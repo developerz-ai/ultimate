@@ -1,0 +1,97 @@
+# One image for every role; `role` is the only difference between the workloads below.
+image:
+  repository: ghcr.io/developerz-ai/ultimate-app
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# Non-secret configuration. Secrets come from an existing Secret, never from this file.
+env:
+  NODE_ENV: production
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+
+existingSecret: ultimate-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile: { type: RuntimeDefault }
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+# Pre-deploy hook. Runs to completion before any serving role starts.
+migrate:
+  enabled: true
+  backoffLimit: 1
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# Each role scales on the signal that actually predicts its saturation.
+roles:
+  web:
+    enabled: true
+    replicas: 3
+    port: 3000
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits: { memory: 512Mi }
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 30
+      metric: rps               # requests per second, via the ingress metric adapter
+      targetAverageValue: "50"
+
+  sync:
+    enabled: true
+    replicas: 2
+    port: 3001
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { memory: 1Gi }
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 40
+      metric: connections       # concurrent websockets per pod
+      targetAverageValue: "2000"
+
+  worker:
+    enabled: true
+    replicas: 2
+    resources:
+      requests: { cpu: 200m, memory: 256Mi }
+      limits: { memory: 1Gi }
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 50
+      metric: queue_depth       # jobs waiting, exported by the worker role
+      targetAverageValue: "100"
+
+  scheduler:
+    enabled: true
+    replicas: 1                 # fixed 1; leader election is a Postgres advisory lock
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 256Mi }
+
+  replicator:
+    enabled: false              # one per database, enable when the change feed is in use
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { memory: 512Mi }
+
+ingress:
+  enabled: false
+  className: nginx
+  host: app.example.com
+  tls: true

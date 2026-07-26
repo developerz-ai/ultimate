@@ -1,0 +1,55 @@
+name: 🐛 Bug
+description: Something behaves differently from what the error, the docs, or the type said.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `x doctor --json` first — most environment problems answer themselves, with the fix
+        command attached.
+
+  - type: input
+    id: code
+    attributes:
+      label: Stable error code
+      description: The `X_*` code from the failure. `none` if nothing was thrown.
+      placeholder: X_DB_DRIFT
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: The failure, verbatim
+      description: Paste the 3-line error, or the `--json` output. Do not summarise it.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduce
+      description: Smallest sequence of `x` commands that shows it.
+      value: |
+        1. bunx create-ultimate repro && cd repro
+        2. x g ...
+        3. x verify
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `x doctor --json` and `bun --version`.
+      render: shell
+    validations:
+      required: true

@@ -1,0 +1,37 @@
+{
+  "name": "@ultimat3/query",
+  "version": "0.0.1",
+  "description": "The query primitive: a policy-checked read, optionally live, with cursor pagination and an incremental matcher",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/query"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ultimat3/cache": "0.0.1",
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/policy": "0.0.1",
+    "@ultimat3/schema": "0.0.1"
+  }
+}

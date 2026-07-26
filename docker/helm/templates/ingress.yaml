@@ -1,0 +1,32 @@
+{{/* Standard ingress. No vendor edge primitives: the CDN gets headers and a purge webhook. */}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ultimate.fullname" . }}
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ include "ultimate.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /_sync
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ultimate.fullname" . }}-sync
+                port: { name: http }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ultimate.fullname" . }}-web
+                port: { name: http }
+{{- end }}

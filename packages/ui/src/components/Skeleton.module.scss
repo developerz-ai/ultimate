@@ -1,0 +1,41 @@
+@use '../tokens' as t;
+
+@keyframes ultimate-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(2);
+}
+
+.skeleton {
+  display: block;
+  inline-size: var(--skeleton-w, 100%);
+  block-size: var(--skeleton-h, 1em);
+  // The sweep is built from surface roles, so it is visible on both themes.
+  background: linear-gradient(
+      90deg,
+      t.role('bg-soft') 25%,
+      t.role('line') 37%,
+      t.role('bg-soft') 63%
+    )
+    0 0 / 200% 100%;
+  animation: ultimate-shimmer 1.4s linear infinite;
+}
+
+.shape-text {
+  border-radius: t.radius(sm);
+}
+
+.shape-block {
+  border-radius: t.radius(md);
+}
+
+.shape-circle {
+  border-radius: t.radius(full);
+  aspect-ratio: 1;
+}

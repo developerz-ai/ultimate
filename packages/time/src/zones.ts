@@ -1,0 +1,147 @@
+/**
+ * IANA timezone primitives. The UTC offset of a zone is derived from
+ * `Intl.DateTimeFormat.formatToParts` — the runtime already ships the tzdata, so there
+ * is no offset table to keep in sync and no `date-fns-tz` dependency.
+ */
+
+import { timezoneInvalid } from './errors';
+import type { Instant } from './instant';
+
+/** An IANA identifier: `Europe/Berlin`, `Asia/Kathmandu`, `UTC`. Never `CET`, never `+01:00`. */
+export type TimeZone = string;
+
+export const UTC: TimeZone = 'UTC';
+
+/** ES2024 `Intl` accepts `+01:00` as a zone; we do not — a fixed offset has no DST rules. */
+const NUMERIC_OFFSET = /^[+-]/;
+
+export function isValidTimeZone(zone: string): boolean {
+  if (zone === '' || NUMERIC_OFFSET.test(zone)) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function assertTimeZone(zone: string): TimeZone {
+  if (!isValidTimeZone(zone)) throw timezoneInvalid(zone);
+  return zone;
+}
+
+/** Wall-clock fields of an instant in a zone, seconds precision. */
+export interface ZoneParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+/**
+ * Read the zone's wall clock for an instant. `hourCycle: 'h23'` is essential: without it
+ * some locales render midnight as hour 24 and every calculation downstream drifts a day.
+ */
+export function zonePartsAt(zone: TimeZone, at: Instant): ZoneParts {
+  const parts = partsFormatterFor(zone).formatToParts(at);
+  const read = (type: Intl.DateTimeFormatPartTypes): number => {
+    const value = parts.find((part) => part.type === type)?.value;
+    if (value === undefined) throw timezoneInvalid(zone);
+    return Number.parseInt(value, 10);
+  };
+  return {
+    year: read('year'),
+    month: read('month'),
+    day: read('day'),
+    hour: read('hour') % 24,
+    minute: read('minute'),
+    second: read('second'),
+  };
+}
+
+/**
+ * Offset in **minutes east of UTC** at a given instant: `Europe/Berlin` → 60 or 120,
+ * `Asia/Kathmandu` → 345, `America/New_York` → -300 or -240.
+ *
+ * The trick: format the instant in the zone, then re-read those wall-clock fields *as if
+ * they were UTC*. The difference between that and the real epoch is the offset.
+ */
+export function offsetAt(zone: TimeZone, at: Instant): number {
+  const parts = zonePartsAt(zone, at);
+  const asIfUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  // Offsets are whole minutes; rounding absorbs the sub-second part `asIfUtc` drops.
+  return Math.round((asIfUtc - at.getTime()) / 60_000);
+}
+
+/** `+01:00`, `-04:00`, `+05:45`, `Z`. */
+export function offsetLabel(minutes: number): string {
+  if (minutes === 0) return 'Z';
+  const sign = minutes < 0 ? '-' : '+';
+  const absolute = Math.abs(minutes);
+  const hours = Math.floor(absolute / 60);
+  return `${sign}${pad2(hours)}:${pad2(absolute % 60)}`;
+}
+
+/** Locale-aware zone label: `CET`, `GMT+5:45`, `Central European Standard Time`. */
+export function zoneAbbrev(
+  zone: TimeZone,
+  at: Instant,
+  locale = 'en-US',
+  style: 'short' | 'long' | 'shortOffset' | 'longOffset' = 'short',
+): string {
+  const formatter = new Intl.DateTimeFormat(locale, {
+    timeZone: zone,
+    timeZoneName: style,
+    hourCycle: 'h23',
+  });
+  const label = formatter.formatToParts(at).find((part) => part.type === 'timeZoneName')?.value;
+  return label ?? offsetLabel(offsetAt(zone, at));
+}
+
+/** True when the zone observes a different offset at some point in the surrounding year. */
+export function observesDst(zone: TimeZone, at: Instant): boolean {
+  const offsets = new Set<number>();
+  for (let month = 0; month < 12; month += 1) {
+    const probe = new Date(at.getTime());
+    probe.setUTCMonth(probe.getUTCMonth() + month);
+    offsets.add(offsetAt(zone, probe as Instant));
+  }
+  return offsets.size > 1;
+}
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function partsFormatterFor(zone: TimeZone): Intl.DateTimeFormat {
+  const cached = formatters.get(zone);
+  if (cached !== undefined) return cached;
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    throw timezoneInvalid(zone);
+  }
+  formatters.set(zone, formatter);
+  return formatter;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}

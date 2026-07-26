@@ -1,0 +1,38 @@
+{
+  "name": "@ultimat3/mcp",
+  "version": "0.0.1",
+  "description": "MCP server, dev tools, and the action-to-tool projection — one authz system, two surfaces",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/mcp"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ultimat3/action": "0.0.1",
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/entity": "0.0.1",
+    "@ultimat3/jobs": "0.0.1",
+    "@ultimat3/query": "0.0.1"
+  }
+}

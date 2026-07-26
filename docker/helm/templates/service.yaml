@@ -1,0 +1,29 @@
+{{/* One Service per role that listens. worker, scheduler and replicator take no traffic. */}}
+{{- range $role, $cfg := .Values.roles }}
+{{- if and $cfg.enabled $cfg.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ultimate.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "ultimate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $role }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ultimate.fullname" . }}
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}

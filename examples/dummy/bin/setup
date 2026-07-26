@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fresh checkout → runnable app. Thin wrapper: `x setup` owns every step below.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+bun install
+x setup --json >/dev/null   # .env from .env.example, embedded Postgres, migrate, seed 'dev'
+x verify
+
+echo "postly ready — run bin/dev"

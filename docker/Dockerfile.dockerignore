@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+**/.x
+**/*.tsbuildinfo
+.git
+.github
+docs
+site
+wiki
+coverage
+**/test-results
+**/playwright-report

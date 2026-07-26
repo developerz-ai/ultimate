@@ -1,0 +1,22 @@
+{
+  "name": "@postly/domain",
+  "version": "0.0.1",
+  "description": "Postly's pure types, constants and invariant predicates — no I/O",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/money": "0.0.1"
+  }
+}

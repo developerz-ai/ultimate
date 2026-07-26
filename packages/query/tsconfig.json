@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../cache"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../policy"
+    },
+    {
+      "path": "../schema"
+    }
+  ]
+}

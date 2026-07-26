@@ -1,0 +1,45 @@
+@use '../tokens' as t;
+
+.breadcrumb {
+  font-size: t.text(sm);
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: t.space(2);
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+
+  // The chevron is generated content, so it is never read out and it mirrors
+  // with the writing direction.
+  &:not(:first-child)::before {
+    color: t.role('fg-muted');
+    content: '/';
+  }
+}
+
+.link {
+  @include t.focus-ring;
+  border-radius: t.radius(sm);
+  color: t.role('fg-muted');
+  text-decoration: none;
+
+  &:hover {
+    color: t.role('accent');
+    text-decoration: underline;
+  }
+}
+
+.current {
+  @include t.truncate;
+  max-inline-size: 20rem;
+  color: t.role('fg-strong');
+  font-weight: t.weight(medium);
+}

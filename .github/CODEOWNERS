@@ -1,0 +1,25 @@
+# Every file has an owner. Review is where conventions become enforcement for the things a test
+# cannot check — naming, error text, and whether a change adds a second way to do something.
+
+*                               @developerz-ai/maintainers
+
+# The gate and the contract between packages.
+/scripts/                       @developerz-ai/maintainers
+/scripts/lib/tiers.ts           @developerz-ai/maintainers
+/.github/                       @developerz-ai/maintainers
+/.coderabbit.yml                @developerz-ai/maintainers
+
+# Publishing is irreversible.
+/PUBLISHING.md                  @developerz-ai/maintainers
+/.github/workflows/release.yml  @developerz-ai/maintainers
+
+# Tier 0-1: everything imports these, so a breaking change here is a breaking change everywhere.
+/packages/core/                 @developerz-ai/maintainers
+/packages/schema/               @developerz-ai/maintainers
+
+# The surfaces users touch first.
+/packages/cli/                  @developerz-ai/maintainers
+/packages/create-ultimate/      @developerz-ai/maintainers
+/packages/testing/              @developerz-ai/maintainers
+
+/docker/                        @developerz-ai/maintainers

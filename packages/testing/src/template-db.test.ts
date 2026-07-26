@@ -1,0 +1,128 @@
+import { describe, expect, test } from 'bun:test';
+import type { SqlRunner } from './template-db';
+import {
+  acquireWorkerDatabase,
+  cloneSql,
+  createTemplateSql,
+  DEFAULT_TEMPLATE,
+  databaseNameFor,
+  dropSql,
+  lockSql,
+  urlFor,
+  workerId,
+} from './template-db';
+
+const ADMIN = 'postgres://user:pw@localhost:5432/postgres?sslmode=disable';
+
+const recorder = (): { statements: string[]; connect: (url: string) => SqlRunner } => {
+  const statements: string[] = [];
+  return {
+    statements,
+    connect: () => ({
+      exec: async (sql: string) => {
+        statements.push(sql);
+      },
+      close: async () => undefined,
+    }),
+  };
+};
+
+describe('unit · template-db', () => {
+  test('each worker id owns a different database', () => {
+    const names = [0, 1, 2, 3].map((worker) => databaseNameFor(DEFAULT_TEMPLATE, worker));
+    expect(new Set(names).size).toBe(4);
+    expect(names[2]).toBe(`${DEFAULT_TEMPLATE}_w2`);
+  });
+
+  test('the worker id comes from the test runner environment', () => {
+    expect(workerId({ BUN_TEST_WORKER_ID: '3' })).toBe(3);
+    expect(workerId({ ULTIMATE_TEST_WORKER: '7' })).toBe(7);
+    expect(workerId({}, 0)).toBe(0);
+    expect(workerId({}, 4097)).toBe(1);
+  });
+
+  test('two workers acquire distinct databases from the same template', async () => {
+    const first = recorder();
+    const second = recorder();
+    const a = await acquireWorkerDatabase(
+      { adminUrl: ADMIN },
+      { connect: first.connect, env: { BUN_TEST_WORKER_ID: '0' } },
+    );
+    const b = await acquireWorkerDatabase(
+      { adminUrl: ADMIN },
+      { connect: second.connect, env: { BUN_TEST_WORKER_ID: '1' } },
+    );
+    expect(a.database).not.toBe(b.database);
+    expect(a.url).not.toBe(b.url);
+    expect(a.kind).toBe('postgres');
+    expect(first.statements).toContain(cloneSql(DEFAULT_TEMPLATE, a.database));
+    expect(second.statements).toContain(cloneSql(DEFAULT_TEMPLATE, b.database));
+  });
+
+  test('the template is created and migrated once, under an advisory lock', async () => {
+    const { statements, connect } = recorder();
+    const migrated: string[] = [];
+    await acquireWorkerDatabase(
+      {
+        adminUrl: ADMIN,
+        migrate: async (url) => {
+          migrated.push(url);
+        },
+      },
+      { connect, env: { BUN_TEST_WORKER_ID: '0' } },
+    );
+    expect(statements[0]).toBe(lockSql(DEFAULT_TEMPLATE));
+    expect(statements).toContain(createTemplateSql(DEFAULT_TEMPLATE));
+    expect(migrated).toEqual([urlFor(ADMIN, DEFAULT_TEMPLATE)]);
+    expect(statements.some((sql) => sql.startsWith('SELECT pg_advisory_unlock'))).toBe(true);
+  });
+
+  test('a worker database is dropped before it is recreated, so a crashed run cannot leak', async () => {
+    const { statements, connect } = recorder();
+    const db = await acquireWorkerDatabase(
+      { adminUrl: ADMIN },
+      { connect, env: { BUN_TEST_WORKER_ID: '2' } },
+    );
+    expect(statements.indexOf(dropSql(db.database))).toBeLessThan(
+      statements.indexOf(cloneSql(DEFAULT_TEMPLATE, db.database)),
+    );
+  });
+
+  test('teardown drops only this worker database', async () => {
+    const { statements, connect } = recorder();
+    const db = await acquireWorkerDatabase(
+      { adminUrl: ADMIN },
+      { connect, env: { BUN_TEST_WORKER_ID: '5' } },
+    );
+    await db.drop();
+    expect(statements.at(-1)).toBe(dropSql(`${DEFAULT_TEMPLATE}_w5`));
+  });
+
+  test('urlFor swaps the database and keeps credentials and parameters', () => {
+    expect(urlFor(ADMIN, 'ultimate_test_template_w1')).toBe(
+      'postgres://user:pw@localhost:5432/ultimate_test_template_w1?sslmode=disable',
+    );
+  });
+
+  test('with no Postgres configured it falls back to PGlite instead of failing', async () => {
+    const db = await acquireWorkerDatabase({}, { connect: recorder().connect, env: {} });
+    expect(db.kind).toBe('pglite');
+    expect(db.url).toContain('pglite://memory/');
+  });
+
+  test('a failing admin connection reports X_TEST_DB_UNAVAILABLE with a fix', async () => {
+    const connect = (): SqlRunner => ({
+      exec: async () => {
+        throw new Error('connection refused');
+      },
+      close: async () => undefined,
+    });
+    try {
+      await acquireWorkerDatabase({ adminUrl: ADMIN }, { connect, env: {} });
+      throw new Error('expected a throw');
+    } catch (error) {
+      expect(error).toBeUltimateError('X_TEST_DB_UNAVAILABLE');
+      expect((error as { fix: string }).fix).toContain('TEST_DATABASE_URL');
+    }
+  });
+});

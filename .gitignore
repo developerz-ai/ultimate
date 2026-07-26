@@ -1,0 +1,82 @@
+# Bun / Node
+node_modules/
+.bun/
+bun.lockb.tmp
+
+# Env
+.env
+.env.local
+.env.*.local
+.env.test.local
+.env.dev
+
+# Build artifacts
+dist/
+build/
+out/
+*.tsbuildinfo
+.turbo/
+.solid/
+.output/
+.x/
+
+# tsc emit alongside TS source (Bun runs .ts directly; these are stray)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+packages/*/src/**/*.jsx
+packages/*/src/**/*.jsx.map
+
+# Task-master local state
+.claude-task-master/
+.ai-task-master/
+
+# CodeGraph index
+.codegraph/
+
+# Tests / coverage
+coverage/
+.nyc_output/
+**/playwright-report/
+**/test-results/
+**/.last-run.json
+.lighthouseci/
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE — editor config is operator-local, never committed
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude local
+.claude/settings.local.json
+.claude/.local/
+.claude/worktrees/
+
+# Operator-local MCP config (may carry API keys / local ports).
+# The committed *.example.json files document the shape.
+/.mcp.json
+/.ui-debugger-mcp.json
+
+# Temp
+tmp/
+temp/
+.tmp/
+.debugging/
+.playwright-mcp/
+/*.png
+
+# Hand-written ambient declarations must survive the stale-emit cleanup above.
+!packages/ui/src/scss.d.ts
+
+# Generated site output
+site/dist/

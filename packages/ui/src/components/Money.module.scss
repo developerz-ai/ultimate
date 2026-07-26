@@ -1,0 +1,11 @@
+@use '../tokens' as t;
+
+.money {
+  // Tabular figures so a column of amounts lines up without a monospace font.
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.negative {
+  color: t.role('danger');
+}

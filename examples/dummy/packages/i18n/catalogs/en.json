@@ -1,0 +1,184 @@
+{
+  "common": {
+    "appName": "Postly",
+    "tagline": "A team blog that behaves itself",
+    "save": "Save",
+    "saved": "Saved",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "loading": "Loading",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "back": "Back"
+  },
+  "site": {
+    "nav": { "features": "Features", "pricing": "Pricing", "blog": "Blog" },
+    "hero": {
+      "metaTitle": "Postly — a team blog that behaves itself",
+      "metaDescription": "Multi-tenant team blogging with offline likes, live feeds, per-member timezones and prices that are integers. Built on Ultimate.",
+      "title": "Publish together. Behave predictably.",
+      "subtitle": "Orgs, members, drafts, comments and a nightly digest that arrives at 09:00 wherever your writers actually are.",
+      "ctaPrimary": "Start free",
+      "ctaSecondary": "Read the blog"
+    },
+    "features": {
+      "heading": "What you get on day one",
+      "realtimeTitle": "Feeds that update themselves",
+      "realtimeBody": "A live query, not a polling loop. Your own click lands instantly; everyone else's arrives as it commits.",
+      "offlineTitle": "Likes that survive the tunnel",
+      "offlineBody": "Writes queue while you are offline and reconcile on reconnect. No lost taps, no duplicate rows.",
+      "localeTitle": "Every member's own language and clock",
+      "localeBody": "Locale and timezone are columns on the membership, so a post reads correctly in Madrid and in Auckland.",
+      "moneyTitle": "Prices that are integers",
+      "moneyBody": "Minor units and a currency, priced per market, formatted once at the edge. Never a float."
+    },
+    "pricing": {
+      "metaTitle": "Postly pricing — free, team and business plans",
+      "metaDescription": "Three plans priced in US dollars and euros. Seats, drafts, comments and the nightly digest are included on every plan, including the free one.",
+      "heading": "Priced per market, not converted",
+      "subheading": "Pick a currency at signup. We never guess an exchange rate on your behalf.",
+      "currencyLabel": "Currency",
+      "perMonth": "per month",
+      "seats": { "one": "{count} seat", "other": "{count} seats" },
+      "cta": "Choose {plan}",
+      "included": "Included on every plan",
+      "includedList": "Live feeds, offline likes, nightly digest, two languages, MCP access"
+    },
+    "blog": {
+      "metaTitle": "The Postly blog",
+      "metaDescription": "Notes on multi-tenant publishing, offline writes, timezone-correct scheduling and integer money.",
+      "publishedOn": "Published {date}",
+      "by": "by {name}",
+      "readMore": "Read the post",
+      "backToBlog": "All posts",
+      "notFoundTitle": "That post has moved",
+      "notFoundBody": "The link is old, or the post was unpublished."
+    },
+    "offline": {
+      "metaTitle": "Offline — Postly",
+      "metaDescription": "You are offline. Postly keeps your feed readable and queues anything you write until the connection returns.",
+      "heading": "You are offline",
+      "body": "The feed you already loaded is still readable. Anything you write is queued and sent when the connection returns.",
+      "queued": {
+        "one": "{count} change waiting to send",
+        "other": "{count} changes waiting to send"
+      },
+      "queuedNone": "Nothing is waiting to send."
+    }
+  },
+  "app": {
+    "nav": { "feed": "Feed", "settings": "Settings", "org": "Organisation" },
+    "feed": {
+      "metaTitle": "Feed",
+      "heading": "{org} feed",
+      "empty": "No posts yet. The first one is the hardest.",
+      "newPost": "New post",
+      "loading": "Loading the feed",
+      "offlineNotice": "Offline — showing the copy on this device."
+    },
+    "post": {
+      "metaTitle": "{title}",
+      "publishedAt": "Published {date}",
+      "draftNotice": "This is a draft. Only your organisation can see it.",
+      "publish": "Publish",
+      "publishing": "Publishing",
+      "like": "Like",
+      "unlike": "Remove like",
+      "likes": { "one": "{count} like", "other": "{count} likes" },
+      "commentsHeading": "Comments",
+      "commentsEmpty": "No comments yet.",
+      "commentPlaceholder": "Say something useful",
+      "commentSubmit": "Comment"
+    },
+    "settings": {
+      "metaTitle": "Settings",
+      "heading": "Your preferences",
+      "intro": "These are stored on your membership, so every surface — web, digest email, admin — agrees.",
+      "localeLabel": "Language",
+      "localeHelp": "Applies to the interface and to your digest email.",
+      "timezoneLabel": "Timezone",
+      "timezoneHelp": "Every date you see is rendered in this zone, and your digest arrives at 09:00 here.",
+      "themeLabel": "Theme",
+      "themeSystem": "Match my system",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "digestLabel": "Nightly digest",
+      "digestHelp": "One email at 09:00 your time with what your organisation published."
+    }
+  },
+  "posts": {
+    "status": { "draft": "Draft", "scheduled": "Scheduled", "published": "Published" },
+    "titleLabel": "Title",
+    "bodyLabel": "Post",
+    "create": "Create draft",
+    "created": "Draft created"
+  },
+  "orgs": {
+    "switcherLabel": "Organisation",
+    "invite": {
+      "heading": "Invite a member",
+      "emailLabel": "Email",
+      "roleLabel": "Role",
+      "submit": "Send invitation",
+      "sent": "Invitation sent to {email}"
+    },
+    "upgrade": {
+      "heading": "Change plan",
+      "submit": "Upgrade to {plan}",
+      "quote": "{charge} today, then {next} monthly",
+      "creditNote": "{credit} credited for the rest of this period",
+      "done": "Now on {plan}"
+    },
+    "roles": { "owner": "Owner", "admin": "Admin", "author": "Author", "reader": "Reader" }
+  },
+  "plans": {
+    "free": { "name": "Free", "description": "One small team, all the primitives." },
+    "team": {
+      "name": "Team",
+      "description": "Drafts, reviews and a digest for a real editorial team."
+    },
+    "business": {
+      "name": "Business",
+      "description": "Many writers, audit-grade history, priority support."
+    }
+  },
+  "mail": {
+    "greeting": "Hi {name},",
+    "signoff": "— The Postly team",
+    "postPublished": {
+      "subject": "{title} — new in {org}",
+      "body": "{author} just published a post in {org}.",
+      "cta": "Read it on Postly"
+    },
+    "welcome": {
+      "subject": "Welcome to Postly, {org}",
+      "body": "Your organisation is ready. Invite your writers and publish something small today.",
+      "cta": "Open your feed"
+    },
+    "nudge": {
+      "subject": "Still nothing published in {org}?",
+      "body": "Three days in and the feed is empty. The first post is the hardest one.",
+      "cta": "Write the first post"
+    },
+    "invite": {
+      "subject": "{inviter} invited you to {org} on Postly",
+      "body": "You have been added as {role}. Accept the invitation to start writing.",
+      "cta": "Accept the invitation"
+    }
+  },
+  "digest": {
+    "subject": "Postly digest for {date}",
+    "greeting": "Good morning, {name}.",
+    "intro": { "one": "{count} new post in {org}.", "other": "{count} new posts in {org}." },
+    "readAction": "Read it on Postly",
+    "footer": "Sent at 09:00 in {zone}. Change this in your settings.",
+    "unsubscribe": "Turn off the digest"
+  },
+  "errors": {
+    "policyDenied": "You do not have permission to do that.",
+    "seatsExceeded": "Your plan is full. Upgrade to add another member.",
+    "offlineQueued": "You are offline — this will be sent when you reconnect.",
+    "updateAvailable": "A new version is ready.",
+    "updateAction": "Reload"
+  }
+}

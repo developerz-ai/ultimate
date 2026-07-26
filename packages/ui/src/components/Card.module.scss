@@ -1,0 +1,69 @@
+@use '../tokens' as t;
+
+.card {
+  @include t.container(card);
+  @include t.transition(box-shadow, border-color, transform);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(lg);
+  background: t.role('surface');
+  color: t.role('fg');
+  overflow: clip;
+}
+
+.interactive {
+  cursor: pointer;
+
+  &:hover {
+    border-color: t.role('accent', 0.4);
+    transform: translateY(-2px);
+    box-shadow: t.shadow(md);
+  }
+
+  &:focus-within {
+    border-color: t.role('accent');
+  }
+}
+
+.header,
+.footer {
+  @include t.padding-inline(var(--card-padding));
+  padding-block: t.space(3);
+  background: t.role('bg-soft');
+}
+
+.header {
+  border-block-end: 1px solid t.role('line');
+  color: t.role('fg-strong');
+  font-weight: t.weight(semibold);
+}
+
+.footer {
+  border-block-start: 1px solid t.role('line');
+}
+
+.body {
+  padding: var(--card-padding, #{t.space(5)});
+  flex: 1;
+}
+
+.elevation-flat {
+  box-shadow: none;
+}
+
+.elevation-xs {
+  box-shadow: t.shadow(xs);
+}
+
+.elevation-sm {
+  box-shadow: t.shadow(sm);
+}
+
+.elevation-md {
+  box-shadow: t.shadow(md);
+}
+
+.elevation-lg {
+  box-shadow: t.shadow(lg);
+}

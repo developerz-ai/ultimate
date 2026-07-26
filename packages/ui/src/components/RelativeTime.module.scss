@@ -1,0 +1,7 @@
+@use '../tokens' as t;
+
+.relative {
+  color: t.role('fg-muted');
+  text-decoration: none;
+  white-space: nowrap;
+}

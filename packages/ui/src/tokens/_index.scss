@@ -1,0 +1,13 @@
+// Single entry point for authors: `@use '../tokens' as t;` then `t.role('bg')`,
+// `t.space(4)`, `@include t.focus-ring`. Forwards maps, functions, and mixins —
+// emits no CSS. Global custom properties come from `theme.scss`.
+
+@forward 'breakpoints';
+@forward 'colors' hide emit, channels;
+@forward 'motion' hide emit;
+@forward 'radius' hide emit;
+@forward 'shadow' hide emit, levels;
+@forward 'space' hide emit;
+@forward 'typography' hide emit;
+@forward 'z' hide emit;
+@forward 'mixins';

@@ -1,0 +1,63 @@
+# The same image, once per role. This file IS the production topology: scale a role by scaling its
+# service, and nothing about the code changes.
+#
+#   docker compose -f docker/docker-compose.prod.yml run --rm migrate
+#   docker compose -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+
+name: ultimate
+
+x-image: &image ${IMAGE:-ultimate-app:latest}
+
+x-common: &common
+  image: *image
+  restart: unless-stopped
+  env_file: [../.env.production]
+  stop_grace_period: 30s          # SIGTERM drains in-flight work before the process exits
+
+services:
+  # Run-once, before anything serves traffic. Refuses to run concurrently with another version.
+  migrate:
+    <<: *common
+    environment: { ROLE: migrate }
+    restart: 'no'
+
+  # Scales on RPS. Stateless, behind a CDN.
+  web:
+    <<: *common
+    environment: { ROLE: web, PORT: 3000 }
+    ports: ['3000:3000']
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    healthcheck:
+      test: ['CMD', '/app/x', 'doctor', '--json']
+      interval: 15s
+    deploy:
+      replicas: 3
+
+  # Scales on concurrent websockets. No sticky sessions.
+  sync:
+    <<: *common
+    environment: { ROLE: sync, PORT: 3001 }
+    ports: ['3001:3001']
+    deploy:
+      replicas: 2
+
+  # Scales on queue depth.
+  worker:
+    <<: *common
+    environment: { ROLE: worker }
+    deploy:
+      replicas: 2
+
+  # Exactly one. Leader election is an advisory lock, so a second instance is harmless but idle.
+  scheduler:
+    <<: *common
+    environment: { ROLE: scheduler }
+    deploy:
+      replicas: 1
+
+  # One per database: logical replication into the change feed.
+  replicator:
+    <<: *common
+    environment: { ROLE: replicator }
+    deploy:
+      replicas: 1

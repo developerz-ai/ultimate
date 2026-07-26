@@ -1,0 +1,212 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "close": "Close",
+    "retry": "Try again",
+    "loading": "Loading…",
+    "empty": "Nothing here yet.",
+    "confirm": "Are you sure?",
+    "yes": "Yes",
+    "no": "No",
+    "copy": "Copy",
+    "copied": "Copied",
+    "signedInAs": "Signed in as {email}"
+  },
+  "errors": {
+    "notFound": {
+      "title": "Page not found",
+      "body": "We looked for {path} and came up empty.",
+      "action": "Back to safety"
+    },
+    "forbidden": {
+      "title": "Not allowed",
+      "body": "Your account can't do this. Ask an admin for the {permission} permission.",
+      "action": "Back"
+    },
+    "unauthorized": {
+      "title": "Please sign in",
+      "body": "This page needs an account.",
+      "action": "Sign in"
+    },
+    "serverError": {
+      "title": "Something broke on our side",
+      "body": "The error was recorded as {traceId}.",
+      "action": "Reload"
+    },
+    "offline": {
+      "title": "You're offline",
+      "body": "Changes are saved locally and will sync when you reconnect.",
+      "action": "Retry now"
+    },
+    "rateLimited": {
+      "title": "Too many requests",
+      "body": "Try again in {seconds} seconds.",
+      "action": "Wait"
+    },
+    "validation": {
+      "title": "Check the highlighted fields",
+      "count": "{count} field needs attention",
+      "count_plural": "{count} fields need attention"
+    }
+  },
+  "validation": {
+    "required": "Required",
+    "tooShort": "Use at least {min} characters",
+    "tooLong": "Use at most {max} characters",
+    "notEmail": "Enter a valid email address",
+    "notUrl": "Enter a valid URL",
+    "notNumber": "Enter a number",
+    "outOfRange": "Enter a value between {min} and {max}",
+    "mismatch": "Values don't match"
+  },
+  "auth": {
+    "signIn": {
+      "title": "Sign in",
+      "submit": "Sign in",
+      "email": "Email",
+      "password": "Password",
+      "forgot": "Forgot your password?",
+      "noAccount": "Don't have an account?",
+      "createAccount": "Create one",
+      "magicLink": "Email me a sign-in link",
+      "failed": "That email and password don't match."
+    },
+    "signUp": {
+      "title": "Create your account",
+      "submit": "Create account",
+      "name": "Name",
+      "haveAccount": "Already have an account?",
+      "terms": "By continuing you agree to the {termsLink}.",
+      "taken": "That email is already registered."
+    },
+    "resetPassword": {
+      "title": "Reset your password",
+      "submit": "Send reset link",
+      "sent": "Check {email} for a reset link.",
+      "newPassword": "New password",
+      "expired": "That link expired. Request a new one."
+    },
+    "verifyEmail": {
+      "title": "Verify your email",
+      "body": "We sent a code to {email}.",
+      "submit": "Verify",
+      "resend": "Resend code"
+    },
+    "twoFactor": {
+      "title": "Two-factor code",
+      "body": "Enter the 6-digit code from your authenticator app.",
+      "submit": "Verify",
+      "recovery": "Use a recovery code"
+    },
+    "signOut": "Sign out",
+    "session": {
+      "expired": "Your session expired. Sign in again.",
+      "current": "This device"
+    }
+  },
+  "pagination": {
+    "previous": "Previous",
+    "next": "Next",
+    "first": "First",
+    "last": "Last",
+    "page": "Page {page} of {pages}",
+    "showing": "Showing {from}–{to} of {total}",
+    "perPage": "{count} per page",
+    "result": "{count} result",
+    "result_plural": "{count} results",
+    "loadMore": "Load more",
+    "noMore": "That's everything."
+  },
+  "admin": {
+    "nav": {
+      "dashboard": "Dashboard",
+      "entities": "Data",
+      "actions": "Actions",
+      "jobs": "Jobs",
+      "tasks": "Schedules",
+      "queries": "Queries",
+      "policies": "Policies",
+      "users": "Users",
+      "settings": "Settings",
+      "logs": "Logs",
+      "traces": "Traces",
+      "migrations": "Migrations"
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "health": "Health",
+      "throughput": "Requests per minute",
+      "errorRate": "Error rate",
+      "latency": "p95 latency",
+      "queueDepth": "Queue depth",
+      "activeUsers": "Active users",
+      "since": "since {when}"
+    },
+    "jobs": {
+      "title": "Jobs",
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "retrying": "Retrying",
+      "cancelled": "Cancelled",
+      "attempt": "Attempt {attempt} of {attempts}",
+      "nextRun": "Next run {when}",
+      "retryNow": "Retry now",
+      "cancel": "Cancel job",
+      "step": "Step {name}",
+      "pending": "{count} job waiting",
+      "pending_plural": "{count} jobs waiting"
+    },
+    "tasks": {
+      "title": "Schedules",
+      "cron": "Cron",
+      "timezone": "Timezone",
+      "lastRun": "Last run",
+      "nextRun": "Next run",
+      "runNow": "Run now",
+      "pause": "Pause",
+      "resume": "Resume"
+    },
+    "entities": {
+      "title": "Data",
+      "rows": "{count} row",
+      "rows_plural": "{count} rows",
+      "newRecord": "New {entity}",
+      "deleteRecord": "Delete this {entity}?",
+      "noResults": "No {entity} matched that filter."
+    },
+    "table": {
+      "sortAscending": "Sort ascending",
+      "sortDescending": "Sort descending",
+      "columns": "Columns",
+      "selected": "{count} selected",
+      "selectAll": "Select all",
+      "clearSelection": "Clear selection"
+    }
+  },
+  "time": {
+    "cron": {
+      "everyMinute": "every minute",
+      "everyNMinutes": "every {n} minutes",
+      "everyHour": "every hour",
+      "everyNHours": "every {n} hours",
+      "at": "at {time}",
+      "onDaysOfMonth": "on day {days}",
+      "onWeekdays": "on {days}",
+      "inMonths": "in {months}",
+      "everyDay": "every day",
+      "and": "and",
+      "invalid": "not a valid cron expression"
+    },
+    "relative": {
+      "now": "just now"
+    }
+  }
+}

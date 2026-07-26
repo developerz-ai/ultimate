@@ -1,0 +1,33 @@
+@use '../tokens' as t;
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(3);
+}
+
+// Numbers align to the trailing edge in both writing directions.
+.numeric {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.sortButton {
+  @include t.focus-ring;
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+  border-radius: t.radius(sm);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    color: t.role('accent');
+  }
+}
+
+.indicator {
+  color: t.role('fg-muted');
+  font-size: 0.75em;
+}

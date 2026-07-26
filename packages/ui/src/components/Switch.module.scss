@@ -1,0 +1,66 @@
+@use '../tokens' as t;
+
+.row {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  cursor: pointer;
+
+  &:has(:disabled) {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+// Order swaps with `order`, so RTL still mirrors correctly.
+.label-start .text {
+  order: -1;
+}
+
+.input {
+  @include t.visually-hidden;
+}
+
+.track {
+  @include t.transition(background);
+  position: relative;
+  flex: none;
+  inline-size: 2.25rem;
+  block-size: 1.25rem;
+  border-radius: t.radius(pill);
+  background: t.role('line');
+}
+
+.knob {
+  @include t.transition(translate);
+  position: absolute;
+  inset-block-start: 0.125rem;
+  inset-inline-start: 0.125rem;
+  inline-size: 1rem;
+  block-size: 1rem;
+  border-radius: t.radius(full);
+  background: t.role('surface-raised');
+  box-shadow: t.shadow(xs);
+}
+
+.input:checked + .track {
+  background: t.role('accent');
+}
+
+// `translate` with a logical sign flip: RTL mirrors via the `dir` attribute.
+.input:checked + .track .knob {
+  translate: 1rem 0;
+}
+
+[dir='rtl'] .input:checked + .track .knob {
+  translate: -1rem 0;
+}
+
+.input:focus-visible + .track {
+  outline: 2px solid t.role('accent');
+  outline-offset: 2px;
+}
+
+.text {
+  font-size: t.text(sm);
+}

@@ -1,0 +1,22 @@
+// Settings form. One column, generous spacing, tokens throughout.
+
+.page {
+  max-inline-size: 34rem;
+}
+
+.preview {
+  background-color: rgb(var(--color-bg-soft));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-fg-muted));
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.actions {
+  align-items: center;
+  border-block-start: 1px solid rgb(var(--color-line));
+  display: flex;
+  gap: var(--space-3);
+  padding-block-start: var(--space-6);
+}

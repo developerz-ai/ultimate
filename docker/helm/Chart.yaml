@@ -1,0 +1,11 @@
+apiVersion: v2
+name: ultimate
+description: One image, N roles. Per-role deployments and autoscalers for an Ultimate app.
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
+kubeVersion: ">=1.27.0-0"
+keywords: [bun, postgres, solidjs, ultimate]
+home: https://ultimate.dev
+sources:
+  - https://github.com/developerz-ai/ultimate

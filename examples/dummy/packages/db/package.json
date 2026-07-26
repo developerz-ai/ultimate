@@ -1,0 +1,27 @@
+{
+  "name": "@postly/db",
+  "version": "0.0.1",
+  "description": "Postly's entities, migrations, cache tags and seeds — schema only",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./seeds/dev": "./seeds/dev.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "gen": "x db gen",
+    "apply": "x db apply"
+  },
+  "dependencies": {
+    "@postly/domain": "0.0.1",
+    "@ultimat3/cache": "0.0.1",
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/entity": "0.0.1"
+  }
+}

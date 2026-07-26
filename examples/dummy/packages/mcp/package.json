@@ -1,0 +1,27 @@
+{
+  "name": "@postly/mcp",
+  "version": "0.0.1",
+  "description": "Postly's own MCP surface — its actions as tools, plus app-specific read tools",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "doc": "x mcp doc --json"
+  },
+  "dependencies": {
+    "@postly/core": "0.0.1",
+    "@postly/domain": "0.0.1",
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/mcp": "0.0.1",
+    "@ultimat3/schema": "0.0.1",
+    "@ultimat3/testing": "0.0.1"
+  }
+}

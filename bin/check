@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# The gate, locally. Identical steps to CI — a check that lives only in CI cannot be run here.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec bun run scripts/verify.ts "$@"

@@ -1,0 +1,75 @@
+// Landing page. No hex, no JS: the grid is CSS, the emphasis is a token.
+
+.page {
+  margin-inline: auto;
+  max-inline-size: 68rem;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-4);
+}
+
+.hero {
+  align-items: center;
+  display: grid;
+  gap: var(--space-12);
+  grid-template-columns: 1fr;
+
+  @media (min-width: 60rem) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.subtitle {
+  color: rgb(var(--color-fg-muted));
+  font-size: 1.125rem;
+  max-inline-size: 34rem;
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.primary,
+.secondary {
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  padding-block: var(--space-3);
+  padding-inline: var(--space-6);
+  text-decoration: none;
+}
+
+.primary {
+  background-color: rgb(var(--color-accent));
+  color: rgb(var(--color-accent-fg));
+
+  &:hover {
+    background-color: rgb(var(--color-accent-strong));
+  }
+}
+
+.secondary {
+  border: 1px solid rgb(var(--color-line));
+  color: rgb(var(--color-fg));
+}
+
+.features {
+  padding-block-start: var(--space-16);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-8);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  list-style: none;
+  padding: 0;
+
+  h3 {
+    margin-block-end: var(--space-2);
+  }
+
+  p {
+    color: rgb(var(--color-fg-muted));
+    margin: 0;
+  }
+}

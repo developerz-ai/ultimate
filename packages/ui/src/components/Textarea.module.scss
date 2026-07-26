@@ -1,0 +1,15 @@
+@use '../tokens' as t;
+
+.textarea {
+  @include t.control;
+  @include t.custom-scrollbar;
+  display: block;
+  min-block-size: calc(1lh * 3);
+  resize: vertical;
+  line-height: t.leading(normal);
+}
+
+.autoGrow {
+  field-sizing: content;
+  resize: none;
+}

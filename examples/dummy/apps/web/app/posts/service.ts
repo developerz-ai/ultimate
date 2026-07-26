@@ -1,0 +1,88 @@
+/**
+ * Post business logic. Registered as `ctx.posts` by the feature-slice convention, so an action,
+ * a job, an MCP tool and the admin app all call the same functions with the same actor.
+ */
+
+import { excerptOf, type PostId, slugify } from '@postly/domain';
+import { type Ctx, defineService } from '@ultimat3/core';
+import type { CommentView, CreatePostInput, PostView } from './entity';
+import { PostNotFound } from './errors';
+import {
+  authorshipOf,
+  byId,
+  bySlug,
+  deleteLike,
+  insertComment,
+  insertDraft,
+  insertLike,
+  markPublished,
+  publishedSince,
+  recountLikes,
+} from './repo';
+
+export const postsService = defineService('posts', (ctx: Ctx) => ({
+  async byId(postId: PostId): Promise<PostView> {
+    const post = await byId(ctx.actor.orgId, postId);
+    if (!post) throw new PostNotFound(postId);
+    return post;
+  },
+
+  async bySlug(slug: string): Promise<PostView> {
+    const post = await bySlug(ctx.actor.orgId, slug);
+    if (!post) throw new PostNotFound(slug);
+    return post;
+  },
+
+  /** Excerpt and slug are derived, never accepted verbatim: both are load-bearing forever. */
+  async createDraft(input: CreatePostInput): Promise<PostView> {
+    return insertDraft({
+      orgId: ctx.actor.orgId,
+      authorId: ctx.actor.memberId,
+      slug: input.slug ?? slugify(input.title),
+      title: input.title,
+      excerpt: excerptOf(input.body),
+      body: input.body,
+    });
+  },
+
+  /**
+   * Publishing is idempotent: a post that is already published keeps its original instant, so a
+   * retried action or a replayed job never rewrites publication history.
+   */
+  async publish(postId: PostId): Promise<PostView> {
+    const post = await this.byId(postId);
+    if (post.status === 'published') return post;
+    return markPublished(ctx.actor.orgId, postId, ctx.now());
+  },
+
+  /**
+   * The server half of `toggleLike`. Returns the authoritative row, which is what the client
+   * rebases its optimistic count onto.
+   */
+  async like(postId: PostId): Promise<PostView> {
+    await insertLike(ctx.actor.orgId, postId, ctx.actor.memberId);
+    return recountLikes(ctx.actor.orgId, postId);
+  },
+
+  async unlike(postId: PostId): Promise<PostView> {
+    await deleteLike(ctx.actor.orgId, postId, ctx.actor.memberId);
+    return recountLikes(ctx.actor.orgId, postId);
+  },
+
+  /** Comments are part of the post aggregate, so they live in this service, not a fourth feature. */
+  async comment(postId: PostId, body: string): Promise<CommentView> {
+    const post = await this.byId(postId); // tenancy check by construction
+    return insertComment({
+      orgId: ctx.actor.orgId,
+      postId: post.id as PostId,
+      authorId: ctx.actor.memberId,
+      body,
+    });
+  },
+
+  /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
+  publishedSince,
+
+  /** Used by `policy.ts` only: two columns, no tenancy filter, because tenancy is what it checks. */
+  authorship: authorshipOf,
+}));

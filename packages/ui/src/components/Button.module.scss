@@ -1,0 +1,146 @@
+@use '../tokens' as t;
+
+.button {
+  @include t.focus-ring;
+  @include t.transition(background, border-color, color, box-shadow, transform);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: t.space(2);
+  border: 1px solid transparent;
+  border-radius: t.radius(md);
+  font-weight: t.weight(semibold);
+  line-height: t.leading(tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled,
+  &[aria-disabled='true'] {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.full {
+  inline-size: 100%;
+}
+
+.label {
+  @include t.truncate;
+}
+
+.spinner {
+  display: inline-flex;
+}
+
+// --- sizes -------------------------------------------------------------------
+
+.size-sm {
+  @include t.padding-inline(t.space(3));
+  padding-block: t.space(1);
+  font-size: t.text(sm);
+}
+
+.size-md {
+  @include t.padding-inline(t.space(4));
+  padding-block: t.space(2);
+  font-size: t.text(md);
+}
+
+.size-lg {
+  @include t.padding-inline(t.space(6));
+  padding-block: t.space(3);
+  font-size: t.text(lg);
+}
+
+// --- variants x tones --------------------------------------------------------
+// `--tone-*` is set by the tone class, so each variant is written once.
+
+.tone-neutral {
+  --tone: #{t.role('fg-strong')};
+  --tone-strong: #{t.role('fg')};
+  --tone-fg: #{t.role('bg')};
+  --tone-soft: #{t.role('bg-soft')};
+}
+
+.tone-accent {
+  --tone: #{t.role('accent')};
+  --tone-strong: #{t.role('accent-strong')};
+  --tone-fg: #{t.role('accent-fg')};
+  --tone-soft: #{t.role('accent', 0.12)};
+}
+
+.tone-success {
+  --tone: #{t.role('success')};
+  --tone-strong: #{t.role('success')};
+  --tone-fg: #{t.role('success-fg')};
+  --tone-soft: #{t.role('success-soft')};
+}
+
+.tone-warning {
+  --tone: #{t.role('warning')};
+  --tone-strong: #{t.role('warning')};
+  --tone-fg: #{t.role('warning-fg')};
+  --tone-soft: #{t.role('warning-soft')};
+}
+
+.tone-danger {
+  --tone: #{t.role('danger')};
+  --tone-strong: #{t.role('danger')};
+  --tone-fg: #{t.role('danger-fg')};
+  --tone-soft: #{t.role('danger-soft')};
+}
+
+.tone-info {
+  --tone: #{t.role('info')};
+  --tone-strong: #{t.role('info')};
+  --tone-fg: #{t.role('info-fg')};
+  --tone-soft: #{t.role('info-soft')};
+}
+
+.variant-primary {
+  background: var(--tone);
+  color: var(--tone-fg);
+
+  &:hover:not(:disabled, [aria-disabled='true']) {
+    background: var(--tone-strong);
+  }
+}
+
+.variant-secondary {
+  border-color: t.role('line');
+  background: t.role('surface-raised');
+  color: t.role('fg-strong');
+
+  &:hover:not(:disabled, [aria-disabled='true']) {
+    border-color: var(--tone);
+    background: var(--tone-soft);
+    color: var(--tone);
+  }
+}
+
+.variant-ghost {
+  background: transparent;
+  color: var(--tone);
+
+  &:hover:not(:disabled, [aria-disabled='true']) {
+    background: var(--tone-soft);
+  }
+}
+
+.variant-link {
+  @include t.padding-inline(0);
+  background: transparent;
+  color: var(--tone);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+
+  &:hover:not(:disabled, [aria-disabled='true']) {
+    color: var(--tone-strong);
+  }
+}

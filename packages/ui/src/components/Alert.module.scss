@@ -1,0 +1,70 @@
+@use '../tokens' as t;
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: t.space(3);
+  padding: t.space(4);
+  border: 1px solid var(--alert-line);
+  border-radius: t.radius(md);
+  background: var(--alert-bg);
+  color: t.role('fg');
+}
+
+.icon {
+  display: inline-flex;
+  color: var(--alert-accent);
+  font-size: t.text(lg);
+  line-height: t.leading(tight);
+}
+
+.content {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.title {
+  color: t.role('fg-strong');
+  font-weight: t.weight(semibold);
+}
+
+.body {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+.tone-neutral {
+  --alert-bg: #{t.role('bg-soft')};
+  --alert-line: #{t.role('line')};
+  --alert-accent: #{t.role('fg-muted')};
+}
+
+.tone-accent {
+  --alert-bg: #{t.role('accent', 0.1)};
+  --alert-line: #{t.role('accent', 0.35)};
+  --alert-accent: #{t.role('accent')};
+}
+
+.tone-success {
+  --alert-bg: #{t.role('success-soft')};
+  --alert-line: #{t.role('success', 0.4)};
+  --alert-accent: #{t.role('success')};
+}
+
+.tone-warning {
+  --alert-bg: #{t.role('warning-soft')};
+  --alert-line: #{t.role('warning', 0.4)};
+  --alert-accent: #{t.role('warning')};
+}
+
+.tone-danger {
+  --alert-bg: #{t.role('danger-soft')};
+  --alert-line: #{t.role('danger', 0.4)};
+  --alert-accent: #{t.role('danger')};
+}
+
+.tone-info {
+  --alert-bg: #{t.role('info-soft')};
+  --alert-line: #{t.role('info', 0.4)};
+  --alert-accent: #{t.role('info')};
+}

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630"
+     role="img" aria-labelledby="og-title">
+  <title id="og-title">Ultimate — an agent-first Bun framework</title>
+  <!-- 1200x630 social card. No external font, no external image: every glyph uses a
+       generic family so the card renders identically wherever it is rasterised. -->
+  <style>
+    .bg     { fill: #0d0e12; }
+    .panel  { fill: #16181f; }
+    .line   { stroke: #2c303c; stroke-width: 2; }
+    .accent { fill: #a5acff; }
+    .title  { fill: #f5f6fa; font-family: ui-sans-serif, system-ui, sans-serif;
+              font-size: 78px; font-weight: 700; letter-spacing: -2px; }
+    .lede   { fill: #dcdfe9; font-family: ui-sans-serif, system-ui, sans-serif;
+              font-size: 34px; font-weight: 400; }
+    .meta   { fill: #989fb2; font-family: ui-monospace, monospace; font-size: 25px; }
+    .prim   { fill: #dcdfe9; font-family: ui-monospace, monospace; font-size: 27px; }
+    .badge  { fill: #989fb2; font-family: ui-monospace, monospace; font-size: 22px;
+              letter-spacing: 3px; }
+  </style>
+
+  <rect class="bg" width="1200" height="630" />
+  <rect class="panel" x="0" y="0" width="1200" height="6" />
+  <rect class="accent" x="0" y="0" width="360" height="6" />
+
+  <g transform="translate(80 96)">
+    <rect x="0" y="0" width="64" height="64" rx="18" fill="none" stroke="#3f4555" stroke-width="4" />
+    <path d="M17 18 L32 47 L47 18" fill="none" stroke="#a5acff" stroke-width="7"
+          stroke-linecap="round" stroke-linejoin="round" />
+    <text class="badge" x="88" y="42">ULTIMATE</text>
+  </g>
+
+  <text class="title" x="80" y="290">One action,</text>
+  <text class="title" x="80" y="376">six artifacts.</text>
+
+  <text class="lede" x="80" y="446">Bun · Postgres · SolidJS — where the primary</text>
+  <text class="lede" x="80" y="490">user is an AI agent.</text>
+
+  <line class="line" x1="80" y1="536" x2="1120" y2="536" />
+  <text class="meta" x="80" y="580">ultimate.developerz.ai</text>
+  <text class="meta" x="1120" y="580" text-anchor="end">pre-v1 · MIT</text>
+
+  <g transform="translate(700 120)">
+    <rect x="0" y="0" width="420" height="380" rx="18" fill="#16181f" stroke="#2c303c" stroke-width="2" />
+    <text class="prim" x="36" y="62">entity</text>
+    <text class="prim" x="36" y="106">policy</text>
+    <text class="prim" x="36" y="150">action</text>
+    <text class="prim" x="36" y="194">mutator</text>
+    <text class="prim" x="230" y="62">query</text>
+    <text class="prim" x="230" y="106">job</text>
+    <text class="prim" x="230" y="150">route</text>
+    <text class="prim" x="230" y="194">task</text>
+    <line class="line" x1="36" y1="228" x2="384" y2="228" />
+    <text class="meta" x="36" y="272">eight primitives</text>
+    <text class="meta" x="36" y="310">one authz system</text>
+    <text class="meta" x="36" y="348">0kb js on site/</text>
+  </g>
+</svg>

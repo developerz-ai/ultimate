@@ -1,0 +1,41 @@
+@use '../tokens' as t;
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(1);
+}
+
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: t.space(1);
+  color: t.role('fg-strong');
+  font-size: t.text(sm);
+  font-weight: t.weight(medium);
+}
+
+.required {
+  color: t.role('danger');
+}
+
+.optional {
+  color: t.role('fg-muted');
+  font-weight: t.weight(normal);
+}
+
+.hint {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}
+
+.error {
+  color: t.role('danger');
+  font-size: t.text(xs);
+  font-weight: t.weight(medium);
+}
+
+// `:has()` lets the whole field react to an invalid control with no extra class.
+.field:has([aria-invalid='true']) .label {
+  color: t.role('danger');
+}

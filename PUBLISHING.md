@@ -1,0 +1,103 @@
+# Publishing
+
+Every framework package publishes to npm under the **`@ultimat3`** scope. `create-ultimate` is
+unscoped, because `bunx create-ultimate myapp` is the first command a user ever runs.
+
+Releases use **OIDC trusted publishing** from GitHub Actions
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) — no `NPM_TOKEN` secret. npm
+mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
+automatically.
+
+## Lockstep versioning — the rule
+
+**Every published package moves to the same version in one commit.** The packages import each
+other by tier, so a mixed-version install is a combination nobody tested. There is no independent
+package version, no changeset-per-package, and no "just bump the one that changed".
+
+```sh
+bun run scripts/release.ts --bump minor        # or --version 0.4.0
+git add -A && git commit -m "release: 0.4.0"
+git tag v0.4.0 && git push --follow-tags
+```
+
+Then publish a GitHub Release for the tag — that is what triggers the workflow.
+
+## One-time bootstrap (manual, requires npm auth)
+
+A trusted publisher can only be attached to a package that **already exists**. The first version
+of each package must be published by hand by a member of the `ultimate` npm org, in tier order:
+
+```sh
+npm login                                   # as an @ultimat3 org member
+bun install
+
+npm publish -w @ultimat3/core -w @ultimat3/schema --access public
+npm publish -w @ultimat3/i18n -w @ultimat3/money -w @ultimat3/time \
+            -w @ultimat3/cache -w @ultimat3/seo -w @ultimat3/db -w @ultimat3/storage --access public
+npm publish -w @ultimat3/entity -w @ultimat3/policy -w @ultimat3/http -w @ultimat3/auth --access public
+npm publish -w @ultimat3/action -w @ultimat3/query -w @ultimat3/jobs -w @ultimat3/realtime --access public
+npm publish -w @ultimat3/render -w @ultimat3/pwa -w @ultimat3/mcp \
+            -w @ultimat3/ai -w @ultimat3/manifest -w @ultimat3/mail --access public
+npm publish -w @ultimat3/ui -w @ultimat3/admin -w @ultimat3/testing -w @ultimat3/cli --access public
+npm publish -w create-ultimate --access public
+```
+
+## One-time: configure the trusted publisher (per package)
+
+On npmjs.com, for **each** package: `npmjs.com/package/<name>` → **Settings** →
+**Trusted Publisher** → **GitHub Actions**, then enter:
+
+| Field | Value |
+| ----------------- | ---------------- |
+| Organization/user | `developerz-ai` |
+| Repository | `ultimate` |
+| Workflow filename | `release.yml` |
+| Environment | *(leave blank)* |
+
+The GitHub org is `developerz-ai` with a hyphen; the npm scope is `@ultimat3`. Both are correct.
+
+## Publish order (dependency tiers)
+
+The workflow publishes one step per tier, lowest first, because a package must be on the registry
+before anything that imports it. Same order as `bun run scripts/list-workspaces.ts`.
+
+| Step | Packages |
+|---|---|
+| tier 0 | `core` `schema` |
+| tier 1 | `i18n` `money` `time` `cache` `seo` `db` `storage` |
+| tier 2 | `entity` `policy` `http` `auth` |
+| tier 3 | `action` `query` `jobs` `realtime` |
+| tier 4 | `render` `pwa` `mcp` `ai` `manifest` `mail` |
+| tier 5 | `ui` `admin` `testing` `cli` |
+| last | `create-ultimate` (depends on `@ultimat3/cli`) |
+
+## Ongoing releases (automated)
+
+1. `bun run scripts/release.ts --bump patch|minor|major` — bumps every package in lockstep and
+   appends the changelog entry.
+2. Commit, tag `vX.Y.Z`, push.
+3. Publish a GitHub Release (or run **Actions → release → Run workflow**).
+4. The workflow installs, runs the full `verify` gate, then publishes each tier over OIDC.
+
+## Requirements baked into the workflow
+
+| Requirement | Where |
+|---|---|
+| `permissions: id-token: write` | lets npm mint the OIDC token |
+| npm CLI `>= 11.5.1` | the workflow upgrades npm; Node 22 ships an older one |
+| npm pinned to `11.5.2` | 11.6.x regressed provenance (`Cannot find module 'sigstore'`) |
+| `publishConfig.access: public` + `provenance: true` | every package.json |
+| `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
+| `bun run scripts/verify.ts` before the first publish | nothing reaches the registry unverified |
+
+## What is published
+
+`exports` points at `./src/index.ts` — the TypeScript source, not a build artifact. Ultimate is
+Bun-only, and Bun runs TypeScript directly; a `dist/` would be a second thing to keep in sync and
+a worse stack trace. `files` ships `src`, `README.md` and `LICENSE`, and nothing else.
+
+## Unpublishing
+
+Don't. npm allows it for 72 hours and it breaks every lockfile that already resolved the version.
+Publish a patch instead, and if a version is genuinely dangerous, `npm deprecate` it with the
+version to move to.

@@ -1,0 +1,21 @@
+@use '../tokens' as t;
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--form-gap, #{t.space(5)});
+}
+
+.summary:focus {
+  outline: 2px solid t.role('danger');
+  outline-offset: 4px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(3);
+  align-items: center;
+  // Trailing edge in both writing directions.
+  justify-content: flex-end;
+}

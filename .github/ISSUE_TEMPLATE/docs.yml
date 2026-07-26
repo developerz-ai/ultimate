@@ -1,0 +1,38 @@
+name: 📚 Docs
+description: Something is wrong, missing, or misleading in the docs, an error message, or a README.
+labels: [docs]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: File path, docs URL, or the error code whose text is wrong.
+      placeholder: docs/idea/04-jobs.md, or X_JOB_STEP_RENAMED
+    validations:
+      required: true
+
+  - type: input
+    id: code
+    attributes:
+      label: Related error code
+      description: If this is about an error's cause/fix text, its stable `X_*` code. Else `none`.
+      placeholder: X_CACHE_UNTAGGED_QUERY
+    validations:
+      required: true
+
+  - type: textarea
+    id: says
+    attributes:
+      label: What it says now
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: should
+    attributes:
+      label: What it should say
+      description: Lead with the rule. Fragments over sentences. Tables for >=3 rows.
+      render: markdown
+    validations:
+      required: true

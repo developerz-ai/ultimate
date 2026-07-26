@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Run the `x` CLI from source against this repo: bin/dev verify --json, bin/dev g action foo.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec bun run packages/cli/src/bin.ts "$@"

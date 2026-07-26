@@ -1,0 +1,27 @@
+// Named z-index ladder. A magic number in a component is a review failure —
+// add a rung here instead.
+
+$z: (
+  base: 0,
+  raised: 10,
+  sticky: 100,
+  dropdown: 200,
+  drawer: 300,
+  dialog: 400,
+  popover: 500,
+  tooltip: 600,
+  toast: 700,
+  skip-nav: 800,
+);
+
+@mixin emit {
+  :root {
+    @each $name, $value in $z {
+      --z-#{$name}: #{$value};
+    }
+  }
+}
+
+@function z($name) {
+  @return var(--z-#{$name});
+}

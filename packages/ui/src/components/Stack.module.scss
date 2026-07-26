@@ -1,0 +1,21 @@
+@use '../tokens' as t;
+
+.stack {
+  display: flex;
+  gap: var(--stack-gap, #{t.space(4)});
+  align-items: var(--stack-align, stretch);
+  justify-content: var(--stack-justify, flex-start);
+  list-style: none;
+}
+
+.direction-row {
+  flex-direction: row;
+}
+
+.direction-column {
+  flex-direction: column;
+}
+
+.wrap {
+  flex-wrap: wrap;
+}

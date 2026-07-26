@@ -1,0 +1,39 @@
+{{/*
+Per-role autoscalers. Each role scales on the signal that predicts ITS saturation — CPU is a
+lagging proxy for all three and would scale the wrong thing at the wrong time:
+  web    -> requests per second
+  sync   -> concurrent websocket connections
+  worker -> queue depth
+*/}}
+{{- range $role, $cfg := .Values.roles }}
+{{- if and $cfg.enabled $cfg.autoscaling $cfg.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "ultimate.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "ultimate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "ultimate.fullname" $ }}-{{ $role }}
+  minReplicas: {{ $cfg.autoscaling.minReplicas }}
+  maxReplicas: {{ $cfg.autoscaling.maxReplicas }}
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: {{ $cfg.autoscaling.metric }}
+        target:
+          type: AverageValue
+          averageValue: {{ $cfg.autoscaling.targetAverageValue | quote }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+{{- end }}
+{{- end }}

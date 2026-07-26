@@ -1,0 +1,51 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../action"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../cache"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../entity"
+    },
+    {
+      "path": "../i18n"
+    },
+    {
+      "path": "../jobs"
+    },
+    {
+      "path": "../mcp"
+    },
+    {
+      "path": "../money"
+    },
+    {
+      "path": "../policy"
+    },
+    {
+      "path": "../query"
+    },
+    {
+      "path": "../render"
+    },
+    {
+      "path": "../ui"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+// Highlight colours for the build's tokenizer (build.ts emits <span class="tok-*">).
+// Roles are tokens defined per theme in tokens.scss — no raw hex here, and both
+// schemes are covered because the token flips, not the rule.
+
+.tok-comment {
+  color: rgb(var(--syntax-comment));
+  font-style: italic;
+}
+
+.tok-keyword {
+  color: rgb(var(--syntax-keyword));
+  font-weight: 600;
+}
+
+.tok-string {
+  color: rgb(var(--syntax-string));
+}
+
+.tok-number {
+  color: rgb(var(--syntax-number));
+}
+
+.tok-fn {
+  color: rgb(var(--syntax-fn));
+}
+
+.tok-type {
+  color: rgb(var(--syntax-type));
+}
+
+.tok-punct {
+  color: rgb(var(--syntax-punct));
+}
+
+// Terminal transcripts: the prompt, the command, and the framework's own
+// three-line error rendering (code / cause / fix).
+.tok-prompt {
+  color: rgb(var(--syntax-punct));
+  user-select: none;
+}
+
+.tok-cmd {
+  color: rgb(var(--color-fg-strong));
+  font-weight: 600;
+}
+
+.tok-pass {
+  color: rgb(var(--syntax-added));
+  font-weight: 600;
+}
+
+.tok-fail {
+  color: rgb(var(--syntax-removed));
+  font-weight: 600;
+}
+
+.tok-code {
+  color: rgb(var(--syntax-removed));
+  font-weight: 600;
+}
+
+.tok-label {
+  color: rgb(var(--syntax-comment));
+}
+
+// Diff blocks.
+.tok-added {
+  color: rgb(var(--syntax-added));
+}
+
+.tok-removed {
+  color: rgb(var(--syntax-removed));
+}

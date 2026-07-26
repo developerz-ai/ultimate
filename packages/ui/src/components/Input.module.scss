@@ -1,0 +1,55 @@
+@use '../tokens' as t;
+
+.wrap {
+  @include t.control;
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+
+  &:focus-within {
+    border-color: t.role('accent');
+    outline: 2px solid t.role('accent');
+    outline-offset: 1px;
+  }
+
+  &[data-disabled='true'] {
+    background: t.role('bg-soft');
+    color: t.role('fg-muted');
+  }
+
+  &:has([aria-invalid='true']) {
+    border-color: t.role('danger');
+  }
+}
+
+// The wrapper owns the box; the control itself is transparent.
+.input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.adornment {
+  display: inline-flex;
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  white-space: nowrap;
+}
+
+.size-sm {
+  padding-block: t.space(1);
+  font-size: t.text(sm);
+}
+
+.size-md {
+  padding-block: t.space(2);
+}
+
+.size-lg {
+  padding-block: t.space(3);
+  font-size: t.text(lg);
+}

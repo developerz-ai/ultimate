@@ -1,0 +1,89 @@
+name: release
+
+# Publishes every @ultimat3 package to npm using OIDC trusted publishing — no NPM_TOKEN secret.
+# npm mints a short-lived token from the GitHub Actions id-token and verifies it against the
+# trusted publisher configured for each package on npmjs.com. Provenance is automatic.
+#
+# Prerequisites (one-time, per package, on npmjs.com — see PUBLISHING.md):
+#   1. The package must already exist on the registry (bootstrap the first version by hand).
+#   2. Package → Settings → Trusted Publisher → GitHub Actions:
+#        Organization/user: developerz-ai
+#        Repository:        ultimate
+#        Workflow filename: release.yml
+#        Environment:       (leave blank)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Serialize releases, but NEVER cancel one mid-flight — npm publishes are irreversible, so
+# cancel-in-progress must stay false (repo CI standard).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # REQUIRED for OIDC — lets npm mint a token from this run
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships an older npm.
+      # Pinned (not @latest): npm 11.6.x regressed the provenance path — a global install lands
+      # without a resolvable `sigstore` module, so `npm publish` with provenance dies on
+      # "Cannot find module 'sigstore'". 11.5.2 is the last release before that regression and
+      # satisfies the trusted-publishing minimum. Revisit when a fixed latest ships.
+      - name: upgrade npm
+        run: npm install -g npm@11.5.2
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: install
+        run: bun install --frozen-lockfile
+
+      # The gate runs before anything reaches the registry: an npm publish cannot be undone.
+      - name: verify
+        run: bun run scripts/verify.ts --json
+
+      # Published in dependency-tier order: a package must be on the registry before anything
+      # that imports it. Same order as `bun run scripts/list-workspaces.ts`.
+      - name: publish tier 0
+        run: npm publish -w @ultimat3/core -w @ultimat3/schema
+
+      - name: publish tier 1
+        run: >
+          npm publish
+          -w @ultimat3/i18n -w @ultimat3/money -w @ultimat3/time
+          -w @ultimat3/cache -w @ultimat3/seo -w @ultimat3/db -w @ultimat3/storage
+
+      - name: publish tier 2
+        run: npm publish -w @ultimat3/entity -w @ultimat3/policy -w @ultimat3/http -w @ultimat3/auth
+
+      - name: publish tier 3
+        run: npm publish -w @ultimat3/action -w @ultimat3/query -w @ultimat3/jobs -w @ultimat3/realtime
+
+      - name: publish tier 4
+        run: >
+          npm publish
+          -w @ultimat3/render -w @ultimat3/pwa -w @ultimat3/mcp
+          -w @ultimat3/ai -w @ultimat3/manifest -w @ultimat3/mail
+
+      - name: publish tier 5
+        run: npm publish -w @ultimat3/ui -w @ultimat3/admin -w @ultimat3/testing -w @ultimat3/cli
+
+      # Last: it depends on @ultimat3/cli, which must already be on the registry.
+      - name: publish create-ultimate
+        run: npm publish -w create-ultimate

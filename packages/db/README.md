@@ -1,0 +1,116 @@
+# @ultimat3/db 🐘
+
+Postgres access for Ultimate: parameterised SQL, transactions, migrations, drift detection,
+branch databases, and a read-only client for anything an LLM drives.
+
+Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/time`, `@ultimat3/money` only.
+No runtime dependencies. **Drizzle is the production backing for the query builder and entity
+schema definitions**; this package declares the narrow structural types it consumes (`DbClient`,
+`SqlFragment`, `EntityDescriptionLike`) so the SQL stays readable and the boundary stays thin.
+
+## Public API
+
+```ts
+import { db, sql, raw, withTransaction, currentTx, readOnly, setDbClient } from '@ultimat3/db';
+
+const rows = await db().query<Post>(sql`select * from posts where org_id = ${orgId}`);
+
+await withTransaction(async (tx) => {
+  await tx.execute(sql`update posts set likes = likes + 1 where id = ${id}`);
+  tx.onRollback(() => cache.restore(id));      // fires in reverse order on rollback
+}, { isolation: 'serializable', readOnly: false });
+```
+
+| Export | |
+|---|---|
+| `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
+| `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
+| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam |
+| `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
+| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report |
+| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL |
+| `introspect()` | live schema → `SchemaDescription` |
+| `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
+| `readOnly()` | mutation-rejecting wrapper |
+| `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
+
+## `sql` is parameters-only
+
+String interpolation is how every SQL injection ships, and an agent writing SQL cannot be
+trusted to remember the difference between a value and a fragment. So:
+
+- scalars (`string`, `number`, `boolean`, `bigint`, `Date`, `Uint8Array`, arrays, `null`) become
+  `$1..$n` and never touch `.text`;
+- a nested fragment is spliced and its parameters are renumbered;
+- **anything else throws `X_SQL_UNSAFE`** — including an object shaped like a `SqlFragment` that
+  `sql`/`raw` did not produce;
+- `raw(trusted)` is the one audited escape hatch, `identifier(name)` the safe way to interpolate
+  a table or column, `literal(text)` for utility statements that reject bound parameters.
+
+## The drift contract
+
+`x db drift` compares `introspect()` against the snapshot the newest applied migration carries.
+Rendered output is pinned byte-for-byte:
+
+```
+X_DB_DRIFT: schema differs from migrations
+  cause: table "posts" has column "publish_at" not present in any migration
+  fix:   x db gen "add publish_at"
+```
+
+| Difference | cause | fix |
+|---|---|---|
+| live column, no migration | `table "T" has column "C" not present in any migration` | `x db gen "add C"` |
+| migrated column, not live | `table "T" is missing column "C" that migrations declare` | `x db migrate` |
+| live table, no migration | `table "T" is not present in any migration` | `x db gen "add T"` |
+| migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
+
+`checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x verify` fails on it.
+
+## Pool sizing by role
+
+`ROLE` picks the profile — a `worker` draining a queue must not size like a `web` process.
+
+| Role | max | statement timeout | idle timeout |
+|---|---|---|---|
+| `web` | 20 | 10s | 30s |
+| `sync` | 10 | 10s | 60s |
+| `worker` | 8 | 120s | 30s |
+| `scheduler` | 2 | 15s | 60s |
+| `migrate` | 1 | none | 10s |
+| `replicator` | 4 | none | 60s |
+
+The timeout is pinned per connection via libpq `options=-c statement_timeout=`. `Bun.SQL` is
+reached lazily, so importing this package never opens a socket.
+
+## Migrations
+
+`migrate()` takes an advisory lock (`pg_advisory_lock(4919202607)`), ensures `x_migrations`
+(`id, name, checksum, applied_at, app_version, duration_ms`), audits, then applies each pending
+migration inside its own transaction. It refuses **before applying anything** when:
+
+- the ledger records a migration this build does not ship **and** its `app_version` differs from
+  the running one — another version owns the database; or
+- an applied migration's `up` SQL no longer matches its recorded checksum.
+
+Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durationMs, appVersion }`.
+
+## Error codes
+
+| Code | Meaning |
+|---|---|
+| `X_DB_UNAVAILABLE` | no reachable database; `fix:` names `DATABASE_URL` |
+| `X_DB_DRIFT` | live schema differs from migrations |
+| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch |
+| `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
+| `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |
+| `X_BRANCH_EXISTS` | branch database already exists (or is the connected one) |
+| `X_READONLY_VIOLATION` | a mutating statement reached a `readOnly()` client |
+| `X_NOT_IMPLEMENTED` | deferred driver (PGlite WASM, branch-on-PGlite) |
+
+```bash
+x db migrate --json
+x db drift --json
+x db gen "add publish_at"
+x db branch create feature_x
+```

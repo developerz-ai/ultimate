@@ -1,0 +1,83 @@
+// Fluid type scale. Every step is a `clamp()` so there is no breakpoint step
+// change and no `font-size` media query anywhere in the design system.
+
+$font-family: (
+  sans: (
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    sans-serif,
+  ),
+  mono: (
+    ui-monospace,
+    'SFMono-Regular',
+    'JetBrains Mono',
+    Menlo,
+    Consolas,
+    monospace,
+  ),
+);
+
+$font-size: (
+  xs: clamp(0.75rem, 0.73rem + 0.1vw, 0.8125rem),
+  sm: clamp(0.875rem, 0.85rem + 0.15vw, 0.9375rem),
+  md: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem),
+  lg: clamp(1.125rem, 1.05rem + 0.35vw, 1.25rem),
+  xl: clamp(1.375rem, 1.2rem + 0.7vw, 1.75rem),
+  2xl: clamp(1.75rem, 1.4rem + 1.4vw, 2.5rem),
+  3xl: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem),
+);
+
+$font-weight: (
+  normal: 400,
+  medium: 500,
+  semibold: 600,
+  bold: 700,
+);
+
+$line-height: (
+  tight: 1.2,
+  snug: 1.35,
+  normal: 1.55,
+  loose: 1.75,
+);
+
+$letter-spacing: (
+  tight: -0.015em,
+  normal: 0,
+  wide: 0.04em,
+);
+
+@mixin emit {
+  :root {
+    @each $name, $stack in $font-family {
+      --font-#{$name}: #{$stack};
+    }
+    @each $name, $value in $font-size {
+      --text-#{$name}: #{$value};
+    }
+    @each $name, $value in $font-weight {
+      --weight-#{$name}: #{$value};
+    }
+    @each $name, $value in $line-height {
+      --leading-#{$name}: #{$value};
+    }
+    @each $name, $value in $letter-spacing {
+      --tracking-#{$name}: #{$value};
+    }
+  }
+}
+
+@function text($name) {
+  @return var(--text-#{$name});
+}
+
+@function weight($name) {
+  @return var(--weight-#{$name});
+}
+
+@function leading($name) {
+  @return var(--leading-#{$name});
+}

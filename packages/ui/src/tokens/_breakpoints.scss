@@ -1,0 +1,10 @@
+// Viewport breakpoints. Prefer container queries; reach for these only when the
+// layout genuinely depends on the viewport (app shell, sticky bars).
+
+$breakpoints: (
+  sm: 480px,
+  md: 768px,
+  lg: 1024px,
+  xl: 1280px,
+  2xl: 1536px,
+);

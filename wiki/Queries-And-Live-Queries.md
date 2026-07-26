@@ -1,0 +1,148 @@
+# Queries and live queries
+
+A `query` is a read. `live: true` makes it subscribable. Never writes, never enqueues, never sends mail.
+
+Pre-v1. Not production-ready. Tiers 1–2 of [Realtime](Realtime) ship in v1; `persist: true` (tier 3, local-first) lands in v2.
+
+## The canonical shape
+
+```ts
+// query
+export const liveFeed = query({
+  input: t.object({ orgId: t.uuid }),
+  policy: can('feed:read'),
+  live: true,
+  sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
+});
+```
+
+## Fields
+
+| Field | Required | Rule |
+|---|---|---|
+| `input` | yes | Standard Schema; ArkType exposed as `t`. Parsed before `policy`, before `sql`. Becomes the GET query string, the client hook argument, and the MCP tool's JSON Schema |
+| `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
+| `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
+| `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. v2 |
+| `sql` | yes | `(input) => builder`. Drizzle-shaped, SQL-transparent — the generated SQL is printable so an agent can read it and self-correct |
+| cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
+
+Nothing else is a query field. Sorting, paging, and filtering are `input` fields consumed by `sql`.
+
+## Five projections
+
+| Projection | Derived from | Shape |
+|---|---|---|
+| HTTP GET | name + `input` | `GET /_x/query/live-feed?orgId=…`, errors as `UltimateError` JSON |
+| Typed client hook | `input` + `sql` return type | `const feed = useLiveFeed({ orgId })` in `app/` — no fetch, no codegen step |
+| Live subscription | `live: true` | WS frames `{qid, op, row, lsn}` patched into a Solid signal |
+| Cache entry | tags from `sql` | key includes actor tenant + policy scope; see [Caching and invalidation](Caching-And-Invalidation) |
+| MCP read tool | `input` + `policy` + name | one read tool per query, identical authz. See [MCP and AI](MCP-And-AI) |
+
+## Owns / never
+
+| Aspect | Rule |
+|---|---|
+| Projects to | HTTP GET, typed client hook, live subscription, cache entry with tags, MCP read tool |
+| Owns | result shape + row-level filtering |
+| Never | write, enqueue a job, send mail, read headers or cookies, authorize inside `sql` |
+| Never | return partial data to satisfy a policy — filter rows in `sql`, decide yes/no in `policy` |
+
+## `live: true` requires deterministic, bounded SQL
+
+`x verify` rejects a live query without both an `orderBy` and a `limit`.
+
+| Requirement | Why | Failure |
+|---|---|---|
+| `orderBy` on a total order | the matcher decides *enters / leaves / moves within* the result from the changed row alone | `x verify` error naming the query |
+| `limit` | an unbounded result set has no bounded change buffer and no bounded reconnect snapshot | `x verify` error naming the query |
+| No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
+| No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_POLICY_DENIED` at subscribe |
+
+A non-live query has none of these constraints — it is just a read.
+
+## Row-level policy filtering
+
+Policy is not a subscribe-time gate that then trusts the stream.
+
+| Moment | Check |
+|---|---|
+| Subscribe | `policy` evaluated against `{ input, actor }`. Denied → `X_POLICY_DENIED`, no subscription created |
+| Initial snapshot | every row filtered through the same policy |
+| Each incremental patch | re-checked per row. A row that fails is **dropped, never sent** |
+| Actor change (role revoked, org left) | the subscription re-evaluates; rows that no longer pass are delivered as `delete` ops |
+| Topic guards (tier 1) | `X_TOPIC_FORBIDDEN` — cause names the actor and topic, never the topic's data |
+
+One authz system. A live query cannot become a second door into your data — that is the failure mode that killed the `allow`/`deny` generation of frameworks ([The eight primitives](The-Eight-Primitives)).
+
+## Request memo (tier 1) dedupe
+
+Three components on one page calling `liveFeed({ orgId })` resolve **one** query.
+
+| Property | Behavior |
+|---|---|
+| Store | AsyncLocalStorage, keyed by query name + parsed `input` + actor tenant + policy scope |
+| Lifetime | one request. No cross-request reuse, no eviction policy to tune |
+| Hit cost | ~0 |
+| Scope safety | two actors in the same process never share an entry — the scope is in the key |
+| Invalidation | dropped immediately when a write in the same request invalidates a tag it carries |
+
+Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres.
+
+## Untagged queries fail the build
+
+```
+X_CACHE_UNTAGGED_QUERY: query "orgRollup" has no cache tag
+  cause: sql touches table "metrics_daily", which no entity declares a tag for
+  fix:   x manifest
+```
+
+A query whose tables are covered by no tag can never be invalidated, so it would be stale forever. `x verify` fails instead. Fix by declaring the entity tag — see `tags()` / `entityTag()` in [Caching and invalidation](Caching-And-Invalidation).
+
+## Subscription caps
+
+Load shedding is a decision with a typed error, not a fall-over.
+
+| Code | Trigger | Fix |
+|---|---|---|
+| `X_LIVE_QUERY_LIMIT` | a tenant registered more distinct live queries than the cap | raise `realtime.limits.perTenantQueries` in `app.config.ts`, or narrow the query set |
+| `X_SUBSCRIPTION_LIMIT` | a socket or tenant reached the subscription cap | `raise realtime.limits.perSocket in app.config.ts, or unsubscribe unused live queries` |
+| `X_CURSOR_STALE` | resume cursor outside the change buffer and no snapshot path supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
+| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is unreachable | `x doctor transport` |
+
+Verbatim shapes: [`packages/realtime/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/errors.ts). Full index: [Error codes](Error-Codes).
+
+## Testing
+
+`x test live` — its own runner, its own fixture shape. Runs against a cloned Postgres plus an in-process replicator and in-process NATS.
+
+| Asserted | Why it catches regressions |
+|---|---|
+| Initial snapshot | the `sql` is right, ordered, and bounded |
+| Incremental patch on write | the matcher's enter/leave/update decision is right for the changed row |
+| Reconnect delta | resume from an LSN produces the same state as a fresh snapshot |
+| Policy-filtered row never delivered | the per-row re-check actually runs |
+
+Every `query({ live: true })` emits a scaffold covering snapshot + one patch + one policy-filtered row. The scaffold fails until filled in — an untested live query is a red build.
+
+```
+x test live --json
+x verify              # runs all six test types
+```
+
+## Introspection
+
+| Command | Output |
+|---|---|
+| `x queries list --json` | name, input schema, tags acquired, `live`/`persist`, policy |
+| `x queries describe <name> --json` | generated SQL, tag set, MCP tool shape |
+| `x cache graph --json` | what a write to each tag evicts, including this query's entry |
+
+## Rules
+
+- One query per read shape. Two queries differing by a boolean is one query with a boolean `input` field.
+- Filter rows in `sql`; decide yes/no in `policy`. Never mix.
+- `live: true` needs `orderBy` + `limit`, always.
+- Presence, typing indicators, and cursors are tier 1 channels forever — never model ephemeral state as rows ([Realtime](Realtime)).
+- A cache miss must be correct and merely slower. No query may depend on a hit.
+- Cache keys are framework-generated. A hand-built key is a rejected PR.

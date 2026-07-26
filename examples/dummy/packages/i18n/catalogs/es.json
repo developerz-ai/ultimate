@@ -1,0 +1,192 @@
+{
+  "common": {
+    "appName": "Postly",
+    "tagline": "Un blog de equipo que se porta bien",
+    "save": "Guardar",
+    "saved": "Guardado",
+    "cancel": "Cancelar",
+    "retry": "Reintentar",
+    "loading": "Cargando",
+    "signIn": "Iniciar sesión",
+    "signOut": "Cerrar sesión",
+    "back": "Volver"
+  },
+  "site": {
+    "nav": { "features": "Funciones", "pricing": "Precios", "blog": "Blog" },
+    "hero": {
+      "metaTitle": "Postly — un blog de equipo que se porta bien",
+      "metaDescription": "Blogs de equipo multiinquilino con «me gusta» sin conexión, feeds en vivo, zona horaria por persona y precios enteros. Hecho con Ultimate.",
+      "title": "Publicad juntos. Comportamiento predecible.",
+      "subtitle": "Organizaciones, miembros, borradores, comentarios y un resumen diario que llega a las 09:00 donde de verdad está cada autor.",
+      "ctaPrimary": "Empezar gratis",
+      "ctaSecondary": "Leer el blog"
+    },
+    "features": {
+      "heading": "Lo que tienes el primer día",
+      "realtimeTitle": "Feeds que se actualizan solos",
+      "realtimeBody": "Una consulta en vivo, no un bucle de sondeo. Tu clic se ve al instante; el del resto llega al confirmarse.",
+      "offlineTitle": "«Me gusta» que sobreviven al túnel",
+      "offlineBody": "Las escrituras se encolan sin conexión y se reconcilian al volver. Ni un toque perdido, ni filas duplicadas.",
+      "localeTitle": "El idioma y el reloj de cada miembro",
+      "localeBody": "Idioma y zona horaria son columnas de la membresía, así que un artículo se lee bien en Madrid y en Auckland.",
+      "moneyTitle": "Precios que son enteros",
+      "moneyBody": "Unidades menores y una moneda, con precio por mercado y formato solo al final. Nunca un decimal flotante."
+    },
+    "pricing": {
+      "metaTitle": "Precios de Postly — planes free, team y business",
+      "metaDescription": "Tres planes con precio en dólares y en euros. Asientos, borradores, comentarios y el resumen diario van incluidos en todos, también en el gratuito.",
+      "heading": "Precio por mercado, no convertido",
+      "subheading": "Elige moneda al registrarte. Nunca adivinamos un tipo de cambio por ti.",
+      "currencyLabel": "Moneda",
+      "perMonth": "al mes",
+      "seats": { "one": "{count} asiento", "other": "{count} asientos" },
+      "cta": "Elegir {plan}",
+      "included": "Incluido en todos los planes",
+      "includedList": "Feeds en vivo, «me gusta» sin conexión, resumen diario, dos idiomas y acceso MCP"
+    },
+    "blog": {
+      "metaTitle": "El blog de Postly",
+      "metaDescription": "Notas sobre publicación multiinquilino, escrituras sin conexión, programación correcta por zona horaria y dinero entero.",
+      "publishedOn": "Publicado el {date}",
+      "by": "por {name}",
+      "readMore": "Leer el artículo",
+      "backToBlog": "Todos los artículos",
+      "notFoundTitle": "Ese artículo ya no está aquí",
+      "notFoundBody": "El enlace es antiguo o el artículo dejó de publicarse."
+    },
+    "offline": {
+      "metaTitle": "Sin conexión — Postly",
+      "metaDescription": "No hay conexión. Postly mantiene tu feed legible y encola lo que escribas hasta que vuelva la red.",
+      "heading": "No tienes conexión",
+      "body": "El feed que ya habías cargado se sigue leyendo. Lo que escribas queda en cola y se envía al volver la conexión.",
+      "queued": {
+        "one": "{count} cambio pendiente de enviar",
+        "other": "{count} cambios pendientes de enviar"
+      },
+      "queuedNone": "No hay nada pendiente de enviar."
+    }
+  },
+  "app": {
+    "nav": { "feed": "Feed", "settings": "Ajustes", "org": "Organización" },
+    "feed": {
+      "metaTitle": "Feed",
+      "heading": "Feed de {org}",
+      "empty": "Todavía no hay artículos. El primero es el difícil.",
+      "newPost": "Nuevo artículo",
+      "loading": "Cargando el feed",
+      "offlineNotice": "Sin conexión: se muestra la copia de este dispositivo."
+    },
+    "post": {
+      "metaTitle": "{title}",
+      "publishedAt": "Publicado el {date}",
+      "draftNotice": "Es un borrador. Solo lo ve tu organización.",
+      "publish": "Publicar",
+      "publishing": "Publicando",
+      "like": "Me gusta",
+      "unlike": "Quitar me gusta",
+      "likes": { "one": "{count} me gusta", "other": "{count} me gusta" },
+      "commentsHeading": "Comentarios",
+      "commentsEmpty": "Aún no hay comentarios.",
+      "commentPlaceholder": "Di algo útil",
+      "commentSubmit": "Comentar"
+    },
+    "settings": {
+      "metaTitle": "Ajustes",
+      "heading": "Tus preferencias",
+      "intro": "Se guardan en tu membresía, así que todas las superficies — web, correo del resumen, administración — coinciden.",
+      "localeLabel": "Idioma",
+      "localeHelp": "Se aplica a la interfaz y al correo del resumen.",
+      "timezoneLabel": "Zona horaria",
+      "timezoneHelp": "Cada fecha se muestra en esta zona y tu resumen llega a las 09:00 de aquí.",
+      "themeLabel": "Tema",
+      "themeSystem": "Igual que mi sistema",
+      "themeLight": "Claro",
+      "themeDark": "Oscuro",
+      "digestLabel": "Resumen diario",
+      "digestHelp": "Un correo a las 09:00 de tu hora con lo que publicó tu organización."
+    }
+  },
+  "posts": {
+    "status": { "draft": "Borrador", "scheduled": "Programado", "published": "Publicado" },
+    "titleLabel": "Título",
+    "bodyLabel": "Artículo",
+    "create": "Crear borrador",
+    "created": "Borrador creado"
+  },
+  "orgs": {
+    "switcherLabel": "Organización",
+    "invite": {
+      "heading": "Invitar a un miembro",
+      "emailLabel": "Correo",
+      "roleLabel": "Rol",
+      "submit": "Enviar invitación",
+      "sent": "Invitación enviada a {email}"
+    },
+    "upgrade": {
+      "heading": "Cambiar de plan",
+      "submit": "Cambiar a {plan}",
+      "quote": "{charge} hoy y después {next} al mes",
+      "creditNote": "{credit} de abono por lo que queda del periodo",
+      "done": "Ahora en {plan}"
+    },
+    "roles": {
+      "owner": "Propietario",
+      "admin": "Administrador",
+      "author": "Autor",
+      "reader": "Lector"
+    }
+  },
+  "plans": {
+    "free": { "name": "Free", "description": "Un equipo pequeño con todas las primitivas." },
+    "team": {
+      "name": "Team",
+      "description": "Borradores, revisiones y resumen para un equipo editorial de verdad."
+    },
+    "business": {
+      "name": "Business",
+      "description": "Muchos autores, histórico auditable y soporte prioritario."
+    }
+  },
+  "mail": {
+    "greeting": "Hola, {name}:",
+    "signoff": "— El equipo de Postly",
+    "postPublished": {
+      "subject": "{title} — novedad en {org}",
+      "body": "{author} acaba de publicar un artículo en {org}.",
+      "cta": "Leerlo en Postly"
+    },
+    "welcome": {
+      "subject": "Te damos la bienvenida a Postly, {org}",
+      "body": "Tu organización está lista. Invita a tu equipo y publica algo pequeño hoy mismo.",
+      "cta": "Abrir tu feed"
+    },
+    "nudge": {
+      "subject": "¿Todavía nada publicado en {org}?",
+      "body": "Han pasado tres días y el feed sigue vacío. El primer artículo es el difícil.",
+      "cta": "Escribir el primero"
+    },
+    "invite": {
+      "subject": "{inviter} te ha invitado a {org} en Postly",
+      "body": "Te han añadido como {role}. Acepta la invitación para empezar a escribir.",
+      "cta": "Aceptar la invitación"
+    }
+  },
+  "digest": {
+    "subject": "Resumen de Postly del {date}",
+    "greeting": "Buenos días, {name}.",
+    "intro": {
+      "one": "{count} artículo nuevo en {org}.",
+      "other": "{count} artículos nuevos en {org}."
+    },
+    "readAction": "Leerlo en Postly",
+    "footer": "Enviado a las 09:00 en {zone}. Puedes cambiarlo en tus ajustes.",
+    "unsubscribe": "Desactivar el resumen"
+  },
+  "errors": {
+    "policyDenied": "No tienes permiso para hacer eso.",
+    "seatsExceeded": "Tu plan está lleno. Cambia de plan para añadir a otra persona.",
+    "offlineQueued": "Sin conexión: se enviará cuando vuelvas a conectarte.",
+    "updateAvailable": "Hay una versión nueva lista.",
+    "updateAction": "Recargar"
+  }
+}

@@ -1,0 +1,216 @@
+# Deployment
+
+One image, N roles. Build once; the `ROLE` env var selects behavior. No role-specific Dockerfile, no per-role dependency set, no drift between what you tested and what runs.
+
+Pre-v1: the deploy path is milestone 11 ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)). Milestones 0–5 ship first. `As of 2026-07` no packages are published to npm.
+
+```
+docker build -t myapp .          # once
+ROLE=web       myapp             # ← same image
+ROLE=sync      myapp
+ROLE=worker    myapp
+ROLE=scheduler myapp
+ROLE=migrate   myapp             # pre-deploy hook
+ROLE=replicator myapp
+```
+
+## Roles
+
+| Role | Does | Scales on | Notes |
+|---|---|---|---|
+| `web` | SSR + static + RPC (actions/queries over HTTP) | **RPS** | behind CDN, stateless, N replicas, no local state |
+| `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
+| `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
+| `scheduler` | cron dispatch → enqueue only | **fixed 1** | Postgres advisory-lock leader election; a second instance is a warm standby, not a duplicate |
+| `migrate` | run-once, pre-deploy | n/a | refuses to run if another version's migration is in flight (`X_MIGRATE_CONCURRENT`) |
+| `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
+
+- No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
+- A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
+- `ROLE=all` co-locates every role in one process for dev — role isolation is simulated, not skipped.
+
+## Health endpoints
+
+Every role exposes both, on every replica. Both return `{ ok, role, buildId, checks: [...] }` — never a bare `200 OK` with no body.
+
+| Endpoint | Answers | Fails when | Consumer |
+|---|---|---|---|
+| `/healthz` | "is this process alive?" | event loop wedged, unhandled fatal state | liveness probe → restart |
+| `/readyz` | "should traffic come here?" | DB unreachable, NATS down, migration version mismatch, **draining** | readiness probe → remove from rotation |
+
+| Role | `/readyz` additionally checks |
+|---|---|
+| `web` | DB pool healthy, build ID matches the migration version |
+| `sync` | replication feed lag under threshold, NATS subscribed |
+| `worker` | queue reachable, at least one pool claiming |
+| `scheduler` | holds the leader lock (a standby reports not-ready, by design) |
+| `replicator` | slot active, WAL lag under threshold |
+
+## Graceful drain on SIGTERM
+
+Identical in every role. Framework behavior, not a deployment guide.
+
+```
+SIGTERM
+  1. /readyz → 503                    (LB stops sending new work; wait ≥ 2× probe interval)
+  2. stop accepting new work          (HTTP: close listener; worker: stop claiming; sync: stop new subscribes)
+  3. finish in-flight work            (bounded by DRAIN_TIMEOUT, default 30s)
+  4. role-specific handoff            (see table)
+  5. flush OTel spans + logs
+  6. close pools, release advisory locks, exit 0
+```
+
+| Role | Step 4 handoff |
+|---|---|
+| `web` | let in-flight requests and streaming responses finish; a stream past the deadline gets a typed truncation, not a socket reset |
+| `sync` | send every client a `reconnect` frame **with a per-client backoff delay** (see below), then close cleanly |
+| `worker` | finish the current step, persist it, and release the job's lease so another worker resumes at the next step — never mid-step |
+| `scheduler` | release the leader lock immediately so the standby promotes within one lock interval |
+| `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
+
+Exceeding `DRAIN_TIMEOUT` throws `X_SHUTDOWN_TIMEOUT`; requests arriving during the drain get `X_DRAINING`.
+
+### Why `sync` sends server-directed jittered reconnect
+
+Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubscribing, all asking "what changed since my LSN?" — a self-inflicted DDoS landing during a deploy when capacity is already reduced, and it is fractal: surviving nodes overload, drop connections, and the herd re-forms.
+
+```
+{ type: 'reconnect', afterMs: 1830, resumeFrom: '0/1A2B3C4', reason: 'drain' }
+```
+
+| Property | Effect |
+|---|---|
+| Per-client `afterMs`, jittered over a window | reconnects arrive spread out, not as a spike |
+| Server chooses the window from live connection count | 500 clients drain in a second; 500k spread over minutes |
+| `resumeFrom` LSN | reconnect is a **delta from the change buffer**, not a resubscribe-and-refetch |
+| Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
+| Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter |
+
+Tune with `realtime.drain` in [Configuration](Configuration). Topology is **not frozen** until milestone 6's benchmark exists: 50k sockets, forced `sync` restart, measured time-to-consistent and DB load ([Realtime](Realtime)).
+
+## `x build`
+
+```
+x build --target docker     # one image, all roles (default)
+x build --target binary     # single Bun-compiled executable, no runtime install
+x build --target static     # site/ output only: HTML, assets, sitemap, feeds
+```
+
+| Target | Output | Use |
+|---|---|---|
+| `docker` | one OCI image, `ROLE` selects behavior | the normal path |
+| `binary` | `dist/myapp` — `bun build --compile`, all roles inside | VMs, systemd, air-gapped, a CLI-shaped product |
+| `static` | `dist/static/` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
+
+All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `sw.js`, and `x.manifest.json`.
+
+```
+$ x build --target docker
+  ✓ typecheck + boundaries           ✓ site/  12 routes  static   0kb js
+  ✓ app/   31 routes  stream         ✓ static assets     avif+webp, 214 files
+  ✓ sw.js  precache 1.9MB / 3MB      ✓ manifest + openapi emitted
+  ✓ image  myapp:8f2a1c9  118MB      build id 8f2a1c9
+```
+
+`x build` runs `x verify`'s static checks (typecheck, lint, boundaries, budgets, SEO, manifest freshness). A build that would fail `x verify` does not produce an artifact.
+
+## Dev compose
+
+```yaml
+# docker/compose.dev.yml — only needed for parity checks; `x dev` needs none of this
+services:
+  app:      { build: ., environment: { ROLE: all }, ports: ['3000:3000'] }
+  postgres: { image: postgres:17, ports: ['5432:5432'] }
+  nats:     { image: nats:2, command: '-js', ports: ['4222:4222'] }
+  minio:    { image: minio/minio, command: 'server /data', ports: ['9000:9000'] }
+```
+
+`x dev` uses embedded Postgres, in-process NATS, and a local directory for S3 — **Docker is not required to develop.** This file exists for parity debugging and CI jobs that want real services.
+
+## Prod compose
+
+```yaml
+# docker/compose.prod.yml
+x-app: &app
+  image: myapp:${BUILD_ID}
+  env_file: .env.prod
+  restart: unless-stopped
+
+services:
+  migrate:    { <<: *app, environment: { ROLE: migrate },    restart: 'no' }
+  web:        { <<: *app, environment: { ROLE: web },        deploy: { replicas: 3 },
+                depends_on: { migrate: { condition: service_completed_successfully } } }
+  sync:       { <<: *app, environment: { ROLE: sync },       deploy: { replicas: 2 } }
+  worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'default,integrations' },
+                deploy: { replicas: 4 } }
+  scheduler:  { <<: *app, environment: { ROLE: scheduler },  deploy: { replicas: 1 } }
+  replicator: { <<: *app, environment: { ROLE: replicator }, deploy: { replicas: 1 } }
+```
+
+| Rule | Reason |
+|---|---|
+| `migrate` completes before `web`/`sync` start | a new schema must exist before new code reads it |
+| `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
+| `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout |
+| Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
+
+`x deploy compose` generates and applies this; it is a plain compose file you can read, diff, and run by hand.
+
+## Helm
+
+Generated by `x build --target docker --helm`, one `Deployment` per role.
+
+| Role | HPA metric | Typical range | Notes |
+|---|---|---|---|
+| `web` | requests/sec (or CPU as fallback) | 3–50 | behind Ingress + CDN; `terminationGracePeriodSeconds` >= drain |
+| `sync` | **active WS connections** (custom metric) | 2–100 | no session affinity; connection count is the only honest signal |
+| `worker` | **queue depth** per named queue (custom metric) | 2–200 | one Deployment per queue when isolation matters |
+| `scheduler` | none — `replicas: 1` | 1 | `PodDisruptionBudget` maxUnavailable 1, leader lock covers overlap |
+| `replicator` | none — `replicas: 1` | 1 | `StatefulSet`-shaped for stable identity; owns the slot |
+| `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
+
+CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. Both metrics are exported as OTel metrics by the framework, so wiring an HPA is configuration, not instrumentation work.
+
+## Static deploys independently
+
+```
+x build --target static && x deploy static --to <cdn>
+```
+
+| Property | Consequence |
+|---|---|
+| Static build does not include the app image | a copy change, a new blog post, a pricing tweak **does not redeploy the API** |
+| Independent version, shared build ID namespace | assets stay resolvable across N deploys ([PWA and offline](PWA-And-Offline)) |
+| ISR pages regenerate server-side and push to the CDN | no full rebuild for one changed record |
+| Rollback is a pointer swap | seconds, no container churn |
+| Cache purge | tag-driven, one hop from the write ([Caching and invalidation](Caching-And-Invalidation)) |
+
+## Targets
+
+The only requirement: **something that runs containers, plus Postgres.** NATS and object storage are optional in small deployments — Postgres covers queue and pubsub; a local volume covers files.
+
+| Target | How | Notes |
+|---|---|---|
+| Hetzner + Compose | `compose.prod.yml` on one or two boxes | cheapest credible production; one node runs all roles |
+| Fly.io | one app per role, or process groups | drain semantics map cleanly to Fly's SIGTERM handling |
+| Railway / Render | one service per role, same image | set `ROLE` per service |
+| AWS ECS / Fargate | one task definition per role | ALB for `web`, NLB for `sync` |
+| Any Kubernetes | the generated Helm chart | EKS, GKE, AKS, k3s — no cloud-specific resources |
+| Bare VM | `--target binary` + systemd units per role | no container runtime at all |
+
+Not supported, **by design**: vendor edge runtimes, serverless-function-per-route, vendor KV / queue / cron primitives, proprietary image loaders. Each would need a second implementation of a framework primitive, and the second implementation is where behavior diverges.
+
+## Release checklist
+
+```
+x verify                       # the gate — green means shippable
+x build --target docker
+ROLE=migrate <image>           # pre-deploy, must exit 0
+<roll web + sync>              # drain-aware; clients reconnect with backoff
+x build --target static        # independently, whenever copy changes
+x status --json                # build-ID distribution of connected clients
+```
+
+## Rollback
+
+Redeploy the previous image tag. Previous builds' assets stay served under the N-deploy retention window (default 10 deploys or 7d, whichever is longer), so a rollback does not 404 anyone mid-session. Version-skew handling: [Upgrading](Upgrading). Failure symptoms: [Troubleshooting](Troubleshooting).

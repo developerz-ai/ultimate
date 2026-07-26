@@ -1,0 +1,231 @@
+// Public API. Explicit, tier by tier: channels, live queries, local-first sync, plus the wire and
+// the server/client halves that carry all three.
+
+export { type ChangeBufferOptions, RingChangeBuffer } from './change-buffer';
+// ---- tier 2: live queries ----------------------------------------------------------------------
+export {
+  type ChangeEvent,
+  type ChangeFeed,
+  type ChangeFeedStartOptions,
+  type ChangeOp,
+  formatLsn,
+  InMemoryChangeFeed,
+  type InMemoryChangeFeedOptions,
+  PgLogicalReplicationFeed,
+  type PgLogicalReplicationOptions,
+  parseLsn,
+} from './changefeed';
+
+// ---- tier 1: channels + presence ---------------------------------------------------------------
+export {
+  ChannelHub,
+  type ChannelHubOptions,
+  channelFrame,
+  type Topic,
+  type TopicGuard,
+  type TopicGuardArgs,
+  type TopicGuardResult,
+  topic,
+} from './channel';
+// ---- server + client halves -------------------------------------------------------------------
+export {
+  applyPatches,
+  type ClientSocket,
+  LiveClient,
+  type LiveClientOptions,
+  type LiveHandle,
+  type LiveQueryRef,
+  type LiveState,
+  type MutatorRef,
+  type SignalFactory,
+} from './client';
+// ---- reconnect ----------------------------------------------------------------------------------
+export {
+  advance,
+  CURSOR_ID_LIMIT,
+  DIGEST_UNVERIFIED,
+  defaultReconnectBudget,
+  digestOf,
+  type LiveCursor,
+  makeCursor,
+  type ReconnectBudget,
+  type ResumeDecision,
+  type ResumeDeps,
+  type ResumeReason,
+  type ResumeResult,
+  type ResumeSource,
+  resumeFrom,
+  shouldResnapshot,
+  verifyDigest,
+} from './cursor';
+// ---- errors ----------------------------------------------------------------------------------
+export {
+  CursorStaleError,
+  NotImplementedError,
+  ProtocolVersionError,
+  RealtimeError,
+  type RealtimeErrorCode,
+  RebaseConflictError,
+  SubscriptionLimitError,
+  TopicForbiddenError,
+  TransportUnavailableError,
+} from './errors';
+export {
+  InProcessTransport,
+  type InProcessTransportOptions,
+  NatsTransport,
+  type NatsTransportOptions,
+  subjectMatches,
+  type Transport,
+  type TransportHandler,
+  type TransportSet,
+  type TransportSetEntry,
+  type TransportSubscription,
+} from './fanout';
+// ---- shared value domain ---------------------------------------------------------------------
+export {
+  canonicalJson,
+  changedColumns,
+  fnv1a,
+  isJsonObject,
+  isRow,
+  type JsonObject,
+  type JsonValue,
+  type Row,
+  type RowOp,
+  type RowPatch,
+} from './json';
+export {
+  type LiveQueryDefinition,
+  LiveQueryRegistry,
+  type LiveQueryRegistryOptions,
+  type LiveSubscription,
+  qidOf,
+  type SnapshotResult,
+} from './live-query';
+// ---- tier 3: local-first ------------------------------------------------------------------------
+export {
+  createOpfsLocalStore,
+  type LocalStore,
+  type LocalTable,
+  type LocalTx,
+  MemoryLocalStore,
+  type OpfsLocalStoreOptions,
+  type TableMap,
+} from './local-store';
+export {
+  applyToWindow,
+  type BridgeResult,
+  bridgeChange,
+  canAffect,
+  type IncrementalMatcher,
+  matcherFor,
+  NO_CHANGE,
+  normalizePatch,
+  patchFromChange,
+  type SubscriptionShape,
+  toBridgeResult,
+} from './matcher-bridge';
+export {
+  type DrainReport,
+  MemoryQueueStore,
+  type MutationSender,
+  type MutationStatus,
+  mutateFrame,
+  OfflineQueue,
+  type QueuedMutation,
+  type QueueState,
+  type QueueStore,
+} from './offline-queue';
+export { authorizeWithPolicy, type GateOptions, visibleWithPolicy } from './policy-gate';
+export {
+  PRESENCE_KEY_PREFIX,
+  type PresenceInput,
+  type PresenceOptions,
+  PresenceRegistry,
+  presenceFrame,
+} from './presence';
+export {
+  type ConflictStrategy,
+  type CustomMerge,
+  custom,
+  type MergeArgs,
+  type RebaseEntry,
+  RebaseLog,
+  type ReconcileOptions,
+  type ReconcileResult,
+  rebaseFrame,
+  reconcile,
+  type ServerAck,
+  strategyName,
+} from './rebase';
+export {
+  type AdvisoryLock,
+  CHANGE_SUBJECT_PREFIX,
+  changeSubject,
+  createReplicator,
+  InMemoryAdvisoryLock,
+  normalize,
+  parseChange,
+  type Replicator,
+  type ReplicatorOptions,
+  type ReplicatorStats,
+} from './replicator';
+export {
+  actorIdOf,
+  CLOSE,
+  SocketRegistry,
+  type SocketRegistryOptions,
+  SyncSocket,
+  type SyncSocketOptions,
+  type WsLike,
+} from './socket';
+export {
+  createSyncNode,
+  type ListenOptions,
+  listenSyncNode,
+  type MutationHandler,
+  type SyncNode,
+  type SyncNodeOptions,
+  type SyncWs,
+  type UpgradeTarget,
+  type WsData,
+} from './sync-node';
+// ---- the wire -------------------------------------------------------------------------------------
+export {
+  type AckFrame,
+  type ConflictStrategyName,
+  decode,
+  encode,
+  FRAME_KINDS,
+  type Frame,
+  type FrameKind,
+  type HelloFrame,
+  type MutateFrame,
+  type PatchFrame,
+  PROTOCOL_VERSION,
+  type PresenceFrame,
+  type PresenceMember,
+  type RebaseFrame,
+  type ReconnectFrame,
+  type SnapshotFrame,
+  type SubscribeFrame,
+  type SubscribeTarget,
+  toWireError,
+  type UpdateAvailableFrame,
+  type WireError,
+} from './sync-protocol';
+export {
+  AcceptBudget,
+  type AcceptBudgetOptions,
+  type BackoffPolicy,
+  backoffDelay,
+  type DrainPlanEntry,
+  type DrainPlanOptions,
+  defaultBackoff,
+  drainPlan,
+  type JitterMode,
+  type ReconnectReason,
+  type Rng,
+  reconnectFrame,
+} from './thundering-herd';

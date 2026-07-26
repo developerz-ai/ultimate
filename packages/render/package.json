@@ -1,0 +1,36 @@
+{
+  "name": "@ultimat3/render",
+  "version": "0.0.1",
+  "description": "The route primitive and the five render modes: static, isr, ssr, stream, spa.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/render"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ultimat3/cache": "0.0.1",
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/seo": "0.0.1"
+  }
+}

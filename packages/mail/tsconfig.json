@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../i18n"
+    },
+    {
+      "path": "../jobs"
+    },
+    {
+      "path": "../schema"
+    },
+    {
+      "path": "../time"
+    }
+  ]
+}

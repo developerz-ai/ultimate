@@ -1,0 +1,92 @@
+@use '../tokens' as t;
+
+@keyframes ultimate-toast-in {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+
+.region {
+  position: fixed;
+  z-index: t.z(toast);
+  padding: t.space(4);
+  pointer-events: none;
+}
+
+.placement-block-end-inline-end {
+  inset-block-end: 0;
+  inset-inline-end: 0;
+}
+
+.placement-block-start-inline-end {
+  inset-block-start: 0;
+  inset-inline-end: 0;
+}
+
+.placement-block-end-center {
+  inset-block-end: 0;
+  inset-inline: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: t.space(2);
+  inline-size: min(24rem, calc(100vw - #{t.space(8)}));
+  list-style: none;
+}
+
+.toast {
+  @include t.surface('surface-raised', 'lg');
+  display: flex;
+  align-items: flex-start;
+  gap: t.space(3);
+  padding: t.space(4);
+  border-inline-start: 3px solid var(--toast-accent);
+  color: t.role('fg');
+  animation: ultimate-toast-in t.duration(base) t.easing(out);
+  pointer-events: auto;
+}
+
+.content {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.title {
+  color: t.role('fg-strong');
+  font-weight: t.weight(semibold);
+  font-size: t.text(sm);
+}
+
+.body {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+.tone-neutral {
+  --toast-accent: #{t.role('line')};
+}
+
+.tone-accent {
+  --toast-accent: #{t.role('accent')};
+}
+
+.tone-success {
+  --toast-accent: #{t.role('success')};
+}
+
+.tone-warning {
+  --toast-accent: #{t.role('warning')};
+}
+
+.tone-danger {
+  --toast-accent: #{t.role('danger')};
+}
+
+.tone-info {
+  --toast-accent: #{t.role('info')};
+}

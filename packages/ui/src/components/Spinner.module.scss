@@ -1,0 +1,33 @@
+@use '../tokens' as t;
+
+@keyframes ultimate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  display: inline-block;
+  border: 2px solid t.role('line');
+  border-block-start-color: t.role('accent');
+  border-radius: t.radius(full);
+  animation: ultimate-spin 700ms linear infinite;
+  // Reduced motion is handled globally in reset.scss; the ring still reads as
+  // a distinct shape when the animation is neutralised.
+}
+
+.size-sm {
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+}
+
+.size-md {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.size-lg {
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-width: 3px;
+}

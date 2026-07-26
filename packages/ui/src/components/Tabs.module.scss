@@ -1,0 +1,71 @@
+@use '../tokens' as t;
+
+.tabs {
+  display: flex;
+  gap: t.space(4);
+}
+
+.orientation-horizontal {
+  flex-direction: column;
+}
+
+.orientation-vertical {
+  flex-direction: row;
+
+  .list {
+    flex-direction: column;
+    border-block-end: 0;
+    border-inline-end: 1px solid t.role('line');
+  }
+
+  .tab[aria-selected='true'] {
+    box-shadow: inset -2px 0 0 0 t.role('accent');
+  }
+}
+
+.list {
+  @include t.custom-scrollbar;
+  display: flex;
+  gap: t.space(1);
+  border-block-end: 1px solid t.role('line');
+  overflow-x: auto;
+}
+
+.tab {
+  @include t.focus-ring(('accent'), 2px, -2px);
+  @include t.transition(color, box-shadow, background);
+  padding-block: t.space(2);
+  padding-inline: t.space(3);
+  border-start-start-radius: t.radius(sm);
+  border-start-end-radius: t.radius(sm);
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  font-weight: t.weight(medium);
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: t.role('fg-strong');
+    background: t.role('bg-soft');
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &[aria-selected='true'] {
+    color: t.role('accent');
+    // Inset shadow instead of a border, so the tab does not shift on select.
+    box-shadow: inset 0 -2px 0 0 t.role('accent');
+  }
+}
+
+.panel {
+  min-inline-size: 0;
+
+  &:focus-visible {
+    outline: 2px solid t.role('accent');
+    outline-offset: 2px;
+  }
+}

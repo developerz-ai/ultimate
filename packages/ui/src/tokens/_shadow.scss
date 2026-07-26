@@ -1,0 +1,49 @@
+// Elevation. Shadows are themed: a light-theme shadow (dark ink, low alpha)
+// is invisible on a dark surface, so dark gets its own deeper, higher-alpha set.
+// Single-layer values on purpose — one string per rung keeps the TS mirror exact.
+
+$shadow-light: (
+  xs: 0 1px 2px rgb(17 15 13 / 0.06),
+  sm: 0 2px 6px rgb(17 15 13 / 0.08),
+  md: 0 4px 14px rgb(17 15 13 / 0.1),
+  lg: 0 12px 32px rgb(17 15 13 / 0.14),
+  xl: 0 24px 56px rgb(17 15 13 / 0.18),
+);
+
+$shadow-dark: (
+  xs: 0 1px 2px rgb(0 0 0 / 0.4),
+  sm: 0 2px 8px rgb(0 0 0 / 0.48),
+  md: 0 6px 20px rgb(0 0 0 / 0.56),
+  lg: 0 16px 40px rgb(0 0 0 / 0.64),
+  xl: 0 28px 64px rgb(0 0 0 / 0.72),
+);
+
+@mixin levels($map) {
+  @each $name, $value in $map {
+    --shadow-#{$name}: #{$value};
+  }
+}
+
+@mixin emit {
+  :root {
+    @include levels($shadow-light);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      @include levels($shadow-dark);
+    }
+  }
+
+  html[data-theme='dark'] {
+    @include levels($shadow-dark);
+  }
+
+  html[data-theme='light'] {
+    @include levels($shadow-light);
+  }
+}
+
+@function shadow($name) {
+  @return var(--shadow-#{$name});
+}

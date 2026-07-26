@@ -1,0 +1,9 @@
+@use '../tokens' as t;
+
+.dateTime {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  // Underlining a <time> would imply a link; the value carries the meaning.
+  text-decoration: none;
+}

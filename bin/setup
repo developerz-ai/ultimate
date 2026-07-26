@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Fresh clone to running. Idempotent — safe to re-run after every pull.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+command -v bun >/dev/null || {
+  echo "X_BUN_MISSING"
+  echo "  cause: bun is not on PATH"
+  echo "  fix:   curl -fsSL https://bun.sh/install | bash"
+  exit 1
+}
+exec bun run scripts/setup.ts "$@"

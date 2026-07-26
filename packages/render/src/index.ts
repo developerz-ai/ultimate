@@ -1,0 +1,165 @@
+/** Public API of `@ultimat3/render`: the `route` primitive, the five modes, the table. */
+
+export type { RenderErrorCode } from './errors';
+export {
+  BudgetExceededError,
+  PrerenderFailedError,
+  RENDER_ERROR_CODES,
+  RouteDuplicateError,
+  RouteMetaMissingError,
+  RouteModeInvalidError,
+  RouteOfflineMissingError,
+  SurfaceBoundaryError,
+} from './errors';
+export type {
+  HeadRenderers,
+  HeadTag,
+  HeadTagKind,
+  LdRenderer,
+  MetaRenderer,
+  ThemeScriptOptions,
+} from './head';
+export {
+  headFromMeta,
+  mergeHead,
+  renderHead,
+  THEME_SCRIPT_MAX_BYTES,
+  themeScript,
+} from './head';
+export type { IslandDirective } from './hydrate';
+export {
+  DEFAULT_REPLAY_EVENTS,
+  emitIslandAttributes,
+  emitIslandProps,
+  hydrateRuntime,
+  hydrateRuntimeBytes,
+  requiredStrategies,
+} from './hydrate';
+export type { BudgetReport, BundleGraph, GraphName, Island, RouteBytes } from './islands';
+export {
+  assertBudget,
+  checkBudget,
+  checkBudgets,
+  formatBytes,
+  graphFor,
+  parseByteBudget,
+  routeJsBytes,
+} from './islands';
+export type { ModeCheckContext, ModeSpec, RouteShape } from './modes';
+export {
+  assertModeInvariants,
+  assertModeShape,
+  defaultHydrate,
+  MODE_SPECS,
+  RENDER_MODES,
+} from './modes';
+export type {
+  CompiledPattern,
+  RegisterRouteInput,
+  RouteDescriptor,
+  RouteEntry,
+  RouteMatch,
+} from './registry';
+export {
+  clearRoutes,
+  compilePattern,
+  describeRoutes,
+  matchRoute,
+  registerRoute,
+  routeCount,
+  routeEntries,
+  routeFor,
+  routePathFromFile,
+} from './registry';
+export type {
+  IsrController,
+  IsrControllerOptions,
+  IsrEntry,
+  IsrRenderFn,
+  IsrServeResult,
+  IsrState,
+  IsrStore,
+} from './render-isr';
+
+export {
+  createIsrController,
+  invalidateAndRevalidate,
+  memoryIsrStore,
+  parseTtlMs,
+} from './render-isr';
+export type { SpaShell, SpaShellInput } from './render-spa';
+export { renderSpa, renderSpaShell, SPA_ROOT_ID } from './render-spa';
+export type { SsrOptions, SsrRenderFn, SsrRenderInput } from './render-ssr';
+export { renderSsr, ssrHeaders } from './render-ssr';
+export type { StaticArtifact, StaticBuildOptions, StaticRenderFn } from './render-static';
+export {
+  assertNoPerRequestState,
+  contentHash,
+  enumeratePrerender,
+  fillPath,
+  renderStatic,
+  staticHeaders,
+  staticResult,
+} from './render-static';
+export type { StreamHole, StreamOptions, StreamPlan } from './render-stream';
+export {
+  collectStream,
+  holeId,
+  holeMarker,
+  REVEAL_SCRIPT,
+  renderStreamHtml,
+  revealChunk,
+  streamResult,
+} from './render-stream';
+export type {
+  HydrateStrategy,
+  OfflineStrategy,
+  PrerenderFn,
+  RenderMode,
+  RenderResult,
+  RevalidateConfig,
+  RouteBudget,
+  RouteConfig,
+  RouteData,
+  RouteDefinition,
+  RouteGuard,
+  RouteMetaFn,
+  RouteParams,
+} from './route';
+export {
+  defineRoute,
+  HYDRATE_STRATEGIES,
+  isRouteConfig,
+  OFFLINE_STRATEGIES,
+  tagKeys,
+} from './route';
+export type {
+  NavigateOptions,
+  NavigationGuard,
+  PrefetchContainer,
+  PrefetchLink,
+  ReactivePrimitives,
+  ResolvedRoute,
+  Router,
+  RouterHost,
+  RouterOptions,
+  RouterRoute,
+} from './router-client';
+export { createRouter } from './router-client';
+export type {
+  BoundaryRule,
+  BoundaryViolation,
+  ImportGraph,
+  ImportRef,
+  Surface,
+  SurfaceSpec,
+} from './surfaces';
+export {
+  assertSurfaceBoundary,
+  checkSurfaceBoundary,
+  importGraph,
+  SURFACE_SPECS,
+  SURFACES,
+  surfaceAllows,
+  surfaceOf,
+} from './surfaces';

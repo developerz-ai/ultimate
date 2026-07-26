@@ -1,0 +1,87 @@
+/** Public surface of @ultimat3/i18n. Explicit exports only. */
+
+export {
+  type Catalog,
+  catalogKeys,
+  flattenCatalog,
+  loadCatalog,
+  mergeCatalogs,
+  missingFrom,
+  type NestedCatalog,
+  parseNestedCatalog,
+} from './catalog';
+export {
+  attachLocale,
+  catalogFor,
+  configureLocales,
+  currentDirection,
+  currentLocale,
+  currentTranslator,
+  LOCALE_COOKIE,
+  type LocaleConfig,
+  type LocaleResolution,
+  type LocaleSourceName,
+  type LocaleSources,
+  localeConfig,
+  localeCookieOf,
+  localeOf,
+  registerCatalog,
+  registeredLocales,
+  resetCatalogs,
+  resolveLocale,
+  t,
+  translatorFor,
+} from './context';
+export {
+  catalogInvalid,
+  catalogMissingKeys,
+  I18N_ERROR_CODES,
+  I18nError,
+  type I18nErrorCode,
+  localeUnsupported,
+} from './errors';
+export {
+  type AuditInput,
+  assertCatalogsComplete,
+  auditCatalogs,
+  type DynamicUsage,
+  type Extraction,
+  type ExtractOptions,
+  type ExtractReport,
+  extractFromFiles,
+  extractKeys,
+  type KeyUsage,
+  type LocaleAudit,
+  mergeExtractions,
+} from './extract';
+export {
+  FRAMEWORK_CATALOG,
+  FRAMEWORK_CATALOG_LOCALE,
+  registerFrameworkCatalog,
+} from './framework';
+export {
+  type InterpolationValue,
+  type InterpolationVars,
+  interpolate,
+  PLURAL_CATEGORIES,
+  placeholdersOf,
+  pluralCategory,
+  pluralKeyCandidates,
+  pluralVariantsOf,
+  selectPluralKey,
+} from './interpolate';
+export {
+  assertSupportedLocale,
+  DEFAULT_LOCALE,
+  type Direction,
+  directionOf,
+  isRtl,
+  isSupportedLocale,
+  type LanguageRange,
+  type Locale,
+  negotiateLocale,
+  normalizeLocale,
+  parseAcceptLanguage,
+  SUPPORTED_LOCALES,
+} from './locales';
+export { createTranslator, isMiss, type TranslateVars, type Translator } from './translator';

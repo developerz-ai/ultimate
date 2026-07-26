@@ -1,0 +1,137 @@
+/**
+ * `<head>` management. Merges `@ultimat3/seo`'s output with per-route overrides, deduped
+ * by key so the last writer wins deterministically, and owns the one inlined script the
+ * framework allows on a 0kb `site/` route: the theme flip.
+ *
+ * The seo renderers are injected rather than imported so render stays testable without a
+ * catalog and so the tag vocabulary keeps exactly one owner (`@ultimat3/seo`).
+ */
+
+import type { RouteMeta } from '@ultimat3/seo';
+import { BudgetExceededError } from './errors';
+
+export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
+
+export interface HeadTag {
+  readonly kind: HeadTagKind;
+  /** Dedupe key. `title`, `meta:description`, `link:canonical`, `script:theme`. */
+  readonly key: string;
+  readonly attrs?: Readonly<Record<string, string | boolean>>;
+  /** Text content for `title`, `script`, `style`. */
+  readonly content?: string;
+}
+
+export type MetaRenderer = (meta: RouteMeta) => readonly HeadTag[];
+export type LdRenderer = (meta: RouteMeta) => string | null;
+
+export interface HeadRenderers {
+  /** `@ultimat3/seo`'s `renderMeta`, adapted to `HeadTag[]`. */
+  readonly renderMeta: MetaRenderer;
+  /** `@ultimat3/seo`'s `renderLd`, returning the JSON-LD body or null. */
+  readonly renderLd?: LdRenderer;
+}
+
+const KIND_ORDER: readonly HeadTagKind[] = ['base', 'title', 'meta', 'link', 'style', 'script'];
+
+/**
+ * Later sources win per key. Order is by kind, then by first-seen position within the
+ * kind — stable output matters because the shell's bytes are content-hashed.
+ */
+export function mergeHead(...sources: readonly (readonly HeadTag[])[]): readonly HeadTag[] {
+  const byKey = new Map<string, HeadTag>();
+  const order: string[] = [];
+  for (const source of sources) {
+    for (const tag of source) {
+      if (!byKey.has(tag.key)) order.push(tag.key);
+      byKey.set(tag.key, tag);
+    }
+  }
+  const merged = order
+    .map((key) => byKey.get(key))
+    .filter((tag): tag is HeadTag => tag !== undefined);
+  return merged.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
+}
+
+/** Build the head for a route from its `meta` output plus explicit overrides. */
+export function headFromMeta(
+  meta: RouteMeta,
+  renderers: HeadRenderers,
+  overrides: readonly HeadTag[] = [],
+): readonly HeadTag[] {
+  const seoTags = renderers.renderMeta(meta);
+  const ld = renderers.renderLd?.(meta) ?? null;
+  const ldTags: readonly HeadTag[] =
+    ld === null
+      ? []
+      : [
+          {
+            kind: 'script',
+            key: 'script:ld+json',
+            attrs: { type: 'application/ld+json' },
+            content: ld,
+          },
+        ];
+  return mergeHead(seoTags, ldTags, overrides);
+}
+
+const VOID_KINDS = new Set<HeadTagKind>(['meta', 'link', 'base']);
+
+export function renderHead(tags: readonly HeadTag[]): string {
+  return tags.map(renderTag).join('');
+}
+
+function renderTag(tag: HeadTag): string {
+  const attrs = Object.entries(tag.attrs ?? {})
+    .map(([name, value]) =>
+      value === true ? ` ${name}` : ` ${name}="${escapeAttr(String(value))}"`,
+    )
+    .join('');
+  if (VOID_KINDS.has(tag.kind)) return `<${tag.kind}${attrs}>`;
+  const raw = tag.content ?? '';
+  const isRaw = tag.kind === 'script' || tag.kind === 'style';
+  return `<${tag.kind}${attrs}>${isRaw ? raw : escapeText(raw)}</${tag.kind}>`;
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+function escapeText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export interface ThemeScriptOptions {
+  /** Attribute the tokens key off. Never a class, never a raw colour. */
+  readonly attribute?: string;
+  readonly storageKey?: string;
+  /** Hard cap; a theme script that grows past this is no longer "one inlined script". */
+  readonly maxBytes?: number;
+}
+
+export const THEME_SCRIPT_MAX_BYTES = 512;
+
+/**
+ * The injection point for the no-flash theme flip. It sets a semantic attribute and
+ * nothing else — every colour is a token, so the whole scheme swap is one attribute.
+ * Returns a `HeadTag` so it participates in dedupe like any other tag.
+ */
+export function themeScript(options: ThemeScriptOptions = {}): HeadTag {
+  const attribute = options.attribute ?? 'data-theme';
+  const storageKey = options.storageKey ?? 'x-theme';
+  const source =
+    `try{var t=localStorage.getItem("${storageKey}")||` +
+    `(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");` +
+    `document.documentElement.setAttribute("${attribute}",t)}catch(e){}`;
+
+  const bytes = new TextEncoder().encode(source).byteLength;
+  const cap = options.maxBytes ?? THEME_SCRIPT_MAX_BYTES;
+  if (bytes > cap) {
+    throw new BudgetExceededError(
+      `the inlined theme script is ${bytes}b, over its ${cap}b cap — the only script a ` +
+        '0kb site/ route is allowed to ship',
+      'shrink the theme script, or raise maxBytes deliberately in the head config',
+    );
+  }
+
+  return { kind: 'script', key: 'script:theme', content: source };
+}

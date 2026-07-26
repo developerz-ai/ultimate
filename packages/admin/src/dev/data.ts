@@ -1,0 +1,296 @@
+// Every /_x panel reads from here, and every method is an introspection call — never a
+// bespoke query. That is what makes the dashboard and the MCP dev server the same facts in
+// two renderings: `--json` on a panel returns exactly what the panel drew.
+//
+// The framework introspection modules are reached through dynamic `import()` so the
+// production graph never statically references them: /_x must not cost the app path a byte.
+
+import type { AdminActor, AdminAuthz } from '../authz';
+import { DevSourceUnavailableError } from '../errors';
+import type {
+  CacheEdgeFact,
+  DevSources,
+  DriftFact,
+  InvalidationFact,
+  JobDefFact,
+  JobRunFact,
+  JobStepFact,
+  LiveQueryFact,
+  LiveSubscriberFact,
+  MailFact,
+  ManifestFact,
+  PolicyFact,
+  QueueFact,
+  RequestTrace,
+  RouteFact,
+  SqlResult,
+  TableFact,
+  TaskFact,
+} from './facts';
+
+const empty = async <T>(value: T): Promise<T> => value;
+
+/** Explicit fixtures. Tests and `x dev --offline` use this; it is not a fallback path. */
+export function staticDevSources(facts: Partial<DevSources> = {}): DevSources {
+  return {
+    routes: facts.routes ?? ((): Promise<readonly RouteFact[]> => empty([])),
+    traces: facts.traces ?? ((): Promise<readonly RequestTrace[]> => empty([])),
+    liveQueries: facts.liveQueries ?? ((): Promise<readonly LiveQueryFact[]> => empty([])),
+    subscribers: facts.subscribers ?? ((): Promise<readonly LiveSubscriberFact[]> => empty([])),
+    jobDefs: facts.jobDefs ?? ((): Promise<readonly JobDefFact[]> => empty([])),
+    queues: facts.queues ?? ((): Promise<readonly QueueFact[]> => empty([])),
+    jobRuns: facts.jobRuns ?? ((): Promise<readonly JobRunFact[]> => empty([])),
+    tasks: facts.tasks ?? ((): Promise<readonly TaskFact[]> => empty([])),
+    tables: facts.tables ?? ((): Promise<readonly TableFact[]> => empty([])),
+    drift: facts.drift ?? ((): Promise<readonly DriftFact[]> => empty([])),
+    runSql:
+      facts.runSql ?? ((): Promise<SqlResult> => empty({ columns: [], rows: [], elapsedMs: 0 })),
+    mail: facts.mail ?? ((): Promise<readonly MailFact[]> => empty([])),
+    cacheGraph: facts.cacheGraph ?? ((): Promise<readonly CacheEdgeFact[]> => empty([])),
+    invalidations: facts.invalidations ?? ((): Promise<readonly InvalidationFact[]> => empty([])),
+    policyMatrix: facts.policyMatrix ?? ((): Promise<readonly PolicyFact[]> => empty([])),
+    manifest:
+      facts.manifest ??
+      ((): Promise<ManifestFact> => empty({ emitted: null, committed: null, diff: [] })),
+  };
+}
+
+type Bag = Readonly<Record<string, unknown>>;
+
+const bagOf = (value: unknown): Bag =>
+  typeof value === 'object' && value !== null ? (value as Bag) : {};
+const str = (value: unknown, fallback = ''): string =>
+  typeof value === 'string' ? value : fallback;
+const numOf = (value: unknown, fallback = 0): number =>
+  typeof value === 'number' ? value : fallback;
+const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
+const strings = (value: unknown): readonly string[] => listOf(value).map((item) => String(item));
+
+export interface DevSourceOptions {
+  /** The app's authz. The policy matrix is computed through it, never re-derived. */
+  readonly authz?: AdminAuthz;
+  /** Actors the matrix is computed for. `x dev --actor` supplies these. */
+  readonly actors?: readonly AdminActor[];
+  /**
+   * Facts no registry can produce on its own — request traces, caught mail, the read-only
+   * SQL tool, the committed manifest. Unwired ones throw X_NOT_IMPLEMENTED with the exact
+   * wiring line, rather than rendering an empty panel that reads as "nothing happened".
+   */
+  readonly hooks?: Partial<DevSources>;
+}
+
+const unwired = <T>(source: string, panel: string): (() => Promise<T>) => {
+  return (): Promise<T> => {
+    throw new DevSourceUnavailableError({ source, panel });
+  };
+};
+
+/**
+ * Registry output is read field by field: a registry that grows a field must not break the
+ * dev dashboard, and a registry that renames one should show a blank cell in /_x rather than
+ * crash the process an engineer is debugging with.
+ */
+export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
+  const hooks = opts.hooks ?? {};
+
+  const sources: DevSources = {
+    async routes(): Promise<readonly RouteFact[]> {
+      const { describeRoutes } = await import('@ultimat3/render');
+      return listOf(describeRoutes()).map((raw) => {
+        const route = bagOf(raw);
+        const budget = bagOf(route['budget']);
+        return {
+          path: str(route['path']),
+          render: str(route['render'], 'stream'),
+          offline: str(route['offline'], 'network-only'),
+          hydrate: str(route['hydrate'], 'idle'),
+          handler: str(route['handler'], str(route['file'])),
+          budget: {
+            ...(typeof budget['js'] === 'string' ? { js: budget['js'] } : {}),
+            ...(typeof budget['lcp'] === 'number' ? { lcp: budget['lcp'] } : {}),
+          },
+          revalidateTags: strings(bagOf(route['revalidate'])['tags']),
+          hasMeta: route['meta'] !== undefined,
+        };
+      });
+    },
+
+    traces: unwired<readonly RequestTrace[]>('traces', 'timeline'),
+
+    async liveQueries(): Promise<readonly LiveQueryFact[]> {
+      const { describeQueries } = await import('@ultimat3/query');
+      return listOf(describeQueries()).map((raw) => {
+        const query = bagOf(raw);
+        return {
+          name: str(query['name']),
+          live: query['live'] === true,
+          policy: str(query['policy']),
+          sql: str(query['sql']),
+        };
+      });
+    },
+
+    subscribers: unwired<readonly LiveSubscriberFact[]>('subscribers', 'live'),
+
+    async jobDefs(): Promise<readonly JobDefFact[]> {
+      const { describeJobs } = await import('@ultimat3/jobs');
+      return listOf(describeJobs()).map((raw) => {
+        const job = bagOf(raw);
+        const retry = bagOf(job['retry']);
+        return {
+          name: str(job['name']),
+          queue: str(job['queue'], 'default'),
+          steps: strings(job['steps']),
+          retry: {
+            attempts: numOf(retry['attempts'], 1),
+            backoff: str(retry['backoff'], 'exponential'),
+          },
+          idempotent: job['idempotencyKey'] !== undefined,
+        };
+      });
+    },
+
+    async queues(): Promise<readonly QueueFact[]> {
+      const { inspect } = await import('@ultimat3/jobs');
+      return listOf(bagOf(await inspect())['queues']).map((raw) => {
+        const queue = bagOf(raw);
+        return {
+          name: str(queue['name'], 'default'),
+          depth: numOf(queue['depth']),
+          running: numOf(queue['running']),
+          failed: numOf(queue['failed']),
+          deadLetter: numOf(queue['deadLetter']),
+        };
+      });
+    },
+
+    async jobRuns(): Promise<readonly JobRunFact[]> {
+      const { inspect } = await import('@ultimat3/jobs');
+      return listOf(bagOf(await inspect())['runs']).map((raw) => {
+        const run = bagOf(raw);
+        return {
+          id: str(run['id']),
+          job: str(run['job']),
+          queue: str(run['queue'], 'default'),
+          status: str(run['status'], 'running') as JobRunFact['status'],
+          attempt: numOf(run['attempt'], 1),
+          steps: listOf(run['steps']).map((rawStep) => {
+            const step = bagOf(rawStep);
+            return {
+              name: str(step['name']),
+              status: str(step['status'], 'pending') as JobStepFact['status'],
+              attempt: numOf(step['attempt'], 1),
+              durationMs: numOf(step['durationMs']),
+              error: typeof step['error'] === 'string' ? step['error'] : null,
+            };
+          }),
+        };
+      });
+    },
+
+    async tasks(): Promise<readonly TaskFact[]> {
+      const { describeTasks } = await import('@ultimat3/jobs');
+      return listOf(describeTasks()).map((raw) => {
+        const task = bagOf(raw);
+        return {
+          name: str(task['name']),
+          cron: str(task['cron']),
+          tz: str(task['tz'], 'UTC'),
+          nextRunAt: typeof task['nextRunAt'] === 'string' ? task['nextRunAt'] : null,
+        };
+      });
+    },
+
+    async tables(): Promise<readonly TableFact[]> {
+      const { describeEntities } = await import('@ultimat3/entity');
+      return listOf(describeEntities()).map((raw) => {
+        const entity = bagOf(raw);
+        return {
+          name: str(entity['table'], str(entity['name'])),
+          columns: Object.entries(bagOf(entity['columns'])).map(([name, rawColumn]) => {
+            const column = bagOf(rawColumn);
+            return {
+              name,
+              type: str(column['type'], 'unknown'),
+              nullable: column['nullable'] === true,
+            };
+          }),
+        };
+      });
+    },
+
+    async drift(): Promise<readonly DriftFact[]> {
+      const { describeEntities } = await import('@ultimat3/entity');
+      return listOf(describeEntities()).flatMap((raw) => {
+        const entity = bagOf(raw);
+        return listOf(entity['drift']).map((rawIssue) => {
+          const issue = bagOf(rawIssue);
+          return {
+            table: str(entity['table'], str(entity['name'])),
+            column: typeof issue['column'] === 'string' ? issue['column'] : null,
+            issue: str(issue['issue'], 'unknown'),
+          };
+        });
+      });
+    },
+
+    runSql: unwired<SqlResult>('runSql', 'db'),
+    mail: unwired<readonly MailFact[]>('mail', 'mail'),
+
+    /**
+     * The tag graph is read through `dependentsOf`, one entity tag at a time: the cache owns
+     * the graph, and /_x asking it per tag keeps the panel honest about what a real
+     * invalidation would reach.
+     */
+    async cacheGraph(): Promise<readonly CacheEdgeFact[]> {
+      const [{ dependentsOf }, { describeEntities }] = await Promise.all([
+        import('@ultimat3/cache'),
+        import('@ultimat3/entity'),
+      ]);
+      return listOf(describeEntities()).map((raw) => {
+        const name = str(bagOf(raw)['name']);
+        return {
+          tag: name,
+          dependents: listOf(dependentsOf([{ entity: name }])).map((rawDep) => {
+            const dep = bagOf(rawDep);
+            return { kind: str(dep['kind']), id: str(dep['id']) };
+          }),
+        };
+      });
+    },
+
+    invalidations: unwired<readonly InvalidationFact[]>('invalidations', 'cache'),
+
+    /**
+     * The matrix is the app's own authz answering, actor by actor and permission by
+     * permission. A panel that re-derived permissions would be a second authz system.
+     */
+    async policyMatrix(): Promise<readonly PolicyFact[]> {
+      const authz = opts.authz;
+      const actors = opts.actors ?? [];
+      if (authz === undefined || actors.length === 0) {
+        throw new DevSourceUnavailableError({ source: 'authz + actors', panel: 'policy' });
+      }
+      const { describeActions } = await import('@ultimat3/action');
+      const permissions = [
+        ...new Set(listOf(describeActions()).map((raw) => str(bagOf(raw)['policy']))),
+      ].filter((permission) => permission !== '');
+
+      return actors.flatMap((actor) =>
+        permissions.map((permission) => {
+          const decision = authz.decide({ permission, actor });
+          return {
+            permission,
+            actorId: actor.id,
+            allowed: decision.allowed,
+            trace: decision.trace,
+          };
+        }),
+      );
+    },
+
+    manifest: unwired<ManifestFact>('manifest', 'manifest'),
+  };
+
+  return { ...sources, ...hooks };
+}

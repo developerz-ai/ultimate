@@ -1,0 +1,31 @@
+@use '../tokens' as t;
+
+.container {
+  --container-gutter: #{t.space(4)};
+  inline-size: min(100% - (var(--container-gutter) * 2), var(--container-max));
+  margin-inline: auto;
+}
+
+.size-prose {
+  --container-max: 68ch;
+}
+
+.size-sm {
+  --container-max: 40rem;
+}
+
+.size-md {
+  --container-max: 52rem;
+}
+
+.size-lg {
+  --container-max: 72rem;
+}
+
+.size-xl {
+  --container-max: 90rem;
+}
+
+.size-full {
+  --container-max: 100%;
+}

@@ -1,0 +1,10 @@
+# Bun runtime + test config. https://bun.sh/docs/runtime/bunfig
+
+[install]
+exact = false
+production = false
+
+[test]
+root = "."
+# Frozen clock, seeded RNG, sealed network. See packages/testing.
+preload = ["./scripts/test-setup.ts"]

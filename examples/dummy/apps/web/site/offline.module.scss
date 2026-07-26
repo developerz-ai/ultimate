@@ -1,0 +1,26 @@
+// Offline fallback. Calm, not alarming: this is a state, not an error.
+
+.page {
+  margin-inline: auto;
+  max-inline-size: 34rem;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-4);
+  text-align: center;
+}
+
+.queue {
+  background-color: rgb(var(--color-info-soft));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-info));
+  padding: var(--space-3);
+}
+
+.retry {
+  align-self: center;
+  border: 1px solid rgb(var(--color-line));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-fg));
+  padding-block: var(--space-2);
+  padding-inline: var(--space-6);
+  text-decoration: none;
+}

@@ -1,0 +1,99 @@
+@use '../tokens' as t;
+
+.iconButton {
+  @include t.focus-ring;
+  @include t.transition(background, color, border-color);
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: t.radius(md);
+  color: t.role('fg-muted');
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.round {
+  border-radius: t.radius(full);
+}
+
+.glyph {
+  display: inline-flex;
+  // Icons inherit the text colour so a tone change needs no icon variant.
+  color: currentcolor;
+}
+
+.size-sm {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  font-size: t.text(sm);
+}
+
+.size-md {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  font-size: t.text(md);
+}
+
+.size-lg {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  font-size: t.text(lg);
+}
+
+.tone-neutral {
+  --tone: #{t.role('fg-strong')};
+  --tone-soft: #{t.role('bg-soft')};
+}
+
+.tone-accent {
+  --tone: #{t.role('accent')};
+  --tone-soft: #{t.role('accent', 0.12)};
+}
+
+.tone-success {
+  --tone: #{t.role('success')};
+  --tone-soft: #{t.role('success-soft')};
+}
+
+.tone-warning {
+  --tone: #{t.role('warning')};
+  --tone-soft: #{t.role('warning-soft')};
+}
+
+.tone-danger {
+  --tone: #{t.role('danger')};
+  --tone-soft: #{t.role('danger-soft')};
+}
+
+.tone-info {
+  --tone: #{t.role('info')};
+  --tone-soft: #{t.role('info-soft')};
+}
+
+.variant-primary {
+  background: var(--tone);
+  color: t.role('accent-fg');
+}
+
+.variant-secondary {
+  border-color: t.role('line');
+  background: t.role('surface-raised');
+
+  &:hover:not(:disabled) {
+    color: var(--tone);
+  }
+}
+
+.variant-ghost,
+.variant-link {
+  background: transparent;
+
+  &:hover:not(:disabled) {
+    background: var(--tone-soft);
+    color: var(--tone);
+  }
+}

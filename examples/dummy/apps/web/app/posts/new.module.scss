@@ -1,0 +1,32 @@
+// Editor. One column, native controls, token colours.
+
+.form {
+  max-inline-size: 42rem;
+
+  input,
+  textarea {
+    background-color: rgb(var(--color-surface-raised));
+    border: 1px solid rgb(var(--color-line));
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-fg));
+    font: inherit;
+    inline-size: 100%;
+    padding: var(--space-3);
+  }
+
+  textarea {
+    min-block-size: 16rem;
+    resize: vertical;
+  }
+}
+
+.label {
+  color: rgb(var(--color-fg-muted));
+  font-size: 0.875rem;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+}

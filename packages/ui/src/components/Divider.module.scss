@@ -1,0 +1,39 @@
+@use '../tokens' as t;
+
+.divider {
+  border: 0;
+  background: t.role('line');
+}
+
+.horizontal {
+  inline-size: 100%;
+  block-size: 1px;
+}
+
+.vertical {
+  inline-size: 1px;
+  block-size: 100%;
+  align-self: stretch;
+}
+
+.labelled {
+  display: flex;
+  align-items: center;
+  gap: t.space(3);
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+
+  &::before,
+  &::after {
+    flex: 1;
+    block-size: 1px;
+    background: t.role('line');
+    content: '';
+  }
+}
+
+.label {
+  @include t.truncate;
+}

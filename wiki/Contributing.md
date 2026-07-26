@@ -1,0 +1,191 @@
+# Contributing
+
+Bun-only monorepo. One gate: `x verify`. Pre-v1 — internals move, so read the tier table before adding an import.
+
+```
+bun install
+bun run verify        # or: bun run x verify
+```
+
+## Repo layout
+
+```
+packages/<name>/
+  package.json         # name @ultimat3/<name>, exports ./src/index.ts, publishConfig
+  tsconfig.json        # extends ../../tsconfig.base.json, composite
+  README.md            # what it owns, its public API, why it exists (30-80 lines)
+  CLAUDE.md            # boundary + deps + commands, <40 lines, compressed style
+  src/index.ts         # explicit public exports
+  src/errors.ts        # this package's X_* codes
+  src/<concern>.ts     # one responsibility each
+  src/<concern>.test.ts
+```
+
+Root also holds `scripts/` (verify, boundaries, manifest, setup), `docs/idea/` (design), `docs/architecture/` (internals), `wiki/` (this reference), `examples/dummy/` (the reference app CI runs `x verify` against).
+
+### `package.json` template
+
+```json
+{
+  "name": "@ultimat3/<name>",
+  "version": "0.0.1",
+  "description": "<one line>",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/<name>"
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "exports": { ".": "./src/index.ts" },
+  "files": ["src", "README.md", "LICENSE"],
+  "engines": { "bun": ">=1.3.0" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {}
+}
+```
+
+### `tsconfig.json` template
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"]
+}
+```
+
+## Import tiers
+
+A package may import from **strictly lower** tiers only — never sideways within its own tier, never upward.
+
+| Tier | Packages | May import |
+|---|---|---|
+| 0 | `core`, `schema` | nothing internal |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo` | tier 0 |
+| 2 | `entity`, `policy`, `http` | tier 0–1 |
+| 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest` | tier 0–3 |
+| 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
+
+Enforced by [`scripts/boundaries.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/boundaries.ts): `bun run boundaries`. A violation is `X_BOUNDARY_VIOLATION` with the **transitive chain**, not just the offending line. It runs on pre-push and inside `x verify` — a lint warning would not count as enforcement.
+
+In a generated app the same mechanism enforces `site/` cannot import `app/`, routes never touch the DB, components hold no business logic, services never import HTTP.
+
+## Code conventions
+
+| Rule | Detail | Enforced by |
+|---|---|---|
+| One file, one job | target <200 LOC, hard ceiling ~500 | review |
+| One export surface per package | `src/index.ts` re-exports explicitly. No `export *` unless the module is purely types | review |
+| Custom typed errors | `src/errors.ts` per package, subclassing `UltimateError`. **Never a bare `Error`** | `x verify` lint stage |
+| No `any` | prefer `unknown` + a schema parse | Biome `suspicious.noExplicitAny: error` |
+| Named exports only | no default exports anywhere | `x verify` lint stage |
+| Single quotes, semicolons, 2-space indent, 100 cols, trailing commas | | `biome.json` formatter |
+| `import type` / `export type` | `verbatimModuleSyntax` is on | Biome `useImportType` / `useExportType`, both `error` |
+| No unused variables or imports | | Biome `correctness.noUnusedVariables` / `noUnusedImports`, both `error` |
+| `kebab-case.ts` filenames | | review |
+| Tests next to the source as `<file>.test.ts` | never a `__tests__/` directory | review |
+| Comments explain WHY | plus a 1–4 line header stating the module's single responsibility | review |
+| i18n-ready | zero hardcoded user-facing strings — everything through `t()` | `x verify` (i18n check) |
+| Dark-theme-ready | every colour a semantic token, never a raw hex | `x verify` lint stage |
+| tz-ready | never format a date without an explicit IANA `timeZone` | `x verify` lint stage, `X_TIME_NO_ZONE` at runtime |
+| Money as minor units | `Money = { minor: number; currency: string }`. Never a float | types + `X_MONEY_NOT_INTEGER` |
+
+TypeScript strictness comes from [`tsconfig.base.json`](https://github.com/developerz-ai/ultimate/blob/main/tsconfig.base.json) and is not negotiable per package: `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noPropertyAccessFromIndexSignature`, `exactOptionalPropertyTypes`, `isolatedModules`, `verbatimModuleSyntax`, `composite`. `noNonNullAssertion` is a Biome **warning** — treat it as an error in review; a `!` is almost always a missing narrow.
+
+## Commands
+
+| Task | Command |
+|---|---|
+| all tests | `bun test` |
+| one file | `bun test packages/core/src/errors.test.ts` |
+| typecheck the whole graph | `bun run typecheck` (`tsc -b --pretty`) |
+| clean the build info | `bun run typecheck:clean` |
+| lint + format check | `bun run lint` (`biome check .`) |
+| autofix | `bun run lint:fix` / `bun run format` |
+| import boundaries | `bun run boundaries` |
+| regenerate manifest | `bun run manifest` |
+| the gate | `bun run verify`, or `bun run x verify` |
+| the CLI from source | `bun run x <command>` → `packages/cli/src/bin.ts` |
+
+Git hooks via [`lefthook.yml`](https://github.com/developerz-ai/ultimate/blob/main/lefthook.yml):
+
+| Hook | Runs |
+|---|---|
+| pre-commit | `bunx biome check --no-errors-on-unmatched --staged`, with `stage_fixed: true` — fixes are added to the commit |
+| pre-push | `bun run typecheck`, then `bun run boundaries` |
+
+Both skip on `merge` and `rebase`. Hooks are a fast subset; CI runs exactly `x verify` — a check that lives only in CI is a check contributors cannot run.
+
+## Adding a new error code
+
+| # | Step |
+|---|---|
+| 1 | Add the code to the package's `src/errors.ts` as a subclass of `UltimateError` — never a bare `Error` |
+| 2 | Give it a `cause`, an exact `fix` command, and a `docs` URL. The same string must render in terminal, browser overlay, and `--json` |
+| 3 | Register it in the code registry. Duplicates across packages fail with `X_ERROR_CODE_DUPLICATE` |
+| 4 | Add a row to [Error codes](Error-Codes) with cause and fix |
+| 5 | Add a test asserting the code, the `fix` string, and the JSON shape |
+
+```ts
+throw new UltimateError({
+  code: 'X_DB_DRIFT',
+  cause: 'table "posts" has column "publish_at" not present in any migration',
+  fix: 'x db gen "add publish_at"',
+  docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+});
+```
+
+A code with no `fix` command is not mergeable. "Errors are instructions" is axiom 4, and an agent that cannot read the fix needs a human.
+
+## Tests
+
+| Requirement | Detail |
+|---|---|
+| >=2 meaningful tests per package | tests that would catch a real regression. `expect(true).toBe(true)` is a rejected PR |
+| Never mock the database | clone it. One real Postgres per test worker |
+| Never assert on wall-clock time | advance the frozen clock |
+| Never reach the network unmocked | it fails by design with `X_TEST_NETWORK_EGRESS` |
+| A flaky test is fixed or deleted **the day it flakes** | there is no `retry: 3` |
+
+Six test types, each a first-class runner: `unit`, `contract`, `live`, `job`, `e2e`, `eval`. See [Testing](Testing).
+
+## Docs style
+
+Everything in `wiki/`, `docs/`, and every `README.md` / `CLAUDE.md` uses compressed-config style:
+
+| Rule | Detail |
+|---|---|
+| Lead with the rule, not the reason | fragments over sentences |
+| Tables for any >=3-row structured data | |
+| Code, paths, and commands verbatim | compress the prose around them, never the command |
+| No meta-framing, no rhetoric, no trailing summary | "This section covers…" is deleted in review |
+| Date load-bearing claims | `As of 2026-07` |
+| No fabricated numbers | no benchmarks that were not run, no adoption counts, no invented dates |
+| `CLAUDE.md` per package | <40 lines: boundary, deps, commands |
+
+Never generate prose documentation at runtime. Facts come from code (`x.manifest.json`, regenerated every build); conventions come from a human (`AGENTS.md`, short, hand-written).
+
+## PR expectations
+
+| Expectation | Detail |
+|---|---|
+| Green `x verify` | typecheck, lint, boundaries, all six test types, migration drift, contract diff, budgets, SEO + i18n, manifest freshness |
+| No new dependency without justification in the PR body | target is **under 40 direct dependencies for the whole framework**. A Bun native beats a package |
+| No new alternative for something already locked | a second CSS system, a second ORM, a second validator, a second runtime is a closed PR ([Home](Home)) |
+| Feature fits one of the eight primitives | if it doesn't fit, it doesn't ship ([The eight primitives](The-Eight-Primitives)) |
+| New failure modes have `X_*` codes with `fix:` lines | |
+| Deep infra may ship interface-only | an in-memory or PGlite-shaped default driver plus a clearly-labelled `X_NOT_IMPLEMENTED` throw carrying a `fix:`. Never a bare `// TODO` |
+| Milestone discipline | each of the 12 milestones ends in a working demo app plus green `x verify`. A package that only compiles is not a milestone |
+
+Security issues go through [`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md), never a public issue.

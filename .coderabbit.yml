@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# CodeRabbit config for the Ultimate framework (Bun-only, Postgres, SolidJS).
+# Review instructions are the conventions themselves — the ones a test cannot check.
+
+language: 'en-US'
+tone_instructions: >-
+  Terse and concrete. Lead with the rule, cite the file that states it, skip nitpicks Biome already
+  catches. The primary user of this codebase is an AI agent: block anything that makes a failure
+  unreadable to one — a bare Error, a missing fix command, a command without --json.
+early_access: true
+enable_free_tier: true
+
+reviews:
+  profile: 'assertive'
+  request_changes_workflow: true
+  high_level_summary: true
+  high_level_summary_placeholder: '@coderabbitai summary'
+  estimate_code_review_effort: true
+  abort_on_close: true
+  collapse_walkthrough: true
+  sequence_diagrams: true
+  poem: false
+  suggested_labels: true
+  auto_apply_labels: true
+  suggested_reviewers: true
+  auto_assign_reviewers: false
+
+  path_filters:
+    - '!**/node_modules/**'
+    - '!**/dist/**'
+    - '!**/.x/**'
+    - '!**/*.tsbuildinfo'
+    - '!**/bun.lock'
+    - '!**/coverage/**'
+    - '!**/migrations/**'
+    - '!**/test-results/**'
+    - '!**/playwright-report/**'
+
+  path_instructions:
+    - path: '**/*'
+      instructions: |
+        Conventions live in CLAUDE.md, AGENTS.md and docs/idea/. Defer to them and cite the rule.
+        The seven axioms, applied to every diff:
+        1. One way to do each thing — flag any second path to something that already works.
+        2. Define once, project everywhere — a fact stated in two places will drift; generate it.
+        3. Enforced, not documented — a new convention needs a check in `x verify`, not a paragraph.
+        4. Errors are instructions — every throw carries a stable X_* code, a cause, and an exact
+           fix command. `throw new Error(...)` is blocking. So is a fix line that is not runnable.
+        5. One command means shippable — nothing may be required that `x verify` does not check.
+        6. The static path never pays for the app path — flag any import that widens site/'s graph.
+        7. Deploy anywhere = containers only — flag any vendor edge/KV/queue primitive.
+        Hard blockers: `any` (use `unknown` + a schema parse), default exports, `export *` from a
+        non-type barrel, a raw hex colour, a hardcoded user-facing string, a float for money, a
+        date formatted without an explicit IANA timeZone, a file over ~500 lines.
+        Review changed lines only. Skip style Biome already enforces.
+
+    - path: 'packages/*/src/**'
+      instructions: |
+        - One file, one responsibility, under ~200 lines. A file that needs "and" to describe it
+          should be split.
+        - `src/index.ts` re-exports the public API explicitly. Never `export *` unless the module
+          is purely types.
+        - `src/errors.ts` owns this package's X_* codes; every error subclasses `UltimateError`.
+        - Tests live beside the source as `<file>.test.ts` and must be able to fail for a real
+          reason. Flag `expect(true).toBe(true)`-shaped assertions.
+        - Header comment states the module's single responsibility in 1-4 lines and explains WHY,
+          never what.
+        - Check the tier table: an import from the same or a higher tier is a build error, not a
+          preference. New entries in scripts/lib/tiers.ts must justify themselves in the table.
+
+    - path: 'packages/cli/**'
+      instructions: |
+        - Every command accepts `--json` and returns the same data in both renderers. A human-only
+          output path is blocking.
+        - Commands return a `CommandResult`; only dispatch.ts writes to stdout or sets an exit code.
+        - Every subprocess goes through exec.ts so tests can inject a fake Runner.
+        - Generators emit source AND a passing test. A generated `// TODO` is blocking.
+        - New user-facing strings go in messages.ts, not inline.
+
+    - path: 'packages/testing/**'
+      instructions: |
+        - Never mock the database — clone a template database.
+        - Never read the wall clock — advance the frozen clock.
+        - Never allow unmocked egress; the failure must name the URL and the mock line.
+        - No retry/flake tolerance anywhere. Flag any `retry`, `sleep`, or timing-dependent wait.
+
+    - path: '**/*.scss'
+      instructions: |
+        - Semantic design tokens only. A raw hex, rgb(), or named colour is blocking — dark theme
+          is not a later project.
+        - No layout values that duplicate a token (spacing, radius, typography).
+
+    - path: '**/*.{tsx,jsx}'
+      instructions: |
+        - Components hold no business logic and no data fetching. Data arrives as props from a
+          route that called an action or a query.
+        - Every user-facing string goes through `t()`; flag literals in JSX text or aria labels.
+        - `site/` components must not import anything that pulls the app graph in transitively.
+
+    - path: '.github/workflows/**'
+      instructions: |
+        - `runs-on: ubuntu-latest` only. Flag any self-hosted or paid runner label.
+        - CI runs the same commands a contributor runs locally; flag a CI-only step.
+        - release.yml publishes over OIDC trusted publishing: `id-token: write`, no NPM_TOKEN, and
+          `cancel-in-progress: false` because an npm publish cannot be undone.
+
+    - path: 'docker/**'
+      instructions: |
+        - One image, all roles, `ROLE` selects behaviour. Flag a per-role image or a per-role build.
+        - Runtime stage stays distroless and non-root. No shell, no package manager in the final
+          image.
+        - Flag any cloud-specific resource; the chart must run on any conformant Kubernetes.
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches: ['main']
+
+chat:
+  auto_reply: true

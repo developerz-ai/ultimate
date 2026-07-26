@@ -1,0 +1,42 @@
+@use '../tokens' as t;
+
+.link {
+  @include t.focus-ring;
+  @include t.transition(color, text-decoration-color);
+  border-radius: t.radius(sm);
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
+}
+
+.tone-accent {
+  color: t.role('accent');
+
+  &:hover {
+    color: t.role('accent-strong');
+  }
+}
+
+.tone-inherit {
+  color: inherit;
+}
+
+.underline-always {
+  text-decoration-line: underline;
+}
+
+.underline-hover {
+  text-decoration-line: none;
+
+  &:hover {
+    text-decoration-line: underline;
+  }
+}
+
+.underline-none {
+  text-decoration-line: none;
+}
+
+// Screen-reader-only suffix, e.g. "(opens in a new tab)".
+.hint {
+  @include t.visually-hidden;
+}

@@ -1,0 +1,15 @@
+@use '../tokens' as t;
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+  // Trailing edge in both writing directions.
+  justify-content: flex-end;
+}
+
+.status {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  font-variant-numeric: tabular-nums;
+}

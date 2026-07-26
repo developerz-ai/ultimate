@@ -1,0 +1,72 @@
+// Pricing table. Tokens only; the current currency is marked with `aria-current`, so the
+// highlight and the accessibility state cannot drift apart.
+
+.page {
+  margin-inline: auto;
+  max-inline-size: 64rem;
+  padding-block: var(--space-16);
+  padding-inline: var(--space-4);
+}
+
+.subheading {
+  color: rgb(var(--color-fg-muted));
+  font-size: 1.125rem;
+}
+
+.currency {
+  display: flex;
+  gap: var(--space-2);
+  margin-block: var(--space-8);
+
+  a {
+    border: 1px solid rgb(var(--color-line));
+    border-radius: var(--radius-pill);
+    color: rgb(var(--color-fg-muted));
+    padding-block: var(--space-1);
+    padding-inline: var(--space-4);
+    text-decoration: none;
+  }
+
+  a[aria-current='true'] {
+    background-color: rgb(var(--color-info-soft));
+    border-color: rgb(var(--color-accent));
+    color: rgb(var(--color-accent));
+  }
+}
+
+.plans {
+  display: grid;
+  gap: var(--space-6);
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  list-style: none;
+  padding: 0;
+}
+
+.plan {
+  background-color: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-line));
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-6);
+}
+
+.cta {
+  background-color: rgb(var(--color-accent));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-accent-fg));
+  font-weight: 600;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  text-align: center;
+  text-decoration: none;
+}
+
+.included {
+  border-block-start: 1px solid rgb(var(--color-line));
+  color: rgb(var(--color-fg-muted));
+  margin-block-start: var(--space-12);
+  padding-block-start: var(--space-6);
+}

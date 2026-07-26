@@ -1,0 +1,189 @@
+// Mounts the /_x panels — and refuses to mount in production, because these panels print
+// SQL, policy traces, and caught mail. The refusal is a throw at construction, not a 404 at
+// request time: an app that boots with /_x mounted in prod has already lost.
+
+import { DevDashboardInProdError } from '../errors';
+import { defaultDevSources } from './data';
+import type { DevSources } from './facts';
+import { type DevPanel, type PanelPayload, panelPayload } from './panel';
+import { cachePanel } from './panel-cache';
+import { dbPanel } from './panel-db';
+import { jobsPanel } from './panel-jobs';
+import { livePanel } from './panel-live';
+import { mailPanel } from './panel-mail';
+import { manifestPanel } from './panel-manifest';
+import { policyPanel } from './panel-policy';
+import { routesPanel } from './panel-routes';
+import { timelinePanel } from './panel-timeline';
+
+export const DEV_PANELS: readonly DevPanel[] = [
+  routesPanel,
+  timelinePanel,
+  livePanel,
+  jobsPanel,
+  dbPanel,
+  mailPanel,
+  cachePanel,
+  policyPanel,
+  manifestPanel,
+];
+
+export const DEV_BASE_PATH = '/_x';
+
+export interface DevDashboardOptions {
+  /** `ROLE` for this process. Defaults to `process.env.ROLE`. */
+  readonly role?: string;
+  /** `NODE_ENV` (or `X_ENV`). Defaults to the environment. */
+  readonly env?: string;
+  readonly basePath?: string;
+  readonly sources?: DevSources;
+  readonly panels?: readonly DevPanel[];
+}
+
+const envOf = (name: string): string | undefined => {
+  const value = process.env[name];
+  return value === undefined || value === '' ? undefined : value;
+};
+
+/**
+ * One rule: anything that says "production" refuses. Checked against both the framework's
+ * `ROLE`-adjacent env and `NODE_ENV`, since a container may set only one of them.
+ */
+export function assertDevOnly(input: {
+  role?: string | undefined;
+  env?: string | undefined;
+}): void {
+  const role = input.role ?? envOf('ROLE') ?? 'dev';
+  const env = input.env ?? envOf('X_ENV') ?? envOf('NODE_ENV') ?? 'development';
+  if (env === 'production' || env === 'prod' || role === 'production' || role === 'prod') {
+    throw new DevDashboardInProdError({ role, env });
+  }
+}
+
+export interface DevDashboard {
+  readonly basePath: string;
+  readonly panels: readonly DevPanel[];
+  /** The `--json` payload for one panel: exactly what the tab renders. */
+  json(key: string, params?: URLSearchParams): Promise<PanelPayload>;
+  /** `null` when the request is not ours, so a host router can fall through. */
+  handle(request: Request): Promise<Response | null>;
+}
+
+const jsonResponse = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** Tokens are defined inline: /_x is a standalone page and still owes both themes. */
+const SHELL_STYLE = `
+:root {
+  --x-color-bg: 253 246 240; --x-color-surface: 255 255 255; --x-color-fg: 38 34 31;
+  --x-color-fg-muted: 110 102 94; --x-color-line: 224 216 208; --x-color-accent: 34 122 197;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --x-color-bg: 18 18 20; --x-color-surface: 34 34 39; --x-color-fg: 228 226 222;
+    --x-color-fg-muted: 150 146 140; --x-color-line: 54 54 60; --x-color-accent: 96 170 240;
+  }
+}
+html[data-theme="light"] {
+  --x-color-bg: 253 246 240; --x-color-surface: 255 255 255; --x-color-fg: 38 34 31;
+  --x-color-fg-muted: 110 102 94; --x-color-line: 224 216 208; --x-color-accent: 34 122 197;
+}
+html[data-theme="dark"] {
+  --x-color-bg: 18 18 20; --x-color-surface: 34 34 39; --x-color-fg: 228 226 222;
+  --x-color-fg-muted: 150 146 140; --x-color-line: 54 54 60; --x-color-accent: 96 170 240;
+}
+body { margin: 0; background: rgb(var(--x-color-bg)); color: rgb(var(--x-color-fg));
+  font: 14px/1.5 ui-monospace, monospace; }
+header { display: flex; gap: 1rem; padding: .75rem 1rem;
+  border-bottom: 1px solid rgb(var(--x-color-line)); flex-wrap: wrap; }
+a { color: rgb(var(--x-color-accent)); }
+main { padding: 1rem; }
+h1 { font-size: 1rem; margin: 0 1rem 0 0; }
+p.question { color: rgb(var(--x-color-fg-muted)); margin: 0 0 1rem; }
+pre { background: rgb(var(--x-color-surface)); border: 1px solid rgb(var(--x-color-line));
+  padding: 1rem; overflow: auto; }
+:focus-visible { outline: 2px solid rgb(var(--x-color-accent)); outline-offset: 2px; }
+`;
+
+function shell(
+  basePath: string,
+  panels: readonly DevPanel[],
+  active: DevPanel,
+  payload: PanelPayload,
+): string {
+  const tabs = panels
+    .map(
+      (panel) =>
+        `<a href="${basePath}/${panel.key}"${panel.key === active.key ? ' aria-current="page"' : ''}>${panel.key}</a>`,
+    )
+    .join(' ');
+
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>_x · ${escapeHtml(active.key)}</title><style>${SHELL_STYLE}</style></head>
+<body><header><h1>_x</h1><nav>${tabs}</nav>
+<a href="${basePath}/${active.key}?json=1">--json</a></header>
+<main><p class="question">${escapeHtml(active.question)}</p>
+<pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></main></body></html>`;
+}
+
+/** Build the dashboard. Throws X_DEV_DASHBOARD_IN_PROD before anything else happens. */
+export function devDashboard(opts: DevDashboardOptions = {}): DevDashboard {
+  assertDevOnly({ role: opts.role, env: opts.env });
+
+  const basePath = opts.basePath ?? DEV_BASE_PATH;
+  const panels = opts.panels ?? DEV_PANELS;
+  const sources = opts.sources ?? defaultDevSources();
+  const byKey = new Map(panels.map((panel) => [panel.key, panel]));
+
+  const json = async (key: string, params = new URLSearchParams()): Promise<PanelPayload> => {
+    const panel = byKey.get(key);
+    if (panel === undefined) {
+      return {
+        panel: key,
+        ok: false,
+        error: {
+          code: 'X_ADMIN_ENTITY_UNKNOWN',
+          cause: `no /_x panel named "${key}" (have: ${[...byKey.keys()].join(', ')})`,
+          fix: `x dev --panel ${[...byKey.keys()][0] ?? 'routes'}`,
+        },
+      };
+    }
+    return panelPayload(panel, sources, params);
+  };
+
+  return {
+    basePath,
+    panels,
+    json,
+
+    async handle(request: Request): Promise<Response | null> {
+      const url = new URL(request.url);
+      if (url.pathname !== basePath && !url.pathname.startsWith(`${basePath}/`)) return null;
+
+      const key = url.pathname.slice(basePath.length).replace(/^\//, '');
+      const panel = byKey.get(key === '' ? (panels[0]?.key ?? '') : key);
+      if (panel === undefined) return jsonResponse(await json(key, url.searchParams), 404);
+
+      const payload = await json(panel.key, url.searchParams);
+      const wantsJson =
+        url.searchParams.has('json') ||
+        (request.headers.get('accept') ?? '').includes('application/json');
+
+      return wantsJson
+        ? jsonResponse(payload, payload.ok ? 200 : 500)
+        : new Response(shell(basePath, panels, panel, payload), {
+            status: 200,
+            headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+          });
+    },
+  };
+}

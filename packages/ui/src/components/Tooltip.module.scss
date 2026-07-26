@@ -1,0 +1,41 @@
+@use '../tokens' as t;
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.bubble {
+  @include t.transition(opacity, translate);
+  position: absolute;
+  z-index: t.z(tooltip);
+  inset-inline-start: 50%;
+  translate: -50% 4px;
+  max-inline-size: 18rem;
+  padding-block: t.space(1);
+  padding-inline: t.space(2);
+  border-radius: t.radius(sm);
+  background: t.role('fg-strong');
+  color: t.role('bg');
+  font-size: t.text(xs);
+  line-height: t.leading(snug);
+  text-align: center;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.placement-block-start {
+  inset-block-end: calc(100% + #{t.space(1)});
+}
+
+.placement-block-end {
+  inset-block-start: calc(100% + #{t.space(1)});
+}
+
+// Hover and keyboard focus both reveal it — a hover-only tooltip is inaccessible.
+.wrap:hover .bubble,
+.wrap:focus-within .bubble {
+  translate: -50% 0;
+  opacity: 1;
+}

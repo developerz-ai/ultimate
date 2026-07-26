@@ -1,0 +1,376 @@
+// The wire. One protocol for all three tiers: a channel subscribe, a live-query subscribe, and an
+// offline mutation drain are frames in the same union. Moving a route from tier 2 to tier 3 is a
+// config flag (`persist: true`), never a new protocol — that promise is enforced here.
+
+import type { LiveCursor } from './cursor';
+import { ProtocolVersionError } from './errors';
+import {
+  isJsonObject,
+  isRow,
+  type JsonObject,
+  type JsonValue,
+  type Row,
+  type RowPatch,
+} from './json';
+
+export const PROTOCOL_VERSION = 1;
+
+export type ConflictStrategyName = 'server-wins' | 'last-write-wins' | 'custom';
+
+export interface WireError {
+  readonly code: string;
+  readonly cause: string;
+  readonly fix: string;
+  readonly docs?: string;
+}
+
+export interface PresenceMember {
+  readonly id: string;
+  readonly actorId: string | null;
+  readonly meta: JsonObject;
+  /** Client-supplied logical time; last write wins per member on ties-free comparison. */
+  readonly updatedAt: number;
+}
+
+export type SubscribeTarget =
+  | { readonly kind: 'topic'; readonly topic: string }
+  | {
+      /**
+       * Client -> server, `qid` carries the *query name*; the server derives the real qid from
+       * (name, input) so a client can never pick its own fanout key. Server -> client it is the
+       * derived qid, which is also what the cursor is keyed by.
+       */
+      readonly kind: 'query';
+      readonly qid: string;
+      readonly input: JsonValue;
+      readonly cursor: LiveCursor | null;
+    };
+
+export interface HelloFrame {
+  readonly type: 'hello';
+  readonly v: number;
+  readonly buildId: string;
+  /** Server-assigned on the reply, `null` on the client's opening frame. */
+  readonly sessionId: string | null;
+  readonly actorId: string | null;
+  readonly resume: readonly LiveCursor[];
+}
+
+export interface SubscribeFrame {
+  readonly type: 'subscribe';
+  readonly v: number;
+  readonly op: 'add' | 'drop';
+  readonly sid: string;
+  readonly target: SubscribeTarget;
+}
+
+export interface SnapshotFrame {
+  readonly type: 'snapshot';
+  readonly v: number;
+  readonly sid: string;
+  readonly rows: readonly Row[];
+  readonly cursor: LiveCursor;
+}
+
+export interface PatchFrame {
+  readonly type: 'patch';
+  readonly v: number;
+  readonly sid: string;
+  readonly patches: readonly RowPatch[];
+  readonly lsn: string;
+}
+
+export interface MutateFrame {
+  readonly type: 'mutate';
+  readonly v: number;
+  /** Idempotency key. The server collapses repeats; the client never renumbers. */
+  readonly key: string;
+  readonly seq: number;
+  readonly name: string;
+  readonly input: JsonValue;
+}
+
+export interface AckFrame {
+  readonly type: 'ack';
+  readonly v: number;
+  /** Mutation key or subscription id being acknowledged. */
+  readonly ref: string;
+  readonly lsn: string | null;
+  readonly error: WireError | null;
+}
+
+export interface RebaseFrame {
+  readonly type: 'rebase';
+  readonly v: number;
+  readonly key: string;
+  readonly entity: string;
+  readonly strategy: ConflictStrategyName;
+  /** Server truth for the row the mutation touched; `null` when the server deleted it. */
+  readonly row: Row | null;
+}
+
+export interface PresenceFrame {
+  readonly type: 'presence';
+  readonly v: number;
+  readonly topic: string;
+  readonly op: 'join' | 'leave' | 'update' | 'sync';
+  readonly members: readonly PresenceMember[];
+}
+
+export interface ReconnectFrame {
+  readonly type: 'reconnect';
+  readonly v: number;
+  /** Server-assigned delay. Clients must honour it so a drain redistributes instead of stampeding. */
+  readonly afterMs: number;
+  readonly reason: 'drain' | 'overload' | 'rebalance';
+}
+
+export interface UpdateAvailableFrame {
+  readonly type: 'update-available';
+  readonly v: number;
+  readonly buildId: string;
+}
+
+export type Frame =
+  | HelloFrame
+  | SubscribeFrame
+  | SnapshotFrame
+  | PatchFrame
+  | MutateFrame
+  | AckFrame
+  | RebaseFrame
+  | PresenceFrame
+  | ReconnectFrame
+  | UpdateAvailableFrame;
+
+export type FrameKind = Frame['type'];
+
+export const FRAME_KINDS: readonly FrameKind[] = [
+  'hello',
+  'subscribe',
+  'snapshot',
+  'patch',
+  'mutate',
+  'ack',
+  'rebase',
+  'presence',
+  'reconnect',
+  'update-available',
+];
+
+export function encode(frame: Frame): string {
+  return JSON.stringify(frame);
+}
+
+/** Narrow `unknown` to a `Frame` or throw `X_PROTOCOL_VERSION`. No frame is trusted unvalidated. */
+export function decode(raw: string | Uint8Array): Frame {
+  const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw fail('frame is not JSON');
+  }
+  if (!isJsonObject(parsed)) throw fail('frame is not an object');
+  const version = parsed['v'];
+  if (version !== PROTOCOL_VERSION) {
+    throw new ProtocolVersionError({ got: version, expected: PROTOCOL_VERSION });
+  }
+  const kind = parsed['type'];
+  switch (kind) {
+    case 'hello':
+      return {
+        type: 'hello',
+        v: PROTOCOL_VERSION,
+        buildId: str(parsed, 'buildId'),
+        sessionId: nullableStr(parsed, 'sessionId'),
+        actorId: nullableStr(parsed, 'actorId'),
+        resume: list(parsed, 'resume').map(cursor),
+      };
+    case 'subscribe':
+      return {
+        type: 'subscribe',
+        v: PROTOCOL_VERSION,
+        op: pick(parsed, 'op', ['add', 'drop'] as const),
+        sid: str(parsed, 'sid'),
+        target: target(parsed['target']),
+      };
+    case 'snapshot':
+      return {
+        type: 'snapshot',
+        v: PROTOCOL_VERSION,
+        sid: str(parsed, 'sid'),
+        rows: list(parsed, 'rows').map(row),
+        cursor: cursor(parsed['cursor']),
+      };
+    case 'patch':
+      return {
+        type: 'patch',
+        v: PROTOCOL_VERSION,
+        sid: str(parsed, 'sid'),
+        patches: list(parsed, 'patches').map(patch),
+        lsn: str(parsed, 'lsn'),
+      };
+    case 'mutate':
+      return {
+        type: 'mutate',
+        v: PROTOCOL_VERSION,
+        key: str(parsed, 'key'),
+        seq: num(parsed, 'seq'),
+        name: str(parsed, 'name'),
+        input: parsed['input'] ?? null,
+      };
+    case 'ack':
+      return {
+        type: 'ack',
+        v: PROTOCOL_VERSION,
+        ref: str(parsed, 'ref'),
+        lsn: nullableStr(parsed, 'lsn'),
+        error: wireError(parsed['error']),
+      };
+    case 'rebase':
+      return {
+        type: 'rebase',
+        v: PROTOCOL_VERSION,
+        key: str(parsed, 'key'),
+        entity: str(parsed, 'entity'),
+        strategy: pick(parsed, 'strategy', ['server-wins', 'last-write-wins', 'custom'] as const),
+        row: parsed['row'] === null ? null : row(parsed['row']),
+      };
+    case 'presence':
+      return {
+        type: 'presence',
+        v: PROTOCOL_VERSION,
+        topic: str(parsed, 'topic'),
+        op: pick(parsed, 'op', ['join', 'leave', 'update', 'sync'] as const),
+        members: list(parsed, 'members').map(member),
+      };
+    case 'reconnect':
+      return {
+        type: 'reconnect',
+        v: PROTOCOL_VERSION,
+        afterMs: num(parsed, 'afterMs'),
+        reason: pick(parsed, 'reason', ['drain', 'overload', 'rebalance'] as const),
+      };
+    case 'update-available':
+      return { type: 'update-available', v: PROTOCOL_VERSION, buildId: str(parsed, 'buildId') };
+    default:
+      throw fail(`unknown frame type ${JSON.stringify(kind)}`);
+  }
+}
+
+/** Project any thrown value onto the wire without losing the error contract's three fields. */
+export function toWireError(error: unknown): WireError {
+  const shape = error as { code?: unknown; cause?: unknown; fix?: unknown; docs?: unknown } | null;
+  const code = typeof shape?.code === 'string' ? shape.code : 'X_PROTOCOL_VERSION';
+  const cause = typeof shape?.cause === 'string' ? shape.cause : String(error);
+  const fix = typeof shape?.fix === 'string' ? shape.fix : 'x doctor realtime';
+  return typeof shape?.docs === 'string'
+    ? { code, cause, fix, docs: shape.docs }
+    : { code, cause, fix };
+}
+
+function fail(detail: string): ProtocolVersionError {
+  return new ProtocolVersionError({ got: detail, expected: PROTOCOL_VERSION, detail });
+}
+
+function str(obj: JsonObject, key: string): string {
+  const value = obj[key];
+  if (typeof value !== 'string') throw fail(`field "${key}" must be a string`);
+  return value;
+}
+
+function nullableStr(obj: JsonObject, key: string): string | null {
+  const value = obj[key];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw fail(`field "${key}" must be a string or null`);
+  return value;
+}
+
+function num(obj: JsonObject, key: string): number {
+  const value = obj[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw fail(`field "${key}" must be a finite number`);
+  }
+  return value;
+}
+
+function pick<T extends string>(obj: JsonObject, key: string, allowed: readonly T[]): T {
+  const value = str(obj, key);
+  const found = allowed.find((candidate) => candidate === value);
+  if (found === undefined) throw fail(`field "${key}" must be one of ${allowed.join('|')}`);
+  return found;
+}
+
+function list(obj: JsonObject, key: string): JsonValue[] {
+  const value = obj[key];
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw fail(`field "${key}" must be an array`);
+  return value;
+}
+
+function row(value: unknown): Row {
+  if (!isRow(value)) throw fail('row must be an object with a string "id"');
+  return value;
+}
+
+function cursor(value: unknown): LiveCursor {
+  if (!isJsonObject(value)) throw fail('cursor must be an object');
+  return {
+    qid: str(value, 'qid'),
+    lsn: str(value, 'lsn'),
+    digest: str(value, 'digest'),
+    ids: list(value, 'ids').map((id) => {
+      if (typeof id !== 'string') throw fail('cursor.ids must be strings');
+      return id;
+    }),
+    count: num(value, 'count'),
+    at: num(value, 'at'),
+  };
+}
+
+function patch(value: unknown): RowPatch {
+  if (!isJsonObject(value)) throw fail('patch must be an object');
+  const base = {
+    op: pick(value, 'op', ['insert', 'update', 'delete'] as const),
+    id: str(value, 'id'),
+    row: value['row'] === null || value['row'] === undefined ? null : object(value['row']),
+    lsn: str(value, 'lsn'),
+  };
+  return value['index'] === undefined ? base : { ...base, index: num(value, 'index') };
+}
+
+function member(value: unknown): PresenceMember {
+  if (!isJsonObject(value)) throw fail('presence member must be an object');
+  return {
+    id: str(value, 'id'),
+    actorId: nullableStr(value, 'actorId'),
+    meta: object(value['meta'] ?? {}),
+    updatedAt: num(value, 'updatedAt'),
+  };
+}
+
+function target(value: unknown): SubscribeTarget {
+  if (!isJsonObject(value)) throw fail('subscribe.target must be an object');
+  const kind = pick(value, 'kind', ['topic', 'query'] as const);
+  if (kind === 'topic') return { kind, topic: str(value, 'topic') };
+  return {
+    kind,
+    qid: str(value, 'qid'),
+    input: value['input'] ?? null,
+    cursor:
+      value['cursor'] === null || value['cursor'] === undefined ? null : cursor(value['cursor']),
+  };
+}
+
+function object(value: unknown): JsonObject {
+  if (!isJsonObject(value)) throw fail('expected a JSON object');
+  return value;
+}
+
+function wireError(value: unknown): WireError | null {
+  if (value === null || value === undefined) return null;
+  if (!isJsonObject(value)) throw fail('ack.error must be an object or null');
+  const base = { code: str(value, 'code'), cause: str(value, 'cause'), fix: str(value, 'fix') };
+  return value['docs'] === undefined ? base : { ...base, docs: str(value, 'docs') };
+}

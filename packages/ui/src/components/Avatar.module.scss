@@ -1,0 +1,66 @@
+@use '../tokens' as t;
+
+.avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--avatar-size, 2rem);
+  block-size: var(--avatar-size, 2rem);
+  flex: none;
+  background: t.role('bg-soft');
+  color: t.role('fg-muted');
+  font-size: calc(var(--avatar-size, 2rem) * 0.4);
+  font-weight: t.weight(semibold);
+  line-height: 1;
+  overflow: clip;
+
+  > img {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+}
+
+.shape-circle {
+  border-radius: t.radius(full);
+}
+
+.shape-rounded {
+  border-radius: t.radius(md);
+}
+
+.initials {
+  user-select: none;
+}
+
+// The name is available to assistive tech without being painted twice.
+.name {
+  @include t.visually-hidden;
+}
+
+.status-online,
+.status-busy,
+.status-offline {
+  &::after {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    inline-size: 28%;
+    block-size: 28%;
+    border: 2px solid t.role('surface');
+    border-radius: t.radius(full);
+    content: '';
+  }
+}
+
+.status-online::after {
+  background: t.role('success');
+}
+
+.status-busy::after {
+  background: t.role('warning');
+}
+
+.status-offline::after {
+  background: t.role('fg-muted');
+}

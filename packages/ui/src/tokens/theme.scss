@@ -1,0 +1,19 @@
+// The one stylesheet that emits global custom properties. Import it once, in the
+// document shell, before any component CSS. Nothing else in the package emits
+// top-level CSS, so ordering is deterministic and dedupe is trivial.
+
+@use 'colors';
+@use 'motion';
+@use 'radius';
+@use 'shadow';
+@use 'space';
+@use 'typography';
+@use 'z';
+
+@include colors.emit;
+@include shadow.emit;
+@include space.emit;
+@include radius.emit;
+@include typography.emit;
+@include motion.emit;
+@include z.emit;

@@ -1,0 +1,9 @@
+@use '../tokens' as t;
+
+.grid {
+  display: grid;
+  grid-template-columns: var(--grid-tracks, 1fr);
+  column-gap: var(--grid-gap, #{t.space(4)});
+  row-gap: var(--grid-row-gap, #{t.space(4)});
+  list-style: none;
+}

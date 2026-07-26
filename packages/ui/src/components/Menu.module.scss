@@ -1,0 +1,63 @@
+@use '../tokens' as t;
+
+.anchor {
+  position: relative;
+  display: inline-block;
+}
+
+.menu {
+  @include t.surface('surface-raised', 'lg');
+  position: absolute;
+  z-index: t.z(dropdown);
+  inset-block-start: calc(100% + #{t.space(1)});
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 12rem;
+  padding: t.space(1);
+}
+
+.align-start {
+  inset-inline-start: 0;
+}
+
+.align-end {
+  inset-inline-end: 0;
+}
+
+.item {
+  @include t.focus-ring;
+  @include t.transition(background, color);
+  display: flex;
+  align-items: center;
+  gap: t.space(2);
+  padding-block: t.space(2);
+  padding-inline: t.space(3);
+  border-radius: t.radius(sm);
+  color: t.role('fg');
+  font-size: t.text(sm);
+  // Menu labels read from the start edge in both writing directions.
+  text-align: start;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: t.role('bg-soft');
+  }
+
+  &:disabled {
+    color: t.role('fg-muted');
+    cursor: not-allowed;
+  }
+}
+
+.destructive {
+  color: t.role('danger');
+
+  &:hover:not(:disabled) {
+    background: t.role('danger-soft');
+  }
+}
+
+.icon {
+  display: inline-flex;
+  color: t.role('fg-muted');
+}

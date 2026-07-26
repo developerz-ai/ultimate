@@ -1,0 +1,28 @@
+@use '../tokens' as t;
+
+.select {
+  min-inline-size: 9rem;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(2);
+  font-size: t.text(sm);
+}
+
+.link {
+  @include t.focus-ring;
+  border-radius: t.radius(sm);
+  color: t.role('fg-muted');
+  text-decoration: none;
+
+  &:hover {
+    color: t.role('accent');
+  }
+
+  &[aria-current='true'] {
+    color: t.role('fg-strong');
+    font-weight: t.weight(semibold);
+  }
+}

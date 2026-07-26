@@ -1,0 +1,89 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/action"
+    },
+    {
+      "path": "./packages/admin"
+    },
+    {
+      "path": "./packages/ai"
+    },
+    {
+      "path": "./packages/auth"
+    },
+    {
+      "path": "./packages/cache"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/create-ultimate"
+    },
+    {
+      "path": "./packages/db"
+    },
+    {
+      "path": "./packages/entity"
+    },
+    {
+      "path": "./packages/http"
+    },
+    {
+      "path": "./packages/i18n"
+    },
+    {
+      "path": "./packages/jobs"
+    },
+    {
+      "path": "./packages/mail"
+    },
+    {
+      "path": "./packages/manifest"
+    },
+    {
+      "path": "./packages/mcp"
+    },
+    {
+      "path": "./packages/money"
+    },
+    {
+      "path": "./packages/policy"
+    },
+    {
+      "path": "./packages/pwa"
+    },
+    {
+      "path": "./packages/query"
+    },
+    {
+      "path": "./packages/realtime"
+    },
+    {
+      "path": "./packages/render"
+    },
+    {
+      "path": "./packages/schema"
+    },
+    {
+      "path": "./packages/seo"
+    },
+    {
+      "path": "./packages/storage"
+    },
+    {
+      "path": "./packages/testing"
+    },
+    {
+      "path": "./packages/time"
+    },
+    {
+      "path": "./packages/ui"
+    }
+  ]
+}

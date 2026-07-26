@@ -1,0 +1,39 @@
+// Feed. The offline notice is `info`, not `danger`: being offline is a state, not a failure.
+
+.header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  margin-block-end: var(--space-6);
+}
+
+.new {
+  background-color: rgb(var(--color-accent));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-accent-fg));
+  font-weight: 600;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+  text-decoration: none;
+}
+
+.offline {
+  background-color: rgb(var(--color-info-soft));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-info));
+  margin-block-end: var(--space-4);
+  padding: var(--space-3);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.empty {
+  color: rgb(var(--color-fg-muted));
+  padding-block: var(--space-12);
+  text-align: center;
+}

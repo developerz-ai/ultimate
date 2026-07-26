@@ -1,0 +1,5 @@
+// One import for an app document shell: every custom property, then the reset.
+// Component modules add nothing global — they only ever emit their own classes.
+
+@use 'tokens/theme';
+@use 'tokens/reset';

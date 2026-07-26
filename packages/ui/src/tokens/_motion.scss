@@ -1,0 +1,36 @@
+// Durations + easings. Every animated rule ships behind the global
+// `prefers-reduced-motion` guard in `reset.scss`.
+
+$duration: (
+  instant: 0ms,
+  fast: 120ms,
+  base: 220ms,
+  slow: 400ms,
+  slower: 640ms,
+);
+
+$easing: (
+  out: cubic-bezier(0.16, 1, 0.3, 1),
+  in: cubic-bezier(0.5, 0, 0.75, 0),
+  in-out: cubic-bezier(0.65, 0, 0.35, 1),
+  spring: cubic-bezier(0.34, 1.56, 0.64, 1),
+);
+
+@mixin emit {
+  :root {
+    @each $name, $value in $duration {
+      --duration-#{$name}: #{$value};
+    }
+    @each $name, $value in $easing {
+      --easing-#{$name}: #{$value};
+    }
+  }
+}
+
+@function duration($name) {
+  @return var(--duration-#{$name});
+}
+
+@function easing($name) {
+  @return var(--easing-#{$name});
+}

@@ -1,0 +1,49 @@
+{
+  "name": "@ultimat3/cli",
+  "version": "0.0.1",
+  "description": "The `x` binary: new, dev, build, verify, generate, db, mcp, doctor, deploy",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "x": "./src/bin.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "dev": "bun run src/bin.ts dev"
+  },
+  "dependencies": {
+    "@ultimat3/action": "0.0.1",
+    "@ultimat3/core": "0.0.1",
+    "@ultimat3/db": "0.0.1",
+    "@ultimat3/entity": "0.0.1",
+    "@ultimat3/http": "0.0.1",
+    "@ultimat3/i18n": "0.0.1",
+    "@ultimat3/jobs": "0.0.1",
+    "@ultimat3/mcp": "0.0.1",
+    "@ultimat3/policy": "0.0.1",
+    "@ultimat3/query": "0.0.1",
+    "@ultimat3/render": "0.0.1",
+    "@ultimat3/testing": "0.0.1"
+  }
+}

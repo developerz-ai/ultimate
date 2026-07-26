@@ -1,0 +1,48 @@
+name: wiki
+
+# Mirrors wiki/ into the GitHub wiki on every push to main. The wiki is a projection of the repo,
+# never the source: edits made in the wiki UI are overwritten, so the review path stays the PR.
+
+on:
+  push:
+    branches: [main]
+    paths: ['wiki/**', '.github/workflows/wiki.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: detect wiki sources
+        id: wiki
+        run: |
+          if [ -d wiki ] && [ -n "$(ls -A wiki 2>/dev/null)" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: push to the wiki
+        if: steps.wiki.outputs.present == 'true'
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" .wiki
+          rsync -a --delete --exclude '.git' wiki/ .wiki/
+          cd .wiki
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "wiki: sync from ${GITHUB_SHA::7}"
+          git push

@@ -1,0 +1,53 @@
+# One image, one process per role. Each service differs only by ROLE and replica count.
+# `migrate` runs to completion before the rest start; it refuses to run concurrently with
+# a different build id.
+name: postly
+
+x-image: &image
+  image: ghcr.io/developerz-ai/postly:${BUILD_ID:?set BUILD_ID to the immutable build hash}
+  env_file: [../.env]
+  restart: unless-stopped
+  stop_grace_period: 30s # SIGTERM → drain in-flight requests, jobs, and sockets
+
+services:
+  migrate:
+    <<: *image
+    environment: [ROLE=migrate]
+    restart: 'no'
+
+  web:
+    <<: *image
+    environment: [ROLE=web]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 3 } # scales on RPS, stateless, behind the CDN
+    ports: ['3000:3000']
+
+  sync:
+    <<: *image
+    environment: [ROLE=sync]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 2 } # scales on concurrent WS; no sticky sessions
+    ports: ['3001:3000']
+
+  worker:
+    <<: *image
+    environment: [ROLE=worker, QUEUES=default,mail,digest]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 2 } # scales on queue depth
+
+  scheduler:
+    <<: *image
+    environment: [ROLE=scheduler]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 1 } # fixed 1; leadership is a Postgres advisory lock
+
+  replicator:
+    <<: *image
+    environment: [ROLE=replicator]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 1 } # exactly 1 per database — it owns the replication slot

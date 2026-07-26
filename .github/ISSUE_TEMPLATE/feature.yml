@@ -1,0 +1,54 @@
+name: ✨ Feature
+description: Propose something the framework should do.
+labels: [feature]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ultimate has one blessed path per job. A proposal that adds a second way to do something
+        that already works will be closed — that ambiguity is the tax agents pay.
+
+  - type: dropdown
+    id: primitive
+    attributes:
+      label: Which primitive does this belong to?
+      description: Everything in the framework is one of the eight. If it fits none, say so.
+      options: [entity, policy, action, mutator, query, job, route, task, none of these]
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What breaks or costs time today. Not the solution yet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: Proposed declaration
+      description: What the user writes. Match the canonical shapes in docs/idea/02-primitives.md.
+      render: typescript
+    validations:
+      required: true
+
+  - type: input
+    id: code
+    attributes:
+      label: New error code, if it can fail
+      description: Stable `X_*` code, with the cause and the exact fix command it would carry.
+      placeholder: X_QUERY_UNBOUNDED
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: axioms
+    attributes:
+      label: Axiom check
+      options:
+        - label: One way to do this — it does not add an alternative to something that works
+        - label: Enforced, not documented — it fails `x verify` when violated
+        - label: Machine-readable — it has a `--json` form and a fix command
+        - label: No platform primitive — it runs anywhere containers run

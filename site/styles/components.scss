@@ -1,0 +1,476 @@
+// Components: buttons, cards, the feature grid, code blocks, tables, callouts,
+// pills, the realtime ladder, and the theme toggle. Every colour is a token.
+
+// ── buttons ───────────────────────────────────────────────────────────────
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  background: rgb(var(--color-accent));
+  color: rgb(var(--color-on-accent));
+  font-size: var(--step-0);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--duration) ease-out,
+    border-color var(--duration) ease-out;
+}
+
+.btn:hover {
+  background: rgb(var(--color-accent-strong));
+  color: rgb(var(--color-on-accent));
+}
+
+.btn--ghost {
+  border-color: rgb(var(--color-line-strong));
+  background: transparent;
+  color: rgb(var(--color-fg-strong));
+}
+
+.btn--ghost:hover {
+  border-color: rgb(var(--color-accent));
+  background: rgb(var(--color-accent-soft));
+  color: rgb(var(--color-accent));
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+// ── theme toggle: the only interactive control on the site ─────────────────
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: var(--border);
+  border-radius: var(--radius-2);
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-fg-muted));
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: rgb(var(--color-accent));
+  color: rgb(var(--color-accent));
+}
+
+.theme-toggle svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+// Icon swap is CSS-only: the <html data-theme> attribute decides which is shown,
+// so the control is correct on first paint with no scripted DOM update.
+.theme-toggle__moon {
+  display: none;
+}
+
+html[data-theme="dark"] .theme-toggle__sun {
+  display: none;
+}
+
+html[data-theme="dark"] .theme-toggle__moon {
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .theme-toggle__sun {
+    display: none;
+  }
+
+  html:not([data-theme="light"]) .theme-toggle__moon {
+    display: block;
+  }
+}
+
+.site-nav__gh {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-2);
+}
+
+.site-nav__gh:hover {
+  background: rgb(var(--color-bg-soft));
+}
+
+// ── cards + grids ─────────────────────────────────────────────────────────
+.grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
+.grid--2 {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: var(--border);
+  border-radius: var(--radius-3);
+  background: rgb(var(--color-surface));
+  box-shadow: var(--shadow-1);
+}
+
+.card h3,
+.card h4 {
+  margin: 0;
+  font-size: var(--step-1);
+}
+
+.card p {
+  margin: 0;
+  color: rgb(var(--color-fg-muted));
+  font-size: var(--step--1);
+}
+
+.card code {
+  white-space: nowrap;
+}
+
+.card__kicker {
+  color: rgb(var(--color-fg-muted));
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+
+a.card {
+  text-decoration: none;
+  color: inherit;
+}
+
+a.card:hover {
+  border-color: rgb(var(--color-accent) / 0.6);
+  box-shadow: var(--shadow-2);
+}
+
+// The eight primitives grid — a monospace name plus one line of contract.
+.primitive {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: var(--border);
+  border-left: 3px solid rgb(var(--color-accent) / 0.55);
+  border-radius: var(--radius-2);
+  background: rgb(var(--color-surface));
+}
+
+.primitive__name {
+  color: rgb(var(--color-fg-strong));
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+
+.primitive p {
+  margin: 0;
+  color: rgb(var(--color-fg-muted));
+  font-size: var(--step--1);
+}
+
+// ── the realtime ladder ───────────────────────────────────────────────────
+.ladder {
+  display: grid;
+  gap: var(--space-3);
+  counter-reset: rung;
+}
+
+@media (min-width: 52rem) {
+  .ladder {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.rung {
+  position: relative;
+  padding: var(--space-4);
+  padding-top: var(--space-5);
+  border: var(--border);
+  border-radius: var(--radius-3);
+  background: rgb(var(--color-surface));
+}
+
+.rung::before {
+  counter-increment: rung;
+  content: "tier " counter(rung);
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-4);
+  color: rgb(var(--color-accent));
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.04em;
+}
+
+.rung h3 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--step-1);
+}
+
+.rung p {
+  margin: 0 0 var(--space-2);
+  color: rgb(var(--color-fg-muted));
+  font-size: var(--step--1);
+}
+
+// ── pills ─────────────────────────────────────────────────────────────────
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.1em 0.6em;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.pill--ok {
+  background: rgb(var(--color-ok-soft));
+  border-color: rgb(var(--color-ok) / 0.35);
+  color: rgb(var(--color-ok));
+}
+
+.pill--warn {
+  background: rgb(var(--color-warn-soft));
+  border-color: rgb(var(--color-warn) / 0.35);
+  color: rgb(var(--color-warn));
+}
+
+.pill--danger {
+  background: rgb(var(--color-danger-soft));
+  border-color: rgb(var(--color-danger) / 0.35);
+  color: rgb(var(--color-danger));
+}
+
+.pill--info {
+  background: rgb(var(--color-info-soft));
+  border-color: rgb(var(--color-info) / 0.35);
+  color: rgb(var(--color-info));
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.pill-row--spaced {
+  margin-top: var(--space-5);
+}
+
+// ── code blocks ───────────────────────────────────────────────────────────
+pre {
+  max-width: 100%;
+  padding: var(--space-4);
+  border: var(--border);
+  border-radius: var(--radius-2);
+  background: rgb(var(--color-code-bg));
+  // Wide code scrolls inside its own container; the page body never scrolls sideways.
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+pre code {
+  display: block;
+  min-width: 0;
+  color: rgb(var(--color-fg));
+  font-size: var(--step--1);
+  white-space: pre;
+}
+
+.code-figure {
+  margin: 0 0 var(--space-4);
+}
+
+.code-figure figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
+  background: rgb(var(--color-surface-alt));
+  color: rgb(var(--color-fg-muted));
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+
+.code-figure pre {
+  border-radius: 0 0 var(--radius-2) var(--radius-2);
+}
+
+// A terminal transcript: same box, prompt-coloured first token.
+.terminal {
+  border-color: rgb(var(--color-line-strong));
+  background: rgb(var(--color-surface-alt));
+}
+
+// ── tables ────────────────────────────────────────────────────────────────
+.table-scroll {
+  max-width: 100%;
+  margin-bottom: var(--space-4);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: var(--border);
+  border-radius: var(--radius-2);
+}
+
+table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: rgb(var(--color-surface-alt));
+  color: rgb(var(--color-fg-muted));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th,
+td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover td {
+  background: rgb(var(--color-bg-soft));
+}
+
+td code {
+  white-space: nowrap;
+}
+
+// ── callouts ──────────────────────────────────────────────────────────────
+.callout {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: var(--border);
+  border-left: 3px solid rgb(var(--color-info));
+  border-radius: var(--radius-2);
+  background: rgb(var(--color-info-soft));
+}
+
+.callout > :last-child {
+  margin-bottom: 0;
+}
+
+.callout__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: rgb(var(--color-info));
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.callout--warn {
+  border-left-color: rgb(var(--color-warn));
+  background: rgb(var(--color-warn-soft));
+}
+
+.callout--warn .callout__label {
+  color: rgb(var(--color-warn));
+}
+
+.callout--ok {
+  border-left-color: rgb(var(--color-ok));
+  background: rgb(var(--color-ok-soft));
+}
+
+.callout--ok .callout__label {
+  color: rgb(var(--color-ok));
+}
+
+blockquote {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-1) var(--space-4);
+  border-left: 3px solid rgb(var(--color-accent) / 0.5);
+  color: rgb(var(--color-fg-muted));
+}
+
+blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+// ── hero ──────────────────────────────────────────────────────────────────
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+// A grid item's default `min-width: auto` lets a wide code block stretch its track and
+// push the page sideways. Every grid child opts out of that, once.
+.hero > *,
+.grid > *,
+.ladder > *,
+.site-footer__grid > * {
+  min-width: 0;
+}
+
+@media (min-width: 64rem) {
+  .hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.hero h1 {
+  margin-bottom: var(--space-4);
+  max-width: 22ch;
+}
+
+.hero__lede {
+  max-width: 46ch;
+  color: rgb(var(--color-fg-muted));
+  font-size: var(--step-1);
+}
+
+// ── section headings that link to themselves ──────────────────────────────
+.heading-anchor {
+  margin-left: 0.35em;
+  color: rgb(var(--color-fg-muted));
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+}
+
+h2:hover .heading-anchor,
+h3:hover .heading-anchor,
+.heading-anchor:focus-visible {
+  opacity: 1;
+}

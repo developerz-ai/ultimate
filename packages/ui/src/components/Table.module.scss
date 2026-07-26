@@ -1,0 +1,77 @@
+@use '../tokens' as t;
+
+// Overflow is contained here, never on <body>.
+.scroller {
+  @include t.custom-scrollbar;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(lg);
+  background: t.role('surface');
+
+  &:focus-visible {
+    outline: 2px solid t.role('accent');
+    outline-offset: -2px;
+  }
+}
+
+.table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: t.text(sm);
+  // Cells decide their own width; the scroller handles the excess.
+  white-space: nowrap;
+
+  :global(th),
+  :global(td) {
+    @include t.padding-inline(t.space(4));
+    // Logical alignment, so numbers stay trailing in both directions.
+    text-align: start;
+    border-block-end: 1px solid t.role('line');
+    vertical-align: middle;
+  }
+
+  :global(th) {
+    color: t.role('fg-strong');
+    font-weight: t.weight(semibold);
+    background: t.role('bg-soft');
+  }
+
+  :global(tbody tr:last-child td) {
+    border-block-end: 0;
+  }
+}
+
+.caption {
+  @include t.padding-inline(t.space(4));
+  padding-block: t.space(3);
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+  text-align: start;
+  caption-side: top;
+}
+
+.srOnly {
+  @include t.visually-hidden;
+}
+
+.density-comfortable :global(th),
+.density-comfortable :global(td) {
+  padding-block: t.space(3);
+}
+
+.density-compact :global(th),
+.density-compact :global(td) {
+  padding-block: t.space(1);
+}
+
+.sticky :global(thead th) {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: t.z(sticky);
+}
+
+.striped :global(tbody tr:nth-child(even) td) {
+  background: t.role('bg-soft', 0.6);
+}

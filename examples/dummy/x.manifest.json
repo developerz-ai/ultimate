@@ -1,0 +1,690 @@
+{
+  "$comment": "GENERATED every build by `x build`. Never hand-edited — drift fails `x verify` (X_MANIFEST_STALE). Keys are sorted so a diff is a real change, not a reordering.",
+  "schemaVersion": 1,
+  "app": "postly",
+  "buildId": "8f2a1c4d9e7b3056",
+  "ultimate": "0.0.1",
+  "budgets": {
+    "app/feed": {
+      "js": "60kb",
+      "lcp": 2000,
+      "measuredJs": "41kb",
+      "measuredLcp": 1420
+    },
+    "app/posts/[id]": {
+      "js": "40kb",
+      "lcp": 2000,
+      "measuredJs": "28kb",
+      "measuredLcp": 1180
+    },
+    "app/posts/new": {
+      "js": "0kb",
+      "lcp": 1200,
+      "measuredJs": "0kb",
+      "measuredLcp": 540
+    },
+    "app/settings": {
+      "js": "45kb",
+      "lcp": 1800,
+      "measuredJs": "33kb",
+      "measuredLcp": 990
+    },
+    "site/blog/[slug]": {
+      "js": "0kb",
+      "lcp": 1800,
+      "measuredJs": "0kb",
+      "measuredLcp": 780
+    },
+    "site/blog/index": {
+      "js": "0kb",
+      "lcp": 1500,
+      "measuredJs": "0kb",
+      "measuredLcp": 660
+    },
+    "site/index": {
+      "js": "0kb",
+      "lcp": 1200,
+      "measuredJs": "0kb",
+      "measuredLcp": 610
+    },
+    "site/offline": {
+      "js": "8kb",
+      "lcp": 1000,
+      "measuredJs": "6kb",
+      "measuredLcp": 240
+    },
+    "site/pricing": {
+      "js": "0kb",
+      "lcp": 1500,
+      "measuredJs": "0kb",
+      "measuredLcp": 700
+    }
+  },
+  "cacheTags": {
+    "blog": {
+      "kind": "derived",
+      "upstream": ["post"]
+    },
+    "comment": {
+      "kind": "entity",
+      "table": "comments"
+    },
+    "feed": {
+      "kind": "derived",
+      "upstream": ["post", "like"]
+    },
+    "like": {
+      "kind": "entity",
+      "table": "likes"
+    },
+    "member": {
+      "kind": "entity",
+      "table": "members"
+    },
+    "org": {
+      "kind": "entity",
+      "table": "orgs"
+    },
+    "plan": {
+      "kind": "entity",
+      "table": "plans"
+    },
+    "post": {
+      "kind": "entity",
+      "table": "posts"
+    }
+  },
+  "entities": [
+    {
+      "name": "comments",
+      "table": "comments",
+      "tenant": "orgId",
+      "primaryKey": ["id"],
+      "columns": ["id", "orgId", "postId", "authorId", "body", "createdAt"],
+      "invariants": ["comment_body_present"],
+      "indexes": ["comments_post_id_created_at_idx"]
+    },
+    {
+      "name": "likes",
+      "table": "likes",
+      "tenant": "orgId",
+      "primaryKey": ["postId", "memberId"],
+      "columns": ["orgId", "postId", "memberId", "createdAt"],
+      "invariants": [],
+      "indexes": ["likes_member_id_idx"]
+    },
+    {
+      "name": "members",
+      "table": "members",
+      "tenant": "orgId",
+      "primaryKey": ["id"],
+      "columns": [
+        "id",
+        "orgId",
+        "userId",
+        "email",
+        "name",
+        "role",
+        "tz",
+        "locale",
+        "theme",
+        "digestOptIn",
+        "createdAt"
+      ],
+      "invariants": [
+        "member_email_shape",
+        "member_locale_supported",
+        "member_tz_supported",
+        "member_unique_per_org"
+      ],
+      "indexes": ["members_org_id_role_idx", "members_tz_idx"]
+    },
+    {
+      "name": "orgs",
+      "table": "orgs",
+      "tenant": null,
+      "primaryKey": ["id"],
+      "columns": ["id", "slug", "name", "planCode", "billingCurrency", "createdAt", "updatedAt"],
+      "invariants": ["org_name_present", "org_slug_shape"],
+      "indexes": ["orgs_plan_code_idx"]
+    },
+    {
+      "name": "plans",
+      "table": "plans",
+      "tenant": null,
+      "primaryKey": ["code", "currency"],
+      "columns": ["code", "currency", "monthly", "seats"],
+      "money": ["monthly"],
+      "invariants": [
+        "plan_currency_matches_price",
+        "plan_price_non_negative",
+        "plan_seats_positive"
+      ],
+      "indexes": []
+    },
+    {
+      "name": "posts",
+      "table": "posts",
+      "tenant": "orgId",
+      "primaryKey": ["id"],
+      "columns": [
+        "id",
+        "orgId",
+        "authorId",
+        "slug",
+        "title",
+        "excerpt",
+        "body",
+        "coverUrl",
+        "status",
+        "likeCount",
+        "publishedAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "invariants": [
+        "post_like_count_non_negative",
+        "post_publish_coherent",
+        "post_slug_shape",
+        "post_slug_unique_per_org"
+      ],
+      "indexes": ["posts_author_id_idx", "posts_feed_idx"],
+      "replicaIdentity": "full"
+    }
+  ],
+  "actions": [
+    {
+      "name": "createComment",
+      "file": "apps/web/app/posts/actions.ts",
+      "route": "POST /_x/action/create-comment",
+      "policy": "post:read",
+      "invalidates": ["comment", "post"],
+      "mcp": {
+        "expose": true,
+        "tool": "postly.createComment"
+      }
+    },
+    {
+      "name": "createPost",
+      "file": "apps/web/app/posts/actions.ts",
+      "route": "POST /_x/action/create-post",
+      "policy": "post:create",
+      "invalidates": ["feed"],
+      "mcp": {
+        "expose": true,
+        "tool": "postly.createPost"
+      }
+    },
+    {
+      "name": "inviteMember",
+      "file": "apps/web/app/orgs/actions.ts",
+      "route": "POST /_x/action/invite-member",
+      "policy": "org:invite",
+      "invalidates": ["member", "org"],
+      "enqueues": ["sendInvite"],
+      "mcp": {
+        "expose": true,
+        "tool": "postly.inviteMember"
+      }
+    },
+    {
+      "name": "publishPost",
+      "file": "apps/web/app/posts/actions.ts",
+      "route": "POST /_x/action/publish-post",
+      "policy": "post:publish",
+      "invalidates": ["post", "feed"],
+      "enqueues": ["notifySubscribers"],
+      "mcp": {
+        "expose": true,
+        "tool": "postly.publishPost"
+      }
+    },
+    {
+      "name": "savePreferences",
+      "file": "apps/web/app/settings-actions.ts",
+      "route": "POST /_x/action/save-preferences",
+      "policy": "member:self",
+      "invalidates": ["member"],
+      "mcp": {
+        "expose": true,
+        "tool": "postly.savePreferences"
+      }
+    },
+    {
+      "name": "upgradePlan",
+      "file": "apps/web/app/orgs/actions.ts",
+      "route": "POST /_x/action/upgrade-plan",
+      "policy": "org:administer",
+      "invalidates": ["org", "plan"],
+      "money": true,
+      "mcp": {
+        "expose": true,
+        "tool": "postly.upgradePlan"
+      }
+    }
+  ],
+  "mutators": [
+    {
+      "name": "toggleLike",
+      "file": "apps/web/app/posts/mutator.ts",
+      "route": "POST /_x/action/toggle-like",
+      "policy": "post:like",
+      "conflict": "server-wins",
+      "invalidates": ["post", "feed"],
+      "offlineQueue": "mutations",
+      "mcp": {
+        "expose": true,
+        "tool": "postly.toggleLike"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "name": "liveFeed",
+      "file": "apps/web/app/posts/live.ts",
+      "policy": "feed:read",
+      "live": true,
+      "persist": true,
+      "tables": ["posts"],
+      "tags": ["feed"],
+      "bounded": {
+        "orderBy": "createdAt",
+        "limit": 50
+      },
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "postById",
+      "file": "apps/web/app/posts/live.ts",
+      "policy": "post:read",
+      "live": false,
+      "tables": ["posts", "comments"],
+      "tags": ["post", "comment"],
+      "ttl": "1m",
+      "mcp": {
+        "expose": true,
+        "tool": "postly.postById"
+      }
+    },
+    {
+      "name": "postBySlug",
+      "file": "apps/web/app/posts/live.ts",
+      "policy": "feed:read",
+      "live": false,
+      "tables": ["posts"],
+      "tags": ["post"],
+      "ttl": "5m",
+      "mcp": {
+        "expose": true,
+        "tool": "postly.postBySlug"
+      }
+    },
+    {
+      "name": "publicPost",
+      "file": "apps/web/app/posts/live.ts",
+      "policy": "post:read-public",
+      "live": false,
+      "tables": ["posts"],
+      "tags": ["blog"],
+      "ttl": "1h",
+      "mcp": {
+        "expose": true,
+        "tool": "postly.publicPost"
+      }
+    },
+    {
+      "name": "publicPostSlugs",
+      "file": "apps/web/app/posts/live.ts",
+      "policy": "post:read-public",
+      "live": false,
+      "tables": ["posts"],
+      "tags": ["blog"],
+      "ttl": "1h",
+      "mcp": {
+        "expose": false
+      }
+    }
+  ],
+  "llm": [
+    {
+      "name": "summarize",
+      "file": "apps/web/app/posts/prompts/summarize.ts",
+      "model": "claude-sonnet-4-5",
+      "prompt": "apps/web/app/posts/prompts/summarize.v3.md",
+      "promptVersion": 3,
+      "policy": "feed:read",
+      "evals": "apps/web/app/posts/prompts/summarize.eval.test.ts",
+      "budget": {
+        "tokensIn": 8000,
+        "costPerCall": {
+          "minor": 5,
+          "currency": "USD"
+        }
+      },
+      "mcp": {
+        "expose": true,
+        "tool": "postly.summarize"
+      }
+    }
+  ],
+  "jobs": [
+    {
+      "name": "deliverDigest",
+      "file": "apps/web/app/digest/jobs.ts",
+      "queue": "mail",
+      "idempotencyKey": "digest:{memberId}:{localDate}",
+      "steps": ["load-member", "load-posts", "send"],
+      "retry": {
+        "attempts": 4,
+        "backoff": "exponential"
+      },
+      "concurrency": {
+        "key": "memberId",
+        "limit": 1
+      }
+    },
+    {
+      "name": "notifySubscribers",
+      "file": "apps/web/app/posts/jobs.ts",
+      "queue": "mail",
+      "idempotencyKey": "notify:{postId}",
+      "steps": ["load-post", "announce", "load-recipients", "send"],
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "concurrency": {
+        "key": "postId",
+        "limit": 1
+      }
+    },
+    {
+      "name": "onboardOrg",
+      "file": "apps/web/app/orgs/jobs.ts",
+      "queue": "default",
+      "idempotencyKey": "onboard:{orgId}",
+      "steps": ["provision", "welcome-email", "sleep:3d", "nudge"],
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      }
+    },
+    {
+      "name": "sendDigest",
+      "file": "apps/web/app/digest/jobs.ts",
+      "queue": "digest",
+      "idempotencyKey": "digest:{runDate}",
+      "steps": ["load-recipients", "schedule:{zone}"],
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      }
+    },
+    {
+      "name": "sendInvite",
+      "file": "apps/web/app/orgs/jobs.ts",
+      "queue": "mail",
+      "idempotencyKey": "invite:{memberId}",
+      "steps": ["load-member", "send"],
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "name": "nightlyDigest",
+      "file": "apps/web/api/tasks.ts",
+      "cron": "0 3 * * *",
+      "tz": "UTC",
+      "enqueues": ["sendDigest"],
+      "nextRun": "2026-07-27T03:00:00.000Z"
+    }
+  ],
+  "policies": [
+    {
+      "name": "feed:read",
+      "file": "apps/web/app/posts/policy.ts",
+      "rowFilter": true,
+      "usedBy": ["liveFeed", "postBySlug", "summarize"]
+    },
+    {
+      "name": "member:self",
+      "file": "apps/web/app/orgs/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["savePreferences", "postly.digestPreview"]
+    },
+    {
+      "name": "org:administer",
+      "file": "apps/web/app/orgs/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["upgradePlan", "postly.planQuote", "postly.seatReport", "admin"]
+    },
+    {
+      "name": "org:invite",
+      "file": "apps/web/app/orgs/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["inviteMember"]
+    },
+    {
+      "name": "post:create",
+      "file": "apps/web/app/posts/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["createPost"]
+    },
+    {
+      "name": "post:like",
+      "file": "apps/web/app/posts/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["toggleLike"]
+    },
+    {
+      "name": "post:publish",
+      "file": "apps/web/app/posts/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["publishPost", "admin"]
+    },
+    {
+      "name": "post:read",
+      "file": "apps/web/app/posts/policy.ts",
+      "rowFilter": false,
+      "usedBy": ["postById", "createComment"]
+    },
+    {
+      "name": "post:read-public",
+      "file": "apps/web/shared/policies.ts",
+      "anonymous": true,
+      "rowFilter": false,
+      "usedBy": ["publicPost", "publicPostSlugs"]
+    }
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "file": "apps/web/site/index.tsx",
+      "surface": "site",
+      "render": "static",
+      "hydrate": "never",
+      "offline": "precache",
+      "indexable": true,
+      "meta": {
+        "title": true,
+        "description": true,
+        "og": true,
+        "ld": "SoftwareApplication"
+      }
+    },
+    {
+      "path": "/blog",
+      "file": "apps/web/site/blog/index.tsx",
+      "surface": "site",
+      "render": "isr",
+      "hydrate": "never",
+      "offline": "runtime",
+      "revalidate": {
+        "tags": ["blog"]
+      },
+      "indexable": true,
+      "feed": ["rss", "atom", "json"],
+      "meta": {
+        "title": true,
+        "description": true,
+        "og": true,
+        "ld": "BreadcrumbList"
+      }
+    },
+    {
+      "path": "/blog/[slug]",
+      "file": "apps/web/site/blog/[slug].tsx",
+      "surface": "site",
+      "render": "isr",
+      "hydrate": "never",
+      "offline": "runtime",
+      "revalidate": {
+        "tags": ["blog"]
+      },
+      "prerender": {
+        "query": "publicPostSlugs",
+        "count": 3
+      },
+      "indexable": true,
+      "meta": {
+        "title": true,
+        "description": true,
+        "og": true,
+        "ld": "Article"
+      }
+    },
+    {
+      "path": "/feed",
+      "file": "apps/web/app/feed.tsx",
+      "surface": "app",
+      "render": "stream",
+      "hydrate": "idle",
+      "offline": "runtime",
+      "indexable": false,
+      "live": ["liveFeed"],
+      "meta": {
+        "title": true,
+        "description": false,
+        "og": false,
+        "ld": null
+      }
+    },
+    {
+      "path": "/offline",
+      "file": "apps/web/site/offline.tsx",
+      "surface": "site",
+      "render": "static",
+      "hydrate": "idle",
+      "offline": "precache",
+      "indexable": false,
+      "pwaFallback": true,
+      "meta": {
+        "title": true,
+        "description": true,
+        "og": false,
+        "ld": null
+      }
+    },
+    {
+      "path": "/posts/[id]",
+      "file": "apps/web/app/posts/[id].tsx",
+      "surface": "app",
+      "render": "ssr",
+      "hydrate": "interaction",
+      "offline": "network-only",
+      "indexable": false,
+      "meta": {
+        "title": true,
+        "description": true,
+        "og": false,
+        "ld": null
+      }
+    },
+    {
+      "path": "/posts/new",
+      "file": "apps/web/app/posts/new.tsx",
+      "surface": "app",
+      "render": "stream",
+      "hydrate": "never",
+      "offline": "runtime",
+      "indexable": false,
+      "meta": {
+        "title": true,
+        "description": false,
+        "og": false,
+        "ld": null
+      }
+    },
+    {
+      "path": "/pricing",
+      "file": "apps/web/site/pricing.tsx",
+      "surface": "site",
+      "render": "isr",
+      "hydrate": "never",
+      "offline": "runtime",
+      "revalidate": {
+        "tags": ["plan"]
+      },
+      "indexable": true,
+      "meta": {
+        "title": true,
+        "description": true,
+        "og": true,
+        "ld": "Product"
+      }
+    },
+    {
+      "path": "/settings",
+      "file": "apps/web/app/settings.tsx",
+      "surface": "app",
+      "render": "spa",
+      "hydrate": "idle",
+      "offline": "precache",
+      "indexable": false,
+      "meta": {
+        "title": true,
+        "description": false,
+        "og": false,
+        "ld": null
+      }
+    }
+  ],
+  "mcpTools": [
+    "postly.createComment",
+    "postly.createPost",
+    "postly.digestPreview",
+    "postly.inviteMember",
+    "postly.planQuote",
+    "postly.postById",
+    "postly.postBySlug",
+    "postly.publicPost",
+    "postly.publishPost",
+    "postly.savePreferences",
+    "postly.seatReport",
+    "postly.summarize",
+    "postly.toggleLike",
+    "postly.upgradePlan"
+  ],
+  "i18n": {
+    "default": "en",
+    "locales": ["en", "es"],
+    "keys": 143,
+    "missing": []
+  },
+  "pwa": {
+    "fallback": "/offline",
+    "precacheBytes": 184320,
+    "precacheRoutes": ["/", "/offline", "/settings"],
+    "backgroundSync": ["mutations"]
+  },
+  "migrations": {
+    "latest": "0001_init",
+    "applied": ["0001_init"],
+    "drift": false
+  }
+}

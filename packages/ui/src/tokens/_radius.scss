@@ -1,0 +1,23 @@
+// Corner radii. `pill` for chips and switches, `full` for avatars.
+
+$radius: (
+  none: 0,
+  sm: 0.25rem,
+  md: 0.5rem,
+  lg: 0.75rem,
+  xl: 1rem,
+  pill: 999px,
+  full: 50%,
+);
+
+@mixin emit {
+  :root {
+    @each $name, $value in $radius {
+      --radius-#{$name}: #{$value};
+    }
+  }
+}
+
+@function radius($name) {
+  @return var(--radius-#{$name});
+}

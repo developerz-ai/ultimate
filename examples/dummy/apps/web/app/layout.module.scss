@@ -1,0 +1,49 @@
+// Authed shell. Sticky bar, one grid, all colours from tokens so the theme toggle is free.
+
+.shell {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  min-block-size: 100dvh;
+}
+
+.bar {
+  align-items: center;
+  background-color: rgb(var(--color-surface));
+  border-block-end: 1px solid rgb(var(--color-line));
+  display: flex;
+  gap: var(--space-6);
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-header);
+}
+
+.brand {
+  color: rgb(var(--color-fg-strong));
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-4);
+  margin-inline-end: auto;
+
+  a {
+    color: rgb(var(--color-fg-muted));
+    text-decoration: none;
+
+    &:hover {
+      color: rgb(var(--color-fg));
+    }
+  }
+}
+
+.main {
+  margin-inline: auto;
+  max-inline-size: 56rem;
+  padding-block: var(--space-8);
+  padding-inline: var(--space-4);
+  inline-size: 100%;
+}

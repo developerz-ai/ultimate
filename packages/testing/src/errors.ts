@@ -1,0 +1,59 @@
+// The X_* codes owned by @ultimat3/testing. A test failure has to be as actionable as a runtime
+// failure — the fix line here is the mock to add, the service to start, or the seed to freeze.
+import { UltimateError } from '@ultimat3/core';
+
+export const TESTING_ERROR_CODES = [
+  'X_TEST_NETWORK_SEALED',
+  'X_TEST_DB_UNAVAILABLE',
+  'X_TEST_NONDETERMINISTIC',
+] as const;
+
+export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
+
+const docsFor = (code: TestingErrorCode): string => `https://ultimate.dev/errors/${code}`;
+
+/** A test reached the network without a mock or an allowlist entry. Always a bug, never a flake. */
+export class NetworkSealedError extends UltimateError {
+  constructor(input: { url: string; method: string; allowed: readonly string[] }) {
+    super({
+      code: 'X_TEST_NETWORK_SEALED',
+      cause: `${input.method} ${input.url} was not mocked (allowed hosts: ${
+        input.allowed.length > 0 ? input.allowed.join(', ') : 'none'
+      })`,
+      fix: `mockFetch('${input.url}', () => new Response('{}')) — or allowHost('${hostOf(input.url)}') if it must be real`,
+      docs: docsFor('X_TEST_NETWORK_SEALED'),
+    });
+  }
+}
+
+/** No Postgres and no PGlite: the harness cannot give the test a database to clone. */
+export class TestDatabaseUnavailableError extends UltimateError {
+  constructor(input: { cause: string }) {
+    super({
+      code: 'X_TEST_DB_UNAVAILABLE',
+      cause: input.cause,
+      fix: 'x dev (embedded Postgres), or set TEST_DATABASE_URL to a running Postgres',
+      docs: docsFor('X_TEST_DB_UNAVAILABLE'),
+    });
+  }
+}
+
+/** Two runs of the same test produced different values. The seed or the clock is not frozen. */
+export class NondeterministicError extends UltimateError {
+  constructor(input: { what: string; first: string; second: string }) {
+    super({
+      code: 'X_TEST_NONDETERMINISTIC',
+      cause: `${input.what} produced "${input.first}" then "${input.second}"`,
+      fix: 'wrap the test in frozenClock() / seededRandom(), or remove the wall-clock read',
+      docs: docsFor('X_TEST_NONDETERMINISTIC'),
+    });
+  }
+}
+
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}

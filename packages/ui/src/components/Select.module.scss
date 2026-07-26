@@ -1,0 +1,51 @@
+@use '../tokens' as t;
+
+.wrap {
+  @include t.control;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+
+  &:focus-within {
+    border-color: t.role('accent');
+  }
+}
+
+.select {
+  flex: 1;
+  min-inline-size: 0;
+  // Room for the chevron on the trailing side, whichever side that is.
+  padding-inline-end: t.space(5);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  appearance: none;
+}
+
+// A CSS chevron avoids shipping an icon font or an inline SVG per select.
+.chevron {
+  position: absolute;
+  inset-inline-end: t.space(3);
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-inline-end: 2px solid t.role('fg-muted');
+  border-block-end: 2px solid t.role('fg-muted');
+  transform: translateY(-2px) rotate(45deg);
+  pointer-events: none;
+}
+
+.size-sm {
+  padding-block: t.space(1);
+  font-size: t.text(sm);
+}
+
+.size-md {
+  padding-block: t.space(2);
+}
+
+.size-lg {
+  padding-block: t.space(3);
+  font-size: t.text(lg);
+}

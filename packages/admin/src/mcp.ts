@@ -1,0 +1,177 @@
+// The AI-first surface: the admin's resources and actions as MCP tools, wired through
+// `defineAppMcp` so the user's agents drive the user's app. Same authz, same audit, same
+// confirmation rules as the buttons — this file adds a transport, not a second back door.
+
+import { defineAppMcp } from '@ultimat3/mcp';
+import { invokeAdminAction } from './action-gate';
+import type { AdminApp } from './admin';
+import type { AdminActor } from './authz';
+import {
+  adminCreate,
+  adminDestroy,
+  adminDetail,
+  adminList,
+  adminUpdate,
+  type CrudCtx,
+  type CrudResult,
+} from './crud';
+import { type AdminMcpTool, adminMcpTools } from './mcp-tools';
+import { confirmationToken } from './permissions';
+import type { AdminAction, AdminRow } from './registry';
+import { adminSearch } from './search';
+
+export type McpInput = Readonly<Record<string, unknown>>;
+
+export type AdminToolResult =
+  | { readonly ok: true; readonly data: unknown }
+  | { readonly ok: false; readonly error: string; readonly reason: string };
+
+const str = (input: McpInput, key: string): string => {
+  const value = input[key];
+  return typeof value === 'string' ? value : '';
+};
+
+const num = (input: McpInput, key: string): number | undefined => {
+  const value = input[key];
+  return typeof value === 'number' ? value : undefined;
+};
+
+const withoutKeys = (input: McpInput, keys: readonly string[]): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!keys.includes(key)) out[key] = value;
+  }
+  return out;
+};
+
+const actionByName = (app: AdminApp, name: string): AdminAction | undefined =>
+  [...app.resources.flatMap((resource) => resource.actions), ...app.globalActions].find(
+    (action) => action.name === name,
+  );
+
+/**
+ * Dispatch one tool call. The tool must be in this actor's allowed list — resolving the name
+ * against `adminMcpTools()` is what makes "the agent sees what it may do" true rather than
+ * aspirational.
+ */
+export async function callAdminTool(
+  app: AdminApp,
+  ctx: CrudCtx,
+  name: string,
+  input: McpInput,
+): Promise<AdminToolResult> {
+  const tool = adminMcpTools(app, ctx).find((candidate) => candidate.name === name);
+  if (tool === undefined) {
+    return {
+      ok: false,
+      error: 'X_ADMIN_TOOL_FORBIDDEN',
+      reason: `tool "${name}" is not available to actor ${ctx.actor.id}`,
+    };
+  }
+  return dispatch(app, ctx, tool, input);
+}
+
+async function dispatch(
+  app: AdminApp,
+  ctx: CrudCtx,
+  tool: AdminMcpTool,
+  input: McpInput,
+): Promise<AdminToolResult> {
+  if (tool.kind === 'search') {
+    const result = await adminSearch({ term: str(input, 'term'), resources: app.resources, ctx });
+    return { ok: true, data: result };
+  }
+
+  if (tool.kind === 'action') {
+    const action = actionByName(app, tool.action ?? '');
+    if (action === undefined) {
+      return { ok: false, error: 'X_ADMIN_TOOL_FORBIDDEN', reason: 'action is not registered' };
+    }
+    const id = str(input, 'id');
+    const result = await invokeAdminAction({
+      action,
+      input: withoutKeys(input, ['confirmation']),
+      actor: ctx.actor,
+      authz: ctx.authz,
+      audit: ctx.audit,
+      requestId: ctx.requestId,
+      subject: {
+        ...(action.entity === undefined ? {} : { entity: action.entity }),
+        ...(id === '' ? {} : { id }),
+      },
+      confirmation: str(input, 'confirmation'),
+      // The agent must echo the token, exactly as the UI makes an operator type it.
+      expectedConfirmation: confirmationToken(action.entity ?? 'admin', id),
+    });
+    return result.ok
+      ? { ok: true, data: result.value }
+      : { ok: false, error: 'X_ADMIN_DENIED', reason: result.decision.reason };
+  }
+
+  const resource = app.resource(tool.entity ?? '');
+  switch (tool.kind) {
+    case 'list': {
+      const limit = num(input, 'limit');
+      const result = await adminList(resource, ctx, {
+        cursor: str(input, 'cursor'),
+        ...(limit === undefined ? {} : { limit }),
+      });
+      return result.ok
+        ? { ok: true, data: result.page }
+        : { ok: false, error: 'X_ADMIN_DENIED', reason: result.decision.reason };
+    }
+    case 'read':
+      return crudResult(await adminDetail(resource, ctx, str(input, 'id')));
+    case 'create':
+      return crudResult(await adminCreate(resource, ctx, input));
+    case 'update':
+      return crudResult(
+        await adminUpdate(resource, ctx, str(input, 'id'), withoutKeys(input, ['id'])),
+      );
+    case 'delete':
+      return crudResult(
+        await adminDestroy(resource, ctx, str(input, 'id'), str(input, 'confirmation')),
+      );
+  }
+}
+
+function crudResult(result: CrudResult<AdminRow>): AdminToolResult {
+  if (result.ok) return { ok: true, data: result.row };
+  return result.kind === 'denied'
+    ? { ok: false, error: 'X_ADMIN_DENIED', reason: result.decision.reason }
+    : { ok: false, error: 'X_ADMIN_INVALID', reason: JSON.stringify(result.issues) };
+}
+
+export interface AdminMcpOptions {
+  readonly app: AdminApp;
+  /** Resolve the MCP session's actor. The same hook the HTTP surface uses, never a bypass. */
+  actor(session: { readonly token?: string }): Promise<AdminActor | null> | AdminActor | null;
+  readonly requestId?: () => string;
+}
+
+/** Mount the admin as an app MCP server. Anonymous sessions get an empty tool list. */
+export function adminMcp(opts: AdminMcpOptions): ReturnType<typeof defineAppMcp> {
+  const { app } = opts;
+  const requestId = opts.requestId ?? ((): string => crypto.randomUUID());
+
+  return defineAppMcp({
+    name: 'admin',
+    description: 'Read and (policy permitting) mutate this app through its admin dashboard.',
+    async tools(session: { readonly token?: string }): Promise<readonly AdminMcpTool[]> {
+      const actor = await opts.actor(session);
+      if (actor === null) return [];
+      return adminMcpTools(app, app.ctx({ actor, requestId: requestId() }));
+    },
+    async call(
+      session: { readonly token?: string },
+      name: string,
+      input: McpInput,
+    ): Promise<AdminToolResult> {
+      const actor = await opts.actor(session);
+      if (actor === null) {
+        return { ok: false, error: 'X_ADMIN_DENIED', reason: 'admin.policy.anonymous' };
+      }
+      return callAdminTool(app, app.ctx({ actor, requestId: requestId() }), name, input);
+    },
+  });
+}

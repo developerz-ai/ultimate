@@ -1,0 +1,83 @@
+name: pages
+
+# Builds the documentation site from site/ and deploys it to GitHub Pages. The site is a static
+# Ultimate surface: 0kb JS by default, so the build output is HTML plus assets.
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'docs/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # site/ is written independently of this workflow. An empty or missing directory produces a
+      # placeholder rather than a red build — a docs site that does not exist yet is not a failure.
+      - name: detect site
+        id: site
+        run: |
+          if [ -d site ] && [ -n "$(ls -A site 2>/dev/null)" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: install
+        if: steps.site.outputs.present == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: build site
+        if: steps.site.outputs.present == 'true'
+        run: |
+          if [ -f site/package.json ] && grep -q '"build"' site/package.json; then
+            bun run --cwd site build
+          else
+            mkdir -p site/dist && cp -r site/. site/dist/ 2>/dev/null || true
+          fi
+
+      - name: stage output
+        run: |
+          mkdir -p _pages
+          if [ -d site/dist ]; then
+            cp -r site/dist/. _pages/
+          elif [ "${{ steps.site.outputs.present }}" = "true" ]; then
+            cp -r site/. _pages/
+          else
+            printf '<!doctype html><title>Ultimate</title><h1>Ultimate</h1><p>The site is not built yet.</p>\n' > _pages/index.html
+          fi
+          # Jekyll would eat _-prefixed paths; this is a plain static upload.
+          touch _pages/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

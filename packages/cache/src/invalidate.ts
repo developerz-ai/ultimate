@@ -1,0 +1,108 @@
+// THE single invalidation entry point. `action.cache.invalidates`, `x cache bust`, the MCP
+// tool and the admin panel all call this one function — nothing else may talk to a tier's
+// `invalidateTags` directly. One hop reaches memo, LRU, Redis, ISR routes and the CDN, and
+// the returned report is what the `/_x` cache panel renders, so "did it actually clear?" is
+// answerable without a log dive.
+
+import { logger, withSpan } from '@ultimat3/core';
+import { dependentsOfKind } from './graph';
+import type { CacheTag } from './tags';
+import { assertKnownTags, parseTag, serializeTags } from './tags';
+import type { CacheTier, TierInvalidation } from './tiers';
+import { sortTiers } from './tiers';
+
+/** Revalidates one ISR route path. Provided by `@ultimat3/render`; absent on a worker. */
+export type Revalidator = (path: string) => Promise<void> | void;
+
+export interface InvalidationReport {
+  readonly tags: readonly string[];
+  readonly tiers: readonly TierInvalidation[];
+  /** ISR route paths queued for regeneration. */
+  readonly isr: readonly string[];
+  readonly cdn: readonly string[];
+  readonly liveQueries: readonly string[];
+  readonly durationMs: number;
+  readonly errors: readonly { tier: string; message: string }[];
+}
+
+const registry: CacheTier[] = [];
+let revalidator: Revalidator | undefined;
+
+/** Tiers register at boot from `app.config.ts`; order is normalised, not trusted. */
+export function registerTier(tier: CacheTier): void {
+  const existing = registry.findIndex((known) => known.name === tier.name);
+  if (existing === -1) registry.push(tier);
+  else registry[existing] = tier;
+}
+
+export function registeredTiers(): readonly CacheTier[] {
+  return sortTiers(registry);
+}
+
+export function resetTiers(): void {
+  registry.length = 0;
+  revalidator = undefined;
+}
+
+export function registerRevalidator(next: Revalidator): void {
+  revalidator = next;
+}
+
+/**
+ * Fan out `tags` across every registered tier plus the dependency graph. Never throws for a
+ * tier failure: a dead Redis must not fail the write that triggered the bust — the failure
+ * lands in `report.errors` and the entry expires by TTL.
+ */
+export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationReport> {
+  return withSpan('cache.invalidate', async (): Promise<InvalidationReport> => {
+    const startedAt = performance.now();
+    assertKnownTags(tags);
+
+    const tiers: TierInvalidation[] = [];
+    const errors: { tier: string; message: string }[] = [];
+
+    for (const tier of sortTiers(registry)) {
+      try {
+        tiers.push(await tier.invalidateTags(tags));
+      } catch (error) {
+        errors.push({
+          tier: tier.name,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const isr = dependentsOfKind(tags, 'isr-route');
+    const cdn = dependentsOfKind(tags, 'cdn-path');
+    const liveQueries = dependentsOfKind(tags, 'live-query');
+
+    for (const path of isr) {
+      try {
+        await revalidator?.(path);
+      } catch (error) {
+        errors.push({
+          tier: 'isr',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const report: InvalidationReport = {
+      tags: serializeTags(tags),
+      tiers,
+      isr,
+      cdn,
+      liveQueries,
+      durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      errors,
+    };
+
+    if (errors.length > 0) logger.warn('cache.invalidate.partial', { ...report });
+    return report;
+  });
+}
+
+/** Convenience for `x cache bust post:1` — accepts the wire form agents see in reports. */
+export function invalidateWireTags(wire: readonly string[]): Promise<InvalidationReport> {
+  return invalidateTags(wire.map(parseTag));
+}

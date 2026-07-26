@@ -1,0 +1,95 @@
+// Canonical colour token source. Semantic roles only, stored as space-separated
+// RGB channels so `rgb(var(--color-x) / 0.5)` composites without a second token.
+// `tokens.ts` mirrors these values; `x verify` fails if the two drift.
+
+$light: (
+  bg: 253 246 240,
+  bg-soft: 245 237 230,
+  surface: 250 245 241,
+  surface-raised: 255 255 255,
+  fg: 38 34 31,
+  fg-strong: 17 15 13,
+  fg-muted: 110 102 94,
+  line: 224 216 208,
+  scrim: 17 15 13,
+  accent: 34 122 197,
+  accent-strong: 21 92 152,
+  accent-fg: 255 255 255,
+  success: 22 128 84,
+  success-soft: 222 244 232,
+  success-fg: 255 255 255,
+  warning: 176 106 8,
+  warning-soft: 253 240 213,
+  warning-fg: 255 255 255,
+  danger: 190 42 42,
+  danger-soft: 253 227 227,
+  danger-fg: 255 255 255,
+  info: 34 122 197,
+  info-soft: 224 239 252,
+  info-fg: 255 255 255,
+);
+
+$dark: (
+  bg: 18 18 20,
+  bg-soft: 28 28 32,
+  surface: 34 34 39,
+  surface-raised: 44 44 50,
+  fg: 228 226 222,
+  fg-strong: 248 247 245,
+  fg-muted: 150 146 140,
+  line: 54 54 60,
+  scrim: 0 0 0,
+  accent: 96 170 240,
+  accent-strong: 130 190 248,
+  accent-fg: 16 20 26,
+  success: 74 190 130,
+  success-soft: 22 46 34,
+  success-fg: 12 26 18,
+  warning: 226 170 66,
+  warning-soft: 52 42 20,
+  warning-fg: 28 20 6,
+  danger: 240 110 110,
+  danger-soft: 56 26 26,
+  danger-fg: 30 12 12,
+  info: 96 170 240,
+  info-soft: 22 38 56,
+  info-fg: 12 20 30,
+);
+
+/// Emit one theme's channels as custom properties.
+@mixin channels($map) {
+  @each $role, $channels in $map {
+    --color-#{$role}: #{$channels};
+  }
+}
+
+/// Light in `:root`, dark behind the media query, and BOTH mirrored under
+/// `html[data-theme]` so an explicit user choice always beats the OS.
+@mixin emit {
+  :root {
+    color-scheme: light;
+    @include channels($light);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      @include channels($dark);
+    }
+  }
+
+  html[data-theme='dark'] {
+    color-scheme: dark;
+    @include channels($dark);
+  }
+
+  html[data-theme='light'] {
+    color-scheme: light;
+    @include channels($light);
+  }
+}
+
+/// `rgb()` wrapper so components never touch the raw channel list.
+@function role($name, $alpha: 1) {
+  @return rgb(var(--color-#{$name}) / #{$alpha});
+}

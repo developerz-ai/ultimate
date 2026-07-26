@@ -1,0 +1,37 @@
+{
+  "name": "create-ultimate",
+  "version": "0.0.1",
+  "description": "bunx create-ultimate myapp — scaffold an Ultimate monorepo",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/developerz-ai/ultimate.git",
+    "directory": "packages/create-ultimate"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "create-ultimate": "./src/bin.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ultimat3/cli": "0.0.1"
+  }
+}

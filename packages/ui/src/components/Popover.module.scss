@@ -1,0 +1,59 @@
+@use '../tokens' as t;
+
+.anchor {
+  position: relative;
+  display: inline-block;
+}
+
+.panel {
+  @include t.surface('surface-raised', 'lg');
+  position: absolute;
+  z-index: t.z(popover);
+  min-inline-size: 12rem;
+  max-inline-size: min(24rem, 90vw);
+  padding: t.space(4);
+  color: t.role('fg');
+}
+
+.placement-block-end {
+  inset-block-start: calc(100% + #{t.space(2)});
+}
+
+.placement-block-start {
+  inset-block-end: calc(100% + #{t.space(2)});
+}
+
+.placement-inline-end {
+  inset-inline-start: calc(100% + #{t.space(2)});
+  inset-block-start: 0;
+}
+
+.placement-inline-start {
+  inset-inline-end: calc(100% + #{t.space(2)});
+  inset-block-start: 0;
+}
+
+.align-start {
+  inset-inline-start: 0;
+}
+
+.align-end {
+  inset-inline-end: 0;
+}
+
+.align-center {
+  inset-inline-start: 50%;
+  translate: -50% 0;
+}
+
+// Inline placements own their own inline axis; alignment must not fight them.
+.placement-inline-end,
+.placement-inline-start {
+  &.align-start,
+  &.align-center,
+  &.align-end {
+    inset-inline-start: auto;
+    inset-inline-end: auto;
+    translate: none;
+  }
+}

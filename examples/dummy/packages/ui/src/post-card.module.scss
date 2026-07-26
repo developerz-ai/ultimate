@@ -1,0 +1,35 @@
+// Post summary card. Colours are semantic tokens only — the dark theme is the same file.
+
+.card {
+  container-type: inline-size;
+}
+
+.title {
+  color: rgb(var(--color-fg-strong));
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    color: rgb(var(--color-accent));
+    text-decoration: underline;
+  }
+}
+
+.meta {
+  align-items: center;
+  color: rgb(var(--color-fg-muted));
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  gap: var(--space-3);
+}
+
+.actions {
+  border-block-start: 1px solid rgb(var(--color-line));
+  display: flex;
+  gap: var(--space-2);
+  padding-block-start: var(--space-3);
+}

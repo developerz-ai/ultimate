@@ -1,0 +1,94 @@
+@use '../tokens' as t;
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+  border: 1px solid transparent;
+  border-radius: t.radius(pill);
+  font-weight: t.weight(medium);
+  line-height: t.leading(tight);
+  white-space: nowrap;
+}
+
+.dot {
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-radius: t.radius(full);
+  background: currentcolor;
+}
+
+.size-sm {
+  @include t.padding-inline(t.space(2));
+  padding-block: 0.0625rem;
+  font-size: t.text(xs);
+}
+
+.size-md {
+  @include t.padding-inline(t.space(3));
+  padding-block: t.space(1);
+  font-size: t.text(xs);
+}
+
+.size-lg {
+  @include t.padding-inline(t.space(4));
+  padding-block: t.space(1);
+  font-size: t.text(sm);
+}
+
+.tone-neutral {
+  --badge: #{t.role('fg-muted')};
+  --badge-soft: #{t.role('bg-soft')};
+  --badge-fg: #{t.role('fg-strong')};
+  --badge-on: #{t.role('bg')};
+}
+
+.tone-accent {
+  --badge: #{t.role('accent')};
+  --badge-soft: #{t.role('accent', 0.14)};
+  --badge-fg: #{t.role('accent-strong')};
+  --badge-on: #{t.role('accent-fg')};
+}
+
+.tone-success {
+  --badge: #{t.role('success')};
+  --badge-soft: #{t.role('success-soft')};
+  --badge-fg: #{t.role('success')};
+  --badge-on: #{t.role('success-fg')};
+}
+
+.tone-warning {
+  --badge: #{t.role('warning')};
+  --badge-soft: #{t.role('warning-soft')};
+  --badge-fg: #{t.role('warning')};
+  --badge-on: #{t.role('warning-fg')};
+}
+
+.tone-danger {
+  --badge: #{t.role('danger')};
+  --badge-soft: #{t.role('danger-soft')};
+  --badge-fg: #{t.role('danger')};
+  --badge-on: #{t.role('danger-fg')};
+}
+
+.tone-info {
+  --badge: #{t.role('info')};
+  --badge-soft: #{t.role('info-soft')};
+  --badge-fg: #{t.role('info')};
+  --badge-on: #{t.role('info-fg')};
+}
+
+.variant-soft {
+  background: var(--badge-soft);
+  color: var(--badge-fg);
+}
+
+.variant-solid {
+  background: var(--badge);
+  color: var(--badge-on);
+}
+
+.variant-outline {
+  border-color: var(--badge);
+  color: var(--badge-fg);
+}

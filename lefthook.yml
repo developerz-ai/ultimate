@@ -1,0 +1,15 @@
+pre-commit:
+  commands:
+    biome:
+      run: bunx biome check --no-errors-on-unmatched --staged
+      stage_fixed: true
+      skip: [merge, rebase]
+
+pre-push:
+  commands:
+    typecheck:
+      run: bun run typecheck
+      skip: [merge, rebase]
+    boundaries:
+      run: bun run boundaries
+      skip: [merge, rebase]

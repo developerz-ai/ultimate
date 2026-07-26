@@ -1,0 +1,72 @@
+// Single post view. Draft state uses the warning token so it reads as "unfinished", not "broken".
+
+.article {
+  border-block-end: 1px solid rgb(var(--color-line));
+  padding-block-end: var(--space-8);
+}
+
+.draft {
+  background-color: rgb(var(--color-warning-soft));
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-warning));
+  margin: 0;
+  padding: var(--space-3);
+}
+
+.meta {
+  align-items: center;
+  color: rgb(var(--color-fg-muted));
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  gap: var(--space-3);
+}
+
+.body {
+  font-size: 1.0625rem;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  gap: var(--space-4);
+}
+
+.comments {
+  padding-block-start: var(--space-8);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-4);
+  list-style: none;
+  padding: 0;
+
+  li {
+    background-color: rgb(var(--color-surface));
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+  }
+}
+
+.form {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-6);
+
+  textarea {
+    background-color: rgb(var(--color-surface-raised));
+    border: 1px solid rgb(var(--color-line));
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-fg));
+    font: inherit;
+    min-block-size: 6rem;
+    padding: var(--space-3);
+    resize: vertical;
+  }
+}
+
+.label {
+  color: rgb(var(--color-fg-muted));
+  font-size: 0.875rem;
+}

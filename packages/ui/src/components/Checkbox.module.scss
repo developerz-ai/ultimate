@@ -1,0 +1,90 @@
+@use '../tokens' as t;
+
+.row {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: t.space(2);
+  cursor: pointer;
+
+  &:has(:disabled) {
+    color: t.role('fg-muted');
+    cursor: not-allowed;
+  }
+}
+
+// The real control stays in the a11y tree and drives the visual box via :checked.
+.input {
+  @include t.visually-hidden;
+}
+
+.box {
+  @include t.transition(background, border-color, box-shadow);
+  position: relative;
+  flex: none;
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+  margin-block-start: 0.15rem;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(sm);
+  background: t.role('surface-raised');
+
+  &::after {
+    position: absolute;
+    inset-inline-start: 0.28rem;
+    inset-block-start: 0.1rem;
+    inline-size: 0.3rem;
+    block-size: 0.55rem;
+    border-inline-end: 2px solid t.role('accent-fg');
+    border-block-end: 2px solid t.role('accent-fg');
+    transform: rotate(40deg) scale(0);
+    transform-origin: center;
+    content: '';
+  }
+}
+
+.input:checked + .box {
+  border-color: t.role('accent');
+  background: t.role('accent');
+
+  &::after {
+    transform: rotate(40deg) scale(1);
+  }
+}
+
+.box[data-mixed='true'] {
+  border-color: t.role('accent');
+  background: t.role('accent');
+
+  &::after {
+    inset-inline-start: 0.2rem;
+    inset-block-start: 0.42rem;
+    inline-size: 0.55rem;
+    block-size: 0;
+    border-inline-end: 0;
+    transform: none;
+  }
+}
+
+.input:focus-visible + .box {
+  outline: 2px solid t.role('accent');
+  outline-offset: 2px;
+}
+
+.input[aria-invalid='true'] + .box {
+  border-color: t.role('danger');
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.label {
+  font-size: t.text(sm);
+}
+
+.description {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}

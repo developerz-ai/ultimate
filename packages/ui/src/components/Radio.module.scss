@@ -1,0 +1,87 @@
+@use '../tokens' as t;
+
+.group {
+  display: flex;
+  gap: t.space(3);
+  border: 0;
+}
+
+.direction-row {
+  flex-flow: row wrap;
+  align-items: flex-start;
+}
+
+.direction-column {
+  flex-direction: column;
+}
+
+.legend {
+  color: t.role('fg-strong');
+  font-size: t.text(sm);
+  font-weight: t.weight(medium);
+}
+
+.row {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: t.space(2);
+  cursor: pointer;
+
+  &:has(:disabled) {
+    color: t.role('fg-muted');
+    cursor: not-allowed;
+  }
+}
+
+.input {
+  @include t.visually-hidden;
+}
+
+.dot {
+  @include t.transition(border-color, box-shadow);
+  position: relative;
+  flex: none;
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+  margin-block-start: 0.15rem;
+  border: 1px solid t.role('line');
+  border-radius: t.radius(full);
+  background: t.role('surface-raised');
+
+  &::after {
+    position: absolute;
+    inset: 0.24rem;
+    border-radius: t.radius(full);
+    background: t.role('accent');
+    transform: scale(0);
+    content: '';
+  }
+}
+
+.input:checked + .dot {
+  border-color: t.role('accent');
+
+  &::after {
+    transform: scale(1);
+  }
+}
+
+.input:focus-visible + .dot {
+  outline: 2px solid t.role('accent');
+  outline-offset: 2px;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.label {
+  font-size: t.text(sm);
+}
+
+.description {
+  color: t.role('fg-muted');
+  font-size: t.text(xs);
+}

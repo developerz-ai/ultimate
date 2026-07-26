@@ -1,0 +1,24 @@
+{
+  "name": "@postly/admin",
+  "version": "0.0.1",
+  "description": "Postly's generated admin dashboard — 20 lines and an MCP surface",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "dev": "x dev --app admin"
+  },
+  "dependencies": {
+    "@postly/db": "0.0.1",
+    "@postly/web": "0.0.1",
+    "@ultimat3/admin": "0.0.1"
+  }
+}

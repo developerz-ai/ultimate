@@ -1,0 +1,23 @@
+@use '../tokens' as t;
+
+.toggle {
+  color: t.role('fg-muted');
+}
+
+.select {
+  min-inline-size: 9rem;
+}
+
+// A pure-CSS sun/moon: a filled disc that a box-shadow crops into a crescent.
+.glyph {
+  display: block;
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  border-radius: t.radius(full);
+  background: currentcolor;
+
+  &[data-theme-glyph='dark'] {
+    background: transparent;
+    box-shadow: inset -0.28rem -0.18rem 0 0 currentcolor;
+  }
+}

@@ -1,0 +1,303 @@
+// The `apps/*` half of what `x new` writes: the three surfaces of apps/web, the admin app that
+// already speaks MCP, and the mobile/desktop placeholders that exist so adding them later is not
+// a restructure. Every file here is real, typed and covered — no placeholder that fails to boot.
+
+import type { GeneratedFile, NameSet } from './naming';
+
+const webPackage = (app: NameSet): string => `{
+  "name": "@${app.kebab}/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./*": "./*.ts", "./*.tsx": "./*.tsx" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" }
+}
+`;
+
+const tsconfig = (): string => `{
+  "extends": "../../tsconfig.json",
+  "include": ["**/*.ts", "**/*.tsx"]
+}
+`;
+
+const sitePage = (
+  app: NameSet,
+): string => `// The landing page. site/ is 0kb JS: static render, hydrate never, no framework script tag.
+import { defineRoute } from '@ultimat3/render';
+import { t } from '@ultimat3/i18n';
+import styles from './page.module.scss';
+
+export const config = defineRoute({
+  kind: 'route',
+  render: 'static',
+  hydrate: 'never',
+  offline: 'precache',
+  budget: { js: '0kb', lcp: 1500 },
+  meta: () => ({
+    title: t('site.home.title'),
+    description: t('site.home.description'),
+  }),
+});
+
+export function HomePage() {
+  return (
+    <main class={styles.hero}>
+      <h1>{t('site.home.title')}</h1>
+      <p>{t('site.home.description')}</p>
+      <a class={styles.cta} href="/dashboard">
+        {t('site.home.cta')}
+      </a>
+    </main>
+  );
+}
+
+export const appName = '${app.kebab}';
+`;
+
+const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
+
+.hero {
+  display: grid;
+  gap: tokens.$space-4;
+  padding: tokens.$space-8;
+  background: tokens.$surface-base;
+  color: tokens.$text-primary;
+}
+
+.cta {
+  justify-self: start;
+  padding: tokens.$space-2 tokens.$space-4;
+  border-radius: tokens.$radius-md;
+  background: tokens.$accent-solid;
+  color: tokens.$accent-on-solid;
+}
+`;
+
+const sitePageTest = (): string => `import { expect } from 'bun:test';
+import { unitTest } from '@ultimat3/testing';
+import { config } from './page';
+
+unitTest('the landing page ships zero JS and declares metadata', () => {
+  expect(config.render).toBe('static');
+  expect(config.hydrate).toBe('never');
+  expect(config.budget.js).toBe('0kb');
+  expect(config.meta().title.length).toBeGreaterThan(0);
+});
+`;
+
+const dashboardPage =
+  (): string => `// The authed dashboard. app/ streams: a static shell is flushed instantly and the holes arrive
+// as their data resolves.
+import { defineRoute } from '@ultimat3/render';
+import { t } from '@ultimat3/i18n';
+import styles from './page.module.scss';
+
+export const config = defineRoute({
+  kind: 'route',
+  render: 'stream',
+  hydrate: 'visible',
+  offline: 'runtime',
+  auth: 'required',
+  budget: { js: '60kb', lcp: 2500 },
+  meta: () => ({ title: t('app.dashboard.title'), description: t('app.dashboard.description') }),
+});
+
+export function DashboardPage() {
+  return (
+    <section class={styles.panel}>
+      <h1>{t('app.dashboard.title')}</h1>
+    </section>
+  );
+}
+`;
+
+const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
+
+.panel {
+  padding: tokens.$space-6;
+  background: tokens.$surface-raised;
+  color: tokens.$text-primary;
+}
+`;
+
+const dashboardTest = (): string => `import { expect } from 'bun:test';
+import { unitTest } from '@ultimat3/testing';
+import { config } from './page';
+
+unitTest('the dashboard streams, requires auth and has an offline strategy', () => {
+  expect(config.render).toBe('stream');
+  expect(config.auth).toBe('required');
+  expect(config.offline).toBe('runtime');
+});
+`;
+
+const offlineFallback =
+  (): string => `// The offline fallback. Every app/ route with offline: 'runtime' falls back here, so a train
+// tunnel shows the product's own shell instead of the browser's error page.
+import { t } from '@ultimat3/i18n';
+import styles from './offline.module.scss';
+
+export function OfflineFallback() {
+  return (
+    <main class={styles.offline}>
+      <h1>{t('app.offline.title')}</h1>
+      <p>{t('app.offline.description')}</p>
+    </main>
+  );
+}
+`;
+
+const offlineStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
+
+.offline {
+  display: grid;
+  gap: tokens.$space-3;
+  padding: tokens.$space-8;
+  background: tokens.$surface-base;
+  color: tokens.$text-secondary;
+}
+`;
+
+const apiAction =
+  (): string => `// api/ holds actions only: no rendering, no components. This one is the readiness probe every
+// role exposes, declared as an action so it appears in OpenAPI and MCP like everything else.
+import { action, t } from '@ultimat3/action';
+import { can } from '@ultimat3/policy';
+
+export const health = action({
+  input: t.object({}),
+  output: t.object({ ok: t.boolean, role: t.string }),
+  policy: can('public'),
+  mcp: { expose: true, description: 'Readiness of this process' },
+  async handle({ ctx }) {
+    return { ok: true, role: ctx.role };
+  },
+});
+`;
+
+const apiTest = (): string => `import { expect } from 'bun:test';
+import { contractTest } from '@ultimat3/testing';
+import { health } from './health';
+
+contractTest('health is an action exposed over MCP', () => {
+  expect(health.kind).toBe('action');
+  expect(health.mcp?.expose).toBe(true);
+});
+`;
+
+const sharedTokens =
+  (): string => `// Semantic tokens for this app, layered on @ultimat3/ui. Components reference these names; a raw
+// hex anywhere in the app is a lint failure, because dark theme is not a later project.
+@use '@ultimat3/ui/tokens' as base;
+
+$surface-base: base.$surface-base;
+$surface-raised: base.$surface-raised;
+$text-primary: base.$text-primary;
+$text-secondary: base.$text-secondary;
+$accent-solid: base.$accent-solid;
+$accent-on-solid: base.$accent-on-solid;
+`;
+
+const sharedActor =
+  (): string => `// The actor type both surfaces agree on. Policies read this and nothing else, so authz cannot
+// disagree between HTTP, live queries, jobs and MCP.
+export interface Actor {
+  readonly id: string;
+  readonly orgId: string;
+  readonly roles: readonly string[];
+}
+
+export const isMember = (actor: Actor | null): boolean =>
+  actor !== null && (actor.roles.includes('member') || actor.roles.includes('owner'));
+`;
+
+const sharedActorTest = (): string => `import { expect } from 'bun:test';
+import { unitTest } from '@ultimat3/testing';
+import { isMember } from './actor';
+
+unitTest('isMember rejects anonymous and viewer actors', () => {
+  expect(isMember(null)).toBe(false);
+  expect(isMember({ id: 'a', orgId: 'o', roles: ['viewer'] })).toBe(false);
+  expect(isMember({ id: 'a', orgId: 'o', roles: ['owner'] })).toBe(true);
+});
+`;
+
+const adminPackage = (app: NameSet): string => `{
+  "name": "@${app.kebab}/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./*": "./*.ts", "./*.tsx": "./*.tsx" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" }
+}
+`;
+
+const adminPage =
+  (): string => `// The generated admin dashboard. It ships an MCP surface over the app's own actions, so the
+// user's agents can drive the user's product with the user's permissions.
+import { defineRoute } from '@ultimat3/render';
+import { t } from '@ultimat3/i18n';
+
+export const config = defineRoute({
+  kind: 'route',
+  render: 'spa',
+  hydrate: 'idle',
+  offline: 'network-only',
+  auth: 'required',
+  budget: { js: '120kb', lcp: 3000 },
+  meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
+});
+
+export function AdminHome() {
+  return <h1>{t('admin.home.title')}</h1>;
+}
+`;
+
+const placeholder = (surface: string, app: NameSet): string => `# ${surface}
+
+Placeholder. The monorepo shape exists now so adding ${surface} later is a new directory, not a
+restructure.
+
+| Question | Answer |
+|---|---|
+| Stack | ${surface === 'mobile' ? 'native Swift / Kotlin against the generated typed client' : 'Tauri shell around the app/ surface'} |
+| API | the same actions as \`apps/web/api\` — one authz system, one contract |
+| Contract | \`openapi.json\` at the repo root, regenerated by \`x manifest\` |
+| Start | \`x new ${app.kebab}-${surface}\` inside this directory, or wire it by hand |
+`;
+
+const icon =
+  (): string => `<!-- The one source icon. x manifest derives every install icon, favicon and og image from
+     this file; currentColor keeps it correct in both themes. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img"
+     aria-label="app icon" fill="none" stroke="currentColor" stroke-width="6"
+     stroke-linecap="round">
+  <path d="M16 16 L32 44 L48 16" />
+</svg>
+`;
+
+export function appFiles(app: NameSet): readonly GeneratedFile[] {
+  return [
+    { path: 'apps/web/package.json', contents: webPackage(app) },
+    { path: 'apps/web/tsconfig.json', contents: tsconfig() },
+    { path: 'apps/web/site/icon.svg', contents: icon() },
+    { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
+    { path: 'apps/web/site/page.module.scss', contents: siteStyle() },
+    { path: 'apps/web/site/page.test.ts', contents: sitePageTest() },
+    { path: 'apps/web/app/dashboard/page.tsx', contents: dashboardPage() },
+    { path: 'apps/web/app/dashboard/page.module.scss', contents: dashboardStyle() },
+    { path: 'apps/web/app/dashboard/page.test.ts', contents: dashboardTest() },
+    { path: 'apps/web/app/offline.tsx', contents: offlineFallback() },
+    { path: 'apps/web/app/offline.module.scss', contents: offlineStyle() },
+    { path: 'apps/web/api/health.ts', contents: apiAction() },
+    { path: 'apps/web/api/health.test.ts', contents: apiTest() },
+    { path: 'apps/web/shared/tokens.scss', contents: sharedTokens() },
+    { path: 'apps/web/shared/actor.ts', contents: sharedActor() },
+    { path: 'apps/web/shared/actor.test.ts', contents: sharedActorTest() },
+    { path: 'apps/admin/package.json', contents: adminPackage(app) },
+    { path: 'apps/admin/tsconfig.json', contents: tsconfig() },
+    { path: 'apps/admin/app/page.tsx', contents: adminPage() },
+    { path: 'apps/mobile/README.md', contents: placeholder('mobile', app) },
+    { path: 'apps/desktop/README.md', contents: placeholder('desktop', app) },
+  ];
+}

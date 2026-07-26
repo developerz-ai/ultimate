@@ -1,0 +1,16 @@
+// Blog index. A list of cards; the card owns its own styling.
+
+.page {
+  margin-inline: auto;
+  max-inline-size: 46rem;
+  padding-block: var(--space-12);
+  padding-inline: var(--space-4);
+}
+
+.list {
+  display: grid;
+  gap: var(--space-6);
+  list-style: none;
+  margin-block-start: var(--space-8);
+  padding: 0;
+}

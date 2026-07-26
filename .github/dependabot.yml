@@ -1,0 +1,49 @@
+version: 2
+
+# Weekly, grouped, and small. A dependency PR that nobody can review in one sitting gets merged
+# without being read, which is worse than being a version behind.
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: 'chore(deps)'
+    groups:
+      dev-tooling:
+        patterns: ['@biomejs/*', 'typescript', 'lefthook', '@types/*']
+        update-types: [minor, patch]
+      runtime:
+        patterns: ['*']
+        exclude-patterns: ['@biomejs/*', 'typescript', 'lefthook', '@types/*']
+        update-types: [minor, patch]
+    ignore:
+      # Bun is pinned by `engines` and installed by the workflow, not by npm.
+      - dependency-name: bun
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: 'chore(ci)'
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: 'chore(docker)'
