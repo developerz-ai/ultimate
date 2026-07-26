@@ -77,11 +77,11 @@ export const config = defineConfig({
 
   /** Validated once at boot. A missing or malformed var is a startup failure, never a 500 later. */
   env: t.object({
-    APP_URL: t.string.url,
-    DATABASE_URL: t.string.url,
-    NATS_URL: t.string.url,
-    REDIS_URL: t.string.url,
-    SESSION_SECRET: t.string.atLeastLength(32),
+    APP_URL: t.url,
+    DATABASE_URL: t.url,
+    NATS_URL: t.url,
+    REDIS_URL: t.url,
+    SESSION_SECRET: t.string.min(32),
     MAIL_API_KEY: t.string,
     ANTHROPIC_API_KEY: t.string,
     ROLE: t

@@ -15,7 +15,7 @@ import {
 import { t } from '@ultimat3/schema';
 
 export const MoneyView = t.object({
-  minor: t.number.integer,
+  minor: t.number.int(),
   currency: t.enumerated(...BILLING_CURRENCIES),
 });
 
@@ -25,8 +25,8 @@ export const OrgView = t.object({
   name: t.string,
   planCode: t.enumerated(...PLAN_CODES),
   billingCurrency: t.enumerated(...BILLING_CURRENCIES),
-  seats: t.number.integer.atLeast(1),
-  seatsUsed: t.number.integer.atLeast(0),
+  seats: t.number.int().min(1),
+  seatsUsed: t.number.int().min(0),
 });
 
 export type OrgView = typeof OrgView.infer;

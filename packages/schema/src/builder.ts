@@ -63,6 +63,12 @@ export interface Schema<In = unknown, Out = In> extends StandardSchemaV1<In, Out
   parse(value: unknown, root?: string): Out;
   safeParse(value: unknown): StandardResult<Out>;
   optional(): Schema<In | undefined, Out | undefined>;
+  /**
+   * Distinct from `optional()`: absent and null are different facts. A nullable column holds a
+   * row that says "no cover image"; an optional field says the caller did not mention it. SQL
+   * has always drawn that line, so the schema has to as well or a round-trip loses it.
+   */
+  nullable(): Schema<In | null, Out | null>;
   default(value: Out): Schema<In | undefined, Out>;
   describe(description: string): Schema<In, Out>;
 }
@@ -127,6 +133,11 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
       return makeSchema<In | undefined, Out | undefined>(
         { ...node, optional: true },
         (value, path) => (value === undefined ? pass(undefined) : check(value, path)),
+      );
+    },
+    nullable(): Schema<In | null, Out | null> {
+      return makeSchema<In | null, Out | null>({ ...node, nullable: true }, (value, path) =>
+        value === null ? pass(null) : check(value, path),
       );
     },
     default(fallback: Out): Schema<In | undefined, Out> {

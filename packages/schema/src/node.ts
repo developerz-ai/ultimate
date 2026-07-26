@@ -30,6 +30,8 @@ export type SchemaFormat =
 export interface SchemaNode {
   readonly kind: SchemaKind;
   readonly optional?: boolean | undefined;
+  /** Separate from `optional`: JSON Schema and the DB both distinguish null from absent. */
+  readonly nullable?: boolean | undefined;
   readonly hasDefault?: boolean | undefined;
   readonly default?: unknown;
   readonly description?: string | undefined;

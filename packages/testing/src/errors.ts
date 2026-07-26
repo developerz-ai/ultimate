@@ -6,6 +6,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_NETWORK_SEALED',
   'X_TEST_DB_UNAVAILABLE',
   'X_TEST_NONDETERMINISTIC',
+  'X_TEST_FIXTURE_UNKNOWN',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -57,3 +58,25 @@ export function hostOf(url: string): string {
     return url;
   }
 }
+
+/**
+ * A test destructured a fixture nobody registered. Naming the registered set matters: the
+ * failure would otherwise surface as `undefined is not an object` deep inside the body,
+ * pointing at the use rather than the missing registration.
+ */
+export class FixtureUnknownError extends UltimateError {
+  constructor(input: { name: string; registered: readonly string[] }) {
+    super({
+      code: 'X_TEST_FIXTURE_UNKNOWN',
+      cause:
+        input.registered.length === 0
+          ? `test requested fixture "${input.name}" but none are registered`
+          : `test requested fixture "${input.name}"; registered: ${input.registered.join(', ')}`,
+      fix: `register it at test setup: defineFixtures({ ${input.name}: () => buildIt() })`,
+      docs: docsFor('X_TEST_FIXTURE_UNKNOWN'),
+    });
+  }
+}
+
+export const fixtureUnknown = (name: string, registered: readonly string[]): UltimateError =>
+  new FixtureUnknownError({ name, registered });

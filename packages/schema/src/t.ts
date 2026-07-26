@@ -86,6 +86,10 @@ export const t: TNamespace = {
   ): Schema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>> {
     return provider().record(values);
   },
+  /** `t.nullable(t.url)` — the column may hold null, which is not the same as being absent. */
+  nullable<S extends AnySchema>(schema: S): Schema<InferInput<S> | null, InferOutput<S> | null> {
+    return schema.nullable() as Schema<InferInput<S> | null, InferOutput<S> | null>;
+  },
   optional<S extends AnySchema>(
     schema: S,
   ): Schema<InferInput<S> | undefined, InferOutput<S> | undefined> {

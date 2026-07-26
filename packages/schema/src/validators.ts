@@ -236,6 +236,12 @@ export function recordSchema<S extends AnySchema>(
   );
 }
 
+export function nullableSchema<S extends AnySchema>(
+  schema: S,
+): Schema<InferInput<S> | null, InferOutput<S> | null> {
+  return schema.nullable() as Schema<InferInput<S> | null, InferOutput<S> | null>;
+}
+
 export function optionalSchema<S extends AnySchema>(
   schema: S,
 ): Schema<InferInput<S> | undefined, InferOutput<S> | undefined> {
@@ -336,6 +342,8 @@ export interface TNamespace {
   record<S extends AnySchema>(
     values: S,
   ): Schema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>>;
+  /** Null is a value the column holds; `optional` is the caller omitting the field. */
+  nullable<S extends AnySchema>(schema: S): Schema<InferInput<S> | null, InferOutput<S> | null>;
   optional<S extends AnySchema>(
     schema: S,
   ): Schema<InferInput<S> | undefined, InferOutput<S> | undefined>;
@@ -376,5 +384,6 @@ export const builtinT: TNamespace = Object.freeze({
   literal: literalSchema,
   union: unionSchema,
   record: recordSchema,
+  nullable: nullableSchema,
   optional: optionalSchema,
 });

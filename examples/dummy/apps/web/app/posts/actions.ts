@@ -36,7 +36,7 @@ export const publishPost = action({
 });
 
 export const createComment = action({
-  input: t.object({ postId: t.uuid, body: t.string.atLeastLength(1).atMostLength(COMMENT_MAX) }),
+  input: t.object({ postId: t.uuid, body: t.string.min(1).max(COMMENT_MAX) }),
   output: CommentView,
   policy: can('post:read'),
   cache: { invalidates: [tag.comment, tag.post] },

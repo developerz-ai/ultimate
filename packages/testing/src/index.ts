@@ -1,3 +1,11 @@
+export type { FixtureBody, FixtureFactory, FixtureMap, Fixtures } from './fixtures';
+export {
+  clearFixtures,
+  defineFixtures,
+  fixtureTest,
+  registeredFixtures,
+  requestedFixtures,
+} from './fixtures';
 // Public API of @ultimat3/testing. Explicit re-exports: the preload has its own entry point so a
 // bunfig can load side effects without importing the whole harness.
 
@@ -5,7 +13,9 @@
 // this package's custom matchers (`toBeUltimateError`, `toEmitSteps`, …) already installed.
 // Importing `expect` straight from `bun:test` in an app test gets the matchers only if some
 // other module happened to load first — a load-order dependency, which is a flake.
-export { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+// `test` is OURS (fixture-injecting); everything else passes through. Re-exported so an app
+// test has one import line, and so `expect` carries this package's matchers already installed.
+export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bun:test';
 export type { DeterminismOptions } from './determinism';
 export {
   advanceClock,
@@ -30,6 +40,7 @@ export {
 } from './errors';
 export type { EntityLike, EntityRegistry, Factory, FactoryOptions } from './factories';
 export { defineFactory, factoriesFor } from './factories';
+export { fixtureTest as test } from './fixtures';
 export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 export type { MatcherResult } from './matchers';

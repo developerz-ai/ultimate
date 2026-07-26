@@ -10,15 +10,15 @@ import { t } from '@ultimat3/schema';
 export const PostView = t.object({
   id: t.uuid,
   orgId: t.uuid,
-  slug: t.string.atMostLength(SLUG_MAX),
-  title: t.string.atMostLength(TITLE_MAX),
-  excerpt: t.string.atMostLength(EXCERPT_MAX),
+  slug: t.string.max(SLUG_MAX),
+  title: t.string.max(TITLE_MAX),
+  excerpt: t.string.max(EXCERPT_MAX),
   body: t.string,
-  coverUrl: t.string.url.or(t.null),
+  coverUrl: t.nullable(t.url),
   status: t.enumerated(...POST_STATUSES),
-  likeCount: t.number.integer.atLeast(0),
+  likeCount: t.number.int().min(0),
   /** UTC instant. Formatting is the edge's job, with the viewer's zone. */
-  publishedAt: t.date.or(t.null),
+  publishedAt: t.nullable(t.date),
   authorId: t.uuid,
   authorName: t.string,
 });
@@ -41,10 +41,10 @@ export const CommentView = t.object({
 export type CommentView = typeof CommentView.infer;
 
 export const CreatePostInput = t.object({
-  title: t.string.atMostLength(TITLE_MAX),
-  body: t.string.atLeastLength(1),
+  title: t.string.max(TITLE_MAX),
+  body: t.string.min(1),
   /** Optional: derived from the title when absent, because a slug is a URL forever. */
-  slug: t.string.atMostLength(SLUG_MAX).optional(),
+  slug: t.string.max(SLUG_MAX).optional(),
 });
 
 export type CreatePostInput = typeof CreatePostInput.infer;

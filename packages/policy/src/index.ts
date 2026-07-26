@@ -1,3 +1,5 @@
+export type { DefinePolicyInput } from './define';
+export { definePolicy } from './define';
 // The public surface of @ultimat3/policy. Explicit, never `export *`.
 
 export type { PolicyErrorCode } from './errors';
