@@ -13,12 +13,16 @@
   }
 
   function stored() {
+    // Declared at the function root, not inside the try: `var` hoists there anyway, and
+    // writing it inline reads as if it were block-scoped when it is not.
+    var v = null;
     try {
-      var v = localStorage.getItem(KEY);
-      return v === 'dark' || v === 'light' ? v : null;
+      // Throws in Safari private mode and wherever storage is blocked by policy.
+      v = localStorage.getItem(KEY);
     } catch (_e) {
       return null;
     }
+    return v === 'dark' || v === 'light' ? v : null;
   }
 
   function apply(theme) {

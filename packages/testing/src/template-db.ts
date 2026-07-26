@@ -36,7 +36,11 @@ export const DEFAULT_TEMPLATE = 'ultimate_test_template';
  * pid fallback keeps two hand-run processes from colliding on the same database.
  */
 export function workerId(env: Readonly<Record<string, string | undefined>>, pid = 0): number {
-  for (const key of ['BUN_TEST_WORKER_ID', 'ULTIMATE_TEST_WORKER', 'JEST_WORKER_ID']) {
+  // ULTIMATE_TEST_WORKER is checked FIRST because `x test` assigns it deliberately, one index per
+  // shard. A runner-set value must beat anything the runtime invents: if Bun ever populates
+  // BUN_TEST_WORKER_ID itself, two shards could resolve to the same index and then race on the
+  // same cloned database — a data-dependent failure that would look like a flaky test.
+  for (const key of ['ULTIMATE_TEST_WORKER', 'BUN_TEST_WORKER_ID', 'JEST_WORKER_ID']) {
     const raw = env[key];
     if (raw === undefined) continue;
     const parsed = Number.parseInt(raw, 10);

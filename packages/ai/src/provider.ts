@@ -201,7 +201,10 @@ export class AnthropicProvider implements Provider {
    * Streaming is mandatory above ~16k `maxTokens`: a non-streaming request that large hits
    * the HTTP timeout before the model finishes.
    */
-  async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
+  // Not a generator: it has nothing to yield, and `async *` with no `yield` is a lint error
+  // for good reason — a caller would see an empty stream that ends cleanly instead of the
+  // throw. Returning `AsyncIterable` keeps the signature identical for consumers.
+  stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     // The SSE reader belongs to the transport half, which needs a real connection.
     void this.body(request);
     throw new AiNotImplementedError({

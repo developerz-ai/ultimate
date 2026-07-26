@@ -234,10 +234,12 @@ export function defineConfig(
   ...overlays: readonly AppConfigOverlay[]
 ): AppConfig {
   const base = defaults(input.name);
-  const merged: AppConfigInput = overlays.reduce<AppConfigInput>(
-    (acc, overlay) => ({ ...acc, ...overlay, name: acc.name }),
-    input,
-  );
+  // One `Object.assign` over all overlays rather than a spread per overlay: `reduce` with a
+  // spread copies every key again on each step, and config is merged at boot on every start.
+  // `name` is applied last because it identifies the app — an overlay may not rename it.
+  const merged: AppConfigInput = Object.assign({}, input, ...overlays, {
+    name: input.name,
+  }) as AppConfigInput;
 
   const config: AppConfig = {
     name: merged.name,

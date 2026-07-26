@@ -8,13 +8,7 @@ import type { Money } from '@ultimat3/money';
 import type { BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, withBudget } from './budget';
 import { AiProviderUnavailableError } from './errors';
-import type {
-  GenerateRequest,
-  GenerateResult,
-  ModelId,
-  Provider,
-  StreamChunk,
-} from './provider';
+import type { GenerateRequest, GenerateResult, ModelId, Provider, StreamChunk } from './provider';
 import { DEFAULT_MODEL, estimateTokens } from './provider';
 
 /**

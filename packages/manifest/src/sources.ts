@@ -10,17 +10,7 @@ import { describeEntities } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
 import type { ManifestSources } from './build';
-import type {
-  ActionFact,
-  EntityFact,
-  ErrorCodeFact,
-  JobFact,
-  JsonValue,
-  PolicyFact,
-  QueryFact,
-  RouteFact,
-  TaskFact,
-} from './schema';
+import type { ErrorCodeFact, JobFact, JsonValue, PolicyFact, RouteFact, TaskFact } from './schema';
 
 export interface FrameworkSourcesInput {
   readonly app: { readonly name: string; readonly version: string };
