@@ -63,15 +63,35 @@ import { defineAppMcp } from '@ultimat3/mcp';
 
 export const mcp = defineAppMcp({
   name: 'acme-admin',
-  actions: [publishPost, suspendUser],   // only those with mcp.expose are projected
-  queries: [liveFeed, orgUsage],
+  include: 'exposed',                    // every action/query with mcp: { expose: true }
   resources: [orgExport],
+  prompts: ['apps/web/app/posts/prompts/summarize.v3.md'],
+  tools: {
+    seatReport: {                        // the key IS the tool name
+      description: 'Seats used, remaining and the plan limit. Read-only.',
+      input: t.object({}),               // any Standard Schema
+      policy: 'org:administer',          // an existing permission, never a new rule
+      destructive: false,
+      async handle({ ctx }) {
+        return seats(await ctx.orgs.byId(ctx.actor.orgId));
+      },
+    },
+  },
   resolveToken: (token) => sessions.resolveAgentToken(token),
 });
 
 // app.config.ts
 routes: [mcp.route]                      // POST /mcp, rate-limited per method class
 ```
+
+`include: 'exposed'` reads the action and query registries instead of asking for
+`actions: [...]` / `queries: [...]` — the registries already know who opted in, and a
+second hand-maintained list is a thing that goes stale silently. The explicit arrays still
+work and win over the registry's copy of the same name.
+
+A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an
+HTTP request goes through, so a tool cannot acquire a second authz path. A tool without one
+is `X_MCP_TOOL_UNSAFE` at boot, and an unmarked tool is metered as a write.
 
 ## Transports
 

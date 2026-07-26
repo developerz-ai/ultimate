@@ -24,14 +24,14 @@ export interface RetryPolicy {
   readonly deadLetter?: boolean;
 }
 
-export const DEFAULT_RETRY: RetryPolicy = {
+export const DEFAULT_RETRY = {
   attempts: 3,
   backoff: 'exponential',
   delay: 1_000,
   maxDelay: 3_600_000,
   jitter: true,
   deadLetter: true,
-};
+} satisfies RetryPolicy;
 
 export type Random = () => number;
 

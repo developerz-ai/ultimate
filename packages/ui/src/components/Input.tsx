@@ -2,11 +2,21 @@
 // input uses `inputmode` + a text type so locale decimal separators survive.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Input.module.scss';
 import type { Size } from './variants';
 
-export type InputType = 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'date' | 'time';
+export type InputType =
+  | 'text'
+  | 'email'
+  | 'password'
+  | 'search'
+  | 'tel'
+  | 'url'
+  | 'date'
+  | 'time'
+  | 'datetime-local';
 
 export interface InputProps {
   id?: string | undefined;
@@ -59,7 +69,7 @@ export function Input(props: InputProps): JSX.Element {
         maxlength={props.maxlength}
         aria-label={props['aria-label']}
         aria-describedby={props['aria-describedby']}
-        aria-invalid={props['aria-invalid'] === true}
+        aria-invalid={ariaBool(props['aria-invalid'])}
         onInput={props.onInput}
         onChange={props.onChange}
         onBlur={props.onBlur}

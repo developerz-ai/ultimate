@@ -1,7 +1,14 @@
 // Public API of @ultimat3/mcp. Explicit — nothing is re-exported by wildcard, so the
 // surface an app or an agent can reach is exactly this list.
 
-export type { AppMcp, DefineAppMcpInput } from './app-tools';
+export type {
+  AnyAppToolDefinition,
+  AppToolArgs,
+  AppToolDefinition,
+  AppTools,
+} from './app-tool';
+export { appToolPrimitive, appToolPrimitives } from './app-tool';
+export type { AppMcp, AppToolSchemas, DefineAppMcpInput } from './app-tools';
 export { defineAppMcp } from './app-tools';
 export type { CreateDevServerInput } from './dev-host';
 export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
@@ -26,9 +33,12 @@ export {
   McpReadOnlyViolationError,
   McpScopeMissingError,
   McpToolUnknownError,
+  McpToolUnsafeError,
 } from './errors';
+export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
 export { isExposed, toolFromAction, toolFromQuery, toolsFrom } from './from-action';
+export { toWireSchema } from './input-schema';
 export type { DatabaseTarget } from './readonly-sql';
 export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 export type {
@@ -54,8 +64,10 @@ export type {
 } from './resources';
 export {
   frameworkResources,
+  promptFromPath,
   RESOURCE_URIS,
   ResourceRegistry,
+  toPrompts,
   URI_ARG_SCHEMA,
 } from './resources';
 export type { CreateMcpServerInput } from './server';

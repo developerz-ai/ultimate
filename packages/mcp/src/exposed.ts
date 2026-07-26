@@ -1,0 +1,78 @@
+// `include: 'exposed'` — project straight from the primitive registries.
+//
+// "Define once, project everywhere". The action and query registries already know which
+// primitives declared `mcp: { expose: true }`; re-listing them in `defineAppMcp` copies that
+// knowledge into a second place, and a copy is a thing that goes stale silently — an action
+// gains `expose`, its tool never appears, and nothing fails.
+//
+// Both registries are read through the same `describe`/`list` boundary `dev-host.ts` already
+// uses, and every projected primitive still runs through `runAction` / `sourceFor`, so the
+// registry shortcut buys convenience and changes no execution path.
+
+import type { AnyAction } from '@ultimat3/action';
+import { actionName, listActions, runAction } from '@ultimat3/action';
+import { withChildContext } from '@ultimat3/core';
+import type { AnyQuery } from '@ultimat3/query';
+import { listQueries, queryName, sourceFor } from '@ultimat3/query';
+import type { McpExposure, ProjectablePrimitive } from './from-action';
+import { toWireSchema } from './input-schema';
+
+/**
+ * Every registered action and query, as projectable primitives. `toolsFrom` applies the opt-in
+ * filter, so this deliberately does NOT filter: one place decides what "exposed" means.
+ *
+ * Read eagerly, at the moment `defineAppMcp` runs — register the app's primitives first.
+ */
+export function exposedPrimitives(): readonly ProjectablePrimitive[] {
+  return [...listActions().map(primitiveFromAction), ...listQueries().map(primitiveFromQuery)];
+}
+
+function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
+  const { def } = target;
+  const exposure = exposureOf(def);
+  return {
+    name: actionName(target),
+    ...(exposure === undefined ? {} : { mcp: exposure }),
+    ...(exposure?.description === undefined ? {} : { description: exposure.description }),
+    inputJsonSchema: toWireSchema(def.input),
+    mutates: true,
+    run: ({ input, actor }) =>
+      withChildContext({ actor }, () => runAction(target, input, { surface: 'mcp' })),
+  };
+}
+
+function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
+  const { def } = target;
+  const exposure = exposureOf(def);
+  return {
+    name: queryName(target),
+    ...(exposure === undefined ? {} : { mcp: exposure }),
+    ...(exposure?.description === undefined ? {} : { description: exposure.description }),
+    inputJsonSchema: toWireSchema(def.input),
+    mutates: false,
+    run: ({ input, actor }) =>
+      withChildContext({ actor }, async () => {
+        // `sourceFor` is the authorized front half of `runQuery` — validate, guard, build —
+        // and is what `live`, `paginate` and `explain` build on too. Executed without the
+        // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,
+        // not a TTL.
+        const source = await sourceFor(target, input);
+        return source.execute();
+      }),
+  };
+}
+
+/**
+ * `@ultimat3/query`'s def type carries no `mcp` field yet, so the opt-in is read structurally
+ * for both primitives rather than one typed path and one untyped one. Narrow on purpose: only
+ * a literal `expose: true` counts, so nothing is exposed by accident.
+ */
+function exposureOf(def: object): McpExposure | undefined {
+  const value = (def as { readonly mcp?: unknown }).mcp;
+  if (typeof value !== 'object' || value === null) return undefined;
+  const fields = value as { readonly expose?: unknown; readonly description?: unknown };
+  return {
+    expose: fields.expose === true,
+    ...(typeof fields.description === 'string' ? { description: fields.description } : {}),
+  };
+}

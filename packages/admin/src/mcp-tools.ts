@@ -106,18 +106,25 @@ function toolFor(resource: AdminResource, op: AdminOperation): AdminMcpTool | nu
   }
 }
 
-/** Every tool the surface could expose, each with the decision that would gate it. */
-export function adminToolDecisions(
-  app: AdminApp,
-  ctx: CrudCtx,
-): readonly { readonly tool: AdminMcpTool; readonly decision: AdminDecision }[] {
-  const out: { tool: AdminMcpTool; decision: AdminDecision }[] = [];
+/** One exposable tool and the decision that gates it, for whichever actor asks. */
+interface ToolGate {
+  readonly tool: AdminMcpTool;
+  gate(ctx: CrudCtx): AdminDecision;
+}
+
+/**
+ * The catalog and its gates, derived once. Two callers need different halves of it — the
+ * transport needs every tool's name and schema before any caller exists, an actor needs the
+ * subset it may call — and they must not be two derivations that can disagree.
+ */
+function toolGates(app: AdminApp): readonly ToolGate[] {
+  const out: ToolGate[] = [];
 
   for (const resource of app.resources) {
     for (const op of resource.operations) {
       const tool = toolFor(resource, op);
       if (tool === null) continue;
-      out.push({ tool, decision: decideOperation(resource, op, ctx) });
+      out.push({ tool, gate: (ctx) => decideOperation(resource, op, ctx) });
     }
     for (const action of resource.actions) {
       if (action.mcp?.expose === false) continue;
@@ -132,7 +139,7 @@ export function adminToolDecisions(
           destructive: action.destructive === true,
           input: [],
         },
-        decision: decideAction(action, ctx.actor, ctx.authz),
+        gate: (ctx) => decideAction(action, ctx.actor, ctx.authz),
       });
     }
   }
@@ -150,7 +157,7 @@ export function adminToolDecisions(
       destructive: false,
       input: [{ name: 'term', type: 'text', required: true }],
     },
-    decision: decideAll(ctx.authz, permissionsForOperation('admin', 'search'), ctx.actor),
+    gate: (ctx) => decideAll(ctx.authz, permissionsForOperation('admin', 'search'), ctx.actor),
   });
 
   for (const action of app.globalActions) {
@@ -166,11 +173,24 @@ export function adminToolDecisions(
         destructive: action.destructive === true,
         input: [],
       },
-      decision: decideAction(action, ctx.actor, ctx.authz),
+      gate: (ctx) => decideAction(action, ctx.actor, ctx.authz),
     });
   }
 
   return out;
+}
+
+/** Every tool the surface could expose, ungated. The transport's `tools/list` payload. */
+export function adminToolCatalog(app: AdminApp): readonly AdminMcpTool[] {
+  return toolGates(app).map(({ tool }) => tool);
+}
+
+/** Every tool the surface could expose, each with the decision that would gate it. */
+export function adminToolDecisions(
+  app: AdminApp,
+  ctx: CrudCtx,
+): readonly { readonly tool: AdminMcpTool; readonly decision: AdminDecision }[] {
+  return toolGates(app).map(({ tool, gate }) => ({ tool, decision: gate(ctx) }));
 }
 
 /** The tools this actor may call. The UI's visibility rule, applied to the MCP surface. */

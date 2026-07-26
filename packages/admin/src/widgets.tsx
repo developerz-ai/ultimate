@@ -3,7 +3,16 @@
 // every one of those places — there is no second place to get it wrong.
 
 import { t } from '@ultimat3/i18n';
-import { DateTime, Money, Select, TextArea, TextInput, Toggle } from '@ultimat3/ui';
+import {
+  Checkbox,
+  DateTime,
+  type DateTimeFormatter,
+  type FieldControl,
+  Input,
+  Money,
+  Select,
+  Textarea,
+} from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { AdminField } from './fields';
 import { type WidgetContext, type WidgetProps, widgetProps } from './widget-value';
@@ -14,12 +23,46 @@ export interface WidgetInput {
   readonly ctx: WidgetContext;
   /** `read` renders a value, `edit` renders a control. */
   readonly mode: 'read' | 'edit';
+  /** Id and description wiring from the surrounding `<Field>`, when there is one. */
+  readonly control?: FieldControl;
   readonly onInput?: (field: string, value: unknown) => void;
 }
 
 const emit = (input: WidgetInput, value: unknown): void => {
   input.onInput?.(input.field.name, value);
 };
+
+/** The part of a `FieldControl` every ui control accepts. Empty when rendered bare. */
+interface ControlWiring {
+  readonly id?: string | undefined;
+  readonly 'aria-describedby'?: string | undefined;
+  readonly 'aria-invalid'?: boolean | undefined;
+  readonly required?: boolean | undefined;
+}
+
+const wiring = (control: FieldControl | undefined): ControlWiring =>
+  control === undefined
+    ? {}
+    : {
+        id: control.id,
+        'aria-describedby': control['aria-describedby'],
+        'aria-invalid': control['aria-invalid'],
+        required: control.required,
+      };
+
+/**
+ * A `date` column has no time of day, and ui's default formatter always renders one. A
+ * rendered midnight is wrong in every zone but the one the value was stored in.
+ */
+const dateOnly: DateTimeFormatter = (at, options) =>
+  new Intl.DateTimeFormat(options.locale, {
+    timeZone: options.zone,
+    dateStyle: 'medium',
+  }).format(at);
+
+/** `<input type="date">` wants `YYYY-MM-DD`; `datetime-local` wants `YYYY-MM-DDTHH:mm`. */
+const inputValueFor = (iso: string, precision: 'date' | 'instant'): string =>
+  iso.slice(0, precision === 'date' ? 10 : 16);
 
 /** Read-mode rendering of already-guarded props. Never formats; the widgets do that. */
 function readView(props: WidgetProps, field: AdminField): JSX.Element {
@@ -34,7 +77,11 @@ function readView(props: WidgetProps, field: AdminField): JSX.Element {
       return props.value === null ? (
         <span>{t('admin.value.empty')}</span>
       ) : (
-        <DateTime value={props.value} timeZone={props.timeZone} precision={props.precision} />
+        <DateTime
+          value={props.value}
+          timeZone={props.timeZone}
+          format={props.precision === 'date' ? dateOnly : undefined}
+        />
       );
     case 'checkbox':
       return <span>{t(props.value ? 'admin.value.true' : 'admin.value.false')}</span>;
@@ -67,106 +114,133 @@ function readView(props: WidgetProps, field: AdminField): JSX.Element {
 
 function editView(props: WidgetProps, input: WidgetInput): JSX.Element {
   const disabled = input.field.readOnly;
+  const shared = wiring(input.control);
   switch (props.widget) {
     case 'textarea':
       return (
-        <TextArea
+        <Textarea
+          {...shared}
           name={props.field}
           value={props.value}
           disabled={disabled}
-          onInput={(next: string) => emit(input, next)}
+          onInput={(event) => emit(input, event.currentTarget.value)}
         />
       );
     case 'number-input':
+      // `inputmode` on a text field, never `type="number"`: a locale decimal separator has to
+      // survive the round trip, and the entity's schema is what decides it is a number.
       return (
-        <TextInput
+        <Input
+          {...shared}
           name={props.field}
-          type="number"
+          inputmode="decimal"
           value={props.value === null ? '' : String(props.value)}
           disabled={disabled}
-          onInput={(next: string) => emit(input, next === '' ? null : Number(next))}
+          onInput={(event) => {
+            const next = event.currentTarget.value;
+            emit(input, next === '' ? null : Number(next));
+          }}
         />
       );
-    case 'money':
+    case 'money': {
+      // Minor units, not a decimal: turning "12,34" into cents is currency- and locale-aware
+      // work owned by @ultimat3/money, and the design system has no money input to host it.
+      const currency = props.value?.currency ?? input.field.currency ?? '';
       return (
-        <Money
-          value={props.value}
-          editable={!disabled}
-          onInput={(next: { minor: number; currency: string }) => emit(input, next)}
+        <Input
+          {...shared}
+          name={props.field}
+          inputmode="numeric"
+          value={props.value === null ? '' : String(props.value.minor)}
+          suffix={currency}
+          disabled={disabled}
+          onInput={(event) => {
+            const next = event.currentTarget.value;
+            emit(input, next === '' ? null : { minor: Number(next), currency });
+          }}
         />
       );
+    }
     case 'checkbox':
       return (
-        <Toggle
+        <Checkbox
+          {...shared}
+          label={t(input.field.labelKey)}
           name={props.field}
           checked={props.value}
           disabled={disabled}
-          onChange={(next: boolean) => emit(input, next)}
+          onChange={(event) => emit(input, event.currentTarget.checked)}
         />
       );
     case 'select':
       return (
         <Select
+          {...shared}
           name={props.field}
-          value={props.value}
+          value={props.value ?? ''}
           disabled={disabled}
           options={props.options.map((option) => ({
             value: option.value,
             label: t(option.labelKey),
           }))}
-          onChange={(next: string) => emit(input, next)}
+          onChange={(event) => emit(input, event.currentTarget.value)}
         />
       );
     case 'datetime':
+      // The stored value is the UTC instant, so the control edits UTC and says so beside the
+      // box: an operator editing a timestamp must know which zone they typed it in.
       return (
-        <DateTime
-          value={props.value}
-          timeZone={props.timeZone}
-          precision={props.precision}
-          editable={!disabled}
-          // The zone picker is part of the widget: an operator editing a timestamp must
-          // state which zone they typed it in.
-          zonePicker
-          onInput={(next: string) => emit(input, next)}
+        <Input
+          {...shared}
+          name={props.field}
+          type={props.precision === 'date' ? 'date' : 'datetime-local'}
+          value={props.value === null ? '' : inputValueFor(props.value, props.precision)}
+          suffix={props.precision === 'date' ? undefined : 'UTC'}
+          disabled={disabled}
+          onInput={(event) => emit(input, event.currentTarget.value)}
         />
       );
     case 'timezone-picker':
       return (
         <Select
+          {...shared}
           name={props.field}
-          value={props.value}
+          value={props.value ?? ''}
           disabled={disabled}
           options={ianaZones().map((zone) => ({ value: zone, label: zone }))}
-          onChange={(next: string) => emit(input, next)}
+          onChange={(event) => emit(input, event.currentTarget.value)}
         />
       );
     case 'locale-picker':
       return (
         <Select
+          {...shared}
           name={props.field}
-          value={props.value}
+          value={props.value ?? ''}
           disabled={disabled}
           options={locales().map((locale) => ({ value: locale, label: locale }))}
-          onChange={(next: string) => emit(input, next)}
+          onChange={(event) => emit(input, event.currentTarget.value)}
         />
       );
     case 'json-editor':
       return (
-        <TextArea
+        <Textarea
+          {...shared}
+          class="x-admin-json"
           name={props.field}
           value={props.value}
           disabled={disabled}
-          monospace
-          onInput={(next: string) => emit(input, next)}
+          onInput={(event) => emit(input, event.currentTarget.value)}
         />
       );
     default:
       return (
-        <TextInput
+        <Input
+          {...shared}
           name={props.field}
           value={String(props.value ?? '')}
           disabled={disabled}
-          onInput={(next: string) => emit(input, next)}
+          onInput={(event) => emit(input, event.currentTarget.value)}
         />
       );
   }

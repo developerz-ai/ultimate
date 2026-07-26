@@ -2,7 +2,7 @@
 // between them, Home/End jump to the ends, and arrow direction follows `dir`.
 
 import type { JSX } from 'solid-js';
-import { createRovingTabindex, useId } from '../a11y';
+import { ariaBool, createRovingTabindex, useId } from '../a11y';
 import { cx } from '../cx';
 import { useUi } from '../theme/context';
 import styles from './Tabs.module.scss';
@@ -61,7 +61,7 @@ export function Tabs(props: TabsProps): JSX.Element {
             role="tab"
             id={`${base}-tab-${item.id}`}
             class={styles['tab']}
-            aria-selected={props.value === item.id}
+            aria-selected={ariaBool(props.value === item.id)}
             aria-controls={`${base}-panel-${item.id}`}
             tabindex={props.value === item.id ? 0 : -1}
             disabled={item.disabled === true}

@@ -32,7 +32,7 @@ export function Form(props: FormProps): JSX.Element {
       style={{ '--form-gap': `var(--space-${props.gap ?? 5})` }}
       method={props.method ?? 'post'}
       action={props.action}
-      noValidate={props.novalidate === true}
+      novalidate={props.novalidate === true}
       aria-label={props['aria-label']}
       aria-describedby={props.error === undefined ? undefined : summaryId}
       onSubmit={props.onSubmit}

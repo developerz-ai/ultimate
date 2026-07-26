@@ -5,7 +5,7 @@
 
 import { describeActions } from '@ultimat3/action';
 import { describeEntities } from '@ultimat3/entity';
-import { describeJobs, inspectJob } from '@ultimat3/jobs';
+import { describeJobs, inspectJob, jobDriver } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
 import type { DevCapabilities, DevHost, DevIntrospection } from './dev-server';
 import { devTools } from './dev-server';
@@ -28,7 +28,13 @@ export function frameworkIntrospection(
     actions: () => describeActions(),
     queries: () => describeQueries(),
     jobs: () => describeJobs(),
-    jobInspect: (name: string) => inspectJob(name),
+    // inspectJob needs a driver; the ambient one is set at boot by the app's job config.
+    // Reported as a tool error rather than thrown, so `x mcp` stays usable without a queue.
+    jobInspect: (name: string) => {
+      const driver = jobDriver();
+      if (driver === undefined) return { error: 'no job driver configured' };
+      return inspectJob(driver, name);
+    },
   };
 }
 

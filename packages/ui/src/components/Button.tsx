@@ -2,6 +2,7 @@
 // need no extra rules; `loading` keeps the label mounted to avoid a layout jump.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Button.module.scss';
 import { Spinner } from './Spinner';
@@ -44,11 +45,11 @@ export function Button(props: ButtonProps): JSX.Element {
         props.class,
       )}
       disabled={inert()}
-      aria-disabled={inert()}
-      aria-busy={props.loading === true}
+      aria-disabled={ariaBool(inert())}
+      aria-busy={ariaBool(props.loading === true)}
       aria-label={props['aria-label']}
       aria-controls={props['aria-controls']}
-      aria-expanded={props['aria-expanded']}
+      aria-expanded={ariaBool(props['aria-expanded'])}
       onClick={props.onClick}
     >
       {props.loading === true ? (

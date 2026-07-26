@@ -325,6 +325,10 @@ export interface TNamespace {
   object<S extends Shape>(shape: S): ObjectSchema<S>;
   array<S extends AnySchema>(items: S): Schema<readonly InferInput<S>[], InferOutput<S>[]>;
   enum<const V extends readonly [string, ...string[]]>(values: V): Schema<V[number], V[number]>;
+  /** Variadic `enum`; the blessed spelling at call sites. */
+  enumerated<const V extends readonly [string, ...string[]]>(
+    ...values: V
+  ): Schema<V[number], V[number]>;
   literal<const V extends string | number | boolean>(value: V): Schema<V, V>;
   union<S extends readonly [AnySchema, ...AnySchema[]]>(
     ...members: S
@@ -368,6 +372,7 @@ export const builtinT: TNamespace = Object.freeze({
   object: objectSchema,
   array: arraySchema,
   enum: enumSchema,
+  enumerated: <const V extends readonly [string, ...string[]]>(...values: V) => enumSchema(values),
   literal: literalSchema,
   union: unionSchema,
   record: recordSchema,

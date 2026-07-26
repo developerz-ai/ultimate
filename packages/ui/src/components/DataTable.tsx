@@ -3,6 +3,7 @@
 // UltimateError with the same code/cause/fix strings the terminal prints.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
@@ -134,7 +135,7 @@ export function DataTable<Row>(props: DataTableProps<Row>): JSX.Element {
             ))}
           </tr>
         </thead>
-        <tbody aria-busy={props.loading === true}>{body()}</tbody>
+        <tbody aria-busy={ariaBool(props.loading === true)}>{body()}</tbody>
       </Table>
       {props.nextCursor === undefined && props.prevCursor === undefined ? null : (
         <Pagination

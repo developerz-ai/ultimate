@@ -2,6 +2,7 @@
 // the accessible name and the tooltip. There is no unlabelled icon button.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './IconButton.module.scss';
 import type { ButtonVariant, Size, Tone } from './variants';
@@ -30,8 +31,8 @@ export function IconButton(props: IconButtonProps): JSX.Element {
       type="button"
       title={props.label}
       aria-label={props.label}
-      aria-pressed={props['aria-pressed']}
-      aria-expanded={props['aria-expanded']}
+      aria-pressed={ariaBool(props['aria-pressed'])}
+      aria-expanded={ariaBool(props['aria-expanded'])}
       aria-controls={props['aria-controls']}
       disabled={props.disabled === true}
       class={cx(

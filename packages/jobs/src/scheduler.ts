@@ -12,7 +12,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { assert, logger } from '@ultimat3/core';
-import { nextCronOccurrence } from '@ultimat3/time';
+import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
 import type { AnyJobHandle } from './job';
@@ -50,11 +50,9 @@ export interface TaskHandle {
 /** Resolves the next fire time. Injected so scheduling logic is testable without a cron impl. */
 export type CronResolver = (cron: string, options: { tz: string; from: Date }) => Date;
 
-const defaultCronResolver: CronResolver = (cron, options) => {
-  // Normalised because a clock-ish API may hand back a Date or epoch ms.
-  const next: unknown = nextCronOccurrence(cron, options);
-  return next instanceof Date ? next : new Date(Number(next));
-};
+const defaultCronResolver: CronResolver = (cron, options) =>
+  // Instant is a branded Date, so it satisfies CronResolver's Date return directly.
+  nextCronOccurrence(cron, options.tz, instant(options.from));
 
 const registry = new Map<string, TaskHandle>();
 let anonymous = 0;

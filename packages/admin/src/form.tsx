@@ -5,6 +5,7 @@
 import { t } from '@ultimat3/i18n';
 import { Card, ErrorState, Field } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
+import { type AdminErrorParts, adminErrorFrom } from './errors';
 import type { AdminRow } from './registry';
 import type { AdminResource } from './resource';
 import type { ValidationIssue } from './validate';
@@ -18,7 +19,7 @@ export interface AdminFormProps<Row extends AdminRow> {
   readonly values: Readonly<Record<string, unknown>>;
   readonly issues: readonly ValidationIssue[];
   readonly submitting: boolean;
-  readonly error: { readonly code: string; readonly cause: string; readonly fix: string } | null;
+  readonly error: AdminErrorParts | null;
   readonly ctx: WidgetContext;
   readonly onInput: (field: string, value: unknown) => void;
   readonly onSubmit: () => void;
@@ -30,13 +31,13 @@ const issuesFor = (issues: readonly ValidationIssue[], field: string): readonly 
 
 export function AdminForm<Row extends AdminRow>(props: AdminFormProps<Row>): JSX.Element {
   if (props.error !== null) {
-    return <ErrorState code={props.error.code} cause={props.error.cause} fix={props.error.fix} />;
+    return <ErrorState error={adminErrorFrom(props.error)} />;
   }
 
   const titleKey = props.mode === 'create' ? 'admin.form.create' : 'admin.form.edit';
 
   return (
-    <Card title={t(titleKey, { entity: t(props.resource.titleKey) })}>
+    <Card header={<h2>{t(titleKey, { entity: t(props.resource.titleKey) })}</h2>}>
       <form
         onSubmit={(event: SubmitEvent) => {
           event.preventDefault();
@@ -59,24 +60,26 @@ export function AdminForm<Row extends AdminRow>(props: AdminFormProps<Row>): JSX
         {props.resource.formFields.map((field) => {
           const own = issuesFor(props.issues, field.name);
           return (
-            <Field
-              label={t(field.labelKey)}
-              name={field.name}
-              required={field.required}
-              invalid={own.length > 0}
-              id={`x-admin-field-${field.name}`}
-            >
-              <Widget
-                field={field}
-                value={props.values[field.name]}
-                ctx={props.ctx}
-                mode="edit"
-                onInput={props.onInput}
-              />
-              {own.map((issue) => (
-                <p class="x-admin-issue">{issue.message}</p>
-              ))}
-            </Field>
+            // The anchor target the issue summary links to. <Field> owns the control's own
+            // id, so the deep link lands on the wrapper and the label still points at the input.
+            <div id={`x-admin-field-${field.name}`}>
+              <Field
+                label={t(field.labelKey)}
+                required={field.required}
+                error={own.length === 0 ? undefined : own.map((issue) => issue.message).join(' ')}
+              >
+                {(control) => (
+                  <Widget
+                    field={field}
+                    value={props.values[field.name]}
+                    ctx={props.ctx}
+                    mode="edit"
+                    control={control}
+                    onInput={props.onInput}
+                  />
+                )}
+              </Field>
+            </div>
           );
         })}
 

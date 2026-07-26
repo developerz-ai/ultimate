@@ -158,7 +158,16 @@ describe('catalog shape', () => {
   test('errors.explain turns a stable code into cause + fix', async () => {
     const { tool } = toolset(BRANCH);
     const found = await tool('errors.explain').handle({ code: 'X_DB_DRIFT' }, caller);
-    expect((found.content[0] as { text: string }).text).toContain('x db gen "add column"');
+    // The payload is JSON, so the fix command arrives with escaped quotes — assert on the
+    // parsed object rather than the wire text, which can never match an unescaped string.
+    const explained = JSON.parse((found.content[0] as { text: string }).text) as {
+      code: string;
+      cause: string;
+      fix: string;
+    };
+    expect(explained.code).toBe('X_DB_DRIFT');
+    expect(explained.cause).toBeTruthy();
+    expect(explained.fix).toBe('x db gen "add column"');
     const missing = await tool('errors.explain').handle({ code: 'X_NOPE' }, caller);
     expect(missing.isError).toBe(true);
   });

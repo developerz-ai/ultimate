@@ -20,17 +20,16 @@ export interface ToastRegionProps {
 
 export function ToastRegion(props: ToastRegionProps): JSX.Element {
   return (
-    <div
+    <section
       class={cx(
         styles['region'],
         styles[`placement-${props.placement ?? 'block-end-inline-end'}`],
         props.class,
       )}
-      role="region"
       aria-label={props.label}
     >
       <ol class={styles['list']}>{props.children}</ol>
-    </div>
+    </section>
   );
 }
 

@@ -15,6 +15,7 @@ import type {
   EntityFact,
   ErrorCodeFact,
   JobFact,
+  JsonValue,
   PolicyFact,
   QueryFact,
   RouteFact,
@@ -38,6 +39,12 @@ export interface FrameworkSourcesInput {
  * functions return the framework's own descriptors; they are narrowed to the manifest's
  * fact shapes here, which is the one place that mapping lives.
  */
+/**
+ * A `JsonSchemaObject` is JSON by construction, but TypeScript will not assign an interface
+ * to an index-signature type. Converted in exactly one place rather than widening every fact.
+ */
+const asJson = (value: object): JsonValue => value as JsonValue;
+
 export function frameworkSources(input: FrameworkSourcesInput): ManifestSources {
   return {
     app: input.app,
@@ -46,9 +53,37 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
     tasks: input.tasks ?? [],
     locales: input.locales ?? [],
     errorCodes: input.errorCodes ?? [],
-    entities: describeEntities() as readonly EntityFact[],
-    actions: describeActions() as readonly ActionFact[],
-    queries: describeQueries() as readonly QueryFact[],
+    // Projected field by field, never cast: the primitive registries own richer shapes
+    // than the manifest publishes, and a cast would silently rot when either side moves.
+    entities: describeEntities().map((entity) => ({
+      name: entity.name,
+      table: entity.table,
+      columns: entity.columns.map((column) => ({
+        name: column.column,
+        type: column.kind,
+        nullable: !column.notNull,
+        primaryKey: column.primaryKey,
+        ...(column.references === null ? {} : { references: column.references }),
+      })),
+      invariants: entity.invariants.map((invariant) => invariant.name),
+    })),
+    actions: describeActions().map((action) => ({
+      name: action.name,
+      input: asJson(action.input),
+      output: asJson(action.output),
+      policy: action.capability,
+      cacheInvalidates: action.invalidates,
+      mcp: {
+        expose: action.mcp.expose,
+        ...(action.mcp.description === null ? {} : { description: action.mcp.description }),
+      },
+    })),
+    queries: describeQueries().map((query) => ({
+      name: query.name,
+      policy: query.capability,
+      live: query.live,
+      cacheTags: query.tags,
+    })),
     jobs: describeJobs() as readonly JobFact[],
   };
 }

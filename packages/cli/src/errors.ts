@@ -10,6 +10,8 @@ export const CLI_ERROR_CODES = [
   'X_NOT_IN_APP',
   'X_BUN_VERSION',
   'X_NOT_IMPLEMENTED',
+  'X_TEST_NO_FILES',
+  'X_TEST_SHARD_FAILED',
 ] as const;
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
@@ -72,6 +74,19 @@ export class BunVersionError extends UltimateError {
       cause: `Bun ${input.found} is older than the required ${input.required}`,
       fix: 'bun upgrade',
       docs: docsFor('X_BUN_VERSION'),
+    });
+  }
+}
+
+/** `x test` discovered nothing. A green run over zero files is the most expensive false pass. */
+export class NoTestFilesError extends UltimateError {
+  constructor(input: { root: string; filter?: string }) {
+    const where = input.filter === undefined ? '' : ` matching "${input.filter}"`;
+    super({
+      code: 'X_TEST_NO_FILES',
+      cause: `no *.test.ts files${where} under ${input.root}`,
+      fix: input.filter === undefined ? 'x test --cwd <repo root>' : 'x test',
+      docs: docsFor('X_TEST_NO_FILES'),
     });
   }
 }

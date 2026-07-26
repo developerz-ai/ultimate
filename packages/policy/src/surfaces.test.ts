@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { clearPermissions, definePermissions } from './permissions';
 import { can } from './policy';
 import { clearRoles, defineRoles } from './roles';
@@ -29,6 +29,14 @@ beforeEach(() => {
 const policy = can<Input>('post:publish');
 const editor = testActor('editor', { roles: ['editor'] }).actor;
 const guest = testActor('guest', { roles: [] }).actor;
+
+// The permission and role registries are process-global by design — one app, one set. A test
+// file that leaves them populated makes an unrelated package's `can()` throw
+// X_PERMISSION_UNKNOWN, so this file must hand the process back the way it found it.
+afterAll(() => {
+  clearPermissions();
+  clearRoles();
+});
 
 describe('one policy, four surfaces', () => {
   test('an allowed actor gets undefined everywhere — the call proceeds', () => {

@@ -34,6 +34,18 @@ export function resetIdCounter(): void {
   idCounter = 0;
 }
 
+/**
+ * `aria-busy`, `aria-checked`, `aria-disabled`, `aria-expanded`, `aria-invalid`,
+ * `aria-pressed` and `aria-selected` are ENUMERATED attributes, not boolean ones: their
+ * values are the literal strings "true" and "false", and an absent attribute is a third,
+ * different state. Converting at the DOM boundary keeps `undefined` meaning "omit" instead
+ * of collapsing it into "false".
+ */
+export function ariaBool(value: boolean | undefined): 'true' | 'false' | undefined {
+  if (value === undefined) return undefined;
+  return value ? 'true' : 'false';
+}
+
 export function focusableWithin(root: ParentNode): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
     (el) => el.offsetParent !== null || el.getClientRects().length > 0,
@@ -130,7 +142,10 @@ export function createRovingTabindex(
 ): (event: KeyboardEvent) => void {
   return (event) => {
     const items = getItems();
-    const current = items.indexOf(document.activeElement);
+    const active = document.activeElement;
+    // Focus may sit on nothing, on `<body>`, or on a non-HTML element (an SVG child): none of
+    // those are in `items`, and all of them mean "start from the first item".
+    const current = active instanceof HTMLElement ? items.indexOf(active) : -1;
     const next = nextRovingIndex(Math.max(current, 0), event.key, items.length, options);
     if (next === current || next < 0) return;
     event.preventDefault();

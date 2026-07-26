@@ -2,7 +2,7 @@
 // visible focus order are the accessibility contract; the theme attributes come from the
 // token system, so nothing here knows a colour.
 
-import { t } from '@ultimat3/i18n';
+import { type Locale, registeredLocales, t } from '@ultimat3/i18n';
 import { LocaleSwitcher, ThemeToggle } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import type { AdminApp } from './admin';
@@ -14,6 +14,7 @@ export interface AdminLayoutProps {
   readonly nav: readonly NavGroup[];
   readonly currentPath: string;
   readonly onSearch?: (term: string) => void;
+  readonly onLocaleChange?: (locale: Locale) => void;
   readonly children: JSX.Element;
 }
 
@@ -63,7 +64,8 @@ export function AdminLayout(props: AdminLayoutProps): JSX.Element {
         </search>
 
         <div class="x-admin-header-tools">
-          <LocaleSwitcher />
+          {/* The locales with a catalog: an option nobody translated is a broken page. */}
+          <LocaleSwitcher locales={registeredLocales()} onLocaleChange={props.onLocaleChange} />
           <ThemeToggle />
         </div>
       </header>

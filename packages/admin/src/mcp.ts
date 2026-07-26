@@ -2,7 +2,18 @@
 // `defineAppMcp` so the user's agents drive the user's app. Same authz, same audit, same
 // confirmation rules as the buttons — this file adds a transport, not a second back door.
 
-import { defineAppMcp } from '@ultimat3/mcp';
+import { agentActor } from '@ultimat3/core';
+import {
+  type AnyMcpTool,
+  type AppMcp,
+  defineAppMcp,
+  type JsonSchema,
+  jsonResult,
+  type McpCaller,
+  type McpToolResult,
+  type ResolvedToken,
+  type ToolArgs,
+} from '@ultimat3/mcp';
 import { invokeAdminAction } from './action-gate';
 import type { AdminApp } from './admin';
 import type { AdminActor } from './authz';
@@ -15,7 +26,13 @@ import {
   type CrudCtx,
   type CrudResult,
 } from './crud';
-import { type AdminMcpTool, adminMcpTools } from './mcp-tools';
+import type { AdminFieldType } from './fields';
+import {
+  type AdminMcpTool,
+  type AdminToolField,
+  adminMcpTools,
+  adminToolCatalog,
+} from './mcp-tools';
 import { confirmationToken } from './permissions';
 import type { AdminAction, AdminRow } from './registry';
 import { adminSearch } from './search';
@@ -149,29 +166,79 @@ export interface AdminMcpOptions {
   readonly requestId?: () => string;
 }
 
-/** Mount the admin as an app MCP server. Anonymous sessions get an empty tool list. */
-export function adminMcp(opts: AdminMcpOptions): ReturnType<typeof defineAppMcp> {
-  const { app } = opts;
+/** A field type an agent can actually send. Anything richer is a JSON object on the wire. */
+const JSON_TYPE: Readonly<Record<AdminFieldType, NonNullable<JsonSchema['type']>>> = {
+  text: 'string',
+  textarea: 'string',
+  number: 'number',
+  money: 'object',
+  boolean: 'boolean',
+  enum: 'string',
+  date: 'string',
+  timestamptz: 'string',
+  timezone: 'string',
+  locale: 'string',
+  json: 'object',
+  relation: 'string',
+  file: 'string',
+};
+
+const inputSchema = (fields: readonly AdminToolField[]): JsonSchema => ({
+  type: 'object',
+  properties: Object.fromEntries(
+    fields.map((field) => [field.name, { type: JSON_TYPE[field.type] }]),
+  ),
+  required: fields.filter((field) => field.required).map((field) => field.name),
+  additionalProperties: false,
+});
+
+/**
+ * `caller.actor` is whatever `resolveToken` returned, so the identity the tool runs as is the
+ * one the session authenticated as — id and roles are all authz reads.
+ */
+const adminActorOf = (caller: McpCaller): AdminActor => ({
+  id: caller.actor.id,
+  roles: caller.actor.roles,
+});
+
+function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMcpTool): AnyMcpTool {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: inputSchema(tool.input),
+    destructive: tool.destructive,
+    async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
+      const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: requestId() });
+      const result = await callAdminTool(opts.app, ctx, tool.name, args);
+      if (result.ok) return jsonResult(result.data);
+      // An expected outcome the model should reason about (a policy said no), not a
+      // protocol error: the transport still answers 200 with the denial in the body.
+      return { ...jsonResult({ error: result.error, reason: result.reason }), isError: true };
+    },
+  };
+}
+
+/**
+ * Mount the admin as an app MCP server.
+ *
+ * The catalog is static because `tools/list` is answered per server, not per caller — so
+ * visibility is NOT the gate here. Every call still goes through `callAdminTool`, which
+ * re-derives this actor's allowed tools and refuses anything not on it, exactly as the UI
+ * refuses a button the actor may not click.
+ */
+export function adminMcp(opts: AdminMcpOptions): AppMcp {
   const requestId = opts.requestId ?? ((): string => crypto.randomUUID());
 
   return defineAppMcp({
     name: 'admin',
-    description: 'Read and (policy permitting) mutate this app through its admin dashboard.',
-    async tools(session: { readonly token?: string }): Promise<readonly AdminMcpTool[]> {
-      const actor = await opts.actor(session);
-      if (actor === null) return [];
-      return adminMcpTools(app, app.ctx({ actor, requestId: requestId() }));
-    },
-    async call(
-      session: { readonly token?: string },
-      name: string,
-      input: McpInput,
-    ): Promise<AdminToolResult> {
-      const actor = await opts.actor(session);
-      if (actor === null) {
-        return { ok: false, error: 'X_ADMIN_DENIED', reason: 'admin.policy.anonymous' };
-      }
-      return callAdminTool(app, app.ctx({ actor, requestId: requestId() }), name, input);
+    tools: adminToolCatalog(opts.app).map((tool) => toMcpTool(opts, requestId, tool)),
+    async resolveToken(token: string): Promise<ResolvedToken | null> {
+      const actor = await opts.actor({ token });
+      // `kind: 'agent'` — the same actor shape an agent gets everywhere else, so a policy
+      // that distinguishes agents from people keeps working on this surface.
+      return actor === null
+        ? null
+        : { actor: agentActor({ id: actor.id, roles: actor.roles ?? [] }), scopes: new Set() };
     },
   });
 }

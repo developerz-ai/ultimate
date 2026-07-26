@@ -21,7 +21,13 @@
       "path": "../jobs"
     },
     {
+      "path": "../policy"
+    },
+    {
       "path": "../query"
+    },
+    {
+      "path": "../schema"
     }
   ]
 }

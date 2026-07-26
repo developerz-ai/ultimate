@@ -21,6 +21,8 @@ const CATALOG = {
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.new.done': 'created {name} — next: cd {name} && x dev',
   'cli.routes.empty': 'no routes in the manifest — run `x manifest` first',
+  'cli.test.fail': '{failed} of {workers} shard(s) failed',
+  'cli.test.pass': '{files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
 } as const;

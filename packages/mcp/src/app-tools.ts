@@ -8,29 +8,47 @@
 // Deliberately one function: an app author should never have to know that `ToolRegistry`,
 // `frameworkResources` and `mcpHttpRoute` exist.
 
+import type { StandardSchemaV1 } from '@ultimat3/schema';
+import type { AnyAppToolDefinition, AppTools } from './app-tool';
+import { appToolPrimitives } from './app-tool';
+import { exposedPrimitives } from './exposed';
 import type { ProjectablePrimitive } from './from-action';
 import { toolsFrom } from './from-action';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
+import { toPrompts } from './resources';
 import type { CreateMcpServerInput } from './server';
 import { createMcpServer, type McpServer } from './server';
 import type { McpRouteDescriptor, ResolvedToken } from './transport-http';
 import { mcpHttpRoute } from './transport-http';
 
-export interface DefineAppMcpInput {
+/** Schema map behind the authored `tools` record; inferred per tool, never written by hand. */
+export type AppToolSchemas = Readonly<Record<string, StandardSchemaV1>>;
+
+export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSchemas> {
   /** Server identity the client shows the user. Defaults to the package name at boot. */
   readonly name?: string;
   readonly version?: string;
+  /**
+   * `'exposed'` projects every registered action and query that declared
+   * `mcp: { expose: true }`. Additive: `actions`/`queries` below still work, and an explicitly
+   * listed primitive wins over the registry's copy of the same name.
+   */
+  readonly include?: 'exposed';
   /** Every action to consider. Only those with `mcp: { expose: true }` are projected. */
   readonly actions?: readonly ProjectablePrimitive[];
   /** Every query to consider. Same opt-in rule. */
   readonly queries?: readonly ProjectablePrimitive[];
   /** App-specific readable documents (a catalog export, a report). */
   readonly resources?: readonly McpResource[];
-  /** Prompts the app ships for its own domain. */
-  readonly prompts?: readonly McpPrompt[];
-  /** Hand-written tools for things no primitive covers. Rare — prefer an action. */
-  readonly tools?: readonly AnyMcpTool[];
+  /** Prompts the app ships: a path to a versioned artifact, or the full descriptor. */
+  readonly prompts?: readonly (string | McpPrompt)[];
+  /**
+   * Hand-written tools for things no primitive covers. Rare — prefer an action. Authored as a
+   * record whose KEY is the tool name; the array of ready `McpTool`s stays accepted for
+   * surfaces that build their catalog programmatically (`@ultimat3/admin` does).
+   */
+  readonly tools?: readonly AnyMcpTool[] | AppTools<TSchemas>;
   /** Bearer-token resolution. Omit to expose no HTTP route (stdio/embedded only). */
   resolveToken?(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Mount path. Defaults to `/mcp`. */
@@ -52,24 +70,37 @@ export interface AppMcp {
  * // apps/admin/src/mcp.ts
  * export const mcp = defineAppMcp({
  *   name: 'acme-admin',
- *   actions: [publishPost, suspendUser],
- *   queries: [liveFeed, orgUsage],
+ *   include: 'exposed',
+ *   prompts: ['apps/web/app/posts/prompts/summarize.v3.md'],
+ *   tools: {
+ *     seatReport: {
+ *       description: 'Seats used, remaining and the plan limit. Read-only.',
+ *       input: t.object({}),
+ *       policy: 'org:administer',
+ *       async handle({ ctx }) {
+ *         return seats(await ctx.orgs.byId(ctx.actor.orgId));
+ *       },
+ *     },
+ *   },
  *   resolveToken: (token) => sessions.resolveAgentToken(token),
  * });
  * ```
  */
-export function defineAppMcp(input: DefineAppMcpInput): AppMcp {
-  const projected = [
-    ...toolsFrom(input.actions ?? []),
-    ...toolsFrom(input.queries ?? []),
-    ...(input.tools ?? []),
-  ];
+export function defineAppMcp<TSchemas extends AppToolSchemas>(
+  input: DefineAppMcpInput<TSchemas>,
+): AppMcp {
+  const listed = [...toolsFrom(input.actions ?? []), ...toolsFrom(input.queries ?? [])];
+  // An explicitly listed primitive is a refinement of the registry's entry, not a rival to it,
+  // so `include` fills the gaps rather than colliding with what the caller already spelled out.
+  const included =
+    input.include === 'exposed' ? notNamed(toolsFrom(exposedPrimitives()), listed) : [];
+  const projected = [...listed, ...included, ...handWritten(input.tools)];
   assertUniqueNames(projected);
 
   const config: CreateMcpServerInput = {
     tools: projected,
     resources: input.resources ?? [],
-    prompts: input.prompts ?? [],
+    prompts: toPrompts(input.prompts ?? []),
     serverInfo: { name: input.name ?? 'ultimate-app', version: input.version ?? '0.0.0' },
   };
   const server = createMcpServer(config);
@@ -85,6 +116,28 @@ export function defineAppMcp(input: DefineAppMcpInput): AppMcp {
         });
 
   return { server, tools: projected, route };
+}
+
+/**
+ * The record form is normalized into primitives and then handed to the SAME `toolsFrom` that
+ * projects an action — which is what makes "one projection, one authz path" true rather than
+ * asserted. The array form is already a projected catalog and passes through untouched, so a
+ * surface that builds its tools programmatically (`@ultimat3/admin`) keeps working verbatim.
+ */
+function handWritten(
+  tools: readonly AnyMcpTool[] | AppTools<AppToolSchemas> | undefined,
+): readonly AnyMcpTool[] {
+  if (tools === undefined) return [];
+  if (Array.isArray(tools)) return tools as readonly AnyMcpTool[];
+  return toolsFrom(appToolPrimitives(tools as Readonly<Record<string, AnyAppToolDefinition>>));
+}
+
+function notNamed(
+  tools: readonly AnyMcpTool[],
+  exclude: readonly AnyMcpTool[],
+): readonly AnyMcpTool[] {
+  const taken = new Set(exclude.map((tool) => tool.name));
+  return tools.filter((tool) => !taken.has(tool.name));
 }
 
 /**

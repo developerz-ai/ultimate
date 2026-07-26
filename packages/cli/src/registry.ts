@@ -12,6 +12,7 @@ import { manifestCommand } from './cmd-manifest';
 import { mcpCommand } from './cmd-mcp';
 import { newCommand } from './cmd-new';
 import { routesCommand } from './cmd-routes';
+import { testCommand } from './cmd-test';
 import { verifyCommand } from './cmd-verify';
 import type { CliCommand } from './command';
 import type { CommandSpec } from './parse';
@@ -22,6 +23,7 @@ const CORE: readonly CliCommand[] = [
   newCommand,
   devCommand,
   buildCommand,
+  testCommand,
   verifyCommand,
   generateCommand,
   dbCommand,

@@ -41,7 +41,7 @@ export interface AdminEntity {
 }
 
 /** Compile-time note: a registered `Entity` is meant to be usable as an `AdminEntity`. */
-export type RegisteredEntity = Entity;
+export type RegisteredEntity = Entity<AdminRow>;
 /** Compile-time note: a registered `Repo` is meant to be usable as an `AdminRepo`. */
 export type RegisteredRepo = Repo;
 

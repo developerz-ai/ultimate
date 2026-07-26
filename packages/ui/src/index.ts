@@ -4,6 +4,7 @@
 export type { FocusTrap, Politeness, RovingOptions, RovingOrientation } from './a11y';
 export {
   announce,
+  ariaBool,
   createFocusTrap,
   createRovingTabindex,
   FOCUSABLE_SELECTOR,

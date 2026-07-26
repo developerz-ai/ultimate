@@ -38,6 +38,9 @@ export function Dialog(props: DialogProps): JSX.Element {
   });
 
   return (
+    // The backdrop's keyboard equivalent is Esc, which <dialog> raises as `cancel`, and
+    // `onCancel` below closes on it.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Esc closes through onCancel
     <dialog
       ref={(el: HTMLDialogElement) => {
         element = el;

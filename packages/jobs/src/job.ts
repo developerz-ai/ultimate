@@ -16,7 +16,7 @@ import { toMs } from './clock';
 import { DEFAULT_QUEUE } from './driver';
 import { IdempotencyRequiredError } from './errors';
 import type { RetryPolicy } from './retry';
-import { DEFAULT_RETRY } from './retry';
+import { type BackoffStrategy, DEFAULT_RETRY } from './retry';
 import type { StepApi } from './steps';
 
 export interface JobRunArgs<I> {
@@ -145,14 +145,17 @@ export function describeJobs(): readonly {
   readonly name: string;
   readonly input: unknown;
   readonly queue: string;
-  readonly retry: { readonly attempts: number; readonly backoff: string };
+  readonly retry: { readonly attempts: number; readonly backoff: BackoffStrategy };
   readonly steps: readonly string[];
 }[] {
   return registeredJobs().map((handle) => ({
     name: handle.name,
     input: describeSchema(handle.input),
     queue: handle.queue,
-    retry: { attempts: handle.retry.attempts, backoff: handle.retry.backoff },
+    retry: {
+      attempts: handle.retry.attempts,
+      backoff: handle.retry.backoff ?? DEFAULT_RETRY.backoff,
+    },
     // Empty by design: step names are chosen inside `run()` at execution time, so they are
     // not statically knowable. `inspect(name)` reports the steps an actual run recorded.
     steps: [],

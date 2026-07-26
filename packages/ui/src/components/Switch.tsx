@@ -2,6 +2,7 @@
 // a form submit). `role="switch"` on a native checkbox keeps keyboard behaviour.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Switch.module.scss';
 
@@ -30,7 +31,7 @@ export function Switch(props: SwitchProps): JSX.Element {
         name={props.name}
         checked={props.checked === true}
         disabled={props.disabled === true}
-        aria-checked={props.checked === true}
+        aria-checked={ariaBool(props.checked === true)}
         aria-describedby={props['aria-describedby']}
         onChange={props.onChange}
       />

@@ -120,7 +120,13 @@ expect.extend({
     );
   },
 
-  toBeWithinBudget(received: number, limit: number) {
+  toBeWithinBudget(received: unknown, limit: number) {
+    if (typeof received !== 'number') {
+      return result(
+        false,
+        `expected a number to compare against the budget, got ${typeof received}`,
+      );
+    }
     return result(received <= limit, `expected ${received} to be within the budget of ${limit}`);
   },
 

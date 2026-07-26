@@ -5,6 +5,9 @@
 // The framework introspection modules are reached through dynamic `import()` so the
 // production graph never statically references them: /_x must not cost the app path a byte.
 
+// Type-only, so it is erased: the introspection modules are still reached by dynamic
+// `import()` below and /_x stays out of the production graph.
+import type { JobState, StepStatus } from '@ultimat3/jobs';
 import type { AdminActor, AdminAuthz } from '../authz';
 import { DevSourceUnavailableError } from '../errors';
 import type {
@@ -79,10 +82,34 @@ export interface DevSourceOptions {
   readonly hooks?: Partial<DevSources>;
 }
 
+const unavailable = (source: string, panel: string): DevSourceUnavailableError =>
+  new DevSourceUnavailableError({ source, panel });
+
 const unwired = <T>(source: string, panel: string): (() => Promise<T>) => {
   return (): Promise<T> => {
-    throw new DevSourceUnavailableError({ source, panel });
+    throw unavailable(source, panel);
   };
+};
+
+/** How many recent runs the jobs panel traces. A dev panel reads, it does not page. */
+const RUN_WINDOW = 50;
+
+/** `JobState` and `StepStatus` are the queue's vocabulary; the panel renders its own. */
+const RUN_STATUS: Readonly<Record<JobState, JobRunFact['status']>> = {
+  ready: 'running',
+  delayed: 'running',
+  running: 'running',
+  suspended: 'running',
+  done: 'ok',
+  failed: 'failed',
+  dead: 'dead',
+};
+
+const STEP_STATUS: Readonly<Record<StepStatus, JobStepFact['status']>> = {
+  completed: 'ok',
+  sleeping: 'sleeping',
+  waiting: 'pending',
+  failed: 'failed',
 };
 
 /**
@@ -151,54 +178,57 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
     },
 
     async queues(): Promise<readonly QueueFact[]> {
-      const { inspect } = await import('@ultimat3/jobs');
-      return listOf(bagOf(await inspect())['queues']).map((raw) => {
-        const queue = bagOf(raw);
-        return {
-          name: str(queue['name'], 'default'),
-          depth: numOf(queue['depth']),
-          running: numOf(queue['running']),
-          failed: numOf(queue['failed']),
-          deadLetter: numOf(queue['deadLetter']),
-        };
-      });
+      const { inspectJobList, inspectQueues, jobDriver } = await import('@ultimat3/jobs');
+      const driver = jobDriver();
+      if (driver === undefined) throw unavailable('queues', 'jobs');
+      const report = await inspectQueues(driver);
+      // `stats()` counts states, and a failed job is one of them only until it is retried or
+      // dead-lettered; the honest count comes from the job list, which needs introspection.
+      const failed =
+        driver.introspect === undefined ? [] : await inspectJobList(driver, { state: 'failed' });
+      return report.queues.map((queue) => ({
+        name: queue.queue,
+        depth: queue.ready + queue.delayed,
+        running: queue.running,
+        failed: failed.filter((record) => record.queue === queue.queue).length,
+        deadLetter: queue.dead,
+      }));
     },
 
     async jobRuns(): Promise<readonly JobRunFact[]> {
-      const { inspect } = await import('@ultimat3/jobs');
-      return listOf(bagOf(await inspect())['runs']).map((raw) => {
-        const run = bagOf(raw);
-        return {
-          id: str(run['id']),
-          job: str(run['job']),
-          queue: str(run['queue'], 'default'),
-          status: str(run['status'], 'running') as JobRunFact['status'],
-          attempt: numOf(run['attempt'], 1),
-          steps: listOf(run['steps']).map((rawStep) => {
-            const step = bagOf(rawStep);
-            return {
-              name: str(step['name']),
-              status: str(step['status'], 'pending') as JobStepFact['status'],
-              attempt: numOf(step['attempt'], 1),
-              durationMs: numOf(step['durationMs']),
-              error: typeof step['error'] === 'string' ? step['error'] : null,
-            };
-          }),
-        };
-      });
+      const { inspectJob, inspectJobList, jobDriver } = await import('@ultimat3/jobs');
+      const driver = jobDriver();
+      if (driver === undefined) throw unavailable('jobRuns', 'jobs');
+      const records = await inspectJobList(driver, { limit: RUN_WINDOW });
+      // One trace per run, because the panel's whole question is "which step failed?" — a
+      // list row without its steps cannot answer it.
+      const traces = await Promise.all(records.map((record) => inspectJob(driver, record.id)));
+      return traces
+        .filter((trace): trace is NonNullable<typeof trace> => trace !== undefined)
+        .map((trace) => ({
+          id: trace.id,
+          job: trace.name,
+          queue: trace.queue,
+          status: RUN_STATUS[trace.state],
+          attempt: trace.attempt,
+          steps: trace.steps.map((step) => ({
+            name: step.name,
+            status: STEP_STATUS[step.status],
+            attempt: step.attempts,
+            durationMs: step.durationMs ?? 0,
+            error: step.error,
+          })),
+        }));
     },
 
     async tasks(): Promise<readonly TaskFact[]> {
-      const { describeTasks } = await import('@ultimat3/jobs');
-      return listOf(describeTasks()).map((raw) => {
-        const task = bagOf(raw);
-        return {
-          name: str(task['name']),
-          cron: str(task['cron']),
-          tz: str(task['tz'], 'UTC'),
-          nextRunAt: typeof task['nextRunAt'] === 'string' ? task['nextRunAt'] : null,
-        };
-      });
+      const { inspectManifest } = await import('@ultimat3/jobs');
+      return inspectManifest().tasks.map((task) => ({
+        name: task.name,
+        cron: task.cron,
+        tz: task.tz,
+        nextRunAt: task.nextRun,
+      }));
     },
 
     async tables(): Promise<readonly TableFact[]> {

@@ -2,12 +2,20 @@
 // on the `AdminAuthz` interface, so there is exactly one adaptation point between the app's
 // policies and the dashboard — and no second authz implementation can grow next to it.
 
+import { type Actor, userActor } from '@ultimat3/core';
 import { definePermissions, evaluate, type Policy } from '@ultimat3/policy';
-import { type AdminAuthz, type AdminDecision, allowed, denied } from './authz';
-import { ADMIN_PERMISSION_SPEC } from './permissions';
+import { type AdminActor, type AdminAuthz, type AdminDecision, allowed, denied } from './authz';
+import { ADMIN_PERMISSIONS } from './permissions';
 
 /** The admin's own permission set, registered with the policy layer at import time. */
-export const adminPermissions = definePermissions(ADMIN_PERMISSION_SPEC);
+export const adminPermissions = definePermissions(ADMIN_PERMISSIONS);
+
+/**
+ * The admin carries its own actor shape; @ultimat3/policy evaluates core's `Actor`. The
+ * mapping lives here because this file is the only one allowed to speak to the policy layer.
+ */
+const policyActor = (actor: AdminActor): Actor =>
+  userActor({ id: actor.id, roles: actor.roles ?? [] });
 
 /**
  * `evaluate()`'s result is read structurally: the policy layer owns its own decision type,
@@ -44,7 +52,13 @@ export function policyAuthz(input: PolicyAuthzInput): AdminAuthz {
           `fix: definePermissions({ '${permission}': … }) or can('${permission}') on the action`,
         ]);
       }
-      return readDecision(permission, evaluate(policy, { actor, input: subject?.input, subject }));
+      // `EvaluateArgs` carries exactly one payload. An admin subject with no action input IS
+      // that payload: a row-level rule has nothing but the entity and id to decide on.
+      const payload = subject?.input ?? subject;
+      return readDecision(
+        permission,
+        evaluate(policy, { actor: policyActor(actor), input: payload }),
+      );
     },
   };
 }

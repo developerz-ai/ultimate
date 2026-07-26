@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { FOCUSABLE_SELECTOR, nextRovingIndex, resetIdCounter, useId } from './a11y';
+import { ariaBool, FOCUSABLE_SELECTOR, nextRovingIndex, resetIdCounter, useId } from './a11y';
 
 describe('useId', () => {
   beforeEach(resetIdCounter);
@@ -49,5 +49,13 @@ describe('FOCUSABLE_SELECTOR', () => {
     expect(FOCUSABLE_SELECTOR).toContain('button:not([disabled])');
     expect(FOCUSABLE_SELECTOR).toContain('[tabindex]:not([tabindex="-1"])');
     expect(FOCUSABLE_SELECTOR).not.toContain('button,');
+  });
+});
+
+describe('ariaBool', () => {
+  test('renders enumerated strings and keeps undefined as "omit the attribute"', () => {
+    expect(ariaBool(true)).toBe('true');
+    expect(ariaBool(false)).toBe('false');
+    expect(ariaBool(undefined)).toBeUndefined();
   });
 });

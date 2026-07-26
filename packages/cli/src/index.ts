@@ -30,6 +30,16 @@ export { handleRpc, MCP_TOOLS, mcpCommand } from './cmd-mcp';
 export type { NewAppOptions, WrittenApp } from './cmd-new';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
 export { renderRouteTable, routesCommand } from './cmd-routes';
+export type { RunShardsOptions, Shard, TestFile } from './cmd-test';
+export {
+  availableCpus,
+  discoverTests,
+  planShards,
+  reproduceFor,
+  runShards,
+  shardArgs,
+  testCommand,
+} from './cmd-test';
 export type { StepOutcome, VerifyContext, VerifyOptions, VerifyStep } from './cmd-verify';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
@@ -45,6 +55,7 @@ export {
   BunVersionError,
   CLI_ERROR_CODES,
   CliNotImplementedError,
+  NoTestFilesError,
   NotInAppError,
   UnknownCommandError,
   VerifyFailedError,

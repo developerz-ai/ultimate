@@ -52,6 +52,24 @@ export interface McpPromptArgument {
   readonly required?: boolean;
 }
 
+/**
+ * A prompt may be authored as a path to a versioned prompt artifact
+ * (`apps/web/app/posts/prompts/summarize.v3.md`). The file IS the contract, so restating its
+ * name and description in a second place is exactly the duplication that goes stale — the name
+ * comes from the filename, version suffix included, because `summarize.v2` and `summarize.v3`
+ * are two different prompts and an agent must be able to say which one it read.
+ */
+export function promptFromPath(path: string): McpPrompt {
+  const file = path.split('/').pop() ?? path;
+  const name = file.replace(/\.(md|markdown|txt|prompt)$/i, '');
+  return { name, description: `Versioned prompt artifact: ${path}` };
+}
+
+/** Accepts either authoring form; an object is already the wire shape and passes through. */
+export function toPrompts(prompts: readonly (string | McpPrompt)[]): readonly McpPrompt[] {
+  return prompts.map((prompt) => (typeof prompt === 'string' ? promptFromPath(prompt) : prompt));
+}
+
 /** The four documents every Ultimate app publishes. Any provider may be omitted. */
 export interface FrameworkResourceProviders {
   /** `x.manifest.json` contents — the generated facts. */

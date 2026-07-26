@@ -86,3 +86,19 @@ export class DevDashboardInProdError extends UltimateError {
     });
   }
 }
+
+/** The three strings a failed admin request carries to the view. */
+export interface AdminErrorParts {
+  readonly code: string;
+  readonly cause: string;
+  readonly fix: string;
+}
+
+/**
+ * A route hands a view the error as data, because it crossed a wire and lost its class. The
+ * views render it through ui's `<ErrorState>`, which reads an UltimateError — so it is
+ * rehydrated here rather than paraphrased into a second, drifting rendering.
+ */
+export function adminErrorFrom(parts: AdminErrorParts): UltimateError {
+  return new UltimateError({ code: parts.code, cause: parts.cause, fix: parts.fix });
+}

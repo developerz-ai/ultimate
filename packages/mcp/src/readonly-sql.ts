@@ -97,7 +97,7 @@ export function assertReadOnlyQuery(sql: string): string {
   }
 
   const statement = statements[0] ?? '';
-  const words = statement.toLowerCase().match(/[a-z_]+/g) ?? [];
+  const words: readonly string[] = statement.toLowerCase().match(/[a-z_]+/g) ?? [];
   const leader = words[0] ?? '';
   if (!READ_LEADERS.has(leader)) {
     throw violation(

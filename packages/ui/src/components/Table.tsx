@@ -23,12 +23,7 @@ export function Table(props: TableProps): JSX.Element {
   return (
     // tabindex makes the scroll region keyboard-reachable, which is required
     // whenever a scrollable element has no focusable children.
-    <div
-      class={cx(styles['scroller'], props.class)}
-      tabindex="0"
-      role="region"
-      aria-label={props.caption}
-    >
+    <section class={cx(styles['scroller'], props.class)} tabindex="0" aria-label={props.caption}>
       <table
         class={cx(
           styles['table'],
@@ -42,6 +37,6 @@ export function Table(props: TableProps): JSX.Element {
         </caption>
         {props.children}
       </table>
-    </div>
+    </section>
   );
 }

@@ -63,14 +63,18 @@ const call = (method: string, params?: unknown) =>
 describe('hidden is not forbidden', () => {
   test('tools/list omits a tool hidden from the caller role', async () => {
     const listed = await server.handle(call('tools/list'), caller('member', ['db:read']));
-    const names = (listed?.result as { tools: { name: string }[] }).tools.map((t) => t.name);
+    const result = listed?.result as { tools: { name: string }[] } | undefined;
+    expect(result).toBeDefined();
+    const names = (result?.tools ?? []).map((t) => t.name);
     expect(names).toEqual(['open.tool', 'scoped.tool']);
     expect(names).not.toContain('admin.only');
   });
 
   test('tools/list includes it for a role that may see it', async () => {
     const listed = await server.handle(call('tools/list'), caller('admin', []));
-    const names = (listed?.result as { tools: { name: string }[] }).tools.map((t) => t.name);
+    const result = listed?.result as { tools: { name: string }[] } | undefined;
+    expect(result).toBeDefined();
+    const names = (result?.tools ?? []).map((t) => t.name);
     expect(names).toContain('admin.only');
   });
 
@@ -93,7 +97,8 @@ describe('hidden is not forbidden', () => {
     );
     expect(response?.error?.code).toBe(INVALID_REQUEST);
     expect(response?.error?.message).toBe('missing scope: db:read');
-    expect((response?.error?.data as { code: string }).code).toBe('X_MCP_SCOPE_MISSING');
+    const data = response?.error?.data as { code: string } | undefined;
+    expect(data?.code).toBe('X_MCP_SCOPE_MISSING');
   });
 });
 
@@ -121,17 +126,16 @@ describe('dispatch', () => {
       call('tools/call', { name: 'scoped.tool', arguments: {} }),
       caller('member', ['db:read']),
     );
-    expect((ok?.result as { content: { text: string }[] }).content[0]?.text).toBe('limit=10');
+    const okResult = ok?.result as { content: { text: string }[] } | undefined;
+    expect(okResult?.content[0]?.text).toBe('limit=10');
 
     const bad = await server.handle(
       call('tools/call', { name: 'scoped.tool', arguments: { limit: 0, nope: 1 } }),
       caller('member', ['db:read']),
     );
     expect(bad?.error?.code).toBe(INVALID_PARAMS);
-    expect((bad?.error?.data as { issues: string[] }).issues).toEqual([
-      'nope: unknown property',
-      'limit: must be >= 1',
-    ]);
+    const badData = bad?.error?.data as { issues: string[] } | undefined;
+    expect(badData?.issues).toEqual(['nope: unknown property', 'limit: must be >= 1']);
   });
 
   test('resources/read returns the manifest at its stable URI', async () => {
@@ -139,7 +143,9 @@ describe('dispatch', () => {
       call('resources/read', { uri: 'ultimate://manifest' }),
       caller(undefined, []),
     );
-    const contents = (response?.result as { contents: { text: string }[] }).contents;
+    const resourceResult = response?.result as { contents: { text: string }[] } | undefined;
+    expect(resourceResult).toBeDefined();
+    const contents = resourceResult?.contents ?? [];
     expect(contents[0]?.text).toBe('{"version":1}');
   });
 

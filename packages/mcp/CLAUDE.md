@@ -21,12 +21,17 @@ import. The CLI wires it.
 | `transport-http.ts` | `POST /mcp` route descriptor, bearer → agent actor |
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
+| `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
+| `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
+| `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
 
 ## Invariants
 
 - Role-hidden → `-32601` ToolNotFound. Scope-missing → `-32600`. Never swap them.
 - Resolve order is visibility → scope → args. Validating first leaks a schema.
-- A projected action tool has **no `scope`**. The action's policy is the only gate.
+- A projected action tool has **no `scope`**. The action's policy is the only gate. A
+  hand-written app tool is the same: its `policy` reaches `guard()` from `@ultimat3/action`,
+  which is the one authz path — never a second check written for MCP.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs.
 - `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.

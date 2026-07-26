@@ -2,6 +2,7 @@
 // supported, with `rows` as the floor — no resize observer, no JS.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Textarea.module.scss';
 
@@ -39,7 +40,7 @@ export function Textarea(props: TextareaProps): JSX.Element {
       maxlength={props.maxlength}
       aria-label={props['aria-label']}
       aria-describedby={props['aria-describedby']}
-      aria-invalid={props['aria-invalid'] === true}
+      aria-invalid={ariaBool(props['aria-invalid'])}
       onInput={props.onInput}
       onBlur={props.onBlur}
     />

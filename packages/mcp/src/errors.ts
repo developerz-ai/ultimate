@@ -9,6 +9,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_ARGS_INVALID',
   'X_MCP_PROTOCOL',
   'X_MCP_READONLY_VIOLATION',
+  'X_MCP_TOOL_UNSAFE',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -53,6 +54,22 @@ export class McpArgsInvalidError extends UltimateError {
       cause: `arguments for "${input.name}" are invalid: ${input.issues.join('; ')}`,
       fix: `re-read the tool's inputSchema from tools/list and resend`,
       docs: docsFor('X_MCP_ARGS_INVALID'),
+    });
+  }
+}
+
+/**
+ * A hand-written tool reached `defineAppMcp` with no policy. Boot-time, because a server that
+ * starts and then refuses every call is indistinguishable from one that is merely broken —
+ * and a tool that starts and then allows every call is a second door into the data.
+ */
+export class McpToolUnsafeError extends UltimateError {
+  constructor(input: { name: string }) {
+    super({
+      code: 'X_MCP_TOOL_UNSAFE',
+      cause: `tool "${input.name}" declares no policy; an unguarded tool is a second door into the data`,
+      fix: `add policy: '<resource>:<verb>' to the tool, reusing the permission its action uses`,
+      docs: docsFor('X_MCP_TOOL_UNSAFE'),
     });
   }
 }

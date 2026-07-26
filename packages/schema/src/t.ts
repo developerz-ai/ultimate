@@ -63,6 +63,16 @@ export const t: TNamespace = {
   enum<const V extends readonly [string, ...string[]]>(values: V): Schema<V[number], V[number]> {
     return provider().enum(values);
   },
+  /**
+   * Variadic form of `enum`, and the blessed spelling: it spreads a `const` tuple of codes
+   * straight from the domain package (`t.enumerated(...PLAN_CODES)`) and avoids the reserved
+   * word at the call site.
+   */
+  enumerated<const V extends readonly [string, ...string[]]>(
+    ...values: V
+  ): Schema<V[number], V[number]> {
+    return provider().enum(values);
+  },
   literal<const V extends string | number | boolean>(value: V): Schema<V, V> {
     return provider().literal(value);
   },

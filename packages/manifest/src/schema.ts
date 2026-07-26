@@ -60,7 +60,8 @@ export interface ActionFact {
 
 export interface QueryFact {
   readonly name: string;
-  readonly input: JsonValue;
+  /** Optional: `QueryDescriptor` is schema-erased, so a live query may not expose one. */
+  readonly input?: JsonValue;
   readonly policy: string | null;
   readonly live: boolean;
   readonly cacheTags: readonly string[];

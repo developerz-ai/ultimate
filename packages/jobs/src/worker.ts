@@ -331,7 +331,10 @@ export function createWorker(options: WorkerOptions): Worker {
       if (state === 'running') return;
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
-      if (options.drainOnShutdown !== false) onShutdown(() => stop('SIGTERM'));
+      // 'accept' phase: stop claiming before core waits on in-flight jobs.
+      if (options.drainOnShutdown !== false) {
+        onShutdown(`jobs.worker.${workerId}`, () => stop('SIGTERM'), { phase: 'accept' });
+      }
       schedule();
     },
     tick,

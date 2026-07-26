@@ -2,6 +2,7 @@
 // on mobile, on keyboard, and with screen readers.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Select.module.scss';
 import type { Size } from './variants';
@@ -42,7 +43,7 @@ export function Select(props: SelectProps): JSX.Element {
         disabled={props.disabled === true}
         aria-label={props['aria-label']}
         aria-describedby={props['aria-describedby']}
-        aria-invalid={props['aria-invalid'] === true}
+        aria-invalid={ariaBool(props['aria-invalid'])}
         onChange={props.onChange}
       >
         {props.placeholder === undefined ? null : (

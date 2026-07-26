@@ -3,13 +3,7 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import type {
-  AnyMcpTool,
-  McpCaller,
-  McpToolResult,
-  McpVerbClass,
-  ToolListEntry,
-} from './registry';
+import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';

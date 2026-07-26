@@ -2,6 +2,7 @@
 // input, so the whole row is a hit target without a manual `for`/`id` pairing.
 
 import type { JSX } from 'solid-js';
+import { ariaBool } from '../a11y';
 import { cx } from '../cx';
 import styles from './Checkbox.module.scss';
 
@@ -35,9 +36,9 @@ export function Checkbox(props: CheckboxProps): JSX.Element {
         checked={props.checked === true}
         disabled={props.disabled === true}
         required={props.required === true}
-        aria-checked={props.indeterminate === true ? 'mixed' : props.checked === true}
+        aria-checked={props.indeterminate === true ? 'mixed' : ariaBool(props.checked === true)}
         aria-describedby={props['aria-describedby']}
-        aria-invalid={props['aria-invalid'] === true}
+        aria-invalid={ariaBool(props['aria-invalid'])}
         onChange={props.onChange}
       />
       <span

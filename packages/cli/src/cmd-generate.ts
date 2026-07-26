@@ -161,12 +161,11 @@ export const generateCommand: CliCommand = {
       });
     }
     const surfaceFlag = flagString(ctx.args, 'surface');
+    const featureFlag = flagString(ctx.args, 'feature');
     const files = generate({
       kind,
       name,
-      ...(flagString(ctx.args, 'feature') === undefined
-        ? {}
-        : { feature: flagString(ctx.args, 'feature') }),
+      ...(featureFlag === undefined ? {} : { feature: featureFlag }),
       surface: surfaceFlag === 'site' ? 'site' : 'app',
       live: flagBool(ctx.args, 'live'),
     });

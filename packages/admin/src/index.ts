@@ -123,8 +123,10 @@ export {
   ADMIN_ERROR_CODES,
   AdminEntityUnknownError,
   type AdminErrorCode,
+  type AdminErrorParts,
   AdminFieldUnsupportedError,
   AdminPolicyMissingError,
+  adminErrorFrom,
   DevDashboardInProdError,
   DevSourceUnavailableError,
 } from './errors';
@@ -155,6 +157,7 @@ export {
   type AdminToolField,
   type AdminToolKind,
   adminMcpTools,
+  adminToolCatalog,
   adminToolDecisions,
 } from './mcp-tools';
 export { adminNav, type NavGroup, type NavItem, type NavOptions, visibleNav } from './nav';
