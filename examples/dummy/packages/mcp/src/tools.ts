@@ -23,6 +23,8 @@ export const mcp = defineAppMcp({
         'Preview the acting member’s next digest: delivery instant in their timezone and the posts it would contain. Read-only, sends nothing.',
       input: t.object({}),
       policy: 'member:self',
+      /** Read-only. `destructive` defaults to true, so a read tool must say so. */
+      destructive: false,
       async handle({ ctx }) {
         const at = nextDigestAt(ctx.now(), ctx.actor.tz);
         const posts = await ctx.posts.publishedSince(
@@ -44,6 +46,8 @@ export const mcp = defineAppMcp({
         'Seats used, seats remaining and the plan limit for the acting organisation. Read-only.',
       input: t.object({}),
       policy: 'org:administer',
+      /** Read-only. `destructive` defaults to true, so a read tool must say so. */
+      destructive: false,
       async handle({ ctx }) {
         const org = await ctx.orgs.byId(ctx.actor.orgId);
         return {
@@ -64,6 +68,8 @@ export const mcp = defineAppMcp({
         'Quote a prorated upgrade in minor units for the acting organisation. Charges nothing — use upgradePlan to actually move.',
       input: t.object({ plan: t.enumerated(...PLAN_CODES) }),
       policy: 'org:administer',
+      /** Read-only. `destructive` defaults to true, so a read tool must say so. */
+      destructive: false,
       async handle({ input, ctx }) {
         const org = await ctx.orgs.byId(ctx.actor.orgId);
         return quoteUpgrade({

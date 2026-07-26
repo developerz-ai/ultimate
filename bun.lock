@@ -87,6 +87,7 @@
       "dependencies": {
         "@postly/core": "0.0.1",
         "@postly/domain": "0.0.1",
+        "@ultimat3/action": "0.0.1",
         "@ultimat3/core": "0.0.1",
         "@ultimat3/mcp": "0.0.1",
         "@ultimat3/schema": "0.0.1",
@@ -263,7 +264,9 @@
         "@ultimat3/core": "0.0.1",
         "@ultimat3/entity": "0.0.1",
         "@ultimat3/jobs": "0.0.1",
+        "@ultimat3/policy": "0.0.1",
         "@ultimat3/query": "0.0.1",
+        "@ultimat3/schema": "0.0.1",
       },
     },
     "packages/money": {

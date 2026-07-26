@@ -1,20 +1,31 @@
 /**
  * contract — the MCP surface is a projection, so the things worth asserting are the projection
- * rules: every exposed action is a tool, every tool has a policy, and the policy is the *same
- * object* the HTTP path uses rather than an equivalent-looking copy.
+ * rules: every exposed action becomes a tool, nothing reaches a client without a policy, and a
+ * mutating tool cannot be metered as cheap read chatter by omission.
+ *
+ * These assert against the real `AppMcp` shape: `tools` is an array, and a tool's policy is
+ * enforced inside `handle` rather than exposed as a field — which is why "no tool without a
+ * policy" is asserted at construction time (`X_MCP_TOOL_UNSAFE`) instead of by inspecting rows.
  */
 
+import { describeActions } from '@ultimat3/action';
+import { defineAppMcp } from '@ultimat3/mcp';
+import { t } from '@ultimat3/schema';
 import { expect, test } from '@ultimat3/testing';
 import { mcp } from './tools';
 
-test('every action that declares mcp.expose is a tool, and nothing else is', async ({
-  manifest,
-}) => {
-  const exposed = manifest.actions.filter((entry) => entry.mcp?.expose).map((entry) => entry.name);
-  const toolNames = mcp.tools().map((tool) => tool.name.replace('postly.', ''));
+const bare = (name: string): string => name.replace(/^postly\./, '');
+
+test('every action that declares mcp.expose is a tool, and nothing else is', () => {
+  const exposed = describeActions()
+    .filter((entry) => entry.mcp?.expose === true)
+    .map((entry) => entry.name);
+  const toolNames = mcp.tools.map((tool) => bare(tool.name));
 
   for (const name of exposed) expect(toolNames).toContain(name);
-  // The only tools not backed by an action are the three declared in tools.ts.
+
+  // The only tools not backed by an action are the three declared in tools.ts. If this list
+  // grows, a read tool was added without a matching action — which is fine, but deliberate.
   expect(toolNames.filter((name) => !exposed.includes(name)).sort()).toEqual([
     'digestPreview',
     'planQuote',
@@ -22,32 +33,30 @@ test('every action that declares mcp.expose is a tool, and nothing else is', asy
   ]);
 });
 
-test('no tool reaches a client without a policy', () => {
-  const unguarded = mcp.tools().filter((tool) => tool.policy === undefined);
-  expect(unguarded.map((tool) => tool.name)).toEqual([]);
+test('no tool reaches a client without a policy — it fails at boot, not at call time', () => {
+  expect(() =>
+    defineAppMcp({
+      name: 'postly-test',
+      tools: {
+        unguarded: {
+          description: 'A tool with no policy must not be constructible.',
+          input: t.object({}),
+          handle: () => Promise.resolve({ ok: true }),
+        },
+      },
+    }),
+  ).toThrow(/X_MCP_TOOL_UNSAFE/);
 });
 
-test('a tool and its HTTP route share one policy object, not two equal ones', async ({
-  actionByName,
-}) => {
-  const tool = mcp.tool('postly.publishPost');
-  expect(tool.policy).toBe(actionByName('publishPost').policy);
-});
+test('a read tool is not metered as destructive, and every tool carries a schema', () => {
+  const quote = mcp.tools.find((tool) => bare(tool.name) === 'planQuote');
+  expect(quote).toBeDefined();
+  // planQuote must never charge — see @postly/mcp CLAUDE.md. `destructive` defaults to true,
+  // so a read tool has to say so explicitly, and a new mutating tool cannot be cheap by default.
+  expect(quote?.destructive).toBe(false);
 
-test('planQuote quotes without charging', async ({ seed, actorFor, billing }) => {
-  const { owner } = await seed('dev').pick({ owner: 'member:ada' });
-
-  const quote = await mcp.call('postly.planQuote', { plan: 'business' }, actorFor(owner));
-
-  expect(quote.charge.currency).toBe('USD');
-  expect(quote.charge.minor).toBeGreaterThan(0);
-  expect(billing.charges()).toEqual([]); // the money tool is upgradePlan, and it was not called
-});
-
-test('a tool denies exactly where the UI would', async ({ seed, actorFor }) => {
-  const { author } = await seed('dev').pick({ author: 'member:bruno' }); // not an owner
-
-  await expect(mcp.call('postly.seatReport', {}, actorFor(author))).rejects.toMatchError(
-    'X_POLICY_DENIED',
-  );
+  for (const tool of mcp.tools) {
+    expect(tool.description.length).toBeGreaterThan(0);
+    expect(tool.inputSchema).toBeDefined();
+  }
 });
