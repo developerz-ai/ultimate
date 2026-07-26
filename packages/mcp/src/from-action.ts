@@ -11,10 +11,10 @@
 // JSON Schema); this file owns the execution half.
 
 import type { Actor } from '@ultimat3/core';
-import type { AnyMcpTool, McpCaller, McpRole, McpToolResult, ToolArgs } from './registry.ts';
-import { jsonResult } from './registry.ts';
-import type { JsonSchema } from './wire.ts';
-import { NO_ARGS } from './wire.ts';
+import type { AnyMcpTool, McpCaller, McpRole, McpToolResult, ToolArgs } from './registry';
+import { jsonResult } from './registry';
+import type { JsonSchema } from './wire';
+import { NO_ARGS } from './wire';
 
 /**
  * MCP exposure as declared on an action/query (`mcp: { expose: true, description }`).

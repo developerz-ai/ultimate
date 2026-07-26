@@ -11,9 +11,9 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Money } from '@ultimat3/money';
-import { AiBudgetExceededError } from './errors.ts';
-import type { TokenUsage } from './provider.ts';
-import { totalTokens } from './provider.ts';
+import { AiBudgetExceededError } from './errors';
+import type { TokenUsage } from './provider';
+import { totalTokens } from './provider';
 
 /** Token ceilings. An omitted scope is unlimited — declare the ones that matter. */
 export interface BudgetLimits {

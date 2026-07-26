@@ -13,10 +13,10 @@
 //     refuse what a human would be allowed.
 
 import type { Actor } from '@ultimat3/core';
-import type { McpCaller, McpRole, McpVerbClass } from './registry.ts';
-import type { McpServer } from './server.ts';
-import type { JsonRpcResponse } from './wire.ts';
-import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire.ts';
+import type { McpCaller, McpRole, McpVerbClass } from './registry';
+import type { McpServer } from './server';
+import type { JsonRpcResponse } from './wire';
+import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
 
 /** Requests per minute per token, by class. Reads are cheap; a write may run migrations. */
 export const MCP_RATE_LIMITS: Readonly<Record<McpVerbClass, number>> = {

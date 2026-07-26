@@ -7,11 +7,11 @@ import { describeActions } from '@ultimat3/action';
 import { describeEntities } from '@ultimat3/entity';
 import { describeJobs, inspectJob } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
-import type { DevCapabilities, DevHost, DevIntrospection } from './dev-server.ts';
-import { devTools } from './dev-server.ts';
-import type { FrameworkResourceProviders } from './resources.ts';
-import { frameworkResources } from './resources.ts';
-import { createMcpServer, type McpServer } from './server.ts';
+import type { DevCapabilities, DevHost, DevIntrospection } from './dev-server';
+import { devTools } from './dev-server';
+import type { FrameworkResourceProviders } from './resources';
+import { frameworkResources } from './resources';
+import { createMcpServer, type McpServer } from './server';
 
 /**
  * The description half of a real app's `DevHost`. `routes` and `policies` are supplied by

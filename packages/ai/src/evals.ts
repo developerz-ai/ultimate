@@ -7,9 +7,9 @@
 // Every result is filed against a prompt's content hash, so a score is always attributable
 // to an exact prompt rather than "whatever was in main that day".
 
-import { EvalThresholdError } from './errors.ts';
-import type { Gateway } from './gateway.ts';
-import type { Prompt, PromptVars } from './prompt.ts';
+import { EvalThresholdError } from './errors';
+import type { Gateway } from './gateway';
+import type { Prompt, PromptVars } from './prompt';
 
 /** One case: the variables to render with, plus what a good answer looks like. */
 export interface EvalCase<V extends PromptVars = PromptVars> {

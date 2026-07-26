@@ -1,6 +1,6 @@
 # Ultimate wiki
 
-A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer.
+A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
 
 **Pre-v1 `As of 2026-07`.** Nothing is published to npm, no API is stable, and no benchmark numbers exist yet. The marketing site is [ultimate.developerz.ai](https://ultimate.developerz.ai/); this wiki is the deeper reference.
 

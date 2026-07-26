@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import type { AnyMcpTool, McpCaller } from './registry.ts';
-import { textResult } from './registry.ts';
-import { frameworkResources } from './resources.ts';
-import { createMcpServer } from './server.ts';
-import { INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire.ts';
+import type { AnyMcpTool, McpCaller } from './registry';
+import { textResult } from './registry';
+import { frameworkResources } from './resources';
+import { createMcpServer } from './server';
+import { INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
 const agent = { kind: 'agent', id: 'agent-1' } as unknown as Actor;
 

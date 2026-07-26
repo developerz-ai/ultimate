@@ -13,9 +13,9 @@
 // for a narrow token; a broad token still cannot see a tool its role may not.
 
 import type { Actor } from '@ultimat3/core';
-import type { ArgIssue } from './validate-args.ts';
-import { validateArgs } from './validate-args.ts';
-import type { JsonSchema } from './wire.ts';
+import type { ArgIssue } from './validate-args';
+import { validateArgs } from './validate-args';
+import type { JsonSchema } from './wire';
 
 /** Arbitrary role identifier — apps own their role vocabulary, the framework does not. */
 export type McpRole = string;

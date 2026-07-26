@@ -9,8 +9,8 @@
 // `x verify` fails on a breaking change without a major version bump. Additive and internal
 // changes never fail, which is what makes the gate credible enough to leave on.
 
-import { canonical } from './build.ts';
-import type { ActionFact, JobFact, Manifest, QueryFact, RouteFact } from './schema.ts';
+import { canonical } from './build';
+import type { ActionFact, JobFact, Manifest, QueryFact, RouteFact } from './schema';
 
 export type ChangeKind = 'breaking' | 'additive' | 'internal';
 

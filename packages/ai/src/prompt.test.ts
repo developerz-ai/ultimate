@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { contentHash, definePrompt, getPrompt, resetPrompts } from './prompt.ts';
+import { contentHash, definePrompt, getPrompt, resetPrompts } from './prompt';
 
 afterEach(() => {
   resetPrompts();

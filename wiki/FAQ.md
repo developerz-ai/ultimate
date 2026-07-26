@@ -116,7 +116,7 @@ No. Multi-ORM means two migration stories and two sets of generated SQL for an a
 
 ### Who is it for?
 
-Primary user: **an AI agent** — one correct way per task, machine-readable errors, generated facts to read. Secondary: **a tired senior engineer** — no glue code, no config archaeology, no 3am pager. Both want the same thing: fewer decisions with consequences.
+Primary user: **an AI agent** — one correct way per task, machine-readable errors, generated facts to read. Secondary: **a tired senior engineer, working through their own AI agent and AI reviewer** — no glue code, no config archaeology, no 3am pager. Both want the same thing: fewer decisions with consequences.
 
 ### How is this different from Rails, Next.js, Meteor, or Phoenix?
 

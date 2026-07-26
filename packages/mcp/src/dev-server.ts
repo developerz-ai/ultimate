@@ -10,12 +10,12 @@
 // packages of this same tier, and the shell-side capabilities (db, tests, logs) belong to
 // the CLI, so this file defines the interface and the CLI satisfies it.
 
-import type { DatabaseTarget } from './readonly-sql.ts';
-import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql.ts';
-import type { AnyMcpTool, McpToolResult, ToolArgs } from './registry.ts';
-import { jsonResult, textResult } from './registry.ts';
-import type { JsonSchema } from './wire.ts';
-import { NO_ARGS } from './wire.ts';
+import type { DatabaseTarget } from './readonly-sql';
+import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
+import type { AnyMcpTool, McpToolResult, ToolArgs } from './registry';
+import { jsonResult, textResult } from './registry';
+import type { JsonSchema } from './wire';
+import { NO_ARGS } from './wire';
 
 /** Scopes the dev server gates on. A token carries a subset; the rest is invisible. */
 export const DEV_SCOPES = {

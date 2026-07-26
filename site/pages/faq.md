@@ -100,5 +100,5 @@ per-query `persist: true`, planned for v2.
 **Is `x verify` really the only gate?** Yes. CI runs exactly `x verify` — a check that lives
 only in CI is a check developers cannot run.
 
-**Who is this for?** Primarily an AI agent, secondarily a tired senior engineer. Both want the
+**Who is this for?** Primarily an AI agent, secondarily a tired senior engineer working through their own AI agent and AI reviewer. Both want the
 same thing: fewer decisions with consequences.

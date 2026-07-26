@@ -4,10 +4,10 @@
 // discover at request time that they don't fit is a truncation bug waiting to happen; the
 // assembler fills to a declared ceiling and reports what it dropped.
 
-import type { Embedder } from './embeddings.ts';
-import { embedBatched, embedOne } from './embeddings.ts';
-import { estimateTextTokens as estimateChunkTokens } from './provider.ts';
-import type { SearchHit, VectorStore } from './vector.ts';
+import type { Embedder } from './embeddings';
+import { embedBatched, embedOne } from './embeddings';
+import { estimateTextTokens as estimateChunkTokens } from './provider';
+import type { SearchHit, VectorStore } from './vector';
 
 export interface Chunk {
   readonly id: string;

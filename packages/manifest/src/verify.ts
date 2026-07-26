@@ -3,10 +3,10 @@
 //
 // Enforced, not documented: a convention that isn't a build error doesn't exist.
 
-import type { ManifestDiff } from './diff.ts';
-import { diffManifest } from './diff.ts';
-import { ManifestBreakingError } from './errors.ts';
-import type { Manifest } from './schema.ts';
+import type { ManifestDiff } from './diff';
+import { diffManifest } from './diff';
+import { ManifestBreakingError } from './errors';
+import type { Manifest } from './schema';
 
 export interface VerifyContractInput {
   /** The manifest currently committed — the published contract. */

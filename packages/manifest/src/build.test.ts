@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { ManifestSources } from './build.ts';
-import { buildManifest } from './build.ts';
-import { manifestJson, verifyBuildId } from './emit.ts';
-import { MANIFEST_VERSION } from './schema.ts';
+import type { ManifestSources } from './build';
+import { buildManifest } from './build';
+import { manifestJson, verifyBuildId } from './emit';
+import { MANIFEST_VERSION } from './schema';
 
 const sources: ManifestSources = {
   app: { name: 'acme', version: '1.4.2' },

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import type { DevHost, QueryResult } from './dev-server.ts';
-import { DEV_SCOPES, devTools } from './dev-server.ts';
-import type { DatabaseTarget } from './readonly-sql.ts';
-import type { AnyMcpTool, McpCaller } from './registry.ts';
-import { ToolRegistry } from './registry.ts';
+import type { DevHost, QueryResult } from './dev-server';
+import { DEV_SCOPES, devTools } from './dev-server';
+import type { DatabaseTarget } from './readonly-sql';
+import type { AnyMcpTool, McpCaller } from './registry';
+import { ToolRegistry } from './registry';
 
 const agent = { kind: 'agent', id: 'a1' } as unknown as Actor;
 

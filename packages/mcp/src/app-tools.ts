@@ -8,14 +8,14 @@
 // Deliberately one function: an app author should never have to know that `ToolRegistry`,
 // `frameworkResources` and `mcpHttpRoute` exist.
 
-import type { ProjectablePrimitive } from './from-action.ts';
-import { toolsFrom } from './from-action.ts';
-import type { AnyMcpTool } from './registry.ts';
-import type { McpPrompt, McpResource } from './resources.ts';
-import type { CreateMcpServerInput } from './server.ts';
-import { createMcpServer, type McpServer } from './server.ts';
-import type { McpRouteDescriptor, ResolvedToken } from './transport-http.ts';
-import { mcpHttpRoute } from './transport-http.ts';
+import type { ProjectablePrimitive } from './from-action';
+import { toolsFrom } from './from-action';
+import type { AnyMcpTool } from './registry';
+import type { McpPrompt, McpResource } from './resources';
+import type { CreateMcpServerInput } from './server';
+import { createMcpServer, type McpServer } from './server';
+import type { McpRouteDescriptor, ResolvedToken } from './transport-http';
+import { mcpHttpRoute } from './transport-http';
 
 export interface DefineAppMcpInput {
   /** Server identity the client shows the user. Defaults to the package name at boot. */

@@ -9,9 +9,9 @@
 // So: edit the template, bump the version. Re-registering a version whose hash moved is a
 // build error, not a warning.
 
-import { AiPromptRenderError, AiPromptVersionError } from './errors.ts';
-import type { Effort, ModelId, ThinkingMode } from './provider.ts';
-import type { JsonSchema } from './tools.ts';
+import { AiPromptRenderError, AiPromptVersionError } from './errors';
+import type { Effort, ModelId, ThinkingMode } from './provider';
+import type { JsonSchema } from './tools';
 
 /** Template variables. Values are stringified at render time with no formatting magic. */
 export type PromptVars = Readonly<Record<string, string | number | boolean>>;

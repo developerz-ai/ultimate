@@ -6,10 +6,10 @@ import {
   jsonSchemaValid,
   numericTolerance,
   resetEvals,
-} from './evals.ts';
-import { createGateway } from './gateway.ts';
-import { definePrompt, resetPrompts } from './prompt.ts';
-import { EchoProvider } from './provider.ts';
+} from './evals';
+import { createGateway } from './gateway';
+import { definePrompt, resetPrompts } from './prompt';
+import { EchoProvider } from './provider';
 
 afterEach(() => {
   resetPrompts();

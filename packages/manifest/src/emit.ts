@@ -4,10 +4,10 @@
 // so a refactor that reorders a struct literal does not produce a diff. Two-space indent and
 // a trailing newline: the file is reviewed by humans and diffed by git.
 
-import { canonical, contentHash } from './build.ts';
-import { ManifestDriftError } from './errors.ts';
-import type { Manifest } from './schema.ts';
-import { isManifest } from './schema.ts';
+import { canonical, contentHash } from './build';
+import { ManifestDriftError } from './errors';
+import type { Manifest } from './schema';
+import { isManifest } from './schema';
 
 export const MANIFEST_FILENAME = 'x.manifest.json';
 

@@ -4,11 +4,13 @@ Guidance for Claude Code when working in this repository.
 
 ## Ultimate
 
-A full-stack, **Bun-only**, opinionated web framework. Rails' philosophy on a Bun + Postgres + SolidJS stack, where **the primary user is an AI agent** and the secondary user is a tired senior engineer.
+A full-stack, **Bun-only**, opinionated web framework. Rails' philosophy on a Bun + Postgres + SolidJS stack, where **the primary user is an AI agent** and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
+
+Rails' actual promise, applied to agents: **reduce the number of problems the author has to worry about**, so the work goes into the app's features instead of the app's infrastructure. Every decision the framework makes is a decision an agent does not have to.
 
 This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x` CLI, the docs, the public site, and one reference app.
 
-CLI binary: `x`. npm scope: `@ultimate`. Import paths: `@ultimat3/<pkg>`.
+CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
 **Status:** pre-alpha. Architecture + docs + package skeletons landed; milestones 0–5 are the path to usable. See [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 

@@ -35,7 +35,7 @@ audiences want fewer decisions with consequences.
 | Audience | What they need | What that forces |
 |---|---|---|
 | **Primary: an AI agent** | one correct way, machine-readable errors, generated facts to read | no choice menus, `--json` everywhere, `x.manifest.json` emitted from code |
-| **Secondary: a tired senior engineer** | no glue code, no 3am pager, no config archaeology | batteries in-box, typed env at boot, `x verify` as the only gate |
+| **Secondary: a tired senior engineer, via their own AI agent + AI reviewer** | no glue code, no 3am pager, no config archaeology | batteries in-box, typed env at boot, `x verify` as the only gate |
 
 </div>
 </section>

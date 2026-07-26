@@ -4,7 +4,7 @@
 // queried with another is a silent relevance collapse, and the only place to catch it is
 // where the two meet. `VectorStore` compares the declared dimension and refuses.
 
-import { AiNotImplementedError } from './errors.ts';
+import { AiNotImplementedError } from './errors';
 
 export interface Embedder {
   readonly name: string;

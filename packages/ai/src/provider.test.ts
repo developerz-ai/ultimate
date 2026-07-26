@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { AnthropicProvider, MODELS, parseMessage } from './provider.ts';
+import { AnthropicProvider, MODELS, parseMessage } from './provider';
 
 const provider = new AnthropicProvider();
 

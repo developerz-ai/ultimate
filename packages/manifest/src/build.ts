@@ -26,8 +26,8 @@ import type {
   QueryFact,
   RouteFact,
   TaskFact,
-} from './schema.ts';
-import { MANIFEST_VERSION } from './schema.ts';
+} from './schema';
+import { MANIFEST_VERSION } from './schema';
 
 export interface ManifestSources {
   readonly app: { readonly name: string; readonly version: string };

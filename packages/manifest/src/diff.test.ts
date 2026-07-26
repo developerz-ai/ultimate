@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { ManifestSources } from './build.ts';
-import { buildManifest } from './build.ts';
-import { diffManifest } from './diff.ts';
-import { verifyContract } from './verify.ts';
+import type { ManifestSources } from './build';
+import { buildManifest } from './build';
+import { diffManifest } from './diff';
+import { verifyContract } from './verify';
 
 const action = (name: string, policy: string, expose = true) => ({
   name,

@@ -5,17 +5,17 @@
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
 import type { Money } from '@ultimat3/money';
-import type { BudgetLimits, BudgetStore } from './budget.ts';
-import { BudgetLedger, currentBudget, withBudget } from './budget.ts';
-import { AiProviderUnavailableError } from './errors.ts';
+import type { BudgetLimits, BudgetStore } from './budget';
+import { BudgetLedger, currentBudget, withBudget } from './budget';
+import { AiProviderUnavailableError } from './errors';
 import type {
   GenerateRequest,
   GenerateResult,
   ModelId,
   Provider,
   StreamChunk,
-} from './provider.ts';
-import { DEFAULT_MODEL, estimateTokens } from './provider.ts';
+} from './provider';
+import { DEFAULT_MODEL, estimateTokens } from './provider';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as

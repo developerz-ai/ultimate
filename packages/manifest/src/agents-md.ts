@@ -15,7 +15,7 @@
 // This module therefore checks exactly two things: that the file exists, and that it has not
 // grown into a document nobody reads. It never writes.
 
-import { AgentsMdMissingError, AgentsMdTooLargeError } from './errors.ts';
+import { AgentsMdMissingError, AgentsMdTooLargeError } from './errors';
 
 export const AGENTS_MD_FILENAME = 'AGENTS.md';
 

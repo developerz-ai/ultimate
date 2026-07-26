@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { HashEmbedder, normalize } from './embeddings.ts';
-import { assembleContext, chunk } from './rag.ts';
-import { MemoryVectorStore } from './vector.ts';
+import { HashEmbedder, normalize } from './embeddings';
+import { assembleContext, chunk } from './rag';
+import { MemoryVectorStore } from './vector';
 
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 

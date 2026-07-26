@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { MemoryBudgetStore } from './budget.ts';
-import { createGateway } from './gateway.ts';
-import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider.ts';
-import { costOf, EchoProvider, MODEL_IDS } from './provider.ts';
+import { MemoryBudgetStore } from './budget';
+import { createGateway } from './gateway';
+import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
+import { costOf, EchoProvider, MODEL_IDS } from './provider';
 
 const echo = new EchoProvider();
 

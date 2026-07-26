@@ -7,8 +7,8 @@
 // Reciprocal-rank fusion combines the two rankings without needing the two score scales to
 // be comparable — which they never are.
 
-import { cosine, tokenize } from './embeddings.ts';
-import { AiNotImplementedError, VectorDimMismatchError } from './errors.ts';
+import { cosine, tokenize } from './embeddings';
+import { AiNotImplementedError, VectorDimMismatchError } from './errors';
 
 export interface VectorRecord {
   readonly id: string;

@@ -6,7 +6,7 @@
 // anywhere at statement level (which also catches a data-modifying CTE — `WITH x AS
 // (INSERT ...) SELECT`, which reads like a SELECT and is not one).
 
-import { McpReadOnlyViolationError } from './errors.ts';
+import { McpReadOnlyViolationError } from './errors';
 
 /** Statements that may begin a read-only query. */
 const READ_LEADERS = new Set(['select', 'with', 'explain', 'show', 'table', 'values']);

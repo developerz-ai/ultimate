@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import type { ProjectablePrimitive } from './from-action.ts';
-import { toolFromAction, toolsFrom } from './from-action.ts';
-import type { McpCaller } from './registry.ts';
+import type { ProjectablePrimitive } from './from-action';
+import { toolFromAction, toolsFrom } from './from-action';
+import type { McpCaller } from './registry';
 
 const human = { kind: 'user', id: 'u1' } as unknown as Actor;
 const robot = { kind: 'agent', id: 'a1', onBehalfOf: 'u1' } as unknown as Actor;

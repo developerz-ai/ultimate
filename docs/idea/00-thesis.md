@@ -7,7 +7,7 @@ Rails' philosophy — convention over configuration, generators, one blessed pat
 | Audience | What they need | What that forces |
 |---|---|---|
 | **Primary: an AI agent** | one correct way, machine-readable errors, generated facts to read | no choice menus, `--json` everywhere, `x.manifest.json` emitted from code |
-| **Secondary: a tired senior engineer** | no glue code, no 3am pager, no config archaeology | batteries in-box, typed env at boot, `x verify` as the only gate |
+| **Secondary: a tired senior engineer, via their own AI agent + AI reviewer** | no glue code, no 3am pager, no config archaeology | batteries in-box, typed env at boot, `x verify` as the only gate |
 
 Agents fail on ambiguity, not on syntax. Every "you could use A or B here" is a branch point where an agent guesses, ships, and the guess is discovered in production. Ambiguity is the tax agents pay — Ultimate's job is to not levy it.
 

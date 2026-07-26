@@ -6,7 +6,7 @@
 // still re-parse authoritatively inside their own handler; this pass exists so a wrong
 // call comes back as a structured issue list instead of a round trip.
 
-import type { JsonSchema } from './wire.ts';
+import type { JsonSchema } from './wire';
 
 export interface ArgIssue {
   /** Dotted path from the arguments root, `''` for the root itself. */

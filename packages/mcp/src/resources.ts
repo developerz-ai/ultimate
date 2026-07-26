@@ -5,7 +5,7 @@
 // injected as thunks because `@ultimat3/manifest` and `@ultimat3/render` sit in this same
 // tier — the CLI wires them, this package only defines the shape and the URIs.
 
-import type { JsonSchema } from './wire.ts';
+import type { JsonSchema } from './wire';
 
 /** Stable URIs. These are quoted in AGENTS.md files, so treat them as public API. */
 export const RESOURCE_URIS = {

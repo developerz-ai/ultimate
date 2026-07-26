@@ -8,9 +8,9 @@
 // stdout is the WIRE. Anything logged there corrupts the protocol, so diagnostics go to
 // stderr and this file never calls `console.log`.
 
-import type { McpCaller } from './registry.ts';
-import type { McpServer } from './server.ts';
-import { errorResponse, PARSE_ERROR } from './wire.ts';
+import type { McpCaller } from './registry';
+import type { McpServer } from './server';
+import { errorResponse, PARSE_ERROR } from './wire';
 
 export interface StdioTransportInput {
   readonly server: McpServer;

@@ -9,12 +9,12 @@ import type {
   McpToolResult,
   McpVerbClass,
   ToolListEntry,
-} from './registry.ts';
-import { ToolRegistry } from './registry.ts';
-import type { McpPrompt, McpResource } from './resources.ts';
-import { ResourceRegistry } from './resources.ts';
-import { formatIssues } from './validate-args.ts';
-import type { JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire.ts';
+} from './registry';
+import { ToolRegistry } from './registry';
+import type { McpPrompt, McpResource } from './resources';
+import { ResourceRegistry } from './resources';
+import { formatIssues } from './validate-args';
+import type { JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
 import {
   DEFAULT_SERVER_INFO,
   errorResponse,
@@ -27,7 +27,7 @@ import {
   METHOD_NOT_FOUND,
   paramsOf,
   resultResponse,
-} from './wire.ts';
+} from './wire';
 
 export interface CreateMcpServerInput {
   readonly tools?: readonly AnyMcpTool[];

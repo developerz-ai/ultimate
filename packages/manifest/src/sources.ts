@@ -9,7 +9,7 @@ import { describeActions } from '@ultimat3/action';
 import { describeEntities } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
-import type { ManifestSources } from './build.ts';
+import type { ManifestSources } from './build';
 import type {
   ActionFact,
   EntityFact,
@@ -19,7 +19,7 @@ import type {
   QueryFact,
   RouteFact,
   TaskFact,
-} from './schema.ts';
+} from './schema';
 
 export interface FrameworkSourcesInput {
   readonly app: { readonly name: string; readonly version: string };

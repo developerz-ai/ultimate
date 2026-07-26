@@ -19,7 +19,12 @@
 
 ## The thesis
 
-Every framework built in the last fifteen years optimised for a human typing code. Ultimate assumes the code is written by an agent and reviewed by a tired senior engineer.
+Every framework built in the last fifteen years optimised for a human typing code. Ultimate assumes the code is written by an agent and reviewed by a tired senior engineer working through their own AI agent and AI reviewer.
+
+The goal is the one Rails had: **shrink the set of problems the author has to hold in
+their head, so they spend their attention on the app's features and not on the app's
+infrastructure.** An agent that has to decide on a migration tool, a queue driver, a
+cache key scheme and an authz model has spent its budget before writing a feature.
 
 That single change of audience rewrites every default:
 

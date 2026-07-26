@@ -8,8 +8,8 @@
 // As of 2026-07. Model IDs are exact alias strings — never append a date suffix.
 
 import type { Money } from '@ultimat3/money';
-import { AiNotImplementedError } from './errors.ts';
-import type { LlmTool, LlmToolCall } from './tools.ts';
+import { AiNotImplementedError } from './errors';
+import type { LlmTool, LlmToolCall } from './tools';
 
 /** Blessed models. Opus 5 is the default; the others are explicit downgrades. */
 export const MODEL_IDS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;

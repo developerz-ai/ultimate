@@ -1,10 +1,10 @@
 // Public API of @ultimat3/mcp. Explicit — nothing is re-exported by wildcard, so the
 // surface an app or an agent can reach is exactly this list.
 
-export type { AppMcp, DefineAppMcpInput } from './app-tools.ts';
-export { defineAppMcp } from './app-tools.ts';
-export type { CreateDevServerInput } from './dev-host.ts';
-export { createDevServer, devHost, frameworkIntrospection } from './dev-host.ts';
+export type { AppMcp, DefineAppMcpInput } from './app-tools';
+export { defineAppMcp } from './app-tools';
+export type { CreateDevServerInput } from './dev-host';
+export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
 export type {
   DevCapabilities,
   DevHost,
@@ -16,9 +16,9 @@ export type {
   TestRun,
   VerifyResult,
   VerifyStep,
-} from './dev-server.ts';
-export { DEV_SCOPES, devTools } from './dev-server.ts';
-export type { McpErrorCode } from './errors.ts';
+} from './dev-server';
+export { DEV_SCOPES, devTools } from './dev-server';
+export type { McpErrorCode } from './errors';
 export {
   MCP_ERROR_CODES,
   McpArgsInvalidError,
@@ -26,11 +26,11 @@ export {
   McpReadOnlyViolationError,
   McpScopeMissingError,
   McpToolUnknownError,
-} from './errors.ts';
-export type { McpExposure, ProjectablePrimitive } from './from-action.ts';
-export { isExposed, toolFromAction, toolFromQuery, toolsFrom } from './from-action.ts';
-export type { DatabaseTarget } from './readonly-sql.ts';
-export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql.ts';
+} from './errors';
+export type { McpExposure, ProjectablePrimitive } from './from-action';
+export { isExposed, toolFromAction, toolFromQuery, toolsFrom } from './from-action';
+export type { DatabaseTarget } from './readonly-sql';
+export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 export type {
   AnyMcpTool,
   ContentBlock,
@@ -42,8 +42,8 @@ export type {
   ToolArgs,
   ToolListEntry,
   ToolResolution,
-} from './registry.ts';
-export { jsonResult, ToolRegistry, textResult, visibleToCaller } from './registry.ts';
+} from './registry';
+export { jsonResult, ToolRegistry, textResult, visibleToCaller } from './registry';
 export type {
   FrameworkResourceProviders,
   McpPrompt,
@@ -51,25 +51,25 @@ export type {
   McpResource,
   ResourceContents,
   ResourceListEntry,
-} from './resources.ts';
+} from './resources';
 export {
   frameworkResources,
   RESOURCE_URIS,
   ResourceRegistry,
   URI_ARG_SCHEMA,
-} from './resources.ts';
-export type { CreateMcpServerInput } from './server.ts';
-export { createMcpServer, McpServer } from './server.ts';
+} from './resources';
+export type { CreateMcpServerInput } from './server';
+export { createMcpServer, McpServer } from './server';
 export type {
   McpHttpTransportInput,
   McpRouteDescriptor,
   ResolvedToken,
-} from './transport-http.ts';
-export { bearerToken, isAgentActor, MCP_RATE_LIMITS, mcpHttpRoute } from './transport-http.ts';
-export type { StdioTransportInput } from './transport-stdio.ts';
-export { serveStdio } from './transport-stdio.ts';
-export type { ArgIssue, ArgValidation } from './validate-args.ts';
-export { formatIssues, validateArgs } from './validate-args.ts';
+} from './transport-http';
+export { bearerToken, isAgentActor, MCP_RATE_LIMITS, mcpHttpRoute } from './transport-http';
+export type { StdioTransportInput } from './transport-stdio';
+export { serveStdio } from './transport-stdio';
+export type { ArgIssue, ArgValidation } from './validate-args';
+export { formatIssues, validateArgs } from './validate-args';
 export type {
   JsonRpcError,
   JsonRpcId,
@@ -77,7 +77,7 @@ export type {
   JsonRpcResponse,
   JsonSchema,
   ServerInfo,
-} from './wire.ts';
+} from './wire';
 export {
   DEFAULT_SERVER_INFO,
   errorResponse,
@@ -90,4 +90,4 @@ export {
   NO_ARGS,
   PARSE_ERROR,
   resultResponse,
-} from './wire.ts';
+} from './wire';
