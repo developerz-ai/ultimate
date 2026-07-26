@@ -34,10 +34,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # No `registry-url:` on purpose. It writes an .npmrc containing
+      #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+      # and with no NODE_AUTH_TOKEN in the environment that resolves to an empty
+      # credential, which npm prefers over the OIDC exchange — publish then fails
+      # ENEEDAUTH on a workflow that is otherwise configured correctly. Trusted
+      # publishing needs no .npmrc at all.
+      # Node must be >= 22.14.0 for trusted publishing.
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: 22.14.0
 
       # Trusted publishing needs npm >= 11.5.1; Node 22 ships an older npm.
       # Pinned (not @latest): npm 11.6.x regressed the provenance path — a global install lands
