@@ -11,6 +11,10 @@ updates:
       day: monday
       time: '06:00'
       timezone: Europe/Berlin
+    # Let a release sit for 14 days before we look at it. Most yanked versions and
+    # supply-chain incidents are caught within that window, and the default is only 3.
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
     labels: [dependencies]
     commit-message:
@@ -32,6 +36,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 14
     labels: [dependencies, ci]
     commit-message:
       prefix: 'chore(ci)'
@@ -44,6 +50,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 14
     labels: [dependencies, docker]
     commit-message:
       prefix: 'chore(docker)'
