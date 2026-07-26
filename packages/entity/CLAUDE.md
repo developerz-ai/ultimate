@@ -1,37 +1,44 @@
 # @ultimat3/entity
 
-Table + domain type + invariants. Tier 2.
+Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Boundary
 
-- May import: `@ultimat3/core`, `@ultimat3/schema`. Nothing else.
-- No `drizzle-orm` dependency. `types.ts` declares the structural `ColumnDef`/
-  `TableDef` we consume; Drizzle is the production backing, documented not imported.
-- Never import `@ultimat3/http` or `@ultimat3/policy` — same tier.
+- May import `@ultimat3/core` and `@ultimat3/schema`. Nothing else — `http` and `policy` are the
+  same tier.
+- No `drizzle-orm`. `types.ts` declares the column vocabulary we consume; Drizzle is the
+  production backing, documented not imported.
 
-## Rules
+## Do not regress
 
-- Money is `bigint` minor units + `char(3)` currency. A float throws. Never one column.
-- Timestamps are `timestamptz`. There is no naive-timestamp helper and there will not be.
-- An invariant that cannot be expressed in SQL does not belong in `invariants` — it is
-  a service-layer rule.
-- `orgId` column present ⇒ every query needs an org predicate. Guard, not convention.
-- Cursor pagination only. Do not add `offset` to `FindManyArgs`.
+- **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
+  offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
+  `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
+  total.
+- **Money is `bigint` minor units + `char(3)` currency.** A float throws. Never one column,
+  never an implied single currency.
+- **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
+- **A tenant column means every query needs an org predicate** — runtime guard, not convention.
+  Missing ⇒ `X_TENANCY_UNSCOPED`.
+- **Invariants run twice**: in the app on write AND as a Postgres CHECK/UNIQUE via `toSql()`. An
+  untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a pretend CHECK.
+- **Row types are derived, never re-declared.** No `as unknown as` to fake the derivation.
 - Never throw a bare `Error` — use `errors.ts`.
+- Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
+  breaks an unrelated package's tests, as it did in `@ultimat3/policy`.
 
 ## Files
 
 | File | Job |
 |---|---|
-| `columns.ts` | blessed helpers + `table()` name derivation |
-| `invariants.ts` | app check + `toSql()` DDL, one declaration |
-| `repo.ts` | `Repo<T>`, cursor codec, memory driver, tx rollback |
-| `tenancy.ts` | `QueryPlan`, `orgScoped()`, `assertScoped()` |
+| `types.ts` | `Column`, `RowOf`, `Insertable` — the type derivation |
+| `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders |
+| `expr.ts` / `invariants.ts` | the `(c) => …` rule language; bind + `toSql()` DDL |
+| `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
+| `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
+| `repo.ts` / `tenancy.ts` | `Repo<T>`, cursor codec, tx rollback; `QueryPlan` + `assertScoped()` |
 | `registry.ts` | duplicate detection + `describeEntities()` for the manifest |
 
 ## Commands
 
-```
-bun test packages/entity
-bun run --filter @ultimat3/entity typecheck
-```
+`bun test packages/entity` · `bun run --filter @ultimat3/entity typecheck`

@@ -4,7 +4,7 @@
  */
 
 import type { Member } from '@postly/db';
-import { defineMail } from '@ultimat3/core';
+import { defineMail } from '@ultimat3/mail';
 import type { PostView } from './entity';
 
 type PostPublishedData = { post: PostView; member: Member };

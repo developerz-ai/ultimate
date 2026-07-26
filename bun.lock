@@ -34,6 +34,7 @@
         "@ultimat3/ai": "0.0.1",
         "@ultimat3/core": "0.0.1",
         "@ultimat3/jobs": "0.0.1",
+        "@ultimat3/mail": "0.0.1",
         "@ultimat3/policy": "0.0.1",
         "@ultimat3/query": "0.0.1",
         "@ultimat3/realtime": "0.0.1",

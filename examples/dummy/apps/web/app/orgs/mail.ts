@@ -3,7 +3,7 @@
  * the catalogs live in a package and not in a component.
  */
 
-import { defineMail } from '@ultimat3/core';
+import { defineMail } from '@ultimat3/mail';
 import type { MemberView, OrgView } from './entity';
 
 export const welcomeEmail = defineMail<OrgView>('org.welcome', {

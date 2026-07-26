@@ -1,8 +1,10 @@
 // The entity registry. Every `entity()` call registers here, which is what makes
-// `x.manifest.json`, the admin dashboard generator and the migration emitter able to
-// see the whole domain without importing it — and what makes a duplicate name a
-// build error rather than a silent last-one-wins.
+// `x.manifest.json`, the admin dashboard generator and the migration emitter able to see the
+// whole domain without importing it — and what makes a duplicate name a build error rather
+// than a silent last-one-wins.
+
 import { entityDuplicate } from './errors';
+import type { InvariantKind } from './invariants';
 
 export interface ColumnDescription {
   readonly property: string;
@@ -18,9 +20,10 @@ export interface ColumnDescription {
 
 export interface InvariantDescription {
   readonly name: string;
-  readonly kind: 'check' | 'unique';
+  readonly kind: InvariantKind;
   readonly message: string;
-  readonly sql: string;
+  /** `null` for an `assert`: a JS predicate the database was never told about. */
+  readonly sql: string | null;
   readonly where: string | null;
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "@postly/web",
   "version": "0.0.1",
-  "description": "Postly's web app — site, app and api surfaces",
+  "description": "Postly's web app \u2014 site, app and api surfaces",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
@@ -29,6 +29,7 @@
     "@ultimat3/ai": "0.0.1",
     "@ultimat3/core": "0.0.1",
     "@ultimat3/jobs": "0.0.1",
+    "@ultimat3/mail": "0.0.1",
     "@ultimat3/policy": "0.0.1",
     "@ultimat3/query": "0.0.1",
     "@ultimat3/realtime": "0.0.1",

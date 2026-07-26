@@ -1,5 +1,7 @@
-import { describe, expect, test } from 'bun:test';
-import { id, orgId, table, text } from './columns';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { text, uuid } from './columns';
+import { entity } from './entity';
+import { clearRegistry } from './registry';
 import {
   assertScoped,
   describePlan,
@@ -7,28 +9,46 @@ import {
   hasOrgPredicate,
   isOrgScoped,
   orgScoped,
+  tenantColumnOf,
 } from './tenancy';
 
-const posts = table('posts', { id: id(), orgId: orgId(), title: text() });
-const settings = table('settings', { id: id(), key: text() });
+const posts = entity('tenancy_test_posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), title: text() },
+});
+
+const settings = entity('tenancy_test_settings', {
+  columns: { id: uuid().primaryKey(), key: text() },
+});
+
+afterAll(() => {
+  clearRegistry();
+});
 
 describe('detection', () => {
-  test('an orgId column is what makes an entity tenant-scoped', () => {
-    expect(isOrgScoped(posts)).toBe(true);
-    expect(isOrgScoped(settings)).toBe(false);
+  test('a tenant column is what makes an entity tenant-scoped', () => {
+    expect(isOrgScoped(posts.$columns)).toBe(true);
+    expect(isOrgScoped(settings.$columns)).toBe(false);
+    expect(tenantColumnOf(posts.$columns)).toBe('orgId');
+  });
+
+  test('a column named orgId counts even without .tenant()', () => {
+    const comments = entity('tenancy_test_comments', {
+      columns: { id: uuid().primaryKey(), orgId: uuid() },
+    });
+    expect(comments.$tenantColumn).toBe('orgId');
   });
 });
 
 describe('assertScoped', () => {
   test('throws X_TENANCY_UNSCOPED for a scoped entity queried without an org', () => {
-    expect(() => assertScoped('post', posts, 'findMany', emptyPlan('post'))).toThrow(
+    expect(() => assertScoped('post', 'orgId', 'findMany', emptyPlan('post'))).toThrow(
       /X_TENANCY_UNSCOPED|org predicate/,
     );
   });
 
   test('the fix line names the call that has to change', () => {
     try {
-      assertScoped('post', posts, 'findMany', emptyPlan('post'));
+      assertScoped('post', 'orgId', 'findMany', emptyPlan('post'));
       throw new Error('expected a throw');
     } catch (error) {
       expect(String((error as { fix?: string }).fix)).toContain('orgScoped(');
@@ -38,18 +58,17 @@ describe('assertScoped', () => {
   test('passes once the org predicate is present', () => {
     const plan = orgScoped(emptyPlan('post'), 'org-1');
     expect(hasOrgPredicate(plan)).toBe(true);
-    expect(() => assertScoped('post', posts, 'findMany', plan)).not.toThrow();
+    expect(() => assertScoped('post', 'orgId', 'findMany', plan)).not.toThrow();
   });
 
   test('an unscoped entity is never forced to carry an org', () => {
-    expect(() => assertScoped('setting', settings, 'findMany', emptyPlan('setting'))).not.toThrow();
+    expect(() => assertScoped('setting', null, 'findMany', emptyPlan('setting'))).not.toThrow();
   });
 });
 
 describe('orgScoped', () => {
   test('adds the predicate exactly once', () => {
-    const once = orgScoped(emptyPlan('post'), 'org-1');
-    const twice = orgScoped(once, 'org-1');
+    const twice = orgScoped(orgScoped(emptyPlan('post'), 'org-1'), 'org-1');
     expect(twice.where).toHaveLength(1);
     expect(twice.where[0]).toEqual({ column: 'orgId', op: 'eq', value: 'org-1' });
   });

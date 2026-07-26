@@ -1,104 +1,143 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import {
-  id,
+  boolean,
+  enumerated,
   integer,
   locale,
   money,
-  nullable,
-  orgId,
-  slug,
-  table,
   text,
-  timestamps,
+  timestamp,
   tz,
+  url,
+  uuid,
 } from './columns';
+import { entity } from './entity';
+import { clearRegistry } from './registry';
+
+afterAll(() => {
+  // The registry is process-global; a leaked entity breaks an unrelated package's tests.
+  clearRegistry();
+});
 
 describe('money', () => {
-  const columns = money('price');
+  const price = money();
 
   test('rejects a float — 12.34 is not 1234 minor units', () => {
-    expect(() => columns.priceMinor.parse(12.34)).toThrow(/money-minor-units|float/);
-    expect(() => columns.priceMinor.parse(0.1)).toThrow(/float/);
-    expect(() => columns.priceMinor.parse(Number.NaN)).toThrow();
+    expect(() => price.$parse({ minor: 12.34, currency: 'EUR' })).toThrow(
+      /money-minor-units|float/,
+    );
+    expect(() => price.$parse({ minor: 0.1, currency: 'EUR' })).toThrow(/float/);
+    expect(() => price.$parse({ minor: Number.NaN, currency: 'EUR' })).toThrow();
   });
 
   test('the message tells an agent exactly what to send instead', () => {
-    try {
-      columns.priceMinor.parse(12.34);
-      throw new Error('expected a throw');
-    } catch (error) {
-      expect(String(error)).toContain('1234n');
-    }
+    expect(() => price.$parse({ minor: 12.34, currency: 'EUR' })).toThrow(/1234n/);
   });
 
   test('accepts bigint, integer number and integer string', () => {
-    expect(columns.priceMinor.parse(1234n)).toBe(1234n);
-    expect(columns.priceMinor.parse(1234)).toBe(1234n);
-    expect(columns.priceMinor.parse('-1234')).toBe(-1234n);
+    expect(price.$parse({ minor: 1234n, currency: 'EUR' }).minor).toBe(1234n);
+    expect(price.$parse({ minor: 1234, currency: 'EUR' }).minor).toBe(1234n);
+    expect(price.$parse({ minor: '-1234', currency: 'EUR' }).minor).toBe(-1234n);
   });
 
-  test('is bigint minor units plus an ISO-4217 code, never one column', () => {
-    expect(columns.priceMinor.kind).toBe('bigint');
-    expect(columns.priceCurrency.kind).toBe('char');
-    expect(columns.priceCurrency.length).toBe(3);
-    expect(columns.priceCurrency.parse('EUR')).toBe('EUR');
-    expect(() => columns.priceCurrency.parse('eur')).toThrow(/iso-4217/);
-    expect(() => columns.priceCurrency.parse('EURO')).toThrow(/iso-4217/);
+  test('is minor units plus an ISO-4217 code — never one column, never a float', () => {
+    expect(() => price.$parse({ minor: 1n, currency: 'eur' })).toThrow(/iso-4217/);
+    expect(() => price.$parse({ minor: 1n, currency: 'EURO' })).toThrow(/iso-4217/);
+
+    const plans = entity('columns_test_plans', {
+      columns: { code: text().primaryKey(), monthly: money() },
+    });
+    const columns = plans.$describe().columns;
+    expect(columns.map((column) => column.column)).toEqual([
+      'code',
+      'monthly_minor',
+      'monthly_currency',
+    ]);
+    expect(columns[1]?.kind).toBe('bigint');
+    expect(columns[2]?.kind).toBe('char');
   });
 
   test('emits a database CHECK so psql cannot write a bad currency either', () => {
-    expect(columns.priceCurrency.check).toBe("price_currency ~ '^[A-Z]{3}$'");
+    const plans = entity('columns_test_catalog', {
+      columns: { id: uuid().primaryKey(), price: money() },
+    });
+    const currency = plans.$describe().columns.find((column) => column.column === 'price_currency');
+    expect(currency?.check).toBe("price_currency ~ '^[A-Z]{3}$'");
   });
 });
 
 describe('time', () => {
-  test('timestamps are always timestamptz — UTC storage is not optional', () => {
-    const { createdAt, updatedAt } = timestamps();
-    expect(createdAt.kind).toBe('timestamptz');
-    expect(updatedAt.kind).toBe('timestamptz');
-    expect(createdAt.name).toBe('created_at');
+  test('a timestamp is always timestamptz — UTC storage is not optional', () => {
+    expect(timestamp().$meta.kind).toBe('timestamptz');
+    expect(timestamp().defaultNow().$meta.default).toEqual({ kind: 'generated', by: 'now' });
+    expect(timestamp().defaultNow().onUpdateNow().$meta.onUpdate).toEqual({
+      kind: 'generated',
+      by: 'now',
+    });
   });
 
-  test('tz() accepts an IANA zone and rejects an abbreviation', () => {
-    const column = tz();
-    expect(column.parse('Europe/Berlin')).toBe('Europe/Berlin');
-    expect(() => column.parse('CET+2')).toThrow(/iana-tz/);
-    expect(() => column.parse('Mars/Olympus')).toThrow(/iana-tz/);
+  test('tz() takes IANA zones and refuses an abbreviation at declaration time', () => {
+    const zone = tz(['Europe/Berlin', 'UTC']);
+    expect(zone.$parse('Europe/Berlin')).toBe('Europe/Berlin');
+    expect(() => zone.$parse('America/New_York')).toThrow(/iana-tz/);
+    expect(() => tz(['CET+2'])).toThrow(/iana-tz/);
+    expect(() => tz(['Mars/Olympus'])).toThrow(/iana-tz/);
   });
 });
 
-describe('table()', () => {
-  const posts = table('posts', {
-    id: id(),
-    title: text(),
-    orgId: orgId(),
-    publishedAt: nullable(text()),
-    slug: slug(),
-    views: integer(),
-    lang: locale({ name: 'lang' }),
-    ...timestamps(),
+describe('the chain', () => {
+  test('.nullable() widens the parser as well as the column', () => {
+    const cover = url().nullable();
+    expect(cover.$meta.notNull).toBe(false);
+    expect(cover.$parse(null)).toBeNull();
+    expect(cover.$parse('https://x.example/a.png')).toBe('https://x.example/a.png');
+    expect(() => url().$parse('not-a-url')).toThrow(/absolute http/);
   });
 
-  test('derives snake_case physical names from the property key', () => {
-    expect(posts.columns.orgId.name).toBe('org_id');
-    expect(posts.columns.publishedAt.name).toBe('published_at');
-    expect(posts.columns.title.name).toBe('title');
+  test('.primaryKey() on a uuid generates a v7 id, so an insert may omit it', () => {
+    const id = uuid().primaryKey();
+    expect(id.$meta.primaryKey).toBe(true);
+    expect(id.$optional).toBe(true);
+    expect(id.$meta.default).toEqual({ kind: 'generated', by: 'uuid-v7' });
+    // A key that cannot be generated stays required.
+    expect(text().primaryKey().$optional).toBe(false);
   });
 
-  test('collects the primary key and the indexes a migration needs', () => {
-    expect(posts.primaryKey).toEqual(['id']);
-    expect(posts.indexes.map((index) => index.name)).toContain('posts_slug_key');
-    expect(posts.indexes.map((index) => index.name)).toContain('posts_org_id_idx');
-    expect(posts.indexes.find((index) => index.name === 'posts_slug_key')?.unique).toBe(true);
+  test('.default() marks the column optional and keeps its type', () => {
+    const status = enumerated(['draft', 'published']).default('draft');
+    expect(status.$optional).toBe(true);
+    expect(status.$meta.default).toEqual({ kind: 'value', value: 'draft' });
+    expect(() => status.$parse('archived')).toThrow(/expected one of/);
+    expect(boolean().default(true).$meta.default).toEqual({ kind: 'value', value: true });
   });
 
-  test('nullable() widens the parser as well as the column', () => {
-    expect(posts.columns.publishedAt.notNull).toBe(false);
-    expect(posts.columns.publishedAt.parse(null)).toBeNull();
+  test('.references() and .tenant() index the column and record the target', () => {
+    const orgs = entity('columns_test_orgs', { columns: { id: uuid().primaryKey() } });
+    const posts = entity('columns_test_posts', {
+      columns: {
+        id: uuid().primaryKey(),
+        orgId: uuid()
+          .references(() => orgs.id, { onDelete: 'cascade' })
+          .tenant(),
+        views: integer().default(0),
+        lang: locale(['en', 'es']).default('en'),
+      },
+    });
+    const described = posts.$describe();
+    const org = described.columns.find((column) => column.property === 'orgId');
+    // Physical names are derived from the property key; a name is written once, or never.
+    expect(org?.column).toBe('org_id');
+    expect(org?.references).toBe('columns_test_orgs.id');
+    expect(described.orgScoped).toBe(true);
+    expect(described.indexes).toContain('columns_test_posts_org_id_idx');
   });
 
-  test('an orgId column carries its foreign key', () => {
-    expect(posts.columns.orgId.references?.table).toBe('orgs');
-    expect(posts.columns.orgId.references?.onDelete).toBe('cascade');
+  test('text({ max }) reaches the database as a CHECK', () => {
+    const notes = entity('columns_test_notes', {
+      columns: { id: uuid().primaryKey(), title: text({ max: 80 }).unique() },
+    });
+    const title = notes.$describe().columns.find((column) => column.property === 'title');
+    expect(title?.check).toBe('char_length(title) <= 80');
+    expect(notes.$describe().indexes).toContain('columns_test_notes_title_key');
   });
 });

@@ -1,0 +1,134 @@
+// The chain every column builder is made of. Each link returns a new column, so a chain reads
+// in declaration order and a builder is never mutated behind someone's back.
+//
+// Where a column landed (table, property key, physical name) is recorded in a binding rather
+// than on the column: the author writes the property key once, `entity()` derives `orgId` ->
+// `org_id` from it, and a lazy `.references(() => orgs.id)` can still resolve the target's
+// physical name even though two schema modules import each other in a cycle.
+
+import { invariantViolated } from './errors';
+import type { AnyColumn, Column, ColumnDefault, ColumnMeta, TimestampColumn } from './types';
+
+export const snake = (value: string): string =>
+  value.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+
+export const GENERATED_UUID: ColumnDefault = { kind: 'generated', by: 'uuid-v7' };
+export const GENERATED_NOW: ColumnDefault = { kind: 'generated', by: 'now' };
+
+/** Every column starts here: not null, no key, no index. */
+export const BARE: Omit<ColumnMeta, 'kind'> = {
+  notNull: true,
+  primaryKey: false,
+  unique: false,
+  index: false,
+  tenant: false,
+};
+
+export interface Binding {
+  readonly table: string;
+  /** camelCase key on the row. */
+  readonly property: string;
+  /** snake_case physical column name. */
+  readonly name: string;
+}
+
+const bindings = new WeakMap<AnyColumn, Binding>();
+
+/**
+ * Called once per column by `entity()`. A column object belongs to exactly one table: sharing
+ * one between two entities would give it two physical names and silently mis-name a foreign
+ * key, so a second binding is a declaration-time error.
+ */
+export const bindColumn = (column: AnyColumn, table: string, property: string): Binding => {
+  const existing = bindings.get(column);
+  if (existing !== undefined && existing.table !== table) {
+    throw invariantViolated(
+      table,
+      property,
+      `this column is already bound to ${existing.table}.${existing.name}; ` +
+        'build a new column instead of sharing one between entities',
+    );
+  }
+  const binding: Binding = { table, property, name: snake(property) };
+  bindings.set(column, binding);
+  return binding;
+};
+
+export const bindingOf = (column: AnyColumn): Binding | undefined => bindings.get(column);
+
+const literal = (value: unknown): ColumnDefault => {
+  if (value === null) return { kind: 'value', value: null };
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return { kind: 'value', value };
+  }
+  throw invariantViolated(
+    'column',
+    'default',
+    `a default must be a literal; got ${typeof value}. For an instant use timestamp().defaultNow()`,
+  );
+};
+
+export const makeColumn = <T, Optional extends boolean>(
+  meta: ColumnMeta,
+  parse: (value: unknown) => T,
+  optional: Optional,
+): Column<T, Optional> => ({
+  $meta: meta,
+  $parse: parse,
+  $optional: optional,
+
+  primaryKey: () => {
+    // Only a uuid key can be generated for the caller; any other key must be supplied.
+    const generated = meta.kind === 'uuid' && meta.default === undefined;
+    return makeColumn<T, boolean>(
+      { ...meta, primaryKey: true, ...(generated ? { default: GENERATED_UUID } : {}) },
+      parse,
+      generated || meta.default !== undefined,
+    );
+  },
+
+  nullable: () =>
+    makeColumn<T | null, Optional>(
+      { ...meta, notNull: false },
+      (value) => (value === null || value === undefined ? null : parse(value)),
+      optional,
+    ),
+
+  unique: () => makeColumn<T, Optional>({ ...meta, unique: true }, parse, optional),
+
+  tenant: () => makeColumn<T, Optional>({ ...meta, tenant: true, index: true }, parse, optional),
+
+  references: (target, options = {}) =>
+    makeColumn<T, Optional>(
+      {
+        ...meta,
+        references: target,
+        index: true,
+        ...(options.onDelete === undefined ? {} : { onDelete: options.onDelete }),
+      },
+      parse,
+      optional,
+    ),
+
+  default: (value) => makeColumn<T, true>({ ...meta, default: literal(value) }, parse, true),
+});
+
+export const column = <T>(
+  kind: ColumnMeta['kind'],
+  parse: (value: unknown) => T,
+  extra: Partial<ColumnMeta> = {},
+): Column<T> => makeColumn<T, false>({ ...BARE, ...extra, kind }, parse, false);
+
+/**
+ * `timestamptz`, always. There is no naive-timestamp builder and there will not be one: a
+ * `timestamp without time zone` is a bug that only surfaces twice a year.
+ */
+export const makeTimestamp = <Optional extends boolean>(
+  meta: ColumnMeta,
+  parse: (value: unknown) => Date,
+  optional: Optional,
+): TimestampColumn<Optional> => ({
+  ...makeColumn<Date, Optional>(meta, parse, optional),
+  defaultNow: () => makeTimestamp({ ...meta, default: GENERATED_NOW }, parse, true),
+  onUpdateNow: () => makeTimestamp({ ...meta, onUpdate: GENERATED_NOW }, parse, optional),
+});

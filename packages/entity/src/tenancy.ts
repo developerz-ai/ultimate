@@ -1,8 +1,9 @@
-// Multi-tenancy is a guard, not a convention. An entity with an `orgId` column can
-// only be queried through a plan that carries an org predicate; building one without
-// it throws `X_TENANCY_UNSCOPED` at the seam instead of leaking another tenant's rows.
+// Multi-tenancy is a guard, not a convention. An entity with a tenant column can only be read
+// through a plan that carries an org predicate; building one without it throws
+// `X_TENANCY_UNSCOPED` at the seam instead of leaking another tenant's rows.
+
 import { tenancyUnscoped } from './errors';
-import type { TableDef } from './types';
+import type { ColumnMap } from './types';
 
 export type Operator =
   | 'eq'
@@ -24,18 +25,36 @@ export interface Predicate {
 
 export type SortDirection = 'asc' | 'desc';
 
+export interface SortKey {
+  readonly column: string;
+  readonly direction: SortDirection;
+}
+
 export interface QueryPlan {
   readonly entity: string;
   readonly where: readonly Predicate[];
-  readonly orderBy: readonly { readonly column: string; readonly direction: SortDirection }[];
+  readonly orderBy: readonly SortKey[];
   readonly limit: number;
+  /** Keyset position. There is no `offset` and there will not be one — see `repo.ts`. */
   readonly cursor?: string;
+  readonly select?: readonly string[];
 }
 
+/** The property key a tenant column takes when it is not marked explicitly. */
 export const ORG_COLUMN = 'orgId';
 
-/** True when the table declares an `orgId` column — presence is the switch. */
-export const isOrgScoped = (table: TableDef): boolean => Object.hasOwn(table.columns, ORG_COLUMN);
+/**
+ * `.tenant()` is the switch; a column literally named `orgId` counts too, so an entity cannot
+ * become unscoped by forgetting one call.
+ */
+export const tenantColumnOf = (columns: ColumnMap): string | null => {
+  for (const [property, column] of Object.entries(columns)) {
+    if (column.$meta.tenant) return property;
+  }
+  return Object.hasOwn(columns, ORG_COLUMN) ? ORG_COLUMN : null;
+};
+
+export const isOrgScoped = (columns: ColumnMap): boolean => tenantColumnOf(columns) !== null;
 
 export const emptyPlan = (entity: string, limit = 50): QueryPlan => ({
   entity,
@@ -44,31 +63,35 @@ export const emptyPlan = (entity: string, limit = 50): QueryPlan => ({
   limit,
 });
 
-export const hasOrgPredicate = (plan: QueryPlan): boolean =>
-  plan.where.some((predicate) => predicate.column === ORG_COLUMN);
+export const hasOrgPredicate = (plan: QueryPlan, column: string = ORG_COLUMN): boolean =>
+  plan.where.some((predicate) => predicate.column === column);
 
 /** Adds the org predicate exactly once; calling it twice is not an error. */
-export const orgScoped = (plan: QueryPlan, orgId: string): QueryPlan =>
-  hasOrgPredicate(plan)
+export const orgScoped = (
+  plan: QueryPlan,
+  orgId: string,
+  column: string = ORG_COLUMN,
+): QueryPlan =>
+  hasOrgPredicate(plan, column)
     ? plan
-    : { ...plan, where: [...plan.where, { column: ORG_COLUMN, op: 'eq', value: orgId }] };
+    : { ...plan, where: [...plan.where, { column, op: 'eq', value: orgId }] };
 
 /**
- * Called by every repository operation. Runtime here, and a build-time check in
- * `x verify` that no query for a tenant-scoped entity is constructed without it.
+ * Called by every repository operation. Runtime here, and a build-time check in `x verify`
+ * that no query for a tenant-scoped entity is constructed without it.
  */
 export const assertScoped = (
   entityName: string,
-  table: TableDef,
+  tenantColumn: string | null,
   operation: string,
   plan: QueryPlan,
 ): void => {
-  if (!isOrgScoped(table)) return;
-  if (hasOrgPredicate(plan)) return;
+  if (tenantColumn === null) return;
+  if (hasOrgPredicate(plan, tenantColumn)) return;
   throw tenancyUnscoped(entityName, operation);
 };
 
-/** Debug/`x db explain` rendering. Values stay out: a plan is safe to log. */
+/** Debug and `x db explain` rendering. Values stay out: a plan is safe to log. */
 export const describePlan = (plan: QueryPlan): string => {
   const where = plan.where
     .map((predicate) => `${predicate.column} ${predicate.op} ?`)
