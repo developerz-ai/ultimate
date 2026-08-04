@@ -83,7 +83,12 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: bun test
-        run: bun test
+        # `bun run test`, not bare `bun test`: the package script carries
+        # `--path-ignore-patterns='**/e2e/**'`, and the e2e suite is opt-in
+        # because it binds a real socket and needs `ULTIMATE_TEST_ALLOW_NET=1`.
+        # Running it bare here is why `test` fails on main — every e2e case dies
+        # on X_TEST_NETWORK_SEALED, which is the harness working as designed.
+        run: bun run test
 
   # The whole gate, exactly as `x verify` runs it. Green here means shippable.
   verify:
