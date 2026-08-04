@@ -32,7 +32,7 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 | **the gate** | `bun run verify` — typecheck + lint + boundaries + tests. Green = shippable. |
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
-| test (all) | `bun test` |
+| test (all) | `bun run test` — bare `bun test` also collects the opt-in `e2e/` and dummy-app fixture suites (#9) |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |
