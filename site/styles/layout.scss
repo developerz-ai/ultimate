@@ -28,6 +28,15 @@
   align-items: center;
   gap: var(--space-5);
   min-height: 3.5rem;
+
+  /* Below the wide breakpoint the eleven nav links, the brand and the GitHub
+   * icon cannot share one row: the nav was left with the 49px the others did
+   * not want, so a phone showed "Home" clipped mid-word inside a strip you had
+   * to swipe, with no menu button anywhere. Wrapping gives the nav its own full
+   * row instead — no JS, no drawer, which suits a site that ships 0kb of it. */
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+  padding-block: var(--space-2);
 }
 
 .brand {
@@ -56,8 +65,9 @@
 }
 
 .site-nav {
-  flex: 1;
+  flex: 1 0 100%;
   min-width: 0;
+  order: 3;
 }
 
 .site-nav__list {
@@ -334,4 +344,17 @@ main {
   justify-content: space-between;
   padding-top: var(--space-4);
   border-top: var(--border);
+}
+
+/* Wide enough for one row again: brand, nav and actions share it as before. */
+@media (min-width: 62rem) {
+  .site-header__inner {
+    flex-wrap: nowrap;
+    padding-block: 0;
+  }
+
+  .site-nav {
+    flex: 1;
+    order: 0;
+  }
 }
