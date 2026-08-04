@@ -34,7 +34,7 @@ export type OrgView = typeof OrgView.infer;
 export const MemberView = t.object({
   id: t.uuid,
   orgId: t.uuid,
-  email: t.string.email,
+  email: t.email,
   name: t.string,
   role: t.enumerated(...MEMBER_ROLES),
   tz: t.enumerated(...SUPPORTED_ZONES),
@@ -56,7 +56,7 @@ export const UpgradeReceipt = t.object({
 export type UpgradeReceipt = typeof UpgradeReceipt.infer;
 
 export const InviteInput = t.object({
-  email: t.string.email,
+  email: t.email,
   role: t.enumerated(...MEMBER_ROLES).default('author'),
   /** New members inherit the inviter's preferences until they change them in settings. */
   tz: t.enumerated(...SUPPORTED_ZONES).optional(),
