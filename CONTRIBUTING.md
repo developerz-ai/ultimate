@@ -18,7 +18,7 @@ embedded Postgres (PGlite), in-process events, and S3 to a local directory.
 | `bin/setup` | fresh clone to running |
 | `bin/dev <args>` | run the `x` CLI from source: `bin/dev verify --json` |
 | `bin/check` | the CI gate, locally |
-| `bun test` | every package's tests |
+| `bun run test` | every package's tests (bare `bun test` also picks up the opt-in suites — see #9) |
 | `bun run scripts/help.ts` | the full script catalogue |
 
 ## ✅ The gate

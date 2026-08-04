@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from './driver-pg';
+import { createPgDriver } from './driver-pg';
 import {
-  createPgDriver,
   SQL_ACK,
   SQL_CLAIM,
   SQL_ENQUEUE,
@@ -9,7 +9,7 @@ import {
   SQL_JOBS_TABLE,
   SQL_NACK,
   SQL_TRY_ADVISORY_LOCK,
-} from './driver-pg';
+} from './driver-pg-sql';
 import { DriverUnavailableError } from './errors';
 
 function recordingExecutor(rows: readonly unknown[] = []): PgExecutor & {

@@ -83,7 +83,13 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: bun test
-        run: bun test
+        # `bun run test`, not bare `bun test`: CI must run the repo's own gate, not a
+        # different command. The script's ignore patterns drop the `e2e/` suites, which
+        # bind a real socket and are opt-in behind ULTIMATE_TEST_ALLOW_NET=1, and the
+        # dummy app's contract/live/job/eval suites, which request fixtures nothing in
+        # the repo registers (#9). Bare `bun test` picked both up, which is why `main`
+        # has been red since 2026-07-30 and every PR inherited it.
+        run: bun run test
 
   # The whole gate, exactly as `x verify` runs it. Green here means shippable.
   verify:

@@ -97,11 +97,16 @@ function stepsFor(root: string): readonly Step[] {
     {
       name: 'test',
       summary: 'bun test across every package',
+      // `bun run test`, not bare `bun test`, so this gate and CI run the same command.
+      // The script's ignore patterns drop two kinds of file: the `e2e/` suites, which
+      // bind a real socket and are opt-in behind ULTIMATE_TEST_ALLOW_NET=1; and the
+      // dummy app's contract/live/job/eval suites, which request fixtures nothing in
+      // the repo registers — 13 tests that have never passed anywhere. See #9.
       run: () =>
-        fromRun(['bun', 'test'], root, {
+        fromRun(['bun', 'run', 'test'], root, {
           code: 'X_TEST_FAILED',
           cause: 'one or more tests failed',
-          fix: 'bun test',
+          fix: 'bun run test',
         }),
     },
     { name: 'filesize', summary: 'one file, one job', run: () => checkFileSizes(root) },
