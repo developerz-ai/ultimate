@@ -12,7 +12,7 @@ factories only**, so a test that never destructures `mail` never loads the mail 
 | No unmocked egress | `sealed-network.ts` patches fetch; a miss is `X_TEST_NETWORK_SEALED` |
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | No retries | a flake is fixed or deleted the day it flakes; there is no `retry: 3` |
-| Test names | always via `testName(type, name)` so `x verify` can filter them |
+| Test names | the filename picks the step; `testName(type, name)` on the outer `describe` puts that type on every failure line under it. Never on the inner `test` too — the prefix would print twice |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers `clock`, `mail`, `runJobs` — an app registers the rest |
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |

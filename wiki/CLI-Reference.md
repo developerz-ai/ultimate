@@ -158,7 +158,7 @@ test can fall between two steps.
 ```bash
 $ x verify --json
 {"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[
-  {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
+  {"name":"budgets","ok":false,"durationMs":812,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
      "fix":"x fix boundary site/pricing/page.tsx",
      "docs":"https://ultimate.dev/errors/X_BUDGET_EXCEEDED","at":"site/pricing"}]}]}
