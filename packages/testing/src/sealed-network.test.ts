@@ -1,13 +1,23 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { markListening, resetListeners } from '@ultimat3/core';
 import { allowHost, mockJson, requestedUrls, resetNetwork, sealNetwork } from './sealed-network';
+import { testName } from './test-types';
 
 sealNetwork();
 
 afterEach(() => {
   resetNetwork();
+  resetListeners();
 });
 
-describe('unit · sealed network', () => {
+/** The seal throws; anything else means the request left this file. Never resolves to a Response. */
+const refusalOf = async (url: string): Promise<{ code?: string } | undefined> =>
+  fetch(url).then(
+    () => undefined,
+    (error: unknown) => error as { code?: string },
+  );
+
+describe(testName('unit', 'sealed network'), () => {
   test('an unmocked request fails with the URL and the line that fixes it', async () => {
     try {
       await fetch('https://api.stripe.com/v1/charges', { method: 'POST' });
@@ -47,6 +57,16 @@ describe('unit · sealed network', () => {
     } catch (error) {
       expect((error as { cause?: string }).cause).toContain('allowed.example.com');
     }
+  });
+
+  test('a port this process opened is not egress — the seal lets it through', async () => {
+    const release = markListening('http://127.0.0.1:59321');
+    // Nothing is listening, so this must fail — but as a connection error, not as the seal.
+    expect((await refusalOf('http://localhost:59321/healthz'))?.code).not.toBe(
+      'X_TEST_NETWORK_SEALED',
+    );
+    release();
+    expect((await refusalOf('http://localhost:59321/healthz'))?.code).toBe('X_TEST_NETWORK_SEALED');
   });
 
   test('every attempted URL is recorded, in order', async () => {

@@ -132,3 +132,12 @@ export function setJobDriver(driver: JobDriver): void {
 export function jobDriver(): JobDriver | undefined {
   return ambient;
 }
+
+/**
+ * Test/CLI seam: forget the ambient driver. The counterpart to `resetMailDriver()` — a test
+ * that installs a queue has to be able to put the process back, or every later file in the
+ * same bun process silently enqueues where it meant to run inline.
+ */
+export function resetJobDriver(): void {
+  ambient = undefined;
+}

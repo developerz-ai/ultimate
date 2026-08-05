@@ -85,7 +85,7 @@ export function checkSurfaceRules(files: readonly SourceFile[]): readonly Findin
           violation('X_BOUNDARY_SITE_TO_APP', {
             at: file.path,
             cause: `site/ imports "${specifier}" from app/ — the marketing bundle would inherit the app graph`,
-            fix: `move the shared part into shared/ and import it from both, then: x verify --only boundaries`,
+            fix: `move the shared part into shared/ and import it from both, then: x verify --json`,
           }),
         );
       }

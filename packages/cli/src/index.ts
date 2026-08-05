@@ -40,7 +40,6 @@ export {
   shardArgs,
   testCommand,
 } from './cmd-test';
-export type { StepOutcome, VerifyContext, VerifyOptions, VerifyStep } from './cmd-verify';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
@@ -83,3 +82,21 @@ export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from
 export { CLI_VERSION, COMMANDS, commandFor, SPECS } from './registry';
 export type { SourceFile, Surface as AppSurface } from './surfaces';
 export { BOUNDARY_CODES, checkAppBoundaries, checkSurfaceRules, surfaceOf } from './surfaces';
+export type {
+  HostCheck,
+  StepOutcome,
+  VerifyContext,
+  VerifyStep,
+  VerifyStepName,
+} from './verify-step';
+export { VERIFY_STEP_NAMES } from './verify-step';
+export type { TestType } from './verify-tests';
+export { TEST_STEPS, TEST_TYPES, testStepCommand } from './verify-tests';
+export {
+  checkFileSizes,
+  checkPackageShape,
+  hasWorkspacePackages,
+  LINE_CEILING,
+  PACKAGE_FILES,
+  workspacePackages,
+} from './workspace-checks';

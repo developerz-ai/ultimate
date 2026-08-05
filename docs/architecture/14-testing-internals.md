@@ -57,7 +57,7 @@ X_TEST_NETWORK_EGRESS: unmocked request in a test
   fix:   http.mock('POST https://api.stripe.com/v1/charges', { status: 200, body: {...} })
 ```
 
-The trap is installed at the fetch/socket layer, so it catches SDKs and transitive dependencies, not just direct `fetch` calls. There is no allowlist flag; a genuine integration test declares `network: 'live'` on the file and is excluded from `x verify`'s default set.
+The trap is installed at the fetch/socket layer, so it catches SDKs and transitive dependencies, not just direct `fetch` calls. A server the test itself started is not egress — `start()` announces its socket to core, so a request back to that port passes. There is no allowlist API a file can call; the one opt-out is `ULTIMATE_TEST_ALLOW_NET=1` in the environment, reserved for a deliberate live integration, so no test can quietly unseal the network for itself.
 
 ## The six test types
 
@@ -120,6 +120,8 @@ $ x verify
 | 1 | typecheck | any error; `any` is banned by lint, not tolerated by a cast | fastest signal, and everything downstream assumes types hold |
 | 2 | lint (Biome) | formatting, `any`, default exports, bare `Error`, raw hex, hardcoded strings | seconds, and it catches the cross-cutting rules before an expensive test run |
 | 3 | **import boundaries** | `site/` → `app/`, routes → DB, services → HTTP, framework tier violations | an import-scan pass; a boundary break invalidates the bundle-graph assumptions the later budget check depends on |
+| 3a | file size | a source file over 500 lines | a file read; one file, one job is cheapest to check before anything runs |
+| 3b | package shape | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` | four `stat` calls, and every later step assumes the package is navigable |
 | 4 | unit tests | any failure | no DB, so still cheap; fails fast on logic |
 | 5 | contract, live, job tests | any failure; a flake **is** a failure | needs cloned databases — first genuinely expensive step |
 | 6 | **migration drift** | schema ≠ migrations ≠ catalog, or an irreversible migration without a marker | after tests, because tests are what would have exercised the new column |

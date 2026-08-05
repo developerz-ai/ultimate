@@ -76,6 +76,9 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - `idempotencyKey` on every job is required by the type. Keys derive from `input` only.
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
+- Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `clock`,
+  `mail` and `runJobs` are the framework's; `seed` and `actorFor` are Postly's. A test that
+  destructures anything else fails with `X_TEST_FIXTURE_UNKNOWN` — register it there, once.
 
 ## Boundaries (build errors, not lint warnings)
 

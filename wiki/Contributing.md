@@ -107,9 +107,9 @@ TypeScript strictness comes from [`tsconfig.base.json`](https://github.com/devel
 
 | Task | Command |
 |---|---|
-| all tests | `bun test` |
+| all tests | `bun run test` (bare `bun test` also scans `examples/`, which has its own gate) |
 | one file | `bun test packages/core/src/errors.test.ts` |
-| typecheck the whole graph | `bun run typecheck` (`tsc -b --pretty`) |
+| typecheck the framework graph | `bun run typecheck` (`tsc -b --pretty`) |
 | clean the build info | `bun run typecheck:clean` |
 | lint + format check | `bun run lint` (`biome check .`) |
 | autofix | `bun run lint:fix` / `bun run format` |

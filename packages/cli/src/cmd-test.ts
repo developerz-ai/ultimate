@@ -28,8 +28,13 @@ export interface Shard {
 
 const TEST_GLOB = '**/*.test.ts';
 
-/** The root `test` script's ignore list, kept identical so `x test` and `bun test` see one suite. */
-const IGNORED = ['/dist/', '/node_modules/', '/e2e/'];
+/**
+ * The root `test` script's ignore list, kept identical so `x test` and `bun run test` see one
+ * suite. `e2e/` is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is
+ * a suite nobody runs until CI says so. `examples/` is, because the reference app is a separate
+ * project with its own gate — `x verify` there, not `x test` here.
+ */
+const IGNORED = ['/dist/', '/node_modules/', '/examples/'];
 
 /** File size stands in for duration: cheap to read, and it correlates far better than file count. */
 export async function discoverTests(root: string, filter?: string): Promise<readonly TestFile[]> {

@@ -2,6 +2,7 @@
 // and the line that fixes it. A test that quietly reaches the internet is a test that fails in CI
 // for reasons nobody can reproduce — so the default is "nothing gets out".
 
+import { isSelfOrigin } from '@ultimat3/core';
 import { NetworkSealedError } from './errors';
 
 export type FetchLike = typeof globalThis.fetch;
@@ -50,8 +51,11 @@ export function sealNetwork(): void {
     if (mock !== undefined) {
       return mock.handler(input instanceof Request ? input : new Request(url, init));
     }
+    // A server this process booted is not egress — the port is one the kernel just handed us, so
+    // there is nothing to allowlist ahead of time. Without this, a socket test's only option is to
+    // unseal the network wholesale, which then hides the real egress it was meant to catch.
     const host = safeHost(url);
-    if (host !== undefined && state.allowed.has(host)) {
+    if (isSelfOrigin(url) || (host !== undefined && state.allowed.has(host))) {
       const original = state.original;
       if (original === undefined) throw new TypeError('sealed network lost its original fetch');
       return original(input, init);

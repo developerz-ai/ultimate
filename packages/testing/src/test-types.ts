@@ -1,6 +1,6 @@
-// The six first-class test types. Each helper prefixes its name with the type, which is what
-// `x verify` filters on (`bun test --test-name-pattern "job · "`) — so the six lines in the verify
-// output are produced by the tests themselves, not by a directory convention nobody follows.
+// The six first-class test types. `x verify` selects a suite by FILENAME — `*.job.test.ts`, and
+// so on — so these helpers only prefix the reported name with its type, which is what makes a
+// failure line say which of the six steps it belongs to. See packages/cli/src/verify-tests.ts.
 
 import { test } from 'bun:test';
 

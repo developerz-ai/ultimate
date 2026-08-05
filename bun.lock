@@ -341,6 +341,9 @@
       "version": "0.0.1",
       "dependencies": {
         "@ultimat3/core": "0.0.1",
+        "@ultimat3/jobs": "0.0.1",
+        "@ultimat3/mail": "0.0.1",
+        "@ultimat3/time": "0.0.1",
       },
     },
     "packages/time": {

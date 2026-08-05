@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
+import { resetJobDriver } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import { registerMailCatalog } from './catalog';
@@ -44,6 +45,10 @@ beforeEach(() => {
   resetMailDriver();
   memory = createMemoryDriver();
   setMailDriver(memory);
+  // `send` enqueues whenever a job driver is ambient, and the driver is process-global. These
+  // tests assert on the inline path, so they state that precondition instead of inheriting
+  // whichever driver an earlier file in this bun process happened to leave behind.
+  resetJobDriver();
 });
 
 function codeOf(value: unknown): string {

@@ -125,16 +125,21 @@ Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAI
 ## x verify
 
 ```bash
-x verify [--only step,step] [--skip step,step] [--json]
+x verify [--json]
 ```
 
-The single gate. Green means shippable; CI runs exactly this.
+The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
+with the framework repo's own `bun run verify` — there is no `--only` and no `--skip`, because
+"green" has to mean the same thing for everyone. A step with nothing to check in this project
+reports as skipped (`-`), never as passed.
 
 | Step | Checks |
 |---|---|
 | `typecheck` | `tsc` across every workspace |
 | `lint` | Biome: no `any`, no default exports, no bare `Error`, no raw colours, no hardcoded user-facing strings |
-| `boundaries` | surface and layer imports, resolved transitively |
+| `boundaries` | surface and layer imports, resolved transitively; package tiers in a monorepo |
+| `filesize` | a source file over 500 lines |
+| `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` |
 | `unit` | pure logic — services, money, policy predicates, matchers |
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
@@ -146,12 +151,17 @@ The single gate. Green means shippable; CI runs exactly this.
 | `budgets` | per-route JS bytes and LCP |
 | `manifest` | `x.manifest.json` freshness |
 
+A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,
+`*.e2e.test.ts` (or any test under `e2e/`), `*.eval.test.ts`. Everything else is a unit test, so no
+test can fall between two steps.
+
 ```bash
-$ x verify --only budgets --json
-{"ok":false,"checks":[{"name":"budgets","ok":false,"failures":[
-  {"route":"site/pricing","metric":"js","actual":"61kb","limit":"40kb",
-   "cause":"chart.js via shared/ui/button.tsx",
-   "fix":"x fix boundary site/pricing/page.tsx"}]}]}
+$ x verify --json
+{"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[
+  {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
+    {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
+     "fix":"x fix boundary site/pricing/page.tsx",
+     "docs":"https://ultimate.dev/errors/X_BUDGET_EXCEEDED","at":"site/pricing"}]}]}
 ```
 
 Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own code.

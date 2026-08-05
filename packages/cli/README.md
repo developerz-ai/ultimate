@@ -9,7 +9,7 @@ The `x` binary. One char during dev, one command per job, `--json` on every one 
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
-| `x verify` | **the gate** | 13 named steps, each with pass/fail + duration |
+| `x verify` | **the gate** | 15 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|studio\|branch` | everything DB | `branch` = copy-on-write clone + preview URL |
 | `x mcp serve` | MCP over stdio or HTTP | read tools unrestricted in dev |
@@ -30,15 +30,18 @@ X_DB_DRIFT: schema differs from migrations
 
 ```sh
 x verify --json
-# {"ok":false,"command":"verify","summary":"1 of 13 steps failed","steps":[...]}
+# {"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[...]}
 ```
 
 ## `x verify` steps
 
-`typecheck lint boundaries unit contract live job e2e eval drift contract-diff budgets manifest`
+`typecheck lint boundaries filesize package-shape unit contract live job e2e eval drift
+contract-diff budgets manifest`
 
-Never bails early: an agent fixing three things needs all three findings from one run.
-`--only a,b` and `--skip c` narrow it; the exit code is non-zero if any step fails.
+One list, in cost order, defined once in `cmd-verify.ts` — the framework repo's own gate
+(`bun run verify`) runs exactly it. A step with nothing to check here reports as skipped, never as
+passed. Never bails early: an agent fixing three things needs all three findings from one run.
+There is no `--only` and no `--skip`; the exit code is non-zero if any step fails.
 
 ## Layout
 
@@ -52,6 +55,9 @@ Never bails early: an agent fixing three things needs all three findings from on
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `surfaces.ts` | app import boundaries (site→app, shared leaf, route→DB) |
+| `verify-step.ts` | the step shape, the step names, the host-check hook |
+| `verify-tests.ts` | one `bun test` invocation per test type |
+| `workspace-checks.ts` | file-size ceiling and package contract files |
 | `drift.ts` `openapi.ts` `budgets.ts` `manifest-scan.ts` | the checks `x verify` composes |
 
 ## Generated file layout

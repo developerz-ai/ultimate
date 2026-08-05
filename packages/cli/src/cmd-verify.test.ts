@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import type { VerifyStep } from './cmd-verify';
-import { runVerify, VERIFY_STEPS, verifyStepNames } from './cmd-verify';
+import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 import { exitCodeFor } from './output';
+import type { VerifyContext, VerifyStep } from './verify-step';
+import { VERIFY_STEP_NAMES } from './verify-step';
 
-const ctx = {
+const ctx: VerifyContext = {
   root: '/nowhere',
   runner: async () => ({
     command: ['true'],
@@ -45,6 +46,8 @@ describe('unit · x verify', () => {
       'typecheck',
       'lint',
       'boundaries',
+      'filesize',
+      'package-shape',
       'unit',
       'contract',
       'live',
@@ -57,6 +60,10 @@ describe('unit · x verify', () => {
       'manifest',
     ]);
     expect(VERIFY_STEPS.every((step) => step.summary.length > 0)).toBe(true);
+  });
+
+  test('the declared names and the steps that exist are one list', () => {
+    expect(verifyStepNames()).toEqual([...VERIFY_STEP_NAMES]);
   });
 
   test('a failing step makes the whole run fail and exit non-zero', async () => {
@@ -91,12 +98,34 @@ describe('unit · x verify', () => {
     expect(seen).toEqual(['typecheck', 'drift']);
   });
 
-  test('--only runs one step and --skip removes one', async () => {
-    const only = await runVerify(stubs, ctx, { only: ['typecheck'] });
-    expect(only.steps?.map((step) => step.name)).toEqual(['typecheck']);
-    expect(only.ok).toBe(true);
-    const skipped = await runVerify(stubs, ctx, { skip: ['drift'] });
-    expect(skipped.ok).toBe(true);
+  test('there is no way to narrow the run: every step runs, every time', async () => {
+    const result = await runVerify(stubs, ctx);
+    expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
+    expect(verifyCommand.spec.flags).toEqual([]);
+    expect(verifyCommand.spec.usage).toBe('x verify [--json]');
+  });
+
+  test('a host check adds findings to the step it was registered for', async () => {
+    const withHost: readonly VerifyStep[] = [
+      {
+        name: 'boundaries',
+        summary: 'imports',
+        run: async (context) => {
+          const extra = (await context.hostChecks?.boundaries?.(context.root)) ?? [];
+          return { ok: extra.length === 0, findings: extra };
+        },
+      },
+    ];
+    const result = await runVerify(withHost, {
+      ...ctx,
+      hostChecks: {
+        boundaries: async () => [
+          { code: 'X_BOUNDARY_VIOLATION', cause: 'cli imports admin', fix: 'invert the import' },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.steps?.[0]?.findings[0]?.code).toBe('X_BOUNDARY_VIOLATION');
   });
 
   test('a step that throws becomes a finding, not a crash', async () => {
@@ -112,6 +141,6 @@ describe('unit · x verify', () => {
     const result = await runVerify(boom, ctx);
     expect(result.ok).toBe(false);
     expect(result.steps?.[0]?.findings[0]?.code).toBe('X_VERIFY_FAILED');
-    expect(result.steps?.[0]?.findings[0]?.fix).toBe('x verify --only boundaries --json');
+    expect(result.steps?.[0]?.findings[0]?.fix).toBe('x verify --json');
   });
 });

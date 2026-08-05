@@ -10,6 +10,9 @@
 
 import { test as bunTest } from 'bun:test';
 import { fixtureUnknown } from './errors';
+import type { TestClock } from './fixture-clock';
+import type { RunJobs } from './fixture-jobs';
+import type { TestMail } from './fixture-mail';
 
 /** Built once per test, on first use. */
 export type FixtureFactory<T = unknown> = () => T | Promise<T>;
@@ -17,18 +20,22 @@ export type FixtureFactory<T = unknown> = () => T | Promise<T>;
 export type FixtureMap = Readonly<Record<string, FixtureFactory>>;
 
 /**
- * What a test body receives. Apps widen it by augmenting `Fixtures`:
+ * What a test body receives. The three the framework owns are declared here and registered by
+ * the preload; apps widen it by augmenting `Fixtures`:
  *
  * ```ts
  * declare module '@ultimat3/testing' {
  *   interface Fixtures {
- *     seed: (name: string) => Promise<SeedHandle>;
+ *     seed: (name: string) => SeedHandle;
  *   }
  * }
  * ```
  */
-// biome-ignore lint/suspicious/noEmptyInterface: the augmentation target — apps declare into it.
-export interface Fixtures {}
+export interface Fixtures {
+  readonly clock: TestClock;
+  readonly mail: TestMail;
+  readonly runJobs: RunJobs;
+}
 
 const registry = new Map<string, FixtureFactory>();
 
@@ -42,6 +49,15 @@ export function clearFixtures(): void {
 
 export function registeredFixtures(): readonly string[] {
   return [...registry.keys()].sort();
+}
+
+/**
+ * A copy of the registry. The registry is process-global and bun shares one process across
+ * files, so a test that needs an empty one snapshots first and hands it back afterwards —
+ * otherwise every later file silently loses the fixtures the preload registered.
+ */
+export function fixtureSnapshot(): FixtureMap {
+  return Object.fromEntries(registry);
 }
 
 /**
@@ -71,19 +87,75 @@ export function requestedFixtures(body: (...args: never[]) => unknown): readonly
 export type FixtureBody = (fixtures: Fixtures) => void | Promise<void>;
 
 /**
- * `test` with fixtures. Only what the body destructures is built, and each is awaited before
- * the body runs — so a body reads `seed('dev')` directly instead of awaiting every fixture.
+ * A fixture that installs process-global state — the ambient job driver, the ambient mail
+ * driver — implements one of the standard disposal symbols to put it back. Bun shares one
+ * process across every test file, so a fixture that skips this does not leak within its own
+ * test: it leaks into every file that runs after it, and the failure surfaces somewhere else.
  */
-export function fixtureTest(name: string, body: FixtureBody): void {
-  bunTest(name, async () => {
-    const wanted = requestedFixtures(body as (...args: never[]) => unknown);
-    const bag: Record<string, unknown> = {};
+type MaybeDisposable = {
+  readonly [Symbol.asyncDispose]?: () => PromiseLike<void> | void;
+  readonly [Symbol.dispose]?: () => void;
+};
+
+const disposerOf = (value: unknown): (() => PromiseLike<void> | void) | undefined => {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function'))
+    return undefined;
+  const target = value as MaybeDisposable;
+  const asyncDispose = target[Symbol.asyncDispose];
+  if (typeof asyncDispose === 'function') return () => asyncDispose.call(target);
+  const dispose = target[Symbol.dispose];
+  return typeof dispose === 'function' ? () => dispose.call(target) : undefined;
+};
+
+/**
+ * Build what the body asked for, run it, dispose in reverse. Split out of `fixtureTest` because
+ * that one hands its callback to bun and returns nothing — teardown is the part most worth
+ * testing, and it cannot be observed through a registration. Not in the package's public API:
+ * `fixtureTest` stays the one way to write a test with fixtures.
+ */
+export async function runWithFixtures(body: FixtureBody): Promise<void> {
+  const wanted = requestedFixtures(body as (...args: never[]) => unknown);
+  // Partial by construction — only what the body destructured is built. Handed over as the
+  // full `Fixtures` because the keys came from that same body: a key it did not name is a key
+  // it cannot read, so the missing ones are unobservable.
+  const bag: Partial<Fixtures> & Record<string, unknown> = {};
+  const built: unknown[] = [];
+  // Boxed rather than a bare `unknown`, so a body that throws a falsy value still reports.
+  let failure: { readonly error: unknown } | undefined;
+  try {
     for (const key of wanted) {
       const factory = registry.get(key);
       // Naming the registered set turns "undefined is not an object" into a fixable message.
       if (factory === undefined) throw fixtureUnknown(key, registeredFixtures());
-      bag[key] = await factory();
+      const value = await factory();
+      built.push(value);
+      bag[key] = value;
     }
     await body(bag as Fixtures);
-  });
+  } catch (error) {
+    failure = { error };
+  }
+
+  // Every disposer runs even when an earlier one throws: a fixture that cannot clean up must
+  // not strand the ones built before it. The body's own failure wins, because a teardown error
+  // that replaced it would hide the assertion that actually broke.
+  for (const value of built.reverse()) {
+    try {
+      await disposerOf(value)?.();
+    } catch (error) {
+      failure ??= { error };
+    }
+  }
+  if (failure !== undefined) throw failure.error;
+}
+
+/**
+ * `test` with fixtures. Only what the body destructures is built, and each is awaited before
+ * the body runs — so a body reads `seed('dev')` directly instead of awaiting every fixture.
+ *
+ * Teardown runs in reverse build order whether the body passed or threw: a failing assertion
+ * must not be the reason the next file inherits a queue.
+ */
+export function fixtureTest(name: string, body: FixtureBody): void {
+  bunTest(name, () => runWithFixtures(body));
 }

@@ -6,5 +6,8 @@ production = false
 
 [test]
 root = "."
-# Frozen clock, seeded RNG, sealed network. See packages/testing.
+# Frozen clock, seeded RNG, sealed network, framework fixtures. See packages/testing.
+# Only the framework's preload: `examples/dummy` is a separate project with its own bunfig,
+# its own fixtures (`seed`, `actorFor`) and its own gate. Registering the app's fixtures here
+# would load the app's entity graph and mail registry into every framework test.
 preload = ["./scripts/test-setup.ts"]

@@ -33,6 +33,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # No `registry-url:` on purpose. It writes an .npmrc containing
       #   //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}

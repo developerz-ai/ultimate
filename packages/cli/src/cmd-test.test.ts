@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import type { Shard, TestFile } from './cmd-test';
 import { discoverTests, planShards, reproduceFor, runShards, shardArgs } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
@@ -189,7 +190,13 @@ describe('unit · x test discovery', () => {
     expect(files.every((file) => file.bytes > 0)).toBe(true);
     expect(files.every((file) => !file.path.includes('node_modules'))).toBe(true);
     expect(files.every((file) => !file.path.includes('/dist/'))).toBe(true);
-    expect(files.every((file) => !file.path.includes('/e2e/'))).toBe(true);
+  });
+
+  // `x test` and `bun run test` must see one suite. An e2e file dropped here is a file that only
+  // ever runs in CI, which is how `packages/http/e2e` stayed broken for as long as it did.
+  test('an opt-in e2e suite is discovered, not silently dropped', async () => {
+    const files = await discoverTests(join(import.meta.dir, '..', '..', 'http'));
+    expect(files.map((file) => file.path)).toContain('e2e/server.e2e.test.ts');
   });
 
   test('a filter narrows the set to matching paths', async () => {

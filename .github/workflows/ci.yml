@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -44,6 +46,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -61,6 +65,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -73,6 +79,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -83,12 +91,9 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: bun test
-        # `bun run test`, not bare `bun test`: CI must run the repo's own gate, not a
-        # different command. The script's ignore patterns drop the `e2e/` suites, which
-        # bind a real socket and are opt-in behind ULTIMATE_TEST_ALLOW_NET=1, and the
-        # dummy app's contract/live/job/eval suites, which request fixtures nothing in
-        # the repo registers (#9). Bare `bun test` picked both up, which is why `main`
-        # has been red since 2026-07-30 and every PR inherited it.
+        # No opt-in exclusions: the framework's e2e/contract/live/job/eval suites all run, every
+        # time. The reference app's suites are not here — they run in `reference-app-verify`,
+        # against the app's own preload and fixtures.
         run: bun run test
 
   # The whole gate, exactly as `x verify` runs it. Green here means shippable.
@@ -98,6 +103,8 @@ jobs:
     needs: [lint, typecheck, boundaries, test]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -109,3 +116,43 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: x verify
         run: bun run scripts/verify.ts --json
+
+  # The reference app runs the same 15-step gate a generated app would. Not in `verify`'s
+  # `needs`: the framework gate and the app gate are two different contracts, checked
+  # independently — a red app doesn't hide a green framework or vice versa. That is also why
+  # the app is absent from the `typecheck` and `test` jobs above: its typecheck and its suites
+  # are steps 1 and 6-11 of the gate below, so running them twice only decides which job's
+  # redness you notice first.
+  #
+  # Advisory, not blocking. As of 2026-08 Postly is written against the finished API — the fluent
+  # `action` surface, `defineMail`/`defineService`, the `page`/`subscribe`/`evaluate` fixtures —
+  # and the framework has not shipped it yet, so every failure here is drift the roadmap already
+  # owns rather than a regression this PR introduced. Blocking on it would make red the resting
+  # state, which is how a gate stops being read. `continue-on-error` comes off at milestone 9 in
+  # docs/idea/14-roadmap.md — the last of those surfaces to land — when app and framework agree.
+  reference-app-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: x verify (examples/dummy)
+        # `continue-on-error` on the STEP, not the job: on the job it leaves the check itself red
+        # for as long as the drift above lasts, and a check that is always red is a check nobody
+        # reads — the exact failure mode this PR exists to remove. On the step the run is marked
+        # with a warning, and the whole 15-step table, every failing step and every fix line stay
+        # in the log. Human render, not `--json`: the reader of an advisory result is a person or
+        # an agent scanning for which step went red, not a parser.
+        continue-on-error: true
+        working-directory: examples/dummy
+        run: bun run ../../packages/cli/src/bin.ts verify

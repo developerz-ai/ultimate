@@ -16,15 +16,16 @@
     "skipLibCheck": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
+    "composite": true,
+    "declaration": true,
     "paths": {
-      "@postly/domain": ["packages/domain/src/index.ts"],
-      "@postly/db": ["packages/db/src/index.ts"],
-      "@postly/core": ["packages/core/src/index.ts"],
-      "@postly/i18n": ["packages/i18n/src/index.ts"],
-      "@postly/ui": ["packages/ui/src/index.ts"],
-      "@postly/mcp": ["packages/mcp/src/index.ts"],
-      "@postly/web/*": ["apps/web/*"]
+      "@postly/domain": ["./packages/domain/src/index.ts"],
+      "@postly/db": ["./packages/db/src/index.ts"],
+      "@postly/core": ["./packages/core/src/index.ts"],
+      "@postly/i18n": ["./packages/i18n/src/index.ts"],
+      "@postly/ui": ["./packages/ui/src/index.ts"],
+      "@postly/mcp": ["./packages/mcp/src/index.ts"],
+      "@postly/web/*": ["./apps/web/*"]
     }
   },
   "include": ["app.config.ts", "apps/**/*", "packages/**/*"],

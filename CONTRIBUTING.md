@@ -18,7 +18,7 @@ embedded Postgres (PGlite), in-process events, and S3 to a local directory.
 | `bin/setup` | fresh clone to running |
 | `bin/dev <args>` | run the `x` CLI from source: `bin/dev verify --json` |
 | `bin/check` | the CI gate, locally |
-| `bun run test` | every package's tests (bare `bun test` also picks up the opt-in suites — see #9) |
+| `bun run test` | every package's tests, opt-in suites included; `examples/` is gated by its own `x verify` |
 | `bun run scripts/help.ts` | the full script catalogue |
 
 ## ✅ The gate
@@ -26,17 +26,25 @@ embedded Postgres (PGlite), in-process events, and S3 to a local directory.
 **`bun run scripts/verify.ts` — green means shippable.** CI runs exactly this. There is no second
 checklist and no CI-only step.
 
+It **is** `x verify`, run at the repo root: one step list, defined once in
+`packages/cli/src/cmd-verify.ts`, so a contributor and a user see the same steps. A step that has
+nothing to check here is reported as skipped (`-`), never as passed.
+
 | Step | Fails on |
 |---|---|
 | `typecheck` | any type error; `any` is banned, and a cast is not a fix |
 | `lint` | Biome: formatting, `any`, unused, default exports |
-| `boundaries` | a tier violation (see below) |
-| `test` | any failing test; a flake is a failure |
+| `boundaries` | a tier violation (see below) or an app surface violation |
 | `filesize` | a file over 500 lines |
 | `package-shape` | a package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` |
-| `manifest` | the framework manifest cannot be generated |
+| `unit` | any failing test that is not one of the typed suites below; a flake is a failure |
+| `contract` `live` `job` `e2e` `eval` | any failing `*.<type>.test.ts` suite (or any test under `e2e/`) |
+| `drift` | an app schema that no migration recorded |
+| `contract-diff` | a breaking change to a published action without a version bump |
+| `budgets` | per-route JS bytes or LCP over the declared limit |
+| `manifest` | the manifest differs from what the code produces, or cannot be generated |
 
-Narrow it while iterating: `bun run scripts/verify.ts --only lint,boundaries --json`.
+There is no `--only` and no `--skip`: "green" has to mean the same thing for everyone (axiom 5).
 
 ## 📦 Import tiers (a build error, not a preference)
 

@@ -1,10 +1,12 @@
-// The bunfig preload for apps: frozen clock, seeded RNG, sealed network, custom matchers. Loaded
-// once per test process, before any test file — an app never has to remember to call it.
+// The bunfig preload for apps: frozen clock, seeded RNG, sealed network, custom matchers, and
+// the framework's fixture bag. Loaded once per test process, before any test file — an app never
+// has to remember to call it.
 //
 //   [test]
 //   preload = ["@ultimat3/testing/preload"]
 
 import { installDeterminism } from './determinism';
+import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
 import { sealNetwork } from './sealed-network';
 
@@ -15,6 +17,8 @@ installDeterminism({
   ...(Number.isFinite(seed) ? { seed } : {}),
   ...(now === undefined ? {} : { now }),
 });
+
+registerFrameworkFixtures();
 
 // Opt-out exists for one case: a test that deliberately exercises a real integration in a job the
 // team runs on purpose. It is an env var, not an API, so it cannot be set from inside a test file.

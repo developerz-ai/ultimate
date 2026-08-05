@@ -18,6 +18,7 @@ export {
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,
   jobDriver,
+  resetJobDriver,
   setJobDriver,
 } from './driver';
 export type { MemoryDriverOptions } from './driver-memory';

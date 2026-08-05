@@ -14,6 +14,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `factories.ts` | typed factories from the entity registry, seeded |
 | `test-types.ts` | the six test types and their helpers |
 | `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` |
+| `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
+| `fixture-{clock,mail,jobs}.ts` | the three fixtures the framework owns |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -23,6 +25,46 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 [test]
 preload = ["@ultimat3/testing/preload"]
 ```
+
+## Fixtures
+
+`test` from this package passes a fixture bag as the first argument, and builds only what the
+body destructures — a test that never names `runJobs` never starts a queue.
+
+```ts
+import { expect, test } from '@ultimat3/testing';
+
+test('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
+  await runJobs(onboardOrg, { orgId });
+  expect(await runJobs.inFlight()).toBe(0);   // suspended, not waiting
+  clock.advance('3d');
+  expect(await runJobs.due()).toBe(1);
+});
+```
+
+| Fixture | Is | Registered by |
+|---|---|---|
+| `clock` | `now()` · `advance('3d')` · `set(instant)` on the frozen clock | the preload |
+| `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` over an in-memory transport | the preload |
+| `runJobs` | a worker: call it to enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| anything else | whatever the app registers | the app's `scripts/test-setup.ts` |
+
+`mail` and `runJobs` install a process-global driver for the length of one test and hand the previous one back afterwards. A fixture that takes over a global does the same: implement `Symbol.dispose` or `Symbol.asyncDispose` on what the factory returns, and `fixtureTest` calls it in reverse build order — including when the test body throws.
+
+An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
+
+```ts
+defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });
+
+declare module '@ultimat3/testing' {
+  interface Fixtures {
+    readonly seed: (name: string) => SeedHandle;
+  }
+}
+```
+
+Destructuring a name nobody registered fails with `X_TEST_FIXTURE_UNKNOWN`, which names the set
+that *is* registered — never `undefined is not an object` from inside the body.
 
 ## The six test types
 
@@ -59,6 +101,11 @@ X_TEST_NETWORK_SEALED
   fix:   mockFetch('https://api.stripe.com/v1/charges', () => new Response('{}')) — or allowHost('api.stripe.com') if it must be real
 ```
 
+A server this process booted is exempt: `createServer().start()` announces its socket through
+core's `markListening()`, so a test may call its own `handle.url()` on a kernel-assigned port with
+the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
+integration — never for a socket test.
+
 ## Errors
 
-`X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC`
+`X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`

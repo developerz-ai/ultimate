@@ -102,7 +102,7 @@ $ x policy explain publishPost --json
 |---|---|---|
 | one path explained | `x policy explain <path> --json` | `policies.list` |
 | every policy + its users | `x policy list --json` | `policies.list` |
-| unprotected surfaces | `x verify --only boundaries --json` | `budgets.report` / `manifest.get` |
+| unprotected surfaces | `x verify --json` (the `boundaries` step) | `budgets.report` / `manifest.get` |
 
 The `branches` array is what the generated tests enumerate — one denial test per branch. An untested branch is a red build.
 
