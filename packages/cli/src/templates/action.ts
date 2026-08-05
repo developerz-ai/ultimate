@@ -11,8 +11,9 @@ const actionSource = (
   feature: NameSet,
 ): string => `// ${name.camel}: one mutation, server-authoritative. Input is validated before the handler runs
 // and the policy is the same object the MCP tool and the HTTP route evaluate.
-import { action, t } from '@ultimat3/action';
+import { action } from '@ultimat3/action';
 import { can } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
 import { ${feature.pascal}NotFoundError } from './errors';
 import { ${feature.camel}Tag } from './policy';
 import * as repo from './repo';

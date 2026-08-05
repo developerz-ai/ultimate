@@ -161,8 +161,9 @@ const offlineStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 const apiAction =
   (): string => `// api/ holds actions only: no rendering, no components. This one is the readiness probe every
 // role exposes, declared as an action so it appears in OpenAPI and MCP like everything else.
-import { action, t } from '@ultimat3/action';
+import { action } from '@ultimat3/action';
 import { can } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
 
 export const health = action({
   input: t.object({}),

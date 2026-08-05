@@ -10,7 +10,8 @@ const jobSource = (
   name: NameSet,
 ): string => `// ${name.camel}: multi-step durable work. Each step is retried independently and its result is
 // stored under its name — step names are stable identifiers, not labels.
-import { job, t } from '@ultimat3/jobs';
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/schema';
 import * as repo from '../repo';
 
 export const ${name.camel} = job({

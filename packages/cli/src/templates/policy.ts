@@ -8,7 +8,8 @@ import { names } from './naming';
 const policySource = (
   feature: NameSet,
 ): string => `// Authz for the ${feature.kebab} feature. Every branch here is reachable from every surface.
-import { can, tag } from '@ultimat3/policy';
+import { tag } from '@ultimat3/cache';
+import { can } from '@ultimat3/policy';
 
 export const ${feature.camel}Tag = tag('${feature.kebab}');
 

@@ -29,6 +29,7 @@ const rootPackage = (app: NameSet): string => `{
   },
   "dependencies": {
     "@ultimat3/action": "^0.0.1",
+    "@ultimat3/cache": "^0.0.1",
     "@ultimat3/cli": "^0.0.1",
     "@ultimat3/core": "^0.0.1",
     "@ultimat3/db": "^0.0.1",
@@ -40,6 +41,7 @@ const rootPackage = (app: NameSet): string => `{
     "@ultimat3/pwa": "^0.0.1",
     "@ultimat3/query": "^0.0.1",
     "@ultimat3/render": "^0.0.1",
+    "@ultimat3/schema": "^0.0.1",
     "@ultimat3/ui": "^0.0.1",
     "drizzle-orm": "^0.44.0",
     "solid-js": "^2.0.0"
@@ -76,20 +78,23 @@ const appConfig = (
   app: NameSet,
 ): string => `// The one config file. Everything the app needs to boot is here, typed and validated at startup —
 // a missing value fails the boot with the exact command that fixes it, never at the first request.
-import { defineApp } from '@ultimat3/core';
+// A named export, never a default: the CLI and the runtime both import \`config\` by name.
+import { defineConfig } from '@ultimat3/core';
 
-export default defineApp({
+export const config = defineConfig({
   name: '${app.kebab}',
-  locales: { default: 'en', supported: ['en'] },
-  timeZone: 'UTC',
-  currency: 'USD',
-  db: { url: process.env['DATABASE_URL'] ?? 'embedded' },
-  auth: { providers: ['password'], sessionDays: 30 },
-  jobs: { driver: 'postgres', queues: { default: { concurrency: 4 } } },
-  realtime: { transport: process.env['NATS_URL'] === undefined ? 'in-process' : 'nats' },
-  storage: { driver: process.env['S3_ENDPOINT'] === undefined ? 'local-dir' : 's3' },
-  budgets: { site: { js: '0kb' }, app: { js: '60kb' } },
-  observability: { otel: true, serviceName: '${app.kebab}' },
+  locales: ['en'],
+  defaultLocale: 'en',
+  defaultTimeZone: 'UTC',
+  defaultCurrency: 'USD',
+  // Env KEYS, never the value: the same image deploys to every environment.
+  database: { urlEnv: 'DATABASE_URL', poolSize: 10 },
+  cache: { driver: 'memory', tiers: ['memo', 'lru'] },
+  jobs: { driver: 'postgres', queues: ['${app.kebab}-default'], concurrency: 4 },
+  // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
+  realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
+  pwa: { enabled: true, offline: 'runtime', installPrompt: true },
+  ai: { mcp: { expose: true, path: '/mcp' } },
 });
 `;
 
@@ -345,22 +350,23 @@ const mcpIndex = (
   app: NameSet,
 ): string => `// The app's own MCP tools. Every action with mcp.expose is already a tool; add app-specific
 // read-only helpers here. Authorization is the action's policy, unchanged.
-import { defineTools } from '@ultimat3/mcp';
+import { defineAppMcp } from '@ultimat3/mcp';
 import { health } from '@${app.kebab}/web/api/health';
 
-export const tools = defineTools({
+export const mcp = defineAppMcp({
   name: '${app.kebab}',
   actions: [health],
 });
 `;
 
-const mcpTest = (app: NameSet): string => `import { expect } from 'bun:test';
+const mcpTest = (): string => `import { expect } from 'bun:test';
 import { unitTest } from '@ultimat3/testing';
-import { tools } from './index';
+import { mcp } from './index';
 
 unitTest('the app exposes its actions as MCP tools', () => {
-  expect(tools.name).toBe('${app.kebab}');
-  expect(tools.actions.length).toBeGreaterThan(0);
+  expect(mcp.tools.length).toBeGreaterThan(0);
+  // Every projected tool must describe itself: an agent picks a tool by its description.
+  for (const tool of mcp.tools) expect(tool.description.length).toBeGreaterThan(0);
 });
 `;
 
@@ -408,6 +414,6 @@ export function repoFiles(app: NameSet): readonly GeneratedFile[] {
       contents: domainPackage(app, 'mcp', "The app's own MCP tools"),
     },
     { path: 'packages/mcp/src/index.ts', contents: mcpIndex(app) },
-    { path: 'packages/mcp/src/index.test.ts', contents: mcpTest(app) },
+    { path: 'packages/mcp/src/index.test.ts', contents: mcpTest() },
   ];
 }

@@ -13,30 +13,33 @@ export interface FeatureTarget {
 
 const entitySource = (
   name: NameSet,
+  snake: string,
 ): string => `// The ${name.camel} table, its domain type and its invariants. No I/O beyond the column
 // definitions: repo.ts owns every query that touches this table.
-import { entity, t } from '@ultimat3/entity';
+import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
 
-export const ${name.camel} = entity({
-  table: '${name.pluralKebab}',
+export const ${name.camel} = entity('${name.pluralKebab}', {
   columns: {
-    id: t.uuid.primary(),
-    orgId: t.uuid.references('orgs.id'),
-    title: t.string.max(200),
-    // Money is integer minor units + an ISO code, never a float.
-    priceMinor: t.integer.default(0),
-    priceCurrency: t.string.length(3).default('USD'),
-    // Stored UTC; formatted at the edge with an explicit IANA time zone.
-    createdAt: t.timestamp.defaultNow(),
+    id: uuid().primaryKey(),
+    // Declaring the tenant column is what turns tenancy on: a read without an org predicate
+    // then fails with X_TENANCY_UNSCOPED instead of leaking another org's rows.
+    orgId: uuid().tenant(),
+    title: text({ max: 200 }),
+    // One property, two physical columns: price_minor bigint + price_currency char(3).
+    // Money is integer minor units plus an ISO code, never a float.
+    price: money(),
+    // Always timestamptz. Stored UTC; formatted at the edge with an explicit IANA time zone.
+    createdAt: timestamp().defaultNow(),
   },
-  invariants: {
-    'title must not be blank': (row) => row.title.trim().length > 0,
-    'price must not be negative': (row) => row.priceMinor >= 0,
-  },
+  // Each rule runs in the app on write AND as a Postgres CHECK — one declaration, both sides.
+  invariants: [
+    invariant('${snake}_title_not_blank', (c) => c.title.trimmed().minLength(1)),
+    invariant('${snake}_price_non_negative', (c) => c.price.minor.atLeast(0)),
+  ],
   indexes: [{ on: ['orgId', 'createdAt'] }],
 });
 
-export type ${name.pascal} = typeof ${name.camel}.$type;
+export type ${name.pascal} = typeof ${name.camel}.$row;
 `;
 
 const repoSource = (
@@ -63,7 +66,7 @@ export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Pro
 }
 `;
 
-const entityTest = (name: NameSet): string => `import { expect } from 'bun:test';
+const entityTest = (name: NameSet, snake: string): string => `import { expect } from 'bun:test';
 import { unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './entity';
 import type { ${name.pascal} } from './entity';
@@ -72,32 +75,33 @@ const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
   id: '00000000-0000-0000-0000-000000000001',
   orgId: '00000000-0000-0000-0000-000000000002',
   title: 'valid title',
-  priceMinor: 1000,
-  priceCurrency: 'USD',
+  price: { minor: 1000n, currency: 'USD' },
   createdAt: new Date(0),
   ...over,
 });
 
 unitTest('${name.camel} declares a table with invariants', () => {
-  expect(${name.camel}.kind).toBe('entity');
-  expect(${name.camel}.table).toBe('${name.pluralKebab}');
-  expect(Object.keys(${name.camel}.invariants)).toContain('title must not be blank');
+  expect(${name.camel}.$name).toBe('${name.pluralKebab}');
+  expect(${name.camel}.$tenantColumn).toBe('orgId');
+  const named = ${name.camel}.$invariants.map((rule) => rule.name);
+  expect(named).toContain('${snake}_title_not_blank');
 });
 
 unitTest('${name.camel} invariants reject a blank title and a negative price', () => {
-  const { invariants } = ${name.camel};
-  expect(invariants['title must not be blank'](row())).toBe(true);
-  expect(invariants['title must not be blank'](row({ title: '   ' }))).toBe(false);
-  expect(invariants['price must not be negative'](row({ priceMinor: -1 }))).toBe(false);
+  expect(() => ${name.camel}.$assert(row())).not.toThrow();
+  expect(() => ${name.camel}.$assert(row({ title: '   ' }))).toThrow();
+  expect(() => ${name.camel}.$assert(row({ price: { minor: -1n, currency: 'USD' } }))).toThrow();
 });
 `;
 
 export function entityFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
   const name = names(rawName);
+  // Constraint names are snake_case because Postgres lowercases every unquoted identifier.
+  const snake = name.kebab.split('-').join('_');
   const dir = `${target.surfaceDir}/${target.feature}`;
   return [
-    { path: `${dir}/entity.ts`, contents: entitySource(name) },
-    { path: `${dir}/entity.test.ts`, contents: entityTest(name) },
+    { path: `${dir}/entity.ts`, contents: entitySource(name, snake) },
+    { path: `${dir}/entity.test.ts`, contents: entityTest(name, snake) },
     { path: `${dir}/repo.ts`, contents: repoSource(name) },
   ];
 }

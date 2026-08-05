@@ -14,7 +14,8 @@ const querySource = (
 // Bounded and ordered — required for${live ? ' live queries' : ' predictable pagination'}.
 import { db } from '@ultimat3/db';
 import { can } from '@ultimat3/policy';
-import { query, t } from '@ultimat3/query';
+import { query } from '@ultimat3/query';
+import { t } from '@ultimat3/schema';
 import { ${feature.camel} } from '../entity';
 
 export const ${name.camel} = query({
