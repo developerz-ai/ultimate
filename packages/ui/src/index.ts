@@ -1,6 +1,11 @@
 // The public surface of @ultimat3/ui. Explicit exports only — this list is the
 // design system's contract, and anything not named here is internal.
 
+// Ambient declarations are not reachable through imports, so a consuming app's
+// program would never load them — every `*.module.scss` import in this package
+// would be TS2307 there. The reference pulls the contract along with the entry.
+/// <reference path="./scss.d.ts" />
+
 export type { FocusTrap, Politeness, RovingOptions, RovingOrientation } from './a11y';
 export {
   announce,

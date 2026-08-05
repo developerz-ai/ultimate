@@ -16,6 +16,8 @@
     "skipLibCheck": true,
     "noEmit": true,
     "resolveJsonModule": true,
+    "composite": true,
+    "declaration": true,
     "paths": {
       "@postly/domain": ["./packages/domain/src/index.ts"],
       "@postly/db": ["./packages/db/src/index.ts"],
