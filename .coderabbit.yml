@@ -4,10 +4,12 @@
 # Review instructions are the conventions themselves — the ones a test cannot check.
 
 language: 'en-US'
+# Hard limit: 250 characters. Over it the whole file fails to parse and CodeRabbit silently
+# reviews with its defaults, so every instruction below is dropped too.
 tone_instructions: >-
-  Terse and concrete. Lead with the rule, cite the file that states it, skip nitpicks Biome already
-  catches. The primary user of this codebase is an AI agent: block anything that makes a failure
-  unreadable to one — a bare Error, a missing fix command, a command without --json.
+  Terse and concrete. Lead with the rule, cite the file that states it, skip nitpicks Biome
+  catches. The primary user here is an AI agent: block whatever makes a failure unreadable to
+  one — a bare Error, a missing fix, a command without --json.
 early_access: true
 enable_free_tier: true
 

@@ -37,6 +37,14 @@ export const tooLongFinding = (path: string, lines: number): Finding => ({
   at: path,
 });
 
+/**
+ * A trailing newline terminates the last line, it does not start another one. Counting the split
+ * parts instead made the real ceiling 499 and reported every count one too high — every correctly
+ * formatted file here ends with a newline, which is exactly the case that was wrong.
+ */
+export const countLines = (text: string): number =>
+  text === '' ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+
 /** Files are the unit of review: one file, one job, hard ceiling 500 lines. */
 export async function checkFileSizes(root: string): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
@@ -45,7 +53,7 @@ export async function checkFileSizes(root: string): Promise<readonly Finding[]> 
     for await (const path of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
       if (skip(path) || seen.has(path)) continue;
       seen.add(path);
-      const lines = (await Bun.file(join(root, path)).text()).split('\n').length;
+      const lines = countLines(await Bun.file(join(root, path)).text());
       if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
     }
   }

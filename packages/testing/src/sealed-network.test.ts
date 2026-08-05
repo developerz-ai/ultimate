@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { markListening, resetListeners } from '@ultimat3/core';
 import { allowHost, mockJson, requestedUrls, resetNetwork, sealNetwork } from './sealed-network';
+import { testName } from './test-types';
 
 sealNetwork();
 
@@ -16,7 +17,7 @@ const refusalOf = async (url: string): Promise<{ code?: string } | undefined> =>
     (error: unknown) => error as { code?: string },
   );
 
-describe('unit · sealed network', () => {
+describe(testName('unit', 'sealed network'), () => {
   test('an unmocked request fails with the URL and the line that fixes it', async () => {
     try {
       await fetch('https://api.stripe.com/v1/charges', { method: 'POST' });

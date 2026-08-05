@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -44,6 +46,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -61,6 +65,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -73,6 +79,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -95,6 +103,8 @@ jobs:
     needs: [lint, typecheck, boundaries, test]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -118,15 +128,15 @@ jobs:
   # `action` surface, `defineMail`/`defineService`, the `page`/`subscribe`/`evaluate` fixtures —
   # and the framework has not shipped it yet, so every failure here is drift the roadmap already
   # owns rather than a regression this PR introduced. Blocking on it would make red the resting
-  # state, which is how a gate stops being read. The full 15-step JSON, every failure and every
-  # fix line are in the log on each run. `continue-on-error` comes off at milestone 9 in
+  # state, which is how a gate stops being read. `continue-on-error` comes off at milestone 9 in
   # docs/idea/14-roadmap.md — the last of those surfaces to land — when app and framework agree.
   reference-app-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -137,5 +147,12 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: x verify (examples/dummy)
+        # `continue-on-error` on the STEP, not the job: on the job it leaves the check itself red
+        # for as long as the drift above lasts, and a check that is always red is a check nobody
+        # reads — the exact failure mode this PR exists to remove. On the step the run is marked
+        # with a warning, and the whole 15-step table, every failing step and every fix line stay
+        # in the log. Human render, not `--json`: the reader of an advisory result is a person or
+        # an agent scanning for which step went red, not a parser.
+        continue-on-error: true
         working-directory: examples/dummy
-        run: bun run ../../packages/cli/src/bin.ts verify --json
+        run: bun run ../../packages/cli/src/bin.ts verify

@@ -8,6 +8,7 @@ import { createRunJobs } from './fixture-jobs';
 import { createTestMail } from './fixture-mail';
 import { fixtureTest } from './fixtures';
 import { FRAMEWORK_FIXTURE_NAMES, registerFrameworkFixtures } from './framework-fixtures';
+import { testName } from './test-types';
 
 // Every global these fixtures touch is process-wide and bun shares one process across files.
 // The tests below build fixtures by hand rather than through `fixtureTest`, so nothing disposes
@@ -40,7 +41,7 @@ const message = (mailId: string) => ({
   tz: 'UTC',
 });
 
-describe('the framework fixture bag', () => {
+describe(testName('unit', 'the framework fixture bag'), () => {
   bunTest('owns exactly clock, mail and runJobs', () => {
     registerFrameworkFixtures();
     expect([...FRAMEWORK_FIXTURE_NAMES]).toEqual(['clock', 'mail', 'runJobs']);
@@ -61,7 +62,7 @@ describe('the framework fixture bag', () => {
   });
 });
 
-describe('the mail fixture', () => {
+describe(testName('unit', 'the mail fixture'), () => {
   bunTest('failOnce rejects the next send of that mail and only that one', async () => {
     const mail = await createTestMail();
     mail.failOnce('welcome');
@@ -84,7 +85,7 @@ describe('the mail fixture', () => {
   });
 });
 
-describe('the runJobs fixture', () => {
+describe(testName('unit', 'the runJobs fixture'), () => {
   const flakyJob = (name: string, fails: () => boolean): JobHandle<{ readonly id: string }> =>
     job<{ readonly id: string }>({
       name,
@@ -164,7 +165,7 @@ describe('the runJobs fixture', () => {
 // The regression: `runJobs` used to install the ambient job driver and leave it there. Nothing
 // in this file noticed — but `send()` enqueues whenever a queue is ambient, so every mail test
 // in a later file asserted on the inline path and got `driver: 'queue'` instead.
-describe('a fixture that installs process-global state hands it back', () => {
+describe(testName('unit', 'a fixture that installs process-global state hands it back'), () => {
   bunTest('runJobs restores the driver the process had before it', async () => {
     resetJobDriver();
     const runJobs = await createRunJobs();
