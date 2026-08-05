@@ -99,6 +99,11 @@ X_TEST_NETWORK_SEALED
   fix:   mockFetch('https://api.stripe.com/v1/charges', () => new Response('{}')) — or allowHost('api.stripe.com') if it must be real
 ```
 
+A server this process booted is exempt: `createServer().start()` announces its socket through
+core's `markListening()`, so a test may call its own `handle.url()` on a kernel-assigned port with
+the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
+integration — never for a socket test.
+
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`

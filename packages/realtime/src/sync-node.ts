@@ -8,6 +8,7 @@ import {
   type Clock,
   healthzPayload,
   logger,
+  markListening,
   markReady,
   onShutdown,
   readyzPayload,
@@ -315,12 +316,21 @@ export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): { s
     fetch: node.fetch,
     websocket: node.websocket,
   });
+  // Same rule as @ultimat3/http: every socket the framework opens announces itself, so a request
+  // back to it is recognisably this process calling itself rather than egress.
+  const stopListening = markListening(server.url.origin);
   onShutdown('realtime:sync', async () => {
     await node.drain();
     await node.stop();
     server.stop();
+    stopListening();
   });
-  return { stop: () => server.stop() };
+  return {
+    stop: () => {
+      server.stop();
+      stopListening();
+    },
+  };
 }
 
 function json(payload: { status: number; body: unknown }): Response {

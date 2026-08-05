@@ -29,4 +29,7 @@ Gotchas:
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
 - `noPropertyAccessFromIndexSignature` is on — `ctx.services['mail']`, not `.mail`.
 - `Ctx` carries a string index signature so apps can augment `CtxServices` for `ctx.posts`.
-- Tests that touch the registry or lifecycle must call `resetErrorCodes()` / `resetLifecycle()`.
+- Tests that touch the registry, the lifecycle or the listener table must call
+  `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
+- Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
+  That is what tells the sealed test network a loopback request is this process, not egress.

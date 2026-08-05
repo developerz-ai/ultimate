@@ -10,6 +10,7 @@ import {
   healthzPayload,
   lifecycleState,
   logger,
+  markListening,
   markReady,
   onShutdown,
   readyzPayload,
@@ -77,6 +78,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   let server: BunServer | undefined;
   let unregister: (() => void) | undefined;
   let unregisterClose: (() => void) | undefined;
+  let stopListening: (() => void) | undefined;
 
   /**
    * Core owns the health state, the in-flight count and the drain deadline so every
@@ -144,6 +146,10 @@ export const createServer = (options: ServerOptions): ServerHandle => {
         fetch: (request, socket) => dispatch(request, socket),
       });
 
+      // Tell core which socket we opened. A request to it is this process calling itself,
+      // so the test seal can let it through without an allowlist entry per random port.
+      stopListening = markListening(server.url.origin);
+
       // 'accept' runs first on SIGTERM: readyz flips to 503 here, while the socket is
       // still open, so the load balancer stops sending new work before we close it.
       unregister = onShutdown(
@@ -159,6 +165,7 @@ export const createServer = (options: ServerOptions): ServerHandle => {
         async () => {
           await server?.stop(true);
           server = undefined;
+          stopListening?.();
         },
         { phase: 'close' },
       );
@@ -174,6 +181,9 @@ export const createServer = (options: ServerOptions): ServerHandle => {
       await drain('manual');
       unregister?.();
       unregisterClose?.();
+      // Idempotent: the close hook already released, unless the drain deadline cut it short.
+      stopListening?.();
+      stopListening = undefined;
       server = undefined;
       logger.info(`ultimate ${role} stopped`);
     },

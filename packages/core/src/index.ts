@@ -142,6 +142,12 @@ export {
   resetLifecycle,
   SHUTDOWN_PHASES,
 } from './lifecycle';
+export {
+  isSelfOrigin,
+  listeningOrigins,
+  markListening,
+  resetListeners,
+} from './listeners';
 export type { LogFields, Logger, LoggerOptions, LogLevel } from './logger';
 export {
   createLogger,

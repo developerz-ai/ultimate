@@ -18,6 +18,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | structured JSON logging + redaction | `logger.ts` |
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
+| the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `assertNever`, `invariant` | `assert.ts` |
 
 ## Errors are instructions

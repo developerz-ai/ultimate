@@ -25,7 +25,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `X_UNAUTHENTICATED` is auth's; both are listed in `HTTP_BORROWED_CODES` and filtered
   out of `registerErrorCodes`. Re-declaring throws `X_ERROR_CODE_DUPLICATE` at import.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in
-  `e2e/` and run with `ULTIMATE_TEST_ALLOW_NET=1 bun test packages/http/e2e`.
+  `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
+  `markListening()`, so the seal treats our own port as self, not egress. Never unseal.
 
 ## Files
 
