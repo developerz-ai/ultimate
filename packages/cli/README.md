@@ -9,7 +9,7 @@ The `x` binary. One char during dev, one command per job, `--json` on every one 
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
-| `x verify` | **the gate** | 13 named steps, each with pass/fail + duration |
+| `x verify` | **the gate** | 15 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|studio\|branch` | everything DB | `branch` = copy-on-write clone + preview URL |
 | `x mcp serve` | MCP over stdio or HTTP | read tools unrestricted in dev |
@@ -30,7 +30,7 @@ X_DB_DRIFT: schema differs from migrations
 
 ```sh
 x verify --json
-# {"ok":false,"command":"verify","summary":"1 of 13 steps failed","steps":[...]}
+# {"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[...]}
 ```
 
 ## `x verify` steps
