@@ -61,6 +61,23 @@ describe('unit · output', () => {
     expect(payload.steps[1]?.findings[0]?.fix).toBe('x db gen "add publish_at"');
   });
 
+  // `runVerify` sets `skipped` only on a step that does not apply, so an executed step reaches
+  // here without the key. A consumer parsing --json must not have to tell "ran" from "absent",
+  // which is why the render normalises it — and why the documented shape says `"skipped":false`.
+  test('every step in the JSON render carries an explicit skipped boolean', () => {
+    const payload = JSON.parse(
+      renderJson({
+        ...failing,
+        steps: [
+          { name: 'typecheck', ok: true, durationMs: 12, findings: [] },
+          { name: 'e2e', ok: true, durationMs: 0, skipped: true, findings: [] },
+        ],
+      }),
+    ) as { steps: { name: string; skipped: boolean }[] };
+    expect(payload.steps.map((step) => step.skipped)).toEqual([false, true]);
+    expect(renderJson(failing)).toContain('"skipped":false');
+  });
+
   test('an UltimateError-shaped value is recognised across a process boundary', () => {
     const plain = { code: 'X_TEST', cause: 'because', fix: 'x doctor' };
     expect(isUltimateErrorShape(plain)).toBe(true);
