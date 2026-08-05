@@ -2,6 +2,7 @@ export type { FixtureBody, FixtureFactory, FixtureMap, Fixtures } from './fixtur
 export {
   clearFixtures,
   defineFixtures,
+  fixtureSnapshot,
   fixtureTest,
   registeredFixtures,
   requestedFixtures,
@@ -40,7 +41,14 @@ export {
 } from './errors';
 export type { EntityLike, EntityRegistry, Factory, FactoryOptions } from './factories';
 export { defineFactory, factoriesFor } from './factories';
+export type { TestClock, TestDuration } from './fixture-clock';
+export { createTestClock } from './fixture-clock';
+export type { JobRunTrace, RunJobs, StepTally } from './fixture-jobs';
+export { createRunJobs } from './fixture-jobs';
+export type { MailRef, TestMail } from './fixture-mail';
+export { createTestMail } from './fixture-mail';
 export { fixtureTest as test } from './fixtures';
+export { FRAMEWORK_FIXTURE_NAMES, registerFrameworkFixtures } from './framework-fixtures';
 export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 export type { MatcherResult } from './matchers';

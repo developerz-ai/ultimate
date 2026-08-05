@@ -1,8 +1,23 @@
-import { afterEach, test as bunTest, describe, expect } from 'bun:test';
-import { clearFixtures, defineFixtures, registeredFixtures, requestedFixtures } from './fixtures';
+import { afterAll, beforeEach, test as bunTest, describe, expect } from 'bun:test';
+import {
+  clearFixtures,
+  defineFixtures,
+  fixtureSnapshot,
+  registeredFixtures,
+  requestedFixtures,
+} from './fixtures';
 
-afterEach(() => {
+// The registry is process-global and the preload filled it. Hand it back, or every file that
+// runs after this one loses `clock`, `seed` and the rest — a load-order flake, not a failure.
+const preloaded = fixtureSnapshot();
+
+beforeEach(() => {
   clearFixtures();
+});
+
+afterAll(() => {
+  clearFixtures();
+  defineFixtures(preloaded);
 });
 
 describe('requestedFixtures', () => {

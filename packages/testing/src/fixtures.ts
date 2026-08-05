@@ -10,6 +10,9 @@
 
 import { test as bunTest } from 'bun:test';
 import { fixtureUnknown } from './errors';
+import type { TestClock } from './fixture-clock';
+import type { RunJobs } from './fixture-jobs';
+import type { TestMail } from './fixture-mail';
 
 /** Built once per test, on first use. */
 export type FixtureFactory<T = unknown> = () => T | Promise<T>;
@@ -17,18 +20,22 @@ export type FixtureFactory<T = unknown> = () => T | Promise<T>;
 export type FixtureMap = Readonly<Record<string, FixtureFactory>>;
 
 /**
- * What a test body receives. Apps widen it by augmenting `Fixtures`:
+ * What a test body receives. The three the framework owns are declared here and registered by
+ * the preload; apps widen it by augmenting `Fixtures`:
  *
  * ```ts
  * declare module '@ultimat3/testing' {
  *   interface Fixtures {
- *     seed: (name: string) => Promise<SeedHandle>;
+ *     seed: (name: string) => SeedHandle;
  *   }
  * }
  * ```
  */
-// biome-ignore lint/suspicious/noEmptyInterface: the augmentation target — apps declare into it.
-export interface Fixtures {}
+export interface Fixtures {
+  readonly clock: TestClock;
+  readonly mail: TestMail;
+  readonly runJobs: RunJobs;
+}
 
 const registry = new Map<string, FixtureFactory>();
 
@@ -42,6 +49,15 @@ export function clearFixtures(): void {
 
 export function registeredFixtures(): readonly string[] {
   return [...registry.keys()].sort();
+}
+
+/**
+ * A copy of the registry. The registry is process-global and bun shares one process across
+ * files, so a test that needs an empty one snapshots first and hands it back afterwards —
+ * otherwise every later file silently loses the fixtures the preload registered.
+ */
+export function fixtureSnapshot(): FixtureMap {
+  return Object.fromEntries(registry);
 }
 
 /**
@@ -77,7 +93,10 @@ export type FixtureBody = (fixtures: Fixtures) => void | Promise<void>;
 export function fixtureTest(name: string, body: FixtureBody): void {
   bunTest(name, async () => {
     const wanted = requestedFixtures(body as (...args: never[]) => unknown);
-    const bag: Record<string, unknown> = {};
+    // Partial by construction — only what the body destructured is built. Handed over as the
+    // full `Fixtures` because the keys came from that same body: a key it did not name is a key
+    // it cannot read, so the missing ones are unobservable.
+    const bag: Partial<Fixtures> & Record<string, unknown> = {};
     for (const key of wanted) {
       const factory = registry.get(key);
       // Naming the registered set turns "undefined is not an object" into a fixable message.

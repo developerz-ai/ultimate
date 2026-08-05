@@ -10,6 +10,15 @@
   "references": [
     {
       "path": "../core"
+    },
+    {
+      "path": "../jobs"
+    },
+    {
+      "path": "../mail"
+    },
+    {
+      "path": "../time"
     }
   ]
 }

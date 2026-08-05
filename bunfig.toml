@@ -6,5 +6,7 @@ production = false
 
 [test]
 root = "."
-# Frozen clock, seeded RNG, sealed network. See packages/testing.
-preload = ["./scripts/test-setup.ts"]
+# Frozen clock, seeded RNG, sealed network, framework fixtures. See packages/testing.
+# The reference app's suites run from here too, and bun reads one bunfig — the one at the cwd —
+# so the app's own fixtures (`seed`, `actorFor`) are registered here as well as by its bunfig.
+preload = ["./scripts/test-setup.ts", "./examples/dummy/scripts/test-setup.ts"]

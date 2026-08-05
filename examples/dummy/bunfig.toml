@@ -1,0 +1,12 @@
+# Bun runtime + test config for Postly. https://bun.sh/docs/runtime/bunfig
+#
+# One preload, two jobs: `scripts/test-setup.ts` pulls in @ultimat3/testing's preload (frozen
+# clock, seeded RNG, sealed network, matchers) and registers the fixtures the app owns.
+
+[install]
+exact = false
+production = false
+
+[test]
+root = "."
+preload = ["./scripts/test-setup.ts"]
