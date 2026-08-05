@@ -5,6 +5,7 @@ import {
   fixtureSnapshot,
   registeredFixtures,
   requestedFixtures,
+  runWithFixtures,
 } from './fixtures';
 
 // The registry is process-global and the preload filled it. Hand it back, or every file that
@@ -40,6 +41,51 @@ describe('requestedFixtures', () => {
       'seed',
       'page',
     ]);
+  });
+});
+
+describe('fixtureTest teardown', () => {
+  // Disposal is what stops one file's ambient driver reaching the next, so it has to hold when a
+  // disposer itself fails — otherwise one broken fixture re-opens the leak for all of them.
+  bunTest('a throwing disposer does not strand the fixtures built before it', async () => {
+    const disposed: string[] = [];
+    defineFixtures({
+      outer: () => ({ [Symbol.dispose]: () => void disposed.push('outer') }),
+      broken: () => ({
+        [Symbol.dispose]: () => {
+          throw new Error('teardown exploded');
+        },
+      }),
+    });
+
+    // `broken` is built second, so it disposes first — `outer` must still be reached.
+    const thrown = await runWithFixtures(({ outer, broken }: never) => void [outer, broken]).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(disposed).toEqual(['outer']);
+    expect((thrown as Error).message).toBe('teardown exploded');
+  });
+
+  bunTest('the body’s failure wins over a teardown failure', async () => {
+    defineFixtures({
+      broken: () => ({
+        [Symbol.dispose]: () => {
+          throw new Error('teardown exploded');
+        },
+      }),
+    });
+
+    const thrown = await runWithFixtures(({ broken }: never) => {
+      void broken;
+      throw new Error('the assertion that actually broke');
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect((thrown as Error).message).toBe('the assertion that actually broke');
   });
 });
 

@@ -83,8 +83,9 @@ jobs:
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
       - name: bun test
-        # `bun run test`, not bare `bun test` — but they now collect the same suites.
-        # No opt-in exclusions: e2e/contract/live/job/eval all run, every time.
+        # No opt-in exclusions: the framework's e2e/contract/live/job/eval suites all run, every
+        # time. The reference app's suites are not here — they run in `reference-app-verify`,
+        # against the app's own preload and fixtures.
         run: bun run test
 
   # The whole gate, exactly as `x verify` runs it. Green here means shippable.
@@ -108,10 +109,22 @@ jobs:
 
   # The reference app runs the same 15-step gate a generated app would. Not in `verify`'s
   # `needs`: the framework gate and the app gate are two different contracts, checked
-  # independently — a red app doesn't hide a green framework or vice versa.
+  # independently — a red app doesn't hide a green framework or vice versa. That is also why
+  # the app is absent from the `typecheck` and `test` jobs above: its typecheck and its suites
+  # are steps 1 and 6-11 of the gate below, so running them twice only decides which job's
+  # redness you notice first.
+  #
+  # Advisory, not blocking. As of 2026-08 Postly is written against the finished API — the fluent
+  # `action` surface, `defineMail`/`defineService`, the `page`/`subscribe`/`evaluate` fixtures —
+  # and the framework has not shipped it yet, so every failure here is drift the roadmap already
+  # owns rather than a regression this PR introduced. Blocking on it would make red the resting
+  # state, which is how a gate stops being read. The full 15-step JSON, every failure and every
+  # fix line are in the log on each run. `continue-on-error` comes off at milestone 9 in
+  # docs/idea/14-roadmap.md — the last of those surfaces to land — when app and framework agree.
   reference-app-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2

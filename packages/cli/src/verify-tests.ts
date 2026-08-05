@@ -48,7 +48,13 @@ const SUITES: Readonly<Record<Exclude<TestType, 'unit'>, TestSuite>> = {
   },
 };
 
-const NEVER_A_TEST = ['**/dist/**', '**/build/**'];
+/**
+ * Build output, and nested projects that carry their own `x verify`. `examples/**` is the second
+ * kind: the reference app is gated by its own run of this same step list, so collecting it here
+ * would report one app failure on two different gates. The patterns are relative to the run's
+ * root, so this excludes nothing when the app itself is the root.
+ */
+const NEVER_A_TEST = ['**/dist/**', '**/build/**', '**/examples/**'];
 
 const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
   patterns.map((pattern) => `--path-ignore-patterns=${pattern}`);
@@ -63,10 +69,20 @@ export const testStepCommand = (type: TestType): readonly string[] =>
       ]
     : ['bun', 'test', ...ignoreFlags(NEVER_A_TEST), SUITES[type].filter];
 
+/**
+ * Whether a step applies has to be decided by the same rule that decides what it runs. When the
+ * two drifted, a suite that lived only under an ignored path made its step apply and then fail
+ * with "no test files matched" — a red gate reporting a suite that, by its own rule, is not here.
+ */
+const NEVER_A_TEST_GLOBS = NEVER_A_TEST.map((pattern) => new Bun.Glob(pattern));
+
+const ignoredPath = (path: string): boolean =>
+  path.includes('node_modules') || NEVER_A_TEST_GLOBS.some((glob) => glob.match(path));
+
 const exists = async (root: string, globs: readonly string[]): Promise<boolean> => {
   for (const pattern of globs) {
     for await (const path of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
-      if (!path.includes('node_modules')) return true;
+      if (!ignoredPath(path)) return true;
     }
   }
   return false;

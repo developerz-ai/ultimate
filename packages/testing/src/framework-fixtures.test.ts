@@ -1,8 +1,8 @@
 import { afterEach, test as bunTest, describe, expect } from 'bun:test';
 import { assert } from '@ultimat3/core';
 import type { JobDefinition, JobHandle } from '@ultimat3/jobs';
-import { job } from '@ultimat3/jobs';
-import { mailDriver, resetMailDriver } from '@ultimat3/mail';
+import { job, jobDriver, resetJobDriver } from '@ultimat3/jobs';
+import { mailDriver, resetMailDriver, tryMailDriver } from '@ultimat3/mail';
 import { frozenNow, setFrozenClock } from './determinism';
 import { createRunJobs } from './fixture-jobs';
 import { createTestMail } from './fixture-mail';
@@ -10,10 +10,14 @@ import { fixtureTest } from './fixtures';
 import { FRAMEWORK_FIXTURE_NAMES, registerFrameworkFixtures } from './framework-fixtures';
 
 // Every global these fixtures touch is process-wide and bun shares one process across files.
+// The tests below build fixtures by hand rather than through `fixtureTest`, so nothing disposes
+// them for us — the ambient job driver in particular, which turns a later `send()` into an
+// enqueue against this file's dead queue.
 const START = frozenNow().toISOString();
 afterEach(() => {
   setFrozenClock(START);
   resetMailDriver();
+  resetJobDriver();
 });
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -154,5 +158,52 @@ describe('the runJobs fixture', () => {
 
     expect(await first.depth()).toBe(1);
     expect(await second.depth()).toBe(0);
+  });
+});
+
+// The regression: `runJobs` used to install the ambient job driver and leave it there. Nothing
+// in this file noticed — but `send()` enqueues whenever a queue is ambient, so every mail test
+// in a later file asserted on the inline path and got `driver: 'queue'` instead.
+describe('a fixture that installs process-global state hands it back', () => {
+  bunTest('runJobs restores the driver the process had before it', async () => {
+    resetJobDriver();
+    const runJobs = await createRunJobs();
+    expect(jobDriver()).toBeDefined();
+
+    await runJobs[Symbol.asyncDispose]();
+
+    expect(jobDriver()).toBeUndefined();
+  });
+
+  bunTest('and restores an outer driver rather than clearing it', async () => {
+    const outer = await createRunJobs();
+    const outerDriver = jobDriver();
+    const inner = await createRunJobs();
+    expect(jobDriver()).not.toBe(outerDriver);
+
+    await inner[Symbol.asyncDispose]();
+
+    expect(jobDriver()).toBe(outerDriver);
+    await outer[Symbol.asyncDispose]();
+  });
+
+  bunTest('the mail fixture restores the ambient mail driver too', async () => {
+    resetMailDriver();
+    const mail = await createTestMail();
+    expect(tryMailDriver()?.name).toBe('test');
+
+    mail[Symbol.dispose]();
+
+    expect(tryMailDriver()).toBeUndefined();
+  });
+
+  // Teardown is what the leak fix rides on, so it has to survive the failing test it follows.
+  fixtureTest('disposal runs even when the body throws', async ({ runJobs }) => {
+    expect(runJobs).toBeDefined();
+    await expect(Promise.reject(new Error('boom'))).rejects.toThrow('boom');
+  });
+
+  bunTest('so the next test starts without the previous one’s queue', () => {
+    expect(jobDriver()).toBeUndefined();
   });
 });

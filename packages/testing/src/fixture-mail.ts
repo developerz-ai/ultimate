@@ -9,7 +9,8 @@ import type { MailDriver, MailMessage, SendResult, SentMail } from '@ultimat3/ma
 /** A `defineMail()` handle, or its id. Both read naturally at a call site. */
 export type MailRef = string | { readonly id: string };
 
-export interface TestMail {
+/** `Disposable`: the fixture installs the ambient mail driver and restores it after the test. */
+export interface TestMail extends Disposable {
   /** Newest first, so an assertion does not index backwards. */
   outbox(): readonly SentMail[];
   lastTo(address: string): SentMail | undefined;
@@ -21,9 +22,12 @@ export interface TestMail {
 const idOf = (mail: MailRef): string => (typeof mail === 'string' ? mail : mail.id);
 
 export async function createTestMail(): Promise<TestMail> {
-  const { createMemoryDriver, driverUnavailable, setMailDriver } = await import('@ultimat3/mail');
+  const { createMemoryDriver, driverUnavailable, resetMailDriver, setMailDriver, tryMailDriver } =
+    await import('@ultimat3/mail');
   const memory = createMemoryDriver();
   const failuresLeft = new Map<string, number>();
+  // The ambient driver is process-global; the fixture borrows it for one test and hands it back.
+  const previous = tryMailDriver();
 
   const driver: MailDriver = {
     name: 'test',
@@ -48,6 +52,10 @@ export async function createTestMail(): Promise<TestMail> {
     clear: () => {
       memory.clear();
       failuresLeft.clear();
+    },
+    [Symbol.dispose]: (): void => {
+      if (previous === undefined) resetMailDriver();
+      else setMailDriver(previous);
     },
   };
 }

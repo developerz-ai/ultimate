@@ -87,22 +87,75 @@ export function requestedFixtures(body: (...args: never[]) => unknown): readonly
 export type FixtureBody = (fixtures: Fixtures) => void | Promise<void>;
 
 /**
- * `test` with fixtures. Only what the body destructures is built, and each is awaited before
- * the body runs — so a body reads `seed('dev')` directly instead of awaiting every fixture.
+ * A fixture that installs process-global state — the ambient job driver, the ambient mail
+ * driver — implements one of the standard disposal symbols to put it back. Bun shares one
+ * process across every test file, so a fixture that skips this does not leak within its own
+ * test: it leaks into every file that runs after it, and the failure surfaces somewhere else.
  */
-export function fixtureTest(name: string, body: FixtureBody): void {
-  bunTest(name, async () => {
-    const wanted = requestedFixtures(body as (...args: never[]) => unknown);
-    // Partial by construction — only what the body destructured is built. Handed over as the
-    // full `Fixtures` because the keys came from that same body: a key it did not name is a key
-    // it cannot read, so the missing ones are unobservable.
-    const bag: Partial<Fixtures> & Record<string, unknown> = {};
+type MaybeDisposable = {
+  readonly [Symbol.asyncDispose]?: () => PromiseLike<void> | void;
+  readonly [Symbol.dispose]?: () => void;
+};
+
+const disposerOf = (value: unknown): (() => PromiseLike<void> | void) | undefined => {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function'))
+    return undefined;
+  const target = value as MaybeDisposable;
+  const asyncDispose = target[Symbol.asyncDispose];
+  if (typeof asyncDispose === 'function') return () => asyncDispose.call(target);
+  const dispose = target[Symbol.dispose];
+  return typeof dispose === 'function' ? () => dispose.call(target) : undefined;
+};
+
+/**
+ * Build what the body asked for, run it, dispose in reverse. Split out of `fixtureTest` because
+ * that one hands its callback to bun and returns nothing — teardown is the part most worth
+ * testing, and it cannot be observed through a registration. Not in the package's public API:
+ * `fixtureTest` stays the one way to write a test with fixtures.
+ */
+export async function runWithFixtures(body: FixtureBody): Promise<void> {
+  const wanted = requestedFixtures(body as (...args: never[]) => unknown);
+  // Partial by construction — only what the body destructured is built. Handed over as the
+  // full `Fixtures` because the keys came from that same body: a key it did not name is a key
+  // it cannot read, so the missing ones are unobservable.
+  const bag: Partial<Fixtures> & Record<string, unknown> = {};
+  const built: unknown[] = [];
+  // Boxed rather than a bare `unknown`, so a body that throws a falsy value still reports.
+  let failure: { readonly error: unknown } | undefined;
+  try {
     for (const key of wanted) {
       const factory = registry.get(key);
       // Naming the registered set turns "undefined is not an object" into a fixable message.
       if (factory === undefined) throw fixtureUnknown(key, registeredFixtures());
-      bag[key] = await factory();
+      const value = await factory();
+      built.push(value);
+      bag[key] = value;
     }
     await body(bag as Fixtures);
-  });
+  } catch (error) {
+    failure = { error };
+  }
+
+  // Every disposer runs even when an earlier one throws: a fixture that cannot clean up must
+  // not strand the ones built before it. The body's own failure wins, because a teardown error
+  // that replaced it would hide the assertion that actually broke.
+  for (const value of built.reverse()) {
+    try {
+      await disposerOf(value)?.();
+    } catch (error) {
+      failure ??= { error };
+    }
+  }
+  if (failure !== undefined) throw failure.error;
+}
+
+/**
+ * `test` with fixtures. Only what the body destructures is built, and each is awaited before
+ * the body runs — so a body reads `seed('dev')` directly instead of awaiting every fixture.
+ *
+ * Teardown runs in reverse build order whether the body passed or threw: a failing assertion
+ * must not be the reason the next file inherits a queue.
+ */
+export function fixtureTest(name: string, body: FixtureBody): void {
+  bunTest(name, () => runWithFixtures(body));
 }

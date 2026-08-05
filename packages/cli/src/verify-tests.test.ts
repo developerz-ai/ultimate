@@ -37,10 +37,19 @@ describe('unit · one bun test invocation per test type', () => {
       'test',
       '--path-ignore-patterns=**/dist/**',
       '--path-ignore-patterns=**/build/**',
+      '--path-ignore-patterns=**/examples/**',
       '.contract.test.',
     ]);
     expect(testStepCommand('job').at(-1)).toBe('.job.test.');
     expect(testStepCommand('e2e').at(-1)).toBe('e2e');
+  });
+
+  // A nested project with its own `x verify` is gated once, by its own run. Collecting it here
+  // too would report the app's failures on the framework's gate and the app's gate both.
+  test('every type skips nested projects that carry their own gate', () => {
+    for (const type of TEST_TYPES) {
+      expect(testStepCommand(type)).toContain('--path-ignore-patterns=**/examples/**');
+    }
   });
 
   test('a failed step tells you the exact command that reproduces it', async () => {
@@ -69,11 +78,26 @@ describe('unit · one bun test invocation per test type', () => {
         TEST_STEPS.find((step) => step.name === name)?.applies?.(ctxFor(root));
       expect(await applies('contract', empty)).toBe(false);
       expect(await applies('e2e', empty)).toBe(false);
-      expect(await applies('contract', REPO_ROOT)).toBe(true);
       expect(await applies('e2e', REPO_ROOT)).toBe(true);
       expect(TEST_STEPS.find((step) => step.name === 'unit')?.applies).toBeUndefined();
     } finally {
       await rm(empty, { recursive: true, force: true });
+    }
+  });
+
+  // `applies` and the command must read the same exclusions. When they disagreed, a suite that
+  // lived only under an ignored path made its step apply and then fail on "no test files matched".
+  test('a suite that only exists in an ignored path does not make its step apply', async () => {
+    const nested = await mkdtemp(join(tmpdir(), 'ultimate-verify-nested-'));
+    try {
+      await Bun.write(join(nested, 'examples/dummy/app/posts.contract.test.ts'), 'export {};\n');
+      await Bun.write(join(nested, 'packages/cli/dist/bundled.e2e.test.ts'), 'export {};\n');
+      const applies = async (name: string): Promise<boolean | undefined> =>
+        TEST_STEPS.find((step) => step.name === name)?.applies?.(ctxFor(nested));
+      expect(await applies('contract')).toBe(false);
+      expect(await applies('e2e')).toBe(false);
+    } finally {
+      await rm(nested, { recursive: true, force: true });
     }
   });
 });

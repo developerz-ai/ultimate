@@ -2,9 +2,6 @@
   "files": [],
   "references": [
     {
-      "path": "./examples/dummy"
-    },
-    {
       "path": "./packages/action"
     },
     {

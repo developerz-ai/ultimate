@@ -16,6 +16,8 @@ factories only**, so a test that never destructures `mail` never loads the mail 
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers `clock`, `mail`, `runJobs` — an app registers the rest |
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |
+| Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there; `fixtureTest` disposes in reverse build order even when the body throws |
+| Building one by hand | `createRunJobs()` outside `fixtureTest` is not disposed for you — reset the driver in `afterEach`, or the next file in the process inherits your queue |
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 

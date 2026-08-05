@@ -35,7 +35,8 @@ export interface JobRunTrace {
   readonly steps: Readonly<Record<string, StepTally>>;
 }
 
-export interface RunJobs {
+/** `AsyncDisposable`: the fixture installs the ambient job driver and restores it after the test. */
+export interface RunJobs extends AsyncDisposable {
   /** Enqueue and drain in one call — the common case. */
   <I>(handle: JobHandle<I>, input: I): Promise<JobRunTrace>;
   enqueue<I>(handle: JobHandle<I>, input: I): Promise<EnqueueResult>;
@@ -75,6 +76,9 @@ const tallyOf = (executions: readonly JobExecution[]): Record<string, StepTally>
 export async function createRunJobs(): Promise<RunJobs> {
   const jobs = await import('@ultimat3/jobs');
   const driver: JobDriver = jobs.createMemoryDriver();
+  // Captured before the overwrite: the ambient driver is process-global, so without this the
+  // next file to call `send()` enqueues into this test's dead queue instead of sending inline.
+  const previous = jobs.jobDriver();
   jobs.setJobDriver(driver);
   const ctx = createContext({ role: 'worker' });
 
@@ -156,5 +160,10 @@ export async function createRunJobs(): Promise<RunJobs> {
         (record) => record.state !== 'running' && record.runAt <= frozenNow().getTime(),
       ).length,
     inFlight: async () => (await live()).filter((record) => record.state === 'running').length,
+    [Symbol.asyncDispose]: async (): Promise<void> => {
+      await driver.close?.();
+      if (previous === undefined) jobs.resetJobDriver();
+      else jobs.setJobDriver(previous);
+    },
   });
 }

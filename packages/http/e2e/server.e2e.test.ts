@@ -1,6 +1,6 @@
-// Opt-in: binds a real port and makes real requests. The network stays sealed — `start()`
-// announces the socket to core, so a request back to it is this process calling itself, not
-// egress. Excluded from `bun test` by the root script's --path-ignore-patterns.
+// Binds a real port and makes real requests. The network stays sealed — `start()` announces the
+// socket to core, so a request back to it is this process calling itself, not egress. Nothing
+// excludes this file: it is the `e2e` step of `x verify` and it runs on every push.
 //
 //   bun test packages/http/e2e
 //

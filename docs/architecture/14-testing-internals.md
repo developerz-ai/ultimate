@@ -57,7 +57,7 @@ X_TEST_NETWORK_EGRESS: unmocked request in a test
   fix:   http.mock('POST https://api.stripe.com/v1/charges', { status: 200, body: {...} })
 ```
 
-The trap is installed at the fetch/socket layer, so it catches SDKs and transitive dependencies, not just direct `fetch` calls. There is no allowlist flag; a genuine integration test declares `network: 'live'` on the file and is excluded from `x verify`'s default set.
+The trap is installed at the fetch/socket layer, so it catches SDKs and transitive dependencies, not just direct `fetch` calls. A server the test itself started is not egress — `start()` announces its socket to core, so a request back to that port passes. There is no allowlist API a file can call; the one opt-out is `ULTIMATE_TEST_ALLOW_NET=1` in the environment, reserved for a deliberate live integration, so no test can quietly unseal the network for itself.
 
 ## The six test types
 

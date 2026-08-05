@@ -32,7 +32,7 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 | **the gate** | `bun run verify` — `x verify` at the repo root: typecheck, lint, boundaries, sizes, shape, every test type, drift, contracts, budgets, manifest. Green = shippable. |
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
-| test (all) | `bun run test` — bare `bun test` also collects the opt-in `e2e/` and dummy-app fixture suites (#9) |
+| test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |

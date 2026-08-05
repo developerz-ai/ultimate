@@ -49,6 +49,8 @@ test('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
 | `runJobs` | a worker: call it to enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
 | anything else | whatever the app registers | the app's `scripts/test-setup.ts` |
 
+`mail` and `runJobs` install a process-global driver for the length of one test and hand the previous one back afterwards. A fixture that takes over a global does the same: implement `Symbol.dispose` or `Symbol.asyncDispose` on what the factory returns, and `fixtureTest` calls it in reverse build order — including when the test body throws.
+
 An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
 
 ```ts
