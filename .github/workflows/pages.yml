@@ -29,47 +29,22 @@ jobs:
         with:
           bun-version: latest
 
-      # site/ is written independently of this workflow. An empty or missing directory produces a
-      # placeholder rather than a red build — a docs site that does not exist yet is not a failure.
-      - name: detect site
-        id: site
-        run: |
-          if [ -d site ] && [ -n "$(ls -A site 2>/dev/null)" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: install
-        if: steps.site.outputs.present == 'true'
-        run: bun install --frozen-lockfile
-
+      # site/build.ts is the one builder — zero dependencies, so no install step. It renders
+      # site/pages/*.md into site/dist/ and emits CNAME, .nojekyll, sitemap, robots and feed
+      # itself. A missing or broken site is a red build, not a placeholder: the site is part of
+      # the repo, and a deploy that silently published raw markdown is worse than a failure.
       - name: build site
-        if: steps.site.outputs.present == 'true'
-        run: |
-          if [ -f site/package.json ] && grep -q '"build"' site/package.json; then
-            bun run --cwd site build
-          else
-            mkdir -p site/dist && cp -r site/. site/dist/ 2>/dev/null || true
-          fi
+        run: bun run site/build.ts
 
-      - name: stage output
-        run: |
-          mkdir -p _pages
-          if [ -d site/dist ]; then
-            cp -r site/dist/. _pages/
-          elif [ "${{ steps.site.outputs.present }}" = "true" ]; then
-            cp -r site/. _pages/
-          else
-            printf '<!doctype html><title>Ultimate</title><h1>Ultimate</h1><p>The site is not built yet.</p>\n' > _pages/index.html
-          fi
-          # Jekyll would eat _-prefixed paths; this is a plain static upload.
-          touch _pages/.nojekyll
-
+      # enablement: true makes the workflow provision Pages on a repo where it is off (a fresh
+      # fork, a restored repo), instead of dying on "Get Pages site failed".
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: _pages
+          path: site/dist
 
   deploy:
     needs: build

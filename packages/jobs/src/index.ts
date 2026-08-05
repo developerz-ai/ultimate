@@ -25,9 +25,8 @@ export { createMemoryDriver } from './driver-memory';
 export type { NatsDriverOptions } from './driver-nats';
 export { createNatsDriver } from './driver-nats';
 export type { PgDriverOptions, PgExecutor } from './driver-pg';
+export { createPgDriver, createPgLeader } from './driver-pg';
 export {
-  createPgDriver,
-  createPgLeader,
   SQL_ACK,
   SQL_ADVISORY_UNLOCK,
   SQL_CLAIM,
@@ -39,7 +38,7 @@ export {
   SQL_STEP_GET,
   SQL_STEP_PUT,
   SQL_TRY_ADVISORY_LOCK,
-} from './driver-pg';
+} from './driver-pg-sql';
 export type { RedisDriverOptions } from './driver-redis';
 export { createRedisDriver } from './driver-redis';
 export type { JobErrorCode } from './errors';
