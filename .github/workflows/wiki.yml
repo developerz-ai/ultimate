@@ -38,7 +38,13 @@ jobs:
           GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git clone "https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" .wiki
+          # A wiki has no git repository until its first page exists, and there is no REST API
+          # that creates one — so a clone against a never-opened wiki fails "Repository not
+          # found", which reads like a permissions problem and is not. Say what it is instead.
+          if ! git clone "https://x-access-token:${GIT_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" .wiki 2>/dev/null; then
+            echo "::error title=Wiki not initialised::${GITHUB_REPOSITORY}.wiki.git does not exist yet. GitHub creates the wiki repository on its first page, and only through the UI. fix: open https://github.com/${GITHUB_REPOSITORY}/wiki, click 'Create the first page', save anything — this workflow overwrites it on the next run."
+            exit 1
+          fi
           rsync -a --delete --exclude '.git' wiki/ .wiki/
           cd .wiki
           git config user.name  "github-actions[bot]"
