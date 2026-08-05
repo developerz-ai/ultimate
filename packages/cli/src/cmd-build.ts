@@ -81,8 +81,7 @@ export const buildCommand: CliCommand = {
           {
             code: 'X_BUILD_FAILED',
             cause: `${command.join(' ')} exited ${result.code}`,
-            fix:
-              target === 'docker' ? 'x doctor --json && docker info' : 'x verify --only typecheck',
+            fix: target === 'docker' ? 'x doctor --json && docker info' : 'x verify --json',
             docs: 'https://ultimate.dev/errors/X_BUILD_FAILED',
           },
         ];

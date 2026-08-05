@@ -48,7 +48,7 @@ export class VerifyFailedError extends UltimateError {
     super({
       code: 'X_VERIFY_FAILED',
       cause: `${input.failed.length} verify step(s) failed: ${input.failed.join(', ')}`,
-      fix: `x verify --only ${input.failed[0] ?? 'typecheck'} --json`,
+      fix: 'x verify --json',
       docs: docsFor('X_VERIFY_FAILED'),
     });
   }

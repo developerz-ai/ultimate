@@ -260,10 +260,12 @@ X_DB_DRIFT: schema differs from migrations
 | `X_CLI_UNKNOWN_COMMAND` | not a command | a typo | `x help` — the suggestion is in `fix` |
 | `X_CLI_BAD_FLAG` | flag rejected | unknown flag, or a bad value | `x <command> --help` |
 | `X_CLI_UNEXPECTED` | the CLI itself failed | a bug, or a broken environment | `x doctor --json` and attach it to an issue |
-| `X_VERIFY_FAILED` | one or more verify steps failed | the gate is red | `x verify --only <step> --json` for that step alone |
+| `X_VERIFY_FAILED` | one or more verify steps failed | the gate is red | `x verify --json` — every step's findings arrive in one run |
 | `X_TYPECHECK_FAILED` | `tsc` failed | a type error anywhere in the workspace | `bunx tsc -b --pretty false` |
 | `X_LINT_FAILED` | Biome failed | `any`, a default export, a bare `Error`, a raw hex colour | `bunx biome check --write .` |
-| `X_TEST_FAILED` | a test type failed | a red test | `bun test --test-name-pattern "<name>"` |
+| `X_TEST_FAILED` | a test type failed | a red test | the `fix` is the exact `bun test …` invocation the step ran |
+| `X_FILE_TOO_LONG` | a source file is over 500 lines | one file doing several jobs | split it; the `fix` names the file |
+| `X_PACKAGE_SHAPE` | a workspace package is missing a contract file | a package added by hand | `bun run scripts/new-package.ts <pkg> --only <file>` |
 | `X_CONTRACT_BREAKING` | the OpenAPI contract broke | a required input added, or an operation removed | give the input a `.default()`, or bump the package version |
 | `X_BUILD_FAILED` | `x build` failed | a static check or the bundler | read `cause`; the failing step is named |
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |

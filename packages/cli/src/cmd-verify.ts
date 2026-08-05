@@ -1,80 +1,24 @@
 // `x verify` — the contract. Every check is a named step with its own pass/fail and duration, the
 // same list in the terminal and in --json, and a non-zero exit if any step fails. Green means
-// shippable (axiom 5); there is no second checklist and no CI-only step.
+// shippable (axiom 5): one step list, no second checklist, no CI-only step, and no way to narrow
+// the run — `--only` and `--skip` would make "green" mean whatever the caller chose.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { requireAppRoot } from './app-root';
+import { APP_CONFIG_FILE, MANIFEST_FILE, requireAppRoot } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
 import { checkDrift } from './drift';
-import type { ExecResult, Runner } from './exec';
-import { execOutput } from './exec';
 import { scanApp } from './manifest-scan';
 import { msg } from './messages';
 import type { OpenApiDocument } from './openapi';
 import { buildOpenApi, diffOpenApi } from './openapi';
 import type { CommandResult, Finding, StepResult } from './output';
-import { flagList } from './parse';
 import { checkAppBoundaries } from './surfaces';
-
-export interface VerifyContext {
-  readonly root: string;
-  readonly runner: Runner;
-}
-
-export interface StepOutcome {
-  readonly ok: boolean;
-  readonly findings: readonly Finding[];
-  readonly output?: string;
-}
-
-export interface VerifyStep {
-  readonly name: string;
-  readonly summary: string;
-  /** Returns false to record the step as skipped rather than passed. */
-  applies?(ctx: VerifyContext): Promise<boolean>;
-  run(ctx: VerifyContext): Promise<StepOutcome>;
-}
-
-const passed: StepOutcome = { ok: true, findings: [] };
-
-function fromExec(result: ExecResult, finding: Omit<Finding, 'docs'>): StepOutcome {
-  if (result.ok) return { ok: true, findings: [], output: execOutput(result) };
-  return {
-    ok: false,
-    findings: [{ ...finding, docs: `https://ultimate.dev/errors/${finding.code}` }],
-    output: execOutput(result),
-  };
-}
-
-const fromFindings = (findings: readonly Finding[]): StepOutcome => ({
-  ok: findings.length === 0,
-  findings,
-});
-
-/** One `bun test` invocation per test type; the type helpers prefix their describe blocks. */
-function testStep(name: string, requires?: string): VerifyStep {
-  const step: VerifyStep = {
-    name,
-    summary: `${name} tests`,
-    async run(ctx) {
-      const result = await ctx.runner(['bun', 'test', '--test-name-pattern', `${name} · `], {
-        cwd: ctx.root,
-      });
-      return fromExec(result, {
-        code: 'X_TEST_FAILED',
-        cause: `one or more ${name} tests failed`,
-        fix: `bun test --test-name-pattern "${name} · "`,
-      });
-    },
-  };
-  if (requires === undefined) return step;
-  return {
-    ...step,
-    applies: async (ctx) => existsSync(join(ctx.root, requires)),
-  };
-}
+import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
+import { fromExec, fromFindings, hostFindings, passed } from './verify-step';
+import { TEST_STEPS } from './verify-tests';
+import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
 
 const readOpenApi = async (root: string): Promise<OpenApiDocument | undefined> => {
   const path = join(root, 'openapi.json');
@@ -82,7 +26,7 @@ const readOpenApi = async (root: string): Promise<OpenApiDocument | undefined> =
   return (await Bun.file(path).json()) as OpenApiDocument;
 };
 
-/** The nine checks of the contract, expanded so each test type reports on its own line. */
+/** The whole contract, in cost order. Every check the framework knows how to make lives here. */
 export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'typecheck',
@@ -112,18 +56,30 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'boundaries',
-    summary: 'surface and layer imports',
-    run: async (ctx) => fromFindings(await checkAppBoundaries(ctx.root)),
+    summary: 'surface, layer and package-tier imports',
+    run: async (ctx) =>
+      fromFindings([
+        ...(await checkAppBoundaries(ctx.root)),
+        ...(await hostFindings(ctx, 'boundaries')),
+      ]),
   },
-  testStep('unit'),
-  testStep('contract'),
-  testStep('live'),
-  testStep('job'),
-  { ...testStep('e2e', 'e2e'), summary: 'playwright, incl. offline + SW update' },
-  { ...testStep('eval', 'evals'), summary: 'LLM output scoring against thresholds' },
+  {
+    name: 'filesize',
+    summary: 'one file, one job',
+    run: async (ctx) => fromFindings(await checkFileSizes(ctx.root)),
+  },
+  {
+    name: 'package-shape',
+    summary: 'every package ships the same contract files',
+    applies: (ctx) => hasWorkspacePackages(ctx.root),
+    run: async (ctx) => fromFindings(await checkPackageShape(ctx.root)),
+  },
+  ...TEST_STEPS,
   {
     name: 'drift',
     summary: 'schema vs migrations',
+    // Only an app owns migrations; a package monorepo's `packages/db` is the driver, not a schema.
+    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
     run: async (ctx) => fromFindings(await checkDrift(ctx.root)),
   },
   {
@@ -150,52 +106,45 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'manifest',
-    summary: 'x.manifest.json freshness',
-    applies: async (ctx) => existsSync(join(ctx.root, 'x.manifest.json')),
+    summary: 'the generated manifest matches the code',
+    applies: async (ctx) =>
+      existsSync(join(ctx.root, MANIFEST_FILE)) || ctx.hostChecks?.manifest !== undefined,
     async run(ctx) {
-      const committed = (await Bun.file(join(ctx.root, 'x.manifest.json')).json()) as {
-        buildId?: string;
-      };
-      const current = await scanApp({ root: ctx.root });
-      if (committed.buildId === current.buildId) return passed;
       return fromFindings([
-        {
-          code: 'X_MANIFEST_STALE',
-          cause: `x.manifest.json records build ${committed.buildId ?? 'none'}, the code produces ${current.buildId}`,
-          fix: 'x manifest',
-          docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
-          at: 'x.manifest.json',
-        },
+        ...(await appManifestFindings(ctx.root)),
+        ...(await hostFindings(ctx, 'manifest')),
       ]);
     },
   },
 ];
 
-export interface VerifyOptions {
-  readonly only?: readonly string[];
-  readonly skip?: readonly string[];
+async function appManifestFindings(root: string): Promise<readonly Finding[]> {
+  const path = join(root, MANIFEST_FILE);
+  if (!existsSync(path)) return [];
+  const committed = (await Bun.file(path).json()) as { buildId?: string };
+  const current = await scanApp({ root });
+  if (committed.buildId === current.buildId) return [];
+  return [
+    {
+      code: 'X_MANIFEST_STALE',
+      cause: `${MANIFEST_FILE} records build ${committed.buildId ?? 'none'}, the code produces ${current.buildId}`,
+      fix: 'x manifest',
+      docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
+      at: MANIFEST_FILE,
+    },
+  ];
 }
 
-const selected = (steps: readonly VerifyStep[], options: VerifyOptions): readonly VerifyStep[] => {
-  const only = options.only ?? [];
-  const skip = options.skip ?? [];
-  return steps.filter(
-    (step) => (only.length === 0 || only.includes(step.name)) && !skip.includes(step.name),
-  );
-};
-
 /**
- * Run steps in order, never bailing early: an agent fixing three things at once needs all three
- * findings from one run, not one per round-trip.
+ * Run every step in order, never bailing early: an agent fixing three things at once needs all
+ * three findings from one run, not one per round-trip.
  */
 export async function runVerify(
   steps: readonly VerifyStep[],
   ctx: VerifyContext,
-  options: VerifyOptions = {},
 ): Promise<CommandResult> {
-  const chosen = selected(steps, options);
   const results: StepResult[] = [];
-  for (const step of chosen) {
+  for (const step of steps) {
     const applies = step.applies === undefined ? true : await step.applies(ctx);
     if (!applies) {
       results.push({ name: step.name, ok: true, durationMs: 0, skipped: true, findings: [] });
@@ -236,7 +185,7 @@ function findingOf(error: unknown, step: string): Finding {
   return {
     code: 'X_VERIFY_FAILED',
     cause: `step "${step}" threw: ${cause}`,
-    fix: `x verify --only ${step} --json`,
+    fix: 'x verify --json',
     docs: 'https://ultimate.dev/errors/X_VERIFY_FAILED',
   };
 }
@@ -245,21 +194,15 @@ export const verifyCommand: CliCommand = {
   spec: {
     name: 'verify',
     summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
-    usage: 'x verify [--only step,step] [--skip step] [--json]',
+    usage: 'x verify [--json]',
     requiresApp: true,
-    flags: [
-      { name: 'only', type: 'string', summary: 'comma-separated step names to run' },
-      { name: 'skip', type: 'string', summary: 'comma-separated step names to skip' },
-    ],
+    flags: [],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('verify', ctx.cwd).dir;
-    return runVerify(
-      VERIFY_STEPS,
-      { root, runner: ctx.runner },
-      { only: flagList(ctx.args, 'only'), skip: flagList(ctx.args, 'skip') },
-    );
+    return runVerify(VERIFY_STEPS, { root, runner: ctx.runner });
   },
 };
 
-export const verifyStepNames = (): readonly string[] => VERIFY_STEPS.map((step) => step.name);
+export const verifyStepNames = (): readonly VerifyStepName[] =>
+  VERIFY_STEPS.map((step) => step.name);

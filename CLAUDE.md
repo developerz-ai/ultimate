@@ -29,7 +29,7 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 | Task | Command |
 |---|---|
 | install | `bun install` |
-| **the gate** | `bun run verify` — typecheck + lint + boundaries + tests. Green = shippable. |
+| **the gate** | `bun run verify` — `x verify` at the repo root: typecheck, lint, boundaries, sizes, shape, every test type, drift, contracts, budgets, manifest. Green = shippable. |
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — bare `bun test` also collects the opt-in `e2e/` and dummy-app fixture suites (#9) |

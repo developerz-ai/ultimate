@@ -77,4 +77,4 @@ A convention that isn't a build error doesn't exist. What actually fails, and wh
 | SEO + i18n | missing meta, duplicate meta, missing key in any locale | [`09`](./09-rendering-internals.md), [`10`](./10-cross-cutting.md) |
 | manifest freshness | `x.manifest.json` / `openapi.json` differ from the code | [`11`](./11-ai-surface.md) |
 
-One command runs all of them: `bun run verify` in this repo, `x verify` in a generated app. There is no `--skip`.
+One command runs all of them, from one step list: `bun run verify` in this repo *is* `x verify` run at the repo root — same steps, same report, same exit code. There is no `--only` and no `--skip`.
