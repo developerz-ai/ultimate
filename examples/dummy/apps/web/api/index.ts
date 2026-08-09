@@ -26,6 +26,12 @@ import * as postQueries from '../app/posts/live';
 // A mutator IS an action, so it registers as one: the optimistic local twin rides on the same
 // declaration instead of living in a parallel registry with a parallel authz path.
 import * as postMutators from '../app/posts/mutator';
+// `defineService('posts', ...)` runs on import — the same "importing IS the boot" rule as the
+// registrations below, so `ctx.posts` is installed wherever this module has run, including
+// tests. `orgs/service.ts` is NOT imported here yet: it still reaches `daysBetween`, which
+// `@ultimat3/time` does not export — a pre-existing gap this task does not own, tracked
+// separately from the posts feature this file already boots.
+import '../app/posts/service';
 import * as settingsActions from '../app/settings-actions';
 
 registerActions(postActions);

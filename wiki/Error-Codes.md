@@ -33,6 +33,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_NOT_IMPLEMENTED` | this driver does not implement the requested feature | an interface-complete driver whose remote half is unwritten | use the default driver, or implement the named method |
 | `X_NO_CONTEXT` | no request context is active | framework code called outside the ALS context | `runWithContext(createContext({ … }), fn)` |
 | `X_SERVICE_MISSING` | service is not registered on the request context | `ctx.<service>` used without providing it | pass it in `createContext({ services: { … } })` |
+| `X_SERVICE_DUPLICATE` | a service name is registered twice | two `defineService('name', ...)` calls used the same name | rename one of the two declarations |
 | `X_ROLE_INVALID` | `ROLE` is not a known runtime role | typo or an old role name in the env | set `ROLE` to `web`, `sync`, `worker`, `scheduler`, `migrate` or `replicator` |
 | `X_DRAINING` | process is draining and refuses new work | work arrived after SIGTERM | retry against another replica; the LB should already have removed this one |
 | `X_SHUTDOWN_TIMEOUT` | graceful shutdown exceeded its deadline | an in-flight handler outlived `DRAIN_TIMEOUT` | raise `configureLifecycle({ deadlineMs })` or shorten the slow handler |

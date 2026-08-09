@@ -2,6 +2,20 @@
  * Every SQL statement the posts feature runs. No business rules here — the service decides what
  * to do, this file decides how to ask Postgres. The transaction is ambient (ALS), so an enqueue
  * in the same request lands in the same transaction as the write.
+ *
+ * KNOWN GAP, not fixed by this comment: every function below calls `.join()`, `.with()`,
+ * `.returning()` or `.onConflictDoNothing()` / `.returningInserted()` on `db.<table>` —
+ * `@ultimat3/entity`'s real `ReadBuilder`/`Table` (`packages/entity/src/query.ts`) has none of
+ * these. `insert()`/`update()`/`delete()` resolve to the row directly; there is no join
+ * primitive at all, so `authorName` (added via `withAuthor`, requiring a join with `members`)
+ * has no real implementation today. Every function that uses `withAuthor` or `.returning()`
+ * throws at runtime. `authorshipOf` has a second, independent problem: it reads `posts`
+ * unscoped by `orgId` on purpose (`policy.ts`'s `postPublish` compares tenancy itself), but
+ * `@ultimat3/entity` refuses any query against a tenant-columned entity with no org predicate
+ * (`X_TENANCY_UNSCOPED`, `packages/entity/src/tenancy.ts`) — there is no scoped escape hatch for
+ * an intentionally cross-tenant read. Both are pre-existing, not introduced by whatever task you
+ * are reading this during; see `apps/web/app/posts/mcp-drive.contract.test.ts`'s header for what
+ * it does and does not exercise as a result.
  */
 
 import { db } from '@postly/db';
