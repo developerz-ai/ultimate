@@ -25,7 +25,7 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `policy` | [`apps/web/app/posts/policy.ts`](apps/web/app/posts/policy.ts) | `post:publish` = owns-or-org-admin, one definition, five surfaces |
 | `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost` |
 | `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic) |
-| `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `toggleLike` — optimistic local twin, offline queue |
+| `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` — optimistic local twin, offline queue |
 | `query` | [`apps/web/app/posts/live.ts`](apps/web/app/posts/live.ts) | `liveFeed` (`live: true`, `persist: true`) + non-live `postBySlug` |
 | `job` | [`apps/web/app/orgs/jobs.ts`](apps/web/app/orgs/jobs.ts) | `onboardOrg` — durable steps + `step.sleep('3d')` |
 | `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `notifySubscribers` — fanout, per-tenant concurrency |
@@ -76,7 +76,7 @@ apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}
 | **Dark theme** | [`apps/web/shared/theme.scss`](apps/web/shared/theme.scss) | every colour is `var(--color-*)`; no raw hex in any `.tsx` or `.scss` |
 | **Timezones** | [`packages/core/src/digest-schedule.ts`](packages/core/src/digest-schedule.ts) | member `tz` drives every `<DateTime>`; digest fires 09:00 local, DST-correct across the March/November transitions |
 | **Money** | [`packages/core/src/billing.ts`](packages/core/src/billing.ts) | integer minor units, USD + EUR, arithmetic never leaves minor units, `Intl` only at the edge |
-| **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `toggleLike` queues offline and reconciles; feed reads from the persisted store; [`site/offline.tsx`](apps/web/site/offline.tsx) is the required fallback |
+| **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` queues offline and reconciles; feed reads from the persisted store; [`site/offline.tsx`](apps/web/site/offline.tsx) is the required fallback |
 | **Realtime** | [`apps/web/app/feed.tsx`](apps/web/app/feed.tsx) | tier 3 — `useLive(liveFeed)` is a Solid signal, patched per row |
 | **AI-first** | [`packages/mcp/src/tools.ts`](packages/mcp/src/tools.ts) | every exposed action is an MCP tool with the *same* policy; admin ships its own MCP surface |
 | **Admin** | [`apps/admin/src/index.ts`](apps/admin/src/index.ts) | the whole dashboard, 20 lines of `defineAdmin` |

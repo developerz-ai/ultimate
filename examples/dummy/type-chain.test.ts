@@ -21,6 +21,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 // signal handler, which has no chance to await, and an unflushed async write is exactly the dirty
 // checkout they exist to prevent. Bun ships no synchronous write.
 import { writeFileSync } from 'node:fs';
+// Node-specific and unavoidable: restoring a tracked file before the runner dies needs synchronous
+// signal cleanup — `process.on`, `process.off` and `process.exit` — and Bun exposes no other way to
+// intercept SIGINT/SIGTERM. Imported through `node:` rather than read off the global, per CLAUDE.md.
+import process from 'node:process';
 
 // `Bun.spawn`, not `@ultimat3/cli`'s `exec`: this file sits at the app root, which has no
 // `node_modules` of its own (only the workspace members under `apps/*`/`packages/*` do) — a

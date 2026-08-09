@@ -6,7 +6,7 @@ describe('action name -> route path', () => {
     ['publishPost', '/api/posts/publish'],
     ['publishPosts', '/api/posts/publish'],
     ['updateUserProfile', '/api/user-profiles/update'],
-    ['toggleLike', '/api/likes/toggle'],
+    ['likePost', '/api/posts/like'],
     ['createOrgInvite', '/api/org-invites/create'],
     ['archiveEntry', '/api/entries/archive'],
     ['inviteMan', '/api/men/invite'],

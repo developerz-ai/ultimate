@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { nowMs } from './clock';
 import { describeJob } from './describe';
 import { resetJobDriver, setJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
@@ -160,17 +161,18 @@ describe('the task DSL surface', () => {
   });
 
   test('.entries() with no occurrence defaults to now — the manual and describe() paths', () => {
+    // `nowMs()` and never `Date.now()`: the default occurrence is this package's own reading of
+    // the injected Clock, which the preload freezes, so this is one exact instant rather than a
+    // window sampled around the assertion. A window would pass just as well if the default were
+    // some other reading entirely.
+    const frozen = nowMs();
     const recorder = defineRecordingTask('dslDigest2b');
-    const before = Date.now();
     recorder.handle.entries();
     recorder.handle.describe();
-    const after = Date.now();
 
-    expect(recorder.seen).toHaveLength(2);
-    for (const seen of recorder.seen) {
-      expect(seen).toBeGreaterThanOrEqual(before);
-      expect(seen).toBeLessThanOrEqual(after);
-    }
+    // Both paths, and neither is `OCCURRENCE_MS`: the default comes from the clock, not from the
+    // argument the test above passed.
+    expect(recorder.seen).toEqual([frozen, frozen]);
   });
 
   test('.enqueue() fires each entry through the job handle it declared, not a copy', async () => {

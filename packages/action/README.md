@@ -71,7 +71,7 @@ kebab-cased.
 |---|---|---|
 | `publishPost` | `POST /api/posts/publish` | `publish_post` |
 | `updateUserProfile` | `POST /api/user-profiles/update` | `update_user_profile` |
-| `toggleLike` | `POST /api/likes/toggle` | `toggle_like` |
+| `likePost` | `POST /api/posts/like` | `like_post` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
 ## One invocation core
@@ -102,11 +102,16 @@ six projections; it adds `local(tx, input)` for the optimistic write and a `conf
 strategy for the rebase.
 
 ```ts
-export const toggleLike = mutator({
+export const likePost = mutator({
   input: t.object({ postId: t.uuid }),
   output: PostLikes,
   policy: can('post:like'),
-  local(tx, { postId }) { tx.posts.update(postId, (p) => ({ likes: p.likes + 1 })); },
+  // Convergent, not incremental: `local` replays on every rebase, so applying it N times has to
+  // equal applying it once — `likedByMe` is what makes the second application a no-op.
+  local(tx, { postId }) {
+    tx.posts.update(postId, (p) =>
+      p.likedByMe ? {} : { likedByMe: true, likeCount: p.likeCount + 1 });
+  },
   async server(ctx, { postId }) { return ctx.posts.like(postId); },
   conflict: 'server-wins', // | 'last-write-wins' | custom(merge)
 });
@@ -116,9 +121,9 @@ The projected surface carries the same three names the declaration used, on top 
 every action member above:
 
 ```ts
-toggleLike.local(tx, { postId })            // the optimistic write, replayed on rebase
-await toggleLike.server(ctx, { postId })    // the authoritative write
-toggleLike.conflict                         // the declared strategy
+likePost.local(tx, { postId })            // the optimistic write, replayed on rebase
+await likePost.server(ctx, { postId })    // the authoritative write
+likePost.conflict                         // the declared strategy
 ```
 
 `.server()` is not a shortcut past `invoke` — it calls the action's own callable, so

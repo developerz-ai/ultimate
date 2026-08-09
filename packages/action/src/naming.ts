@@ -50,7 +50,7 @@ export function pluralize(word: string): string {
 /**
  * `publishPost`        -> POST /api/posts/publish
  * `updateUserProfile`  -> POST /api/user-profiles/update
- * `toggleLike`         -> POST /api/likes/toggle
+ * `likePost`           -> POST /api/posts/like
  * `checkout`           -> POST /api/checkouts/invoke   (single-word fallback)
  */
 export function derivePath(name: string): ActionPath {

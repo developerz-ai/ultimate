@@ -5,7 +5,7 @@
 
 import { expect, test } from 'bun:test';
 import type { LocalTable, LocalTables, LocalTx } from '@ultimat3/action';
-import { toggleLike } from './mutator';
+import { likePost } from './mutator';
 
 type LocalPost = LocalTables['posts'];
 
@@ -35,7 +35,7 @@ const fakeTx = (rows: Map<string, LocalPost>): LocalTx => {
 const applyLocal = (times: number): LocalPost | undefined => {
   const rows = new Map<string, LocalPost>([[POST, { id: POST, likeCount: 4, likedByMe: false }]]);
   const tx = fakeTx(rows);
-  for (let run = 0; run < times; run += 1) toggleLike.local(tx, { postId: POST, orgId: ORG });
+  for (let run = 0; run < times; run += 1) likePost.local(tx, { postId: POST, orgId: ORG });
   return rows.get(POST);
 };
 
@@ -51,7 +51,7 @@ test('the local twin is replayable: three applications land where one does', () 
 test('a row this member already liked is left alone', () => {
   const rows = new Map<string, LocalPost>([[POST, { id: POST, likeCount: 9, likedByMe: true }]]);
 
-  toggleLike.local(fakeTx(rows), { postId: POST, orgId: ORG });
+  likePost.local(fakeTx(rows), { postId: POST, orgId: ORG });
 
   // Derived from the flag, not from the previous count: the server half converges the same way,
   // because `insertLike` is insert-or-ignore and `recountLikes` recounts instead of adding.
@@ -61,7 +61,7 @@ test('a row this member already liked is left alone', () => {
 test('a row the local store has never seen is not invented', () => {
   const rows = new Map<string, LocalPost>();
 
-  toggleLike.local(fakeTx(rows), { postId: POST, orgId: ORG });
+  likePost.local(fakeTx(rows), { postId: POST, orgId: ORG });
 
   expect(rows.size).toBe(0);
 });

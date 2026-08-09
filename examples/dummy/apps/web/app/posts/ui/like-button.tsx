@@ -8,7 +8,7 @@ import { useConnection, useMutation } from '@ultimat3/realtime';
 import { Button } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import { toggleLike } from '../mutator';
+import { likePost } from '../mutator';
 import styles from './like-button.module.scss';
 
 export type LikeButtonProps = {
@@ -25,7 +25,7 @@ export type LikeButtonProps = {
 
 export const LikeButton = (props: LikeButtonProps): JSX.Element => {
   const t = useT();
-  const like = useMutation(toggleLike);
+  const like = useMutation(likePost);
   const connection = useConnection();
 
   return (

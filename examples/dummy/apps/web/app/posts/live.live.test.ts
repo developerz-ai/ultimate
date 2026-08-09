@@ -6,7 +6,7 @@
 import { expect, test } from '@ultimat3/testing';
 import { publishPost } from './actions';
 import { liveFeed } from './live';
-import { toggleLike } from './mutator';
+import { likePost } from './mutator';
 
 test('the initial snapshot is scoped to the actor’s org', async ({ seed, actorFor, subscribe }) => {
   const { ada, acme } = await seed('dev').pick({ ada: 'member:ada', acme: 'org:acme' });
@@ -68,7 +68,7 @@ test('an offline like applies locally, queues, and reconciles on reconnect', asy
   });
 
   const feed = await subscribe(liveFeed.as(actorFor(ada), { orgId: acme.id }));
-  const mutate = toggleLike.as(actorFor(ada));
+  const mutate = likePost.as(actorFor(ada));
 
   network.offline();
   await mutate({ postId: post.id, orgId: acme.id });

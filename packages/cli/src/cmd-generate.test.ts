@@ -5,18 +5,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { GENERATORS, generate, writeFiles } from './cmd-generate';
 import type { GeneratedFile } from './templates';
+import { thrownBy } from './thrown-by';
 
 const loaderFor = (path: string): 'ts' | 'tsx' => (path.endsWith('.tsx') ? 'tsx' : 'ts');
-
-/** The thrown shape, not the class: the code and the fix are what an agent acts on. */
-const thrownBy = (call: () => unknown): { code?: string; cause?: string; fix?: string } => {
-  try {
-    call();
-  } catch (error) {
-    return error as { code?: string; cause?: string; fix?: string };
-  }
-  throw new Error('expected a throw');
-};
 
 /** Parses with Bun's own transpiler: a generator that emits unparseable TS is a broken generator. */
 const parses = (file: GeneratedFile): boolean => {

@@ -152,7 +152,13 @@ export function containedPath(root: string, path: string): string {
   const base = resolve(root);
   const target = resolve(base, path);
   if (target !== base && !target.startsWith(`${base}${sep}`))
-    throw new ScaffoldPathEscapeError({ path, dir: base });
+    // The default `fix` names the scaffold gate's own test, which repairs nothing for someone
+    // running `x g`: the fix here is the generate command, re-run as a dry run.
+    throw new ScaffoldPathEscapeError({
+      path,
+      dir: base,
+      fix: `name the file relative to the app root with no ".." segment, then re-run: x g ${GENERATORS.join('|')} <name> --dry-run`,
+    });
   return target;
 }
 

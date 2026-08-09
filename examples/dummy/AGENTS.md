@@ -40,8 +40,8 @@ Green means shippable. Nothing else is a gate.
 
 ## Where things intentionally look duplicated
 
-- `publishPost` and `toggleLike` do similar-looking work. `publishPost` is an `action`
-  (server-authoritative, no local twin); `toggleLike` is a `mutator` because likes must work
+- `publishPost` and `likePost` do similar-looking work. `publishPost` is an `action`
+  (server-authoritative, no local twin); `likePost` is a `mutator` because likes must work
   offline. The primitive encodes the difference; do not merge them.
 - `packages/db/src/schema/*.ts` declares entities, `apps/web/app/*/entity.ts` declares view
   schemas. Tables are shared across apps; views belong to one feature.

@@ -157,7 +157,8 @@ describe('unit · shared/ is a leaf', () => {
 
   test('the leak renders as a finding with a code, a cause and a runnable fix', () => {
     const leak = checkSharedLeaf([file(LEAF, "export { feed } from '../app/feed';")])[0];
-    if (leak === undefined) throw new Error('expected a leak');
+    expect(leak).toBeDefined();
+    if (leak === undefined) return;
     const finding = sharedLeafFindingFor(leak);
     expect(finding.code).toBe('X_BOUNDARY_SHARED_LEAF');
     expect(finding.cause).toContain('runtime import of "../app/feed"');

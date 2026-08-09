@@ -29,7 +29,7 @@ declare module '@ultimat3/action' {
   }
 }
 
-export const toggleLike = mutator({
+export const likePost = mutator({
   input: t.object({ postId: t.uuid, orgId: t.uuid }),
   output: PostView,
   policy: postLike,

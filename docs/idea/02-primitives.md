@@ -127,7 +127,7 @@ An action with an optimistic local twin. `local` runs client-side against the lo
 
 ```ts
 // mutator (action + optimistic local twin)
-export const toggleLike = mutator({
+export const likePost = mutator({
   input:  t.object({ postId: t.uuid, orgId: t.uuid }),
   output: PostView,
   policy: postLike,

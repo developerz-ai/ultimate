@@ -265,16 +265,16 @@
   ],
   "mutators": [
     {
-      "name": "toggleLike",
+      "name": "likePost",
       "file": "apps/web/app/posts/mutator.ts",
-      "route": "POST /_x/action/toggle-like",
+      "route": "POST /_x/action/like-post",
       "policy": "post:like",
       "conflict": "server-wins",
       "invalidates": ["post", "feed"],
       "offlineQueue": "mutations",
       "mcp": {
         "expose": true,
-        "tool": "postly.toggleLike"
+        "tool": "postly.likePost"
       }
     }
   ],
@@ -479,7 +479,7 @@
       "name": "post:like",
       "file": "apps/web/app/posts/policy.ts",
       "rowFilter": false,
-      "usedBy": ["toggleLike"]
+      "usedBy": ["likePost"]
     },
     {
       "name": "post:publish",
@@ -659,6 +659,7 @@
     "postly.createPost",
     "postly.digestPreview",
     "postly.inviteMember",
+    "postly.likePost",
     "postly.planQuote",
     "postly.postById",
     "postly.postBySlug",
@@ -667,7 +668,6 @@
     "postly.savePreferences",
     "postly.seatReport",
     "postly.summarize",
-    "postly.toggleLike",
     "postly.upgradePlan"
   ],
   "i18n": {

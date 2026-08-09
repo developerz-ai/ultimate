@@ -56,7 +56,7 @@ export const postsService = defineService('posts', (ctx: Ctx) => ({
   },
 
   /**
-   * The server half of `toggleLike`. Returns the authoritative row, which is what the client
+   * The server half of `likePost`. Returns the authoritative row, which is what the client
    * rebases its optimistic count onto.
    *
    * The `byId` first is the tenancy check, and it is load-bearing: `insertLike` trusts the three

@@ -1,6 +1,6 @@
 /**
  * The thing the app is about. `likeCount` is denormalised so the feed's live query stays
- * bounded and deterministic; the `toggleLike` mutator owns keeping it true.
+ * bounded and deterministic; the `likePost` mutator owns keeping it true.
  */
 
 import {

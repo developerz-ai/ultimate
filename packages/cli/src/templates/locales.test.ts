@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { thrownBy } from '../thrown-by';
 import { catalogPath, DEFAULT_LOCALES, resolveLocales } from './locales';
-
-/** The thrown shape, not the class: a code and a fix are what an agent reads. */
-const thrownBy = (call: () => unknown): { code?: string; cause?: string; fix?: string } => {
-  try {
-    call();
-  } catch (error) {
-    return error as { code?: string; cause?: string; fix?: string };
-  }
-  throw new Error('expected a throw');
-};
 
 describe('unit · the generated-catalog locale resolver', () => {
   test('no request is the default locale, and an all-blank request is too', () => {

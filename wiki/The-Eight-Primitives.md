@@ -78,8 +78,13 @@ export const publishPost = action({
 An action with an optimistic local twin. `local` runs client-side against the local store; `server` is authoritative. Same input, same name, both halves in one file.
 
 ```ts
-export const toggleLike = mutator({
-  local(tx, { postId }) { tx.posts.update(postId, (p) => ({ likes: p.likes + 1 })); },
+export const likePost = mutator({
+  // Convergent, not incremental: `local` replays on every rebase, so applying it N times has to
+  // equal applying it once — `likedByMe` is what makes the second application a no-op.
+  local(tx, { postId }) {
+    tx.posts.update(postId, (p) =>
+      p.likedByMe ? {} : { likedByMe: true, likeCount: p.likeCount + 1 });
+  },
   async server(ctx, { postId }) { return ctx.posts.like(postId); },
   conflict: 'server-wins', // | 'last-write-wins' | custom(merge)
 });

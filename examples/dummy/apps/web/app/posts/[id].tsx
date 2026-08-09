@@ -102,6 +102,9 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
         {/* Native form posting to the action's generated route: it works before hydration. */}
         <form class={styles.form} method="post" action="/_x/action/create-comment">
           <input type="hidden" name="postId" value={props.data.id} />
+          {/* `postRead` decides on the org, so it travels in the input — including on the
+              pre-hydration path, which would otherwise fail the action's own schema. */}
+          <input type="hidden" name="orgId" value={props.data.orgId} />
           <label class={styles.label} for="comment-body">
             {t('app.post.commentsHeading')}
           </label>
