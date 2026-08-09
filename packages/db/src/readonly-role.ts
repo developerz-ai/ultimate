@@ -4,7 +4,7 @@
 // inside an already-`READ ONLY` transaction, never by a connection string.
 
 import type { DbClient } from './client';
-import { identifier, literal, type SqlFragment, sql } from './sql';
+import { identifier, literal, raw, type SqlFragment, sql } from './sql';
 
 /** The role `ensureReadOnlyRole` creates and `readOnlyQuery` assumes by default. */
 export const READONLY_ROLE = 'ultimate_readonly';
@@ -12,6 +12,48 @@ export const READONLY_ROLE = 'ultimate_readonly';
 export interface ReadOnlyRoleOptions {
   readonly role?: string | undefined;
   readonly schema?: string | undefined;
+  /**
+   * The roles that CREATE objects in `schema` — in practice whoever runs the migrations.
+   * Postgres scopes `ALTER DEFAULT PRIVILEGES` to objects created by the roles it names, so when
+   * migrations run as a different user than this DDL, every table created afterwards is
+   * unreadable by the read-only role and layer 1 quietly stops covering new tables. Defaults to
+   * the connected user; naming another role requires membership in it.
+   */
+  readonly creators?: readonly string[] | undefined;
+}
+
+/**
+ * `CURRENT_USER` is a keyword, not an identifier — quoting it would name a role actually called
+ * "current_user", so it stays bare exactly like `GRANT ... TO CURRENT_USER` below.
+ */
+function creatorRefs(creators: readonly string[] | undefined): readonly SqlFragment[] {
+  // Absent *or* empty means "whoever is connected", never "no creators": the second reading would
+  // silently drop the layer for every object created after this DDL.
+  if (creators === undefined || creators.length === 0) return [raw('CURRENT_USER')];
+  return creators.map((creator) => identifier(creator));
+}
+
+/**
+ * Emitted once per creating role, because Postgres applies `ALTER DEFAULT PRIVILEGES` only to
+ * objects created by the roles it names. Without the pair its own defaults work against us: a
+ * table created after this DDL is invisible to SELECT while a new sequence is readable —
+ * backwards for a role that must stay read-only forever, not just at grant time.
+ */
+function defaultPrivileges(
+  creator: SqlFragment,
+  role: string,
+  schema: string,
+): readonly SqlFragment[] {
+  return [
+    sql`
+      ALTER DEFAULT PRIVILEGES FOR ROLE ${creator} IN SCHEMA ${identifier(schema)}
+      GRANT SELECT ON TABLES TO ${identifier(role)}
+    `,
+    sql`
+      ALTER DEFAULT PRIVILEGES FOR ROLE ${creator} IN SCHEMA ${identifier(schema)}
+      REVOKE ALL ON SEQUENCES FROM ${identifier(role)}
+    `,
+  ];
 }
 
 /** The idempotent DDL that creates and re-grants the role. Safe to run at every boot. */
@@ -39,17 +81,11 @@ export function grantReadOnlySql(options?: ReadOnlyRoleOptions): readonly SqlFra
     // Sequences expose nextval/currval, which leaks row counts and (with USAGE) lets a "reader"
     // advance state other transactions depend on — read-only excludes them outright.
     sql`REVOKE ALL ON ALL SEQUENCES IN SCHEMA ${identifier(schema)} FROM ${identifier(role)}`,
-    // Without these two, Postgres's own defaults work against us: a table created after this
-    // DDL runs is invisible to SELECT, while a new sequence is readable — backwards for a role
-    // that must stay read-only forever, not just at grant time.
-    sql`
-      ALTER DEFAULT PRIVILEGES IN SCHEMA ${identifier(schema)}
-      GRANT SELECT ON TABLES TO ${identifier(role)}
-    `,
-    sql`
-      ALTER DEFAULT PRIVILEGES IN SCHEMA ${identifier(schema)}
-      REVOKE ALL ON SEQUENCES FROM ${identifier(role)}
-    `,
+    // Two per creating role: what the grants above cover is the schema as it is *now*, and
+    // `ALTER DEFAULT PRIVILEGES` is the only thing that covers what lands in it next.
+    ...creatorRefs(options?.creators).flatMap((creator) =>
+      defaultPrivileges(creator, role, schema),
+    ),
   ];
 }
 

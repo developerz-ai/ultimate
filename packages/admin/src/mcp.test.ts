@@ -30,8 +30,11 @@ const publish: AdminAction = {
   },
 };
 
-/** Grants per actor id — the point being that ONE server answers two callers differently. */
-const GRANTS: Readonly<Record<string, readonly string[]>> = {
+/**
+ * Grants per actor id — the point being that ONE server answers two callers differently.
+ * Mutable so a test can move a permission mid-run and pin when the catalog notices.
+ */
+const GRANTS: Record<string, readonly string[]> = {
   reader: ['admin:read', 'post:read'],
   editor: ['admin:write', 'post:read', 'post:write', 'post:publish'],
 };
@@ -57,7 +60,10 @@ const mcp = adminMcp({
   requestId: (): string => 'req_test',
 });
 
-/** One caller = one request, exactly as the HTTP transport builds it. */
+/**
+ * One `McpCaller` object = one HTTP request, exactly as `transport-http.ts` builds it. Over
+ * stdio the same object is reused for the whole connection — see the grain test below.
+ */
 const caller = (id: string): McpCaller => ({ actor: agentActor({ id }), scopes: new Set() });
 
 async function listTools(who: McpCaller): Promise<readonly string[]> {
@@ -114,6 +120,25 @@ describe('the admin MCP catalog is computed per caller', () => {
 
     // No grants at all: an unknown actor learns nothing about the app's shape.
     expect(await listTools(stranger)).toEqual([]);
+  });
+
+  test('the allowed-list cache is scoped to the caller OBJECT, which is the documented grain', async () => {
+    const connected = caller('promoted');
+    expect(await listTools(connected)).toEqual([]);
+
+    GRANTS['promoted'] = ['admin:read', 'post:read'];
+
+    // Same caller object = one HTTP request, or one whole stdio connection. The catalog it
+    // was handed does not change under it, which is exactly what `allowedByCaller` documents.
+    expect(await listTools(connected)).toEqual([]);
+    // A new request (HTTP) or a reconnection (stdio) builds a new `McpCaller`, and that is
+    // what makes the grant visible. Over stdio the peer is the developer's own shell, so a
+    // connection-scoped catalog is the intended grain, not a missed invalidation.
+    expect(await listTools(caller('promoted'))).toEqual([
+      'admin.post.list',
+      'admin.post.read',
+      'admin.search',
+    ]);
   });
 
   test('calling a tool the caller cannot see answers ToolNotFound, never Forbidden', async () => {

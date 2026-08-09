@@ -68,9 +68,9 @@ strand a well-behaved client.
 
 | Rule | Detail |
 |---|---|
-| Visibility is fail-closed | `visibleTo` admits only who it names; no role ⇒ sees only tools that declare none |
-| Visibility is input-independent | a predicate audience takes `McpCaller` and nothing else — arguments are out of reach |
-| `tools/list` is per connection | filtered per caller on every call, never a static catalog |
+| A role list is fail-closed | a `visibleTo` role list admits only the roles it names, so a caller carrying no role matches none of them |
+| A predicate audience sees the caller and nothing else | it is handed `McpCaller` — never the call arguments, so two calls with different inputs cannot answer differently. Must return the literal `true`; if it throws, the tool is hidden |
+| `tools/list` is answered per caller | filtered on every call against the caller the transport resolved — one per HTTP request, one per stdio connection — never a static catalog |
 | Gate order | visibility → scope → arguments → policy; the scope gate never waits on a policy run against attacker-supplied input |
 | Every outcome is audited | one line per `tools/call`; hidden/scope/policy at `warn`, ok at `info` — see `audit.ts` |
 | Audit lines carry no payload | tool, outcome, actor, code. Never arguments, never rows |

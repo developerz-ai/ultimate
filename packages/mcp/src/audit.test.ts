@@ -1,10 +1,22 @@
+// The audit line as the enumeration ALERT, not as bookkeeping. A hidden tool tells the prober
+// nothing — `tools/list` omits it and the call answers ToolNotFound — so this log is the only
+// place a name walk is ever visible, which is why `hidden` must reach it at `warn`.
+// The severity table below IS that contract: demote one outcome to `debug` and the alert
+// silently stops firing, with every other test in the package still green.
+
 import { describe, expect, test } from 'bun:test';
+import type { Logger } from '@ultimat3/core';
 import { agentActor, createLogger, frozenClock } from '@ultimat3/core';
 import type { McpOutcome } from './audit';
 import { auditToolCall, outcomeForCode } from './audit';
 import type { McpCaller } from './registry';
 
-function capture() {
+interface Capture {
+  readonly logger: Logger;
+  readonly lines: Record<string, unknown>[];
+}
+
+function capture(): Capture {
   const lines: Record<string, unknown>[] = [];
   const logger = createLogger({
     level: 'trace',

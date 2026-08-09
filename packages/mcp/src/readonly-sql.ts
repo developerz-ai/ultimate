@@ -114,7 +114,10 @@ export function assertReadOnlyQuery(sql: string): string {
     if (WRITE_KEYWORDS.has(word)) {
       throw rejected(
         `the statement contains the mutating keyword "${word}"`,
-        'use db.migrate on a branch database for anything that writes',
+        // `db.migrate` applies pending migrations; it is not an INSERT/UPDATE/DELETE path, and
+        // there is no MCP tool that is. Data changes go through an action, which carries a policy.
+        'db.query has no write path: change data by calling an action exposed with ' +
+          'mcp: { expose: true }, and change schema with db.migrate after x db branch <name>',
       );
     }
   }

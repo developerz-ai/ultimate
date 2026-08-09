@@ -36,8 +36,10 @@ MCP `db.query` tool does not use it — it goes through `readOnlyQuery()`, which
 
 `readonly-role.ts` and `readonly-query.ts` are layers 1–2 of that tool's defence-in-depth: a
 `NOLOGIN` Postgres role (`ensureReadOnlyRole`) and a per-statement `BEGIN READ ONLY` + statement
-timeout (`readOnlyQuery`). Neither throws on a missing permission — `ensureReadOnlyRole` returns
-`null` and leaves reporting the degraded layer to the caller. Layers 3–4 (pre-parse scan, MCP
+timeout (`readOnlyQuery`). Only layer 1 degrades: `ensureReadOnlyRole` returns `null` on a missing
+permission and leaves reporting the degraded layer to the caller. **`readOnlyQuery` throws** — a
+failed reservation (`X_DB_UNAVAILABLE`), `SET LOCAL ROLE`, transaction command or the statement
+itself all reach the caller, and every caller must handle that. Layers 3–4 (pre-parse scan, MCP
 policy) live in `@ultimat3/mcp`, which must still never import this package — the CLI wires the
 two together.
 
@@ -50,4 +52,7 @@ Gotchas:
 - `exactOptionalPropertyTypes` — declare optional fields as `x?: T | undefined`.
 - `noUncheckedIndexedAccess` — array reads are `T | undefined`; `chunks[i] ?? ''` everywhere.
 - Tests use `createRecordingClient()` + `setDbClient()`; no test may need a live database.
+- `ALTER DEFAULT PRIVILEGES` is scoped to an object's creator, so layer 1 covers future tables
+  only for the roles in `creators` (default: the connected user). Migrations running as another
+  DB user must name it, or tables created later are not selectable by `ultimate_readonly`.
 - `Bun.SQL` is reached lazily inside `connect()` — importing `client.ts` must not open a socket.

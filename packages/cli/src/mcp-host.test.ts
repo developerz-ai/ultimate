@@ -176,14 +176,35 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
       'BEGIN READ ONLY',
       `SET LOCAL statement_timeout = ${limits.timeoutMs}`,
       `SET LOCAL ROLE "${READONLY_ROLE}"`,
-      'select id from posts',
+      'DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select id from posts',
+      `FETCH FORWARD ${limits.maxRows + 1} FROM ultimate_read_cursor`,
       'ROLLBACK',
     ]);
     expect(answer.guards).toEqual([
       'txn:read-only',
       `timeout:${limits.timeoutMs}ms`,
       `role:${READONLY_ROLE}`,
+      `fetch:${limits.maxRows + 1} rows`,
     ]);
+  });
+
+  test('the ceiling is asked of the SERVER, so a wide table is never paged into this process', async () => {
+    const db = createRecordingClient();
+    await readOnlyRows(db, 'select * from events', limits, null);
+
+    // The bound that matters is on the FETCH, not on a slice afterwards: without it the driver
+    // has already allocated every row in `events` by the time layer 4 gets to drop them.
+    expect(db.texts).toContain(`FETCH FORWARD ${limits.maxRows + 1} FROM ultimate_read_cursor`);
+    expect(db.texts).not.toContain('select * from events');
+  });
+
+  test('EXPLAIN and SHOW have no cursor form, so they still run directly', async () => {
+    for (const statement of ['explain select 1', 'show statement_timeout']) {
+      const db = createRecordingClient();
+      const answer = await readOnlyRows(db, statement, limits, null);
+      expect(db.texts).toContain(statement);
+      expect(answer.guards.some((guard) => guard.startsWith('fetch:'))).toBe(false);
+    }
   });
 
   test('no role means the layer is absent from guards, never assumed present', async () => {
@@ -196,7 +217,8 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
   });
 
   test('one row past the ceiling comes back, so the tool can report truncation', async () => {
-    const db = createRecordingClient().on('select', {
+    // More rows than asked for: a server that over-delivers must still not widen the answer.
+    const db = createRecordingClient().on('FETCH', {
       rows: Array.from({ length: 50 }, (_, id) => ({ id, title: `p${id}` })),
     });
     const answer = await readOnlyRows(db, 'select id, title from posts', limits, null);
@@ -209,7 +231,9 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
     const db = createRecordingClient();
     const sql = "select 'delete from posts' as note";
     await readOnlyRows(db, sql, limits, null);
-    expect(db.texts).toContain(sql);
+    // Inside the cursor now, but still verbatim — stripping it would run
+    // `select   as note`.
+    expect(db.texts).toContain(`DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR ${sql}`);
   });
 });
 

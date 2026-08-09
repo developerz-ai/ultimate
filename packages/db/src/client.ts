@@ -161,7 +161,17 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       // (`ERR_POSTGRES_UNSAFE_TRANSACTION`), and a BEGIN that landed on a different connection
       // than the statement after it would not be a transaction at all — which is exactly what
       // `withTransaction` and `readOnlyQuery` depend on being true.
-      const reserved = await connect().reserve();
+      const pool = connect();
+      let reserved: BunSqlReserved;
+      try {
+        reserved = await pool.reserve();
+      } catch (error) {
+        // Acquiring the pin is the one step that runs outside `runOn`, so an exhausted or
+        // unreachable pool would escape as an untyped driver error — and `readOnlyQuery` reaches
+        // this line before its first statement, which is how MCP ends up returning something
+        // other than X_DB_UNAVAILABLE.
+        throw dbUnavailable('could not reserve a connection from the pool', error);
+      }
       return {
         query: async <T>(fragment: SqlFragment) => rowsOf<T>(await runOn(reserved, fragment)),
         one: async <T>(fragment: SqlFragment) =>

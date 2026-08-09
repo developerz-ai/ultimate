@@ -132,6 +132,48 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     expect(read.rows.length).toBeGreaterThanOrEqual(0);
   });
 
+  test('maxRows bounds what the SERVER sends, not what the caller keeps', async () => {
+    const role = await ensureReadOnlyRole(client);
+    await client.execute(sql`
+      insert into widgets (name)
+      select 'w' || g from generate_series(1, 500) g
+    `);
+
+    // A recording client cannot tell a cursor from a slice — only a real server can, because
+    // only here does the unbounded form actually allocate all 500 rows in this process.
+    const bounded = await readOnlyQuery<{ id: number }>('select * from widgets', {
+      client,
+      role,
+      maxRows: 10,
+    });
+    expect(bounded.rows).toHaveLength(10);
+    expect(bounded.guards).toContain('fetch:10 rows');
+
+    const whole = await readOnlyQuery<{ id: number }>('select * from widgets', { client, role });
+    expect(whole.rows.length).toBeGreaterThan(400);
+    expect(whole.guards.some((guard) => guard.startsWith('fetch:'))).toBe(false);
+
+    // `EXPLAIN` has no cursor form, so it must survive the option rather than fail on it.
+    const explained = await readOnlyQuery('explain select 1', { client, role, maxRows: 10 });
+    expect(explained.rows.length).toBeGreaterThan(0);
+
+    // ROLLBACK closes the cursor; a leak would leave it visible to the next pooled statement.
+    const open = await client.query<{ name: string }>(sql`select name from pg_cursors`);
+    expect(open).toEqual([]);
+  });
+
+  test('ALTER DEFAULT PRIVILEGES covers tables created after the grant DDL ran', async () => {
+    const role = await ensureReadOnlyRole(client);
+    // The claim layer 1 makes is about the FUTURE: without `FOR ROLE`, Postgres scopes the
+    // default to the executing user's own objects, and a table created later stops being
+    // selectable. Nothing but a real server can refuse this.
+    await client.execute(sql`create table gadgets (id int)`);
+    await client.execute(sql`insert into gadgets values (7)`);
+
+    const read = await readOnlyQuery<{ id: number }>('select id from gadgets', { client, role });
+    expect(read.rows).toEqual([{ id: 7 }]);
+  });
+
   test('checkDb pings the live connection instead of a fake one', async () => {
     const report = await checkDb(client);
     expect(report.ok).toBe(true);

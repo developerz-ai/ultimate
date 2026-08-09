@@ -103,14 +103,30 @@ export type McpVerbClass = 'read' | 'write';
 /**
  * True when `caller` may see (and therefore call) `tool`. See OUTCOME 1 above.
  *
- * FAIL-CLOSED: a tool that names its audience is invisible to a caller with no role. The
- * opposite — treating "no role" as "no filter applies" — hands an unroled connection every
- * restricted tool in the catalog, which is the whole leak this gate exists to prevent.
+ * FAIL-CLOSED, three ways:
+ *
+ *  1. A role list admits only the roles it names, so a caller with no role matches none of
+ *     them. The opposite — treating "no role" as "no filter applies" — hands an unroled
+ *     connection every restricted tool in the catalog.
+ *  2. A predicate must return the literal `true`. Author-supplied code returning something
+ *     merely truthy ("admin", 1, an object) would otherwise widen the gate by accident.
+ *  3. A predicate that THROWS denies. A predicate is app code that can fail for ordinary
+ *     reasons (`@ultimat3/admin` builds a request context inside its own), and an escaping
+ *     throw would answer `-32603` where a hidden tool answers `-32601` — a different error
+ *     code is exactly what a prober reads as "this tool exists", which is the enumeration
+ *     oracle OUTCOME 1 exists to remove. It would also break `list` outright for that
+ *     caller, turning one broken audience into an empty catalog.
  */
 export function visibleToCaller(tool: AnyMcpTool, caller: McpCaller): boolean {
   const visibility = tool.visibleTo;
   if (visibility === undefined) return true;
-  if (typeof visibility === 'function') return visibility(caller);
+  if (typeof visibility === 'function') {
+    try {
+      return visibility(caller) === true;
+    } catch {
+      return false;
+    }
+  }
   return caller.role !== undefined && visibility.includes(caller.role);
 }
 

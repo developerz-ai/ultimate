@@ -33,10 +33,16 @@ import. The CLI wires it.
 - Three outcomes, never blurred: role-hidden → `-32601` ToolNotFound with no `data`;
   scope → `-32600` `X_MCP_SCOPE_DENIED` naming the scope; policy → an `isError` result
   carrying `X_POLICY_DENIED`. Swapping any two is an enumeration oracle.
-- `visibleTo` is **fail-closed** and may be a predicate over the caller — never over the
-  arguments, so existence cannot be probed by varying input. `tools/list` is per caller.
+- `visibleTo` is **fail-closed** three ways: a role list admits only the roles it names (a
+  caller with no role matches none), a predicate must return the literal `true`, and a
+  predicate that THROWS hides the tool. A predicate takes the caller — never the arguments —
+  so existence cannot be probed by varying input. `tools/list` is answered per caller: one
+  `McpCaller` per HTTP request, one per stdio connection.
 - Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
   running the policy first decides a refusal from attacker-supplied input.
+- A framework error rendered into a tool result is **byte-identical to
+  `UltimateError.format()`** — one denial must not read one way over MCP and another in the
+  terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
 - Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments
   or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
 - `security.test.ts` is the executable contract for all of the above. Extend it, never
@@ -46,6 +52,9 @@ import. The CLI wires it.
   a written-out list is a request, so filtering it would ship a catalog missing a tool its
   author believes is there. `include: 'exposed'` sweeps the registries and therefore skips,
   because that list is every primitive the app registered, not one anyone wrote out.
+  `actions:` and `queries:` go through **one** `toolsListed` call over the concatenation: it
+  collects every offender before throwing, so one boot names all of them and one edit closes
+  all of them. Two calls would throw on the first array and never examine the second.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
   throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`. The caller
   reading them is usually an agent that needs `{ code, cause, fix }`.

@@ -32,6 +32,11 @@ function tool(overrides: Partial<AnyMcpTool> & { name: string }): AnyMcpTool {
   };
 }
 
+/** App code failing for an ordinary reason: a missing actor, a registry miss, a cold cache. */
+function throwingVisibility(): boolean {
+  throw new TypeError('visibility predicate blew up');
+}
+
 describe('visibleToCaller', () => {
   test('no visibleTo means everyone, including a roleless caller', () => {
     expect(visibleToCaller(tool({ name: 'open' }), caller())).toBe(true);
@@ -52,6 +57,17 @@ describe('visibleToCaller', () => {
     expect(visibleToCaller(t, caller())).toBe(false);
     const allowed: McpCaller = { actor: agentActor({ id: 'agent-allowed' }), scopes: new Set() };
     expect(visibleToCaller(t, allowed)).toBe(true);
+  });
+
+  test('a throwing predicate denies rather than escaping', () => {
+    const t = tool({ name: 'boom', visibleTo: throwingVisibility });
+    expect(visibleToCaller(t, caller({ role: 'admin' }))).toBe(false);
+  });
+
+  test('a truthy non-boolean does not widen the gate — only a literal true admits', () => {
+    // A JS caller (or a predicate returning the permission it matched) must not be an "allow".
+    const truthy = tool({ name: 'truthy', visibleTo: (() => 'admin') as () => boolean });
+    expect(visibleToCaller(truthy, caller({ role: 'admin' }))).toBe(false);
   });
 });
 
@@ -103,6 +119,18 @@ describe('ToolRegistry.list / names', () => {
     expect(registry.names(caller({ role: 'admin' }))).toEqual(['admin.only', 'open']);
   });
 
+  test('a tool whose predicate throws is hidden, and the rest of the catalog survives', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([
+      tool({ name: 'open' }),
+      tool({ name: 'boom', visibleTo: throwingVisibility }),
+      tool({ name: 'zebra' }),
+    ]);
+    // One broken audience must not empty the catalog — that would be a denial of service
+    // dressed up as a security control.
+    expect(registry.names(caller({ role: 'admin' }))).toEqual(['open', 'zebra']);
+  });
+
   test('each entry is a complete, standalone row', () => {
     const registry = new ToolRegistry();
     registry.register(tool({ name: 'echo', description: 'echoes', inputSchema: STRING_ARG }));
@@ -123,6 +151,17 @@ describe('ToolRegistry.resolve ordering: visibility -> scope -> args -> ok', () 
     expect(registry.resolve('admin.only', {}, caller())).toEqual({
       kind: 'not-found',
       name: 'admin.only',
+    });
+  });
+
+  test('a throwing predicate resolves not-found, indistinguishable from an absent tool', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'boom', visibleTo: throwingVisibility }));
+    // Propagating the throw would answer -32603 where a hidden tool answers -32601, and that
+    // difference is what a prober reads as "this tool exists".
+    expect(registry.resolve('boom', {}, caller({ role: 'admin' }))).toEqual({
+      kind: 'not-found',
+      name: 'boom',
     });
   });
 

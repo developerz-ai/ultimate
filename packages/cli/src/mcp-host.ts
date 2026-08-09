@@ -143,12 +143,16 @@ export async function readOnlyRows(
     client: db,
     role,
     timeoutMs: limits.timeoutMs,
+    // One row past the ceiling: the tool needs to know there was more. Asked of the *server*,
+    // through the cursor the pinned read-only transaction already makes available, so a
+    // `select * from events` cannot be paged into this process before layer 4 gets to drop it.
+    // Wrapping the statement in `select * from (…) limit n` instead would change the meaning of
+    // a statement carrying its own LIMIT and fail outright on `EXPLAIN` and `SHOW`.
+    maxRows: limits.maxRows + 1,
   });
   const columns = Object.keys(rows[0] ?? {});
-  // One row past the ceiling: the tool needs to know there was more, and `DbClient` exposes no
-  // cursor to ask the server instead. Wrapping the statement in `select * from (…) limit n`
-  // would change the meaning of a statement carrying its own LIMIT and fail outright on
-  // `EXPLAIN` and `SHOW`, which are commands rather than derived tables.
+  // `EXPLAIN` and `SHOW` are commands, not cursorable, so they arrive whole — the slice is the
+  // only bound they have.
   const kept = rows.slice(0, limits.maxRows + 1);
   return { columns, rows: kept.map((row) => columns.map((column) => row[column])), guards };
 }

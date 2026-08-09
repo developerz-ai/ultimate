@@ -125,12 +125,13 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `X_MCP_TOOL_UNKNOWN`, or a tool absent from `tools/list` | the tool is hidden from this caller's role, the action does not set `mcp: { expose: true }`, or the manifest is stale | visibility is fail-closed — check the caller's role against the tool's `visibleTo`; otherwise add the field, then `x manifest` |
+| `X_MCP_TOOL_UNKNOWN`, or a tool absent from `tools/list` | the tool is hidden from this caller, or the name is stale — role-hidden and absent answer identically, on purpose | visibility is fail-closed: check the caller against the tool's `visibleTo` (a role allowlist or a predicate over the caller). Otherwise `tools/list` for the catalog this caller may use, and `x manifest` if the committed manifest is stale |
+| `X_MCP_TOOL_UNDECLARED`, and MCP refuses to boot | an action or query written out in `defineAppMcp`'s `actions:`/`queries:` never declared `mcp: { expose: true }` — a boot-time configuration error, not a hidden tool | add `mcp: { expose: true, description: '<what it does>' }` beside the primitive's policy, or drop it from the list and let `include: 'exposed'` project what opted in |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope — scope is a property of the token, not of the actor's permissions | `x token grant <scope>`, then reconnect: scopes are fixed for the life of a connection |
 | `X_POLICY_DENIED` from a `tools/call` | the tool was invoked and its policy refused this input — the same denial the HTTP route returns for the same call | grant the human the permission — an agent can never exceed the human it acts for |
 | Dev MCP server not reachable | `x dev` not running, or you pointed at prod | default socket is `mcp.devSocket` (`ws://localhost:9229`). The dev server is **never** bound in `ROLE=web` |
-| `X_MCP_QUERY_REJECTED` | `db.query` was not given exactly one read-only statement | send a single `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES`; use `db.migrate` on a branch database for anything that writes |
-| `X_MCP_NOT_BRANCH_DB` | `db.migrate` was aimed at a database that is not a branch | `x branch <name>`, then retry `db.migrate` |
+| `X_MCP_QUERY_REJECTED` | `db.query` was not given exactly one read-only statement | send a single **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read. MCP has no arbitrary-write path: change data by calling an action exposed with `mcp: { expose: true }`, change schema with `db.migrate` on a branch database |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` was aimed at a database that is not a branch | `x db branch <name>`, then retry `db.migrate` |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema twice | tighten the prompt or loosen the schema; the retry already happened once |
 | Prompt change had no effect | semantic cache hit | bump the prompt version — editing a prompt requires it. `x ai cache --json` |
 | `x verify` fails on a prompt | no evals file | an unevaluated prompt is untested code. Add `<prompt>.evals.ts` |

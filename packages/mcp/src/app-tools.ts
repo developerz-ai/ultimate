@@ -96,8 +96,11 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   input: DefineAppMcpInput<TSchemas>,
 ): AppMcp {
   // `toolsListed`, not `toolsFrom`: these two arrays are what the author wrote out, so an
-  // undeclared entry is a mistake to report, not a primitive to pass over.
-  const listed = [...toolsListed(input.actions ?? []), ...toolsListed(input.queries ?? [])];
+  // undeclared entry is a mistake to report, not a primitive to pass over. ONE call over both
+  // arrays, because `toolsListed` collects every offender before throwing — calling it twice
+  // would throw on the first undeclared action and never look at the queries, so the author
+  // fixes one list, re-boots, and meets a second `X_MCP_TOOL_UNDECLARED`.
+  const listed = toolsListed([...(input.actions ?? []), ...(input.queries ?? [])]);
   // An explicitly listed primitive is a refinement of the registry's entry, not a rival to it,
   // so `include` fills the gaps rather than colliding with what the caller already spelled out.
   const included =

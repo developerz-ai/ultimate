@@ -230,6 +230,8 @@ export class McpServer {
 
 interface FrameworkError {
   readonly code: string;
+  /** `''` for a foreign thrown object that carries no title. See `renderFrameworkError`. */
+  readonly title: string;
   readonly cause: string;
   readonly fix: string;
 }
@@ -241,16 +243,26 @@ interface FrameworkError {
  */
 function asFrameworkError(error: unknown): FrameworkError | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
-  const e = error as { code?: unknown; cause?: unknown; fix?: unknown };
+  const e = error as { code?: unknown; title?: unknown; cause?: unknown; fix?: unknown };
   if (typeof e.code !== 'string' || !e.code.startsWith('X_')) return undefined;
   return {
     code: e.code,
+    title: typeof e.title === 'string' ? e.title : '',
     cause: typeof e.cause === 'string' ? e.cause : 'unknown',
     fix: typeof e.fix === 'string' ? e.fix : 'see docs',
   };
 }
 
-/** The agent-readable three-line form — the same shape `x` prints and `--json` carries. */
+/**
+ * The agent-readable form, BYTE-IDENTICAL to `UltimateError.format()` — one denial reads the
+ * same over MCP as it does in the terminal, so an agent that learned the shape from `x` does
+ * not have to learn a second one here. Dropping the title would be a second rendering of the
+ * same contract, and the two would drift.
+ *
+ * The bare-`code` head is the fallback for a foreign thrown object that carries `code`/`cause`
+ * but no title; a real `UltimateError` always has one.
+ */
 function renderFrameworkError(error: FrameworkError): string {
-  return `${error.code}\n  cause: ${error.cause}\n  fix:   ${error.fix}`;
+  const head = error.title === '' ? error.code : `${error.code}: ${error.title}`;
+  return `${head}\n  cause: ${error.cause}\n  fix:   ${error.fix}`;
 }

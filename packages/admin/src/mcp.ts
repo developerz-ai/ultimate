@@ -211,9 +211,24 @@ const adminActorOf = (caller: McpCaller): AdminActor => ({
  * WHY memoize: visibility is asked once per tool and each answer re-derives the whole
  * catalog, so an unmemoized `tools/list` costs O(tools²) authz decisions.
  *
- * WHY a `WeakMap` keyed on the caller: the transport builds exactly one `McpCaller` object
- * per request, so an entry is per-connection by construction — it cannot hand one caller
- * another's answer, and it dies with the request object, so there is nothing to evict.
+ * WHY a `WeakMap` keyed on the caller OBJECT: an entry can never hand one caller another's
+ * answer, and it is collected with the caller, so there is nothing to evict.
+ *
+ * Its LIFETIME is therefore the transport's, and the two transports differ:
+ *
+ * | Transport | `McpCaller` built | Cache grain |
+ * |---|---|---|
+ * | HTTP (`transport-http.ts`) | inside `route.handle`, per request | per request |
+ * | stdio (`transport-stdio.ts`) | once, in `StdioTransportInput` | per connection |
+ *
+ * So over stdio a permission change made mid-connection is NOT observed until the client
+ * reconnects. That is accepted, not overlooked: the stdio peer is the local developer's own
+ * shell, which launched this process and already holds that developer's authority, and the
+ * session is short and re-launched per editor/agent run. A connection-scoped catalog is the
+ * intended grain there — an invalidation hook would add a second source of truth for
+ * visibility to keep in sync with `adminMcpTools`, which is the drift this file avoids
+ * everywhere else. Over HTTP, where a token can outlive a permission change, the grain is
+ * already per request and the question does not arise.
  *
  * WHY keyed by app too: one process can mount two admins, and their catalogs differ.
  */
@@ -264,12 +279,12 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
  * Mount the admin as an app MCP server.
  *
  * The catalog is built once but answered per caller: every tool carries a `visibleTo`
- * predicate that re-derives that actor's allowed tools, so `tools/list` is per-connection and
- * a tool the actor may not use is ABSENT from it — and a direct call answers ToolNotFound,
- * never Forbidden. Forbidden would confirm the tool exists, leaking every entity name and
- * operation to anyone who probes. Every call still goes through `callAdminTool`, which
- * re-checks the same allowed list on dispatch, exactly as the UI refuses a button the actor
- * may not click.
+ * predicate that re-derives that actor's allowed tools, so `tools/list` is answered per
+ * caller — one `McpCaller` per HTTP request, one per stdio connection — and a tool the actor
+ * may not use is ABSENT from it, while a direct call answers ToolNotFound, never Forbidden.
+ * Forbidden would confirm the tool exists, leaking every entity name and operation to anyone
+ * who probes. Every call still goes through `callAdminTool`, which re-checks the same allowed
+ * list on dispatch, exactly as the UI refuses a button the actor may not click.
  */
 export function adminMcp(opts: AdminMcpOptions): AppMcp {
   const requestId = opts.requestId ?? ((): string => crypto.randomUUID());

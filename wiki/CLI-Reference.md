@@ -298,16 +298,22 @@ whatever its bearer token was issued.
 | `queue.depth` | pending, running and failed counts per queue | `dev:read` |
 | `manifest.read` | the generated `x.manifest.json` as text | `dev:read` |
 | `errors.explain` | `X_*` → cause, fix, docs | `dev:read` |
-| `db.query` | ONE read-only SQL statement, 1000-row cap | `db:read` |
+| `db.query` | ONE read-only SQL statement; `limit` defaults to 100 rows, maximum 1000 | `db:read` |
 | `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
 | `tests.run` | run the suite, structured results | `dev:test` |
 | `verify.run` | run `x verify`, structured per-step result | `dev:test` |
 | `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
 
-`db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword, a
-locking clause, a non-branch target — before the host runs anything.
+`db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword
+(a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, a non-branch target —
+before the host runs anything.
 
-Never exposed in `ROLE=web`. Errors: `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_DENIED`, `X_MCP_QUERY_REJECTED`, `X_MCP_NOT_BRANCH_DB`, `X_MCP_PROTOCOL`.
+Never exposed in `ROLE=web`. Errors split by when they fire:
+
+| When | Codes | Effect |
+|---|---|---|
+| boot — configuring an MCP surface with `defineAppMcp` | `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE` | the call throws; no server starts |
+| runtime — one request | `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_DENIED`, `X_MCP_QUERY_REJECTED`, `X_MCP_NOT_BRANCH_DB`, `X_MCP_PROTOCOL` | that call is refused; the server keeps serving |
 
 A tool this caller may not see is absent from `tools/list` and answers ToolNotFound, never Forbidden. `x token grant <scope>` takes effect on the next connection — scopes are fixed for the life of one. Full model: [MCP and AI](MCP-And-AI).
 

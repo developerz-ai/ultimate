@@ -134,6 +134,36 @@ describe('outcome 1 — hidden: absent from the catalog, ToolNotFound on call', 
     await scoped.handle(call('admin.seats', { orgId: 'o_1' }), refused);
     for (const who of seen) expect(Object.keys(who).sort()).toEqual(['actor', 'scopes']);
   });
+
+  test('a predicate that THROWS hides the tool — it never becomes a different error code', async () => {
+    const brittle: AnyMcpTool = {
+      name: 'admin.seats',
+      description: 'visibility derived by app code that can fail',
+      inputSchema: NO_ARGS_SCHEMA,
+      // `@ultimat3/admin` builds a request context in here, so a throw is reachable in
+      // production: a missing actor, a registry miss, a cold cache.
+      visibleTo: () => {
+        throw new TypeError('admin context was not built');
+      },
+      async handle() {
+        return textResult('seats');
+      },
+    };
+    const scoped = createMcpServer({ tools: [brittle] });
+    const member = caller('member', ['every:scope']);
+
+    const onBrittle = await scoped.handle(call('admin.seats'), member);
+    const onAbsent = await scoped.handle(call('no.such.tool'), member);
+
+    // An escaping throw answers -32603 where a hidden tool answers -32601, and that ONE
+    // difference tells a prober the name reached app code — i.e. that the tool exists.
+    expect(JSON.stringify(onBrittle).replace('admin.seats', 'no.such.tool')).toBe(
+      JSON.stringify(onAbsent),
+    );
+    expect(onBrittle?.error?.code).toBe(METHOD_NOT_FOUND);
+    // And one broken audience must not take the whole catalog down with it.
+    expect(listedNames(await scoped.handle(list, member))).toEqual([]);
+  });
 });
 
 describe('outcome 2 — scope: named out loud, and decided before the policy', () => {

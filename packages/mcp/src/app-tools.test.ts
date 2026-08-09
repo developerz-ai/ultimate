@@ -316,6 +316,21 @@ describe('an undeclared primitive in a written-out list is a build error', () =>
     );
   });
 
+  test('one throw names every offender across BOTH arrays, so one edit closes all of them', () => {
+    const thrown = codeAndCause(() =>
+      defineAppMcp({
+        actions: [primitive('deleteEverything'), primitive('publishPost', { expose: true })],
+        queries: [primitive('privateFeed')],
+      }),
+    );
+
+    expect(thrown?.code).toBe('X_MCP_TOOL_UNDECLARED');
+    // Two `toolsListed` calls would throw on the action and never examine the queries — the
+    // author fixes the actions, re-boots, and meets the same error again for the query.
+    expect(thrown?.cause).toContain('deleteEverything');
+    expect(thrown?.cause).toContain('privateFeed');
+  });
+
   test('mcp: { expose: false } is refused as loudly as no mcp block at all', () => {
     expect(() => defineAppMcp({ actions: [primitive('optedOut', { expose: false })] })).toThrow(
       'X_MCP_TOOL_UNDECLARED',

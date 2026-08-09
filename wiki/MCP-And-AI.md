@@ -17,7 +17,7 @@ Pre-v1, not production-ready. `As of 2026-07`: the MCP registry, wire protocol, 
 | `manifest.get` | the whole `x.manifest.json` | ten separate reads |
 | `tests.run` | run a test type or a single file, structured results | parsing terminal output |
 | `logs.tail` | structured logs + OTel spans, filterable | scrollback archaeology |
-| `db.query` | **read-only** SQL, 1000-row cap, `EXPLAIN` on request | inventing a query and hoping |
+| `db.query` | **read-only** SQL, 100-row default and 1000-row maximum, `EXPLAIN` on request | inventing a query and hoping |
 | `db.migrate` | generate + apply migrations **in a branch DB only** | mutating the dev database |
 | `errors.explain` | `X_*` code → cause, fix command, docs URL | web search |
 | `budgets.report` | per-route bytes/LCP with the import chain that caused a regression | bisecting bundles |
@@ -30,7 +30,7 @@ Implemented names `as of 2026-07` differ slightly from the design table: `action
 | gated read | `db.query`, `logs.tail`, `budgets.report` | scope `db:read` / `dev:logs` |
 | write | `db.migrate`, `tests.run` | scope `db:migrate` / `dev:test`, **branch environments only** |
 
-None of them is exposed in `ROLE=web`. `db.query` accepts one statement. Multiple statements, writes, locking clauses, and data-modifying CTEs are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
+None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and functions that reach outside the database (`pg_read_file`, `pg_sleep`, `dblink`, `lo_import`, …) are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
 
 ## Every action is an MCP tool
 
@@ -69,9 +69,10 @@ Hidden means hidden: `Forbidden` on a hidden tool is an enumeration oracle — a
 
 | Rule | Detail |
 |---|---|
-| Visibility is **fail-closed** | a tool that declares `visibleTo` is visible only to a caller whose role is in the list; a caller with no role sees only tools that declare no `visibleTo` |
+| `visibleTo` takes two forms | a **role allowlist**, or a **predicate over the caller**. A tool that declares neither is visible to everyone |
+| Both forms are **fail-closed** | a role list admits only the roles it names, so a caller whose role is not in it — including a caller with no role at all — is refused; a caller with no role sees only tools that declare no `visibleTo` |
 | `tools/list` is per connection | answered per caller, never a static catalog |
-| Visibility is input-independent | `visibleTo` is a role list or a predicate over the caller — the predicate never sees call arguments, so existence cannot be probed by varying them |
+| Visibility is input-independent | the predicate takes the caller and nothing else — it structurally cannot read call arguments, so existence cannot be probed by varying them |
 | Gate order is fixed | visibility → scope → arguments → policy. Scope runs before the policy, so a refusal never depends on evaluating a policy against attacker-supplied input; arguments are validated after both gates, so a schema never leaks to a caller who may not see the tool |
 | Every outcome is audited | one structured log line per `tools/call`: `surface: 'mcp'`, tool name, actor id, outcome. ToolNotFound, scope denials and policy denials log at `warn`, a successful call at `info` — ToolNotFound is `warn` on purpose, because an enumeration attempt is a detectable pattern |
 | Audit lines carry no payload | tool name, outcome and error code only — never call arguments, never row data |
@@ -206,7 +207,7 @@ $ x verify --json
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
 | `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | `x token grant <scope>`, then reconnect — scopes are fixed for the life of a connection |
-| `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send a single `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` |
+| `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send exactly one **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | use a branch DB (`x branch <name>`) |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
 | `X_POLICY_DENIED` | the action's policy refused this actor — identical to the HTTP denial | grant the permission, or act as an actor who has it |

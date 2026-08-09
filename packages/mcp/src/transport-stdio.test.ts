@@ -10,14 +10,21 @@ import { serveStdio } from './transport-stdio';
 
 const caller: McpCaller = { actor: agentActor({ id: 'dev' }), scopes: new Set() };
 
+// `echo` returns its argument verbatim, so a byte that the transport mangled on its way in
+// comes back out where an assertion can see it.
 const server = createMcpServer({
   tools: [
     {
       name: 'echo',
       description: 'echoes',
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-      async handle() {
-        return textResult('ok');
+      inputSchema: {
+        type: 'object',
+        properties: { note: { type: 'string' } },
+        required: ['note'],
+        additionalProperties: false,
+      },
+      async handle(args) {
+        return textResult(String(args['note']));
       },
     },
   ],
@@ -95,19 +102,33 @@ describe('serveStdio', () => {
   });
 
   test('a multi-byte UTF-8 character split across chunk boundaries decodes correctly', async () => {
-    const line = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"note":"café"}}\n';
+    const line = `${JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'echo', arguments: { note: 'café' } },
+    })}\n`;
     const bytes = new TextEncoder().encode(line);
-    const mid = Math.floor(bytes.length / 2);
+    // Split BETWEEN the two bytes of `é` (0xC3 0xA9) — derived, because a fixed index (or the
+    // midpoint) lands in the ASCII run and exercises no incremental decoding at all.
+    const split = bytes.indexOf(0xc3) + 1;
+    expect(bytes[split]).toBe(0xa9);
+
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(bytes.slice(0, mid));
-        controller.enqueue(bytes.slice(mid));
+        controller.enqueue(bytes.slice(0, split));
+        controller.enqueue(bytes.slice(split));
         controller.close();
       },
     });
     const chunks: string[] = [];
     await serveStdio({ server, caller, input: stream, write: (c) => void chunks.push(c) });
+
     expect(chunks).toHaveLength(1);
-    expect(JSON.parse(chunks[0] ?? '').id).toBe(1);
+    const parsed = JSON.parse(chunks[0] ?? '');
+    // The ECHOED value is the assertion. A decoder without `{ stream: true }` turns the two
+    // halves into `caf` plus two U+FFFD replacement characters — still valid JSON, still
+    // answering id 1 — so asserting on the envelope alone can never fail.
+    expect(parsed.result.content[0].text).toBe('café');
   });
 });

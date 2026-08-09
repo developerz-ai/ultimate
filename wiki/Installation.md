@@ -117,12 +117,12 @@ claude mcp add ultimate --transport ws ws://localhost:9229
 | `manifest.get` | ten separate reads |
 | `tests.run` | parsing terminal output |
 | `logs.tail` | scrollback archaeology |
-| `db.query` | inventing a query and hoping (read-only, 1000-row cap) |
+| `db.query` | inventing a query and hoping (read-only; 100-row default, 1000-row maximum) |
 | `db.migrate` | mutating the dev DB — writes land in a **branch DB only** |
 | `errors.explain` | a web search for an error string |
 | `budgets.report` | bisecting bundles |
 
-Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
+Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. `db.query` refuses a batch, a write keyword anywhere at statement level (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, and `pg_read_file`-class functions — `X_MCP_QUERY_REJECTED`, before the host sees the string. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
 
 ## Upgrading and removal
 
