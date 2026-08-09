@@ -58,6 +58,7 @@ export {
   tryIntrospect,
 } from './provider';
 export type {
+  FormattableIssue,
   InferInput,
   InferOutput,
   StandardFailureResult,
@@ -70,6 +71,7 @@ export type {
   StandardTypes,
 } from './standard';
 export {
+  formatIssues,
   formatPath,
   isStandardSchema,
   parse,

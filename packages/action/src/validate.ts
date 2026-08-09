@@ -4,8 +4,8 @@
  * and the same issue text — on the way in and on the way out.
  */
 
-import type { InferOutput, StandardIssue, StandardSchemaV1 } from '@ultimat3/schema';
-import { formatPath, validateAsync } from '@ultimat3/schema';
+import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import { formatIssues, validateAsync } from '@ultimat3/schema';
 import { InputInvalidError, OutputInvalidError } from './errors';
 
 export async function validateInput<S extends StandardSchemaV1>(
@@ -15,7 +15,7 @@ export async function validateInput<S extends StandardSchemaV1>(
 ): Promise<InferOutput<S>> {
   const result = await validateAsync(schema, raw);
   if (result.issues !== undefined) {
-    throw new InputInvalidError(actionName, formatIssues(result.issues));
+    throw new InputInvalidError(actionName, formatIssues(result.issues).join('; '));
   }
   return result.value;
 }
@@ -32,17 +32,7 @@ export async function validateOutput<S extends StandardSchemaV1>(
 ): Promise<InferOutput<S>> {
   const result = await validateAsync(schema, produced);
   if (result.issues !== undefined) {
-    throw new OutputInvalidError(actionName, formatIssues(result.issues));
+    throw new OutputInvalidError(actionName, formatIssues(result.issues).join('; '));
   }
   return result.value;
-}
-
-/** Deterministic, one-line rendering — same text in terminal, overlay and `--json`. */
-export function formatIssues(issues: readonly StandardIssue[]): string {
-  return issues
-    .map((issue) => {
-      const path = formatPath(issue.path);
-      return path === '' ? issue.message : `${path}: ${issue.message}`;
-    })
-    .join('; ');
 }
