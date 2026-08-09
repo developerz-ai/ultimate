@@ -14,9 +14,12 @@ const webPackage = (app: NameSet): string => `{
 }
 `;
 
+// The ambient \`*.module.scss\` declaration is not reachable through an import, so a program that
+// only sees this app's files would report TS2307 on every stylesheet. Naming it in \`include\`
+// is what makes \`tsc -p apps/web\` agree with \`tsc -p .\`.
 const tsconfig = (): string => `{
   "extends": "../../tsconfig.json",
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx", "../../types/scss.d.ts"]
 }
 `;
 
@@ -28,7 +31,6 @@ import { t } from '@ultimat3/i18n';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
-  kind: 'route',
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
@@ -73,15 +75,15 @@ const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const sitePageTest = (): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
+const sitePageTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
-unitTest('the landing page ships zero JS and declares metadata', () => {
+unitTest('the landing page ships zero JS and declares metadata', async () => {
   expect(config.render).toBe('static');
   expect(config.hydrate).toBe('never');
-  expect(config.budget.js).toBe('0kb');
-  expect(config.meta().title.length).toBeGreaterThan(0);
+  expect(config.budget?.js).toBe('0kb');
+  const meta = await config.meta({});
+  expect(meta.title ?? '').not.toBe('');
 });
 `;
 
@@ -93,11 +95,11 @@ import { t } from '@ultimat3/i18n';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
-  kind: 'route',
   render: 'stream',
   hydrate: 'visible',
   offline: 'runtime',
-  auth: 'required',
+  // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
+  policy: { permission: 'dashboard:read' },
   budget: { js: '60kb', lcp: 2500 },
   meta: () => ({ title: t('app.dashboard.title'), description: t('app.dashboard.description') }),
 });
@@ -120,13 +122,12 @@ const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const dashboardTest = (): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
+const dashboardTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
-unitTest('the dashboard streams, requires auth and has an offline strategy', () => {
+unitTest('the dashboard streams, requires a permission and has an offline strategy', () => {
   expect(config.render).toBe('stream');
-  expect(config.auth).toBe('required');
+  expect(config.policy?.permission).toBe('dashboard:read');
   expect(config.offline).toBe('runtime');
 });
 `;
@@ -161,13 +162,16 @@ const offlineStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 const apiAction =
   (): string => `// api/ holds actions only: no rendering, no components. This one is the readiness probe every
 // role exposes, declared as an action so it appears in OpenAPI and MCP like everything else.
-import { action, t } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
+import { action } from '@ultimat3/action';
+import { allow } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
 
 export const health = action({
   input: t.object({}),
   output: t.object({ ok: t.boolean, role: t.string }),
-  policy: can('public'),
+  // Public, said out loud. \`can('x:y')\` is the other branch; a missing policy is a build error,
+  // so "anyone may call this" has to be a declaration too.
+  policy: allow('public'),
   mcp: { expose: true, description: 'Readiness of this process' },
   async handle({ ctx }) {
     return { ok: true, role: ctx.role };
@@ -175,13 +179,12 @@ export const health = action({
 });
 `;
 
-const apiTest = (): string => `import { expect } from 'bun:test';
-import { contractTest } from '@ultimat3/testing';
+const apiTest = (): string => `import { contractTest, expect } from '@ultimat3/testing';
 import { health } from './health';
 
 contractTest('health is an action exposed over MCP', () => {
   expect(health.kind).toBe('action');
-  expect(health.mcp?.expose).toBe(true);
+  expect(health.def.mcp?.expose).toBe(true);
 });
 `;
 
@@ -239,11 +242,11 @@ import { defineRoute } from '@ultimat3/render';
 import { t } from '@ultimat3/i18n';
 
 export const config = defineRoute({
-  kind: 'route',
   render: 'spa',
   hydrate: 'idle',
   offline: 'network-only',
-  auth: 'required',
+  // A spa renders no data, so the shell itself must be gated — @ultimat3/render requires it.
+  policy: { permission: 'admin:read' },
   budget: { js: '120kb', lcp: 3000 },
   meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
 });

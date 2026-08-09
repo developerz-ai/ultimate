@@ -12,42 +12,51 @@ const querySource = (
   live: boolean,
 ): string => `// ${name.camel}: a ${live ? 'live (subscribable)' : 'one-shot'} read over ${feature.pluralKebab}.
 // Bounded and ordered — required for${live ? ' live queries' : ' predictable pagination'}.
-import { db } from '@ultimat3/db';
-import { can } from '@ultimat3/policy';
-import { query, t } from '@ultimat3/query';
-import { ${feature.camel} } from '../entity';
+import { from, query } from '@ultimat3/query';
+import { t } from '@ultimat3/schema';
+import type { ${feature.pascal} } from '../entity';
+import { can${feature.pascal}Read } from '../policy';
+import * as repo from '../repo';
 
 export const ${name.camel} = query({
   input: t.object({ orgId: t.uuid, limit: t.number.default(50) }),
-  policy: can('${feature.kebab}:read'),
+  policy: can${feature.pascal}Read,
   live: ${String(live)},
   sql: ({ orgId, limit }) =>
-    db.select().from(${feature.camel}).where({ orgId }).orderBy('createdAt').limit(limit),
+    // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
+    // and the entity created the table as snake_case.
+    from<${feature.pascal}>('${feature.table}', () => repo.listByOrg(orgId, limit))
+      .where({ orgId })
+      .orderBy('createdAt')
+      .limit(limit),
 });
 `;
 
-const queryTest = (name: NameSet, live: boolean): string => `import { expect } from 'bun:test';
-import { ${live ? 'liveTest' : 'unitTest'} } from '@ultimat3/testing';
+const queryTest = (name: NameSet, live: boolean): string => {
+  const wrapper = live ? 'liveTest' : 'unitTest';
+  return `import { anonymousCtx } from '@ultimat3/action';
+import { expect, ${wrapper} } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
-${live ? 'liveTest' : 'unitTest'}('${name.camel} is a declared query', () => {
+const orgId = '00000000-0000-0000-0000-000000000002';
+
+${wrapper}('${name.camel} is a declared query', () => {
   expect(${name.camel}.kind).toBe('query');
   expect(${name.camel}.live).toBe(${String(live)});
 });
 
-${live ? 'liveTest' : 'unitTest'}('${name.camel} is bounded and ordered', () => {
-  const sql = String(${name.camel}.sql({ orgId: '00000000-0000-0000-0000-000000000002', limit: 50 }));
+${wrapper}('${name.camel} is bounded and ordered', () => {
+  // The SQL text is the contract an agent reads to self-correct, so assert on it, not on a shape.
+  const { sql } = ${name.camel}.def.sql({ orgId, limit: 50 }, anonymousCtx()).toSQL();
   expect(sql.toLowerCase()).toContain('order by');
   expect(sql.toLowerCase()).toContain('limit');
 });
 
-${live ? 'liveTest' : 'unitTest'}('${name.camel} requires an actor with read permission', async () => {
-  await expect(${name.camel}.policy).toDenyPolicy({
-    actor: null,
-    input: { orgId: '00000000-0000-0000-0000-000000000002', limit: 50 },
-  });
+${wrapper}('${name.camel} requires an actor with read permission', async () => {
+  await expect(${name.camel}.def.policy).toDenyPolicy({ actor: null, input: { orgId } });
 });
 `;
+};
 
 export interface QueryOptions extends FeatureTarget {
   readonly live?: boolean;

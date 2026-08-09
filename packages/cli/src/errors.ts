@@ -12,6 +12,7 @@ export const CLI_ERROR_CODES = [
   'X_NOT_IMPLEMENTED',
   'X_TEST_NO_FILES',
   'X_TEST_SHARD_FAILED',
+  'X_SCAFFOLD_PATH_ESCAPE',
 ] as const;
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
@@ -87,6 +88,22 @@ export class NoTestFilesError extends UltimateError {
       cause: `no *.test.ts files${where} under ${input.root}`,
       fix: input.filter === undefined ? 'x test --cwd <repo root>' : 'x test',
       docs: docsFor('X_TEST_NO_FILES'),
+    });
+  }
+}
+
+/**
+ * A generated file's path resolves outside the sandbox the scaffold gate writes into. `..` in a
+ * `GeneratedFile.path` would put template output on the developer's real disk, so it fails here
+ * rather than after the write.
+ */
+export class ScaffoldPathEscapeError extends UltimateError {
+  constructor(input: { path: string; dir: string }) {
+    super({
+      code: 'X_SCAFFOLD_PATH_ESCAPE',
+      cause: `generated path "${input.path}" resolves outside the sandbox ${input.dir}`,
+      fix: `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
+      docs: docsFor('X_SCAFFOLD_PATH_ESCAPE'),
     });
   }
 }

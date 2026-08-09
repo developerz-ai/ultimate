@@ -270,6 +270,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_BUILD_FAILED` | `x build` failed | a static check or the bundler | read `cause`; the failing step is named |
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |
 | `X_GENERATE_CONFLICT` | a generator would overwrite a file | the name is taken | `x g … --force`, or choose another name |
+| `X_SCAFFOLD_PATH_ESCAPE` | a generated path resolves outside the scaffold sandbox | a `..` segment or an absolute path in a template's `GeneratedFile.path` | make the path relative to the app root with no `..`, then `bun test packages/cli/src/scaffold-typecheck.contract.test.ts` |
 
 ## Names used in the design docs
 

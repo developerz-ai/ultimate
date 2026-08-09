@@ -10,10 +10,15 @@ export type Surface = 'site' | 'app';
 const RENDER: Record<Surface, string> = { site: 'isr', app: 'stream' };
 const HYDRATE: Record<Surface, string> = { site: 'never', app: 'visible' };
 const OFFLINE: Record<Surface, string> = { site: 'precache', app: 'runtime' };
-const BUDGET: Record<Surface, string> = {
-  site: "{ js: '0kb', lcp: 1800 }",
-  app: "{ js: '60kb', lcp: 2500 }",
+/** Structured, not a literal string: the route and the test that pins it read the same fact. */
+const BUDGET: Record<Surface, { readonly js: string; readonly lcp: number }> = {
+  site: { js: '0kb', lcp: 1800 },
+  app: { js: '60kb', lcp: 2500 },
 };
+const budgetLiteral = (surface: Surface): string =>
+  `{ js: '${BUDGET[surface].js}', lcp: ${BUDGET[surface].lcp} }`;
+/** `isr` without a trigger is `static` wearing a costume — @ultimat3/render rejects it at boot. */
+const REVALIDATE: Record<Surface, string> = { site: "\n  revalidate: { ttl: '1h' },", app: '' };
 
 const routeDir = (surface: Surface, path: string): string =>
   `apps/web/${surface}/${path
@@ -36,11 +41,10 @@ import { t } from '@ultimat3/i18n';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
-  kind: 'route',
-  render: '${RENDER[surface]}',
+  render: '${RENDER[surface]}',${REVALIDATE[surface]}
   hydrate: '${HYDRATE[surface]}',
   offline: '${OFFLINE[surface]}',
-  budget: ${BUDGET[surface]},
+  budget: ${budgetLiteral(surface)},
   meta: () => ({
     title: t('${titleKey(path)}'),
     description: t('${titleKey(path).replace('.title', '.description')}'),
@@ -68,14 +72,17 @@ const styleSource =
 }
 `;
 
-const routeTest = (surface: Surface, path: string): string => `import { expect } from 'bun:test';
-import { e2eTest, unitTest } from '@ultimat3/testing';
+const routeTest = (
+  surface: Surface,
+  path: string,
+): string => `import { e2eTest, expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
-unitTest('/${path} declares metadata', () => {
-  const meta = config.meta();
-  expect(meta.title.length).toBeGreaterThan(0);
-  expect(meta.description.length).toBeGreaterThan(0);
+unitTest('/${path} declares metadata', async () => {
+  // meta() takes the route's data and may be async, so a caller always awaits it.
+  const meta = await config.meta({});
+  expect(meta.title ?? '').not.toBe('');
+  expect(meta.description ?? '').not.toBe('');
 });
 
 unitTest('/${path} declares a render mode, an offline strategy and a budget', () => {
@@ -85,7 +92,7 @@ unitTest('/${path} declares a render mode, an offline strategy and a budget', ()
 });
 
 unitTest('/${path} stays inside its byte budget declaration', () => {
-  expect(config.budget.js).toBe('${surface === 'site' ? '0kb' : '60kb'}');
+  expect(config.budget?.js).toBe('${BUDGET[surface].js}');
 });
 
 e2eTest('/${path} renders offline from its fallback', async ({ page, offline }) => {

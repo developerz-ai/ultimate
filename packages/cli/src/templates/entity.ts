@@ -13,58 +13,75 @@ export interface FeatureTarget {
 
 const entitySource = (
   name: NameSet,
+  snake: string,
+  table: string,
 ): string => `// The ${name.camel} table, its domain type and its invariants. No I/O beyond the column
 // definitions: repo.ts owns every query that touches this table.
-import { entity, t } from '@ultimat3/entity';
+import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
 
-export const ${name.camel} = entity({
-  table: '${name.pluralKebab}',
+export const ${name.camel} = entity('${table}', {
   columns: {
-    id: t.uuid.primary(),
-    orgId: t.uuid.references('orgs.id'),
-    title: t.string.max(200),
-    // Money is integer minor units + an ISO code, never a float.
-    priceMinor: t.integer.default(0),
-    priceCurrency: t.string.length(3).default('USD'),
-    // Stored UTC; formatted at the edge with an explicit IANA time zone.
-    createdAt: t.timestamp.defaultNow(),
+    id: uuid().primaryKey(),
+    // Declaring the tenant column is what turns tenancy on: a read without an org predicate
+    // then fails with X_TENANCY_UNSCOPED instead of leaking another org's rows.
+    orgId: uuid().tenant(),
+    title: text({ max: 200 }),
+    // One property, two physical columns: price_minor bigint + price_currency char(3).
+    // Money is integer minor units plus an ISO code, never a float.
+    price: money(),
+    // Always timestamptz. Stored UTC; formatted at the edge with an explicit IANA time zone.
+    createdAt: timestamp().defaultNow(),
   },
-  invariants: {
-    'title must not be blank': (row) => row.title.trim().length > 0,
-    'price must not be negative': (row) => row.priceMinor >= 0,
-  },
+  // Each rule runs in the app on write AND as a Postgres CHECK — one declaration, both sides.
+  invariants: [
+    invariant('${snake}_title_not_blank', (c) => c.title.trimmed().minLength(1)),
+    invariant('${snake}_price_non_negative', (c) => c.price.minor.atLeast(0)),
+  ],
   indexes: [{ on: ['orgId', 'createdAt'] }],
 });
 
-export type ${name.pascal} = typeof ${name.camel}.$type;
+export type ${name.pascal} = typeof ${name.camel}.$row;
 `;
 
 const repoSource = (
   name: NameSet,
+  table: string,
 ): string => `// The only module allowed to query the ${name.pluralKebab} table. Routes call actions and
 // queries; actions call services; services call this.
-import { db } from '@ultimat3/db';
-import { ${name.camel} } from './entity';
+// \`db()\` is the ambient handle: inside a transaction it IS the transaction, so these functions
+// join the caller's transaction without knowing one is open.
+import { db, sql } from '@ultimat3/db';
+import { dbDrift, newId } from '@ultimat3/entity';
 import type { ${name.pascal} } from './entity';
 
 export async function byId(id: string): Promise<${name.pascal} | undefined> {
-  const rows = await db.select().from(${name.camel}).where({ id }).limit(1);
-  return rows[0];
+  const row = await db().one<${name.pascal}>(sql\`select * from ${table} where id = \${id}\`);
+  return row ?? undefined;
 }
 
 export async function listByOrg(orgId: string, limit = 50): Promise<readonly ${name.pascal}[]> {
-  return db.select().from(${name.camel}).where({ orgId }).orderBy('createdAt').limit(limit);
+  // Ordered and bounded: an unordered page is a different page on every request.
+  return db().query<${name.pascal}>(
+    sql\`select * from ${table} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
+  );
 }
 
 export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Promise<${name.pascal}> {
-  const [created] = await db.insert(${name.camel}).values(row).returning();
-  if (created === undefined) throw new Error('insert returned no row');
+  // Money is two physical columns — integer minor units plus the ISO code, never a float.
+  const created = await db().one<${name.pascal}>(sql\`
+    insert into ${table} (id, org_id, title, price_minor, price_currency)
+    values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency})
+    returning *\`);
+  if (created === null) throw dbDrift('${table}', 'id');
   return created;
 }
 `;
 
-const entityTest = (name: NameSet): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
+const entityTest = (
+  name: NameSet,
+  snake: string,
+  table: string,
+): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './entity';
 import type { ${name.pascal} } from './entity';
 
@@ -72,23 +89,24 @@ const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
   id: '00000000-0000-0000-0000-000000000001',
   orgId: '00000000-0000-0000-0000-000000000002',
   title: 'valid title',
-  priceMinor: 1000,
-  priceCurrency: 'USD',
+  // \`money()\` puts \`MoneyValue\` on the row, whose minor units are bigint — the column is a
+  // Postgres bigint, and a JS number would silently lose precision above 2^53 minor units.
+  price: { minor: 1000n, currency: 'USD' },
   createdAt: new Date(0),
   ...over,
 });
 
 unitTest('${name.camel} declares a table with invariants', () => {
-  expect(${name.camel}.kind).toBe('entity');
-  expect(${name.camel}.table).toBe('${name.pluralKebab}');
-  expect(Object.keys(${name.camel}.invariants)).toContain('title must not be blank');
+  expect(${name.camel}.$name).toBe('${table}');
+  expect(${name.camel}.$tenantColumn).toBe('orgId');
+  const named = ${name.camel}.$invariants.map((rule) => rule.name);
+  expect(named).toContain('${snake}_title_not_blank');
 });
 
 unitTest('${name.camel} invariants reject a blank title and a negative price', () => {
-  const { invariants } = ${name.camel};
-  expect(invariants['title must not be blank'](row())).toBe(true);
-  expect(invariants['title must not be blank'](row({ title: '   ' }))).toBe(false);
-  expect(invariants['price must not be negative'](row({ priceMinor: -1 }))).toBe(false);
+  expect(() => ${name.camel}.$assert(row())).not.toThrow();
+  expect(() => ${name.camel}.$assert(row({ title: '   ' }))).toThrow();
+  expect(() => ${name.camel}.$assert(row({ price: { minor: -1n, currency: 'USD' } }))).toThrow();
 });
 `;
 
@@ -96,8 +114,8 @@ export function entityFiles(rawName: string, target: FeatureTarget): readonly Ge
   const name = names(rawName);
   const dir = `${target.surfaceDir}/${target.feature}`;
   return [
-    { path: `${dir}/entity.ts`, contents: entitySource(name) },
-    { path: `${dir}/entity.test.ts`, contents: entityTest(name) },
-    { path: `${dir}/repo.ts`, contents: repoSource(name) },
+    { path: `${dir}/entity.ts`, contents: entitySource(name, name.snake, name.table) },
+    { path: `${dir}/entity.test.ts`, contents: entityTest(name, name.snake, name.table) },
+    { path: `${dir}/repo.ts`, contents: repoSource(name, name.table) },
   ];
 }

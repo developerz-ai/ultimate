@@ -10,7 +10,8 @@ const jobSource = (
   name: NameSet,
 ): string => `// ${name.camel}: multi-step durable work. Each step is retried independently and its result is
 // stored under its name — step names are stable identifiers, not labels.
-import { job, t } from '@ultimat3/jobs';
+import { job } from '@ultimat3/jobs';
+import { t } from '@ultimat3/schema';
 import * as repo from '../repo';
 
 export const ${name.camel} = job({
@@ -43,20 +44,19 @@ export const ${name.camel} = task({
 });
 `;
 
-const jobTest = (name: NameSet): string => `import { expect } from 'bun:test';
-import { jobTest } from '@ultimat3/testing';
+const jobTest = (name: NameSet): string => `import { expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
+
+const id = '00000000-0000-0000-0000-000000000001';
 
 jobTest('${name.camel} declares an idempotency key and a retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
-  expect(${name.camel}.idempotencyKey({ id: 'abc' })).toBe('${name.kebab}:abc');
+  expect(${name.camel}.idempotencyKeyFor({ id })).toBe(\`${name.kebab}:\${id}\`);
   expect(${name.camel}.retry.attempts).toBeGreaterThan(1);
 });
 
 jobTest('${name.camel} is idempotent for the same input', () => {
-  const first = ${name.camel}.idempotencyKey({ id: 'abc' });
-  const second = ${name.camel}.idempotencyKey({ id: 'abc' });
-  expect(first).toBe(second);
+  expect(${name.camel}.idempotencyKeyFor({ id })).toBe(${name.camel}.idempotencyKeyFor({ id }));
 });
 
 jobTest('${name.camel} runs its steps in order', async () => {
@@ -64,10 +64,12 @@ jobTest('${name.camel} runs its steps in order', async () => {
 });
 `;
 
-const taskTest = (name: NameSet, jobName: NameSet): string => `import { expect } from 'bun:test';
-import { jobTest } from '@ultimat3/testing';
-import { ${name.camel} } from './${name.kebab}';
+const taskTest = (
+  name: NameSet,
+  jobName: NameSet,
+): string => `import { expect, jobTest } from '@ultimat3/testing';
 import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
+import { ${name.camel} } from './${name.kebab}';
 
 jobTest('${name.camel} declares a cron with an explicit time zone', () => {
   expect(${name.camel}.kind).toBe('task');
@@ -76,7 +78,7 @@ jobTest('${name.camel} declares a cron with an explicit time zone', () => {
 });
 
 jobTest('${name.camel} enqueues ${jobName.camel} and nothing else', () => {
-  const pairs = ${name.camel}.enqueue();
+  const pairs = ${name.camel}.entries();
   expect(pairs).toHaveLength(1);
   expect(pairs[0]?.[0]).toBe(${jobName.camel});
 });
