@@ -2,6 +2,9 @@
 // app's modules register, and the actions those modules declared answer over the same HTTP
 // pipeline production runs. A fixture that stubbed any of that would prove nothing — the bug this
 // replaces was a dev server that served `/_x` and 404'd every route the app actually had.
+//
+// `/_x` here is `@ultimat3/admin`'s dashboard, mounted. The assertions below read the panels'
+// own payloads, so a CLI that grew a second copy of one would fail this file.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
@@ -133,30 +136,90 @@ describe('unit · x dev boots the app', () => {
     expect(await response.text()).toContain('<title>Pricing</title>');
   });
 
-  test('/_x still answers, and reports the roles and services it booted', async () => {
-    expect(await (await fetchDev('/_x')).json()).toMatchObject({ ok: true });
-    const services = (await (await fetchDev('/_x/services')).json()) as {
-      roles: string[];
-      services: { db: { mode: string } };
-      reloads: number;
-    };
-    expect(services.roles).toEqual(['web', 'worker', 'scheduler']);
-    expect(services.services.db.mode).toBe('embedded');
-    expect(services.reloads).toBe(0);
+  test('/_x serves the dashboard shell, with a tab per mounted panel', async () => {
+    const response = await fetchDev('/_x');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/html');
+    const shell = await response.text();
+    for (const key of server.panels) expect(shell).toContain(`href="/_x/${key}"`);
+    expect(server.panels).toHaveLength(11);
   });
 
-  test('/_x/manifest is the loaded app, not a second scan of the source', async () => {
-    const manifest = (await (await fetchDev('/_x/manifest')).json()) as {
-      app: { name: string; version: string };
-      actions: { name: string }[];
-      routes: { url: string }[];
+  test('/_x/routes?json=1 is the panel payload, naming the route the fixture registered', async () => {
+    const payload = (await (await fetchDev('/_x/routes?json=1')).json()) as {
+      panel: string;
+      ok: boolean;
+      data: { routes: { path: string }[] };
     };
-    expect(manifest.app).toEqual({ name: 'dev-fixture', version: '1.4.0' });
-    expect(manifest.actions.map((action) => action.name).sort()).toEqual([
+    expect(payload).toMatchObject({ panel: 'routes', ok: true });
+    expect(payload.data.routes.map((route) => route.path)).toContain('/pricing');
+  });
+
+  test('/_x/services reports the roles and services this process actually booted', async () => {
+    const payload = (await (await fetchDev('/_x/services?json=1')).json()) as {
+      ok: boolean;
+      data: { roles: string[]; services: { db: { mode: string } }; reloads: number };
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.data.roles).toEqual(['web', 'worker', 'scheduler']);
+    expect(payload.data.services.db.mode).toBe('embedded');
+    expect(payload.data.reloads).toBe(0);
+  });
+
+  test('/_x/db reads the embedded Postgres and refuses a write statement', async () => {
+    const read = (await (await fetchDev('/_x/db?json=1&sql=select%201%20as%20n')).json()) as {
+      ok: boolean;
+      data: { result: { columns: string[]; rows: unknown[][] } | null; refused: string | null };
+    };
+    expect(read.ok).toBe(true);
+    expect(read.data.refused).toBeNull();
+    expect(read.data.result?.columns).toEqual(['n']);
+    expect(read.data.result?.rows).toEqual([[1]]);
+
+    const write = (await (await fetchDev('/_x/db?json=1&sql=delete%20from%20x_jobs')).json()) as {
+      data: { result: unknown; refused: string | null };
+    };
+    expect(write.data.refused).toContain('read-only');
+    expect(write.data.result).toBeNull();
+  });
+
+  test('/_x/manifest is the loaded app, diffed against the committed file', async () => {
+    const payload = (await (await fetchDev('/_x/manifest?json=1')).json()) as {
+      ok: boolean;
+      data: {
+        drifted: boolean;
+        added: string[];
+        manifest: {
+          committed: unknown;
+          emitted: {
+            app: { name: string; version: string };
+            actions: { name: string }[];
+            routes: { url: string }[];
+          };
+        };
+      };
+    };
+    expect(payload.ok).toBe(true);
+    const emitted = payload.data.manifest.emitted;
+    expect(emitted.app).toEqual({ name: 'dev-fixture', version: '1.4.0' });
+    expect(emitted.actions.map((action) => action.name).sort()).toEqual([
       'echoPost',
       'publishPost',
     ]);
-    expect(manifest.routes.map((route) => route.url)).toEqual(['/pricing']);
+    expect(emitted.routes.map((route) => route.url)).toEqual(['/pricing']);
+    // The fixture never ran `x manifest`, so every key reads as added rather than as changed.
+    expect(payload.data.manifest.committed).toBeNull();
+    expect(payload.data.drifted).toBe(true);
+    expect(payload.data.added).toContain('app');
+  });
+
+  test('an unknown /_x path 404s with a code, a cause and a fix', async () => {
+    const response = await fetchDev('/_x/nope');
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { code: string; cause: string; fix: string };
+    expect(body.code).toBe('X_ROUTE_NOT_FOUND');
+    expect(body.cause).toContain('/_x/nope');
+    expect(body.fix.length).toBeGreaterThan(0);
   });
 
   test('the embedded database is real Postgres — the jobs table exists in it', async () => {

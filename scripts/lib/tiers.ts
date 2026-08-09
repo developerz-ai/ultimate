@@ -24,10 +24,12 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
  * | `admin -> ui` | the admin dashboard *is* the ui kit, composed; inverting it would mean shipping every widget through props |
  * | `realtime -> query` | tier 3 is one feature: a live query is a query plus a subscription, and splitting it would duplicate the SQL shape |
  * | `create-ultimate -> cli` | a published shim whose whole job is to call `x new`; the alternative is a second copy of the templates |
+ * | `cli -> admin` | `x dev` MOUNTS the `/_x` dashboard, it does not reimplement it; the panels are a product of the same tier, and the alternative is a second dev dashboard living in the CLI |
  */
 export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = {
   admin: ['ui'],
   realtime: ['query'],
+  cli: ['admin'],
   'create-ultimate': ['cli'],
 };
 

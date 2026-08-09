@@ -13,7 +13,7 @@ export {
 export type { LoadedApp } from './app-load';
 export { loadApp, resetAppLoad } from './app-load';
 export type { AppManifest } from './app-manifest';
-export { appManifest, readAppManifest, writeAppManifest } from './app-manifest';
+export { appManifest, policyFacts, readAppManifest, writeAppManifest } from './app-manifest';
 export { OPENAPI_FILE, openApiJson } from './app-openapi';
 export type { AppRoot } from './app-root';
 export { findAppRoot, requireAppRoot, requireBunVersion, versionAtLeast } from './app-root';
@@ -38,8 +38,7 @@ export type { GenerateOptions, Generator } from './cmd-generate';
 export { GENERATORS, generate, generateCommand, writeFiles } from './cmd-generate';
 export { createHelpCommand, createVersionCommand, renderHelp } from './cmd-help';
 export { manifestCommand } from './cmd-manifest';
-export type { McpTool } from './cmd-mcp';
-export { handleRpc, MCP_TOOLS, mcpCommand } from './cmd-mcp';
+export { mcpCommand } from './cmd-mcp';
 export type { NewAppOptions, WrittenApp } from './cmd-new';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
 export { renderRouteTable, routesCommand } from './cmd-routes';
@@ -56,6 +55,8 @@ export {
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
+export type { DevDashboardInput, DevStatus } from './dev-dashboard';
+export { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 export { devHooks } from './dev-hooks';
 export type { DevRenderOptions, DevRouteData } from './dev-render';
 export { appRoutes } from './dev-render';
@@ -81,6 +82,8 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
+export type { CliMcpServer, DevHostInput } from './mcp-host';
+export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
 export type { CommandResult, Finding, JsonValue, StepResult } from './output';
 export {

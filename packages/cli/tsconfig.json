@@ -12,6 +12,9 @@
       "path": "../action"
     },
     {
+      "path": "../admin"
+    },
+    {
       "path": "../core"
     },
     {
@@ -25,6 +28,9 @@
     },
     {
       "path": "../jobs"
+    },
+    {
+      "path": "../mail"
     },
     {
       "path": "../manifest"

@@ -93,7 +93,7 @@ function budgetOf(route: RouteDescriptor): { budget?: { js?: string; lcp?: numbe
  * One permission, N surfaces — `enforcedIn` is that list, derived from the actions and queries
  * that actually assert it rather than declared a second time next to the policy.
  */
-function policyFacts(): readonly PolicyFact[] {
+export function policyFacts(): readonly PolicyFact[] {
   const enforced = new Map<string, string[]>();
   const add = (permission: string, where: string): void => {
     if (permission.length === 0) return;

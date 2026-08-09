@@ -1,21 +1,22 @@
 // `x dev` — the app, booted. Every role in one Bun process, embedded Postgres/events/storage
 // started for real, the app's own modules loaded into the framework's registries, and the route
-// table those registries hold served over HTTP. `/_x` rides along so an agent can introspect the
-// running app. No Docker, no env setup: an unset variable means the embedded default.
+// table those registries hold served over HTTP. `@ultimat3/admin`'s `/_x` dashboard is mounted
+// alongside it — mounted, never re-implemented — so an agent can introspect the running app.
+// No Docker, no env setup: an unset variable means the embedded default.
 
 import { watch } from 'node:fs';
 import { join } from 'node:path';
 import { listActions, toRoute } from '@ultimat3/action';
 import type { Role } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { json as jsonResponse } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { checkAppBoundaries } from './app-boundaries';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
+import type { DevDashboardInput, DevStatus } from './dev-dashboard';
+import { devDashboardRoutes, devPanels } from './dev-dashboard';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
@@ -37,41 +38,14 @@ export interface DevServer {
   readonly findings: readonly Finding[];
   readonly running: RunningRoles;
   readonly runtime: RunningServices;
+  /** Panel keys `/_x` mounted, in tab order. Reported so `--json` names what is reachable. */
+  readonly panels: readonly string[];
   stop(): Promise<void>;
 }
 
 interface DevState {
   manifest: Manifest;
   reloads: number;
-}
-
-/**
- * `/_x` is the agent's introspection surface: the same facts as `x.manifest.json`, plus the live
- * boundary report, plus the reload counter a test can poll instead of sleeping. Public, because
- * it exists to be read without credentials by whatever is driving the dev loop.
- */
-function devRoutes(root: string, state: DevState, server: () => DevServer): readonly Route[] {
-  const routes: Record<string, () => unknown | Promise<unknown>> = {
-    '/_x': () => ({
-      ok: true,
-      endpoints: ['/_x/manifest', '/_x/routes', '/_x/boundaries', '/_x/services'],
-    }),
-    '/_x/manifest': () => state.manifest,
-    '/_x/routes': () => ({ routes: state.manifest.routes }),
-    '/_x/boundaries': async () => ({ findings: await checkAppBoundaries(root) }),
-    '/_x/services': () => ({
-      services: server().services,
-      roles: server().roles,
-      findings: server().findings,
-      reloads: state.reloads,
-    }),
-  };
-  return Object.entries(routes).map(([path, body]) => ({
-    method: 'GET' as const,
-    path,
-    meta: { name: `dev${path.replaceAll('/', '.')}`, auth: 'public' as const, tags: ['_x'] },
-    handler: async (): Promise<Response> => jsonResponse(await body()),
-  }));
 }
 
 /** Debounced: a save that touches five files is one reload, not five. */
@@ -99,6 +73,16 @@ export interface StartDevOptions {
 }
 
 /**
+ * The environment `devDashboard` refuses to mount in. Spread conditionally rather than passed as
+ * `undefined`: `exactOptionalPropertyTypes` makes "absent" and "explicitly undefined" different
+ * answers, and only the absent one lets the dashboard read the process environment itself.
+ */
+const envOf = (env: StartDevOptions['env']): { env?: string } => {
+  const value = env['NODE_ENV'] ?? env['X_ENV'];
+  return value === undefined ? {} : { env: value };
+};
+
+/**
  * Boot order is the production order: services first, then the app's modules (importing them IS
  * the registration), then the roles that serve what those modules registered. A module that
  * fails to import becomes a finding rather than a dead process — the point of the dev loop is to
@@ -114,8 +98,24 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const buildId = state.manifest.buildId;
 
   let server: DevServer;
+  // Read at request time, never captured at boot: `/_x/services` must report the reload counter
+  // and the findings as they are now, not as they were when the route table was built.
+  const dashboard: DevDashboardInput = {
+    root: options.root,
+    runtime,
+    status: (): DevStatus => ({
+      url: server.url,
+      services: server.services,
+      roles: server.roles,
+      findings: server.findings,
+      reloads: state.reloads,
+    }),
+    ...envOf(options.env),
+  };
+  const panels = devPanels(dashboard).map((panel) => panel.key);
+
   const routes: readonly Route[] = [
-    ...devRoutes(options.root, state, () => server),
+    ...devDashboardRoutes(dashboard),
     ...listActions().map(toRoute),
     ...appRoutes({ buildId }),
   ];
@@ -144,6 +144,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     findings: app.findings,
     running,
     runtime,
+    panels,
     async stop() {
       stopWatching();
       await running.stop();
@@ -188,6 +189,7 @@ export const devCommand: CliCommand = {
       command: 'dev',
       summary: msg('cli.dev.ready', {
         url: server.url,
+        panels: server.panels.length,
         services: describeServices(server.services),
       }),
       findings: server.findings,
@@ -200,9 +202,11 @@ export const devCommand: CliCommand = {
         events: server.services.events.url,
         storage: server.services.storage.url,
         introspect: `${server.url}/_x`,
+        panels: [...server.panels],
       },
       lines: [
         msg('cli.dev.roles', { roles: server.roles.join(', ') }),
+        msg('cli.dev.panels', { panels: server.panels.join(', ') }),
         `  manifest ${join(root, MANIFEST_FILENAME)}`,
         `  introspect ${server.url}/_x`,
       ],

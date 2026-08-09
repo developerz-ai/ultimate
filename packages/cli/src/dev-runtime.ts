@@ -1,7 +1,7 @@
 // Starting the services `dev-services.ts` resolved. Resolution answers "which database"; this
 // answers "it is running, and every ambient accessor in the framework now points at it" — so
-// `db()`, `jobDriver()` and the realtime transport are the objects a production boot installs,
-// only backed by embedded drivers.
+// `db()`, `jobDriver()`, `mailDriver()` and the realtime transport are the objects a production
+// boot installs, only backed by embedded drivers.
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,6 +15,8 @@ import {
   setEventBus,
   setJobDriver,
 } from '@ultimat3/jobs';
+import type { MemoryMailDriver } from '@ultimat3/mail';
+import { createMemoryDriver, resetMailDriver, setMailDriver } from '@ultimat3/mail';
 import type { Transport } from '@ultimat3/realtime';
 import { InProcessTransport, NatsTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
@@ -31,6 +33,7 @@ export interface RunningServices {
   readonly events: EventBus;
   readonly transport: Transport;
   readonly storage: Storage;
+  readonly mail: MemoryMailDriver;
   stop(): Promise<void>;
 }
 
@@ -110,6 +113,11 @@ export async function startServices(services: DevServices): Promise<RunningServi
   setEventBus(events);
   const transport = startTransport(services);
   const storage = startStorage(services);
+  // Caught, not sent: the `/_x` mail panel reads this outbox, so the local loop can check what a
+  // template renders in every locale without a mailbox, an API key, or a message escaping to a
+  // real address.
+  const mail = createMemoryDriver();
+  setMailDriver(mail);
 
   return {
     services,
@@ -118,8 +126,10 @@ export async function startServices(services: DevServices): Promise<RunningServi
     events,
     transport,
     storage,
+    mail,
     async stop() {
       await transport.close();
+      resetMailDriver();
       setDbClient(undefined);
       await db.close();
     },

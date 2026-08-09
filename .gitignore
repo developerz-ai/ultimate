@@ -81,5 +81,7 @@ temp/
 # Generated site output
 site/dist/
 
-# CLI app-loader test fixture (written and removed per run; a crashed run leaves it)
+# CLI test fixtures (written and removed per run; a crashed run leaves them)
 packages/cli/.app-fixture/
+packages/cli/.dev-fixture/
+packages/cli/.mcp-fixture/

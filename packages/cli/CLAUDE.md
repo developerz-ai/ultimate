@@ -15,8 +15,14 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 
 Every fact the CLI reports comes from a framework package: the manifest from
 `@ultimat3/manifest`, `openapi.json` from `@ultimat3/action`, the route table from
-`@ultimat3/render`, budget units from `@ultimat3/render`. A check that reimplements one of
-those here is the bug, not the fix.
+`@ultimat3/render`, budget units from `@ultimat3/render`, the `/_x` panels from
+`@ultimat3/admin`, the MCP tool catalog from `@ultimat3/mcp`. A check that reimplements one
+of those here is the bug, not the fix.
+
+`cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
+dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
+holds — a SQL runner, the committed manifest, the process's own services — supplied as
+`defaultDevSources({ hooks })`.
 
 ## `x dev` boots the app; it does not simulate one
 
@@ -27,7 +33,10 @@ those here is the bug, not the fix.
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
-| `cmd-dev.ts` | boot order, `/_x`, the file watcher |
+| `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
+| `cmd-dev.ts` | boot order, mounting `/_x`, the file watcher |
+| `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
+| `cmd-mcp.ts` | `x mcp serve`: the two transports, and the local developer's caller |
 
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
