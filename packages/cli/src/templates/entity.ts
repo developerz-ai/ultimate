@@ -45,7 +45,7 @@ export type ${name.pascal} = typeof ${name.camel}.$row;
 
 const repoSource = (
   name: NameSet,
-  snake: string,
+  table: string,
 ): string => `// The only module allowed to query the ${name.pluralKebab} table. Routes call actions and
 // queries; actions call services; services call this.
 // \`db()\` is the ambient handle: inside a transaction it IS the transaction, so these functions
@@ -55,24 +55,24 @@ import { dbDrift, newId } from '@ultimat3/entity';
 import type { ${name.pascal} } from './entity';
 
 export async function byId(id: string): Promise<${name.pascal} | undefined> {
-  const row = await db().one<${name.pascal}>(sql\`select * from ${snake} where id = \${id}\`);
+  const row = await db().one<${name.pascal}>(sql\`select * from ${table} where id = \${id}\`);
   return row ?? undefined;
 }
 
 export async function listByOrg(orgId: string, limit = 50): Promise<readonly ${name.pascal}[]> {
   // Ordered and bounded: an unordered page is a different page on every request.
   return db().query<${name.pascal}>(
-    sql\`select * from ${snake} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
+    sql\`select * from ${table} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
   );
 }
 
 export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Promise<${name.pascal}> {
   // Money is two physical columns — integer minor units plus the ISO code, never a float.
   const created = await db().one<${name.pascal}>(sql\`
-    insert into ${snake} (id, org_id, title, price_minor, price_currency)
+    insert into ${table} (id, org_id, title, price_minor, price_currency)
     values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency})
     returning *\`);
-  if (created === null) throw dbDrift('${snake}', 'id');
+  if (created === null) throw dbDrift('${table}', 'id');
   return created;
 }
 `;
@@ -89,6 +89,8 @@ const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
   id: '00000000-0000-0000-0000-000000000001',
   orgId: '00000000-0000-0000-0000-000000000002',
   title: 'valid title',
+  // \`money()\` puts \`MoneyValue\` on the row, whose minor units are bigint — the column is a
+  // Postgres bigint, and a JS number would silently lose precision above 2^53 minor units.
   price: { minor: 1000n, currency: 'USD' },
   createdAt: new Date(0),
   ...over,
@@ -110,14 +112,10 @@ unitTest('${name.camel} invariants reject a blank title and a negative price', (
 
 export function entityFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
   const name = names(rawName);
-  // Constraint and table names are snake_case: Postgres lowercases every unquoted identifier,
-  // and a hyphen would have to be quoted at every call site forever.
-  const snake = name.kebab.split('-').join('_');
-  const table = name.pluralKebab.split('-').join('_');
   const dir = `${target.surfaceDir}/${target.feature}`;
   return [
-    { path: `${dir}/entity.ts`, contents: entitySource(name, snake, table) },
-    { path: `${dir}/entity.test.ts`, contents: entityTest(name, snake, table) },
-    { path: `${dir}/repo.ts`, contents: repoSource(name, table) },
+    { path: `${dir}/entity.ts`, contents: entitySource(name, name.snake, name.table) },
+    { path: `${dir}/entity.test.ts`, contents: entityTest(name, name.snake, name.table) },
+    { path: `${dir}/repo.ts`, contents: repoSource(name, name.table) },
   ];
 }

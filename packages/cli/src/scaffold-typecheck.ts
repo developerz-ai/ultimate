@@ -2,12 +2,17 @@
 // the real workspace packages, the real compiler. A template that merely parses has not been
 // checked — it has moved its failure from this gate to the first command the user runs.
 
+// `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`), for a
+// symlink (`symlinkSync`, how the sandbox borrows the workspace's node_modules), or for a
+// recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined path,
+// but only `resolve`/`sep` can prove that path stayed inside the sandbox.
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { GenerateOptions } from './cmd-generate';
 import { generate } from './cmd-generate';
 import { planNewApp } from './cmd-new';
+import { ScaffoldPathEscapeError } from './errors';
 import type { Runner } from './exec';
 import { exec } from './exec';
 import type { GeneratedFile } from './templates';
@@ -63,10 +68,14 @@ export interface TypeDiagnostic {
 const AT_FILE = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.*)$/;
 const PROJECT_WIDE = /^error (TS\d+): (.*)$/;
 
-/** Config errors carry no file, so both shapes are collected: a silent harness is a green lie. */
+/**
+ * Config errors carry no file, so both shapes are collected: a silent harness is a green lie.
+ * Split on `\r?\n`, because a trailing `\r` lands inside the message capture and no `KNOWN_GAPS`
+ * entry would match it — a CRLF `tsc` would turn every pinned gap into an unexplained failure.
+ */
 export function parseDiagnostics(output: string): readonly TypeDiagnostic[] {
   const found: TypeDiagnostic[] = [];
-  for (const line of output.split('\n')) {
+  for (const line of output.split(/\r?\n/)) {
     const at = AT_FILE.exec(line);
     if (at !== null) {
       found.push({
@@ -86,43 +95,75 @@ export function parseDiagnostics(output: string): readonly TypeDiagnostic[] {
 
 export interface KnownGap {
   readonly code: string;
-  readonly file: RegExp;
-  readonly message: RegExp;
+  /** Exact sandbox-relative path. A pattern would absolve the same bug in a file nobody pinned. */
+  readonly file: string;
+  /** Exact `tsc` message. Matched literally so a near-miss regression is not absorbed. */
+  readonly message: string;
   /** Who fixes it, and why the template cannot. */
   readonly owner: string;
 }
 
+// `InvariantColumns` is an index-signature type, so `c.title` is `ColumnExpr | undefined` under
+// `noUncheckedIndexedAccess`. Every hand-written entity in `examples/dummy` reproduces it
+// identically: the fix is a column proxy typed from the entity's own columns, in @ultimat3/entity
+// — a different template cannot avoid it without dropping to `satisfies()`, which would silently
+// stop emitting the Postgres CHECK.
+const INVARIANT_PROXY =
+  '@ultimat3/entity — type the invariant column proxy from the declared columns';
+
+/** Every entity the fixture generates. Each one declares the same two invariants. */
+const FIXTURE_ENTITIES = [
+  'apps/web/app/credit-note/entity.ts',
+  'apps/web/app/invoice/entity.ts',
+  'apps/web/app/post/entity.ts',
+] as const;
+
 /**
- * Diagnostics a template cannot fix, pinned one by one. Pinned, never ignored: `unexpectedIn`
- * fails on anything not listed here, and `staleGapsIn` fails when a listed entry stops
- * reproducing — so an entry cannot outlive the bug it describes.
+ * Diagnostics a template cannot fix, pinned one occurrence at a time. Pinned, never ignored:
+ * `unexpectedIn` fails on anything not listed here — including a second copy of a listed
+ * diagnostic, because each entry is consumed by exactly one match — and `staleGapsIn` fails when
+ * a listed entry stops reproducing, so an entry cannot outlive the bug it describes.
  */
-export const KNOWN_GAPS: readonly KnownGap[] = [
-  {
-    code: 'TS18048',
-    file: /entity\.ts$/,
-    message: /^'c\.[A-Za-z]\w*' is possibly 'undefined'\.$/,
-    // `InvariantColumns` is an index-signature type, so `c.title` is `ColumnExpr | undefined`
-    // under `noUncheckedIndexedAccess`. Every hand-written entity in `examples/dummy` reproduces
-    // it identically: the fix is a column proxy typed from the entity's own columns, in
-    // @ultimat3/entity — a different template cannot avoid it without dropping to `satisfies()`,
-    // which would silently stop emitting the Postgres CHECK.
-    owner: '@ultimat3/entity — type the invariant column proxy from the declared columns',
-  },
-];
+export const KNOWN_GAPS: readonly KnownGap[] = FIXTURE_ENTITIES.flatMap((file) =>
+  ["'c.title' is possibly 'undefined'.", "'c.price' is possibly 'undefined'."].map(
+    (message): KnownGap => ({ code: 'TS18048', file, message, owner: INVARIANT_PROXY }),
+  ),
+);
 
 const matches = (diagnostic: TypeDiagnostic, gap: KnownGap): boolean =>
   diagnostic.code === gap.code &&
-  gap.file.test(diagnostic.file) &&
-  gap.message.test(diagnostic.message);
+  diagnostic.file === gap.file &&
+  diagnostic.message === gap.message;
 
-/** Everything the gate refuses: a diagnostic no `KNOWN_GAPS` entry accounts for. */
+export interface GapPartition {
+  /** Diagnostics no unconsumed `KNOWN_GAPS` entry accounts for. */
+  readonly unexpected: readonly TypeDiagnostic[];
+  /** Entries that found no match — the bug is fixed and the pin has to go. */
+  readonly stale: readonly KnownGap[];
+}
+
+/**
+ * One pass, first-fit, each pin spent once. Counting matters: two occurrences of a diagnostic
+ * pinned once means a new regression is hiding behind an old bug, so the surplus is unexpected.
+ */
+export function partitionDiagnostics(diagnostics: readonly TypeDiagnostic[]): GapPartition {
+  const budget = KNOWN_GAPS.map((gap) => ({ gap, spent: false }));
+  const unexpected: TypeDiagnostic[] = [];
+  for (const entry of diagnostics) {
+    const slot = budget.find((pin) => !pin.spent && matches(entry, pin.gap));
+    if (slot === undefined) unexpected.push(entry);
+    else slot.spent = true;
+  }
+  return { unexpected, stale: budget.filter((pin) => !pin.spent).map((pin) => pin.gap) };
+}
+
+/** Everything the gate refuses: a diagnostic no unconsumed `KNOWN_GAPS` entry accounts for. */
 export const unexpectedIn = (diagnostics: readonly TypeDiagnostic[]): readonly TypeDiagnostic[] =>
-  diagnostics.filter((entry) => !KNOWN_GAPS.some((gap) => matches(entry, gap)));
+  partitionDiagnostics(diagnostics).unexpected;
 
 /** Entries that no longer reproduce — the bug is fixed and the pin has to go. */
 export const staleGapsIn = (diagnostics: readonly TypeDiagnostic[]): readonly KnownGap[] =>
-  KNOWN_GAPS.filter((gap) => !diagnostics.some((entry) => matches(entry, gap)));
+  partitionDiagnostics(diagnostics).stale;
 
 /** Written beside the app's own tsconfig so the gate inherits every flag the app ships with. */
 const OVERLAY = 'tsconfig.scaffold-check.json';
@@ -165,13 +206,25 @@ export interface TypecheckReport {
   readonly output: string;
 }
 
+/**
+ * `GeneratedFile.path` is documented as relative-POSIX, not enforced as it. A `..` segment would
+ * put template output on the developer's real disk, so the sandbox proves containment before it
+ * writes rather than after.
+ */
+export function sandboxPath(dir: string, path: string): string {
+  const target = resolve(dir, path);
+  if (target !== dir && !target.startsWith(`${dir}${sep}`))
+    throw new ScaffoldPathEscapeError({ path, dir });
+  return target;
+}
+
 export async function typecheckScaffold(options: TypecheckOptions = {}): Promise<TypecheckReport> {
   const root = workspaceRoot();
   const app = options.app ?? FIXTURE_APP;
   const files = options.files ?? scaffoldFixture();
   const dir = mkdtempSync(join(tmpdir(), 'x-scaffold-'));
   try {
-    for (const file of files) await Bun.write(join(dir, file.path), file.contents);
+    for (const file of files) await Bun.write(sandboxPath(dir, file.path), file.contents);
     // The sandbox borrows the workspace's installed dependencies. The gate is about the
     // templates; whether a registry install succeeds is a different question, and a sealed
     // test cannot ask it.

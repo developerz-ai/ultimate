@@ -57,9 +57,10 @@ export const ${name.camel} = mutator({
   output: t.object({ id: t.uuid, title: t.string }),
   policy: can${feature.pascal}Write,
   // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
-  // augments LocalTables, and generated code cannot assume that has happened yet.
+  // augments LocalTables, and generated code cannot assume that has happened yet. The name is the
+  // entity's snake_case table, so the local twin and the server row live under one key.
   local(tx, input) {
-    tx.table<Local${feature.pascal}>('${feature.pluralKebab}').update(input.id, {
+    tx.table<Local${feature.pascal}>('${feature.table}').update(input.id, {
       title: input.title,
       pending: true,
     });

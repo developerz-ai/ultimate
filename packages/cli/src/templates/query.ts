@@ -23,7 +23,9 @@ export const ${name.camel} = query({
   policy: can${feature.pascal}Read,
   live: ${String(live)},
   sql: ({ orgId, limit }) =>
-    from<${feature.pascal}>('${feature.pluralKebab}', () => repo.listByOrg(orgId, limit))
+    // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
+    // and the entity created the table as snake_case.
+    from<${feature.pascal}>('${feature.table}', () => repo.listByOrg(orgId, limit))
       .where({ orgId })
       .orderBy('createdAt')
       .limit(limit),

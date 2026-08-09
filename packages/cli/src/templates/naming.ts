@@ -42,16 +42,28 @@ export interface NameSet {
   readonly pascal: string;
   readonly plural: string;
   readonly pluralKebab: string;
+  /** Singular snake_case. Constraint and index names. */
+  readonly snake: string;
+  /**
+   * The table identifier: plural snake_case. Derived here rather than at each call site because
+   * the entity, the repo SQL, the query source and the mutator's local table all name the same
+   * table — and Postgres lowercases every unquoted identifier, so a hyphen would have to be
+   * quoted forever.
+   */
+  readonly table: string;
 }
 
 export function names(input: string): NameSet {
   const base = camel(input);
+  const pluralKebab = kebab(plural(base));
   return {
     raw: input,
     kebab: kebab(input),
     camel: base,
     pascal: pascal(input),
     plural: plural(base),
-    pluralKebab: kebab(plural(base)),
+    pluralKebab,
+    snake: kebab(input).split('-').join('_'),
+    table: pluralKebab.split('-').join('_'),
   };
 }

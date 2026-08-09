@@ -10,11 +10,13 @@ export type Surface = 'site' | 'app';
 const RENDER: Record<Surface, string> = { site: 'isr', app: 'stream' };
 const HYDRATE: Record<Surface, string> = { site: 'never', app: 'visible' };
 const OFFLINE: Record<Surface, string> = { site: 'precache', app: 'runtime' };
-const BUDGET: Record<Surface, string> = {
-  site: "{ js: '0kb', lcp: 1800 }",
-  app: "{ js: '60kb', lcp: 2500 }",
+/** Structured, not a literal string: the route and the test that pins it read the same fact. */
+const BUDGET: Record<Surface, { readonly js: string; readonly lcp: number }> = {
+  site: { js: '0kb', lcp: 1800 },
+  app: { js: '60kb', lcp: 2500 },
 };
-const JS_BUDGET: Record<Surface, string> = { site: '0kb', app: '60kb' };
+const budgetLiteral = (surface: Surface): string =>
+  `{ js: '${BUDGET[surface].js}', lcp: ${BUDGET[surface].lcp} }`;
 /** `isr` without a trigger is `static` wearing a costume — @ultimat3/render rejects it at boot. */
 const REVALIDATE: Record<Surface, string> = { site: "\n  revalidate: { ttl: '1h' },", app: '' };
 
@@ -42,7 +44,7 @@ export const config = defineRoute({
   render: '${RENDER[surface]}',${REVALIDATE[surface]}
   hydrate: '${HYDRATE[surface]}',
   offline: '${OFFLINE[surface]}',
-  budget: ${BUDGET[surface]},
+  budget: ${budgetLiteral(surface)},
   meta: () => ({
     title: t('${titleKey(path)}'),
     description: t('${titleKey(path).replace('.title', '.description')}'),
@@ -90,7 +92,7 @@ unitTest('/${path} declares a render mode, an offline strategy and a budget', ()
 });
 
 unitTest('/${path} stays inside its byte budget declaration', () => {
-  expect(config.budget?.js).toBe('${JS_BUDGET[surface]}');
+  expect(config.budget?.js).toBe('${BUDGET[surface].js}');
 });
 
 e2eTest('/${path} renders offline from its fallback', async ({ page, offline }) => {
