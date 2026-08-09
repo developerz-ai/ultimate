@@ -78,6 +78,10 @@ export async function callAdminTool(
   input: McpInput,
 ): Promise<AdminToolResult> {
   const tool = adminMcpTools(app, ctx).find((candidate) => candidate.name === name);
+  // NOT dead code, and not the only gate: the registry's `visibleTo` predicate already hides
+  // this tool from a caller who may not use it, so an MCP call cannot reach here refused.
+  // Every other entry point (a direct `callAdminTool`, a future transport) can, so this stays
+  // as defence in depth — the authz decision must not live only in the catalog filter.
   if (tool === undefined) {
     return {
       ok: false,
@@ -201,12 +205,50 @@ const adminActorOf = (caller: McpCaller): AdminActor => ({
   roles: caller.actor.roles,
 });
 
+/**
+ * The tool names one caller may call, memoized.
+ *
+ * WHY memoize: visibility is asked once per tool and each answer re-derives the whole
+ * catalog, so an unmemoized `tools/list` costs O(tools²) authz decisions.
+ *
+ * WHY a `WeakMap` keyed on the caller: the transport builds exactly one `McpCaller` object
+ * per request, so an entry is per-connection by construction — it cannot hand one caller
+ * another's answer, and it dies with the request object, so there is nothing to evict.
+ *
+ * WHY keyed by app too: one process can mount two admins, and their catalogs differ.
+ */
+const allowedByCaller = new WeakMap<McpCaller, Map<AdminApp, ReadonlySet<string>>>();
+
+function allowedToolNames(
+  opts: AdminMcpOptions,
+  requestId: () => string,
+  caller: McpCaller,
+): ReadonlySet<string> {
+  const perApp = allowedByCaller.get(caller) ?? new Map<AdminApp, ReadonlySet<string>>();
+  const cached = perApp.get(opts.app);
+  if (cached !== undefined) return cached;
+
+  const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: requestId() });
+  // `adminMcpTools` is the actor's allowed list — the same derivation the UI's buttons use.
+  // Never a second decision written for MCP.
+  const names: ReadonlySet<string> = new Set(adminMcpTools(opts.app, ctx).map(({ name }) => name));
+  perApp.set(opts.app, names);
+  allowedByCaller.set(caller, perApp);
+  return names;
+}
+
 function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMcpTool): AnyMcpTool {
   return {
     name: tool.name,
     description: tool.description,
     inputSchema: inputSchema(tool.input),
     destructive: tool.destructive,
+    // Visibility IS the gate: a tool this actor may not call is absent from `tools/list` and
+    // answers ToolNotFound on call, never Forbidden — Forbidden would confirm the tool exists
+    // and turn the catalog into something an agent can enumerate by probing names. The
+    // predicate never sees call arguments, so visibility stays input-independent.
+    visibleTo: (caller: McpCaller): boolean =>
+      allowedToolNames(opts, requestId, caller).has(tool.name),
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
       const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: requestId() });
       const result = await callAdminTool(opts.app, ctx, tool.name, args);
@@ -221,10 +263,13 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
 /**
  * Mount the admin as an app MCP server.
  *
- * The catalog is static because `tools/list` is answered per server, not per caller — so
- * visibility is NOT the gate here. Every call still goes through `callAdminTool`, which
- * re-derives this actor's allowed tools and refuses anything not on it, exactly as the UI
- * refuses a button the actor may not click.
+ * The catalog is built once but answered per caller: every tool carries a `visibleTo`
+ * predicate that re-derives that actor's allowed tools, so `tools/list` is per-connection and
+ * a tool the actor may not use is ABSENT from it — and a direct call answers ToolNotFound,
+ * never Forbidden. Forbidden would confirm the tool exists, leaking every entity name and
+ * operation to anyone who probes. Every call still goes through `callAdminTool`, which
+ * re-checks the same allowed list on dispatch, exactly as the UI refuses a button the actor
+ * may not click.
  */
 export function adminMcp(opts: AdminMcpOptions): AppMcp {
   const requestId = opts.requestId ?? ((): string => crypto.randomUUID());

@@ -216,7 +216,7 @@ X_DB_DRIFT: schema differs from migrations
 |---|---|---|---|
 | `X_MCP_TOOL_UNKNOWN` | no such tool for this caller | a stale tool name, or one this caller may not see | call `tools/list` to read the catalog |
 | `X_MCP_ARGS_INVALID` | tool arguments failed the input schema | guessed arguments | re-read `inputSchema` from `tools/list` and resend |
-| `X_MCP_SCOPE_MISSING` | the caller's token lacks a scope | a read token calling a write tool | `x token grant <scope>` |
+| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | a read token calling a write tool | `x token grant <scope>`, then reconnect — scopes are fixed for the life of a connection |
 | `X_MCP_READONLY_VIOLATION` | a write attempted through a read-only tool | `db.query` with an `INSERT` | use `db.migrate` in a branch DB, or an action |
 | `X_MCP_PROTOCOL` | the MCP handshake or auth is wrong | missing bearer token, or a user-shaped actor | send `Authorization: Bearer <token>`; resolve MCP callers as agents |
 | `X_AI_BUDGET_EXCEEDED` | a model call would exceed its budget | prompt too large, or cost cap reached | raise `ai.budget` for the scope, or shorten the prompt |

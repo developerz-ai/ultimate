@@ -4,6 +4,8 @@
 // Both transports (http, stdio) and every test drive this one function.
 
 import { formatIssues } from '@ultimat3/schema';
+import { auditToolCall, outcomeForCode } from './audit';
+import { McpScopeDeniedError } from './errors';
 import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
@@ -137,18 +139,35 @@ export class McpServer {
       return errorResponse(id, INVALID_PARAMS, 'tools/call params.name must be a string');
     }
 
+    // Three outcomes, deliberately different — and every one of them audited, including the
+    // one that tells the caller nothing. See `audit.ts`.
     const resolved = this.tools.resolve(name, params['arguments'] ?? {}, caller);
     switch (resolved.kind) {
-      // Absent AND role-hidden collapse to the same answer — hidden ≠ forbidden.
+      // OUTCOME 1. Absent AND role-hidden collapse to the same answer, with no `data` at
+      // all: any extra field would be the difference a prober is looking for.
       case 'not-found':
+        auditToolCall({ tool: name, outcome: 'hidden', caller, code: 'X_MCP_TOOL_UNKNOWN' });
         return errorResponse(id, METHOD_NOT_FOUND, `tool not found: ${name}`);
-      // The caller can see this tool, so naming its missing scope leaks nothing.
-      case 'forbidden':
-        return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
-          code: 'X_MCP_SCOPE_MISSING',
+      // OUTCOME 2. The caller can already see this tool, so naming the missing scope leaks
+      // nothing — and the fix travels with it, built by the error that owns the wording.
+      case 'scope-denied': {
+        const denial = new McpScopeDeniedError({ name, scope: resolved.scope });
+        auditToolCall({
+          tool: name,
+          outcome: 'scope-denied',
+          caller,
           scope: resolved.scope,
+          code: denial.code,
         });
+        return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
+          code: denial.code,
+          scope: resolved.scope,
+          fix: denial.fix,
+          docs: denial.docs,
+        });
+      }
       case 'invalid-args':
+        auditToolCall({ tool: name, outcome: 'invalid-args', caller, code: 'X_MCP_ARGS_INVALID' });
         return errorResponse(id, INVALID_PARAMS, `invalid arguments for ${name}`, {
           code: 'X_MCP_ARGS_INVALID',
           issues: formatIssues(resolved.issues),
@@ -161,16 +180,33 @@ export class McpServer {
     try {
       result = await resolved.tool.handle(resolved.args, caller);
     } catch (error) {
-      // An UltimateError thrown by a tool is an EXPECTED outcome the model can act on
-      // (policy denied, migration refused), so it comes back as an `isError` result
-      // carrying the code/cause/fix rather than an opaque transport failure.
+      // OUTCOME 3 arrives here: the tool ran its policy through `guard()` and the policy
+      // said no. An UltimateError is an EXPECTED outcome the model can act on, so it comes
+      // back as an `isError` result carrying code/cause/fix — the same three lines an HTTP
+      // caller gets for the same call — rather than an opaque transport failure.
       const framework = asFrameworkError(error);
       if (framework !== undefined) {
-        return resultResponse(id, { content: [{ type: 'text', text: framework }], isError: true });
+        auditToolCall({
+          tool: name,
+          outcome: outcomeForCode(framework.code),
+          caller,
+          code: framework.code,
+        });
+        return resultResponse(id, {
+          content: [{ type: 'text', text: renderFrameworkError(framework) }],
+          isError: true,
+        });
       }
+      auditToolCall({ tool: name, outcome: 'failed', caller });
       return errorResponse(id, INTERNAL_ERROR, `tool "${name}" failed unexpectedly`);
     }
 
+    // A tool may answer `isError` itself (admin renders its own denial): still outcome 3.
+    auditToolCall({
+      tool: name,
+      outcome: result.isError === true ? 'policy-denied' : 'ok',
+      caller,
+    });
     const payload: Record<string, unknown> = { content: result.content };
     if (result.isError === true) payload['isError'] = true;
     return resultResponse(id, payload);
@@ -192,15 +228,29 @@ export class McpServer {
   }
 }
 
+interface FrameworkError {
+  readonly code: string;
+  readonly cause: string;
+  readonly fix: string;
+}
+
 /**
- * Render a thrown framework error into the agent-readable three-line form, or `undefined`
- * when it is not one (a genuine bug, which becomes `-32603` with no internals leaked).
+ * Read a thrown framework error, or `undefined` when it is not one (a genuine bug, which
+ * becomes `-32603` with no internals leaked). Structural rather than `instanceof`: the
+ * transport must stay independent of which package threw.
  */
-function asFrameworkError(error: unknown): string | undefined {
+function asFrameworkError(error: unknown): FrameworkError | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
   const e = error as { code?: unknown; cause?: unknown; fix?: unknown };
   if (typeof e.code !== 'string' || !e.code.startsWith('X_')) return undefined;
-  const cause = typeof e.cause === 'string' ? e.cause : 'unknown';
-  const fix = typeof e.fix === 'string' ? e.fix : 'see docs';
-  return `${e.code}\n  cause: ${cause}\n  fix:   ${fix}`;
+  return {
+    code: e.code,
+    cause: typeof e.cause === 'string' ? e.cause : 'unknown',
+    fix: typeof e.fix === 'string' ? e.fix : 'see docs',
+  };
+}
+
+/** The agent-readable three-line form — the same shape `x` prints and `--json` carries. */
+function renderFrameworkError(error: FrameworkError): string {
+  return `${error.code}\n  cause: ${error.cause}\n  fix:   ${error.fix}`;
 }

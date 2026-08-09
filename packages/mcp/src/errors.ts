@@ -1,11 +1,11 @@
 // The X_* codes owned by @ultimat3/mcp. Each carries the exact next command, because the
 // caller reading it is usually an agent with no human to ask.
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MCP_ERROR_CODES = [
   'X_MCP_TOOL_UNKNOWN',
-  'X_MCP_SCOPE_MISSING',
+  'X_MCP_SCOPE_DENIED',
   'X_MCP_ARGS_INVALID',
   'X_MCP_PROTOCOL',
   'X_MCP_READONLY_VIOLATION',
@@ -14,12 +14,29 @@ export const MCP_ERROR_CODES = [
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
 
+export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
+  X_MCP_TOOL_UNKNOWN: 'no such tool for this caller',
+  X_MCP_SCOPE_DENIED: "the connection's token does not carry the tool's scope",
+  X_MCP_ARGS_INVALID: 'tool arguments failed the input schema',
+  X_MCP_PROTOCOL: 'the MCP handshake or auth is wrong',
+  X_MCP_READONLY_VIOLATION: 'a write attempted through a read-only tool',
+  X_MCP_TOOL_UNSAFE: 'an MCP tool declares no policy',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(MCP_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
+
 const docsFor = (code: McpErrorCode): string => `https://ultimate.dev/errors/${code}`;
 
 /**
- * A tool name reached the dispatcher that no visible tool answers to. Thrown by the
- * programmatic call path (`server.call`); over the wire the same condition is
- * `-32601` so a role-hidden tool is indistinguishable from an absent one.
+ * OUTCOME 1 of three: a tool name reached the dispatcher that no VISIBLE tool answers to —
+ * the tool is absent, or it exists and this caller's role may never invoke it. One error for
+ * both, on purpose. Thrown by in-process callers; over the wire the same condition is
+ * `-32601` with the same message, so a role-hidden tool is indistinguishable from an absent
+ * one even for a caller holding every scope in the system.
  */
 export class McpToolUnknownError extends UltimateError {
   constructor(input: { name: string; visible: readonly string[] }) {
@@ -34,15 +51,23 @@ export class McpToolUnknownError extends UltimateError {
   }
 }
 
-/** The caller may see the tool but its token does not carry the tool's scope. */
-export class McpScopeMissingError extends UltimateError {
+/**
+ * OUTCOME 2 of three: the caller may SEE the tool, but the connection's token does not carry
+ * its scope. Named out loud rather than hidden — the caller can legitimately fix this, and
+ * hiding it would strand a well-behaved client. Scope belongs to the token, not to the
+ * actor's permissions: granting it takes effect on the next connection, not this one.
+ */
+export class McpScopeDeniedError extends UltimateError {
+  readonly scope: string;
+
   constructor(input: { name: string; scope: string }) {
     super({
-      code: 'X_MCP_SCOPE_MISSING',
-      cause: `tool "${input.name}" requires scope "${input.scope}", which this token does not carry`,
-      fix: `x token grant ${input.scope}`,
-      docs: docsFor('X_MCP_SCOPE_MISSING'),
+      code: 'X_MCP_SCOPE_DENIED',
+      cause: `tool "${input.name}" requires scope "${input.scope}", which this connection's token does not carry`,
+      fix: `x token grant ${input.scope}   # then reconnect: scopes are fixed for the life of a connection`,
+      docs: docsFor('X_MCP_SCOPE_DENIED'),
     });
+    this.scope = input.scope;
   }
 }
 

@@ -125,8 +125,9 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `X_MCP_SCOPE_MISSING` | the tool call's actor lacks the action's policy scope | grant the human the permission — an agent can never exceed the human it acts for |
-| `X_MCP_TOOL_UNKNOWN` | the action does not set `mcp: { expose: true }`, or the manifest is stale | add the field, then `x manifest` |
+| `X_MCP_TOOL_UNKNOWN`, or a tool absent from `tools/list` | the tool is hidden from this caller's role, the action does not set `mcp: { expose: true }`, or the manifest is stale | visibility is fail-closed — check the caller's role against the tool's `visibleTo`; otherwise add the field, then `x manifest` |
+| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope — scope is a property of the token, not of the actor's permissions | `x token grant <scope>`, then reconnect: scopes are fixed for the life of a connection |
+| `X_POLICY_DENIED` from a `tools/call` | the tool was invoked and its policy refused this input — the same denial the HTTP route returns for the same call | grant the human the permission — an agent can never exceed the human it acts for |
 | Dev MCP server not reachable | `x dev` not running, or you pointed at prod | default socket is `mcp.devSocket` (`ws://localhost:9229`). The dev server is **never** bound in `ROLE=web` |
 | `X_MCP_READONLY_VIOLATION` | a write attempted through a read-only tool | `db.query` is read-only; `db.migrate` runs in a branch DB only (`x branch <name>`) |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema twice | tighten the prompt or loosen the schema; the retry already happened once |

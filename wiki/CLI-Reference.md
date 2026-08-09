@@ -307,7 +307,9 @@ whatever its bearer token was issued.
 `db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword, a
 locking clause, a non-branch target — before the host runs anything.
 
-Never exposed in `ROLE=web`. Errors: `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_MISSING`, `X_MCP_READONLY_VIOLATION`, `X_MCP_PROTOCOL`.
+Never exposed in `ROLE=web`. Errors: `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_DENIED`, `X_MCP_READONLY_VIOLATION`, `X_MCP_PROTOCOL`.
+
+A tool this caller may not see is absent from `tools/list` and answers ToolNotFound, never Forbidden. `x token grant <scope>` takes effect on the next connection — scopes are fixed for the life of one. Full model: [MCP and AI](MCP-And-AI).
 
 ## x doctor
 

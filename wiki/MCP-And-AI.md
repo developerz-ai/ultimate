@@ -51,9 +51,34 @@ That line is the entire integration. From the existing declaration:
 
 The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy runs inside `run`, so there is nothing to keep in sync. A projected tool therefore declares **no** MCP scope: adding one would be a second gate in front of the only gate that matters, and the two would eventually disagree.
 
-No MCP-specific permission table, no "trusted tool" mode, no service account with broad rights. Exposure is opt-in; silence exposes nothing.
+No MCP-specific permission table, no service account with broad rights. Exposure is opt-in; silence exposes nothing.
 
 The user's own agents can therefore operate the user's product — refund an order, re-run an import, publish a post — with the exact permissions that user has in the UI. See [Admin dashboard](Admin-Dashboard) and [Actions](Actions).
+
+## Three outcomes, deliberately different
+
+Role, scope and policy refuse in three distinguishable ways. The difference is the security property, not an implementation detail.
+
+| Situation | Response | Wire |
+|---|---|---|
+| The actor's role can never invoke the tool | absent from `tools/list`; a direct call answers ToolNotFound | JSON-RPC `-32601`, message `tool not found: <name>`, no `data` at all |
+| The role could invoke it, but the connection's scope does not include it | explicit refusal naming the missing scope | JSON-RPC `-32600`, `data: { code: 'X_MCP_SCOPE_DENIED', scope, fix }` |
+| The tool was invoked and the policy denied this input | `X_POLICY_DENIED` with the denial reason | a normal `result` with `isError: true` — identical to the HTTP answer for the same call |
+
+Hidden means hidden: `Forbidden` on a hidden tool is an enumeration oracle — an agent, or an attacker driving one, walks a name list and reads the org's feature set, entity names and internal operations off the difference between "not found" and "forbidden". A scope refusal is the opposite case: a well-behaved client can legitimately fix it, so hiding it would only strand the caller.
+
+| Rule | Detail |
+|---|---|
+| Visibility is **fail-closed** | a tool that declares `visibleTo` is visible only to a caller whose role is in the list; a caller with no role sees only tools that declare no `visibleTo` |
+| `tools/list` is per connection | answered per caller, never a static catalog |
+| Visibility is input-independent | `visibleTo` is a role list or a predicate over the caller — the predicate never sees call arguments, so existence cannot be probed by varying them |
+| Gate order is fixed | visibility → scope → arguments → policy. Scope runs before the policy, so a refusal never depends on evaluating a policy against attacker-supplied input; arguments are validated after both gates, so a schema never leaks to a caller who may not see the tool |
+| Every outcome is audited | one structured log line per `tools/call`: `surface: 'mcp'`, tool name, actor id, outcome. ToolNotFound, scope denials and policy denials log at `warn`, a successful call at `info` — ToolNotFound is `warn` on purpose, because an enumeration attempt is a detectable pattern |
+| Audit lines carry no payload | tool name, outcome and error code only — never call arguments, never row data |
+| No trusted-tool mode | there is no flag that skips policy evaluation, on any MCP surface |
+| The actor cannot exceed the human | the actor is the signed-in user's session; an agent inherits exactly those permissions |
+
+Rationale for each: [`docs/architecture/11-ai-surface.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/11-ai-surface.md).
 
 ## Generated facts, hand-written conventions
 
@@ -180,7 +205,7 @@ $ x verify --json
 |---|---|---|
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
 | `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
-| `X_MCP_SCOPE_MISSING` | the token does not carry the tool's scope | `x token grant <scope>` |
+| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | `x token grant <scope>`, then reconnect — scopes are fixed for the life of a connection |
 | `X_MCP_READONLY_VIOLATION` | `db.query` given a mutating statement, or `db.migrate` pointed at a non-branch DB | use a branch DB (`x branch <name>`) or a `SELECT` |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
 | `X_POLICY_DENIED` | the action's policy refused this actor — identical to the HTTP denial | grant the permission, or act as an actor who has it |
@@ -193,6 +218,8 @@ Full list: [Error codes](Error-Codes). CLI surface: [CLI reference](CLI-Referenc
 
 - One authz system. An MCP call and an HTTP call reach the same `policy` with the same actor resolution.
 - Exposure is opt-in per action; a projected tool carries no scope of its own.
+- Visibility is fail-closed and computed per connection. A hidden tool answers ToolNotFound, never Forbidden.
+- Gate order is visibility → scope → arguments → policy, and every outcome is audited. There is no trusted-tool mode.
 - Write tools are branch-scoped. The dev server is never reachable in `ROLE=web`.
 - Facts are generated every build; conventions are hand-written and short.
 - Never generate prose documentation at runtime.

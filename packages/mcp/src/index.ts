@@ -11,6 +11,8 @@ export type {
 export { appToolPrimitive, appToolPrimitives } from './app-tool';
 export type { AppMcp, AppToolSchemas, DefineAppMcpInput } from './app-tools';
 export { defineAppMcp } from './app-tools';
+export type { McpAuditEntry, McpOutcome } from './audit';
+export { auditToolCall, outcomeForCode } from './audit';
 export type { CreateDevServerInput } from './dev-host';
 export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
 export type {
@@ -29,10 +31,11 @@ export { DEV_SCOPES, devTools } from './dev-server';
 export type { McpErrorCode } from './errors';
 export {
   MCP_ERROR_CODES,
+  MCP_ERROR_TITLES,
   McpArgsInvalidError,
   McpProtocolError,
   McpReadOnlyViolationError,
-  McpScopeMissingError,
+  McpScopeDeniedError,
   McpToolUnknownError,
   McpToolUnsafeError,
 } from './errors';
@@ -50,6 +53,7 @@ export type {
   McpTool,
   McpToolResult,
   McpVerbClass,
+  McpVisibility,
   ToolArgs,
   ToolListEntry,
   ToolResolution,
