@@ -31,7 +31,7 @@ test('a publish arrives as one incremental patch, not a refetch', async ({
   const feed = await subscribe(liveFeed.as(actorFor(ada), { orgId: acme.id }));
   const before = feed.rows().length;
 
-  await publishPost.as(actorFor(ada), { postId: draft.id, notify: false });
+  await publishPost.as(actorFor(ada), { postId: draft.id, orgId: acme.id, notify: false });
   await feed.settled();
 
   expect(feed.rows().length).toBe(before);
@@ -96,7 +96,7 @@ test('reconnect inside the buffer window is a delta, not a snapshot', async ({
   const lsn = feed.lsn();
 
   network.drop();
-  await publishPost.as(actorFor(ada), { postId: draft.id, notify: false });
+  await publishPost.as(actorFor(ada), { postId: draft.id, orgId: acme.id, notify: false });
   network.online();
   await feed.settled();
 

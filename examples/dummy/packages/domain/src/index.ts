@@ -41,4 +41,4 @@ export {
   THEMES,
 } from './preferences';
 export type { MemberRole } from './roles';
-export { canAuthor, isAtLeast, isOrgAdmin, MEMBER_ROLES, ROLE_RANK } from './roles';
+export { canAuthor, isAtLeast, isMemberRole, isOrgAdmin, MEMBER_ROLES, ROLE_RANK } from './roles';

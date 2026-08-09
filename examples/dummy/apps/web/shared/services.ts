@@ -1,0 +1,67 @@
+/**
+ * What `ctx.posts` and `ctx.orgs` are. The framework carries an ambient context so no signature in
+ * the app grows a `ctx` argument twice; this file is where Postly says which services ride on it,
+ * and with what shape.
+ *
+ * The view types are imported **as types only**, exactly like `shared/client.ts` imports `Api`: no
+ * module-graph edge exists from `shared/` to a feature's implementation, so `shared/` stays a leaf
+ * and `site/` keeps its 0kb baseline. The contract lives here; each feature's `service.ts`
+ * implements it and is installed once with `createContext({ services })` at boot.
+ *
+ * Every method speaks the feature's own view type. A service that invented a second row shape
+ * would be a second schema to keep in step with the entity — the drift this file exists to avoid.
+ */
+
+import type {
+  AppLocale,
+  AppTheme,
+  AppZone,
+  MemberId,
+  OrgId,
+  PlanCode,
+  PostId,
+} from '@postly/domain';
+import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
+import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
+
+export interface PostsService {
+  byId(postId: PostId): Promise<PostView>;
+  bySlug(slug: string): Promise<PostView>;
+  createDraft(input: CreatePostInput): Promise<PostView>;
+  publish(postId: PostId): Promise<PostView>;
+  like(postId: PostId): Promise<PostView>;
+  unlike(postId: PostId): Promise<PostView>;
+  comment(postId: PostId, body: string): Promise<CommentView>;
+  /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
+  publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
+}
+
+export interface OrgsService {
+  byId(orgId: OrgId): Promise<OrgView>;
+  invite(input: InviteInput): Promise<MemberView>;
+  upgrade(plan: PlanCode): Promise<UpgradeReceipt>;
+  savePreferences(values: {
+    locale: AppLocale;
+    tz: AppZone;
+    theme: AppTheme;
+    digestOptIn: boolean;
+  }): Promise<MemberView>;
+  memberById(memberId: MemberId): Promise<MemberView>;
+  provision(orgId: OrgId): Promise<OrgView>;
+  digestRecipients(orgId: OrgId): Promise<MemberView[]>;
+  /** Cross-tenant on purpose, and only reachable from the scheduler's job. */
+  allDigestRecipients(): Promise<MemberView[]>;
+}
+
+/** Tier 1 realtime: a topic anything server-side can announce onto. */
+export interface Channel {
+  publish(message: Readonly<Record<string, unknown>>): Promise<void>;
+}
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly posts: PostsService;
+    readonly orgs: OrgsService;
+    channel(name: string): Channel;
+  }
+}

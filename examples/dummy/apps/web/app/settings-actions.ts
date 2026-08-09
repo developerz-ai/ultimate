@@ -1,14 +1,15 @@
 /**
  * Preference writes. Not a feature of its own — settings are a thin edit of the member row, so
  * the action lives beside the page that uses it and delegates to `ctx.orgs`.
+ *
+ * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
 
 import { tag } from '@postly/db';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
-import { action } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { action, t } from '@ultimat3/action';
 import { MemberView } from './orgs/entity';
+import { memberSelf } from './orgs/policy';
 
 export const savePreferences = action({
   input: t.object({
@@ -20,7 +21,7 @@ export const savePreferences = action({
     digestOptIn: t.boolean.default(true),
   }),
   output: MemberView,
-  policy: can('member:self'),
+  policy: memberSelf,
   cache: { invalidates: [tag.member] },
   mcp: {
     expose: true,

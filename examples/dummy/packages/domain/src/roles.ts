@@ -7,6 +7,10 @@ export const MEMBER_ROLES = ['owner', 'admin', 'author', 'reader'] as const;
 
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
+/** Narrows an arbitrary role string — an actor carries strings, a rule needs the vocabulary. */
+export const isMemberRole = (value: string): value is MemberRole =>
+  (MEMBER_ROLES as readonly string[]).includes(value);
+
 /** Higher rank subsumes every capability of a lower one. */
 export const ROLE_RANK: Readonly<Record<MemberRole, number>> = Object.freeze({
   owner: 40,

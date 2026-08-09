@@ -18,20 +18,26 @@ task      — a scheduled trigger (cron) that enqueues jobs
 A mutation or command, server-authoritative. Declared once.
 
 ```ts
-// action
+// action — `t` comes from @ultimat3/action; an action file imports one package
+import { action, t } from '@ultimat3/action';
+
 export const publishPost = action({
-  input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
+  input:  t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
+  policy: postPublish,                // declared once in the feature's policy.ts
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
     return post;
   },
 });
 ```
+
+`orgId` is in the `input` because the policy decides on it. A predicate is synchronous — see
+[`policy`](#policy) — so authz reads the declaration, never the database. The policy object is
+named, never re-declared inline: an action and its live query evaluate the same instance.
 
 ### Six generated artifacts
 
@@ -72,17 +78,31 @@ A table + its domain type + invariants. The single source of the DB schema, the 
 
 ## `policy`
 
-An authz rule, evaluated in every surface.
+An authz rule, evaluated in every surface. A predicate always receives `{ input, actor, row, ctx }`,
+whichever surface called it.
 
 ```ts
-policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
+// decides on input — `row` is null
+export const postCreate = can<PostScope>('post:create',
+  ({ actor, input }) => actor?.orgId === input.orgId);
+
+// decides about a row the SURFACE already loaded — a live query passes one per change event
+export const postPublish = can<PostScope, PostRow>('post:publish',
+  ({ actor, input, row }) =>
+    actor?.orgId === input.orgId && (row === null || ownsPost(actor, row)));
 ```
+
+**Predicates are synchronous, and that is the constraint everything else follows from.** A live query
+re-evaluates one per subscriber on every change, so an `await` here would be one database round trip
+per row per connected client — a 10k-watcher feed would cost 10k reads per write. The caller loads
+what a rule needs and passes it in: tenancy travels in `input`, an already-loaded row in `row`. Never
+reach for a row through `input`.
 
 | Aspect | Rule |
 |---|---|
 | Projects to | HTTP guard, live-query row filter, job actor check, MCP tool gate, admin visibility |
 | Owns | the yes/no and the denial reason |
-| Never | mutate, query outside the declared repos, or return partial data (filter in the `query`) |
+| Never | mutate, perform I/O of any kind, or return partial data (filter in the `query`) |
 
 ## `mutator`
 
@@ -91,7 +111,10 @@ An action with an optimistic local twin. `local` runs client-side against the lo
 ```ts
 // mutator (action + optimistic local twin)
 export const toggleLike = mutator({
-  local(tx, { postId }) { tx.posts.update(postId, (p) => ({ likes: p.likes + 1 })); },
+  input:  t.object({ postId: t.uuid, orgId: t.uuid }),
+  output: PostView,
+  policy: postLike,
+  local(tx, { postId }) { tx.posts.update(postId, (p) => ({ likeCount: p.likeCount + 1 })); },
   async server(ctx, { postId }) { return ctx.posts.like(postId); },
   conflict: 'server-wins', // | 'last-write-wins' | custom(merge)
 });
@@ -108,12 +131,16 @@ export const toggleLike = mutator({
 A read; optionally live (subscribable).
 
 ```ts
-// query
+// query — `t` and `from` come from @ultimat3/query; a query file imports one package
+import { from, query, t } from '@ultimat3/query';
+
 export const liveFeed = query({
-  input: t.object({ orgId: t.uuid }),
-  policy: can('feed:read'),
+  input: t.object({ orgId: t.uuid, limit: t.number.int().min(1).max(50).default(50) }),
+  policy: feedRead,
   live: true,
-  sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
+  sql: ({ orgId, limit }) =>
+    from<PostSummary>('posts', () => repo.feedPage(orgId, limit))
+      .where({ orgId }).orderBy('createdAt', 'desc').limit(limit),
 });
 ```
 
@@ -128,19 +155,28 @@ export const liveFeed = query({
 Durable background work, optionally multi-step. `idempotencyKey` is **required by the type**.
 
 ```ts
-// job
+// job — `t` comes from @ultimat3/jobs; a job file imports one package
+import { job, t } from '@ultimat3/jobs';
+import { send } from '@ultimat3/mail';
+
 export const onboardOrg = job({
-  input: t.object({ orgId: t.uuid }),
+  input: t.object({ orgId: t.uuid, to: t.email, locale: t.locale }),
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`,   // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {
     const org = await step.run('provision', () => ctx.orgs.provision(input.orgId));
-    await step.run('welcome-email', () => ctx.mail.send(welcomeEmail, org));
+    const to  = { to: input.to, locale: input.locale };
+    await step.run('welcome-email', () => send(welcomeEmail, org, to));
     await step.sleep('3d');
-    await step.run('nudge', () => ctx.mail.send(nudgeEmail, org));
+    await step.run('nudge', () => send(nudgeEmail, org, to));
   },
 });
 ```
+
+The recipient rides in the payload, not in `ctx`: a run resumed three days later must not depend on
+a request context that stopped existing the moment the signup returned. Enqueue through the handle —
+`onboardOrg.enqueue(input)` — so the retry policy, the key and the queue come from the declaration
+rather than from a call site.
 
 | Aspect | Rule |
 |---|---|
@@ -181,9 +217,13 @@ A scheduled trigger. Enqueues jobs; never does work itself.
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
-  enqueue: () => [[sendDigest, {}]],
+  enqueue: () => [[sendDigest, { runDate: localDateIn(systemClock.now(), 'UTC') }]],
 });
 ```
+
+The payload is not empty, and that is the point: a job's `idempotencyKey` derives from `input`
+alone, so `{}` would make every night's run collide with the first one and the digest would send
+exactly once, ever.
 
 | Aspect | Rule |
 |---|---|
@@ -196,5 +236,5 @@ export const nightlyDigest = task({
 `entity` → `policy` → `action` → `job` → `task`; `query` (optionally live) → `route`; `mutator` = `action` + local twin. Feature-sliced, one of each per folder — never one layer per app:
 
 ```
-apps/web/app/<feature>/{entity,repo,service,actions,live,jobs,policy,ui}.ts
+apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}.ts
 ```

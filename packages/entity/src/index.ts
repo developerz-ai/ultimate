@@ -1,6 +1,7 @@
 // The public surface of @ultimat3/entity. Explicit, never `export *`.
 
 /** Re-exported so an `entity` file needs one import, not two. Same object as schema's. */
+export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type { TextOptions } from './columns';
 export {

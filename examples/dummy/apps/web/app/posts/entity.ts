@@ -4,7 +4,7 @@
  */
 
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, TITLE_MAX } from '@postly/domain';
-import { t } from '@ultimat3/schema';
+import { type Infer, t } from '@ultimat3/schema';
 
 /** The output of every post action and query. Drives OpenAPI, the MCP tool, and the typed client. */
 export const PostView = t.object({
@@ -23,12 +23,12 @@ export const PostView = t.object({
   authorName: t.string,
 });
 
-export type PostView = typeof PostView.infer;
+export type PostView = Infer<typeof PostView>;
 
 /** The feed row: same post, minus the body, because 50 bodies is not a feed. */
 export const PostSummary = PostView.omit('body');
 
-export type PostSummary = typeof PostSummary.infer;
+export type PostSummary = Infer<typeof PostSummary>;
 
 export const CommentView = t.object({
   id: t.uuid,
@@ -38,7 +38,7 @@ export const CommentView = t.object({
   createdAt: t.date,
 });
 
-export type CommentView = typeof CommentView.infer;
+export type CommentView = Infer<typeof CommentView>;
 
 export const CreatePostInput = t.object({
   title: t.string.max(TITLE_MAX),
@@ -47,4 +47,4 @@ export const CreatePostInput = t.object({
   slug: t.string.max(SLUG_MAX).optional(),
 });
 
-export type CreatePostInput = typeof CreatePostInput.infer;
+export type CreatePostInput = Infer<typeof CreatePostInput>;

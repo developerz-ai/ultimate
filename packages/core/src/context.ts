@@ -78,8 +78,16 @@ export function createContext(init: CtxInit = {}): Ctx {
   const requestId = init.requestId ?? uuid(clock);
   const trace = init.traceId ?? newTraceId();
   const base = init.logger ?? rootLogger;
-  const services: ServiceBag = { ...(init.services ?? {}) };
-  const ctx: Ctx = {
+  const services: ServiceBag = Object.freeze({ ...(init.services ?? {}) });
+  const ctx = {
+    // Services ride ON the context, not only under `ctx.services`: `CtxServices` exists to be
+    // augmented, so `ctx.posts` has to BE the service. Spread first, so a service that collides
+    // with a framework field (`actor`, `logger`) loses — it stays reachable as
+    // `ctx.services.actor`, and the context's own meaning never depends on what an app named a
+    // service. The assertion is the one thing this package cannot prove: an augmentation
+    // declares which services exist, only the boot code knows whether it passed them. A missing
+    // one throws `X_SERVICE_MISSING` on first use rather than reading as `undefined`.
+    ...services,
     requestId,
     traceId: trace,
     actor: init.actor ?? anonymousActor(),
@@ -91,8 +99,8 @@ export function createContext(init: CtxInit = {}): Ctx {
     now: () => clock.now(),
     logger: base.child({ requestId, traceId: trace }),
     signal: init.signal ?? neverAborted,
-    services: Object.freeze(services),
-  };
+    services,
+  } as Ctx;
   return Object.freeze(ctx);
 }
 

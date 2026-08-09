@@ -81,6 +81,24 @@ describe('request context', () => {
     });
   });
 
+  test('a service is reachable as ctx.<name>, which is what CtxServices augments', () => {
+    // `interface CtxServices { posts: PostsService }` types `ctx.posts`; if the service were only
+    // under `ctx.services`, every augmenting app would read `undefined` through a typed property.
+    const posts = { byId: () => 'p1' };
+    const ctx = createContext({ services: { posts } });
+    expect((ctx as unknown as { posts: unknown }).posts).toBe(posts);
+    expect(ctx.services['posts']).toBe(posts);
+  });
+
+  test('a service may not shadow a context field', () => {
+    // An app is free to call a service `logger`; the context's own logger still wins, and the
+    // service stays reachable by name. Otherwise naming a service would change what `ctx` means.
+    const ctx = createContext({ services: { logger: 'not-a-logger', actor: 'not-an-actor' } });
+    expect(typeof ctx.logger.info).toBe('function');
+    expect(ctx.actor.kind).toBe('anonymous');
+    expect(ctx.services['logger']).toBe('not-a-logger');
+  });
+
   test('throwIfAborted surfaces caller disconnects as X_ABORTED', () => {
     const controller = new AbortController();
     const ctx = createContext({ signal: controller.signal });
