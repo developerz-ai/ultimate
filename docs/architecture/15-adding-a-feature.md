@@ -110,7 +110,7 @@ export const publishPost = action({
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
     return post;
   },
 });
@@ -122,7 +122,7 @@ export const publishPost = action({
 | `policy` | the only authz. Runs before the handler, after validation |
 | `cache.invalidates` | one hop reaches memo, LRU, Redis, ISR, CDN ([`09-rendering-internals.md`](./09-rendering-internals.md)) |
 | `mcp` | one line makes it an agent-callable tool with identical authz ([`11-ai-surface.md`](./11-ai-surface.md)) |
-| `ctx.jobs.enqueue` | joins the request transaction — outbox by default ([`08-jobs-internals.md`](./08-jobs-internals.md)) |
+| `<job>.enqueue` | joins the request transaction — outbox by default ([`08-jobs-internals.md`](./08-jobs-internals.md)) |
 
 Actions must never read headers/cookies, render, redirect, authorize inside `handle`, or do slow work inline.
 

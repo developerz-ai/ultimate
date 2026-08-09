@@ -20,7 +20,7 @@ Order is fixed. Each row states why it cannot move earlier or later.
 | 10 | `input-validate` | `input` schema parse → typed `input`; failure → `X_INPUT_INVALID` with the field path | authz reads validated input |
 | 11 | `authz` | `policy.evaluate({ actor, input, tenant })` → allow or `X_POLICY_DENIED` | **after validation, because policies read validated input.** `ownsPost(actor, input.postId)` on an unparsed body is how type confusion becomes privilege escalation |
 | 12 | `cache-lookup` | queries only: tier 1 → 2 → 3, key includes actor scope | **after authz** — a cache hit that precedes a policy check is a cross-tenant leak with a fast path |
-| 13 | `handler` | `handle({ input, ctx })` inside a DB transaction (mutations); `ctx.jobs.enqueue` joins that transaction | the only user code in the pipeline |
+| 13 | `handler` | `handle({ input, ctx })` inside a DB transaction (mutations); `<job>.enqueue` joins that transaction | the only user code in the pipeline |
 | 14 | `commit` | commit; then release outbox rows and fan out `cache.invalidates` | invalidation *enqueued* in the tx, *executed* after commit: a rolled-back write never purges |
 | 15 | `output-validate` | `output` schema parse — always in dev/test, sampled in prod | catches contract drift at the source, not in a client |
 | 16 | `serialize` | problem+json, JSON, or the streaming envelope ([`09-rendering-internals.md`](./09-rendering-internals.md)) | needs the handler result and the negotiated locale |

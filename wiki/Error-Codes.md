@@ -126,7 +126,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_STEP_DUPLICATE` | two `step.run` calls share a name | copy-paste inside `run()` | rename one — step names are the replay key |
 | `X_JOB_MAX_ATTEMPTS` | the job exhausted its retries | a step kept failing | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` |
 | `X_JOB_TIMEOUT` | a job exceeded its wall-clock limit | one long step | raise `timeout`, or split the work into more `step.run()` calls |
-| `X_OUTBOX_NO_TX` | enqueue outside a transaction | `ctx.jobs.enqueue` called with no ambient tx | wrap in `ctx.tx(async (tx) => …)`, or enqueue with `{ outbox: false }` deliberately |
+| `X_OUTBOX_NO_TX` | enqueue outside a transaction | `<job>.enqueue` called with no ambient tx | wrap in `ctx.tx(async (tx) => …)`, or enqueue with `{ outbox: false }` deliberately |
 | `X_DRIVER_UNAVAILABLE` | the queue driver is unreachable | Redis/NATS down, or the URL is wrong | `x doctor --json`; check the driver URL in `app.config.ts` |
 
 ## Realtime

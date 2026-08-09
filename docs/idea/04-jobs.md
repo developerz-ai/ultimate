@@ -4,15 +4,18 @@ Postgres queue by default. Durable steps. `idempotencyKey` required by the type.
 
 ## Transactional outbox by default
 
-`ctx.jobs.enqueue` inside an action writes the job row **in the same transaction as the business write**.
+`handle.enqueue` inside an action writes the job row **in the same transaction as the business write**.
 
 ```ts
 async handle({ input, ctx }) {
   const post = await ctx.posts.publish(input.postId);              // INSERT/UPDATE
-  if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });  // same tx
+  if (input.notify) await notifySubscribers.enqueue({ postId: post.id });  // same tx
   return post;
 }
 ```
+
+One way to enqueue: the handle's own `.enqueue`. It resolves the ambient jobs facade — the same
+one `ctx.jobs` names — so there is no second call form to choose between and no `tx` to thread.
 
 | Bug class removed | How it happens without an outbox |
 |---|---|

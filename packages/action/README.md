@@ -50,7 +50,7 @@ export const publishPost = action({
   idempotent: true,
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
     return post;
   },
 });

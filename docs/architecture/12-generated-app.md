@@ -97,8 +97,10 @@ Feature-sliced, not layer-sliced. One folder per feature; each file one job.
 apps/web/app/<feature>/
   entity.ts  repo.ts  service.ts  policy.ts  errors.ts  ui.tsx  ui.module.scss
   actions/<verb>-<feature>.ts    one action or mutator per file
-  live/<name>.ts                 one query per file
+  live/<name>.ts                 one subscribable query per file (`x g query --live`)
+  queries/<name>.ts              one plain query per file (`x g query`)
   jobs/<verb>-<feature>.ts       one job per file
+  tasks/<name>.ts                one cron trigger per file (`x g task`)
   ui/<feature>-card.tsx          the feature's components
   admin/resource.ts              --admin only
 apps/web/app/<features>/page.tsx the route, at the plural URL
@@ -113,7 +115,9 @@ apps/web/app/<features>/page.tsx the route, at the plural URL
 | `errors.ts` | the feature's `X_*` codes | a bare `Error` |
 | `actions/` | one `action` / `mutator` per file | logic — delegate to `service.ts` |
 | `live/` | one `query` per file, `live: true` | writes |
+| `queries/` | one `query` per file, not subscribable | writes |
 | `jobs/` | one `job` per file | inline slow work in an action |
+| `tasks/` | one `task` per file — a cron trigger that enqueues a job | doing the work itself |
 | `ui.tsx`, `ui/` | Solid components | fetching, business logic, its own authz |
 | `admin/resource.ts` | list columns, title key, page size | a second authz path |
 

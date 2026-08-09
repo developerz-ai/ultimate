@@ -76,7 +76,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | Job stuck "in-flight" after a worker was killed | the lease has not expired yet | wait `jobs.visibilityTimeout` (default `'30s'`); the row is re-claimed and resumes at the **next** step, never mid-step. `x jobs show <id> --json` |
 | Job in dead-letter | `retry.attempts` exhausted | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` — it replays from the failed step |
 | Nothing is processing | no `worker` for that queue name | check `WORKER_QUEUES` against `jobs.queues` |
-| A job ran but the row it needs doesn't exist | enqueued outside the transaction | enqueue via `ctx.jobs.enqueue` inside the action's `handle`; `X_OUTBOX_NO_TX` catches the rest |
+| A job ran but the row it needs doesn't exist | enqueued outside the transaction | enqueue via `<job>.enqueue` inside the action's `handle`; `X_OUTBOX_NO_TX` catches the rest |
 | Cron never fires | no `scheduler`, or the standby is holding | `scheduler` is fixed at 1 active; a standby reports not-ready by design. `x status --json` |
 
 ## Realtime

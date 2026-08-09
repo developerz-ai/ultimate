@@ -205,8 +205,8 @@ A limited job is **deferred, never dropped**. Dropping is a data-loss decision d
 **Your tables. Never only the queue payload.**
 
 ```ts
-await ctx.jobs.enqueue(onboardOrg, { orgId: org.id });          // ✅ a pointer
-await ctx.jobs.enqueue(onboardOrg, { org: { ...30 fields } });  // ❌ a record
+await onboardOrg.enqueue({ orgId: org.id });          // ✅ a pointer
+await onboardOrg.enqueue({ org: { ...30 fields } });  // ❌ a record
 ```
 
 | Consequence of a payload-as-record | Detail |

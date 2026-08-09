@@ -23,12 +23,12 @@ export const onboardOrg = job({
 
 ## Transactional outbox by default
 
-`ctx.jobs.enqueue` inside an [action](Actions) writes the job row in the **same transaction** as the business write. Commit *is* the enqueue.
+`<job>.enqueue` inside an [action](Actions) writes the job row in the **same transaction** as the business write — the handle resolves the ambient jobs facade, the one `ctx.jobs` names. Commit *is* the enqueue.
 
 ```ts
 async handle({ input, ctx }) {
   const post = await ctx.posts.publish(input.postId);              // INSERT/UPDATE
-  if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });  // same tx
+  if (input.notify) await notifySubscribers.enqueue({ postId: post.id });  // same tx
   return post;
 }
 ```

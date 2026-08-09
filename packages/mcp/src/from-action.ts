@@ -23,6 +23,12 @@ import { NO_ARGS } from './wire';
  */
 export interface McpExposure {
   readonly expose?: boolean;
+  /**
+   * Contract text, not UI text: the same string is the OpenAPI operation `summary`, and
+   * `buildOpenApi`'s bytes are what `x verify` diffs. Routing it through the ambient,
+   * request-scoped `t()` would make that artifact locale-dependent — see
+   * `ActionMcp.description` in @ultimat3/action.
+   */
   readonly description?: string;
   readonly visibleTo?: readonly McpRole[];
   /** Override the projected tool name. Defaults to the primitive's own name. */

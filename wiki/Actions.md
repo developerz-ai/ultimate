@@ -11,7 +11,7 @@ export const publishPost = action({
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
     return post;
   },
 });
@@ -28,7 +28,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `policy` | `Policy` from `can(...)` | yes | the one authz decision, evaluated on every surface. Omitting it is a build error |
 | `cache.invalidates` | `readonly CacheTag[]` | no | tags dropped from every cache tier after `handle` settles; unknown tag = compile error |
 | `mcp.expose` | `boolean` | no (default `true`) | every action is a tool unless it opts out |
-| `mcp.description` | `string` | no | the tool description an agent reads; write it for a stranger |
+| `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | per-actor limit enforced at the HTTP and MCP edges |
 | `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
@@ -39,7 +39,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 |---|---|---|
 | `ctx.actor` | `Actor` | `{ kind: 'user' \| 'service' \| 'agent' \| 'anonymous', id, orgId?, roles, scopes }`. Read-only; authz already ran |
 | `ctx.<service>` | app-augmented | repos and services (`ctx.posts`, `ctx.orgs`, `ctx.mail`) — declared via `CtxServices` |
-| `ctx.jobs` | job client | `ctx.jobs.enqueue(job, input)`; enqueue is transactional via the outbox |
+| `ctx.jobs` | job client | the facade `<job>.enqueue(input)` resolves; enqueue is transactional via the outbox |
 | `ctx.requestId` / `ctx.traceId` | `string` | W3C trace id; the same value crosses HTTP → job → live query |
 | `ctx.locale` / `ctx.tz` | `string` | BCP-47 and IANA. Never format a date without `ctx.tz` |
 | `ctx.clock` / `ctx.now()` | `Clock` / `Date` | frozen and advanceable in tests. Never `Date.now()` |
@@ -54,7 +54,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | 1 | **HTTP route** | name + `input` | `POST /_x/action/publish-post`, body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | `await api.publishPost({ postId })` in `app/` — no fetch, no codegen step to remember |
-| 4 | **Job handle** | the whole declaration | `ctx.jobs.enqueue(publishPost, input)` runs the same handler durably |
+| 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | one tool per exposed action, JSON Schema from `input`, authz unchanged |
 | 6 | **Test scaffold** | `input` + `policy` | schema round-trip plus a denial test per policy branch |
 

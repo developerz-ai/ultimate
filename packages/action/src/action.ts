@@ -29,6 +29,16 @@ export interface ActionCache {
 export interface ActionMcp {
   /** Default `true`: every action is a tool unless it opts out. */
   readonly expose: boolean;
+  /**
+   * Contract text, NOT UI text — deliberately outside `t()`. It becomes the OpenAPI
+   * operation `summary` (`toOpenApiOperation`), and `buildOpenApi`'s bytes are what
+   * `x verify` diffs for contract drift. Resolving it through the ambient, request-scoped
+   * translator would make `openapi.json` depend on whichever locale happened to be active
+   * when it was generated, which is exactly the determinism that file's header forbids.
+   * Localised agent-facing text needs a separate, locale-resolved projection; there is no
+   * second field for it here until that exists, because two ways to describe one tool is
+   * the drift axiom 1 rejects.
+   */
   readonly description?: string;
 }
 

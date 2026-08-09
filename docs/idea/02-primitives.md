@@ -42,6 +42,11 @@ the row once per invocation, after the input parse and before the guard. Omit `r
 gets `null`, which a row-level rule must read as a denial. The policy object is named, never
 re-declared inline: an action and its live query evaluate the same instance.
 
+`mcp.description` is the one string in a declaration that does **not** go through `t()`. It is the
+OpenAPI operation `summary` as well as the tool description, and `openapi.json` is bytes `x verify`
+diffs — a locale-dependent contract artifact is a gate that fails on the machine that generated it.
+Localised agent-facing text is a separate, locale-resolved projection, not a second field here.
+
 ### Six generated artifacts
 
 | # | Artifact | Derived from | Notes |
@@ -49,7 +54,7 @@ re-declared inline: an action and its live query evaluate the same instance.
 | 1 | **HTTP route** | name + `input` | `POST /_x/action/publish-post`, body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | `await publishPost({ postId, orgId })` in `app/`, no fetch, no codegen step to remember |
-| 4 | **Job handle** | the whole declaration | `publishPost.job()` — the action's `input`, a namespaced job name, an `idempotencyKey` derived from the payload, and an `invoke` that lands in the same execution core with `surface: 'job'`; see [`04-jobs.md`](./04-jobs.md) |
+| 4 | **Job handle** | the whole declaration | `publishPost.job()` — the action's `input`, a namespaced job name, an `idempotencyKey` derived from the payload, and an `invoke` that lands in the same execution core with `surface: 'job'`. It is the shape a queue driver *registers*, not one you call: `.enqueue()` belongs to a declared `job` like `notifySubscribers` above; see [`04-jobs.md`](./04-jobs.md) |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | one tool per exposed action, JSON Schema from `input`, authz unchanged |
 | 6 | **Contract tests** | `input` + `policy` | `.contract()` runs what every action owes — garbage input rejected, anonymous actor denied, operation present in OpenAPI — and `x g` emits a cross-org denial through `.as()` beside it; all passing on the first run |
 
