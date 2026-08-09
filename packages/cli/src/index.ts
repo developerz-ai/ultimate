@@ -56,8 +56,15 @@ export {
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
-export type { DevServices, Role, ServiceBinding } from './dev-services';
-export { describeServices, ROLES, resolveServices, roleContext } from './dev-services';
+export { devHooks } from './dev-hooks';
+export type { DevRenderOptions, DevRouteData } from './dev-render';
+export { appRoutes } from './dev-render';
+export type { RunningRoles, StartRolesOptions } from './dev-roles';
+export { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+export type { DevDbClient, RunningServices } from './dev-runtime';
+export { startServices } from './dev-runtime';
+export type { DevServices, ServiceBinding } from './dev-services';
+export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
 export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';

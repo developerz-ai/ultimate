@@ -82,11 +82,35 @@ x dev [--port 3000] [--role web,worker] [--once] [--json]
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--port` | string | `3000` | HTTP port |
-| `--role` | string | all roles | comma-separated roles to run in this process |
+| `--port` | string | `3000` | HTTP port. The `sync` role listens on `--port + 1` |
+| `--role` | string | `web,sync,worker,scheduler` | comma-separated roles to run in this process |
 | `--once` | boolean | `false` | boot, report, exit — for smoke tests and CI |
 
-Starts embedded Postgres, in-process NATS, a local directory for S3, the `/_x` dev dashboard, and the MCP dev server. Role isolation is simulated, not skipped. Errors: `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
+Boots the app: embedded Postgres (PGlite under `.x/pgdata`), the in-process event bus, a local
+directory for S3, then every module under `apps/*/{site,app,api,shared}` and `packages/*/src` —
+importing them IS the registration. What those modules registered is then served:
+
+| Registered | Served as |
+|---|---|
+| `action` / `mutator` | `POST /api/<resource>/<verb>`, policy enforced by the pipeline |
+| `route` | its URL, in its declared render mode, with that mode's cache headers |
+| `job` | claimed off the real Postgres queue by the `worker` role |
+| `task` | dispatched by the `scheduler` role |
+| — | `/_x`, `/_x/manifest`, `/_x/routes`, `/_x/boundaries`, `/_x/services` |
+
+A module that will not import becomes a finding on the result rather than a dead process, so the
+dev loop stays reachable while something is broken.
+
+| Env | Unset means | Set means |
+|---|---|---|
+| `DATABASE_URL` | PGlite in this process | that Postgres |
+| `NATS_URL` | in-process fanout | that NATS server |
+| `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
+
+`migrate` and `replicator` are real roles but not dev roles: `migrate` is `x db apply`, and the
+replicator needs logical replication the embedded database does not serve. Naming either is
+`X_CLI_BAD_FLAG`, never a silently ignored value. Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`,
+`X_ENV_MISSING`, `X_DB_DRIFT`.
 
 ## x g
 

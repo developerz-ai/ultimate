@@ -69,35 +69,6 @@ export function resolveServices(root: string, env: Env): DevServices {
   };
 }
 
-export const ROLES = ['web', 'sync', 'worker', 'scheduler', 'replicator'] as const;
-
-export type Role = (typeof ROLES)[number];
-
-/**
- * Role isolation, simulated. In production these are separate processes; in `x dev` they share
- * one, so the framework enforces the same boundary in-process — a web request that reaches worker
- * internals fails here exactly as it would fail over the network in production.
- */
-export interface RoleContext {
-  readonly role: Role;
-  readonly allows: (other: Role) => boolean;
-}
-
-const ALLOWED: Record<Role, readonly Role[]> = {
-  web: ['web'],
-  sync: ['sync'],
-  worker: ['worker'],
-  scheduler: ['scheduler', 'worker'],
-  replicator: ['replicator'],
-};
-
-export function roleContext(role: Role): RoleContext {
-  return {
-    role,
-    allows: (other) => (ALLOWED[role] ?? []).includes(other),
-  };
-}
-
 export const describeServices = (services: DevServices): string =>
   [services.db, services.events, services.storage]
     .map((binding) => `${binding.name}=${binding.mode}`)

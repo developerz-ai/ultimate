@@ -39,7 +39,13 @@
       "path": "../query"
     },
     {
+      "path": "../realtime"
+    },
+    {
       "path": "../render"
+    },
+    {
+      "path": "../storage"
     },
     {
       "path": "../testing"

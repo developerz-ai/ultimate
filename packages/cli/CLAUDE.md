@@ -18,6 +18,21 @@ Every fact the CLI reports comes from a framework package: the manifest from
 `@ultimat3/render`, budget units from `@ultimat3/render`. A check that reimplements one of
 those here is the bug, not the fix.
 
+## `x dev` boots the app; it does not simulate one
+
+| File | Job |
+|---|---|
+| `dev-services.ts` | resolve which service each binding points at — embedded or external |
+| `dev-runtime.ts` | start them and install the ambient accessors (`db()`, `jobDriver()`, storage, transport) |
+| `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
+| `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
+| `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
+| `cmd-dev.ts` | boot order, `/_x`, the file watcher |
+
+The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
+driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
+only thing dev changes is which driver is behind an interface.
+
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 
 Adding a command: write `cmd-<name>.ts` exporting a `CliCommand`, register it in `registry.ts`,

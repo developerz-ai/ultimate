@@ -1,7 +1,15 @@
 // The per-request context. It is created by the pipeline before any user code runs
 // and published through core's ALS, which is why nothing in the framework has to
 // thread a request object by hand — and why nothing can accidentally skip it.
-import { type Actor, type Ctx, type Role, useContext, uuid } from '@ultimat3/core';
+import {
+  type Actor,
+  anonymousActor,
+  type Ctx,
+  isAnonymous,
+  type Role,
+  useContext,
+  uuid,
+} from '@ultimat3/core';
 import type { HttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
 import type { RateLimitDecision } from './rate-limit';
@@ -29,7 +37,12 @@ export interface RequestContext {
   parentSpanId: string | null;
   params: RouteParams;
   route: Route | undefined;
-  actor: Actor | null;
+  /**
+   * Never null: core models "nobody" as the anonymous actor, and `asCtx` publishes this very
+   * object through ALS — so a null here would reach every `ctx.actor` reader in the framework
+   * as a contract violation that only shows up on the first unauthenticated request.
+   */
+  actor: Actor;
   locale: string;
   tz: string;
   buildId: string | null;
@@ -66,7 +79,7 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
   parentSpanId: null,
   params: {},
   route: undefined,
-  actor: null,
+  actor: anonymousActor(),
   locale: init.config.locale.default,
   tz: init.config.tz.default,
   buildId: null,
@@ -101,5 +114,6 @@ export interface ActorView {
   readonly orgId?: string | null;
 }
 
+/** Anonymous reads as "no actor" so the rate limiter keys an unauthenticated call by IP. */
 export const actorView = (actor: Actor | null): ActorView | null =>
-  actor === null ? null : (actor as unknown as ActorView);
+  actor === null || isAnonymous(actor) ? null : (actor as unknown as ActorView);

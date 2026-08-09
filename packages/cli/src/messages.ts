@@ -13,6 +13,7 @@ const CATALOG = {
   'cli.db.branch.ready': 'branch {name} ready',
   'cli.dev.ready': 'dev ready on {url} — /_x mounted, {services}',
   'cli.dev.hmr': 'reloaded {file} in {ms}ms',
+  'cli.dev.roles': '  roles {roles}',
   'cli.deploy.plan': 'containers only: {images} image, roles {roles}',
   'cli.doctor.clean': 'no findings — environment is shippable',
   'cli.doctor.findings': '{count} finding(s)',

@@ -44,7 +44,9 @@
     "@ultimat3/mcp": "0.0.1",
     "@ultimat3/policy": "0.0.1",
     "@ultimat3/query": "0.0.1",
+    "@ultimat3/realtime": "0.0.1",
     "@ultimat3/render": "0.0.1",
+    "@ultimat3/storage": "0.0.1",
     "@ultimat3/testing": "0.0.1"
   }
 }
