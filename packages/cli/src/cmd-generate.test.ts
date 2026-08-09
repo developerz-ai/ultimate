@@ -50,11 +50,52 @@ describe('unit · x g', () => {
     expect(paths).toContain('apps/web/app/invoice/errors.ts');
   });
 
-  test('the action test pins the policy denial branch', () => {
+  test('the action test pins the policy denial branch, through the action itself', () => {
     const files = generate({ kind: 'action', name: 'publish-invoice', feature: 'invoice' });
     const testFile = files.find((file) => file.path.endsWith('publish-invoice.test.ts'));
-    expect(testFile?.contents).toContain('toDenyPolicy');
     expect(testFile?.contents).toContain('toRejectInput');
+    // `.as()` is the one execution path with the actor swapped, so a denial asserted through it
+    // is the denial HTTP, MCP and the job surface would produce.
+    expect(testFile?.contents).toContain('.as(outsider,');
+    expect(testFile?.contents).toContain("toBeUltimateError('X_FORBIDDEN')");
+  });
+
+  test('generated tests drive the fluent surface, never a projection function', () => {
+    const files = generate({ kind: 'action', name: 'publish-invoice', feature: 'invoice' });
+    const testFile = files.find((file) => file.path.endsWith('publish-invoice.test.ts'));
+    expect(testFile?.contents).toContain('.contract()');
+    // One authz object across surfaces — the claim the whole DSL rests on.
+    expect(testFile?.contents).toContain('.tool().policy');
+    expect(testFile?.contents).toContain('.openapi().operationId');
+    for (const reached of ['toMcpTool(', 'toOpenApiOperation(', 'contractTestsFor(']) {
+      expect(testFile?.contents.includes(reached)).toBe(false);
+    }
+  });
+
+  test('a primitive imports t from its own package, never from @ultimat3/schema', () => {
+    for (const kind of GENERATORS) {
+      for (const file of typescript(generate({ kind, name: 'invoice', feature: 'invoice' }))) {
+        expect(file.contents.includes("from '@ultimat3/schema'")).toBe(false);
+      }
+    }
+  });
+
+  test('no generated file reaches through .def — the declaration is not app surface', () => {
+    for (const kind of GENERATORS) {
+      for (const file of typescript(generate({ kind, name: 'invoice', feature: 'invoice' }))) {
+        expect(/\.def\b/.test(file.contents)).toBe(false);
+      }
+    }
+  });
+
+  test('x g policy declares its permission set both ways', () => {
+    const files = generate({ kind: 'policy', name: 'invoice', feature: 'invoice' });
+    const source = files.find((file) => file.path.endsWith('policy.ts'));
+    // The augmentation narrows can() at compile time; definePermissions is the same set at run
+    // time. One without the other leaves half the typo unguarded.
+    expect(source?.contents).toContain("declare module '@ultimat3/policy'");
+    expect(source?.contents).toContain('definePermissions([');
+    expect(source?.contents).toContain("'invoice:read': true;");
   });
 
   test('a live query is generated bounded and ordered, and its test says so', () => {
@@ -72,7 +113,9 @@ describe('unit · x g', () => {
     const source = files.find((file) => file.path.endsWith('reindex.ts'));
     expect(source?.contents).toContain('idempotencyKey:');
     const testFile = files.find((file) => file.path.endsWith('reindex.test.ts'));
-    expect(testFile?.contents).toContain('toEmitSteps');
+    // Pinned through a real driver: the key only matters because the second enqueue dedupes.
+    expect(testFile?.contents).toContain('.enqueue({ id })');
+    expect(testFile?.contents).toContain('deduped');
   });
 
   test('a site route is generated with a 0kb budget and no hydration', () => {

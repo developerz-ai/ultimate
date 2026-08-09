@@ -4,6 +4,15 @@ import { recordSteps } from './matchers';
 
 const policy = (allow: boolean) => ({ evaluate: async () => allow });
 
+/** The shape @ultimat3/policy actually builds: one `run()`, and `row` is a required field. */
+const runnable = (allow: boolean) => ({
+  seen: [] as unknown[],
+  run(args: Readonly<Record<string, unknown>>) {
+    this.seen.push(args['row']);
+    return { allowed: allow };
+  },
+});
+
 const job = {
   kind: 'job',
   run: async ({ step }: { step: { run<T>(name: string, body: () => T): Promise<T> } }) => {
@@ -29,6 +38,24 @@ describe('unit · matchers', () => {
   test('toDenyPolicy passes on a denial and fails on an allow', async () => {
     await expect(policy(false)).toDenyPolicy({ actor: null });
     await expect(policy(true)).not.toDenyPolicy({ actor: { id: 'a' } });
+  });
+
+  // A real `Policy` has no `evaluate()`, so the matcher used to answer "not a policy" for every
+  // policy the framework builds — which reads as a denial and never fails on an allow.
+  test('toDenyPolicy decides a real Policy through its run()', async () => {
+    await expect(runnable(false)).toDenyPolicy({ actor: null, input: {} });
+    await expect(runnable(true)).not.toDenyPolicy({ actor: { id: 'a' }, input: {} });
+  });
+
+  test('toDenyPolicy defaults row to null, and a caller-supplied row wins', async () => {
+    const denies = runnable(false);
+    await expect(denies).toDenyPolicy({ actor: null, input: {} });
+    await expect(denies).toDenyPolicy({ actor: null, input: {}, row: { id: 'r' } });
+    expect(denies.seen).toEqual([null, { id: 'r' }]);
+  });
+
+  test('toDenyPolicy fails loudly on something that is not a policy at all', async () => {
+    await expect({ nope: true }).not.toDenyPolicy({ actor: null });
   });
 
   test('toEmitSteps pins the step sequence', async () => {

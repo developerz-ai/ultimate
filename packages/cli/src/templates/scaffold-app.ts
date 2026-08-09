@@ -9,8 +9,13 @@ const webPackage = (app: NameSet): string => `{
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { "./*": "./*.ts", "./*.tsx": "./*.tsx" },
-  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" }
+  "exports": {
+    "./*": "./*.ts",
+    "./*.tsx": "./*.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
 }
 `;
 
@@ -26,8 +31,8 @@ const tsconfig = (): string => `{
 const sitePage = (
   app: NameSet,
 ): string => `// The landing page. site/ is 0kb JS: static render, hydrate never, no framework script tag.
-import { defineRoute } from '@ultimat3/render';
 import { t } from '@ultimat3/i18n';
+import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -90,8 +95,9 @@ unitTest('the landing page ships zero JS and declares metadata', async () => {
 const dashboardPage =
   (): string => `// The authed dashboard. app/ streams: a static shell is flushed instantly and the holes arrive
 // as their data resolves.
-import { defineRoute } from '@ultimat3/render';
+
 import { t } from '@ultimat3/i18n';
+import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -135,6 +141,7 @@ unitTest('the dashboard streams, requires a permission and has an offline strate
 const offlineFallback =
   (): string => `// The offline fallback. Every app/ route with offline: 'runtime' falls back here, so a train
 // tunnel shows the product's own shell instead of the browser's error page.
+
 import { t } from '@ultimat3/i18n';
 import styles from './offline.module.scss';
 
@@ -162,9 +169,9 @@ const offlineStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 const apiAction =
   (): string => `// api/ holds actions only: no rendering, no components. This one is the readiness probe every
 // role exposes, declared as an action so it appears in OpenAPI and MCP like everything else.
-import { action } from '@ultimat3/action';
+
+import { action, t } from '@ultimat3/action';
 import { allow } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
 
 export const health = action({
   input: t.object({}),
@@ -182,9 +189,19 @@ export const health = action({
 const apiTest = (): string => `import { contractTest, expect } from '@ultimat3/testing';
 import { health } from './health';
 
+// Named here because every projection needs a stable name and this file does not boot the app.
+// At boot \`registerActions\` stamps the same name onto the same object.
+const target = health.named('health');
+
 contractTest('health is an action exposed over MCP', () => {
-  expect(health.kind).toBe('action');
-  expect(health.mcp?.expose).toBe(true);
+  expect(target.kind).toBe('action');
+  expect(target.mcp?.expose).toBe(true);
+});
+
+contractTest('health projects one MCP tool and one OpenAPI operation', () => {
+  // Same policy object on both surfaces — a public action says so once, not once per surface.
+  expect(target.tool().policy).toBe(target.policy);
+  expect(target.openapi().operationId).toBe('health');
 });
 `;
 
@@ -230,16 +247,22 @@ const adminPackage = (app: NameSet): string => `{
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { "./*": "./*.ts", "./*.tsx": "./*.tsx" },
-  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" }
+  "exports": {
+    "./*": "./*.ts",
+    "./*.tsx": "./*.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
 }
 `;
 
 const adminPage =
   (): string => `// The generated admin dashboard. It ships an MCP surface over the app's own actions, so the
 // user's agents can drive the user's product with the user's permissions.
-import { defineRoute } from '@ultimat3/render';
+
 import { t } from '@ultimat3/i18n';
+import { defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
   render: 'spa',

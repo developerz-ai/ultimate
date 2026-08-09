@@ -11,10 +11,12 @@ const actionSource = (
   feature: NameSet,
 ): string => `// ${name.camel}: one mutation, server-authoritative. Input is validated before the handler runs
 // and the policy is the same object the MCP tool and the HTTP route evaluate.
-import { action } from '@ultimat3/action';
-import { t } from '@ultimat3/schema';
+// \`t\` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
+
+import { action, t } from '@ultimat3/action';
 // One directory up: actions live in \`actions/\`, the feature's errors, policy and repo are the
 // slice's own files and are shared by every action in it.
+
 import { ${feature.pascal}NotFoundError } from '../errors';
 import { can${feature.pascal}Write, ${feature.camel}Tag } from '../policy';
 import * as repo from '../repo';
@@ -40,8 +42,8 @@ const mutatorSource = (
   feature: NameSet,
 ): string => `// ${name.camel}: an action with an optimistic local twin. The local half runs against the client
 // store immediately; the server half is authoritative and reconciles on conflict.
-import { mutator } from '@ultimat3/action';
-import { t } from '@ultimat3/schema';
+
+import { mutator, t } from '@ultimat3/action';
 import { ${feature.pascal}NotFoundError } from '../errors';
 import { can${feature.pascal}Write } from '../policy';
 import * as repo from '../repo';
@@ -56,6 +58,7 @@ export const ${name.camel} = mutator({
   input: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
   output: t.object({ id: t.uuid, title: t.string }),
   policy: can${feature.pascal}Write,
+  mcp: { expose: true, description: '${name.raw} — generated, edit the description' },
   // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
   // augments LocalTables, and generated code cannot assume that has happened yet. The name is the
   // entity's snake_case table, so the local twin and the server row live under one key.
@@ -78,6 +81,7 @@ const errorsSource = (
   feature: NameSet,
 ): string => `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
 // needs the code, the cause and the exact command that fixes it.
+
 import { UltimateError } from '@ultimat3/core';
 
 export class ${feature.pascal}NotFoundError extends UltimateError {
@@ -92,53 +96,78 @@ export class ${feature.pascal}NotFoundError extends UltimateError {
 }
 `;
 
-const ID = '00000000-0000-0000-0000-000000000001';
-const ORG = '00000000-0000-0000-0000-000000000002';
+const ID = '00000000-0000-4000-8000-000000000001';
+const ORG = '00000000-0000-4000-8000-000000000002';
+const OTHER_ORG = '00000000-0000-4000-8000-000000000009';
+
+/** The declaration-shape assertions that differ between the two primitives. */
+const shapeTest = (name: NameSet, isMutator: boolean): string =>
+  isMutator
+    ? `unitTest('${name.camel} projects both halves and a conflict strategy', () => {
+  // The projected names mirror the declaration: local() optimistic, server() authoritative.
+  // server() routes through the same invoke() core as every other surface, so it cannot skip
+  // the input parse, the policy or the output parse.
+  expect(target.describeMutator().kind).toBe('mutator');
+  expect(target.conflict).toBe('server-wins');
+  expect(typeof target.local).toBe('function');
+  expect(typeof target.server).toBe('function');
+});`
+    : `unitTest('${name.camel} is a declared action', () => {
+  expect(target.kind).toBe('action');
+  expect(target.describe().name).toBe('${name.camel}');
+});`;
 
 const actionTest = (
   name: NameSet,
+  feature: NameSet,
   isMutator: boolean,
-): string => `import { contractTest, expect, unitTest } from '@ultimat3/testing';
+): string => `import { testActor } from '@ultimat3/policy';
+import { contractTest, expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
 const id = '${ID}';
 const orgId = '${ORG}';
+const input = { id, orgId${isMutator ? ", title: 'a title'" : ''} };
 
-unitTest('${name.camel} is a declared ${isMutator ? 'mutator' : 'action'}', () => {
-${
-  isMutator
-    ? `  expect(${name.camel}.describeMutator().kind).toBe('mutator');
-  expect(${name.camel}.isMutator).toBe(true);`
-    : `  expect(${name.camel}.kind).toBe('action');`
-}
-});
+// Named here because every projection needs a stable name and this file does not boot the app.
+// At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
+// object, so \`${name.camel}.tool()\` works there with nothing to remember.
+const target = ${name.camel}.named('${name.camel}');
+
+// Holds the grant, wrong org. That is the interesting actor: a denial here is the predicate
+// deciding, not the permission check, so this test fails if the tenancy rule is ever dropped.
+const outsider = testActor('outsider', {
+  orgId: '${OTHER_ORG}',
+  permissions: ['${feature.kebab}:write'],
+}).actor;
+
+${shapeTest(name, isMutator)}
 
 unitTest('${name.camel} rejects input that is not a uuid', async () => {
-  await expect(${name.camel}.input).toRejectInput({ id: 'not-a-uuid', orgId${
-    isMutator ? ", title: 'a title'" : ''
-  } });
-  await expect(${name.camel}.input).toAcceptInput({ id, orgId${
-    isMutator ? ", title: 'a title'" : ''
-  } });
+  await expect(target.input).toRejectInput({ ...input, id: 'not-a-uuid' });
+  await expect(target.input).toAcceptInput(input);
 });
 
-unitTest('${name.camel} denies an anonymous actor', async () => {
-  await expect(${name.camel}.policy).toDenyPolicy({ actor: null, input: { orgId } });
+contractTest('${name.camel} passes the contract every action owes', async () => {
+  // Three assertions the framework makes for any action, without knowing what this one does:
+  // garbage input is rejected, an anonymous actor is denied, and the operation reaches the
+  // OpenAPI document. \`.contract()\` is the projection; this loop just runs it.
+  for (const contract of target.contract()) await contract.run();
 });
 
-${
-  isMutator
-    ? `unitTest('${name.camel} projects both halves and a conflict strategy', () => {
-  expect(${name.camel}.conflict).toBe('server-wins');
-  // The projected names mirror the declaration: local() optimistic, server() authoritative.
-  expect(typeof ${name.camel}.local).toBe('function');
-  expect(typeof ${name.camel}.server).toBe('function');
-});`
-    : `contractTest('${name.camel} is exposed as an MCP tool with a description', () => {
-  expect(${name.camel}.mcp?.expose).toBe(true);
-  expect(${name.camel}.mcp?.description ?? '').not.toBe('');
-});`
-}
+contractTest('${name.camel} denies a foreign org before the handler runs', async () => {
+  // \`.as()\` is the one execution path with the actor swapped, so this denial is the same one
+  // HTTP, MCP and the job surface would produce — and no repo call happened to produce it.
+  const denied = await target.as(outsider, input).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
+});
+
+contractTest('${name.camel} projects one MCP tool and one OpenAPI operation', () => {
+  // Same policy object on both surfaces — an MCP call cannot reach a different authz path.
+  expect(target.tool().policy).toBe(target.policy);
+  expect(target.tool().description).not.toBe('');
+  expect(target.openapi().operationId).toBe('${name.camel}');
+});
 `;
 
 export interface ActionOptions extends FeatureTarget {
@@ -155,7 +184,7 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
       path: `${dir}/${name.kebab}.ts`,
       contents: isMutator ? mutatorSource(name, feature) : actionSource(name, feature),
     },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: actionTest(name, isMutator) },
+    { path: `${dir}/${name.kebab}.test.ts`, contents: actionTest(name, feature, isMutator) },
     {
       path: `${target.surfaceDir}/${target.feature}/errors.ts`,
       contents: errorsSource(feature),

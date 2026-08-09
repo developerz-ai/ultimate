@@ -6,22 +6,29 @@ import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 
+/** A live read always fans out fresh, so a TTL on it would only ever be dead configuration. */
+const cacheLine = (feature: NameSet, live: boolean): string =>
+  live ? '' : `\n  cache: { tags: [${feature.camel}Tag], ttlMs: 30_000 },`;
+
 const querySource = (
   name: NameSet,
   feature: NameSet,
   live: boolean,
 ): string => `// ${name.camel}: a ${live ? 'live (subscribable)' : 'one-shot'} read over ${feature.pluralKebab}.
 // Bounded and ordered — required for${live ? ' live queries' : ' predictable pagination'}.
-import { from, query } from '@ultimat3/query';
-import { t } from '@ultimat3/schema';
+// \`t\` comes from @ultimat3/query, not @ultimat3/schema: a query file imports one package.
+
+import { from, query, t } from '@ultimat3/query';
 import type { ${feature.pascal} } from '../entity';
-import { can${feature.pascal}Read } from '../policy';
+import { can${feature.pascal}Read${live ? '' : `, ${feature.camel}Tag`} } from '../policy';
 import * as repo from '../repo';
 
 export const ${name.camel} = query({
   input: t.object({ orgId: t.uuid, limit: t.number.default(50) }),
   policy: can${feature.pascal}Read,
-  live: ${String(live)},
+  live: ${String(live)},${cacheLine(feature, live)}
+  // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
+  mcp: { expose: true, description: '${name.raw} — generated, edit the description' },
   sql: ({ orgId, limit }) =>
     // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.
@@ -32,39 +39,55 @@ export const ${name.camel} = query({
 });
 `;
 
-const queryTest = (name: NameSet, live: boolean): string => {
+const queryTest = (name: NameSet, feature: NameSet, live: boolean): string => {
   const wrapper = live ? 'liveTest' : 'unitTest';
-  return `import { anonymousCtx } from '@ultimat3/action';
+  return `import { testActor } from '@ultimat3/policy';
 import { sourceFor } from '@ultimat3/query';
 import { expect, ${wrapper} } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
-// A real v4 uuid: \`sourceFor\` parses the input the way a request does, so a placeholder that
-// only looks like a uuid would fail the read before it ever built any SQL.
+// A real v4 uuid: the read parses its input the way a request does, so a placeholder that only
+// looks like a uuid would fail before it ever built any SQL.
 const orgId = '00000000-0000-4000-8000-000000000002';
 
-${wrapper}('${name.camel} is a declared query', () => {
-  expect(${name.camel}.kind).toBe('query');
-  expect(${name.camel}.isLive).toBe(${String(live)});
+// Named here because every projection needs a stable name and this file does not boot the app.
+// At boot \`registerQueries(await import('./${live ? 'live' : 'queries'}'))\` stamps the same name
+// onto the same object.
+const target = ${name.camel}.named('${name.camel}');
+
+// Holds the grant, wrong org — so a denial here is the predicate deciding, not the grant.
+const outsider = testActor('outsider', {
+  orgId: '00000000-0000-4000-8000-000000000009',
+  permissions: ['${feature.kebab}:read'],
+}).actor;
+
+${wrapper}('${name.camel} is a declared ${live ? 'live ' : ''}query', () => {
+  expect(target.kind).toBe('query');
+  expect(target.isLive).toBe(${String(live)});
 });
 
 ${wrapper}('${name.camel} is bounded and ordered', async () => {
-  // The SQL text is the contract an agent reads to self-correct, so assert on it, not on a shape.
-  // \`sourceFor\` is the one read path — it parses the input and builds the source exactly as a
-  // request does; \`enforce: false\` skips the policy, which the next test covers on its own.
-  // \`named\` because a read needs a name to project: at boot \`registerQueries\` supplies it.
-  const source = await sourceFor(
-    ${name.camel}.named('${name.camel}'),
-    { orgId, limit: 50 },
-    { ctx: anonymousCtx(), enforce: false },
-  );
+  // The SQL text is the contract an agent reads to self-correct, so assert on it, not on a
+  // shape. \`sourceFor\` is the one read path — it parses the input and builds the source exactly
+  // as a request does. \`actor: null\` gives the call a context of its own rather than borrowing
+  // an ambient one, and \`enforce: false\` leaves the policy to the test below.
+  const source = await sourceFor(target, { orgId, limit: 50 }, { actor: null, enforce: false });
   const { sql } = source.toSQL();
   expect(sql.toLowerCase()).toContain('order by');
   expect(sql.toLowerCase()).toContain('limit');
 });
 
-${wrapper}('${name.camel} requires an actor with read permission', async () => {
-  await expect(${name.camel}.policy).toDenyPolicy({ actor: null, input: { orgId } });
+${wrapper}('${name.camel} denies a foreign org before it reads a row', async () => {
+  // \`.as()\` is the one read path with the actor swapped: validate, authorize, then read. The
+  // denial lands before any SQL executes, which is why this needs no database.
+  const denied = await target.as(outsider, { orgId, limit: 50 }).catch((error: unknown) => error);
+  expect(denied).toBeUltimateError('X_FORBIDDEN');
+});
+
+${wrapper}('${name.camel} exposes one MCP tool that reads, and never writes', () => {
+  // Same policy object on both surfaces — an agent cannot reach a different authz path.
+  expect(target.tool().policy).toBe(target.policy);
+  expect(target.tool().mutates).toBe(false);
 });
 `;
 };
@@ -80,6 +103,6 @@ export function queryFiles(rawName: string, target: QueryOptions): readonly Gene
   const dir = `${target.surfaceDir}/${target.feature}/${live ? 'live' : 'queries'}`;
   return [
     { path: `${dir}/${name.kebab}.ts`, contents: querySource(name, feature, live) },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: queryTest(name, live) },
+    { path: `${dir}/${name.kebab}.test.ts`, contents: queryTest(name, feature, live) },
   ];
 }

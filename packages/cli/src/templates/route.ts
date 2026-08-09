@@ -36,8 +36,9 @@ const pageSource = (surface: Surface, path: string): string => {
   );
   return `// Route: /${path} on the ${surface} surface. Config first: render mode, offline
 // strategy and budget are declarations, not runtime choices.
-import { defineRoute } from '@ultimat3/render';
+
 import { t } from '@ultimat3/i18n';
+import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -79,7 +80,9 @@ const routeTest = (
 import { config } from './page';
 
 unitTest('/${path} declares metadata', async () => {
-  // meta() takes the route's data and always resolves — awaiting is the one shape.
+  expect(config.kind).toBe('route');
+  // meta() takes the route's data and always resolves — awaiting is the one shape, whether the
+  // declaration was written sync or async.
   const meta = await config.meta({});
   expect(meta.title ?? '').not.toBe('');
   expect(meta.description ?? '').not.toBe('');

@@ -41,7 +41,6 @@ const rootPackage = (app: NameSet): string => `{
     "@ultimat3/pwa": "^0.0.1",
     "@ultimat3/query": "^0.0.1",
     "@ultimat3/render": "^0.0.1",
-    "@ultimat3/schema": "^0.0.1",
     "@ultimat3/ui": "^0.0.1",
     "solid-js": "^2.0.0"
   },
@@ -156,8 +155,12 @@ const domainPackage = (app: NameSet, name: string, description: string): string 
   "private": true,
   "type": "module",
   "description": "${description}",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit -p ../../tsconfig.json" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  }
 }
 `;
 
@@ -235,7 +238,7 @@ export async function seed(): Promise<number> {
 
 if (import.meta.main) {
   const count = await seed();
-  process.stdout.write(JSON.stringify({ ok: true, seeded: count }) + '\\n');
+  process.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
 }
 `;
 
@@ -348,9 +351,9 @@ const mcpIndex = (
   app: NameSet,
 ): string => `// The app's own MCP tools. Every action with mcp.expose is already a tool; add app-specific
 // read-only helpers here. Authorization is the action's policy, unchanged.
+import * as api from '@${app.kebab}/web/api/health';
 import { registerActions } from '@ultimat3/action';
 import { defineAppMcp } from '@ultimat3/mcp';
-import * as api from '@${app.kebab}/web/api/health';
 
 // Names come from export names, so the registry agrees with the module the app already wrote.
 registerActions(api);

@@ -16,9 +16,10 @@ const serviceSource = (
   feature: NameSet,
 ): string => `// Business logic for ${feature.pluralKebab}. Knows nothing about HTTP or requests, so a job and an
 // action can both call it. Takes values, not a request.
+
+import type { ${feature.pascal} } from './entity';
 import { ${feature.pascal}NotFoundError } from './errors';
 import * as repo from './repo';
-import type { ${feature.pascal} } from './entity';
 
 /** Derived from the row, never restated: a new column reaches this input without an edit here. */
 export type Create${feature.pascal}Input = Omit<${feature.pascal}, 'id' | 'createdAt'>;
@@ -51,10 +52,11 @@ const uiSource = (
   feature: NameSet,
 ): string => `// Presentation only. No fetching, no business logic: the list arrives as a prop from the route,
 // which got it from the live query.
-import { For } from 'solid-js';
+
 import { t } from '@ultimat3/i18n';
-import styles from './ui.module.scss';
+import { For } from 'solid-js';
 import type { ${feature.pascal} } from './entity';
+import styles from './ui.module.scss';
 
 export interface ${feature.pascal}ListProps {
   readonly rows: readonly ${feature.pascal}[];

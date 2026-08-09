@@ -1,6 +1,6 @@
 // `x g job` / `x g task` — durable background work and the cron trigger that enqueues it. The
 // idempotency key is required by the type, so the generator always emits one; the generated test
-// pins the step sequence, because renaming a step silently invalidates its stored result.
+// pins it through a real driver, because a key that is not stable is a job that runs twice.
 
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
@@ -10,8 +10,9 @@ const jobSource = (
   name: NameSet,
 ): string => `// ${name.camel}: multi-step durable work. Each step is retried independently and its result is
 // stored under its name — step names are stable identifiers, not labels.
-import { job } from '@ultimat3/jobs';
-import { t } from '@ultimat3/schema';
+// \`t\` comes from @ultimat3/jobs, not @ultimat3/schema: a job file imports one package.
+
+import { job, t } from '@ultimat3/jobs';
 import * as repo from '../repo';
 
 export const ${name.camel} = job({
@@ -34,20 +35,31 @@ const taskSource = (
   jobName: NameSet,
 ): string => `// ${name.camel}: a scheduled trigger. Tasks only enqueue jobs — the work itself is durable and
 // retryable, and the schedule carries an explicit IANA time zone.
+
 import { task } from '@ultimat3/jobs';
 import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
 
 export const ${name.camel} = task({
   cron: '0 3 * * *',
   tz: 'UTC',
-  enqueue: () => [[${jobName.camel}, { id: '00000000-0000-0000-0000-000000000001' }]],
+  enqueue: () => [[${jobName.camel}, { id: '00000000-0000-4000-8000-000000000001' }]],
 });
 `;
 
-const jobTest = (name: NameSet): string => `import { expect, jobTest } from '@ultimat3/testing';
+const jobTest = (
+  name: NameSet,
+): string => `import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
-const id = '00000000-0000-0000-0000-000000000001';
+const id = '00000000-0000-4000-8000-000000000001';
+
+// The driver is process-global, so it is installed and released around this file rather than
+// left behind for whichever test happens to run next.
+beforeAll(() => {
+  setJobDriver(createMemoryDriver());
+});
+afterAll(resetJobDriver);
 
 jobTest('${name.camel} declares an idempotency key and a retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
@@ -55,7 +67,7 @@ jobTest('${name.camel} declares an idempotency key and a retry policy', () => {
   expect(${name.camel}.retry.attempts).toBeGreaterThan(1);
 });
 
-jobTest('${name.camel} is idempotent for the same input', () => {
+jobTest('${name.camel} derives the same key for the same input', () => {
   expect(${name.camel}.idempotencyKeyFor({ id })).toBe(${name.camel}.idempotencyKeyFor({ id }));
 });
 
@@ -65,17 +77,28 @@ jobTest('${name.camel} projects itself into the manifest', () => {
   expect(described.retry.attempts).toBe(5);
 });
 
-jobTest('${name.camel} runs its steps in order', async () => {
-  await expect(${name.camel}).toEmitSteps(['load', 'process']);
+jobTest('${name.camel} enqueues once, and dedupes the retry', async () => {
+  // The whole point of the key: an at-least-once caller may enqueue twice and the work still
+  // happens once. \`.enqueue()\` is the one queue path — a job is never run inline.
+  const first = await ${name.camel}.enqueue({ id });
+  expect(first.deduped).toBe(false);
+  const again = await ${name.camel}.enqueue({ id });
+  expect(again.deduped).toBe(true);
 });
 `;
 
 const taskTest = (
   name: NameSet,
   jobName: NameSet,
-): string => `import { expect, jobTest } from '@ultimat3/testing';
+): string => `import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
 import { ${name.camel} } from './${name.kebab}';
+
+beforeAll(() => {
+  setJobDriver(createMemoryDriver());
+});
+afterAll(resetJobDriver);
 
 jobTest('${name.camel} declares a cron with an explicit time zone', () => {
   expect(${name.camel}.kind).toBe('task');
@@ -93,6 +116,14 @@ jobTest('${name.camel} describes its schedule and its jobs', () => {
   const described = ${name.camel}.describe();
   expect(described.tz).toBe('UTC');
   expect(described.jobs).toHaveLength(1);
+});
+
+jobTest('${name.camel} fires its entries onto the same queue the scheduler would', async () => {
+  // \`.enqueue()\` is the backfill path: the declared entries, through the facade a job handle
+  // uses, with no scheduler and no leader involved.
+  const results = await ${name.camel}.enqueue();
+  expect(results).toHaveLength(1);
+  expect(results[0]?.job).toBe(${jobName.camel}.name);
 });
 `;
 
