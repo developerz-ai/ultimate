@@ -36,12 +36,20 @@ export {
   McpProtocolError,
   McpQueryRejectedError,
   McpScopeDeniedError,
+  McpToolDuplicateError,
+  McpToolUndeclaredError,
   McpToolUnknownError,
   McpToolUnsafeError,
 } from './errors';
 export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
-export { isExposed, toolFromAction, toolFromQuery, toolsFrom } from './from-action';
+export {
+  isExposed,
+  toolFromAction,
+  toolFromQuery,
+  toolsFrom,
+  toolsListed,
+} from './from-action';
 export { toWireSchema } from './input-schema';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
 export {

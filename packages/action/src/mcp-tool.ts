@@ -50,9 +50,16 @@ export function toMcpTool(target: AnyAction): McpToolDescriptor {
   };
 }
 
-/** Every action is exposed unless it sets `mcp: { expose: false }`. */
+/**
+ * Opt-in, exactly like a query's: only a literal `mcp: { expose: true }` exposes an action.
+ *
+ * It read `!== false` until 2026-08, which made writing an action silently hand every agent a
+ * new write capability — and disagreed with `@ultimat3/mcp`'s `exposedPrimitives`, the projection
+ * that actually builds a catalog. Two functions answering "is this a tool?" differently is the
+ * ambiguity axiom 1 rejects, so the fail-closed one wins.
+ */
 export function isExposed(target: AnyAction): boolean {
-  return target.mcp?.expose !== false;
+  return target.mcp?.expose === true;
 }
 
 /** Deterministic order — the tool list is part of the agent-visible contract. */

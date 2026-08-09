@@ -15,7 +15,7 @@ import. The CLI wires it.
 | `audit.ts` | one structured line per `tools/call`, outcome → level |
 | `validate-args.ts` | JSON-Schema-subset arg validation, applies defaults |
 | `server.ts` | JSON-RPC dispatch, `classify` for rate-limit buckets |
-| `from-action.ts` | action/query → tool; the "one authz system" projection |
+| `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
 | `dev-server.ts` | the 13 dev tools; depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
@@ -41,6 +41,14 @@ import. The CLI wires it.
   or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
 - `security.test.ts` is the executable contract for all of the above. Extend it, never
   weaken it.
+- Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
+  `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
+  a written-out list is a request, so filtering it would ship a catalog missing a tool its
+  author believes is there. `include: 'exposed'` sweeps the registries and therefore skips,
+  because that list is every primitive the app registered, not one anyone wrote out.
+- Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
+  throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`. The caller
+  reading them is usually an agent that needs `{ code, cause, fix }`.
 - A projected action tool has **no `scope`**. The action's policy is the only gate. A
   hand-written app tool is the same: its `policy` reaches `guard()` from `@ultimat3/action`,
   which is the one authz path — never a second check written for MCP.

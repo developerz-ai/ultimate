@@ -17,6 +17,7 @@ import type { QueryMcp } from '@ultimat3/query';
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
+import type { ProjectablePrimitive } from './from-action';
 import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { jsonResult } from './registry';
 
@@ -65,6 +66,22 @@ const codeOfRejection = async (promise: Promise<unknown>): Promise<string | null
     () => null,
     (error: { code?: string }) => error.code ?? 'unknown',
   );
+
+/** A boot-time refusal is only useful if it carries the contract — assert on the fields. */
+interface ThrownContract {
+  readonly code: string;
+  readonly cause: string;
+  readonly fix: string;
+}
+
+const codeAndCause = (fn: () => unknown): ThrownContract | null => {
+  try {
+    fn();
+    return null;
+  } catch (thrown) {
+    return thrown as ThrownContract;
+  }
+};
 
 describe('tools as a named record', () => {
   test('the record key is the tool name and the schema becomes the wire inputSchema', () => {
@@ -257,12 +274,97 @@ describe("include: 'exposed'", () => {
     expect(defineAppMcp({}).tools).toEqual([]);
   });
 
+  test('the registry sweep still passes over what never opted in — it is not a written list', () => {
+    registerActions();
+    registerFeed('privateFeed');
+
+    // `deleteEverything` and `privateFeed` are undeclared and must NOT be an error here:
+    // `include` reads every primitive the app registered, not a list anyone wrote out.
+    expect(() => defineAppMcp({ include: 'exposed' })).not.toThrow();
+  });
+
   test('a record tool sits alongside the projected ones', () => {
     registerActions();
 
     const mcp = defineAppMcp({ include: 'exposed', tools: { seatReport } });
 
     expect(mcp.tools.map((tool) => tool.name)).toEqual(['publishPost', 'seatReport']);
+  });
+});
+
+describe('an undeclared primitive in a written-out list is a build error', () => {
+  const primitive = (name: string, mcp?: { expose: boolean }): ProjectablePrimitive => ({
+    name,
+    ...(mcp === undefined ? {} : { mcp }),
+    async run() {
+      return null;
+    },
+  });
+
+  test('a listed action without mcp.expose fails at boot, naming the action', () => {
+    const thrown = codeAndCause(() => defineAppMcp({ actions: [primitive('deleteEverything')] }));
+
+    expect(thrown?.code).toBe('X_MCP_TOOL_UNDECLARED');
+    expect(thrown?.cause).toContain('deleteEverything');
+    // Exposure belongs next to the policy, so the fix points there — not at this file.
+    expect(thrown?.fix).toContain('mcp: { expose: true');
+  });
+
+  test('a listed query is held to the same rule', () => {
+    expect(() => defineAppMcp({ queries: [primitive('privateFeed')] })).toThrow(
+      'X_MCP_TOOL_UNDECLARED',
+    );
+  });
+
+  test('mcp: { expose: false } is refused as loudly as no mcp block at all', () => {
+    expect(() => defineAppMcp({ actions: [primitive('optedOut', { expose: false })] })).toThrow(
+      'X_MCP_TOOL_UNDECLARED',
+    );
+  });
+
+  test('the server is never built: a catalog missing a listed tool must not reach a client', () => {
+    registerAction(
+      'publishPost',
+      action({
+        input: t.object({}),
+        output: t.object({ ok: t.boolean }),
+        policy: can('post:publish'),
+        mcp: { expose: true, description: 'Publish a draft post' },
+        handle: () => ({ ok: true }),
+      }),
+    );
+
+    expect(() =>
+      defineAppMcp({ include: 'exposed', actions: [primitive('deleteEverything')] }),
+    ).toThrow('X_MCP_TOOL_UNDECLARED');
+  });
+
+  test('a listed primitive that DID opt in still projects — the happy path is untouched', () => {
+    const mcp = defineAppMcp({ actions: [primitive('publishPost', { expose: true })] });
+
+    expect(mcp.tools.map((tool) => tool.name)).toEqual(['publishPost']);
+  });
+});
+
+describe('two primitives may not project to one tool name', () => {
+  test('a record key colliding with a projected action is X_MCP_TOOL_DUPLICATE at boot', () => {
+    registerAction(
+      'seatReport',
+      action({
+        input: t.object({ orgId: t.string }),
+        output: t.object({ ok: t.boolean }),
+        policy: can('org:administer'),
+        mcp: { expose: true, description: 'The action, not the hand-written tool' },
+        handle: () => ({ ok: true }),
+      }),
+    );
+
+    const thrown = codeAndCause(() => defineAppMcp({ include: 'exposed', tools: { seatReport } }));
+
+    // An UltimateError, not a bare throw: an agent reading this gets `{ code, cause, fix }`.
+    expect(thrown?.code).toBe('X_MCP_TOOL_DUPLICATE');
+    expect(thrown?.cause).toContain('seatReport');
+    expect(thrown?.fix).toContain('rename one');
   });
 });
 

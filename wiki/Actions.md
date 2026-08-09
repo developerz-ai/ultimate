@@ -27,7 +27,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `output` | Standard Schema | yes | the response contract; drives the typed client return type and the OpenAPI response |
 | `policy` | `Policy` from `can(...)` | yes | the one authz decision, evaluated on every surface. Omitting it is a build error |
 | `cache.invalidates` | `readonly CacheTag[]` | no | tags dropped from every cache tier after `handle` settles; unknown tag = compile error |
-| `mcp.expose` | `boolean` | no (default `true`) | every action is a tool unless it opts out |
+| `mcp.expose` | `boolean` | no (opt-in) | only a literal `true` makes the action a tool; silence exposes nothing. Listing an un-exposed action in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot |
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | per-actor limit enforced at the HTTP and MCP edges |
 | `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header |

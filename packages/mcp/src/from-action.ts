@@ -11,6 +11,7 @@
 // JSON Schema); this file owns the execution half.
 
 import type { Actor } from '@ultimat3/core';
+import { McpToolUndeclaredError } from './errors';
 import type { AnyMcpTool, McpCaller, McpRole, McpToolResult, ToolArgs } from './registry';
 import { jsonResult } from './registry';
 import type { JsonSchema } from './wire';
@@ -59,8 +60,8 @@ export function isExposed(primitive: ProjectablePrimitive): boolean {
 }
 
 /**
- * Project one primitive. Throws nothing: an un-exposed primitive is a caller error caught
- * by `toolsFrom`, which filters first.
+ * Project one primitive. Throws nothing, and does not re-check exposure: the two list
+ * projections below decide what an un-exposed primitive means — skip it, or refuse it.
  */
 export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
   const name = primitive.mcp?.name ?? primitive.name;
@@ -88,10 +89,33 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
 /** Alias that reads correctly at a query call site — same projection, same guarantees. */
 export const toolFromQuery = toolFromAction;
 
-/** Project every exposed primitive, skipping the rest. Stable name order. */
+/**
+ * Project every exposed primitive, SKIPPING the rest. Stable name order.
+ *
+ * For a swept list — every primitive the registries hold — where the un-exposed ones are the
+ * normal case and dropping them is the whole job. A list the author wrote out by hand goes
+ * through `toolsListed`, which refuses instead.
+ */
 export function toolsFrom(primitives: readonly ProjectablePrimitive[]): readonly AnyMcpTool[] {
   return primitives
     .filter(isExposed)
     .map(toolFromAction)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
+ * Project a list the AUTHOR wrote out, REFUSING any primitive that never opted in.
+ *
+ * Naming a primitive in `defineAppMcp` is the request to expose it, so silence there is a
+ * contradiction rather than an opt-out — and a silently dropped entry ships a server whose
+ * catalog is missing a tool its author believes is in it. Every offender is collected before
+ * throwing so one edit closes all of them.
+ */
+export function toolsListed(primitives: readonly ProjectablePrimitive[]): readonly AnyMcpTool[] {
+  const undeclared = primitives.filter((primitive) => !isExposed(primitive));
+  if (undeclared.length > 0) {
+    // The primitive's own name, not `mcp.name`: it is what the author greps for.
+    throw new McpToolUndeclaredError({ names: undeclared.map((primitive) => primitive.name) });
+  }
+  return toolsFrom(primitives);
 }

@@ -11,6 +11,8 @@ export const MCP_ERROR_CODES = [
   'X_MCP_QUERY_REJECTED',
   'X_MCP_NOT_BRANCH_DB',
   'X_MCP_TOOL_UNSAFE',
+  'X_MCP_TOOL_UNDECLARED',
+  'X_MCP_TOOL_DUPLICATE',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -23,6 +25,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_QUERY_REJECTED: 'db.query was not given one read-only statement',
   X_MCP_NOT_BRANCH_DB: 'db.migrate was aimed at a database that is not a branch',
   X_MCP_TOOL_UNSAFE: 'an MCP tool declares no policy',
+  X_MCP_TOOL_UNDECLARED: 'defineAppMcp lists a primitive that declares no MCP exposure',
+  X_MCP_TOOL_DUPLICATE: 'two primitives project to one MCP tool name',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Guarded
@@ -97,6 +101,50 @@ export class McpToolUnsafeError extends UltimateError {
       cause: `tool "${input.name}" declares no policy; an unguarded tool is a second door into the data`,
       fix: `add policy: '<resource>:<verb>' to the tool, reusing the permission its action uses`,
       docs: docsFor('X_MCP_TOOL_UNSAFE'),
+    });
+  }
+}
+
+/**
+ * A primitive was NAMED in `defineAppMcp`'s `actions`/`queries` but never declared
+ * `mcp: { expose: true }`. Naming it there is the request to expose it, so the only two honest
+ * answers are "project it" and "refuse": filtering it out silently ships a catalog missing a tool
+ * its author believes is in it, and nothing fails until an agent asks for a tool that is not
+ * there. Boot-time, with every offender named at once so one edit closes all of them.
+ *
+ * `include: 'exposed'` sweeps the registries and therefore DOES filter — that list is every
+ * primitive the app registered, not a list anyone wrote out.
+ */
+export class McpToolUndeclaredError extends UltimateError {
+  /** The offending primitive names, so a caller can report them without re-parsing `cause`. */
+  readonly names: readonly string[];
+
+  constructor(input: { names: readonly string[] }) {
+    const names = input.names.join(', ');
+    super({
+      code: 'X_MCP_TOOL_UNDECLARED',
+      cause: `listed in defineAppMcp but never declared mcp.expose: ${names}`,
+      fix:
+        "add mcp: { expose: true, description: '<what it does>' } beside the policy on each — " +
+        "or drop it from the list and let include: 'exposed' project what opted in",
+      docs: docsFor('X_MCP_TOOL_UNDECLARED'),
+    });
+    this.names = input.names;
+  }
+}
+
+/**
+ * Two primitives project to one tool name. Caught at boot rather than at first call: an agent
+ * asking for the name reaches whichever copy won, which is the worst failure mode available —
+ * a call that succeeds against the wrong handler and reports nothing.
+ */
+export class McpToolDuplicateError extends UltimateError {
+  constructor(input: { name: string }) {
+    super({
+      code: 'X_MCP_TOOL_DUPLICATE',
+      cause: `two primitives project to the MCP tool "${input.name}"`,
+      fix: "rename one: the tool name is the primitive's export name, or the `tools` record key",
+      docs: docsFor('X_MCP_TOOL_DUPLICATE'),
     });
   }
 }

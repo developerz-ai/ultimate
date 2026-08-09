@@ -27,7 +27,7 @@ export interface ActionCache {
 }
 
 export interface ActionMcp {
-  /** Default `true`: every action is a tool unless it opts out. */
+  /** Opt-in: only a literal `true` makes the action a tool. Silence exposes nothing. */
   readonly expose: boolean;
   /**
    * Contract text, NOT UI text — deliberately outside `t()`. It becomes the OpenAPI

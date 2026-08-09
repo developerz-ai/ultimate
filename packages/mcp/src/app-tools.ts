@@ -11,9 +11,10 @@
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyAppToolDefinition, AppTools } from './app-tool';
 import { appToolPrimitives } from './app-tool';
+import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
 import type { ProjectablePrimitive } from './from-action';
-import { toolsFrom } from './from-action';
+import { toolsFrom, toolsListed } from './from-action';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
@@ -31,13 +32,18 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
   readonly version?: string;
   /**
    * `'exposed'` projects every registered action and query that declared
-   * `mcp: { expose: true }`. Additive: `actions`/`queries` below still work, and an explicitly
-   * listed primitive wins over the registry's copy of the same name.
+   * `mcp: { expose: true }`, and quietly passes over the rest — that list is every primitive the
+   * app registered, not one anyone wrote out. Additive: `actions`/`queries` below still work,
+   * and an explicitly listed primitive wins over the registry's copy of the same name.
    */
   readonly include?: 'exposed';
-  /** Every action to consider. Only those with `mcp: { expose: true }` are projected. */
+  /**
+   * Actions to project. Naming one here IS the request to expose it, so a listed action that
+   * never declared `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot rather than a tool
+   * missing from the catalog — exposure stays declared next to the policy, never in this list.
+   */
   readonly actions?: readonly ProjectablePrimitive[];
-  /** Every query to consider. Same opt-in rule. */
+  /** Queries to project. Same rule, same error. */
   readonly queries?: readonly ProjectablePrimitive[];
   /** App-specific readable documents (a catalog export, a report). */
   readonly resources?: readonly McpResource[];
@@ -89,7 +95,9 @@ export interface AppMcp {
 export function defineAppMcp<TSchemas extends AppToolSchemas>(
   input: DefineAppMcpInput<TSchemas>,
 ): AppMcp {
-  const listed = [...toolsFrom(input.actions ?? []), ...toolsFrom(input.queries ?? [])];
+  // `toolsListed`, not `toolsFrom`: these two arrays are what the author wrote out, so an
+  // undeclared entry is a mistake to report, not a primitive to pass over.
+  const listed = [...toolsListed(input.actions ?? []), ...toolsListed(input.queries ?? [])];
   // An explicitly listed primitive is a refinement of the registry's entry, not a rival to it,
   // so `include` fills the gaps rather than colliding with what the caller already spelled out.
   const included =
@@ -143,23 +151,14 @@ function notNamed(
 /**
  * A duplicate tool name is caught here rather than at first call: two primitives projecting
  * to one name means the agent silently reaches the wrong one, which is the worst failure
- * mode available. Boot-time, loud, with both offenders named.
+ * mode available. Boot-time, loud, and named.
  */
 function assertUniqueNames(tools: readonly AnyMcpTool[]): void {
   const seen = new Set<string>();
   for (const tool of tools) {
     if (seen.has(tool.name)) {
-      throw new AppMcpDuplicateError(tool.name);
+      throw new McpToolDuplicateError({ name: tool.name });
     }
     seen.add(tool.name);
-  }
-}
-
-class AppMcpDuplicateError extends Error {
-  constructor(name: string) {
-    super(
-      `two primitives project to the MCP tool "${name}"; set mcp.name on one of them to disambiguate`,
-    );
-    this.name = 'AppMcpDuplicateError';
   }
 }

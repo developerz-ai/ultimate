@@ -115,6 +115,13 @@ routes: [mcp.route]                      // POST /mcp, rate-limited per method c
 second hand-maintained list is a thing that goes stale silently. The explicit arrays still
 work and win over the registry's copy of the same name.
 
+The two lists are read differently, on purpose. `include` **sweeps**: it holds every primitive
+the app registered, so one that never opted in is passed over. `actions:`/`queries:` are
+**written out**: naming a primitive there is the request to expose it, so one that never declared
+`mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot — a listed tool is never silently
+missing from the catalog, and exposure stays declared next to the policy. Two primitives reaching
+one tool name is `X_MCP_TOOL_DUPLICATE`, also at boot.
+
 A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an
 HTTP request goes through, so a tool cannot acquire a second authz path. A tool without one
 is `X_MCP_TOOL_UNSAFE` at boot, and an unmarked tool is metered as a write.
