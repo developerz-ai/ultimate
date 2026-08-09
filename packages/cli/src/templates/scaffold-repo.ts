@@ -43,7 +43,6 @@ const rootPackage = (app: NameSet): string => `{
     "@ultimat3/render": "^0.0.1",
     "@ultimat3/schema": "^0.0.1",
     "@ultimat3/ui": "^0.0.1",
-    "drizzle-orm": "^0.44.0",
     "solid-js": "^2.0.0"
   },
   "engines": { "bun": ">=1.3.0" }
@@ -120,6 +119,16 @@ root = "."
 preload = ["@ultimat3/testing/preload"]
 `;
 
+const scssTypes =
+  (): string => `// SCSS modules resolve to a class-name map at build time. Ambient because an import cannot
+// reach a declaration file — every surface names this file in its tsconfig "include".
+
+declare module '*.module.scss' {
+  const classes: Readonly<Record<string, string>>;
+  export default classes;
+}
+`;
+
 const gitignore = (): string => `node_modules/
 .x/
 dist/
@@ -187,28 +196,12 @@ unitTest('money refuses to add across currencies', () => {
 });
 `;
 
-const dbIndex = (
-  app: NameSet,
-): string => `// The Drizzle client. Schema and migrations only — no business logic lives in this package.
-export { db } from './client';
+const dbIndex =
+  (): string => `// Schema and migrations only — no business logic lives in this package. The client itself is
+// @ultimat3/db's: one connection pool, sized by ROLE, shared by every package in the app.
+export type { DbClient, SqlFragment } from '@ultimat3/db';
+export { db, sql, withTransaction } from '@ultimat3/db';
 export * as schema from './schema';
-export type { ${app.pascal}Database } from './client';
-`;
-
-const dbClient = (
-  app: NameSet,
-): string => `// One database handle per process. The URL comes from app.config.ts, which validated it at boot.
-import { SQL } from 'bun';
-import { drizzle } from 'drizzle-orm/bun-sql';
-import * as schema from './schema';
-
-const url = process.env['DATABASE_URL'];
-
-export const db = drizzle(new SQL(url === undefined || url === '' ? 'postgres://localhost/${app.kebab}' : url), {
-  schema,
-});
-
-export type ${app.pascal}Database = typeof db;
 `;
 
 const dbSchema = (
@@ -221,17 +214,22 @@ export { post } from '@${app.kebab}/web/app/post/entity';
 const dbSeed = (
   app: NameSet,
 ): string => `// Deterministic seed: same rows every time, so a test and a demo see the same database.
-import { db } from './client';
-import { post } from './schema';
+import { db, sql } from '@ultimat3/db';
 
 const ORG = '00000000-0000-0000-0000-000000000002';
 
 export async function seed(): Promise<number> {
   const rows = [
-    { id: '00000000-0000-0000-0000-000000000101', orgId: ORG, title: 'Hello ${app.pascal}', priceMinor: 0, priceCurrency: 'USD' },
-    { id: '00000000-0000-0000-0000-000000000102', orgId: ORG, title: 'Second post', priceMinor: 1900, priceCurrency: 'USD' },
+    { id: '00000000-0000-0000-0000-000000000101', title: 'Hello ${app.pascal}', minor: 0 },
+    { id: '00000000-0000-0000-0000-000000000102', title: 'Second post', minor: 1900 },
   ];
-  await db.insert(post).values(rows).onConflictDoNothing();
+  for (const row of rows) {
+    // Idempotent by primary key, so re-seeding a branch database is a no-op rather than a crash.
+    await db().execute(sql\`
+      insert into posts (id, org_id, title, price_minor, price_currency)
+      values (\${row.id}, \${ORG}, \${row.title}, \${row.minor}, 'USD')
+      on conflict (id) do nothing\`);
+  }
   return rows.length;
 }
 
@@ -350,17 +348,22 @@ const mcpIndex = (
   app: NameSet,
 ): string => `// The app's own MCP tools. Every action with mcp.expose is already a tool; add app-specific
 // read-only helpers here. Authorization is the action's policy, unchanged.
+import { registerActions } from '@ultimat3/action';
 import { defineAppMcp } from '@ultimat3/mcp';
-import { health } from '@${app.kebab}/web/api/health';
+import * as api from '@${app.kebab}/web/api/health';
 
+// Names come from export names, so the registry agrees with the module the app already wrote.
+registerActions(api);
+
+// \`include: 'exposed'\` projects straight from the registry. Re-listing the actions here would
+// copy \`mcp: { expose: true }\` into a second place, and the copy goes stale in silence.
 export const mcp = defineAppMcp({
   name: '${app.kebab}',
-  actions: [health],
+  include: 'exposed',
 });
 `;
 
-const mcpTest = (): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
+const mcpTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { mcp } from './index';
 
 unitTest('the app exposes its actions as MCP tools', () => {
@@ -378,6 +381,7 @@ export function repoFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'biome.json', contents: biome() },
     { path: 'bunfig.toml', contents: bunfig() },
     { path: 'app.config.ts', contents: appConfig(app) },
+    { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
     { path: '.env.development', contents: envDevelopment() },
     {
@@ -390,8 +394,7 @@ export function repoFiles(app: NameSet): readonly GeneratedFile[] {
       path: 'packages/db/package.json',
       contents: domainPackage(app, 'db', 'Drizzle schema and migrations, no business logic'),
     },
-    { path: 'packages/db/src/index.ts', contents: dbIndex(app) },
-    { path: 'packages/db/src/client.ts', contents: dbClient(app) },
+    { path: 'packages/db/src/index.ts', contents: dbIndex() },
     { path: 'packages/db/src/schema.ts', contents: dbSchema(app) },
     { path: 'packages/db/src/seed.ts', contents: dbSeed(app) },
     { path: 'packages/db/migrations/0000_initial.sql', contents: migration() },

@@ -12,18 +12,19 @@ const actionSource = (
 ): string => `// ${name.camel}: one mutation, server-authoritative. Input is validated before the handler runs
 // and the policy is the same object the MCP tool and the HTTP route evaluate.
 import { action } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { ${feature.pascal}NotFoundError } from './errors';
-import { ${feature.camel}Tag } from './policy';
-import * as repo from './repo';
+// One directory up: actions live in \`actions/\`, the feature's errors, policy and repo are the
+// slice's own files and are shared by every action in it.
+import { ${feature.pascal}NotFoundError } from '../errors';
+import { can${feature.pascal}Write, ${feature.camel}Tag } from '../policy';
+import * as repo from '../repo';
 
 export const ${name.camel} = action({
-  input: t.object({ id: t.uuid }),
+  // orgId is part of the input because the policy decides on it — authz reads the declaration,
+  // never the database.
+  input: t.object({ id: t.uuid, orgId: t.uuid }),
   output: t.object({ id: t.uuid, title: t.string }),
-  policy: can('${feature.kebab}:write', ({ actor, input }) =>
-    actor !== null && repo.byId(input.id).then((row) => row?.orgId === actor.orgId),
-  ),
+  policy: can${feature.pascal}Write,
   cache: { invalidates: [${feature.camel}Tag] },
   mcp: { expose: true, description: '${name.raw} — generated, edit the description' },
   async handle({ input }) {
@@ -40,17 +41,33 @@ const mutatorSource = (
 ): string => `// ${name.camel}: an action with an optimistic local twin. The local half runs against the client
 // store immediately; the server half is authoritative and reconciles on conflict.
 import { mutator } from '@ultimat3/action';
-import { ${feature.pascal}NotFoundError } from './errors';
-import * as repo from './repo';
+import { t } from '@ultimat3/schema';
+import { ${feature.pascal}NotFoundError } from '../errors';
+import { can${feature.pascal}Write } from '../policy';
+import * as repo from '../repo';
+
+interface Local${feature.pascal} {
+  readonly id: string;
+  readonly title: string;
+  readonly pending: boolean;
+}
 
 export const ${name.camel} = mutator({
-  local(tx, { id }: { id: string }) {
-    tx.${feature.plural}.update(id, (row) => ({ ...row, pending: true }));
+  input: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
+  output: t.object({ id: t.uuid, title: t.string }),
+  policy: can${feature.pascal}Write,
+  // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
+  // augments LocalTables, and generated code cannot assume that has happened yet.
+  local(tx, input) {
+    tx.table<Local${feature.pascal}>('${feature.pluralKebab}').update(input.id, {
+      title: input.title,
+      pending: true,
+    });
   },
-  async server(_ctx, { id }: { id: string }) {
-    const row = await repo.byId(id);
-    if (row === undefined) throw new ${feature.pascal}NotFoundError({ id });
-    return { id: row.id, title: row.title };
+  async server(_ctx, input) {
+    const row = await repo.byId(input.id);
+    if (row === undefined) throw new ${feature.pascal}NotFoundError({ id: input.id });
+    return { id: row.id, title: input.title };
   },
   conflict: 'server-wins',
 });
@@ -74,41 +91,49 @@ export class ${feature.pascal}NotFoundError extends UltimateError {
 }
 `;
 
+const ID = '00000000-0000-0000-0000-000000000001';
+const ORG = '00000000-0000-0000-0000-000000000002';
+
 const actionTest = (
   name: NameSet,
   isMutator: boolean,
-): string => `import { expect } from 'bun:test';
-import { contractTest, unitTest } from '@ultimat3/testing';
+): string => `import { contractTest, expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
+const id = '${ID}';
+const orgId = '${ORG}';
+
 unitTest('${name.camel} is a declared ${isMutator ? 'mutator' : 'action'}', () => {
-  expect(${name.camel}.kind).toBe('${isMutator ? 'mutator' : 'action'}');
+${
+  isMutator
+    ? `  expect(${name.camel}.describeMutator().kind).toBe('mutator');
+  expect(${name.camel}.isMutator).toBe(true);`
+    : `  expect(${name.camel}.kind).toBe('action');`
+}
+});
+
+unitTest('${name.camel} rejects input that is not a uuid', async () => {
+  await expect(${name.camel}.def.input).toRejectInput({ id: 'not-a-uuid', orgId${
+    isMutator ? ", title: 'a title'" : ''
+  } });
+  await expect(${name.camel}.def.input).toAcceptInput({ id, orgId${
+    isMutator ? ", title: 'a title'" : ''
+  } });
+});
+
+unitTest('${name.camel} denies an anonymous actor', async () => {
+  await expect(${name.camel}.def.policy).toDenyPolicy({ actor: null, input: { orgId } });
 });
 
 ${
   isMutator
-    ? `unitTest('${name.camel} declares a conflict strategy and both halves', () => {
+    ? `unitTest('${name.camel} declares a conflict strategy and an optimistic local half', () => {
   expect(${name.camel}.conflict).toBe('server-wins');
-  expect(typeof ${name.camel}.local).toBe('function');
-  expect(typeof ${name.camel}.server).toBe('function');
+  expect(typeof ${name.camel}.applyLocal).toBe('function');
 });`
-    : `unitTest('${name.camel} rejects input that is not a uuid', async () => {
-  await expect(${name.camel}.input).toRejectInput({ id: 'not-a-uuid' });
-  await expect(${name.camel}.input).toAcceptInput({
-    id: '00000000-0000-0000-0000-000000000001',
-  });
-});
-
-unitTest('${name.camel} denies an anonymous actor', async () => {
-  await expect(${name.camel}.policy).toDenyPolicy({
-    actor: null,
-    input: { id: '00000000-0000-0000-0000-000000000001' },
-  });
-});
-
-contractTest('${name.camel} is exposed as an MCP tool with a description', () => {
-  expect(${name.camel}.mcp?.expose).toBe(true);
-  expect(${name.camel}.mcp?.description.length).toBeGreaterThan(0);
+    : `contractTest('${name.camel} is exposed as an MCP tool with a description', () => {
+  expect(${name.camel}.def.mcp?.expose).toBe(true);
+  expect(${name.camel}.def.mcp?.description ?? '').not.toBe('');
 });`
 }
 `;

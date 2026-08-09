@@ -20,12 +20,8 @@ import { ${feature.pascal}NotFoundError } from './errors';
 import * as repo from './repo';
 import type { ${feature.pascal} } from './entity';
 
-export interface Create${feature.pascal}Input {
-  readonly orgId: string;
-  readonly title: string;
-  readonly priceMinor: number;
-  readonly priceCurrency: string;
-}
+/** Derived from the row, never restated: a new column reaches this input without an edit here. */
+export type Create${feature.pascal}Input = Omit<${feature.pascal}, 'id' | 'createdAt'>;
 
 export async function create(input: Create${feature.pascal}Input): Promise<${feature.pascal}> {
   return repo.insert(input);
@@ -38,8 +34,9 @@ export async function require${feature.pascal}(id: string): Promise<${feature.pa
 }
 `;
 
-const serviceTest = (feature: NameSet): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
+const serviceTest = (
+  feature: NameSet,
+): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { ${feature.pascal}NotFoundError } from './errors';
 
 unitTest('${feature.pascal}NotFoundError carries a code, a cause and a fix', () => {
@@ -67,7 +64,9 @@ export function ${feature.pascal}List(props: ${feature.pascal}ListProps) {
   return (
     <ul class={styles.list}>
       <For each={props.rows} fallback={<li>{t('app.${feature.kebab}.empty')}</li>}>
-        {(row) => <li class={styles.item}>{row.title}</li>}
+        {/* The item arrives as an accessor: reading it inside the row is what keeps the update
+            surgical instead of re-rendering the list. */}
+        {(row) => <li class={styles.item}>{row().title}</li>}
       </For>
     </ul>
   );

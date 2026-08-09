@@ -14,11 +14,12 @@ export interface FeatureTarget {
 const entitySource = (
   name: NameSet,
   snake: string,
+  table: string,
 ): string => `// The ${name.camel} table, its domain type and its invariants. No I/O beyond the column
 // definitions: repo.ts owns every query that touches this table.
 import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
 
-export const ${name.camel} = entity('${name.pluralKebab}', {
+export const ${name.camel} = entity('${table}', {
   columns: {
     id: uuid().primaryKey(),
     // Declaring the tenant column is what turns tenancy on: a read without an org predicate
@@ -44,30 +45,43 @@ export type ${name.pascal} = typeof ${name.camel}.$row;
 
 const repoSource = (
   name: NameSet,
+  snake: string,
 ): string => `// The only module allowed to query the ${name.pluralKebab} table. Routes call actions and
 // queries; actions call services; services call this.
-import { db } from '@ultimat3/db';
-import { ${name.camel} } from './entity';
+// \`db()\` is the ambient handle: inside a transaction it IS the transaction, so these functions
+// join the caller's transaction without knowing one is open.
+import { db, sql } from '@ultimat3/db';
+import { dbDrift, newId } from '@ultimat3/entity';
 import type { ${name.pascal} } from './entity';
 
 export async function byId(id: string): Promise<${name.pascal} | undefined> {
-  const rows = await db.select().from(${name.camel}).where({ id }).limit(1);
-  return rows[0];
+  const row = await db().one<${name.pascal}>(sql\`select * from ${snake} where id = \${id}\`);
+  return row ?? undefined;
 }
 
 export async function listByOrg(orgId: string, limit = 50): Promise<readonly ${name.pascal}[]> {
-  return db.select().from(${name.camel}).where({ orgId }).orderBy('createdAt').limit(limit);
+  // Ordered and bounded: an unordered page is a different page on every request.
+  return db().query<${name.pascal}>(
+    sql\`select * from ${snake} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
+  );
 }
 
 export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Promise<${name.pascal}> {
-  const [created] = await db.insert(${name.camel}).values(row).returning();
-  if (created === undefined) throw new Error('insert returned no row');
+  // Money is two physical columns — integer minor units plus the ISO code, never a float.
+  const created = await db().one<${name.pascal}>(sql\`
+    insert into ${snake} (id, org_id, title, price_minor, price_currency)
+    values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency})
+    returning *\`);
+  if (created === null) throw dbDrift('${snake}', 'id');
   return created;
 }
 `;
 
-const entityTest = (name: NameSet, snake: string): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
+const entityTest = (
+  name: NameSet,
+  snake: string,
+  table: string,
+): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './entity';
 import type { ${name.pascal} } from './entity';
 
@@ -81,7 +95,7 @@ const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
 });
 
 unitTest('${name.camel} declares a table with invariants', () => {
-  expect(${name.camel}.$name).toBe('${name.pluralKebab}');
+  expect(${name.camel}.$name).toBe('${table}');
   expect(${name.camel}.$tenantColumn).toBe('orgId');
   const named = ${name.camel}.$invariants.map((rule) => rule.name);
   expect(named).toContain('${snake}_title_not_blank');
@@ -96,12 +110,14 @@ unitTest('${name.camel} invariants reject a blank title and a negative price', (
 
 export function entityFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
   const name = names(rawName);
-  // Constraint names are snake_case because Postgres lowercases every unquoted identifier.
+  // Constraint and table names are snake_case: Postgres lowercases every unquoted identifier,
+  // and a hyphen would have to be quoted at every call site forever.
   const snake = name.kebab.split('-').join('_');
+  const table = name.pluralKebab.split('-').join('_');
   const dir = `${target.surfaceDir}/${target.feature}`;
   return [
-    { path: `${dir}/entity.ts`, contents: entitySource(name, snake) },
-    { path: `${dir}/entity.test.ts`, contents: entityTest(name, snake) },
-    { path: `${dir}/repo.ts`, contents: repoSource(name) },
+    { path: `${dir}/entity.ts`, contents: entitySource(name, snake, table) },
+    { path: `${dir}/entity.test.ts`, contents: entityTest(name, snake, table) },
+    { path: `${dir}/repo.ts`, contents: repoSource(name, table) },
   ];
 }
