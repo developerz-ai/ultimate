@@ -4,16 +4,17 @@
 
 import { watch } from 'node:fs';
 import { join } from 'node:path';
+import type { Manifest } from '@ultimat3/manifest';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { checkAppBoundaries } from './app-boundaries';
+import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import type { DevServices } from './dev-services';
 import { describeServices, ROLES, resolveServices } from './dev-services';
-import type { AppManifest } from './manifest-scan';
-import { scanApp } from './manifest-scan';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
-import { checkAppBoundaries } from './surfaces';
 
 const DEFAULT_PORT = 3000;
 
@@ -24,7 +25,7 @@ export interface DevServer {
 }
 
 interface DevState {
-  manifest: AppManifest;
+  manifest: Manifest;
   reloads: number;
 }
 
@@ -46,12 +47,7 @@ function devRoutes(root: string, state: DevState, services: DevServices) {
         endpoints: ['/_x/manifest', '/_x/routes', '/_x/boundaries', '/_x/services'],
       }),
     '/_x/manifest': () => json(state.manifest),
-    '/_x/routes': () =>
-      json({
-        routes: state.manifest.entries
-          .filter((entry) => entry.kind === 'route')
-          .map((entry) => ({ path: entry.path, surface: entry.surface, meta: entry.meta })),
-      }),
+    '/_x/routes': () => json({ routes: state.manifest.routes }),
     '/_x/boundaries': async () => json({ findings: await checkAppBoundaries(root) }),
     '/_x/services': () => json({ services, reloads: state.reloads }),
     '/healthz': () => new Response('ok'),
@@ -84,7 +80,7 @@ export interface StartDevOptions {
 
 export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const services = resolveServices(options.root, options.env);
-  const state: DevState = { manifest: await scanApp({ root: options.root }), reloads: 0 };
+  const state: DevState = { manifest: (await appManifest(options.root)).manifest, reloads: 0 };
   const routes = devRoutes(options.root, state, services);
   const server = Bun.serve({
     port: options.port,
@@ -93,7 +89,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   });
   const stopWatching = watchApp(options.root, (file) => {
     const started = performance.now();
-    void scanApp({ root: options.root }).then((manifest) => {
+    void appManifest(options.root).then(({ manifest }) => {
       state.manifest = manifest;
       state.reloads += 1;
       options.onReload?.(file, Math.round(performance.now() - started));
@@ -153,7 +149,7 @@ export const devCommand: CliCommand = {
         storage: server.services.storage.url,
         introspect: `${server.url}/_x`,
       },
-      lines: [`  manifest ${join(root, 'x.manifest.json')}`, `  introspect ${server.url}/_x`],
+      lines: [`  manifest ${join(root, MANIFEST_FILENAME)}`, `  introspect ${server.url}/_x`],
     };
     if (ctx.args.flags.get('once') === true) {
       await server.stop();

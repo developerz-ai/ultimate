@@ -128,10 +128,11 @@ export async function collectSourceFiles(root: string): Promise<readonly SourceF
 // ---------------------------------------------------------------------------
 // Rule 2: `shared/` is a leaf.
 //
-// `packages/cli/src/surfaces.ts` states the same rule for a generated app, but it only ever runs
-// from an app root under `x verify`, and CI runs the reference app's gate advisory-only — so a
-// value import out of `shared/` would ship with nothing red. Checked here instead of imported
-// from there because this script must keep running with no node_modules present.
+// `@ultimat3/render`'s `checkSurfaceBoundary` states the same rule for a generated app (the CLI
+// runs it from `packages/cli/src/app-boundaries.ts`), but it only ever runs from an app root
+// under `x verify`, and CI runs the reference app's gate advisory-only — so a value import out
+// of `shared/` would ship with nothing red. Checked here instead of imported from there because
+// this script must keep running with no node_modules present.
 // ---------------------------------------------------------------------------
 
 const SURFACES = new Set(['site', 'app', 'api', 'shared']);

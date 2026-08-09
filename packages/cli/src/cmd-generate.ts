@@ -6,8 +6,9 @@
 // app root, and `node:path` is the only API that resolves one. `node:fs` for the exists check.
 import { existsSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { appManifest, writeAppManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
-import { writeManifest } from './cmd-manifest';
 import type { CliCommand, CommandContext } from './command';
 import {
   BadFlagError,
@@ -15,8 +16,6 @@ import {
   ScaffoldPathEscapeError,
   UnknownCommandError,
 } from './errors';
-import type { AppManifest } from './manifest-scan';
-import { scanApp } from './manifest-scan';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
@@ -268,10 +267,11 @@ export const generateCommand: CliCommand = {
     // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.
-    let manifest: AppManifest | undefined;
+    let buildId: string | undefined;
     if (report.written.length > 0) {
-      manifest = await scanApp({ root });
-      await writeManifest(root, manifest);
+      const { manifest } = await appManifest(root);
+      await writeAppManifest(root, manifest);
+      buildId = manifest.buildId;
     }
     return {
       ok: report.conflicts.length === 0,
@@ -279,11 +279,11 @@ export const generateCommand: CliCommand = {
       summary: msg('cli.generate.wrote', { count: report.written.length, kind, name }),
       data: {
         files: report.written,
-        ...(manifest === undefined ? {} : { manifest: { buildId: manifest.buildId } }),
+        ...(buildId === undefined ? {} : { manifest: { buildId } }),
       },
       lines: [
         ...report.written.map((path) => `  + ${path}`),
-        ...(manifest === undefined ? [] : ['  + x.manifest.json']),
+        ...(buildId === undefined ? [] : [`  + ${MANIFEST_FILENAME}`]),
       ],
       findings: report.conflicts,
     };

@@ -80,3 +80,6 @@ temp/
 
 # Generated site output
 site/dist/
+
+# CLI app-loader test fixture (written and removed per run; a crashed run leaves it)
+packages/cli/.app-fixture/

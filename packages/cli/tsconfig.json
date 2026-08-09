@@ -27,6 +27,9 @@
       "path": "../jobs"
     },
     {
+      "path": "../manifest"
+    },
+    {
       "path": "../mcp"
     },
     {

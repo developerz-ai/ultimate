@@ -3,22 +3,26 @@
 // allowed to hand-edit these two files.
 
 import { join } from 'node:path';
+import type { Manifest } from '@ultimat3/manifest';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { appManifest, readAppManifest, writeAppManifest } from './app-manifest';
+import { OPENAPI_FILE, openApiJson } from './app-openapi';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import type { AppManifest } from './manifest-scan';
-import { countOf, scanApp } from './manifest-scan';
 import { msg } from './messages';
-import { buildOpenApi } from './openapi';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool } from './parse';
 
-const stable = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
-
-export async function writeManifest(root: string, manifest: AppManifest): Promise<string> {
-  const path = join(root, 'x.manifest.json');
-  await Bun.write(path, stable(manifest));
-  return path;
-}
+const countsOf = (manifest: Manifest): JsonValue => ({
+  routes: manifest.routes.length,
+  actions: manifest.actions.length,
+  mutators: manifest.actions.filter((action) => action.mutator === true).length,
+  queries: manifest.queries.length,
+  jobs: manifest.jobs.length,
+  tasks: manifest.tasks.length,
+  entities: manifest.entities.length,
+  policies: manifest.policies.length,
+});
 
 export const manifestCommand: CliCommand = {
   spec: {
@@ -33,58 +37,45 @@ export const manifestCommand: CliCommand = {
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('manifest', ctx.cwd).dir;
-    const manifest = await scanApp({ root });
-    const counts: JsonValue = {
-      routes: countOf(manifest, 'route'),
-      actions: countOf(manifest, 'action'),
-      mutators: countOf(manifest, 'mutator'),
-      queries: countOf(manifest, 'query'),
-      jobs: countOf(manifest, 'job'),
-      tasks: countOf(manifest, 'task'),
-      entities: countOf(manifest, 'entity'),
-      policies: countOf(manifest, 'policy'),
-    };
+    const { manifest, findings } = await appManifest(root);
+    const counts = countsOf(manifest);
 
     if (flagBool(ctx.args, 'check')) {
-      const committed = await Bun.file(join(root, 'x.manifest.json'))
-        .json()
-        .catch(() => undefined);
-      const fresh =
-        committed !== null &&
-        typeof committed === 'object' &&
-        (committed as { buildId?: string }).buildId === manifest.buildId;
+      const committed = await readAppManifest(root);
+      const fresh = committed?.buildId === manifest.buildId;
       return {
-        ok: fresh,
+        ok: fresh && findings.length === 0,
         command: 'manifest',
         summary: fresh ? 'manifest is fresh' : 'manifest is stale',
         findings: fresh
-          ? []
+          ? findings
           : [
+              ...findings,
               {
                 code: 'X_MANIFEST_STALE',
-                cause: `x.manifest.json does not match build ${manifest.buildId}`,
+                cause: `${MANIFEST_FILENAME} does not match build ${manifest.buildId}`,
                 fix: 'x manifest',
                 docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
-                at: 'x.manifest.json',
+                at: MANIFEST_FILENAME,
               },
             ],
         data: { buildId: manifest.buildId, counts },
       };
     }
 
-    const path = await writeManifest(root, manifest);
+    const path = await writeAppManifest(root, manifest);
     if (ctx.args.flags.get('openapi') !== false) {
-      const version = (ctx.env['npm_package_version'] ?? '0.0.0') as string;
-      await Bun.write(join(root, 'openapi.json'), stable(buildOpenApi(manifest, version)));
+      await Bun.write(join(root, OPENAPI_FILE), openApiJson(manifest));
     }
     return {
-      ok: true,
+      ok: findings.length === 0,
       command: 'manifest',
       summary: msg('cli.manifest.wrote', {
-        path: 'x.manifest.json',
-        routes: countOf(manifest, 'route'),
-        actions: countOf(manifest, 'action'),
+        path: MANIFEST_FILENAME,
+        routes: manifest.routes.length,
+        actions: manifest.actions.length,
       }),
+      findings,
       data: { path, buildId: manifest.buildId, counts },
     };
   },

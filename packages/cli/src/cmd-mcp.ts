@@ -2,15 +2,17 @@
 // in dev; write tools are scoped to a branch database. Same facts as `x manifest` and `x routes`,
 // so an agent never has to parse terminal output to learn what the app contains.
 
+import { describeRoutes } from '@ultimat3/render';
+import { checkAppBoundaries } from './app-boundaries';
+import { loadApp } from './app-load';
+import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import type { CliErrorCode } from './errors';
 import { CLI_ERROR_CODES, docsFor } from './errors';
-import { scanApp } from './manifest-scan';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagString } from './parse';
-import { checkAppBoundaries } from './surfaces';
 
 export interface McpTool {
   readonly name: string;
@@ -32,17 +34,19 @@ export const MCP_TOOLS: readonly McpTool[] = [
     name: 'manifest.get',
     description: 'The whole x.manifest.json: routes, actions, jobs, policies, entities',
     readOnly: true,
-    run: async (root) => (await scanApp({ root })) as unknown as JsonValue,
+    run: async (root) => (await appManifest(root)).manifest as unknown as JsonValue,
   },
   {
     name: 'routes.list',
     description: 'Route table with render mode, hydrate, offline strategy and budget',
     readOnly: true,
     run: async (root) => {
-      const manifest = await scanApp({ root });
-      return manifest.entries
-        .filter((entry) => entry.kind === 'route')
-        .map((entry) => ({ path: entry.path ?? entry.name, file: entry.file })) as JsonValue;
+      await loadApp(root);
+      return describeRoutes().map((route) => ({
+        path: route.path,
+        file: route.file,
+        surface: route.surface,
+      })) as JsonValue;
     },
   },
   {
