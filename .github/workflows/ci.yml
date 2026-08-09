@@ -77,6 +77,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # A real Postgres, not a fake driver — packages/testing/src/template-db.ts clones a database
+    # off it per worker, so client.ts/introspect.ts/branch.ts get exercised against a live server
+    # instead of a recording client. No admin URL means those tests skip, so `bun test` still
+    # passes on a laptop with nothing installed.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ultimate
+          POSTGRES_PASSWORD: ultimate
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ultimate"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
         with:
@@ -101,6 +121,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     needs: [lint, typecheck, boundaries, test]
+    # Same live Postgres as the `test` job — the gate's own unit step sweeps up the live-Postgres
+    # tests too, and it should exercise them for real rather than silently skip.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ultimate
+          POSTGRES_PASSWORD: ultimate
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ultimate"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
         with:
