@@ -64,6 +64,28 @@ export function formatPath(
   return out;
 }
 
+/**
+ * Any issue list this package or its consumers produce, whatever shape the path takes —
+ * a `StandardIssue`'s segment array, or an already-flattened dotted string.
+ */
+export interface FormattableIssue {
+  readonly message: string;
+  readonly path?: string | readonly (PropertyKey | StandardPathSegment)[] | undefined;
+}
+
+/**
+ * The one issue-to-text renderer for the whole framework: `x_validation_failed`,
+ * MCP arg errors and action input/output errors all read the same `path: message`
+ * line so a human or an agent parses one format everywhere. Callers join or index
+ * the array however their surface needs it.
+ */
+export function formatIssues(issues: readonly FormattableIssue[]): readonly string[] {
+  return issues.map((issue) => {
+    const path = typeof issue.path === 'string' ? issue.path : formatPath(issue.path);
+    return path === '' ? issue.message : `${path}: ${issue.message}`;
+  });
+}
+
 /** Normalise any conforming library's issues into Ultimate's path-annotated shape. */
 export function toValidationIssues(issues: readonly StandardIssue[]): readonly ValidationIssue[] {
   return issues.map((issue) => ({

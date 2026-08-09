@@ -3,11 +3,11 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
+import { formatIssues } from '@ultimat3/schema';
 import type { AnyMcpTool, McpCaller, McpToolResult, McpVerbClass, ToolListEntry } from './registry';
 import { ToolRegistry } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';
-import { formatIssues } from './validate-args';
 import type { JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
 import {
   DEFAULT_SERVER_INFO,

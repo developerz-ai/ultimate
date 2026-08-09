@@ -6,11 +6,11 @@
 // gains `expose`, its tool never appears, and nothing fails.
 //
 // Both registries are read through the same `describe`/`list` boundary `dev-host.ts` already
-// uses, and every projected primitive still runs through `runAction` / `sourceFor`, so the
+// uses, and every projected primitive still runs through `invoke` / `sourceFor`, so the
 // registry shortcut buys convenience and changes no execution path.
 
 import type { AnyAction } from '@ultimat3/action';
-import { actionName, listActions, runAction } from '@ultimat3/action';
+import { actionName, invoke, listActions } from '@ultimat3/action';
 import { withChildContext } from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
 import { listQueries, queryName, sourceFor } from '@ultimat3/query';
@@ -28,27 +28,25 @@ export function exposedPrimitives(): readonly ProjectablePrimitive[] {
 }
 
 function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
-  const { def } = target;
-  const exposure = exposureOf(def);
+  const exposure = exposureOf(target.mcp);
   return {
     name: actionName(target),
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
-    inputJsonSchema: toWireSchema(def.input),
+    inputJsonSchema: toWireSchema(target.input),
     mutates: true,
-    run: ({ input, actor }) =>
-      withChildContext({ actor }, () => runAction(target, input, { surface: 'mcp' })),
+    // The actor rides in on the options: `invoke` swaps it inside the one execution path.
+    run: ({ input, actor }) => invoke(target, input, { surface: 'mcp', actor }),
   };
 }
 
 function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
-  const { def } = target;
-  const exposure = exposureOf(def);
+  const exposure = exposureOf(target.mcp);
   return {
     name: queryName(target),
     ...(exposure === undefined ? {} : { mcp: exposure }),
     ...(exposure?.description === undefined ? {} : { description: exposure.description }),
-    inputJsonSchema: toWireSchema(def.input),
+    inputJsonSchema: toWireSchema(target.input),
     mutates: false,
     run: ({ input, actor }) =>
       withChildContext({ actor }, async () => {
@@ -63,16 +61,20 @@ function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
 }
 
 /**
- * `@ultimat3/query`'s def type carries no `mcp` field yet, so the opt-in is read structurally
- * for both primitives rather than one typed path and one untyped one. Narrow on purpose: only
- * a literal `expose: true` counts, so nothing is exposed by accident.
+ * An action and a query declare MCP exposure with the same two fields, so one typed path
+ * reads both. Narrow on purpose: only a literal `expose: true` counts, so nothing is
+ * exposed by accident — an undeclared `mcp` block yields no exposure at all.
  */
-function exposureOf(def: object): McpExposure | undefined {
-  const value = (def as { readonly mcp?: unknown }).mcp;
-  if (typeof value !== 'object' || value === null) return undefined;
-  const fields = value as { readonly expose?: unknown; readonly description?: unknown };
+function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined {
+  if (declared === undefined) return undefined;
   return {
-    expose: fields.expose === true,
-    ...(typeof fields.description === 'string' ? { description: fields.description } : {}),
+    expose: declared.expose === true,
+    ...(declared.description === undefined ? {} : { description: declared.description }),
   };
+}
+
+/** `ActionMcp` and `QueryMcp` are the same shape; restating it binds to neither. */
+interface DeclaredMcp {
+  readonly expose: boolean;
+  readonly description?: string;
 }

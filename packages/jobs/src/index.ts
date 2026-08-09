@@ -1,5 +1,8 @@
 // Public API of @ultimat3/jobs. Explicit, no `export *`.
 
+/** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
+export { t } from '@ultimat3/schema';
+export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,
   ClaimOptions,
@@ -71,7 +74,7 @@ export {
   inspectQueues,
   retryFromStep,
 } from './inspect';
-export type { AnyJobHandle, JobDefinition, JobHandle, JobRunArgs } from './job';
+export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job';
 export { describeJobs, getJob, job, nameJobs, registeredJobs, resetJobs } from './job';
 export type {
   Lease,
@@ -97,10 +100,13 @@ export {
   createMemoryOutboxStore,
   createOutboxRelay,
   enqueueInTx,
+  jobsFacade,
+  resetJobsFacade,
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
   SQL_OUTBOX_STAGE,
   SQL_OUTBOX_TABLE,
+  setJobsFacade,
 } from './outbox';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
@@ -113,8 +119,10 @@ export type {
   SchedulerOptions,
   SchedulerState,
   TaskDefinition,
+  TaskDescriptor,
   TaskEnqueueEntry,
   TaskHandle,
+  TaskJobResult,
 } from './scheduler';
 export {
   createMemorySchedulerState,

@@ -81,7 +81,7 @@ import { config } from './page';
 unitTest('the landing page ships zero JS and declares metadata', async () => {
   expect(config.render).toBe('static');
   expect(config.hydrate).toBe('never');
-  expect(config.budget?.js).toBe('0kb');
+  expect(config.budget.js).toBe('0kb');
   const meta = await config.meta({});
   expect(meta.title ?? '').not.toBe('');
 });
@@ -184,7 +184,7 @@ import { health } from './health';
 
 contractTest('health is an action exposed over MCP', () => {
   expect(health.kind).toBe('action');
-  expect(health.def.mcp?.expose).toBe(true);
+  expect(health.mcp?.expose).toBe(true);
 });
 `;
 

@@ -3,7 +3,7 @@ import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { QueryDef } from './query';
-import { query, runQuery } from './query';
+import { isQuery, query, runQuery, sourceFor } from './query';
 import { describeQueries, registerQueries, registerQuery, resetRegistry } from './registry';
 import { from } from './source';
 import { explain } from './sql';
@@ -36,6 +36,41 @@ const defineFeed = () =>
 describe('query', () => {
   beforeEach(() => {
     resetRegistry();
+  });
+
+  test('the declaration is lifted onto the query and `sql` is not reachable', () => {
+    const feed = registerQuery('orgFeed', defineFeed());
+    expect('def' in feed).toBe(false);
+    expect(feed.input).toBe(Input);
+    expect(feed.isLive).toBe(true);
+    expect(feed.policy.label).toBe('feed:read');
+  });
+
+  test('registration names the query in place, so the module export projects', () => {
+    // The bug this pins: handing back a differently-named twin leaves
+    // `import { liveFeed } from './live'` unnamed, so every projection on it throws
+    // X_QUERY_UNREGISTERED after boot while the registry's copy works fine.
+    const declared = defineFeed();
+    const registered = registerQuery('orgFeed', declared);
+    expect(registered).toBe(declared);
+    expect(declared.name).toBe('orgFeed');
+    expect(declared.tool().query).toBe('orgFeed');
+  });
+
+  test('naming an already-named query twins it instead of renaming in place', () => {
+    const declared = registerQuery('orgFeed', defineFeed());
+    const twin = registerQuery('archiveFeed', declared);
+    expect(twin).not.toBe(declared);
+    expect(declared.name).toBe('orgFeed');
+    expect(twin.name).toBe('archiveFeed');
+  });
+
+  test('a look-alike is not a query, so it never reaches the registry', () => {
+    // Only `query()` stashes a declaration, so only `query()` can produce something with a
+    // `sql` to run. An object that merely says `kind: 'query'` has none.
+    const impostor = Object.assign(() => Promise.resolve([]), { kind: 'query' as const });
+    expect(isQuery(impostor)).toBe(false);
+    expect(registerQueries({ impostor })).toEqual([]);
   });
 
   test('returns rows and infers the row type from the source', async () => {
@@ -89,6 +124,23 @@ describe('query', () => {
     registerQueries({ orgFeed: defineFeed(), archiveFeed: defineFeed() });
     expect(describeQueries().map((entry) => entry.name)).toEqual(['archiveFeed', 'orgFeed']);
     expect(describeQueries()[0]?.live).toBe(true);
+  });
+
+  test('enforce:false skips the policy and nothing else — the shape `x g query` emits', async () => {
+    const feed = defineFeed().named('orgFeed');
+    const source = await sourceFor(feed, { orgId: ORG }, { ctx: anonymous, enforce: false });
+    expect(source.toSQL().sql).toContain('order by');
+
+    // The input is still parsed: a scaffolded test that passes garbage must go red.
+    const failure = await sourceFor(
+      feed,
+      { orgId: 'nope' },
+      {
+        ctx: anonymous,
+        enforce: false,
+      },
+    ).catch((error: unknown) => error);
+    expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');
   });
 
   test('explain exposes the generated SQL so an agent can self-correct', async () => {

@@ -175,7 +175,9 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
     );
   }
 
-  if (ctx.surface === 'site' && config.hydrate !== 'never' && config.budget?.js === undefined) {
+  // `budget` is always on the descriptor; `budget.js` is the field that stays optional,
+  // and its absence is the failure — site/ is 0kb until a route says otherwise, in bytes.
+  if (ctx.surface === 'site' && config.hydrate !== 'never' && config.budget.js === undefined) {
     throw new RouteModeInvalidError(
       `${ctx.file} is in site/ (0kb JS baseline) and opts into hydrate: '${config.hydrate}' ` +
         'without a JS budget',

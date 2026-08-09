@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { createMemoryDriver } from './driver-memory';
@@ -11,6 +11,8 @@ import {
   createMemoryOutboxStore,
   createOutboxRelay,
   enqueueInTx,
+  resetJobsFacade,
+  setJobsFacade,
 } from './outbox';
 
 /** Minimal Standard Schema so these tests do not depend on ArkType's surface. */
@@ -39,6 +41,12 @@ beforeEach(() => {
     retry: { attempts: 3, backoff: 'exponential' },
     run: () => Promise.resolve(),
   });
+});
+
+// The facade slot is process-global, like the driver: a leaked one would silently reroute
+// every later enqueue in this bun process into this file's transaction.
+afterEach(() => {
+  resetJobsFacade();
 });
 
 const fakeTx = (): Tx => ({ id: 'tx-1' }) as unknown as Tx;
@@ -136,5 +144,57 @@ describe('ctx.jobs.enqueue facade', () => {
     const store = createMemoryOutboxStore();
     const jobs = createJobsFacade({ store, driver, mode: 'required' }, () => undefined);
     await expect(jobs.enqueue(notify, { orgId: 'org-3' })).rejects.toThrow(OutboxNoTxError);
+  });
+});
+
+describe('handle.enqueue through the installed facade', () => {
+  test('stages into the ambient transaction — the row exists only after commit', async () => {
+    const driver = createMemoryDriver();
+    const store = createMemoryOutboxStore();
+    const relay = createOutboxRelay({ store, driver });
+    const tx = fakeTx();
+    let ambient: Tx | undefined = tx;
+    setJobsFacade(createJobsFacade({ store, driver }, () => ambient));
+
+    const staged = await notify.enqueue({ orgId: 'org-1' });
+    // No queue id yet: the row does not exist until COMMIT, and neither does the relay's work.
+    expect(staged.runId).toBe('');
+    expect(await relay.tick()).toBe(0);
+    expect(((await driver.introspect?.list()) ?? []).length).toBe(0);
+
+    await store.commit(tx);
+    expect(await relay.tick()).toBe(1);
+
+    const rows = (await driver.introspect?.list()) ?? [];
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.idempotencyKey).toBe('notify:org-1');
+
+    // Same call site, no transaction in scope: published directly, no outbox hop.
+    ambient = undefined;
+    await notify.enqueue({ orgId: 'org-2' });
+    expect(((await driver.introspect?.list()) ?? []).length).toBe(2);
+  });
+
+  test('the installed facade carries handle.as tenant stamping into the outbox row', async () => {
+    const driver = createMemoryDriver();
+    const store = createMemoryOutboxStore();
+    const tx = fakeTx();
+    setJobsFacade(createJobsFacade({ store, driver }, () => tx));
+
+    await notify.as({ orgId: 'org-9' }, { orgId: 'org-9' });
+    const [record] = await store.commit(tx);
+    expect(record?.tenantId).toBe('org-9');
+  });
+
+  test('resetJobsFacade puts the process back to the driver-only fallback', async () => {
+    const driver = createMemoryDriver();
+    const store = createMemoryOutboxStore();
+    const tx = fakeTx();
+    setJobsFacade(createJobsFacade({ store, driver }, () => tx));
+    resetJobsFacade();
+
+    // No driver installed either, so the fallback has nothing to publish to and says so.
+    await expect(notify.enqueue({ orgId: 'org-4' })).rejects.toThrow('X_DRIVER_UNAVAILABLE');
+    expect(await store.pendingCount()).toBe(0);
   });
 });

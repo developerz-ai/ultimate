@@ -9,7 +9,7 @@ import { isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { json, problem } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
-import { actionName, runAction } from './action';
+import { actionName, defOf, invoke } from './invoke';
 import {
   derivePath,
   inputSchemaName,
@@ -35,7 +35,7 @@ export const REPLAYED_HEADER = 'x-ultimate-replayed';
 export function toRoute(target: AnyAction): Route {
   const name = actionName(target);
   const { path, resource } = derivePath(name);
-  const { def } = target;
+  const def = defOf(target);
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
     try {
@@ -44,7 +44,7 @@ export function toRoute(target: AnyAction): Route {
       const raw = await req.bodyRaw();
       const key = def.idempotent === true ? req.header(IDEMPOTENCY_HEADER) : null;
       let replayed = false;
-      const result = await runAction(target, raw, {
+      const result = await invoke(target, raw, {
         surface: 'http',
         idempotencyKey: key,
         onReplay: () => {
@@ -91,7 +91,7 @@ export interface OpenApiOperation {
 /** The operation object for this action. `openapi.ts` assembles them into a document. */
 export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
   const name = actionName(target);
-  const { def } = target;
+  const def = defOf(target);
   const path = derivePath(name);
   const idempotent = def.idempotent === true;
   return {

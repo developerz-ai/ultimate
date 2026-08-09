@@ -20,11 +20,12 @@ const entitySource = (
 import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
 
 export const ${name.camel} = entity('${table}', {
+  // Naming the tenant column is what turns tenancy on: a read without an org predicate then
+  // fails with X_TENANCY_UNSCOPED instead of leaking another org's rows.
+  tenant: 'orgId',
   columns: {
     id: uuid().primaryKey(),
-    // Declaring the tenant column is what turns tenancy on: a read without an org predicate
-    // then fails with X_TENANCY_UNSCOPED instead of leaking another org's rows.
-    orgId: uuid().tenant(),
+    orgId: uuid(),
     title: text({ max: 200 }),
     // One property, two physical columns: price_minor bigint + price_currency char(3).
     // Money is integer minor units plus an ISO code, never a float.
@@ -41,6 +42,12 @@ export const ${name.camel} = entity('${table}', {
 });
 
 export type ${name.pascal} = typeof ${name.camel}.$row;
+
+// What leaves the server: an action writes \`output: ${name.pascal}View\` and the shape is the
+// columns', never a second declaration to keep in sync. The tenant column is not in it — an org
+// id is the caller's context, not the client's data.
+export const ${name.pascal}View = ${name.camel}.$view(['id', 'title', 'price', 'createdAt']);
+export type ${name.pascal}View = typeof ${name.pascal}View.$row;
 `;
 
 const repoSource = (
@@ -82,7 +89,7 @@ const entityTest = (
   snake: string,
   table: string,
 ): string => `import { expect, unitTest } from '@ultimat3/testing';
-import { ${name.camel} } from './entity';
+import { ${name.camel}, ${name.pascal}View } from './entity';
 import type { ${name.pascal} } from './entity';
 
 const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
@@ -101,6 +108,16 @@ unitTest('${name.camel} declares a table with invariants', () => {
   expect(${name.camel}.$tenantColumn).toBe('orgId');
   const named = ${name.camel}.$invariants.map((rule) => rule.name);
   expect(named).toContain('${snake}_title_not_blank');
+});
+
+unitTest('${name.pascal}View projects the row an action returns', () => {
+  const result = ${name.pascal}View['~standard'].validate(row());
+  expect('value' in result && Object.keys(result.value)).toEqual([
+    'id',
+    'title',
+    'price',
+    'createdAt',
+  ]);
 });
 
 unitTest('${name.camel} invariants reject a blank title and a negative price', () => {

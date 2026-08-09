@@ -2,6 +2,8 @@
 // import `@ultimat3/core`, so `SchemaError` reproduces the `UltimateError` shape structurally
 // and carries the same `Symbol.for('ultimate.error')` brand — `isUltimateError()` still matches.
 
+import { formatIssues } from './standard';
+
 /** Same well-known symbol `@ultimat3/core` brands with. Keep in sync, never rename. */
 export const ULTIMATE_ERROR_BRAND: unique symbol = Symbol.for('ultimate.error');
 
@@ -114,7 +116,9 @@ export class ValidationFailedError extends SchemaError {
 
   /** One line per issue — what the dev overlay and `x test --json` render. */
   formatIssues(): string {
-    return this.issues.map((issue) => `  ${issue.path}: ${issue.message}`).join('\n');
+    return formatIssues(this.issues)
+      .map((line) => `  ${line}`)
+      .join('\n');
   }
 }
 

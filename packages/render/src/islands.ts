@@ -9,7 +9,7 @@ import { BudgetExceededError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { hydrateRuntimeBytes } from './hydrate';
 import type { RouteEntry } from './registry';
-import type { HydrateStrategy, RouteBudget } from './route';
+import type { HydrateStrategy } from './route';
 import type { Surface } from './surfaces';
 import { SURFACE_SPECS } from './surfaces';
 
@@ -109,8 +109,7 @@ export function checkBudget(
   directives: readonly IslandDirective[] = [],
 ): BudgetReport {
   const bytes = routeJsBytes(entry, islands, directives);
-  const budget: RouteBudget | undefined = entry.config.budget;
-  const limit = parseByteBudget(budget?.js);
+  const limit = parseByteBudget(entry.config.budget.js);
 
   // site/ has a 0kb default: shipping JS there without declaring a budget is the failure.
   if (limit === null && entry.surface === 'site' && bytes.total > 0) {

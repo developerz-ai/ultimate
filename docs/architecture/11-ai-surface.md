@@ -8,20 +8,23 @@ An action is not "also exposed over MCP". There is one invocation core; HTTP and
 
 ```ts
 // packages/action/src/invoke.ts — the single invocation core
-export async function invoke<I, O>(def: ActionDef<I, O>, raw: unknown, actor: ActorRef | null) {
-  const input = parse(def.input, raw);                       // X_INPUT_INVALID
-  await evaluate(def.policy, { actor, input, tenant: ctx.tenantId });  // X_POLICY_DENIED
-  const out = await def.handle({ input, ctx });
-  return parse(def.output, out);                             // X_OUTPUT_INVALID
+export function invoke(target: AnyAction, raw: unknown, options: InvokeOptions = {}) {
+  const def = defOf(target);                                 // private store, this module only
+  const input = await validateInput(def.input, raw, name);   // X_INPUT_INVALID
+  guard(def.policy, { actor: actorOf(ctx), input, ctx, action: name }, options.surface);
+  const out = await def.handle({ input, ctx });              // policy's own code on denial
+  return validateOutput(def.output, out, name);              // X_OUTPUT_INVALID
 }
 ```
 
 | Adapter | Turns | Into | Then |
 |---|---|---|---|
-| `http` | a `Request` body | `raw` | `invoke(def, raw, actor)` |
-| `mcp` | a `tools/call` `arguments` object | `raw` | `invoke(def, raw, actor)` |
+| `http` | a `Request` body | `raw` | `invoke(action, raw, { surface: 'http' })` |
+| `mcp` | a `tools/call` `arguments` object | `raw` | `invoke(action, raw, { surface: 'mcp', actor })` |
 
-Neither adapter may parse, authorize, or handle on its own. Both go through `invoke`. Enforced structurally: `def.handle` and `def.policy` are not exported from `@ultimat3/action`'s public surface — the only way to reach them is `invoke`.
+`surface` selects how a denial renders — never whether authz runs. The actor rides in on `options` (or on the ambient context); `.as(actor, input)` is the same core with the actor swapped, not a second path.
+
+Neither adapter may parse, authorize, or handle on its own. Both go through `invoke`. Enforced structurally: an action has no `.def`. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `handle` has exactly one caller.
 
 | MCP requirement | Source | Notes |
 |---|---|---|

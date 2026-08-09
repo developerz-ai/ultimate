@@ -5,7 +5,7 @@
 // registry runs, so this file is the mapping to `ProjectablePrimitive`, which `toolsFrom` then
 // projects exactly as it projects an action. One projection, not two.
 //
-// The load-bearing line is `guard(...)` in `run` below: it is the SAME function `runAction` calls
+// The load-bearing line is `guard(...)` in `run` below: it is the SAME function `invoke` calls
 // for an HTTP request, reached through the same `@ultimat3/action` policy gate. A hand-written
 // tool therefore has no authz of its own — it borrows the action tier's, so a rule change cannot
 // apply to routes and miss tools.

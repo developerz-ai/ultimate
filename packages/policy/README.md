@@ -14,7 +14,7 @@ export const publishPost = action({
 
 ## Shape
 
-A policy is a pure `(input, actor, ctx) => PolicyDecision`.
+A policy is a pure `(input, actor, row, ctx) => PolicyDecision`.
 
 ```ts
 type PolicyDecision =
@@ -25,6 +25,35 @@ type PolicyDecision =
 `reason` is always **safe to log** (it names permissions, never row data) and useful
 to an agent: `actor lacks post:publish` and `post:publish predicate returned false`
 are different problems with different fixes.
+
+## One predicate signature, every surface
+
+```ts
+interface PolicyArgs<I = unknown, R = unknown> {
+  input: I;
+  actor: Actor | null;
+  row: R | null; // required — `null` means "this rule decides on input alone"
+  ctx?: Ctx;
+}
+```
+
+A predicate is written once and is correct in an HTTP route, a job, an MCP tool and a
+live query's per-row gate:
+
+```ts
+// decides on input alone — `row` is null
+can<{ orgId: string }>('post:create', ({ actor, input }) => actor?.orgId === input.orgId);
+
+// decides about a row the surface already loaded
+can<{ postId: string }, Post>('post:publish', ({ actor, row }) => row?.authorId === actor?.id);
+```
+
+`row` is required and nullable, not optional. An optional field is how the two shapes
+drifted apart the first time: the realtime row gate nested the row inside `input`, so a
+row rule and an input rule received different objects and nothing caught it.
+
+Callers have it easier — `EvaluateArgs.row` **is** optional, and `evaluate()` normalises a
+missing row to `null`. A surface that has no row passes `{ input, actor, ctx }` unchanged.
 
 ## Combinators
 

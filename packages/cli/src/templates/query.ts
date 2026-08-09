@@ -35,25 +35,36 @@ export const ${name.camel} = query({
 const queryTest = (name: NameSet, live: boolean): string => {
   const wrapper = live ? 'liveTest' : 'unitTest';
   return `import { anonymousCtx } from '@ultimat3/action';
+import { sourceFor } from '@ultimat3/query';
 import { expect, ${wrapper} } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
-const orgId = '00000000-0000-0000-0000-000000000002';
+// A real v4 uuid: \`sourceFor\` parses the input the way a request does, so a placeholder that
+// only looks like a uuid would fail the read before it ever built any SQL.
+const orgId = '00000000-0000-4000-8000-000000000002';
 
 ${wrapper}('${name.camel} is a declared query', () => {
   expect(${name.camel}.kind).toBe('query');
-  expect(${name.camel}.live).toBe(${String(live)});
+  expect(${name.camel}.isLive).toBe(${String(live)});
 });
 
-${wrapper}('${name.camel} is bounded and ordered', () => {
+${wrapper}('${name.camel} is bounded and ordered', async () => {
   // The SQL text is the contract an agent reads to self-correct, so assert on it, not on a shape.
-  const { sql } = ${name.camel}.def.sql({ orgId, limit: 50 }, anonymousCtx()).toSQL();
+  // \`sourceFor\` is the one read path — it parses the input and builds the source exactly as a
+  // request does; \`enforce: false\` skips the policy, which the next test covers on its own.
+  // \`named\` because a read needs a name to project: at boot \`registerQueries\` supplies it.
+  const source = await sourceFor(
+    ${name.camel}.named('${name.camel}'),
+    { orgId, limit: 50 },
+    { ctx: anonymousCtx(), enforce: false },
+  );
+  const { sql } = source.toSQL();
   expect(sql.toLowerCase()).toContain('order by');
   expect(sql.toLowerCase()).toContain('limit');
 });
 
 ${wrapper}('${name.camel} requires an actor with read permission', async () => {
-  await expect(${name.camel}.def.policy).toDenyPolicy({ actor: null, input: { orgId } });
+  await expect(${name.camel}.policy).toDenyPolicy({ actor: null, input: { orgId } });
 });
 `;
 };

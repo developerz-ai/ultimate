@@ -10,6 +10,12 @@ const policySource = (
 ): string => `// Authz for the ${feature.kebab} feature. Every branch here is reachable from every surface.
 // Predicates are synchronous on purpose: a live query re-evaluates one per subscriber per patch,
 // so an await here would be a database round trip per row per connected client.
+//
+// A predicate always receives { input, actor, row, ctx }, whichever surface called it. These rules
+// decide on the input, so row is null. A rule about an already-loaded row reads row instead —
+// never reach for a row through input:
+//   can<${feature.pascal}Scope, ${feature.pascal}Row>('${feature.kebab}:write', ({ actor, row }) =>
+//     row?.ownerId === actor?.id)
 import { tag } from '@ultimat3/cache';
 import { can } from '@ultimat3/policy';
 

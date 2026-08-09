@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { action, runAction } from './action';
+import { action } from './action';
 import { MemoryIdempotencyStore } from './idempotency';
+import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, runs: t.number });
@@ -32,8 +33,8 @@ describe('idempotency', () => {
     const store = new MemoryIdempotencyStore();
     const options = { ctx, store, idempotencyKey: 'key-1' } as const;
 
-    const first = await runAction(target, { postId: POST_ID }, options);
-    const second = await runAction(target, { postId: POST_ID }, options);
+    const first = await invoke(target, { postId: POST_ID }, options);
+    const second = await invoke(target, { postId: POST_ID }, options);
 
     expect(second).toEqual(first);
     expect(runs()).toBe(1);
@@ -42,10 +43,10 @@ describe('idempotency', () => {
   test('the same key with a different payload is X_IDEMPOTENCY_CONFLICT', async () => {
     const { target } = defineCounter();
     const store = new MemoryIdempotencyStore();
-    await runAction(target, { postId: POST_ID }, { ctx, store, idempotencyKey: 'key-1' });
+    await invoke(target, { postId: POST_ID }, { ctx, store, idempotencyKey: 'key-1' });
 
     const other = '00000000-0000-4000-8000-0000000000bb';
-    const failure = await runAction(
+    const failure = await invoke(
       target,
       { postId: other },
       {
@@ -63,8 +64,8 @@ describe('idempotency', () => {
     const options = { ctx, store, idempotencyKey: 'key-1' } as const;
 
     const [a, b] = await Promise.allSettled([
-      runAction(target, { postId: POST_ID }, options),
-      runAction(target, { postId: POST_ID }, options),
+      invoke(target, { postId: POST_ID }, options),
+      invoke(target, { postId: POST_ID }, options),
     ]);
 
     const outcomes = [a.status, b.status].sort();
@@ -74,8 +75,8 @@ describe('idempotency', () => {
 
   test('without a key an idempotent action still runs every time', async () => {
     const { target, runs } = defineCounter();
-    await runAction(target, { postId: POST_ID }, { ctx });
-    await runAction(target, { postId: POST_ID }, { ctx });
+    await invoke(target, { postId: POST_ID }, { ctx });
+    await invoke(target, { postId: POST_ID }, { ctx });
     expect(runs()).toBe(2);
   });
 });

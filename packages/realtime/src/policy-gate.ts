@@ -21,13 +21,16 @@ export function authorizeWithPolicy(
   options: GateOptions,
 ): (args: { actor: Actor | null; input: JsonValue }) => Promise<void> {
   return async (args) => {
-    await guard(policy, subjectOf(options, args.actor, args.input), 'live');
+    // No row exists yet at subscribe time; `null` says so rather than leaving the predicate
+    // to infer it from an absent field.
+    await guard(policy, subjectOf(options, args.actor, args.input, null), 'live');
   };
 }
 
 /**
  * Row gate for `LiveQueryDefinition.visible`. Called once per subscriber per row — never once per
- * query. The row travels as part of the policy input so a predicate can read both.
+ * query. The row travels as `row`, the same field an HTTP or job row rule reads: a predicate is
+ * written once as `({ actor, row }) => …` and works on every surface.
  */
 export function visibleWithPolicy<R extends Row = Row>(
   policy: QueryPolicy,
@@ -35,11 +38,7 @@ export function visibleWithPolicy<R extends Row = Row>(
 ): (args: { actor: Actor | null; row: R; input: JsonValue }) => Promise<boolean> {
   return async (args) => {
     try {
-      await guard(
-        policy,
-        subjectOf(options, args.actor, { input: args.input, row: args.row }),
-        'live',
-      );
+      await guard(policy, subjectOf(options, args.actor, args.input, args.row), 'live');
       return true;
     } catch {
       return false;
@@ -47,6 +46,11 @@ export function visibleWithPolicy<R extends Row = Row>(
   };
 }
 
-function subjectOf(options: GateOptions, actor: Actor | null, input: unknown): QuerySubject {
-  return { actor, input, ctx: options.ctx, query: options.query };
+function subjectOf(
+  options: GateOptions,
+  actor: Actor | null,
+  input: unknown,
+  row: unknown,
+): QuerySubject {
+  return { actor, input, row, ctx: options.ctx, query: options.query };
 }

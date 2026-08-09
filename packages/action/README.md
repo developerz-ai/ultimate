@@ -2,18 +2,45 @@
 
 One declaration → six artifacts.
 
-| # | Artifact | Produced by | Guarantees |
+| # | Artifact | Reach it with | Guarantees |
 |---|---|---|---|
-| 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(action)` | policy + validation + idempotency + invalidation, non-optional |
-| 2 | OpenAPI 3.1 operation + document | `toOpenApiOperation` / `buildOpenApi` | byte-stable output, diffed by `x verify` |
-| 3 | Typed RPC client | `createClient<typeof actions>()` | server typo = compile error in Solid |
-| 4 | MCP tool | `toMcpTool(action)` | *identical* policy evaluation to the route |
-| 5 | Job handle | `toJobHandle(action)` | enqueue durable work, no rewrite |
-| 6 | Contract tests | `contractTestsFor(action)` | garbage rejected, anonymous denied, spec present |
+| 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(action)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
+| 2 | OpenAPI 3.1 operation + document | `action.openapi()` / `buildOpenApi()` | byte-stable output, diffed by `x verify` |
+| 3 | Typed RPC client | `action.client({ baseUrl })` / `createClient<typeof actions>()` | server typo = compile error in Solid |
+| 4 | MCP tool | `action.tool()` | *identical* policy evaluation to the route |
+| 5 | Job handle | `action.job()` | enqueue durable work, no rewrite |
+| 6 | Contract tests | `action.contract()` | garbage rejected, anonymous denied, spec present |
+
+## The fluent surface
+
+An action carries its own projections, so app code never reaches through `.def` and
+never imports a projection function:
+
+```ts
+publishPost.input                              // the declared input schema
+publishPost.output                             // the declared output schema
+publishPost.policy                             // the one policy object
+publishPost.mcp                                // { expose, description }, as declared
+await publishPost.as(actor, { postId })        // run as someone, one execution path
+publishPost.tool()                             // MCP descriptor
+publishPost.openapi()                          // OpenAPI operation
+publishPost.client({ baseUrl })                // typed RPC method
+publishPost.job()                              // durable-work handle
+publishPost.contract()                         // the three generated assertions
+```
+
+`publishPost.tool().policy === publishPost.policy` — the same object, so an MCP call
+cannot reach a different authz path. `.as()` keeps the surrounding context whole and
+swaps only the actor: impersonation, not a second context.
 
 ## Declare
 
+`t` is re-exported here — the same object `@ultimat3/schema` exports, so an action file
+imports one package for the primitive and its schemas, never two.
+
 ```ts
+import { action, t } from '@ultimat3/action';
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
@@ -31,7 +58,9 @@ export const publishPost = action({
 
 Then, once, at boot: `registerActions(await import('./actions'))`. Names come from
 **export names** — that is what makes the path, the tool name and the OpenAPI
-`operationId` derivable everywhere without a second declaration.
+`operationId` derivable everywhere without a second declaration. Registration stamps
+the name onto the action the module exported, so the binding you imported is the one
+that projects; a projection attempted before boot is `X_ACTION_UNREGISTERED`.
 
 ## Path derivation
 
@@ -45,15 +74,26 @@ kebab-cased.
 | `toggleLike` | `POST /api/likes/toggle` | `toggle_like` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
-## One authz system
+## One invocation core
 
-`runAction()` is the only execution path. HTTP, MCP, jobs and direct server calls
-differ **only** in the `surface` they hand to `enforce()` from `@ultimat3/policy`,
-which selects how a denial renders (problem+json / tool error / failed job) — never
-whether authz runs. The denial keeps the policy's own code, so an anonymous caller
-gets `X_UNAUTHENTICATED` (401) on both surfaces and a permission gap gets
-`X_FORBIDDEN` (403). Registering an action without `policy:` throws
-`X_ACTION_POLICY_MISSING`; there is no bypass flag.
+`invoke()` is the only execution path: **parse input → evaluate policy → handle →
+parse output**. HTTP, MCP, jobs and direct server calls differ **only** in the
+`surface` they hand to `enforce()` from `@ultimat3/policy`, which selects how a
+denial renders (problem+json / tool error / failed job) — never whether authz runs.
+
+Enforced structurally, not by convention: the declaration is held in a private
+store inside `invoke.ts`, so `handle` is reachable from nowhere else. An action has
+no `.def`. A second authz path cannot be written without deleting that store.
+
+| Stage | Failure |
+|---|---|
+| parse input | `X_INPUT_INVALID` |
+| evaluate policy | the policy's own code — `X_UNAUTHENTICATED` (401), `X_FORBIDDEN` (403) |
+| handle | whatever the handler throws |
+| parse output | `X_OUTPUT_INVALID` — and fields the schema never declared are dropped |
+
+Registering an action without `policy:` throws `X_ACTION_POLICY_MISSING`; there is
+no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FOREIGN`.
 
 ## mutator = action + local twin
 
@@ -71,6 +111,21 @@ export const toggleLike = mutator({
   conflict: 'server-wins', // | 'last-write-wins' | custom(merge)
 });
 ```
+
+The projected surface carries the same three names the declaration used, on top of
+every action member above:
+
+```ts
+toggleLike.local(tx, { postId })            // the optimistic write, replayed on rebase
+await toggleLike.server(ctx, { postId })    // the authoritative write
+toggleLike.conflict                         // the declared strategy
+```
+
+`.server()` is not a shortcut past `invoke` — it calls the action's own callable, so
+the input parse, the policy and the output parse all still run: an actor the policy
+denies is denied there exactly as over HTTP. `.local()` is the only half that skips
+the core, because it never leaves the client; keep it a pure function of `(tx, input)`
+— no I/O, no clock, no randomness — since every rebase replays it.
 
 `LocalTx` is the client write surface (`@ultimat3/realtime` implements it over OPFS
 SQLite). Type your tables once: `declare module '@ultimat3/action' { interface

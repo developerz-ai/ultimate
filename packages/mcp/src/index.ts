@@ -1,6 +1,7 @@
 // Public API of @ultimat3/mcp. Explicit — nothing is re-exported by wildcard, so the
 // surface an app or an agent can reach is exactly this list.
 
+export { formatIssues } from '@ultimat3/schema';
 export type {
   AnyAppToolDefinition,
   AppToolArgs,
@@ -81,7 +82,7 @@ export { bearerToken, isAgentActor, MCP_RATE_LIMITS, mcpHttpRoute } from './tran
 export type { StdioTransportInput } from './transport-stdio';
 export { serveStdio } from './transport-stdio';
 export type { ArgIssue, ArgValidation } from './validate-args';
-export { formatIssues, validateArgs } from './validate-args';
+export { validateArgs } from './validate-args';
 export type {
   JsonRpcError,
   JsonRpcId,

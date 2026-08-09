@@ -5,12 +5,15 @@ the columns: `type Post = typeof posts.$row`. Declare the shape once — repos, 
 admin screen, cache tags and the manifest are all projections of that one call.
 
 ```ts
+import {
+  entity, enumerated, integer, invariant, text, timestamp, url, uuid,
+} from '@ultimat3/entity';
+
 export const posts = entity('posts', {
+  tenant: 'orgId',
   columns: {
     id: uuid().primaryKey(),
-    orgId: uuid()
-      .references(() => orgs.id, { onDelete: 'cascade' })
-      .tenant(),
+    orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }),
     slug: text({ max: 80 }),
     title: text({ max: 120 }),
     coverUrl: url().nullable(),
@@ -28,7 +31,29 @@ export const posts = entity('posts', {
 });
 
 export type Post = typeof posts.$row;
+
+export const PostView = posts.$view(['id', 'title', 'coverUrl', 'status']);
+export type PostView = typeof PostView.$row;
 ```
+
+## `$view` is what leaves the server
+
+`posts.$view([...])` returns a Standard Schema over a subset of the row, so an action names it
+directly — `output: PostView` — and the projected type flows on to the client and the component.
+
+| Rule | Detail |
+|---|---|
+| Keys are checked twice | unknown key ⇒ `tsc` error, and `X_INVARIANT_VIOLATED` at declaration for a JS caller |
+| Values are the columns' | each key is parsed by the column that declared it; no second copy of the rule |
+| Nothing is invented | a view projects a row that exists — an absent required key is missing data, not a default |
+| `$name` | `posts.view.id_title_coverUrl_status` — stable, and legal as an OpenAPI `components.schemas` key |
+
+There is no free `view(posts, [...])` function: a projection is reached through the entity, and
+every framework member is `$`-prefixed so a column may still be called `name`, `view` or `tenant`.
+
+A view the columns cannot express — a joined `authorName`, a computed `excerpt` — is a hand-written
+`t.object({...})`. `t` is re-exported here, the same object `@ultimat3/schema` exports, so that file
+still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 
 ## Blessed columns
 
@@ -74,8 +99,12 @@ the first migration); Postgres is production and implements the same `Repo<T>`.
 
 ## Tenancy is a guard
 
-A `.tenant()` column (or one named `orgId`) means every read needs an org predicate. Without
-one: `X_TENANCY_UNSCOPED`, at the seam, every time.
+`tenant: 'orgId'` on the entity names the column outright. Omit it and it is inferred — a
+`.tenant()` column, else one named `orgId` — so an entity never becomes unscoped by forgetting the
+key; name a column that does not exist and the declaration fails with `X_INVARIANT_VIOLATED`.
+
+Either way, every read then needs an org predicate. Without one: `X_TENANCY_UNSCOPED`, at the
+seam, every time.
 
 ## Seeds
 

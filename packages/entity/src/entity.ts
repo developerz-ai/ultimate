@@ -14,8 +14,10 @@ import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant, invariantsToSql } from './invariants';
 import type { EntityDescription } from './registry';
 import { registerEntity } from './registry';
-import { tenantColumnOf } from './tenancy';
+import { resolveTenantColumn } from './tenancy';
 import type { AnyColumn, ColumnMap, ColumnMeta, IndexDef, RowOf } from './types';
+import type { EntityView } from './view';
+import { viewFor } from './view';
 
 /** Presence of this column is what makes an entity soft-deletable — not a flag. */
 export const SOFT_DELETE_COLUMN = 'deletedAt';
@@ -30,6 +32,11 @@ export interface IndexInit<C extends ColumnMap> {
 
 export interface EntityInit<C extends ColumnMap> {
   readonly columns: C;
+  /**
+   * The tenant column, said out loud. Omitted, it is inferred from `.tenant()` or a column named
+   * `orgId`, so silence never means unscoped.
+   */
+  readonly tenant?: keyof C & string;
   /** Composite keys only — a single key is `uuid().primaryKey()` on the column itself. */
   readonly primaryKey?: readonly (keyof C & string)[];
   readonly invariants?: readonly InvariantDef[];
@@ -64,6 +71,11 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   $tagFor(id: string): string;
   /** Fills declared defaults, then validates every column. Throws on a bad value. */
   $parse(value: unknown): Row;
+  /**
+   * `const PostView = posts.$view(['id', 'title'])` — the projection an action names as its
+   * `output`. An unknown key is a compile error, and a declaration error for a JS caller.
+   */
+  $view<K extends keyof Row & string>(keys: readonly K[]): EntityView<Row, K>;
   /** Runs every invariant. Called by the repository on insert and update. */
   $assert(row: Row): void;
   /** The CHECK/UNIQUE statements the migration emits for this entity. */
@@ -95,7 +107,7 @@ export const entity = <const C extends ColumnMap>(
 
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
-  const tenantColumn = tenantColumnOf(init.columns);
+  const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
 
   const primaryKey =
     init.primaryKey ?? entries.filter(([, column]) => column.$meta.primaryKey).map(([key]) => key);
@@ -241,6 +253,8 @@ export const entity = <const C extends ColumnMap>(
     },
     $tagFor: (id) => `${cacheTag}:${id}`,
     $parse: parse,
+    $view: <K extends keyof Row & string>(keys: readonly K[]) =>
+      viewFor<Row, K>(name, init.columns, keys),
     $assert: (row) => assertInvariants(name, invariants, row),
     $migration: () => invariantsToSql(name, invariants),
     $describe: describe,

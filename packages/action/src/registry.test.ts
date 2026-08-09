@@ -36,6 +36,26 @@ describe('registry', () => {
     expect(getAction('publishPost')?.name).toBe('publishPost');
   });
 
+  test('the module export itself is what gets named, not a copy of it', () => {
+    // Boot registers `await import('./actions')`; the app keeps calling the binding it
+    // imported. If registration named a twin, every `publishPost.tool()` in app code
+    // would throw X_ACTION_UNREGISTERED after a successful boot.
+    const publishPost = define();
+    const registered = registerAction('publishPost', publishPost);
+    expect(registered).toBe(publishPost);
+    expect(publishPost.name).toBe('publishPost');
+    expect(publishPost.tool().action).toBe('publishPost');
+  });
+
+  test('a second name yields a twin, so the first registration keeps its own', () => {
+    const publishPost = define();
+    registerAction('publishPost', publishPost);
+    const twin = registerAction('archivePost', publishPost);
+    expect(twin).not.toBe(publishPost);
+    expect(publishPost.name).toBe('publishPost');
+    expect(getAction('archivePost')?.name).toBe('archivePost');
+  });
+
   test('a duplicate name is X_ACTION_DUPLICATE', () => {
     registerAction('publishPost', define());
     let code: unknown;

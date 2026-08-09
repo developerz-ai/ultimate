@@ -13,6 +13,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
+import type { QueryMcp } from '@ultimat3/query';
 import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
@@ -185,15 +186,17 @@ describe("include: 'exposed'", () => {
     );
   };
 
-  /** `@ultimat3/query`'s def type has no `mcp` field yet, so an author attaches it. */
-  const registerFeed = (name: string, mcp?: { expose: boolean; description?: string }): void => {
-    const feed = query({
-      input: t.object({}),
-      policy: can('post:read'),
-      sql: () => from<{ id: string }>('posts', [{ id: 'p1' }]),
-    });
-    if (mcp !== undefined) Object.assign(feed.def, { mcp });
-    registerQuery(name, feed);
+  /** `mcp:` is declared on the query, exactly as an author writes it. */
+  const registerFeed = (name: string, mcp?: QueryMcp): void => {
+    registerQuery(
+      name,
+      query({
+        input: t.object({}),
+        policy: can('post:read'),
+        ...(mcp === undefined ? {} : { mcp }),
+        sql: () => from<{ id: string }>('posts', [{ id: 'p1' }]),
+      }),
+    );
   };
 
   test('projects every opted-in primitive from the registries and nothing else', () => {

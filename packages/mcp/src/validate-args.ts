@@ -32,11 +32,6 @@ export function validateArgs(schema: JsonSchema, raw: unknown): ArgValidation {
   return { ok: true, value: value as Record<string, unknown> };
 }
 
-/** Render issues as the one-line strings the error contract embeds. */
-export function formatIssues(issues: readonly ArgIssue[]): readonly string[] {
-  return issues.map((i) => (i.path === '' ? i.message : `${i.path}: ${i.message}`));
-}
-
 function walk(schema: JsonSchema, input: unknown, path: string, issues: ArgIssue[]): unknown {
   if (schema.anyOf !== undefined) return anyOf(schema.anyOf, input, path, issues);
   if (schema.const !== undefined && input !== schema.const) {

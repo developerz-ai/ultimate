@@ -123,6 +123,7 @@ export type {
   RouteData,
   RouteDefinition,
   RouteGuard,
+  RouteMetaAsyncFn,
   RouteMetaFn,
   RouteParams,
 } from './route';
