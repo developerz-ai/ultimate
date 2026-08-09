@@ -10,8 +10,10 @@
 // packages of this same tier, and the shell-side capabilities (db, tests, logs) belong to
 // the CLI, so this file defines the interface and the CLI satisfies it.
 
+import type { QueryLimits, QueryRows } from './query-limits';
+import { capQueryRows, DEFAULT_QUERY_ROWS, QUERY_LIMITS, resolveQueryLimits } from './query-limits';
 import type { DatabaseTarget } from './readonly-sql';
-import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
+import { assertBranchDatabase, assertReadOnlyQuery, PARSE_GUARD } from './readonly-sql';
 import type { AnyMcpTool, McpToolResult, ToolArgs } from './registry';
 import { jsonResult, textResult } from './registry';
 import type { JsonSchema } from './wire';
@@ -25,13 +27,6 @@ export const DEV_SCOPES = {
   dbRead: 'db:read',
   dbMigrate: 'db:migrate',
 } as const;
-
-export interface QueryResult {
-  readonly columns: readonly string[];
-  readonly rows: readonly (readonly unknown[])[];
-  readonly rowCount: number;
-  readonly truncated: boolean;
-}
 
 export interface TestRun {
   readonly passed: number;
@@ -86,7 +81,12 @@ export interface DevIntrospection {
 /** Shell-side capabilities. Satisfied by the CLI, which owns the process and the DB. */
 export interface DevCapabilities {
   readonly database: DatabaseTarget;
-  runQuery(sql: string, limit: number): Promise<QueryResult>;
+  /**
+   * Run one already-parsed read-only statement under layers 1–2 (a SELECT-only role, a
+   * `BEGIN READ ONLY` transaction, `limits.timeoutMs`) and return at most `limits.maxRows + 1`
+   * rows — the extra row is how the tool tells `truncated` without a second count query.
+   */
+  runQuery(sql: string, limits: QueryLimits): Promise<QueryRows>;
   runMigrations(branch: string, dryRun: boolean): Promise<MigrateResult>;
   queueDepth(): Promise<readonly QueueDepth[]>;
   runTests(filter: string | undefined): Promise<TestRun>;
@@ -173,23 +173,34 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
       name: 'db.query',
       description:
         'Run ONE read-only SQL statement. Writes, multiple statements, locking clauses ' +
-        'and data-modifying CTEs are refused (X_MCP_READONLY_VIOLATION), not merely discouraged.',
+        'and data-modifying CTEs are refused (X_MCP_QUERY_REJECTED), not merely discouraged. ' +
+        `Runs as a SELECT-only role in a READ ONLY transaction, capped at ${QUERY_LIMITS.maxRows} ` +
+        `rows, ${QUERY_LIMITS.maxBytes} bytes and ${QUERY_LIMITS.timeoutMs}ms; the answer's ` +
+        '`guards` names the defences that engaged and `truncatedBy` names any cap that bit.',
       scope: DEV_SCOPES.dbRead,
       destructive: false,
       inputSchema: {
         type: 'object',
         properties: {
           sql: { type: 'string', description: 'One SELECT/WITH/EXPLAIN/SHOW statement.' },
-          limit: { type: 'integer', minimum: 1, maximum: 1000, default: 100 },
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: QUERY_LIMITS.maxRows,
+            default: DEFAULT_QUERY_ROWS,
+          },
         },
         required: ['sql'],
         additionalProperties: false,
       },
       async handle(args: ToolArgs) {
-        // Enforced here, before the host ever sees the string.
+        // Layer 3, here, before the host ever sees the string; layers 1–2 in the host; layer 4
+        // on the way out. The caps run in this handler rather than in the host because a host
+        // that forgets them is a host that answers a million rows into a model's context.
         const statement = assertReadOnlyQuery(String(args['sql']));
-        const limit = typeof args['limit'] === 'number' ? args['limit'] : 100;
-        return jsonResult(await host.runQuery(statement, limit));
+        const limits = resolveQueryLimits(args['limit']);
+        const rows = await host.runQuery(statement, limits);
+        return jsonResult(capQueryRows({ ...rows, guards: [PARSE_GUARD, ...rows.guards] }, limits));
       },
     },
 
@@ -198,7 +209,7 @@ export function devTools(host: DevHost): readonly AnyMcpTool[] {
       name: 'db.migrate',
       description:
         'Apply pending migrations to the current BRANCH database. Refuses a production or ' +
-        'non-branch target (X_MCP_READONLY_VIOLATION). Use ROLE=migrate to deploy.',
+        'non-branch target (X_MCP_NOT_BRANCH_DB). Use ROLE=migrate to deploy.',
       scope: DEV_SCOPES.dbMigrate,
       destructive: true,
       inputSchema: {

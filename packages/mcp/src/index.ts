@@ -21,7 +21,6 @@ export type {
   DevIntrospection,
   ErrorExplanation,
   MigrateResult,
-  QueryResult,
   QueueDepth,
   TestRun,
   VerifyResult,
@@ -33,8 +32,9 @@ export {
   MCP_ERROR_CODES,
   MCP_ERROR_TITLES,
   McpArgsInvalidError,
+  McpNotBranchDbError,
   McpProtocolError,
-  McpReadOnlyViolationError,
+  McpQueryRejectedError,
   McpScopeDeniedError,
   McpToolUnknownError,
   McpToolUnsafeError,
@@ -43,8 +43,15 @@ export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
 export { isExposed, toolFromAction, toolFromQuery, toolsFrom } from './from-action';
 export { toWireSchema } from './input-schema';
+export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
+export {
+  capQueryRows,
+  DEFAULT_QUERY_ROWS,
+  QUERY_LIMITS,
+  resolveQueryLimits,
+} from './query-limits';
 export type { DatabaseTarget } from './readonly-sql';
-export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
+export { assertBranchDatabase, assertReadOnlyQuery, PARSE_GUARD } from './readonly-sql';
 export type {
   AnyMcpTool,
   ContentBlock,

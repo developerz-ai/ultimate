@@ -8,7 +8,8 @@ export const MCP_ERROR_CODES = [
   'X_MCP_SCOPE_DENIED',
   'X_MCP_ARGS_INVALID',
   'X_MCP_PROTOCOL',
-  'X_MCP_READONLY_VIOLATION',
+  'X_MCP_QUERY_REJECTED',
+  'X_MCP_NOT_BRANCH_DB',
   'X_MCP_TOOL_UNSAFE',
 ] as const;
 
@@ -19,7 +20,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_SCOPE_DENIED: "the connection's token does not carry the tool's scope",
   X_MCP_ARGS_INVALID: 'tool arguments failed the input schema',
   X_MCP_PROTOCOL: 'the MCP handshake or auth is wrong',
-  X_MCP_READONLY_VIOLATION: 'a write attempted through a read-only tool',
+  X_MCP_QUERY_REJECTED: 'db.query was not given one read-only statement',
+  X_MCP_NOT_BRANCH_DB: 'db.migrate was aimed at a database that is not a branch',
   X_MCP_TOOL_UNSAFE: 'an MCP tool declares no policy',
 };
 
@@ -112,17 +114,33 @@ export class McpProtocolError extends UltimateError {
 }
 
 /**
- * A read-only surface was asked to write: `db.query` given a mutating statement, or
- * `db.migrate` pointed at a database that is not a branch. Enforced, not documented —
- * the dev server holds real credentials.
+ * LAYER 3 of `db.query`'s four defences: the statement is not one read-only statement, so it
+ * never reaches the server. Separate from the migration refusal below because the two want
+ * different next commands, and a code that covers both tells the agent neither.
  */
-export class McpReadOnlyViolationError extends UltimateError {
-  constructor(input: { operation: string; cause: string; fix: string }) {
+export class McpQueryRejectedError extends UltimateError {
+  constructor(input: { cause: string; fix: string }) {
     super({
-      code: 'X_MCP_READONLY_VIOLATION',
-      cause: `${input.operation} refused: ${input.cause}`,
+      code: 'X_MCP_QUERY_REJECTED',
+      cause: `db.query refused: ${input.cause}`,
       fix: input.fix,
-      docs: docsFor('X_MCP_READONLY_VIOLATION'),
+      docs: docsFor('X_MCP_QUERY_REJECTED'),
+    });
+  }
+}
+
+/**
+ * `db.migrate` was pointed at a database that is not a branch. Enforced, not documented — the
+ * dev server holds real credentials, and a migration is the one dev tool that cannot be undone
+ * by reading the error afterwards.
+ */
+export class McpNotBranchDbError extends UltimateError {
+  constructor(input: { cause: string; fix: string }) {
+    super({
+      code: 'X_MCP_NOT_BRANCH_DB',
+      cause: `db.migrate refused: ${input.cause}`,
+      fix: input.fix,
+      docs: docsFor('X_MCP_NOT_BRANCH_DB'),
     });
   }
 }

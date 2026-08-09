@@ -85,6 +85,6 @@ describe('outcomeForCode', () => {
   test('anything else wants a human — including input the JSON Schema already passed', () => {
     // A projected action rejecting input MCP validated means the two schemas have drifted.
     expect(outcomeForCode('X_INPUT_INVALID')).toBe('failed');
-    expect(outcomeForCode('X_MCP_READONLY_VIOLATION')).toBe('failed');
+    expect(outcomeForCode('X_MCP_QUERY_REJECTED')).toBe('failed');
   });
 });

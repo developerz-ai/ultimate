@@ -1,14 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import type { DevHost, QueryResult } from './dev-server';
+import type { DevHost } from './dev-server';
 import { DEV_SCOPES, devTools } from './dev-server';
+import type { QueryRows } from './query-limits';
 import type { DatabaseTarget } from './readonly-sql';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { ToolRegistry } from './registry';
 
 const agent = { kind: 'agent', id: 'a1' } as unknown as Actor;
 
-const EMPTY_RESULT: QueryResult = { columns: [], rows: [], rowCount: 0, truncated: false };
+/** What layers 1–2 hand back when they both engaged and the statement matched nothing. */
+const EMPTY_ROWS: QueryRows = {
+  columns: [],
+  rows: [],
+  guards: ['txn:read-only', 'timeout:5000ms', 'role:ultimate_readonly'],
+};
 
 function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
   const ran: string[] = [];
@@ -23,7 +29,7 @@ function fakeHost(database: DatabaseTarget): { host: DevHost; ran: string[] } {
     jobInspect: (name) => ({ name, attempts: 5 }),
     async runQuery(sql) {
       ran.push(sql);
-      return EMPTY_RESULT;
+      return EMPTY_ROWS;
     },
     async runMigrations(branch, dryRun) {
       ran.push(`migrate:${branch}:${String(dryRun)}`);
@@ -93,7 +99,7 @@ describe('db.query is read-only, enforced', () => {
     const { tool, ran } = toolset(BRANCH);
     await expect(
       tool('db.query').handle({ sql: "update posts set title = 'x'" }, caller),
-    ).rejects.toMatchObject({ code: 'X_MCP_READONLY_VIOLATION' });
+    ).rejects.toMatchObject({ code: 'X_MCP_QUERY_REJECTED' });
     expect(ran).toEqual([]);
   });
 
@@ -101,11 +107,53 @@ describe('db.query is read-only, enforced', () => {
     const { tool } = toolset(BRANCH);
     const cte = 'with d as (delete from posts returning id) select * from d';
     await expect(tool('db.query').handle({ sql: cte }, caller)).rejects.toMatchObject({
-      code: 'X_MCP_READONLY_VIOLATION',
+      code: 'X_MCP_QUERY_REJECTED',
     });
     await expect(
       tool('db.query').handle({ sql: 'select 1; drop table posts' }, caller),
-    ).rejects.toMatchObject({ code: 'X_MCP_READONLY_VIOLATION' });
+    ).rejects.toMatchObject({ code: 'X_MCP_QUERY_REJECTED' });
+  });
+
+  test('the answer names every layer that engaged, parse and caps included', async () => {
+    const { tool } = toolset(BRANCH);
+    const result = await tool('db.query').handle({ sql: 'select 1' }, caller);
+    const answer = JSON.parse(result.content[0]?.text ?? '{}') as {
+      guards: string[];
+      truncatedBy: string | null;
+    };
+    expect(answer.guards).toEqual([
+      'parse:single-read',
+      'txn:read-only',
+      'timeout:5000ms',
+      'role:ultimate_readonly',
+      'cap:100 rows',
+      'cap:262144 bytes',
+    ]);
+    expect(answer.truncatedBy).toBeNull();
+  });
+
+  test('the hard row ceiling clamps a caller that asks for more than the schema allows', async () => {
+    // 5000 rows offered, 1000 the ceiling — `limit` is a request, never a permission.
+    const rows = Array.from({ length: 5000 }, (_, index) => [index]);
+    const host = fakeHost(BRANCH).host;
+    const tools = devTools({
+      ...host,
+      async runQuery() {
+        return { columns: ['n'], rows, guards: ['txn:read-only'] };
+      },
+    });
+    const tool = tools.find((t) => t.name === 'db.query');
+    const result = await tool?.handle({ sql: 'select n from wide', limit: 9999 }, caller);
+    const answer = JSON.parse(result?.content[0]?.text ?? '{}') as {
+      rowCount: number;
+      truncated: boolean;
+      truncatedBy: string | null;
+      guards: string[];
+    };
+    expect(answer.rowCount).toBe(1000);
+    expect(answer.truncated).toBe(true);
+    expect(answer.truncatedBy).toBe('rows');
+    expect(answer.guards).toContain('cap:1000 rows');
   });
 
   test('a literal that merely looks like a write is fine', async () => {
@@ -126,7 +174,7 @@ describe('db.migrate refuses anything but a branch database', () => {
     const { tool, ran } = toolset(SHARED);
     const failure = tool('db.migrate').handle({}, caller);
     await expect(failure).rejects.toMatchObject({
-      code: 'X_MCP_READONLY_VIOLATION',
+      code: 'X_MCP_NOT_BRANCH_DB',
       fix: 'x db branch <name>, then retry db.migrate',
     });
     expect(ran).toEqual([]);
@@ -135,7 +183,7 @@ describe('db.migrate refuses anything but a branch database', () => {
   test('production is refused and points at the migrate role', async () => {
     const { tool, ran } = toolset(PROD);
     await expect(tool('db.migrate').handle({}, caller)).rejects.toMatchObject({
-      code: 'X_MCP_READONLY_VIOLATION',
+      code: 'X_MCP_NOT_BRANCH_DB',
     });
     expect(ran).toEqual([]);
   });

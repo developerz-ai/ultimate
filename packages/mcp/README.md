@@ -15,7 +15,7 @@ asks instead of guessing.
 | `queue.depth` | `dev:read` | pending / running / failed per queue |
 | `manifest.read` | `dev:read` | `x.manifest.json` verbatim |
 | `errors.explain` | `dev:read` | stable `X_*` code → cause + exact fix command + docs |
-| `db.query` | `db:read` | **read-only, enforced** — one statement, no writes, no locks, no data-modifying CTE |
+| `db.query` | `db:read` | **read-only, enforced four ways** — SELECT-only role, `BEGIN READ ONLY`, one-statement parse, 5s/1000-row/256 KiB caps |
 | `db.migrate` | `db:migrate` | **branch DB only** — refuses production and any non-branch target |
 | `tests.run` | `dev:test` | runs the suite (executes project code) |
 | `verify.run` | `dev:test` | `x verify` — the shippable contract |
@@ -23,6 +23,19 @@ asks instead of guessing.
 
 `db.query` and `db.migrate` are gated *and* say so in their own description, so a model that
 reads only the catalog still knows what it is holding.
+
+### `db.query`'s four layers
+
+| Layer | Mechanism | Where |
+|---|---|---|
+| 1. Role | `ultimate_readonly` — `NOLOGIN`, `SELECT` on every table present and future, nothing on sequences; assumed with `SET LOCAL ROLE` inside the transaction, never via a second connection string | `@ultimat3/db` |
+| 2. Transaction | `BEGIN READ ONLY` … `ROLLBACK` on one reserved connection — Postgres refuses the write even if a grant is wrong | `@ultimat3/db` |
+| 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock, no `pg_read_file`-class call — on a form with literals and comments blanked | `readonly-sql.ts` |
+| 4. Limits | `SET LOCAL statement_timeout`, a hard 1000-row ceiling (`limit` clamps into it, never past it) and a 256 KiB byte cap | `query-limits.ts` |
+
+The answer carries `guards` — the layers that actually engaged — plus `truncatedBy` and `bytes`.
+A layer that could not engage (a managed Postgres that refuses `CREATE ROLE`) is **absent from
+the list**, never assumed. Truncation is never silent.
 
 ## One authz system, two surfaces
 
@@ -148,4 +161,5 @@ inside their own handler.
 | `X_MCP_SCOPE_DENIED` | visible, but the connection's token lacks the scope |
 | `X_MCP_ARGS_INVALID` | arguments failed the declared schema |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
-| `X_MCP_READONLY_VIOLATION` | `db.query` given a write, or `db.migrate` given a non-branch DB |
+| `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |

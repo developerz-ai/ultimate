@@ -92,14 +92,16 @@ Rules:
 
 `db.query` is defended four ways, because "read-only by convention" is not read-only.
 
-| Layer | Mechanism |
+| Layer | What actually ships |
 |---|---|
-| 1. Connection | a dedicated Postgres role with `SELECT`-only grants and no `USAGE` on sequences; separate connection string |
-| 2. Transaction | every statement runs in `BEGIN READ ONLY` — Postgres refuses writes even if a grant is wrong |
-| 3. Parse | a single statement only; multiple statements, `COPY`, `DO`, and any DDL are refused before reaching the server (`X_MCP_QUERY_REJECTED`) |
-| 4. Limits | `statement_timeout`, a row cap (default 1000, truncation flagged in the response), and a byte cap |
+| 1. Role | a dedicated `ultimate_readonly` Postgres role: `NOLOGIN`, `USAGE` on the schema, `SELECT` on all tables (and on future tables via `ALTER DEFAULT PRIVILEGES`), `ALL` revoked on sequences. Assumed with `SET LOCAL ROLE` **inside** the read-only transaction rather than through a second connection string — the grant reverts with the transaction, and a second pool would double the connection budget for a tool that runs one statement at a time. `NOLOGIN` means the role is unreachable by any connection string at all. When the connection is not allowed to create or grant roles (a managed Postgres where the app user is not a role admin) the layer is **reported as absent**, never silently assumed |
+| 2. Transaction | every statement runs inside `BEGIN READ ONLY` … `ROLLBACK`, on a connection reserved out of the pool so the `BEGIN` and the statement are the same session. Postgres refuses a write even if a grant is wrong |
+| 3. Parse | one statement only, an allowed leading keyword, and no mutating keyword anywhere at statement level — checked on a form with comments, string literals, quoted identifiers and dollar-quoted bodies blanked out, so a keyword hiding in a string cannot fool it and a second statement cannot hide behind a block comment. Refused before the host ever sees the string: `X_MCP_QUERY_REJECTED`. The statement that runs is the caller's own bytes, not the stripped form |
+| 4. Limits | `statement_timeout` of 5 s (`SET LOCAL`, so it cannot leak into another session), a row cap — `limit` defaults to 100 and is clamped to a hard 1000 — and a 256 KiB byte cap on the serialised rows. Truncation is flagged in the response, never silent |
 
-`EXPLAIN` / `EXPLAIN ANALYZE` are available on request — `ANALYZE` still inside `READ ONLY`, so a plan can be measured without a write path. Results carry the tenant filter the caller's session implies; a query without a tenant predicate against a tenant-scoped table is rejected with a fix that adds it.
+The response carries a `guards` array naming the layers that actually engaged for that statement (`role:ultimate_readonly`, `txn:read-only`, `timeout:5000ms`, `parse:single-read`, `cap:1000 rows`, `cap:262144 bytes`), plus `truncatedBy: 'rows' | 'bytes' | null` and `bytes`. A layer that could not engage is absent from the list — the agent reads which defences held instead of trusting a description.
+
+`EXPLAIN` is available on request; `EXPLAIN ANALYZE` is refused — it executes the plan it claims to describe. Results carry the tenant filter the caller's session implies; a query without a tenant predicate against a tenant-scoped table is rejected with a fix that adds it.
 
 ## Branch-DB-only migrations
 

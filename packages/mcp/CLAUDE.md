@@ -25,6 +25,8 @@ import. The CLI wires it.
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
 | `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
+| `readonly-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check |
+| `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 
 ## Invariants
 
@@ -42,7 +44,15 @@ import. The CLI wires it.
 - A projected action tool has **no `scope`**. The action's policy is the only gate. A
   hand-written app tool is the same: its `policy` reaches `guard()` from `@ultimat3/action`,
   which is the one authz path — never a second check written for MCP.
-- `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs.
+- `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
+  (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
+  next commands).
+- `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
+  (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
+  `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
+- The caps run in the **tool**, not the host. A host that forgets them answers a million rows
+  into a model's context. `guards` names the layers that engaged; a layer that could not engage
+  is absent from the list, never assumed present.
 - `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
 

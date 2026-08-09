@@ -298,7 +298,7 @@ whatever its bearer token was issued.
 | `queue.depth` | pending, running and failed counts per queue | `dev:read` |
 | `manifest.read` | the generated `x.manifest.json` as text | `dev:read` |
 | `errors.explain` | `X_*` → cause, fix, docs | `dev:read` |
-| `db.query` | ONE read-only SQL statement, row-capped | `db:read` |
+| `db.query` | ONE read-only SQL statement, 1000-row cap | `db:read` |
 | `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
 | `tests.run` | run the suite, structured results | `dev:test` |
 | `verify.run` | run `x verify`, structured per-step result | `dev:test` |
@@ -307,7 +307,7 @@ whatever its bearer token was issued.
 `db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword, a
 locking clause, a non-branch target — before the host runs anything.
 
-Never exposed in `ROLE=web`. Errors: `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_DENIED`, `X_MCP_READONLY_VIOLATION`, `X_MCP_PROTOCOL`.
+Never exposed in `ROLE=web`. Errors: `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_DENIED`, `X_MCP_QUERY_REJECTED`, `X_MCP_NOT_BRANCH_DB`, `X_MCP_PROTOCOL`.
 
 A tool this caller may not see is absent from `tools/list` and answers ToolNotFound, never Forbidden. `x token grant <scope>` takes effect on the next connection — scopes are fixed for the life of one. Full model: [MCP and AI](MCP-And-AI).
 

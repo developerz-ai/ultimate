@@ -31,7 +31,15 @@ framework contract and duplicated in `@ultimat3/entity`. Change them together or
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's
 and `X_DB_DRIFT` is also declared by entity — registering twice throws at import.
 
-The MCP `db.query` tool is **required** to wrap its client in `readOnly()`.
+`readOnly()` is the regex-gated client for any caller that cannot open its own transaction. The
+MCP `db.query` tool does not use it — it goes through `readOnlyQuery()`, which is stronger.
+
+`readonly-role.ts` and `readonly-query.ts` are layers 1–2 of that tool's defence-in-depth: a
+`NOLOGIN` Postgres role (`ensureReadOnlyRole`) and a per-statement `BEGIN READ ONLY` + statement
+timeout (`readOnlyQuery`). Neither throws on a missing permission — `ensureReadOnlyRole` returns
+`null` and leaves reporting the degraded layer to the caller. Layers 3–4 (pre-parse scan, MCP
+policy) live in `@ultimat3/mcp`, which must still never import this package — the CLI wires the
+two together.
 
 ```bash
 bun test                      # from packages/db

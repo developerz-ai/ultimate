@@ -129,7 +129,8 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope — scope is a property of the token, not of the actor's permissions | `x token grant <scope>`, then reconnect: scopes are fixed for the life of a connection |
 | `X_POLICY_DENIED` from a `tools/call` | the tool was invoked and its policy refused this input — the same denial the HTTP route returns for the same call | grant the human the permission — an agent can never exceed the human it acts for |
 | Dev MCP server not reachable | `x dev` not running, or you pointed at prod | default socket is `mcp.devSocket` (`ws://localhost:9229`). The dev server is **never** bound in `ROLE=web` |
-| `X_MCP_READONLY_VIOLATION` | a write attempted through a read-only tool | `db.query` is read-only; `db.migrate` runs in a branch DB only (`x branch <name>`) |
+| `X_MCP_QUERY_REJECTED` | `db.query` was not given exactly one read-only statement | send a single `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES`; use `db.migrate` on a branch database for anything that writes |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` was aimed at a database that is not a branch | `x branch <name>`, then retry `db.migrate` |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema twice | tighten the prompt or loosen the schema; the retry already happened once |
 | Prompt change had no effect | semantic cache hit | bump the prompt version — editing a prompt requires it. `x ai cache --json` |
 | `x verify` fails on a prompt | no evals file | an unevaluated prompt is untested code. Add `<prompt>.evals.ts` |

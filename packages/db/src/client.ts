@@ -49,9 +49,16 @@ export function poolProfileFor(role: Role = resolveRole()): PoolProfile {
   return POOL_PROFILES[role];
 }
 
+/** One connection pinned out of `Bun.SQL`'s pool, released back by hand. */
+interface BunSqlReserved {
+  unsafe(text: string, values?: readonly unknown[]): Promise<unknown>;
+  release(): void;
+}
+
 /** The slice of `Bun.SQL` we use. Declared structurally so this package has no dependency. */
 interface BunSqlDriver {
   unsafe(text: string, values?: readonly unknown[]): Promise<unknown>;
+  reserve(): Promise<BunSqlReserved>;
   close(options?: { readonly timeout?: number }): Promise<void>;
 }
 
@@ -122,12 +129,19 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     return driver;
   }
 
-  async function run(fragment: SqlFragment): Promise<unknown> {
+  async function runOn(
+    driver: Pick<BunSqlDriver, 'unsafe'>,
+    fragment: SqlFragment,
+  ): Promise<unknown> {
     try {
-      return await connect().unsafe(fragment.text, fragment.values);
+      return await driver.unsafe(fragment.text, fragment.values);
     } catch (error) {
       throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
     }
+  }
+
+  async function run(fragment: SqlFragment): Promise<unknown> {
+    return runOn(connect(), fragment);
   }
 
   const client: PostgresClient = {
@@ -143,8 +157,20 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       return affectedBy(await run(fragment));
     },
     async reserve(): Promise<DbConnection> {
-      // Bun pools transparently; a reservation is the seam a real pinned connection slots into.
-      return { ...pickClient(client), release: () => undefined };
+      // A real pin, not a seam: `Bun.SQL` refuses a bare BEGIN on a pooled handle
+      // (`ERR_POSTGRES_UNSAFE_TRANSACTION`), and a BEGIN that landed on a different connection
+      // than the statement after it would not be a transaction at all — which is exactly what
+      // `withTransaction` and `readOnlyQuery` depend on being true.
+      const reserved = await connect().reserve();
+      return {
+        query: async <T>(fragment: SqlFragment) => rowsOf<T>(await runOn(reserved, fragment)),
+        one: async <T>(fragment: SqlFragment) =>
+          rowsOf<T>(await runOn(reserved, fragment))[0] ?? null,
+        execute: async (fragment: SqlFragment) => affectedBy(await runOn(reserved, fragment)),
+        release: () => {
+          reserved.release();
+        },
+      };
     },
     async ping(): Promise<void> {
       await client.query(sql`select 1`);
@@ -155,14 +181,6 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     },
   };
   return client;
-}
-
-function pickClient(client: DbClient): DbClient {
-  return {
-    query: (fragment) => client.query(fragment),
-    one: (fragment) => client.one(fragment),
-    execute: (fragment) => client.execute(fragment),
-  };
 }
 
 let ambient: DbClient | undefined;

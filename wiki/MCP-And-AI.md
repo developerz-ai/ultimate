@@ -17,7 +17,7 @@ Pre-v1, not production-ready. `As of 2026-07`: the MCP registry, wire protocol, 
 | `manifest.get` | the whole `x.manifest.json` | ten separate reads |
 | `tests.run` | run a test type or a single file, structured results | parsing terminal output |
 | `logs.tail` | structured logs + OTel spans, filterable | scrollback archaeology |
-| `db.query` | **read-only** SQL, row cap, `EXPLAIN` on request | inventing a query and hoping |
+| `db.query` | **read-only** SQL, 1000-row cap, `EXPLAIN` on request | inventing a query and hoping |
 | `db.migrate` | generate + apply migrations **in a branch DB only** | mutating the dev database |
 | `errors.explain` | `X_*` code → cause, fix command, docs URL | web search |
 | `budgets.report` | per-route bytes/LCP with the import chain that caused a regression | bisecting bundles |
@@ -30,7 +30,7 @@ Implemented names `as of 2026-07` differ slightly from the design table: `action
 | gated read | `db.query`, `logs.tail`, `budgets.report` | scope `db:read` / `dev:logs` |
 | write | `db.migrate`, `tests.run` | scope `db:migrate` / `dev:test`, **branch environments only** |
 
-None of them is exposed in `ROLE=web`. `db.query` accepts one statement. Multiple statements, writes, locking clauses, and data-modifying CTEs are **refused**, not discouraged — `X_MCP_READONLY_VIOLATION`, enforced before the host sees the string. `db.migrate` refuses a target that is not a branch database.
+None of them is exposed in `ROLE=web`. `db.query` accepts one statement. Multiple statements, writes, locking clauses, and data-modifying CTEs are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
 
 ## Every action is an MCP tool
 
@@ -206,7 +206,8 @@ $ x verify --json
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
 | `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | `x token grant <scope>`, then reconnect — scopes are fixed for the life of a connection |
-| `X_MCP_READONLY_VIOLATION` | `db.query` given a mutating statement, or `db.migrate` pointed at a non-branch DB | use a branch DB (`x branch <name>`) or a `SELECT` |
+| `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send a single `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | use a branch DB (`x branch <name>`) |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
 | `X_POLICY_DENIED` | the action's policy refused this actor — identical to the HTTP denial | grant the permission, or act as an actor who has it |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |

@@ -117,7 +117,7 @@ claude mcp add ultimate --transport ws ws://localhost:9229
 | `manifest.get` | ten separate reads |
 | `tests.run` | parsing terminal output |
 | `logs.tail` | scrollback archaeology |
-| `db.query` | inventing a query and hoping (read-only, row-capped) |
+| `db.query` | inventing a query and hoping (read-only, 1000-row cap) |
 | `db.migrate` | mutating the dev DB — writes land in a **branch DB only** |
 | `errors.explain` | a web search for an error string |
 | `budgets.report` | bisecting bundles |

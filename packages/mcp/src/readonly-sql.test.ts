@@ -5,7 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 
-const refusal = { code: 'X_MCP_READONLY_VIOLATION' };
+const refusal = { code: 'X_MCP_QUERY_REJECTED' };
+const notBranch = { code: 'X_MCP_NOT_BRANCH_DB' };
 
 describe('assertReadOnlyQuery returns what will actually run', () => {
   test('a read is returned byte-for-byte, minus surrounding whitespace and one trailing ;', () => {
@@ -117,9 +118,9 @@ describe('assertBranchDatabase', () => {
   test('production and shared non-branch targets are refused separately', () => {
     expect(() =>
       assertBranchDatabase({ label: 'prod', branch: 'main', production: true }),
-    ).toThrowError(expect.objectContaining(refusal));
+    ).toThrowError(expect.objectContaining(notBranch));
     expect(() =>
       assertBranchDatabase({ label: 'staging', branch: null, production: false }),
-    ).toThrowError(expect.objectContaining(refusal));
+    ).toThrowError(expect.objectContaining(notBranch));
   });
 });

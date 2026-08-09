@@ -1,6 +1,8 @@
-// Single responsibility: a `DbClient` that cannot mutate. The MCP `db.query` tool is REQUIRED to
-// use this wrapper — an LLM with a Postgres connection and no gate is an outage waiting to be
-// prompted into existence. Detection strips comments and string literals first, because
+// Single responsibility: a `DbClient` that cannot mutate — for any caller that cannot open its
+// own transaction. An LLM with a Postgres connection and no gate is an outage waiting to be
+// prompted into existence. (MCP's `db.query` reaches past this for the stronger `readOnlyQuery`:
+// a SELECT-only role inside `BEGIN READ ONLY`, where Postgres refuses the write, not a regex.)
+// Detection strips comments and string literals first, because
 // `/* x */ update ...` and `WITH t AS (INSERT ...) SELECT` are exactly how a naive check is beaten.
 
 import type { DbClient } from './client';

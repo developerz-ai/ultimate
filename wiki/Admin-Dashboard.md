@@ -44,7 +44,7 @@ One authz seam for the whole admin: the rendered button, the HTTP call behind it
 | An admin-only user table or role table | admins are users with permissions; a parallel identity store drifts and gets forgotten in offboarding |
 | A "superuser" bypass | there is no flag that skips policy evaluation |
 | Writes without a policy | an action with no `policy` does not compile; the admin cannot invoke what does not exist |
-| A raw SQL console that writes | read-only SQL only, statement-capped and row-capped. Writes and data-modifying CTEs are refused with `X_MCP_READONLY_VIOLATION` |
+| A raw SQL console that writes | read-only SQL only, statement-capped and row-capped. Writes and data-modifying CTEs are refused with `X_MCP_QUERY_REJECTED` |
 | Offset pagination | offset re-scans every page and skips rows when the table is written to mid-page. Keyset only |
 | Hidden framework internals as user data | `/_x` panels are dev-only and gated by role |
 
