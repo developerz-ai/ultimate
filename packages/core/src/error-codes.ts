@@ -39,6 +39,7 @@ const CORE_CODE_TITLES = {
   X_NO_CONTEXT: 'no request context is active',
   X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
   X_ROLE_INVALID: 'ROLE is not a known runtime role',
+  X_SERVICE_DUPLICATE: 'a service name is registered twice',
   X_SERVICE_MISSING: 'service is not registered on the request context',
   X_SHUTDOWN_TIMEOUT: 'graceful shutdown exceeded its deadline',
   X_UNREACHABLE: 'unreachable branch was reached',

@@ -9,6 +9,7 @@ import { UltimateError } from './errors';
 import { traceId as newTraceId, uuid } from './ids';
 import { type Logger, logger as rootLogger, setLoggerContextFields } from './logger';
 import { type Role, resolveRole } from './roles';
+import { installedServices, isManagedService } from './service';
 
 /**
  * Augment to attach typed services (`ctx.posts`, `ctx.jobs`, `ctx.mail`):
@@ -78,21 +79,8 @@ export function createContext(init: CtxInit = {}): Ctx {
   const requestId = init.requestId ?? uuid(clock);
   const trace = init.traceId ?? newTraceId();
   const base = init.logger ?? rootLogger;
-  const services: ServiceBag = Object.freeze({ ...(init.services ?? {}) });
-  const ctx = {
-    // Services ride ON the context, not only under `ctx.services`: `CtxServices` exists to be
-    // augmented, so `ctx.posts` has to BE the service. Spread first, so a service that collides
-    // with a framework field (`actor`, `logger`) loses — it stays reachable as
-    // `ctx.services.actor`, and the context's own meaning never depends on what an app named a
-    // service. The assertion is the one thing this package cannot prove: an augmentation
-    // declares which services exist, only the boot code knows whether it passed them. So a
-    // service the boot never installed reads as `undefined` through `ctx.posts` — this is a
-    // frozen plain object, and it stays one on purpose: a get-trap proxy that threw on absent
-    // keys would also throw on `await ctx` (the runtime probes `.then`), on `JSON.stringify`,
-    // and on every optional-property check. `useService(name)` is the path that names the
-    // failure instead of leaving a bare `TypeError` at the first call: it throws
-    // `X_SERVICE_MISSING`, with the installed names and the fix.
-    ...services,
+  const explicit: ServiceBag = Object.freeze({ ...(init.services ?? {}) });
+  const fields = {
     requestId,
     traceId: trace,
     actor: init.actor ?? anonymousActor(),
@@ -104,6 +92,32 @@ export function createContext(init: CtxInit = {}): Ctx {
     now: () => clock.now(),
     logger: base.child({ requestId, traceId: trace }),
     signal: init.signal ?? neverAborted,
+  };
+  // A registered service (`defineService`) closes over the ctx it is built for — actor, clock,
+  // tz — so it has to run HERE, against this exact call's fields, rather than once at boot and
+  // be cached: a cached instance would answer every impersonated actor with the first one's
+  // tenant. `preview` carries everything a factory may read except a sibling service, which is
+  // what stops factories from depending on one another's instances. Explicit `init.services`
+  // wins over an auto-installed one of the same name — a test's hand-built mock overrides the
+  // real thing on purpose.
+  const preview = Object.freeze({ ...explicit, ...fields, services: explicit }) as Ctx;
+  const services: ServiceBag = Object.freeze({ ...installedServices(preview), ...explicit });
+  const ctx = {
+    // Services ride ON the context, not only under `ctx.services`: `CtxServices` exists to be
+    // augmented, so `ctx.posts` has to BE the service. Spread first, so a service that collides
+    // with a framework field (`actor`, `logger`) loses — it stays reachable as
+    // `ctx.services.actor`, and the context's own meaning never depends on what an app named a
+    // service. The assertion is the one thing this package cannot prove: an augmentation
+    // declares which services exist, only the boot code knows whether it passed them, or
+    // registered a factory for them. So a service nothing installed reads as `undefined`
+    // through `ctx.posts` — this is a frozen plain object, and it stays one on purpose: a
+    // get-trap proxy that threw on absent keys would also throw on `await ctx` (the runtime
+    // probes `.then`), on `JSON.stringify`, and on every optional-property check.
+    // `useService(name)` is the path that names the failure instead of leaving a bare
+    // `TypeError` at the first call: it throws `X_SERVICE_MISSING`, with the installed names
+    // and the fix.
+    ...services,
+    ...fields,
     services,
   } as Ctx;
   return Object.freeze(ctx);
@@ -140,6 +154,13 @@ export function hasContext(): boolean {
  */
 export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
   const parent = useContext();
+  // A factory-managed service was built for the PARENT's actor; forwarding it verbatim into an
+  // impersonated child would answer every call with the parent's tenant. `createContext` below
+  // rebuilds every registered factory fresh against the child's own actor, so only services no
+  // factory owns — a hand-built mock nothing registered — carry forward unrebuilt.
+  const carried = Object.fromEntries(
+    Object.entries(parent.services).filter(([name]) => !isManagedService(name)),
+  );
   const child = createContext({
     requestId: parent.requestId,
     traceId: patch.traceId ?? parent.traceId,
@@ -151,7 +172,7 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     clock: patch.clock ?? parent.clock,
     logger: patch.logger ?? parent.logger,
     signal: patch.signal ?? parent.signal,
-    services: { ...parent.services, ...(patch.services ?? {}) },
+    services: { ...carried, ...(patch.services ?? {}) },
   });
   return storage.run(child, fn);
 }

@@ -76,17 +76,26 @@ Competing frameworks make "add an AI feature" a project. Here it is the default 
 
 One typed entry point for model calls — provider-agnostic, observable, cached, evaluated.
 
+**`llm()` is an action factory, not a ninth primitive.** It returns an `action`, so a model
+call carries the same MCP tool, OpenAPI operation, typed client, job handle and contract tests
+every action does, gated by the same one policy object. A new capability arrives as a factory
+over an existing primitive; the eight stay eight.
+
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-5',
   input:  t.object({ postId: t.uuid }),
-  output: t.object({ summary: t.string, tags: t.string.array() }),
+  output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact
+  vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
   cache:  { semantic: { threshold: 0.97, ttl: '7d' } },
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
   policy: can('post:read'),
 });
 ```
+
+`vars` is the one declared place a model call loads data: the input is an id, the prompt needs
+the row behind it, and a reader can see exactly what was sent.
 
 | Feature | Behavior |
 |---|---|
@@ -104,8 +113,9 @@ Long or multi-call chains are `job`s with steps ([`04-jobs.md`](./04-jobs.md)), 
 ## Prompts as versioned artifacts
 
 ```
-apps/web/app/posts/prompts/summarize.v3.md      # the prompt, plain markdown + typed slots
-apps/web/app/posts/prompts/summarize.evals.ts   # evals attached to it
+apps/web/app/posts/prompts/summarize.v3.md            # the prompt, plain markdown + typed slots
+apps/web/app/posts/prompts/summarize.evals.ts         # evals attached to it
+apps/web/app/posts/prompts/summarize.v3.baseline.json # the scores the gate compares against
 ```
 
 | Rule | Why |
@@ -138,6 +148,8 @@ pgvector in the same Postgres. No second datastore.
 | Shape | fixture set + assertions: exact, schema, rubric (LLM judge), or regression-vs-baseline |
 | Determinism | temperature 0 where possible; judge model and prompt version pinned |
 | Gate | `x verify` fails on a score drop beyond the declared tolerance, not on absolute score |
+| Baseline | a committed file, so accepting a new number is a reviewable diff — `ULTIMATE_EVAL_RECORD=1 x test eval` re-records it |
+| Coverage | a prompt no `defineEval` names fails the gate; the rule reads the registry, not filenames |
 | Cost | reported per run; `x test eval --sample 20` for the fast local loop |
 | Output | `--json` with per-case scores, so an agent iterating on a prompt sees which case it broke |
 

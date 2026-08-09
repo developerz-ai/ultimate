@@ -74,6 +74,73 @@ describe('hybrid search', () => {
   });
 });
 
+/**
+ * The dev store enforces the SAME envelope `PgVectorStore` compiles into SQL. A tenant leak
+ * that only reproduces against production Postgres is a leak nobody finds locally.
+ */
+describe('scope', () => {
+  const seedTenants = async (): Promise<MemoryVectorStore> => {
+    const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+    await store
+      .scoped({ tenant: 'acme' })
+      .upsert([
+        { id: 'a', text: 'invoice policy', vector: vec(1, 0, 0, 0), metadata: { kind: 'guide' } },
+      ]);
+    await store
+      .scoped({ tenant: 'globex' })
+      .upsert([
+        { id: 'a', text: 'invoice policy', vector: vec(1, 0, 0, 0), metadata: { kind: 'guide' } },
+      ]);
+    return store;
+  };
+
+  test('two tenants may share an id and never see each other’s row', async () => {
+    const store = await seedTenants();
+    expect(await store.search(vec(1, 0, 0, 0), 10)).toHaveLength(2);
+    const acme = await store.scoped({ tenant: 'acme' }).hybrid({
+      query: 'invoice',
+      vector: vec(1, 0, 0, 0),
+      k: 10,
+    });
+    expect(acme.map((hit) => hit.id)).toEqual(['a']);
+    expect(await store.scoped({ tenant: 'other' }).searchText('invoice', 10)).toEqual([]);
+  });
+
+  test('an allow-list is default deny: a row missing the key is invisible', async () => {
+    const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+    await store.upsert([
+      {
+        id: 'tagged',
+        text: 'invoice policy',
+        vector: vec(1, 0, 0, 0),
+        metadata: { kind: 'guide' },
+      },
+      { id: 'untagged', text: 'invoice policy', vector: vec(1, 0, 0, 0) },
+    ]);
+    const visible = await store.scoped({ allow: { kind: ['guide'] } }).search(vec(1, 0, 0, 0), 10);
+    expect(visible.map((hit) => hit.id)).toEqual(['tagged']);
+  });
+
+  test('delete is scoped, so one tenant cannot delete another tenant’s id', async () => {
+    const store = await seedTenants();
+    await store.scoped({ tenant: 'acme' }).delete(['a']);
+    expect(await store.scoped({ tenant: 'acme' }).search(vec(1, 0, 0, 0), 10)).toEqual([]);
+    expect(await store.scoped({ tenant: 'globex' }).search(vec(1, 0, 0, 0), 10)).toHaveLength(1);
+  });
+
+  test('a derived scope may only tighten', async () => {
+    const store = new MemoryVectorStore({ dimension: 4, name: 'docs' });
+    expect(store.scope).toEqual({});
+    expect(() => store.scoped({ tenant: 'acme' }).scoped({ tenant: 'globex' })).toThrow(
+      /X_VECTOR_SCOPE_WIDENED/,
+    );
+    const narrowed = store
+      .scoped({ allow: { kind: ['guide', 'error'] } })
+      .scoped({ allow: { kind: ['error'] } });
+    expect(narrowed.scope.allow).toEqual({ kind: ['error'] });
+  });
+});
+
 describe('embedding', () => {
   test('the hash embedder is deterministic and normalised', async () => {
     const embedder = new HashEmbedder({ dimension: 32 });

@@ -2,6 +2,14 @@
  * Postly's MCP server. `include: 'exposed'` pulls in every action and query that declared
  * `mcp: { expose: true }` — with their policies, not copies of them. Only tools that are *not*
  * actions are written out here.
+ *
+ * No `resolveToken` yet, so `mcp.route` is `undefined` — this server is reachable in-process
+ * (`mcp.server.handle(body, caller)`, what `apps/web/app/posts/mcp-drive.contract.test.ts`
+ * drives) but not yet mounted at `POST /mcp`. Wiring one needs a real bearer-token → member
+ * resolution, which needs Postly to issue agent tokens in the first place — neither exists yet.
+ * `packages/admin/src/mcp.ts` (the framework's own admin package) is the shape to follow once
+ * they do — it wraps `resolveToken` around the same `actor({ token })` hook its HTTP surface
+ * already uses.
  */
 
 import { localDateIn, nextDigestAt, quoteUpgrade, seatsRemaining } from '@postly/core';

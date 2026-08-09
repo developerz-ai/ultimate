@@ -190,7 +190,7 @@ reports as skipped (`-`), never as passed.
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
 | `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
 | `e2e` | Playwright against the built output, including offline and SW update |
-| `eval` | LLM output scored against thresholds |
+| `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |
 | `budgets` | per-route JS bytes and LCP |
@@ -199,6 +199,12 @@ reports as skipped (`-`), never as passed.
 A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,
 `*.e2e.test.ts` (or any test under `e2e/`), `*.eval.test.ts`. Everything else is a unit test, so no
 test can fall between two steps.
+
+`eval` is the one step that applies with no suite of its own: a prompt no `defineEval` names is
+`X_EVAL_MISSING`, because a skipped step would read as a green gate over untested code. It gates on
+the drop from each eval's committed baseline, never on an absolute score —
+`ULTIMATE_EVAL_RECORD=1 x test eval` re-records those baselines so accepting a new number is a
+reviewable diff.
 
 ```bash
 $ x verify --json

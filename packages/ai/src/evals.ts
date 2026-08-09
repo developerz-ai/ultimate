@@ -1,15 +1,31 @@
 // Evals are a test type.
 //
 // Not a notebook, not a dashboard, not a weekly report — a `bun test` case that fails CI.
-// A prompt change that drops accuracy below its threshold should break the build exactly
+// A prompt change that drops a score below its recorded baseline should break the build exactly
 // like a type error does, because the consequence is the same: shipping something wrong.
+//
+// The gate is the DROP, never the absolute score: an absolute floor fails every eval at once the
+// day the provider ships a slightly different model, which teaches everyone to lower thresholds
+// until they measure nothing. `tolerance` is how far a score may fall before it is a regression.
 //
 // Every result is filed against a prompt's content hash, so a score is always attributable
 // to an exact prompt rather than "whatever was in main that day".
 
-import { EvalThresholdError } from './errors';
+import { EvalBaselineMissingError, EvalThresholdError } from './errors';
+import type { EvalBaseline, Regression } from './eval-baseline';
+import {
+  baselinePath,
+  describeRegression,
+  readBaseline,
+  recordingBaselines,
+  regressionsAgainst,
+  writeBaseline,
+} from './eval-baseline';
 import type { Gateway } from './gateway';
 import type { Prompt, PromptVars } from './prompt';
+import { describePrompts } from './prompt';
+import type { Scorer } from './scorers';
+import { clampScore } from './scorers';
 
 /** One case: the variables to render with, plus what a good answer looks like. */
 export interface EvalCase<V extends PromptVars = PromptVars> {
@@ -19,19 +35,19 @@ export interface EvalCase<V extends PromptVars = PromptVars> {
   readonly expected?: string;
 }
 
-/** A scorer returns 0..1. Deterministic scorers are preferred; judges are a last resort. */
-export interface Scorer {
-  readonly name: string;
-  score(input: { output: string; expected?: string }): Promise<number> | number;
-}
-
 export interface DefineEvalInput<V extends PromptVars = PromptVars> {
   readonly name: string;
   readonly prompt: Prompt<V>;
   readonly cases: readonly EvalCase<V>[];
   readonly scorers: readonly Scorer[];
-  /** Mean score below this fails. Explicit, so lowering it is a reviewable diff. */
-  readonly threshold: number;
+  /**
+   * The committed scores this run is compared against. Write it as
+   * `import.meta.resolve('./name.baseline.json')` — a cwd-relative path resolves to a different
+   * file depending on where the suite was started.
+   */
+  readonly baseline: string;
+  /** How far a score may fall before it is a regression. Explicit: widening it is a diff. */
+  readonly tolerance: number;
   readonly maxTokens?: number;
 }
 
@@ -48,7 +64,12 @@ export interface EvalResult {
   /** The prompt content hash. A score means nothing without it. */
   readonly promptHash: string;
   readonly score: number;
-  readonly threshold: number;
+  /** The recorded run mean, or `undefined` when this eval has never been recorded. */
+  readonly baseline: number | undefined;
+  readonly tolerance: number;
+  /** Every score that fell further than `tolerance` — the run mean and each case. */
+  readonly regressions: readonly Regression[];
+  /** A baseline exists and nothing regressed. Anything else is a red gate. */
   readonly passed: boolean;
   readonly cases: readonly CaseResult[];
 }
@@ -56,14 +77,27 @@ export interface EvalResult {
 export interface Eval<V extends PromptVars = PromptVars> {
   readonly name: string;
   readonly prompt: Prompt<V>;
-  readonly threshold: number;
-  /** Score every case. Never throws on a low score — `assert` does that. */
+  readonly tolerance: number;
+  /** The baseline file, as declared — what `x verify` reports when it cannot be read. */
+  readonly baseline: string;
+  /** Score every case against the baseline. Never throws on a regression — `assert` does that. */
   run(gateway: Gateway): Promise<EvalResult>;
   /**
-   * Run and throw `X_EVAL_THRESHOLD` if below threshold. This is the line a test file
-   * calls, so a regression is a red test with the worst cases named in the message.
+   * Run and throw `X_EVAL_THRESHOLD` on a regression. This is the line a test file calls, so a
+   * prompt edit that broke a case is a red test naming that case and both its scores.
+   *
+   * Under `ULTIMATE_EVAL_RECORD=1` it writes the baseline instead of gating on it.
    */
   assert(gateway: Gateway): Promise<EvalResult>;
+}
+
+/** What `x verify` reads to decide whether every prompt is evaluated. */
+export interface EvalFact {
+  readonly name: string;
+  readonly prompt: string;
+  readonly promptId: string;
+  readonly tolerance: number;
+  readonly baseline: string;
 }
 
 const registry = new Map<string, Eval>();
@@ -72,34 +106,69 @@ export function defineEval<V extends PromptVars>(input: DefineEvalInput<V>): Eva
   const evaluation: Eval<V> = {
     name: input.name,
     prompt: input.prompt,
-    threshold: input.threshold,
+    tolerance: input.tolerance,
+    baseline: input.baseline,
     run: (gateway) => runEval(input, gateway),
-    async assert(gateway) {
-      const result = await runEval(input, gateway);
-      if (!result.passed) {
-        throw new EvalThresholdError({
-          eval: result.name,
-          score: result.score,
-          threshold: result.threshold,
-          promptVersion: `${result.promptRef} (${result.promptHash})`,
-          worst: worstCases(result.cases),
-        });
-      }
-      return result;
-    },
+    assert: (gateway) => assertEval(input, gateway),
   };
   registry.set(input.name, evaluation as Eval);
   return evaluation;
 }
 
-export function describeEvals(): readonly { name: string; prompt: string; threshold: number }[] {
+export function describeEvals(): readonly EvalFact[] {
   return [...registry.values()]
-    .map((e) => ({ name: e.name, prompt: e.prompt.ref, threshold: e.threshold }))
+    .map((evaluation) => ({
+      name: evaluation.name,
+      prompt: evaluation.prompt.ref,
+      promptId: evaluation.prompt.id,
+      tolerance: evaluation.tolerance,
+      baseline: evaluation.baseline,
+    }))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
+ * Every registered prompt no eval names, by ID rather than by version: old versions are retained
+ * so traces stay interpretable, and an eval on the current version evaluates that lineage.
+ */
+export function promptsWithoutEvals(): readonly Prompt[] {
+  const covered = new Set([...registry.values()].map((evaluation) => evaluation.prompt.id));
+  return describePrompts().filter((prompt) => !covered.has(prompt.id));
 }
 
 export function resetEvals(): void {
   registry.clear();
+}
+
+async function assertEval<V extends PromptVars>(
+  input: DefineEvalInput<V>,
+  gateway: Gateway,
+): Promise<EvalResult> {
+  const path = baselinePath(input.baseline, input.name);
+  const result = await runEval(input, gateway);
+
+  if (recordingBaselines()) {
+    await writeBaseline(path, baselineFrom(result));
+    return { ...result, baseline: result.score, regressions: [], passed: true };
+  }
+  if (result.baseline === undefined) {
+    throw new EvalBaselineMissingError({
+      eval: input.name,
+      path,
+      reason: 'has never been recorded',
+    });
+  }
+  if (result.regressions.length > 0) {
+    throw new EvalThresholdError({
+      eval: result.name,
+      score: result.score,
+      baseline: result.baseline,
+      tolerance: result.tolerance,
+      promptVersion: `${result.promptRef} (${result.promptHash})`,
+      regressed: result.regressions.map(describeRegression),
+    });
+  }
+  return result;
 }
 
 async function runEval<V extends PromptVars>(
@@ -108,17 +177,16 @@ async function runEval<V extends PromptVars>(
 ): Promise<EvalResult> {
   const cases: CaseResult[] = [];
   for (const testCase of input.cases) {
-    const request = {
+    const generated = await gateway.generate({
       messages: [{ role: 'user' as const, content: input.prompt.render(testCase.vars) }],
       maxTokens: input.maxTokens ?? 1_024,
       ...(input.prompt.system !== undefined ? { system: input.prompt.system } : {}),
       ...(input.prompt.model !== undefined ? { model: input.prompt.model } : {}),
       ...(input.prompt.effort !== undefined ? { effort: input.prompt.effort } : {}),
-    };
-    const generated = await gateway.generate(request);
+    });
     const perScorer: Record<string, number> = {};
     for (const scorer of input.scorers) {
-      perScorer[scorer.name] = clamp(
+      perScorer[scorer.name] = clampScore(
         await scorer.score({
           output: generated.text,
           ...(testCase.expected !== undefined ? { expected: testCase.expected } : {}),
@@ -134,117 +202,41 @@ async function runEval<V extends PromptVars>(
   }
 
   const score = mean(cases.map((c) => c.score));
+  const recorded = await readBaseline(baselinePath(input.baseline, input.name));
+  const regressions =
+    recorded === undefined
+      ? []
+      : regressionsAgainst({
+          baseline: recorded,
+          score,
+          cases: caseScores(cases),
+          tolerance: input.tolerance,
+        });
+
   return {
     name: input.name,
     promptRef: input.prompt.ref,
     promptHash: input.prompt.hash,
     score,
-    threshold: input.threshold,
-    passed: score >= input.threshold,
+    baseline: recorded?.score,
+    tolerance: input.tolerance,
+    regressions,
+    passed: recorded !== undefined && regressions.length === 0,
     cases,
   };
 }
 
-/** The three lowest-scoring case names — what a failure message must contain to be useful. */
-function worstCases(cases: readonly CaseResult[]): readonly string[] {
-  return [...cases]
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 3)
-    .map((c) => `${c.case}=${c.score.toFixed(2)}`);
-}
+const caseScores = (cases: readonly CaseResult[]): Record<string, number> =>
+  Object.fromEntries(cases.map((c) => [c.case, c.score]));
 
-const clamp = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
+/** What a run records: the numbers, and the exact prompt that produced them. */
+export const baselineFrom = (result: EvalResult): EvalBaseline => ({
+  eval: result.name,
+  prompt: result.promptRef,
+  promptHash: result.promptHash,
+  score: result.score,
+  cases: caseScores(result.cases),
+});
+
 const mean = (values: readonly number[]): number =>
   values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
-
-// ── built-in scorers ─────────────────────────────────────────────────────────
-
-/** Exact match after trimming. The strictest and cheapest scorer; prefer it when it fits. */
-export const exact: Scorer = {
-  name: 'exact',
-  score: ({ output, expected }) => (output.trim() === (expected ?? '').trim() ? 1 : 0),
-};
-
-/** Case-insensitive substring. For "did it mention X" without pinning the phrasing. */
-export const contains: Scorer = {
-  name: 'contains',
-  score: ({ output, expected }) =>
-    expected !== undefined && output.toLowerCase().includes(expected.toLowerCase()) ? 1 : 0,
-};
-
-/** Output parses as JSON. Pairs with a prompt that declares an `output` schema. */
-export const jsonValid: Scorer = {
-  name: 'json-valid',
-  score: ({ output }) => {
-    try {
-      JSON.parse(output);
-      return 1;
-    } catch {
-      return 0;
-    }
-  },
-};
-
-/** Output parses AND satisfies the required keys of `schema`. */
-export function jsonSchemaValid(required: readonly string[]): Scorer {
-  return {
-    name: 'json-schema-valid',
-    score: ({ output }) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(output);
-      } catch {
-        return 0;
-      }
-      if (typeof parsed !== 'object' || parsed === null) return 0;
-      const record = parsed as Record<string, unknown>;
-      const present = required.filter((key) => record[key] !== undefined).length;
-      return required.length === 0 ? 1 : present / required.length;
-    },
-  };
-}
-
-/** Graded numeric closeness — 1 at exact, 0 at or beyond `tolerance`. */
-export function numericTolerance(tolerance: number): Scorer {
-  return {
-    name: 'numeric-tolerance',
-    score: ({ output, expected }) => {
-      const got = Number.parseFloat(output.trim());
-      const want = Number.parseFloat((expected ?? '').trim());
-      if (Number.isNaN(got) || Number.isNaN(want)) return 0;
-      const delta = Math.abs(got - want);
-      return delta >= tolerance ? 0 : 1 - delta / tolerance;
-    },
-  };
-}
-
-/**
- * LLM-as-judge. The judge prompt is itself a versioned artifact, so a judge change is a new
- * hash and every score it produced is re-attributable. A judge whose prompt drifts silently
- * is a measuring instrument that lies.
- */
-export function llmJudge(input: {
-  readonly gateway: Gateway;
-  readonly judge: Prompt<{ output: string; expected: string }>;
-  readonly maxTokens?: number;
-}): Scorer {
-  return {
-    name: `llm-judge@${input.judge.hash}`,
-    async score({ output, expected }) {
-      const generated = await input.gateway.generate({
-        messages: [
-          {
-            role: 'user',
-            content: input.judge.render({ output, expected: expected ?? '' }),
-          },
-        ],
-        maxTokens: input.maxTokens ?? 256,
-        ...(input.judge.system !== undefined ? { system: input.judge.system } : {}),
-        ...(input.judge.model !== undefined ? { model: input.judge.model } : {}),
-      });
-      // The judge is asked for a bare 0..1; anything else scores 0 rather than guessing.
-      const parsed = Number.parseFloat(generated.text.trim());
-      return Number.isNaN(parsed) ? 0 : clamp(parsed);
-    },
-  };
-}

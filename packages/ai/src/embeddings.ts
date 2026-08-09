@@ -1,10 +1,9 @@
-// The embedding interface plus a deterministic hash embedder for tests and `x dev`.
+// The embedding interface, the vector maths every store shares, and a deterministic hash
+// embedder for tests and `x dev`. The remote one lives in ./remote-embedder.
 //
 // The dimension lives in the TYPE, not in a config file: a store built with one embedder and
 // queried with another is a silent relevance collapse, and the only place to catch it is
 // where the two meet. `VectorStore` compares the declared dimension and refuses.
-
-import { AiNotImplementedError } from './errors';
 
 export interface Embedder {
   readonly name: string;
@@ -69,24 +68,6 @@ export class HashEmbedder implements Embedder {
       vector[slot] = (vector[slot] ?? 0) + sign;
     }
     return normalize(vector);
-  }
-}
-
-/** A real remote embedder needs a key and a transport; the interface is complete without it. */
-export class RemoteEmbedder implements Embedder {
-  readonly name: string;
-  readonly dimension: number;
-
-  constructor(input: { name: string; dimension: number }) {
-    this.name = input.name;
-    this.dimension = input.dimension;
-  }
-
-  async embed(_texts: readonly string[]): Promise<readonly Float32Array[]> {
-    throw new AiNotImplementedError({
-      feature: `RemoteEmbedder("${this.name}")`,
-      fix: 'set EMBEDDINGS_API_KEY and configure ai.embeddings in app.config.ts, or use HashEmbedder in dev',
-    });
   }
 }
 

@@ -69,6 +69,13 @@ Concurrent requests never leak into each other. `ctx.logger` carries `requestId`
 automatically; so does the root `logger` while a context is active. Add typed services by
 augmenting `CtxServices`; reach late-bound ones with `useService<T>('mail')`.
 
+A service that reads the actor (`ctx.posts`, scoped to `ctx.actor.orgId`) registers once with
+`defineService('posts', (ctx) => ({ ... }))`, at import time. `createContext` and
+`withChildContext` then build it fresh, bound to whichever actor they are constructing a ctx
+for — importing the module that calls `defineService` is the registration, the same convention
+`registerActions` uses. Passing `services: { posts: ... }` to `createContext` still works and
+wins over a registered factory of the same name, for a test that wants to hand in a mock.
+
 ## Env fails once, completely
 
 ```ts

@@ -16,8 +16,11 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 Every fact the CLI reports comes from a framework package: the manifest from
 `@ultimat3/manifest`, `openapi.json` from `@ultimat3/action`, the route table from
 `@ultimat3/render`, budget units from `@ultimat3/render`, the `/_x` panels from
-`@ultimat3/admin`, the MCP tool catalog from `@ultimat3/mcp`. A check that reimplements one
-of those here is the bug, not the fix.
+`@ultimat3/admin`, the MCP tool catalog from `@ultimat3/mcp`, eval coverage from
+`@ultimat3/ai`. A check that reimplements one of those here is the bug, not the fix.
+
+`app-evals.ts` is why the `eval` step can apply with no eval suite at all: a prompt no eval
+names is `X_EVAL_MISSING`, and a skipped step would read as a green gate over untested code.
 
 `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
 dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
