@@ -3,8 +3,18 @@
  * need it too; what a *post looks like on the wire* is this feature's business, so it lives here.
  */
 
+import type { Post } from '@postly/db';
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, TITLE_MAX } from '@postly/domain';
 import { type Infer, t } from '@ultimat3/schema';
+
+/**
+ * Hop 4 of the type chain (docs/architecture/05-type-chain.md): every field below except
+ * `authorName` must still name a real column on `posts`. `authorName` has no column of its own —
+ * it comes from the join in `repo.ts` — so it is added back, not picked. A column renamed or
+ * dropped in `packages/db/src/schema/posts.ts` fails to compile on the object literal below,
+ * instead of surfacing three hops downstream as a field that silently arrives `undefined`.
+ */
+type PostViewKeys = Exclude<keyof Post, 'createdAt' | 'updatedAt'> | 'authorName';
 
 /** The output of every post action and query. Drives OpenAPI, the MCP tool, and the typed client. */
 export const PostView = t.object({
@@ -21,7 +31,7 @@ export const PostView = t.object({
   publishedAt: t.nullable(t.date),
   authorId: t.uuid,
   authorName: t.string,
-});
+} satisfies Record<PostViewKeys, unknown>);
 
 export type PostView = Infer<typeof PostView>;
 
