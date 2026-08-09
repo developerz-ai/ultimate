@@ -75,8 +75,11 @@ const FORBIDDEN_FUNCTIONS = [
 ];
 
 /**
- * Throw unless `sql` is a single read-only statement. Returns the normalised statement so
- * the caller logs what it actually ran, not what it was handed.
+ * Throw unless `sql` is a single read-only statement. Every check runs on the *stripped* form
+ * (literals and comments blanked) so a keyword hiding in a string cannot fool it — but the
+ * string returned is the caller's own `sql`, verbatim apart from surrounding whitespace and
+ * one trailing `;`, because the caller *executes* this value. Returning the stripped form ran
+ * `select 'delete from posts' as note` as `select   as note`.
  */
 export function assertReadOnlyQuery(sql: string): string {
   const stripped = stripLiteralsAndComments(sql);
@@ -132,7 +135,17 @@ export function assertReadOnlyQuery(sql: string): string {
       );
     }
   }
-  return statement;
+  return verbatim(sql);
+}
+
+/**
+ * The caller's bytes, minus surrounding whitespace and one trailing `;`. Anything past that
+ * semicolon is whitespace or a comment — the single-statement check above already proved the
+ * stripped form has nothing else there.
+ */
+function verbatim(sql: string): string {
+  const trimmed = sql.trim();
+  return trimmed.endsWith(';') ? trimmed.slice(0, -1).trimEnd() : trimmed;
 }
 
 /** What the host knows about the connection `db.migrate` would run against. */

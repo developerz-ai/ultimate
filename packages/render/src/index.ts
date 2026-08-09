@@ -26,6 +26,7 @@ export {
   THEME_SCRIPT_MAX_BYTES,
   themeScript,
 } from './head';
+export { headTagKey, seoRenderers, toHeadTag } from './head-seo';
 export type { IslandDirective } from './hydrate';
 export {
   DEFAULT_REPLAY_EVENTS,

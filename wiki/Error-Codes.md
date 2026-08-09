@@ -163,6 +163,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_BOUNDARY_SERVICE_TO_HTTP` | a service imported HTTP | request awareness inside business logic | take the values as arguments so a job can reuse the service |
 | `X_BOUNDARY_SHARED_LEAF` | `shared/` imported a surface | `shared/` is a leaf | invert the dependency |
 | `X_BUDGET_EXCEEDED` | a route blew its JS or LCP budget | a heavy transitive import | `x routes --json` for the chain; move it behind `hydrate: 'interaction'` or raise the budget deliberately |
+| `X_BUDGET_UNMEASURED` | a route declares a JS or LCP budget the build never measured | the route is absent from `.x/build-stats.json` | `x build`, then `x verify` |
 | `X_PRERENDER_FAILED` | a prerendered path threw during build | `prerender()` returned an id that no longer resolves | fix the data source, or narrow `prerender()` |
 
 ## SEO
@@ -235,7 +236,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_ADMIN_TOOL_FORBIDDEN` | an admin MCP tool was called without permission | agent acting beyond its user | nothing to fix — the policy is correct |
 | `X_DEV_DASHBOARD_IN_PROD` | `/_x` was mounted outside dev | the dev dashboard shipped in the image | delete the `/_x` mount from the production entrypoint |
 | `X_MANIFEST_DRIFT` | `x.manifest.json` differs from the code | a primitive changed without regenerating | `x manifest` |
-| `X_MANIFEST_STALE` | the committed manifest is stale in CI | forgot to commit the regenerated file | `x manifest`, then commit |
+| `X_MANIFEST_STALE` | `openapi.json` is stale | the committed spec does not match the actions the code registers | `x manifest`, then commit |
 | `X_MANIFEST_BREAKING` | a published contract was removed or narrowed | a breaking change with no version bump | bump the major version, or restore the contract |
 | `X_AGENTS_MD_MISSING` | no `AGENTS.md` | the human-authored file was deleted | write it by hand — short: stack, commands, conventions |
 | `X_AGENTS_MD_TOO_LARGE` | `AGENTS.md` grew past its cap | generated facts pasted into it | move facts into `x.manifest.json`; keep conventions only |
@@ -270,7 +271,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_TEST_FAILED` | a test type failed | a red test | the `fix` is the exact `bun test …` invocation the step ran |
 | `X_FILE_TOO_LONG` | a source file is over 500 lines | one file doing several jobs | split it; the `fix` names the file |
 | `X_PACKAGE_SHAPE` | a workspace package is missing a contract file | a package added by hand | `bun run scripts/new-package.ts <pkg> --only <file>` |
-| `X_CONTRACT_BREAKING` | the OpenAPI contract broke | a required input added, or an operation removed | give the input a `.default()`, or bump the package version |
+| `X_APP_PACKAGE_INVALID` | the app's `package.json` has no usable `name`/`version` — the manifest never fabricates `app@0.0.0`, because its version is the compatibility gate | a malformed or hand-trimmed `package.json` | `bun pm pkg set name=<app> version=0.1.0` |
 | `X_BUILD_FAILED` | `x build` failed | a static check or the bundler | read `cause`; the failing step is named |
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |
 | `X_GENERATE_CONFLICT` | a generator would overwrite a file | the name is taken | `x g … --force`, or choose another name |

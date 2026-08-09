@@ -55,7 +55,8 @@ export class UltimateRequest {
     return this.ctx.params;
   }
 
-  get actor(): Actor | null {
+  /** Never null — an unauthenticated call carries core's anonymous actor, same as `Ctx`. */
+  get actor(): Actor {
     return this.ctx.actor;
   }
 

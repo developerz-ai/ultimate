@@ -1,9 +1,10 @@
 # @ultimat3/admin 🛠️
 
-**Two dashboards live here. They are not the same thing.**
+**Two dashboards live here. They are not the same thing — and they have two doors.**
 
 | | `/_x` — framework dev dashboard | `admin` — generated app admin |
 |---|---|---|
+| Import | `@ultimat3/admin/dev` | `@ultimat3/admin` |
 | Audience | you, debugging the framework | your operators, and their agents |
 | Environment | development **only** — mounting it with `env=production` or `role=production` throws `X_DEV_DASHBOARD_IN_PROD` | production |
 | Authz | none: it is your own machine | the app's policies, one decision per surface |
@@ -27,12 +28,15 @@ One panel per file. Each kills one question, and each is available as `--json` �
 | `manifest` | emitted `x.manifest.json` diffed against the committed one |
 
 ```ts
-import { devDashboard, defaultDevSources } from '@ultimat3/admin';
+import { devDashboard, defaultDevSources } from '@ultimat3/admin/dev';
 
 const dev = devDashboard({ sources: defaultDevSources({ authz, actors }) }); // throws in prod
 const response = await dev.handle(request); // null when the path is not /_x
 await dev.json('jobs'); // the same payload `x dev --panel jobs --json` prints
 ```
+
+The root barrel does not re-export any of this: `x dev` mounts `/_x` without pulling a Solid
+component tree into the process, and an admin view cannot reach a dev panel by accident.
 
 ## The generated admin
 

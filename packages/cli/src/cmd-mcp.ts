@@ -1,172 +1,172 @@
-// `x mcp serve` — the framework's own MCP server over stdio or HTTP. Read tools are unrestricted
-// in dev; write tools are scoped to a branch database. Same facts as `x manifest` and `x routes`,
-// so an agent never has to parse terminal output to learn what the app contains.
+// `x mcp serve` — the framework's dev MCP server over stdio or HTTP. The 13 tools, the JSON-RPC
+// dispatch, both transports and the structural SQL refusals all come from `@ultimat3/mcp`; the CLI
+// supplies only the app, the caller and the socket. A tool answered here would be a second answer
+// to a question the framework already answers.
 
+import { markListening, nanoid, onShutdown } from '@ultimat3/core';
+import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import type { CliErrorCode } from './errors';
-import { CLI_ERROR_CODES, docsFor } from './errors';
-import { scanApp } from './manifest-scan';
+import { BadFlagError } from './errors';
+import type { CliMcpServer } from './mcp-host';
+import { createDevMcpServer, DEV_TOOL_SCOPES } from './mcp-host';
 import { msg } from './messages';
-import type { CommandResult, JsonValue } from './output';
+import type { CommandResult } from './output';
 import { flagString } from './parse';
-import { checkAppBoundaries } from './surfaces';
 
-export interface McpTool {
-  readonly name: string;
-  readonly description: string;
-  readonly readOnly: boolean;
-  run(root: string, input: Readonly<Record<string, unknown>>): Promise<JsonValue>;
-}
+const DEFAULT_PORT = 9229;
+const TRANSPORTS = ['stdio', 'http'] as const;
+type Transport = (typeof TRANSPORTS)[number];
 
-const errorExplanation = (code: string): JsonValue => {
-  const known: readonly string[] = CLI_ERROR_CODES;
-  if (!known.includes(code)) {
-    return { code, known: false, docs: `https://ultimate.dev/errors/${code}` };
-  }
-  return { code, known: true, docs: docsFor(code as CliErrorCode) };
-};
+/** One reading of the entitlement, so `--json` and the terminal can never disagree about it. */
+const scopes = (): readonly string[] => [...DEV_TOOL_SCOPES].sort();
 
-export const MCP_TOOLS: readonly McpTool[] = [
-  {
-    name: 'manifest.get',
-    description: 'The whole x.manifest.json: routes, actions, jobs, policies, entities',
-    readOnly: true,
-    run: async (root) => (await scanApp({ root })) as unknown as JsonValue,
-  },
-  {
-    name: 'routes.list',
-    description: 'Route table with render mode, hydrate, offline strategy and budget',
-    readOnly: true,
-    run: async (root) => {
-      const manifest = await scanApp({ root });
-      return manifest.entries
-        .filter((entry) => entry.kind === 'route')
-        .map((entry) => ({ path: entry.path ?? entry.name, file: entry.file })) as JsonValue;
+const scopeLine = (): string => msg('cli.mcp.scopes', { scopes: scopes().join(' ') });
+
+const isTransport = (value: string): value is Transport =>
+  (TRANSPORTS as readonly string[]).includes(value);
+
+/** The catalog, from the server's own registry — never a list kept here. */
+async function catalog(host: CliMcpServer): Promise<CommandResult> {
+  const tools = host.server.list(host.caller);
+  await host.close();
+  return {
+    ok: true,
+    command: 'mcp',
+    summary: msg('cli.mcp.serving', { transport: 'none', tools: tools.length }),
+    // `scopes` rides in `data` because it rides in `lines`: every fact the terminal prints is a
+    // fact `--json` carries, or the two renderers have drifted.
+    data: {
+      tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
+      scopes: scopes(),
     },
-  },
-  {
-    name: 'boundaries.check',
-    description: 'Surface and layer import violations, each with the fix command',
-    readOnly: true,
-    run: async (root) => (await checkAppBoundaries(root)) as unknown as JsonValue,
-  },
-  {
-    name: 'errors.explain',
-    description: 'X_* code to cause, fix command and docs URL',
-    readOnly: true,
-    run: async (_root, input) => errorExplanation(String(input['code'] ?? '')),
-  },
-];
-
-interface JsonRpcRequest {
-  readonly jsonrpc: '2.0';
-  readonly id?: number | string;
-  readonly method: string;
-  readonly params?: Readonly<Record<string, unknown>>;
+    lines: [...tools.map((tool) => `  ${tool.name.padEnd(20)} ${tool.description}`), scopeLine()],
+  };
 }
 
-const result = (id: number | string | undefined, payload: JsonValue): string =>
-  JSON.stringify({ jsonrpc: '2.0', id: id ?? null, result: payload });
+const notFound = (path: string): Response =>
+  new Response(
+    JSON.stringify({
+      code: 'X_MCP_PROTOCOL',
+      cause: 'the MCP server answers exactly one route',
+      fix: `POST ${path} with an Authorization: Bearer header`,
+    }),
+    { status: 404, headers: { 'content-type': 'application/json' } },
+  );
 
-const rpcError = (id: number | string | undefined, code: number, message: string): string =>
-  JSON.stringify({ jsonrpc: '2.0', id: id ?? null, error: { code, message } });
+/** A running HTTP transport. `stop()` releases the socket AND the host's lazily booted services. */
+export interface McpHttpServer {
+  readonly result: CommandResult;
+  stop(): Promise<void>;
+}
 
-/** One dispatcher for both transports: stdio and HTTP must never answer differently. */
-export async function handleRpc(root: string, raw: string): Promise<string> {
-  let request: JsonRpcRequest;
-  try {
-    request = JSON.parse(raw) as JsonRpcRequest;
-  } catch {
-    return rpcError(undefined, -32700, 'parse error');
-  }
-  if (request.method === 'initialize') {
-    return result(request.id, {
-      protocolVersion: '2025-06-18',
-      serverInfo: { name: 'ultimate', version: '0.0.1' },
-      capabilities: { tools: {} },
+/**
+ * HTTP demands a bearer token, and a token in a config file is one more thing to keep in sync — so
+ * it is minted per process and returned in `data`, where `--json` puts it one read away.
+ *
+ * Exported with its stop handle rather than swallowing it: the socket and the host's PGlite data
+ * directory outlive `run()` otherwise, and nothing — a test, an embedding caller, or a signal —
+ * could ever release them.
+ */
+export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
+  const token = nanoid(32);
+  const route = mcpHttpRoute({
+    server: host.server,
+    resolveToken: (candidate) =>
+      candidate === token ? { actor: host.caller.actor, scopes: DEV_TOOL_SCOPES } : null,
+  });
+  const handle = Bun.serve({
+    port,
+    hostname: 'localhost',
+    fetch: (request: Request): Response | Promise<Response> => {
+      const url = new URL(request.url);
+      if (request.method !== route.method || url.pathname !== route.path) {
+        return notFound(route.path);
+      }
+      return route.handle(request);
+    },
+  });
+  // Announces the socket as this process's own, so a caller on it is never mistaken for egress.
+  const stopListening = markListening(handle.url.origin);
+  const url = `${handle.url.origin}${route.path}`;
+  return {
+    result: {
+      ok: true,
+      command: 'mcp',
+      summary: msg('cli.mcp.serving', { transport: 'http', tools: host.tools.length }),
+      data: { url, token, tools: host.tools.length, scopes: scopes() },
+      lines: [`  POST ${url}`, `  authorization: Bearer ${token}`, scopeLine()],
+    },
+    async stop() {
+      await handle.stop(true);
+      stopListening();
+      await host.close();
+    },
+  };
+}
+
+/**
+ * stdout is the WIRE. `dispatch.ts` renders a `CommandResult` only after `run` resolves, and this
+ * resolves when the peer closes stdin — so the command's own output cannot reach stdout while a
+ * session is live, and nothing here writes to it directly.
+ */
+async function serveOverStdio(host: CliMcpServer): Promise<CommandResult> {
+  await serveStdio({ server: host.server, caller: host.caller });
+  await host.close();
+  return {
+    ok: true,
+    command: 'mcp',
+    summary: msg('cli.mcp.serving', { transport: 'stdio', tools: host.tools.length }),
+    data: { transport: 'stdio', tools: host.tools.length },
+  };
+}
+
+function readPort(ctx: CommandContext): number {
+  const raw = flagString(ctx.args, 'port') ?? String(DEFAULT_PORT);
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new BadFlagError({
+      flag: 'port',
+      command: 'mcp serve',
+      reason: `expects a port in 0..65535, got "${raw}"`,
+      fix: `x mcp serve --transport http --port ${DEFAULT_PORT}`,
     });
   }
-  if (request.method === 'tools/list') {
-    return result(
-      request.id,
-      MCP_TOOLS.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        readOnly: tool.readOnly,
-      })),
-    );
-  }
-  if (request.method === 'tools/call') {
-    const params = request.params ?? {};
-    const name = String(params['name'] ?? '');
-    const tool = MCP_TOOLS.find((entry) => entry.name === name);
-    if (tool === undefined) {
-      return rpcError(request.id, -32601, `unknown tool "${name}" — call tools/list`);
-    }
-    const args = (params['arguments'] ?? {}) as Readonly<Record<string, unknown>>;
-    const payload = await tool.run(root, args);
-    return result(request.id, payload);
-  }
-  return rpcError(request.id, -32601, `unknown method "${request.method}"`);
-}
-
-async function serveStdio(root: string): Promise<void> {
-  const decoder = new TextDecoder();
-  for await (const chunk of Bun.stdin.stream()) {
-    for (const line of decoder.decode(chunk).split('\n')) {
-      if (line.trim().length === 0) continue;
-      process.stdout.write(`${await handleRpc(root, line)}\n`);
-    }
-  }
+  return port;
 }
 
 export const mcpCommand: CliCommand = {
   spec: {
     name: 'mcp',
-    summary: 'serve the framework MCP tools over stdio or HTTP',
-    usage: 'x mcp serve [--transport stdio|http] [--port 9229] [--json]',
+    summary: 'serve the dev tools: routes, schema, policies, db, queues, logs, tests, verify',
+    usage: 'x mcp tools | x mcp serve [--transport stdio|http] [--port 9229] [--json]',
     requiresApp: true,
     subcommands: ['serve', 'tools'],
     flags: [
       { name: 'transport', type: 'string', summary: 'stdio | http', default: 'stdio' },
-      { name: 'port', type: 'string', summary: 'HTTP port', default: '9229' },
+      { name: 'port', type: 'string', summary: 'HTTP port', default: String(DEFAULT_PORT) },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('mcp', ctx.cwd).dir;
     const transport = flagString(ctx.args, 'transport') ?? 'stdio';
-    if (ctx.args.subcommand === 'tools') {
-      return {
-        ok: true,
-        command: 'mcp',
-        summary: msg('cli.mcp.serving', { transport: 'none', tools: MCP_TOOLS.length }),
-        data: MCP_TOOLS.map((tool) => ({ name: tool.name, description: tool.description })),
-        lines: MCP_TOOLS.map((tool) => `  ${tool.name.padEnd(20)} ${tool.description}`),
-      };
-    }
-    if (transport === 'http') {
-      const port = Number.parseInt(flagString(ctx.args, 'port') ?? '9229', 10);
-      const server = Bun.serve({
-        port,
-        fetch: async (request) =>
-          new Response(await handleRpc(root, await request.text()), {
-            headers: { 'content-type': 'application/json' },
-          }),
+    // Validated before the app is loaded: a typo must not cost a boot to report.
+    if (!isTransport(transport)) {
+      throw new BadFlagError({
+        flag: 'transport',
+        command: 'mcp serve',
+        reason: `expects ${TRANSPORTS.join(' or ')}, got "${transport}"`,
+        fix: 'x mcp serve --transport stdio',
       });
-      return {
-        ok: true,
-        command: 'mcp',
-        summary: msg('cli.mcp.serving', { transport: 'http', tools: MCP_TOOLS.length }),
-        data: { url: `http://localhost:${server.port}`, tools: MCP_TOOLS.length },
-      };
     }
-    await serveStdio(root);
-    return {
-      ok: true,
-      command: 'mcp',
-      summary: msg('cli.mcp.serving', { transport: 'stdio', tools: MCP_TOOLS.length }),
-      data: { tools: MCP_TOOLS.length },
-    };
+    const port = readPort(ctx);
+    const host = await createDevMcpServer({ root, env: ctx.env, runner: ctx.runner });
+    if (ctx.args.subcommand === 'tools') return catalog(host);
+    if (transport !== 'http') return serveOverStdio(host);
+    // Long-running: the process stays alive on the server handle. The stop handle goes to the
+    // shutdown registry so a signal releases the socket and the database, not the exit code alone.
+    const served = startMcpHttp(host, port);
+    onShutdown('cli:mcp-http', () => served.stop());
+    return served.result;
   },
 };

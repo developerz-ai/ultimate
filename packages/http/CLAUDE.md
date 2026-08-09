@@ -12,6 +12,11 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Rules
 
 - Route `meta.auth` is required. Never default a route to public.
+- **`ctx.actor` is never null.** `asCtx` publishes the request context itself as core's `Ctx`,
+  and `Ctx.actor` is an `Actor` — so "nobody" is core's anonymous actor, not `null`. The
+  `authenticate` hook still says it with `null`; the `auth` stage is where that becomes
+  `anonymousActor()`. A null here reaches every `ctx.actor` reader in the framework as a contract
+  violation that only shows up on the first unauthenticated request.
 - Never add a stage to `PIPELINE_STAGES` without a `why` and a test.
 - Statuses live in `error-map.ts` only. No other file writes a status number.
 - Never throw a bare `Error` — use a factory from `errors.ts`.

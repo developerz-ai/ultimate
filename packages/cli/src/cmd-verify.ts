@@ -5,26 +5,22 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { APP_CONFIG_FILE, MANIFEST_FILE, requireAppRoot } from './app-root';
+import type { Manifest } from '@ultimat3/manifest';
+import { assertNoDrift, MANIFEST_FILENAME, verifyContract } from '@ultimat3/manifest';
+import { checkAppBoundaries } from './app-boundaries';
+import { appManifest, readAppManifest } from './app-manifest';
+import { OPENAPI_FILE, openApiJson } from './app-openapi';
+import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
 import { checkDrift } from './drift';
-import { scanApp } from './manifest-scan';
 import { msg } from './messages';
-import type { OpenApiDocument } from './openapi';
-import { buildOpenApi, diffOpenApi } from './openapi';
 import type { CommandResult, Finding, StepResult } from './output';
-import { checkAppBoundaries } from './surfaces';
+import { findingFrom } from './output';
 import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
 import { fromExec, fromFindings, hostFindings, passed } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
 import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
-
-const readOpenApi = async (root: string): Promise<OpenApiDocument | undefined> => {
-  const path = join(root, 'openapi.json');
-  if (!existsSync(path)) return undefined;
-  return (await Bun.file(path).json()) as OpenApiDocument;
-};
 
 /** The whole contract, in cost order. Every check the framework knows how to make lives here. */
 export const VERIFY_STEPS: readonly VerifyStep[] = [
@@ -84,14 +80,19 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'contract-diff',
-    summary: 'published actions vs openapi.json',
-    applies: async (ctx) => existsSync(join(ctx.root, 'openapi.json')),
+    summary: 'the published contract vs the committed manifest',
+    // Either file is a published contract on its own: `openapi.json` generates the typed client,
+    // so gating on the manifest alone let a stale spec ship a wrong client unchecked.
+    applies: async (ctx) =>
+      existsSync(join(ctx.root, MANIFEST_FILENAME)) || existsSync(join(ctx.root, OPENAPI_FILE)),
     async run(ctx) {
-      const committed = await readOpenApi(ctx.root);
-      if (committed === undefined) return passed;
-      const manifest = await scanApp({ root: ctx.root });
-      const current = buildOpenApi(manifest, committed.info.version);
-      return fromFindings(diffOpenApi(committed, current, { versionBumped: false }));
+      const committed = await readAppManifest(ctx.root);
+      const { manifest, findings } = await appManifest(ctx.root);
+      return fromFindings([
+        ...findings,
+        ...(committed === undefined ? [] : contractFindings(committed, manifest)),
+        ...(await specFindings(ctx.root, manifest)),
+      ]);
     },
   },
   {
@@ -100,7 +101,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     async run(ctx) {
       const stats = await readBuildStats(ctx.root);
       if (stats === undefined) return passed;
-      const manifest = await scanApp({ root: ctx.root });
+      const { manifest } = await appManifest(ctx.root);
       return fromFindings(checkBudgets(manifest, stats));
     },
   },
@@ -108,29 +109,51 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     name: 'manifest',
     summary: 'the generated manifest matches the code',
     applies: async (ctx) =>
-      existsSync(join(ctx.root, MANIFEST_FILE)) || ctx.hostChecks?.manifest !== undefined,
+      existsSync(join(ctx.root, MANIFEST_FILENAME)) || ctx.hostChecks?.manifest !== undefined,
     async run(ctx) {
       return fromFindings([
-        ...(await appManifestFindings(ctx.root)),
+        ...(await driftFindings(ctx.root)),
         ...(await hostFindings(ctx, 'manifest')),
       ]);
     },
   },
 ];
 
-async function appManifestFindings(root: string): Promise<readonly Finding[]> {
-  const path = join(root, MANIFEST_FILE);
+/** `assertNoDrift` throws `X_MANIFEST_DRIFT`; a step reports, so the error becomes a finding. */
+async function driftFindings(root: string): Promise<readonly Finding[]> {
+  const path = join(root, MANIFEST_FILENAME);
   if (!existsSync(path)) return [];
-  const committed = (await Bun.file(path).json()) as { buildId?: string };
-  const current = await scanApp({ root });
-  if (committed.buildId === current.buildId) return [];
+  const { manifest, findings } = await appManifest(root);
+  try {
+    await assertNoDrift({ manifest, path });
+    return findings;
+  } catch (error) {
+    return [...findings, { ...findingFrom(error), at: MANIFEST_FILENAME }];
+  }
+}
+
+/** A breaking change is allowed — with a major bump. `verifyContract` is the one that decides. */
+function contractFindings(before: Manifest, after: Manifest): readonly Finding[] {
+  try {
+    verifyContract({ before, after });
+    return [];
+  } catch (error) {
+    return [{ ...findingFrom(error), at: MANIFEST_FILENAME }];
+  }
+}
+
+/** The typed client is generated from `openapi.json`, so a stale spec ships a wrong client. */
+async function specFindings(root: string, manifest: Manifest): Promise<readonly Finding[]> {
+  const path = join(root, OPENAPI_FILE);
+  if (!existsSync(path)) return [];
+  if ((await Bun.file(path).text()) === openApiJson(manifest)) return [];
   return [
     {
       code: 'X_MANIFEST_STALE',
-      cause: `${MANIFEST_FILE} records build ${committed.buildId ?? 'none'}, the code produces ${current.buildId}`,
+      cause: `${OPENAPI_FILE} does not match the actions the code registers`,
       fix: 'x manifest',
       docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
-      at: MANIFEST_FILE,
+      at: OPENAPI_FILE,
     },
   ];
 }

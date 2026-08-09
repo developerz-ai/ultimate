@@ -23,6 +23,7 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Responses | return `RenderResult`. `@ultimat3/http` builds the `Response`. |
 | Solid | no `solid-js` import anywhere in this package. Inject primitives. |
 | Colours | tokens and `data-theme` only. No hex in `head.ts` or any emitted script. |
+| `<head>` binding | `head.ts` stays injection-only (testable with no catalog); `head-seo.ts` is the ONE binding of `HeadRenderers` to `@ultimat3/seo`. A caller writing its own converter is the drift this file prevents. |
 
 Cross-package: `@ultimat3/pwa` consumes route descriptors as **data**, never by import.
 Keep `RouteDescriptor` additive — removing a field breaks `sw.js` generation.

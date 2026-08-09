@@ -185,6 +185,7 @@ export {
   type ListenOptions,
   listenSyncNode,
   type MutationHandler,
+  type SyncListener,
   type SyncNode,
   type SyncNodeOptions,
   type SyncWs,

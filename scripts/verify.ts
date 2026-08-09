@@ -39,10 +39,13 @@ export const frameworkManifest: HostCheck = async (root) => {
   } catch (error) {
     return [
       {
-        code: 'X_MANIFEST_STALE',
+        // Not `X_MANIFEST_STALE`: nothing here is out of date. The generator refused to run, and
+        // that is a failed gate step — `X_MANIFEST_STALE` belongs to a committed `openapi.json`
+        // the code has moved past, `X_MANIFEST_DRIFT` to a committed manifest.
+        code: 'X_VERIFY_FAILED',
         cause: `the framework manifest could not be generated: ${error instanceof Error ? error.message : String(error)}`,
         fix: 'bun run manifest',
-        docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
+        docs: 'https://ultimate.dev/errors/X_VERIFY_FAILED',
         at: DEFAULT_OUT,
       },
     ];

@@ -12,7 +12,7 @@ The `x` binary. One char during dev, one command per job, `--json` on every one 
 | `x verify` | **the gate** | 15 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|studio\|branch` | everything DB | `branch` = copy-on-write clone + preview URL |
-| `x mcp serve` | MCP over stdio or HTTP | read tools unrestricted in dev |
+| `x mcp serve` | `@ultimat3/mcp`'s 13 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x doctor` | environment, ports, drift, PWA prerequisites | every finding carries a fix command |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
@@ -54,11 +54,21 @@ There is no `--only` and no `--skip`; the exit code is non-zero if any step fail
 | `registry.ts` | the one command list |
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
-| `surfaces.ts` | app import boundaries (site→app, shared leaf, route→DB) |
+| `app-load.ts` | import an app's modules so the framework registries hold it |
+| `app-manifest.ts` | `x.manifest.json`, projected by `@ultimat3/manifest` |
+| `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
+| `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
+| `dev-*.ts` | what `x dev` boots: services, runtime, routes, hooks, roles, the `/_x` mount |
+| `mcp-host.ts` | the shell-side half of `@ultimat3/mcp`'s dev server — db, tests, logs, verify |
 | `verify-step.ts` | the step shape, the step names, the host-check hook |
 | `verify-tests.ts` | one `bun test` invocation per test type |
 | `workspace-checks.ts` | file-size ceiling and package contract files |
-| `drift.ts` `openapi.ts` `budgets.ts` `manifest-scan.ts` | the checks `x verify` composes |
+| `drift.ts` `budgets.ts` | the checks `x verify` composes |
+
+The CLI describes an app by **loading** it, never by parsing it: `action()`, `entity()`,
+`job()` and `defineRoute()` register themselves, and `x manifest`, `x routes` and `x verify`
+read the same tables the running server reads. There is no second definition of a primitive,
+no second OpenAPI builder and no second surface-boundary walk anywhere in this package.
 
 ## Generated file layout
 

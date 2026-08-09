@@ -1,0 +1,255 @@
+// The `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost`: the shell-side facts no registry
+// holds — a database to query, a migrator, a test runner, the dev log, the committed manifest and
+// the gate. The description half is the framework's own `frameworkIntrospection`, so nothing here
+// is a second catalog of routes, entities, actions, queries or jobs.
+
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { agentActor, UltimateError } from '@ultimat3/core';
+import { raw, readLedger } from '@ultimat3/db';
+import { inspectJobList, inspectQueues } from '@ultimat3/jobs';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import type {
+  DevCapabilities,
+  McpCaller,
+  McpServer,
+  QueryResult,
+  VerifyResult,
+  VerifyStep,
+} from '@ultimat3/mcp';
+import { createDevServer, DEV_SCOPES, devHost, frameworkIntrospection } from '@ultimat3/mcp';
+import { describeRoutes } from '@ultimat3/render';
+import { loadApp } from './app-load';
+import { appManifest, policyFacts } from './app-manifest';
+import { runVerify, VERIFY_STEPS } from './cmd-verify';
+import type { RunningServices } from './dev-runtime';
+import { startServices } from './dev-runtime';
+import type { DevServices, Env } from './dev-services';
+import { resolveServices } from './dev-services';
+import { MIGRATIONS_DIR } from './drift';
+import { CliNotImplementedError } from './errors';
+import type { Runner } from './exec';
+import { execOutput } from './exec';
+import { databaseTarget } from './mcp-db-target';
+import { explainErrorCode } from './mcp-errors';
+import { parseBunTest } from './mcp-test-output';
+
+export interface DevHostInput {
+  readonly root: string;
+  readonly env: Env;
+  readonly runner: Runner;
+}
+
+export interface CliMcpServer {
+  readonly server: McpServer;
+  readonly caller: McpCaller;
+  /** Tool names this caller can see, sorted. The catalog `x mcp tools` prints. */
+  readonly tools: readonly string[];
+  close(): Promise<void>;
+}
+
+/** Every dev scope. Both transports resolve to this set — one surface, one entitlement. */
+export const DEV_TOOL_SCOPES: ReadonlySet<string> = new Set(Object.values(DEV_SCOPES));
+
+/**
+ * The developer's own shell. A stdio peer already owns the process, so there is no network
+ * boundary to defend and the caller carries every dev scope. `kind: 'agent'` because
+ * `transport-http.ts` structurally refuses anything else and both transports must resolve to the
+ * same caller — an MCP call is an agent call, never the human behind it.
+ */
+export function localCaller(): McpCaller {
+  return {
+    actor: agentActor({ id: 'x-cli', scopes: [...DEV_TOOL_SCOPES] }),
+    scopes: DEV_TOOL_SCOPES,
+  };
+}
+
+// ── the lazily booted services ───────────────────────────────────────────────
+
+export interface LazyServices {
+  readonly services: DevServices;
+  running(): Promise<RunningServices>;
+  close(): Promise<void>;
+}
+
+/**
+ * The database boots on FIRST USE, once, and is shared: answering `routes.list` must not pay a
+ * PGlite boot. Same resolver and same drivers as `x dev` — a dev-only second driver is exactly the
+ * bug that design exists to prevent. Exported as the boot seam a test can drive without a server.
+ */
+export function lazyServices(input: DevHostInput): LazyServices {
+  const services = resolveServices(input.root, input.env);
+  let started: Promise<RunningServices> | undefined;
+  let closed = false;
+  return {
+    services,
+    running(): Promise<RunningServices> {
+      // A boot started after close() would hold the PGlite data directory for the life of the
+      // process with nobody left to stop it — the host is closed, so the call is the bug.
+      if (closed) {
+        throw new CliNotImplementedError({
+          feature: 'an MCP tool that needs the database after the host closed',
+          fix: 'x mcp serve --transport stdio   # keep the host open for the whole session',
+        });
+      }
+      started ??= startServices(services);
+      return started;
+    },
+    async close(): Promise<void> {
+      if (closed) return;
+      closed = true;
+      // A boot that rejected has nothing to stop, and close() must not throw on the way out.
+      await (await started?.catch(() => undefined))?.stop();
+    },
+  };
+}
+
+/** Migration ids on disk (`0001_init.sql` → `0001_init`) that the ledger does not record. */
+async function pendingMigrations(root: string, lazy: LazyServices): Promise<readonly string[]> {
+  const dir = join(root, MIGRATIONS_DIR);
+  if (!existsSync(dir)) return [];
+  const ids: string[] = [];
+  for await (const file of new Bun.Glob('*.sql').scan({ cwd: dir, absolute: false })) {
+    if (!file.endsWith('.down.sql')) ids.push(file.replace(/\.sql$/, ''));
+  }
+  const { db } = await lazy.running();
+  // No ledger table means nothing has been applied. `ensureLedger` would create it, and a dry run
+  // is not allowed to write.
+  const ledger = await readLedger(db).catch(() => []);
+  const applied = new Set(ledger.map((row) => row.id));
+  return ids.filter((id) => !applied.has(id)).sort();
+}
+
+// ── the capabilities ─────────────────────────────────────────────────────────
+
+function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities {
+  const { root, runner } = input;
+  return {
+    database: databaseTarget(lazy.services),
+
+    // `assertReadOnlyQuery` already refused writes, batches and locking clauses inside the tool,
+    // before this host was reached; a second gate here would be a second place to keep right.
+    // The cap is applied in memory because there is no honest alternative: `DbClient` exposes no
+    // cursor or stream, and wrapping the statement in `select * from (…) limit n` would both
+    // change the meaning of a statement carrying its own LIMIT and fail outright on `EXPLAIN`
+    // and `SHOW`, which are commands rather than derived tables.
+    async runQuery(sql: string, limit: number): Promise<QueryResult> {
+      const { db } = await lazy.running();
+      const rows = await db.query<Record<string, unknown>>(raw(sql));
+      const columns = Object.keys(rows[0] ?? {});
+      const capped = rows.slice(0, limit);
+      return {
+        columns,
+        rows: capped.map((row) => columns.map((column) => row[column])),
+        // Counts what came back; `truncated` is how the caller learns there was more.
+        rowCount: capped.length,
+        truncated: rows.length > limit,
+      };
+    },
+
+    async runMigrations(branch: string, dryRun: boolean) {
+      const before = await pendingMigrations(root, lazy);
+      if (dryRun) return { branch, applied: [], pending: before };
+      const result = await runner(['bunx', 'drizzle-kit', 'migrate'], { cwd: root });
+      if (!result.ok) {
+        // Thrown, not returned: `server.ts` renders any X_* error as the three-line
+        // code/cause/fix result, which is what an agent needs to act without a round trip.
+        throw new UltimateError({
+          code: 'X_DB_MIGRATE_FAILED',
+          cause: `${result.command.join(' ')} exited ${result.code}: ${execOutput(result).slice(0, 400)}`,
+          fix: 'x db reset',
+        });
+      }
+      // The ledger is the evidence for "applied" — never the migrator's own stdout.
+      const pending = await pendingMigrations(root, lazy);
+      return { branch, applied: before.filter((id) => !pending.includes(id)), pending };
+    },
+
+    async queueDepth() {
+      const { jobs } = await lazy.running();
+      const report = await inspectQueues(jobs);
+      // `stats()` counts states, and a job is `failed` only until it is retried or dead-lettered;
+      // the honest count comes from the job list. Same reading as /_x's queues panel.
+      const failed =
+        jobs.introspect === undefined ? [] : await inspectJobList(jobs, { state: 'failed' });
+      return report.queues.map((queue) => ({
+        queue: queue.queue,
+        pending: queue.ready + queue.delayed,
+        running: queue.running,
+        failed: failed.filter((record) => record.queue === queue.queue).length,
+      }));
+    },
+
+    // `bun test <filter>` matches on the test path, the same rule `x test`'s `discoverTests` uses.
+    async runTests(filter: string | undefined) {
+      const result = await runner(
+        filter === undefined ? ['bun', 'test'] : ['bun', 'test', filter],
+        {
+          cwd: root,
+        },
+      );
+      return parseBunTest(execOutput(result), result.durationMs);
+    },
+
+    async tailLogs(lines: number, role: string | undefined) {
+      const dir = lazy.services.stateDir;
+      const path = role === undefined ? join(dir, 'dev.log') : join(dir, 'logs', `${role}.log`);
+      const file = Bun.file(path);
+      if (!(await file.exists())) {
+        // `@ultimat3/core`'s `logger` is a module const with no sink seam, so there is nothing to
+        // intercept in-process — a log on disk is the only honest source, and the fix creates one.
+        throw new CliNotImplementedError({
+          feature: `logs.tail without ${path}`,
+          fix:
+            role === undefined
+              ? `x dev > ${path} 2>&1`
+              : `mkdir -p ${join(dir, 'logs')} && x dev --role ${role} > ${path} 2>&1`,
+        });
+      }
+      return (await file.text()).trimEnd().split('\n').slice(-lines);
+    },
+
+    async readManifest() {
+      const file = Bun.file(join(root, MANIFEST_FILENAME));
+      // The contract is "the generated manifest as text", so an app that has never run
+      // `x manifest` gets the current one rather than a failure.
+      if (await file.exists()) return file.text();
+      return JSON.stringify((await appManifest(root)).manifest, null, 2);
+    },
+
+    explainError: explainErrorCode,
+
+    async verify(fix: boolean): Promise<VerifyResult> {
+      // The one safe autofix this repo actually has. Anything more would be the gate rewriting
+      // code it was asked to judge.
+      if (fix) await runner(['bunx', 'biome', 'check', '--write', '.'], { cwd: root });
+      const result = await runVerify(VERIFY_STEPS, { root, runner });
+      return {
+        ok: result.ok,
+        steps: (result.steps ?? []).map((step): VerifyStep => {
+          const detail = step.findings[0]?.cause;
+          // exactOptionalPropertyTypes: omit `detail`, never hand over an explicit undefined.
+          return detail === undefined
+            ? { name: step.name, ok: step.ok }
+            : { name: step.name, ok: step.ok, detail };
+        }),
+      };
+    },
+  };
+}
+
+/**
+ * Loading the app IS the registration, so it happens before the server is built: every
+ * introspection tool then answers from the framework's own registries, not from a scan.
+ */
+export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpServer> {
+  await loadApp(input.root);
+  const lazy = lazyServices(input);
+  const introspection = frameworkIntrospection({
+    routes: () => describeRoutes(),
+    policies: () => policyFacts(),
+  });
+  const server = createDevServer({ host: devHost(introspection, capabilities(input, lazy)) });
+  const caller = localCaller();
+  return { server, caller, tools: server.tools.names(caller), close: () => lazy.close() };
+}

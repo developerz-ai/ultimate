@@ -82,11 +82,56 @@ x dev [--port 3000] [--role web,worker] [--once] [--json]
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--port` | string | `3000` | HTTP port |
-| `--role` | string | all roles | comma-separated roles to run in this process |
+| `--port` | string | `3000` | HTTP port. The `sync` role listens on `--port + 1` |
+| `--role` | string | `web,sync,worker,scheduler` | comma-separated roles to run in this process |
 | `--once` | boolean | `false` | boot, report, exit — for smoke tests and CI |
 
-Starts embedded Postgres, in-process NATS, a local directory for S3, the `/_x` dev dashboard, and the MCP dev server. Role isolation is simulated, not skipped. Errors: `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
+Boots the app: embedded Postgres (PGlite under `.x/pgdata`), the in-process event bus, a local
+directory for S3, then every module under `apps/*/{site,app,api,shared}` and `packages/*/src` —
+importing them IS the registration. What those modules registered is then served:
+
+| Registered | Served as |
+|---|---|
+| `action` / `mutator` | `POST /api/<resource>/<verb>`, policy enforced by the pipeline |
+| `route` | its URL, in its declared render mode, with that mode's cache headers |
+| `job` | claimed off the real Postgres queue by the `worker` role |
+| `task` | dispatched by the `scheduler` role |
+| — | `/_x`, the dev dashboard from `@ultimat3/admin` |
+
+A module that will not import becomes a finding on the result rather than a dead process, so the
+dev loop stays reachable while something is broken.
+
+`/_x/<panel>` is one tab per panel; `?json=1` (or `accept: application/json`) returns exactly what
+the tab draws. Eleven panels — the nine `@ultimat3/admin` ships plus the two only the CLI can
+answer:
+
+| Panel | Kills the question |
+|---|---|
+| `routes` | which URL renders how, with which budget |
+| `timeline` | where did this request spend its milliseconds |
+| `live` | why did this subscriber not get the row |
+| `jobs` | which step failed, and what is queued |
+| `db` | what is in the table, and does the schema match the migrations (read-only SQL) |
+| `mail` | what did that email look like, in that locale |
+| `cache` | which tags would this invalidation bust |
+| `policy` | which clause decided, for which actor |
+| `manifest` | is the committed `x.manifest.json` current |
+| `services` | which database/events/storage this process is talking to, and its reload count |
+| `boundaries` | which import crosses a surface or a layer |
+
+A panel whose source is not wired in this process answers `ok: false` with the exact wiring line
+rather than an empty tab.
+
+| Env | Unset means | Set means |
+|---|---|---|
+| `DATABASE_URL` | PGlite in this process | that Postgres |
+| `NATS_URL` | in-process fanout | that NATS server |
+| `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
+
+`migrate` and `replicator` are real roles but not dev roles: `migrate` is `x db apply`, and the
+replicator needs logical replication the embedded database does not serve. Naming either is
+`X_CLI_BAD_FLAG`, never a silently ignored value. Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`,
+`X_ENV_MISSING`, `X_DB_DRIFT`.
 
 ## x g
 
@@ -233,17 +278,28 @@ x mcp serve [--transport stdio|http] [--port 9229] [--json]
 | `--transport` | string | `stdio` | `stdio` for an editor client, `http` for a socket |
 | `--port` | string | `9229` | HTTP port when `--transport http` |
 
-| Tool | Does | Access |
+Serves `@ultimat3/mcp`'s dev server — 13 tools, one catalog, the same on both transports. Every
+tool declares a scope; the local developer's caller carries all five, and an HTTP caller carries
+whatever its bearer token was issued.
+
+| Tool | Does | Scope |
 |---|---|---|
-| `manifest.get` | the whole `x.manifest.json` | read |
-| `routes.list` | the route table | read |
-| `boundaries.check` | run the import-boundary check | read |
-| `errors.explain` | `X_*` → cause, fix, docs | read |
-| `db.query` | read-only SQL with a row cap, `EXPLAIN` on request | read, dev |
-| `db.migrate` | generate and apply migrations in a **branch** database | write, branch only |
-| `tests.run` | run a test type or a single file, structured results | write, dev |
-| `verify.run` | run `x verify` and return the structured result | write, dev |
-| `logs.tail` | structured logs and OTel spans | read, dev |
+| `routes.list` | route table: url, render mode, offline, hydrate, budget | `dev:read` |
+| `schema.describe` | entities with columns, types and invariants | `dev:read` |
+| `policies.list` | every policy: permission, subject, where it is enforced | `dev:read` |
+| `actions.describe` | actions and queries: schemas, policy, cache tags, MCP exposure | `dev:read` |
+| `jobs.inspect` | job definitions, retry policy and steps | `dev:read` |
+| `queue.depth` | pending, running and failed counts per queue | `dev:read` |
+| `manifest.read` | the generated `x.manifest.json` as text | `dev:read` |
+| `errors.explain` | `X_*` → cause, fix, docs | `dev:read` |
+| `db.query` | ONE read-only SQL statement, row-capped | `db:read` |
+| `db.migrate` | apply pending migrations to a **branch** database | `db:migrate` |
+| `tests.run` | run the suite, structured results | `dev:test` |
+| `verify.run` | run `x verify`, structured per-step result | `dev:test` |
+| `logs.tail` | last N log lines, optionally for one role | `dev:logs` |
+
+`db.query` and `db.migrate` refuse structurally — multiple statements, a mutating keyword, a
+locking clause, a non-branch target — before the host runs anything.
 
 Never exposed in `ROLE=web`. Errors: `X_MCP_TOOL_UNKNOWN`, `X_MCP_ARGS_INVALID`, `X_MCP_SCOPE_MISSING`, `X_MCP_READONLY_VIOLATION`, `X_MCP_PROTOCOL`.
 

@@ -12,6 +12,9 @@
       "path": "../action"
     },
     {
+      "path": "../admin"
+    },
+    {
       "path": "../core"
     },
     {
@@ -21,10 +24,19 @@
       "path": "../entity"
     },
     {
+      "path": "../http"
+    },
+    {
       "path": "../i18n"
     },
     {
       "path": "../jobs"
+    },
+    {
+      "path": "../mail"
+    },
+    {
+      "path": "../manifest"
     },
     {
       "path": "../mcp"
@@ -36,7 +48,13 @@
       "path": "../query"
     },
     {
+      "path": "../realtime"
+    },
+    {
       "path": "../render"
+    },
+    {
+      "path": "../storage"
     },
     {
       "path": "../testing"

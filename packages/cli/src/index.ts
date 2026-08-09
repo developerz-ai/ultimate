@@ -2,10 +2,23 @@
 // on these, and a barrel that re-exports everything would make every internal a compatibility
 // promise.
 
+export type { BoundaryCode, SourceFile } from './app-boundaries';
+export {
+  BOUNDARY_CODES,
+  checkAppBoundaries,
+  checkImportRules,
+  resolveSpecifier,
+  scanRuntimeImports,
+} from './app-boundaries';
+export type { LoadedApp } from './app-load';
+export { loadApp, resetAppLoad } from './app-load';
+export type { AppManifest } from './app-manifest';
+export { appManifest, policyFacts, readAppManifest, writeAppManifest } from './app-manifest';
+export { OPENAPI_FILE, openApiJson } from './app-openapi';
 export type { AppRoot } from './app-root';
 export { findAppRoot, requireAppRoot, requireBunVersion, versionAtLeast } from './app-root';
 export type { BuildStats, RouteStats } from './budgets';
-export { checkBudgets, formatBytes, parseBytes, readBuildStats } from './budgets';
+export { BUILD_STATS_FILE, checkBudgets, readBuildStats } from './budgets';
 export type { BuildTarget } from './cmd-build';
 export { argsFor, BUILD_TARGETS, buildCommand, readTarget } from './cmd-build';
 export { branchDatabaseName, branchSql, dbCommand, previewUrl } from './cmd-db';
@@ -24,9 +37,9 @@ export {
 export type { GenerateOptions, Generator } from './cmd-generate';
 export { GENERATORS, generate, generateCommand, writeFiles } from './cmd-generate';
 export { createHelpCommand, createVersionCommand, renderHelp } from './cmd-help';
-export { manifestCommand, writeManifest } from './cmd-manifest';
-export type { McpTool } from './cmd-mcp';
-export { handleRpc, MCP_TOOLS, mcpCommand } from './cmd-mcp';
+export { manifestCommand } from './cmd-manifest';
+export type { McpHttpServer } from './cmd-mcp';
+export { mcpCommand, startMcpHttp } from './cmd-mcp';
 export type { NewAppOptions, WrittenApp } from './cmd-new';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
 export { renderRouteTable, routesCommand } from './cmd-routes';
@@ -43,8 +56,17 @@ export {
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
-export type { DevServices, Role, ServiceBinding } from './dev-services';
-export { describeServices, ROLES, resolveServices, roleContext } from './dev-services';
+export type { DevDashboardInput, DevStatus } from './dev-dashboard';
+export { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
+export { devHooks } from './dev-hooks';
+export type { DevRenderOptions, DevRouteData } from './dev-render';
+export { appRoutes } from './dev-render';
+export type { RunningRoles, StartRolesOptions } from './dev-roles';
+export { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+export type { DevDbClient, RunningServices } from './dev-runtime';
+export { startServices } from './dev-runtime';
+export type { DevServices, ServiceBinding } from './dev-services';
+export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
 export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
@@ -61,11 +83,9 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
-export type { AppManifest, ManifestEntry, PrimitiveKind } from './manifest-scan';
-export { buildIdFor, PRIMITIVE_KINDS, routePathFor, scanApp, surfaceFor } from './manifest-scan';
+export type { CliMcpServer, DevHostInput } from './mcp-host';
+export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
-export type { OpenApiDocument, OpenApiOperation } from './openapi';
-export { buildOpenApi, diffOpenApi } from './openapi';
 export type { CommandResult, Finding, JsonValue, StepResult } from './output';
 export {
   exitCodeFor,
@@ -80,8 +100,6 @@ export {
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
 export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from './parse';
 export { CLI_VERSION, COMMANDS, commandFor, SPECS } from './registry';
-export type { SourceFile, Surface as AppSurface } from './surfaces';
-export { BOUNDARY_CODES, checkAppBoundaries, checkSurfaceRules, surfaceOf } from './surfaces';
 export type {
   HostCheck,
   StepOutcome,

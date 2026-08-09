@@ -41,8 +41,8 @@ Nothing here relies on you reading a changelog carefully. Each class is a build 
 
 | Class | Detected by | Code | Fix |
 |---|---|---|---|
-| Action/query contract change | contract diff against the published `openapi.json` | `X_CONTRACT_DRIFT` | version the action, or accept the diff with `x contract accept` |
-| Breaking published surface | contract diff, breaking subset | `X_CONTRACT_BREAKING` | bump the action's version; old clients keep the old shape |
+| Action/query contract change | `x verify`'s `contract-diff` step, against the committed `x.manifest.json` | `X_MANIFEST_BREAKING` | `x verify --json` to read the finding, then bump the major version or restore the input/output shape |
+| Breaking published surface | manifest contract diff, breaking subset | `X_MANIFEST_BREAKING` | bump the app's major version; old clients keep the old shape |
 | Schema vs migrations | schema introspection vs migration history | `X_DB_DRIFT` | `x db gen "<message>"` then `x db apply` |
 | Stale generated facts | manifest freshness check | `X_MANIFEST_STALE` | `x manifest` |
 | Import-tier change | `scripts/boundaries.ts` re-run over the new tier table | `X_BOUNDARY_VIOLATION` | move the import down a tier or invert the dependency |

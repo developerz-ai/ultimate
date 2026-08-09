@@ -2,7 +2,7 @@
 // this order IS the framework's guarantee: context before user code, identity before
 // rate limiting, validation before authz, authz before the handler. Nothing can skip a
 // stage, and the array is exported so `/_x` renders it and pipeline.test.ts asserts it.
-import { logger, runWithContext, withSpan } from '@ultimat3/core';
+import { anonymousActor, isAnonymous, logger, runWithContext, withSpan } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfig, stripBasePath } from './config';
 import { actorView, asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -204,9 +204,11 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
 
     auth: async (request, ctx) => {
       if (hooks.authenticate !== undefined) {
-        ctx.actor = await hooks.authenticate(request, ctx);
+        // The hook says "anonymous" with null; the context says it with core's anonymous actor,
+        // because `asCtx` publishes this object as a `Ctx` and `Ctx.actor` is never null.
+        ctx.actor = (await hooks.authenticate(request, ctx)) ?? anonymousActor();
       }
-      if (ctx.route?.meta.auth === 'required' && ctx.actor === null) {
+      if (ctx.route?.meta.auth === 'required' && isAnonymous(ctx.actor)) {
         throw unauthenticated(ctx.url.pathname);
       }
       return undefined;

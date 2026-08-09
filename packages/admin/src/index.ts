@@ -77,48 +77,8 @@ export {
   permissionsForOperation,
 } from './crud';
 export { AdminDetail, type AdminDetailProps } from './detail';
-export { type DevSourceOptions, defaultDevSources, staticDevSources } from './dev/data';
-export type {
-  CacheEdgeFact,
-  ColumnFact,
-  DevSources,
-  DriftFact,
-  InvalidationFact,
-  JobDefFact,
-  JobRunFact,
-  JobStepFact,
-  LiveQueryFact,
-  LiveSubscriberFact,
-  MailFact,
-  ManifestFact,
-  PolicyFact,
-  QueueFact,
-  RequestTrace,
-  RouteFact,
-  SpanKind,
-  SqlResult,
-  TableFact,
-  TaskFact,
-  TimelineSpan,
-} from './dev/facts';
-export { type DevPanel, type PanelPayload, panelPayload } from './dev/panel';
-export { type CachePanelData, cachePanel } from './dev/panel-cache';
-export { assertReadOnly, type DbPanelData, dbPanel } from './dev/panel-db';
-export { type JobsPanelData, jobsPanel } from './dev/panel-jobs';
-export { type LivePanelData, livePanel } from './dev/panel-live';
-export { type MailPanelData, mailPanel } from './dev/panel-mail';
-export { type ManifestPanelData, manifestPanel } from './dev/panel-manifest';
-export { type PolicyPanelData, policyPanel } from './dev/panel-policy';
-export { type RoutesPanelData, routesPanel } from './dev/panel-routes';
-export { type TimelinePanelData, timelinePanel } from './dev/panel-timeline';
-export {
-  assertDevOnly,
-  DEV_BASE_PATH,
-  DEV_PANELS,
-  type DevDashboard,
-  type DevDashboardOptions,
-  devDashboard,
-} from './dev/server';
+// The /_x dashboard is NOT re-exported here — it has its own door, `@ultimat3/admin/dev`, so a
+// host that only mounts the dev panels never loads a production admin component.
 export {
   ADMIN_ERROR_CODES,
   AdminEntityUnknownError,

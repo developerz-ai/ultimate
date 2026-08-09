@@ -24,6 +24,7 @@ tier 5  ui, admin, testing, cli                      (may import tier 0-4)
 | `schema` → `core` | needs `UltimateError` for parse failures. `core` imports nothing. |
 | `admin` → `ui` | the admin dashboard *is* the ui kit, composed. Inverting it ships every widget through props. |
 | `realtime` → `query` | tier 3 is one feature: a live query is a query plus a subscription. Splitting duplicates the SQL shape. |
+| `cli` → `admin` | `x dev` **mounts** `/_x`; it does not reimplement it. The panels are a tier-5 product, and the alternative is a second dev dashboard inside the CLI. |
 | `create-ultimate` → `cli` | a published shim whose whole job is `x new`. The alternative is a second copy of the templates. |
 | everything else | none. Siblings share **types only**, declared in the lowest tier that needs them. |
 
