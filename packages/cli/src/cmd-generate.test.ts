@@ -156,4 +156,35 @@ describe('unit · x g', () => {
       expect(/#[0-9a-fA-F]{3,8}\b/.test(file.contents)).toBe(false);
     }
   });
+
+  test('a resource ships the card and form components, and their i18n keys', () => {
+    const files = generate({ kind: 'resource', name: 'invoice' });
+    const paths = files.map((file) => file.path);
+    expect(paths).toContain('apps/web/app/invoice/ui/invoice-card.tsx');
+    expect(paths).toContain('apps/web/app/invoice/ui/invoice-form.tsx');
+    const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en/invoice.json');
+    expect(catalog?.contents).toContain('app.invoice.empty');
+  });
+
+  test('a resource with --admin also emits the admin override', () => {
+    const withoutAdmin = generate({ kind: 'resource', name: 'invoice' });
+    expect(withoutAdmin.map((file) => file.path)).not.toContain(
+      'apps/web/app/invoice/admin/resource.ts',
+    );
+    const withAdmin = generate({ kind: 'resource', name: 'invoice', admin: true });
+    const paths = withAdmin.map((file) => file.path);
+    expect(paths).toContain('apps/web/app/invoice/admin/resource.ts');
+    expect(paths).toContain('apps/web/app/invoice/admin/resource.test.ts');
+    const source = withAdmin.find((file) => file.path.endsWith('admin/resource.ts'));
+    expect(source?.contents).toContain('invoiceAdminResource');
+  });
+
+  test('a resource takes every configured locale for its catalogs', () => {
+    const files = generate({ kind: 'resource', name: 'invoice', locales: ['en', 'es'] });
+    const paths = files.map((file) => file.path);
+    expect(paths).toContain('packages/i18n/catalogs/en/invoice.json');
+    expect(paths).toContain('packages/i18n/catalogs/es/invoice.json');
+    expect(paths).toContain('packages/i18n/catalogs/en/invoices.json');
+    expect(paths).toContain('packages/i18n/catalogs/es/invoices.json');
+  });
 });

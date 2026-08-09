@@ -5,8 +5,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireAppRoot } from './app-root';
+import { writeManifest } from './cmd-manifest';
 import type { CliCommand, CommandContext } from './command';
 import { CliNotImplementedError, UnknownCommandError } from './errors';
+import type { AppManifest } from './manifest-scan';
+import { scanApp } from './manifest-scan';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagString } from './parse';
@@ -42,6 +45,10 @@ export interface GenerateOptions {
   readonly feature?: string;
   readonly surface?: Surface;
   readonly live?: boolean;
+  /** `resource` only: also emit the per-entity admin override. */
+  readonly admin?: boolean;
+  /** Every locale a generated i18n catalog entry ships for. Defaults to `['en']`. */
+  readonly locales?: readonly string[];
 }
 
 const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
@@ -67,7 +74,13 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
   const target = { surfaceDir, feature };
   switch (options.kind) {
     case 'resource':
-      return dedupe(resourceFiles(options.name, target));
+      return dedupe(
+        resourceFiles(options.name, {
+          ...target,
+          admin: options.admin === true,
+          ...(options.locales === undefined ? {} : { locales: options.locales }),
+        }),
+      );
     case 'action':
       return dedupe(actionFiles(options.name, target));
     case 'mutator':
@@ -145,6 +158,8 @@ export const generateCommand: CliCommand = {
       { name: 'feature', type: 'string', summary: 'feature slice to write into' },
       { name: 'surface', type: 'string', summary: 'site | app', default: 'app' },
       { name: 'live', type: 'boolean', summary: 'subscribable query' },
+      { name: 'admin', type: 'boolean', summary: 'resource: also emit the admin override' },
+      { name: 'locales', type: 'string', summary: 'comma-separated locales, default en' },
       { name: 'force', type: 'boolean', summary: 'overwrite existing files' },
       { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },
     ],
@@ -162,12 +177,19 @@ export const generateCommand: CliCommand = {
     }
     const surfaceFlag = flagString(ctx.args, 'surface');
     const featureFlag = flagString(ctx.args, 'feature');
+    const localesFlag = flagString(ctx.args, 'locales');
+    const locales = localesFlag
+      ?.split(',')
+      .map((locale) => locale.trim())
+      .filter((locale) => locale.length > 0);
     const files = generate({
       kind,
       name,
       ...(featureFlag === undefined ? {} : { feature: featureFlag }),
       surface: surfaceFlag === 'site' ? 'site' : 'app',
       live: flagBool(ctx.args, 'live'),
+      admin: flagBool(ctx.args, 'admin'),
+      ...(locales === undefined || locales.length === 0 ? {} : { locales }),
     });
     if (flagBool(ctx.args, 'dry-run')) {
       return {
@@ -179,12 +201,26 @@ export const generateCommand: CliCommand = {
       };
     }
     const report = await writeFiles(root, files, flagBool(ctx.args, 'force'));
+    // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
+    // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
+    // sees a resource that exists on disk but not in the manifest.
+    let manifest: AppManifest | undefined;
+    if (report.written.length > 0) {
+      manifest = await scanApp({ root });
+      await writeManifest(root, manifest);
+    }
     return {
       ok: report.conflicts.length === 0,
       command: 'g',
       summary: msg('cli.generate.wrote', { count: report.written.length, kind, name }),
-      data: { files: report.written },
-      lines: report.written.map((path) => `  + ${path}`),
+      data: {
+        files: report.written,
+        ...(manifest === undefined ? {} : { manifest: { buildId: manifest.buildId } }),
+      },
+      lines: [
+        ...report.written.map((path) => `  + ${path}`),
+        ...(manifest === undefined ? [] : ['  + x.manifest.json']),
+      ],
       findings: report.conflicts,
     };
   },

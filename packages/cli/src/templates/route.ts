@@ -115,15 +115,24 @@ const catalogSource = (path: string): string => `{
 
 export interface RouteOptions {
   readonly surface: Surface;
+  /** Every locale the catalog entry ships for. Defaults to `['en']` — an app narrows or grows it. */
+  readonly locales?: readonly string[];
 }
+
+const DEFAULT_LOCALES: readonly string[] = ['en'];
 
 export function routeFiles(rawPath: string, options: RouteOptions): readonly GeneratedFile[] {
   const path = rawPath.replace(/^\/+/, '');
   const dir = routeDir(options.surface, path);
+  const locales =
+    options.locales !== undefined && options.locales.length > 0 ? options.locales : DEFAULT_LOCALES;
   return [
     { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path) },
     { path: `${dir}/page.module.scss`, contents: styleSource() },
     { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
-    { path: `packages/i18n/catalogs/en/${kebab(path)}.json`, contents: catalogSource(path) },
+    ...locales.map((locale) => ({
+      path: `packages/i18n/catalogs/${locale}/${kebab(path)}.json`,
+      contents: catalogSource(path),
+    })),
   ];
 }

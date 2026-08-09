@@ -3,6 +3,7 @@
 // the blessed path; the individual generators exist for adding to a slice that already exists.
 
 import { actionFiles } from './action';
+import { adminFiles } from './admin';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import { jobFiles } from './job';
@@ -90,10 +91,85 @@ const uiStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-export function resourceFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
+const cardSource = (
+  feature: NameSet,
+): string => `// One ${feature.camel} rendered on its own — the list's \`item\` shown outside a list, so a
+// detail route and a search result render the identical markup.
+
+import { t } from '@ultimat3/i18n';
+import type { ${feature.pascal} } from '../entity';
+import styles from '../ui.module.scss';
+
+export interface ${feature.pascal}CardProps {
+  readonly row: ${feature.pascal};
+}
+
+export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {
+  return (
+    <article class={styles.item}>
+      <h3>{props.row.title}</h3>
+      <p>{t('app.${feature.kebab}.updated')}</p>
+    </article>
+  );
+}
+`;
+
+const formSource = (
+  feature: NameSet,
+): string => `// Presentation only: the mutator this submits to owns validation server-side, so this form
+// never re-implements the invariant — a blank title fails at the boundary, not in the DOM.
+
+import { t } from '@ultimat3/i18n';
+import { createSignal } from 'solid-js';
+import styles from '../ui.module.scss';
+
+export interface ${feature.pascal}FormProps {
+  readonly onSubmit: (title: string) => void;
+}
+
+export function ${feature.pascal}Form(props: ${feature.pascal}FormProps) {
+  const [title, setTitle] = createSignal('');
+  return (
+    <form
+      class={styles.item}
+      onSubmit={(event) => {
+        event.preventDefault();
+        props.onSubmit(title());
+      }}
+    >
+      <label>
+        {t('app.${feature.kebab}.titleLabel')}
+        <input value={title()} onInput={(event) => setTitle(event.currentTarget.value)} />
+      </label>
+      <button type="submit">{t('app.${feature.kebab}.submit')}</button>
+    </form>
+  );
+}
+`;
+
+const catalogSource = (feature: NameSet): string => `{
+  "app.${feature.kebab}.empty": "No ${feature.pluralKebab} yet.",
+  "app.${feature.kebab}.updated": "Last updated",
+  "app.${feature.kebab}.titleLabel": "Title",
+  "app.${feature.kebab}.submit": "Save"
+}
+`;
+
+const DEFAULT_LOCALES: readonly string[] = ['en'];
+
+export interface ResourceOptions extends FeatureTarget {
+  /** `x g resource post --admin` — also emits the per-entity admin override. */
+  readonly admin?: boolean;
+  /** Every locale the feature's catalog ships for. Defaults to `['en']`. */
+  readonly locales?: readonly string[];
+}
+
+export function resourceFiles(rawName: string, target: ResourceOptions): readonly GeneratedFile[] {
   const feature = names(rawName);
   const slice: FeatureTarget = { surfaceDir: target.surfaceDir, feature: feature.kebab };
   const dir = `${slice.surfaceDir}/${slice.feature}`;
+  const locales =
+    target.locales !== undefined && target.locales.length > 0 ? target.locales : DEFAULT_LOCALES;
   return [
     ...entityFiles(rawName, slice),
     ...policyFiles(rawName, slice),
@@ -105,6 +181,13 @@ export function resourceFiles(rawName: string, target: FeatureTarget): readonly 
     { path: `${dir}/service.test.ts`, contents: serviceTest(feature) },
     { path: `${dir}/ui.tsx`, contents: uiSource(feature) },
     { path: `${dir}/ui.module.scss`, contents: uiStyle() },
-    ...routeFiles(feature.pluralKebab, { surface: 'app' }),
+    { path: `${dir}/ui/${feature.kebab}-card.tsx`, contents: cardSource(feature) },
+    { path: `${dir}/ui/${feature.kebab}-form.tsx`, contents: formSource(feature) },
+    ...locales.map((locale) => ({
+      path: `packages/i18n/catalogs/${locale}/${feature.kebab}.json`,
+      contents: catalogSource(feature),
+    })),
+    ...routeFiles(feature.pluralKebab, { surface: 'app', locales }),
+    ...(target.admin === true ? adminFiles(rawName, slice) : []),
   ];
 }
