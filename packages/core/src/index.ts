@@ -85,6 +85,7 @@ export {
   CORE_ERROR_CODES,
   describeErrorCode,
   ERROR_DOCS_BASE,
+  errorCodeSnapshot,
   errorDocsUrl,
   hasErrorCode,
   listErrorCodes,

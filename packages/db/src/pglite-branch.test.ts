@@ -24,6 +24,12 @@ const seedDataDir = async (): Promise<void> => {
   await writeFile(join(from, 'base', '1247'), 'x'.repeat(64));
 };
 
+// Booting PGlite is a WASM compile plus an initdb — ~1.5s each, and the test below pays it three
+// times. bun's default 5s per test is under the honest cost of the thing being measured, so a
+// slow runner turns a passing test into a timeout whose teardown then races the copy. Stated
+// here, generous on purpose: this bound exists to catch a hang, not to police a boot.
+const THREE_PGLITE_BOOTS_MS = 60_000;
+
 const failure = async (run: () => Promise<unknown>): Promise<{ code: string; fix: string }> => {
   try {
     await run();
@@ -100,28 +106,32 @@ describe('branchPglite', () => {
   });
 
   // The point of a branch is that the copy is a working database, not that files moved.
-  test('the branch is a real database carrying the rows the source committed', async () => {
-    const source = createPgliteClient({ dataDir: from });
-    await source.execute(sql`create table posts (id int primary key, title text)`);
-    await source.execute(sql`insert into posts values (${1}, ${'shipped'})`);
-    await source.close();
+  test(
+    'the branch is a real database carrying the rows the source committed',
+    async () => {
+      const source = createPgliteClient({ dataDir: from });
+      await source.execute(sql`create table posts (id int primary key, title text)`);
+      await source.execute(sql`insert into posts values (${1}, ${'shipped'})`);
+      await source.close();
 
-    const info = await branchPglite('feature_x', { from });
-    const branch = createPgliteClient({ dataDir: info.dataDir });
-    try {
-      expect(
-        await branch.one<{ title: string }>(sql`select title from posts where id = ${1}`),
-      ).toEqual({ title: 'shipped' });
-      await branch.execute(sql`insert into posts values (${2}, ${'branch only'})`);
-    } finally {
-      await branch.close();
-    }
+      const info = await branchPglite('feature_x', { from });
+      const branch = createPgliteClient({ dataDir: info.dataDir });
+      try {
+        expect(
+          await branch.one<{ title: string }>(sql`select title from posts where id = ${1}`),
+        ).toEqual({ title: 'shipped' });
+        await branch.execute(sql`insert into posts values (${2}, ${'branch only'})`);
+      } finally {
+        await branch.close();
+      }
 
-    const reopened = createPgliteClient({ dataDir: from });
-    try {
-      expect(await reopened.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
-    } finally {
-      await reopened.close();
-    }
-  });
+      const reopened = createPgliteClient({ dataDir: from });
+      try {
+        expect(await reopened.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
+      } finally {
+        await reopened.close();
+      }
+    },
+    THREE_PGLITE_BOOTS_MS,
+  );
 });

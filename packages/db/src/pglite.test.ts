@@ -217,22 +217,30 @@ describe('createPgliteClient', () => {
 // The fakes above pin the adapter; this pins the binding. Without it "the driver is wired up" is
 // a claim about a module specifier nobody ever resolved — which is what the stub used to be.
 describe('the real embedded database', () => {
-  test('boots from the default loader and runs Postgres, with no server and no Docker', async () => {
-    const client = createPgliteClient();
-    try {
-      await client.execute(sql`create table posts (id int primary key, title text)`);
-      expect(await client.execute(sql`insert into posts values (${1}, ${'hello'})`)).toBe(1);
-      expect(await client.execute(sql`insert into posts values (${2}, ${'world'})`)).toBe(1);
-      expect(
-        await client.one<{ title: string }>(sql`select title from posts where id = ${2}`),
-      ).toEqual({ title: 'world' });
-      expect(await client.query(sql`select id from posts order by id`)).toEqual([
-        { id: 1 },
-        { id: 2 },
-      ]);
-      expect(await client.execute(sql`delete from posts`)).toBe(2);
-    } finally {
-      await client.close();
-    }
-  });
+  // A WASM compile plus an initdb — ~1.5s on a CI runner, against bun's 5s default. Stated so a
+  // slow machine reads as slow rather than as a broken driver; it is a hang detector, not a budget.
+  const PGLITE_BOOT_MS = 30_000;
+
+  test(
+    'boots from the default loader and runs Postgres, with no server and no Docker',
+    async () => {
+      const client = createPgliteClient();
+      try {
+        await client.execute(sql`create table posts (id int primary key, title text)`);
+        expect(await client.execute(sql`insert into posts values (${1}, ${'hello'})`)).toBe(1);
+        expect(await client.execute(sql`insert into posts values (${2}, ${'world'})`)).toBe(1);
+        expect(
+          await client.one<{ title: string }>(sql`select title from posts where id = ${2}`),
+        ).toEqual({ title: 'world' });
+        expect(await client.query(sql`select id from posts order by id`)).toEqual([
+          { id: 1 },
+          { id: 2 },
+        ]);
+        expect(await client.execute(sql`delete from posts`)).toBe(2);
+      } finally {
+        await client.close();
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
 });
