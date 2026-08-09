@@ -1,14 +1,11 @@
 {
-  "prompt": "summarize.v3.md",
-  "promptVersion": 3,
-  "model": "claude-sonnet-4-5",
-  "judge": { "model": "claude-sonnet-4-5", "temperature": 0 },
-  "recordedAt": "2026-07-14",
-  "score": 0.94,
+  "eval": "posts.summarize",
+  "prompt": "posts.summarize@3",
+  "promptHash": "f60443c06505b347bbb83cc6b9d5fded",
+  "score": 0.972,
   "cases": {
-    "english/tenancy": 0.96,
-    "spanish/timezones": 0.95,
-    "short-body/passthrough": 0.91
-  },
-  "cost": { "minor": 3, "currency": "USD" }
+    "english/tenancy": 1,
+    "short-body/passthrough": 0.917,
+    "spanish/timezones": 1
+  }
 }

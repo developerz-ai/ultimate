@@ -225,7 +225,10 @@ X_DB_DRIFT: schema differs from migrations
 | `X_AI_KEY_MISSING` | the provider API key is not set | `ANTHROPIC_API_KEY` / `EMBEDDINGS_API_KEY` unset and no `apiKey` passed | `export ANTHROPIC_API_KEY=<key>`, or pass `{ apiKey }` to the provider |
 | `X_AI_REQUEST_INVALID` | the provider would reject this request | `thinking: 'disabled'` above `high` effort | use `effort: 'high'` or below, or leave thinking adaptive |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema on the answer and on the repair turn | the model would not produce the shape | describe the shape in the prompt template and bump its version, or widen `output` in the `llm()` declaration |
-| `X_EVAL_THRESHOLD` | an eval scored below its tolerance | a prompt edit regressed cases | `x ai eval <name> --verbose` for per-case scores |
+| `X_EVAL_THRESHOLD` | an eval scored below its tolerance | a prompt edit regressed cases against the recorded baseline | `x test <eval>` for per-case scores; `ULTIMATE_EVAL_RECORD=1 x test eval` to accept new numbers as a reviewed diff |
+| `X_EVAL_BASELINE_MISSING` | an eval has no recorded baseline to gate against | a new eval, or a `baseline:` that is not `import.meta.resolve('./…')` | `ULTIMATE_EVAL_RECORD=1 x test eval`, then commit the baseline file |
+| `X_EVAL_BASELINE_INVALID` | a recorded baseline cannot be read | a hand-edited or half-merged baseline file | `ULTIMATE_EVAL_RECORD=1 x test eval` to re-record it |
+| `X_EVAL_MISSING` | a prompt has no eval | a `definePrompt` with no `defineEval` naming it | add `defineEval({ prompt, cases, scorers, tolerance, baseline })` beside the prompt |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave its tenant | a handler re-scoped the store it was handed | derive from the unscoped store: `vectorStore.scoped({ tenant })` |
 

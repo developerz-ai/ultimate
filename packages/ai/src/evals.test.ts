@@ -1,19 +1,22 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import {
-  contains,
-  defineEval,
-  exact,
-  jsonSchemaValid,
-  numericTolerance,
-  resetEvals,
-} from './evals';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { EvalBaseline } from './eval-baseline';
+import { RECORD_ENV, writeBaseline } from './eval-baseline';
+import { defineEval, describeEvals, promptsWithoutEvals, resetEvals } from './evals';
 import { createGateway } from './gateway';
 import { definePrompt, resetPrompts } from './prompt';
 import { EchoProvider } from './provider';
+import { exact } from './scorers';
 
-afterEach(() => {
+const temporary: string[] = [];
+
+afterEach(async () => {
   resetPrompts();
   resetEvals();
+  delete Bun.env[RECORD_ENV];
+  await Promise.all(temporary.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
 /** Answers keyed by the rendered prompt — a fixture, so the eval is a real test. */
@@ -28,25 +31,50 @@ const classify = () =>
     template: 'Classify: {{text}}',
   });
 
-describe('an eval is a test that fails CI', () => {
-  test('assert throws X_EVAL_THRESHOLD naming the worst cases', async () => {
+/** A recorded baseline on disk, returned as the `import.meta.resolve`-shaped spec a declaration uses. */
+async function recorded(baseline: EvalBaseline): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'ultimate-eval-'));
+  temporary.push(dir);
+  const path = join(dir, `${baseline.eval}.baseline.json`);
+  await writeBaseline(path, baseline);
+  return path;
+}
+
+const unrecorded = async (): Promise<string> => {
+  const dir = await mkdtemp(join(tmpdir(), 'ultimate-eval-'));
+  temporary.push(dir);
+  return join(dir, 'never-recorded.baseline.json');
+};
+
+const THREE_CASES = [
+  { name: 'good', vars: { text: 'great product' }, expected: 'positive' },
+  { name: 'bad', vars: { text: 'awful product' }, expected: 'negative' },
+  { name: 'broken', vars: { text: 'it broke' }, expected: 'negative' },
+];
+
+describe('unit · the gate is the drop, not the absolute score', () => {
+  test('assert throws X_EVAL_THRESHOLD naming the case and both its scores', async () => {
     const prompt = classify();
     const gateway = gatewayWith({
       'Classify: great product': 'positive',
-      'Classify: awful product': 'positive', // wrong
-      'Classify: it broke': 'positive', // wrong
+      'Classify: awful product': 'positive', // regressed
+      'Classify: it broke': 'negative',
+    });
+    const baseline = await recorded({
+      eval: 'sentiment',
+      prompt: 'classify-sentiment@0.9.0',
+      promptHash: 'older',
+      score: 1,
+      cases: { good: 1, bad: 1, broken: 1 },
     });
 
     const evaluation = defineEval({
       name: 'sentiment',
       prompt,
-      threshold: 0.9,
+      baseline,
+      tolerance: 0.05,
       scorers: [exact],
-      cases: [
-        { name: 'good', vars: { text: 'great product' }, expected: 'positive' },
-        { name: 'bad', vars: { text: 'awful product' }, expected: 'negative' },
-        { name: 'broken', vars: { text: 'it broke' }, expected: 'negative' },
-      ],
+      cases: THREE_CASES,
     });
 
     let thrown: { code?: unknown; cause?: unknown; fix?: unknown } | undefined;
@@ -58,55 +86,159 @@ describe('an eval is a test that fails CI', () => {
 
     expect(thrown?.code).toBe('X_EVAL_THRESHOLD');
     const cause = String(thrown?.cause);
-    // A useful failure names the score, the bar, the exact prompt, and what regressed.
-    expect(cause).toContain('0.333');
-    expect(cause).toContain('0.900');
+    // A useful failure names the score, what it fell from, the exact prompt, and which case.
+    expect(cause).toContain('0.667');
+    expect(cause).toContain('1.000');
     expect(cause).toContain(prompt.hash);
-    expect(cause).toContain('bad=0.00');
-    expect(String(thrown?.fix)).toContain('sentiment');
+    expect(cause).toContain('bad 0.00 ← 1.00');
+    // Accepting a new number must be a reviewable diff, so the fix names the record command.
+    expect(String(thrown?.fix)).toContain('ULTIMATE_EVAL_RECORD=1');
   });
 
-  test('a passing eval returns the score attributed to the prompt hash', async () => {
+  test('a low score that matches its baseline passes — an absolute floor would not', async () => {
     const prompt = classify();
     const gateway = gatewayWith({
       'Classify: great product': 'positive',
-      'Classify: awful product': 'negative',
+      'Classify: awful product': 'positive',
+      'Classify: it broke': 'positive',
     });
     const evaluation = defineEval({
-      name: 'sentiment-ok',
+      name: 'sentiment-flat',
       prompt,
-      threshold: 1,
+      baseline: await recorded({
+        eval: 'sentiment-flat',
+        prompt: 'classify-sentiment@1.0.0',
+        promptHash: prompt.hash,
+        score: 0.333,
+        cases: { good: 1, bad: 0, broken: 0 },
+      }),
+      tolerance: 0.05,
       scorers: [exact],
-      cases: [
-        { name: 'good', vars: { text: 'great product' }, expected: 'positive' },
-        { name: 'bad', vars: { text: 'awful product' }, expected: 'negative' },
-      ],
+      cases: THREE_CASES,
     });
+
     const result = await evaluation.assert(gateway);
-    expect(result.score).toBe(1);
-    expect(result.promptHash).toBe(prompt.hash);
-    expect(result.promptRef).toBe('classify-sentiment@1.0.0');
+    expect(result.passed).toBe(true);
+    expect(result.regressions).toEqual([]);
+    expect(result.baseline).toBe(0.333);
+  });
+
+  test('a case that collapses fails even while the run mean holds', async () => {
+    const prompt = classify();
+    const gateway = gatewayWith({
+      'Classify: great product': 'positive',
+      'Classify: awful product': 'positive', // was right
+      'Classify: it broke': 'negative', // was wrong
+    });
+    const evaluation = defineEval({
+      name: 'sentiment-swap',
+      prompt,
+      baseline: await recorded({
+        eval: 'sentiment-swap',
+        prompt: 'classify-sentiment@1.0.0',
+        promptHash: prompt.hash,
+        score: 0.667,
+        cases: { good: 1, bad: 1, broken: 0 },
+      }),
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: THREE_CASES,
+    });
+
+    const result = await evaluation.run(gateway);
+    expect(result.score).toBeCloseTo(result.baseline ?? -1, 3);
+    expect(result.regressions).toEqual([{ case: 'bad', baseline: 1, score: 0 }]);
+    expect(result.passed).toBe(false);
+    await expect(evaluation.assert(gateway)).rejects.toMatchObject({ code: 'X_EVAL_THRESHOLD' });
   });
 });
 
-describe('built-in scorers', () => {
-  test('contains is case-insensitive; exact is not forgiving', () => {
-    expect(contains.score({ output: 'The Answer is 42.', expected: 'answer' })).toBe(1);
-    expect(exact.score({ output: ' 42 ', expected: '42' })).toBe(1);
-    expect(exact.score({ output: 'forty two', expected: '42' })).toBe(0);
+describe('unit · a baseline is a committed artifact', () => {
+  test('an eval that has never been recorded fails instead of passing on nothing', async () => {
+    const prompt = classify();
+    const evaluation = defineEval({
+      name: 'sentiment-new',
+      prompt,
+      baseline: await unrecorded(),
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: [THREE_CASES[0] ?? { name: 'good', vars: { text: 'x' } }],
+    });
+    const gateway = gatewayWith({ 'Classify: great product': 'positive' });
+
+    const result = await evaluation.run(gateway);
+    expect(result.score).toBe(1);
+    expect(result.passed).toBe(false); // a perfect score still gates on nothing
+    await expect(evaluation.assert(gateway)).rejects.toMatchObject({
+      code: 'X_EVAL_BASELINE_MISSING',
+    });
   });
 
-  test('json-schema-valid grades partial structure rather than pass/fail', () => {
-    const scorer = jsonSchemaValid(['id', 'name']);
-    expect(scorer.score({ output: '{"id":"1","name":"a"}' })).toBe(1);
-    expect(scorer.score({ output: '{"id":"1"}' })).toBe(0.5);
-    expect(scorer.score({ output: 'not json' })).toBe(0);
-  });
+  test('record mode writes the scores with the prompt that produced them', async () => {
+    const prompt = classify();
+    const path = await unrecorded();
+    const evaluation = defineEval({
+      name: 'sentiment-record',
+      prompt,
+      baseline: path,
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: THREE_CASES,
+    });
+    const gateway = gatewayWith({
+      'Classify: great product': 'positive',
+      'Classify: awful product': 'negative',
+      'Classify: it broke': 'positive',
+    });
 
-  test('numeric tolerance degrades linearly to the tolerance edge', () => {
-    const scorer = numericTolerance(10);
-    expect(scorer.score({ output: '100', expected: '100' })).toBe(1);
-    expect(scorer.score({ output: '105', expected: '100' })).toBe(0.5);
-    expect(scorer.score({ output: '120', expected: '100' })).toBe(0);
+    Bun.env[RECORD_ENV] = '1';
+    const result = await evaluation.assert(gateway);
+    expect(result.passed).toBe(true);
+
+    const written = (await Bun.file(path).json()) as EvalBaseline;
+    expect(written).toEqual({
+      eval: 'sentiment-record',
+      prompt: 'classify-sentiment@1.0.0',
+      promptHash: prompt.hash,
+      score: 0.667,
+      cases: { bad: 1, broken: 0, good: 1 },
+    });
+  });
+});
+
+describe('unit · every prompt is evaluated', () => {
+  test('a prompt no eval names is reported; a version bump stays covered', async () => {
+    const v1 = classify();
+    definePrompt({ id: 'draft-reply', version: '2.0.0', template: 'Reply to {{text}}' });
+    expect(promptsWithoutEvals().map((prompt) => prompt.ref)).toEqual([
+      'classify-sentiment@1.0.0',
+      'draft-reply@2.0.0',
+    ]);
+
+    defineEval({
+      name: 'sentiment-cover',
+      prompt: v1,
+      baseline: await unrecorded(),
+      tolerance: 0.05,
+      scorers: [exact],
+      cases: THREE_CASES,
+    });
+    // v2 of the same prompt id is the same lineage: the eval declared on it covers both.
+    definePrompt<{ text: string }>({
+      id: 'classify-sentiment',
+      version: '2.0.0',
+      template: 'Classify carefully: {{text}}',
+    });
+
+    expect(promptsWithoutEvals().map((prompt) => prompt.ref)).toEqual(['draft-reply@2.0.0']);
+    expect(describeEvals()).toEqual([
+      {
+        name: 'sentiment-cover',
+        prompt: 'classify-sentiment@1.0.0',
+        promptId: 'classify-sentiment',
+        tolerance: 0.05,
+        baseline: expect.stringContaining('never-recorded.baseline.json'),
+      },
+    ]);
   });
 });

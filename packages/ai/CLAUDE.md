@@ -21,7 +21,9 @@ rather than imported. Same contract, two wire formats.
 | `prompt.ts` | `definePrompt`, content hashing, version registry |
 | `embeddings.ts` | `Embedder`, `HashEmbedder`, cosine helpers |
 | `remote-embedder.ts` | `RemoteEmbedder` — the production `/v1/embeddings` client |
-| `evals.ts` | `defineEval`, built-in scorers, threshold assertion |
+| `evals.ts` | `defineEval`, the run, the baseline gate, prompt coverage |
+| `eval-baseline.ts` | the recorded scores: path, read/write, what counts as a regression |
+| `scorers.ts` | what a `Scorer` is, the built-in ones, and `llmJudge` |
 | `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid |
 | `vector-scope.ts` | the tenant + policy envelope, and the tighten-only derive rule |
 | `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
@@ -71,6 +73,20 @@ rather than imported. Same contract, two wire formats.
 - Model IDs are exact aliases. Never append a date suffix.
 - `definePrompt` refuses a re-registered version whose hash moved.
 - Every eval result carries the prompt hash. A score without one is not a measurement.
+- An eval gates on the DROP from its recorded baseline, never on an absolute score. An absolute
+  floor fails every eval at once the day a provider ships a slightly different model, which
+  teaches everyone to lower thresholds until they measure nothing.
+- The run mean AND every case are compared. A mean that holds while one case collapses is the
+  regression an eval exists to catch.
+- A baseline that has never been recorded is `X_EVAL_BASELINE_MISSING`, and a corrupt one is
+  `X_EVAL_BASELINE_INVALID` — never "absent, so pass". A step that cannot fail is not running.
+- `baseline` is `import.meta.resolve('./…')`. A cwd-relative path resolves to a different file
+  depending on where the suite was started, which is how a gate silently stops gating.
+- Every registered prompt must be named by an eval (`promptsWithoutEvals`, `X_EVAL_MISSING`).
+  Coverage is by prompt ID, not ref: old versions are retained, and an eval on the current one
+  evaluates that lineage.
+- `ULTIMATE_EVAL_RECORD=1` writes baselines instead of gating on them. A test that deliberately
+  scores a worse model calls `run`, never `assert` — `assert` would re-record during that pass.
 - Retrieval is hybrid by default. Do not add a vector-only convenience path.
 - `PgVectorStore` is the ONLY production vector path — pgvector and Postgres FTS in the app's own
   Postgres, never a second datastore. `MemoryVectorStore` is the dev twin and enforces the same

@@ -67,6 +67,31 @@ Locale and zone are declared per test when the behavior under test depends on th
 
 Each type is a first-class runner with its own fixture shape — not a naming convention on top of one runner. Every command supports `--json`.
 
+### Evals
+
+An eval declares its cases beside the prompt (`<name>.evals.ts`) and gates on the **drop** from a
+committed baseline, never on an absolute score — models drift, prompts should not.
+
+| Rule | Code |
+|---|---|
+| a prompt no `defineEval` names | `X_EVAL_MISSING` |
+| the run mean or a case fell past `tolerance` | `X_EVAL_THRESHOLD` |
+| the baseline was never recorded | `X_EVAL_BASELINE_MISSING` |
+
+```ts
+export const summarizeEval = defineEval({
+  name: 'summarize',
+  prompt: summarizePrompt,
+  cases: [{ name: 'refund', vars: { ticket: 'I want my money back' }, expected: 'billing' }],
+  scorers: [exact, jsonSchemaValid(['category', 'summary'])],
+  baseline: import.meta.resolve('./summarize.baseline.json'),
+  tolerance: 0.05,
+});
+```
+
+`ULTIMATE_EVAL_RECORD=1 x test eval` re-records every baseline, so accepting a new number is a
+reviewable diff instead of an edited threshold.
+
 ```ts
 // contract test — generated as a scaffold with the action
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {

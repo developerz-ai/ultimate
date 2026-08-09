@@ -38,28 +38,38 @@ export {
   AiRequestInvalidError,
   AiTransportError,
   EmbedderDimMismatchError,
+  EvalBaselineInvalidError,
+  EvalBaselineMissingError,
+  EvalMissingError,
   EvalThresholdError,
   LlmOutputInvalidError,
   VectorDimMismatchError,
   VectorScopeWidenedError,
 } from './errors';
+export type { EvalBaseline, Regression } from './eval-baseline';
+export {
+  baselinePath,
+  describeRegression,
+  OVERALL,
+  RECORD_ENV,
+  readBaseline,
+  recordingBaselines,
+  regressionsAgainst,
+  writeBaseline,
+} from './eval-baseline';
 export type {
   CaseResult,
   DefineEvalInput,
   Eval,
   EvalCase,
+  EvalFact,
   EvalResult,
-  Scorer,
 } from './evals';
 export {
-  contains,
+  baselineFrom,
   defineEval,
   describeEvals,
-  exact,
-  jsonSchemaValid,
-  jsonValid,
-  llmJudge,
-  numericTolerance,
+  promptsWithoutEvals,
   resetEvals,
 } from './evals';
 export type { CreateGatewayInput, Gateway, GatewayCache, RetryPolicy } from './gateway';
@@ -140,6 +150,15 @@ export type { RemoteEmbedderInput } from './remote-embedder';
 export { RemoteEmbedder } from './remote-embedder';
 export type { AiRuntimeInput } from './runtime';
 export { aiEmbedder, aiGateway, configureAi, resetAiRuntime, semanticCacheFor } from './runtime';
+export type { Scorer } from './scorers';
+export {
+  contains,
+  exact,
+  jsonSchemaValid,
+  jsonValid,
+  llmJudge,
+  numericTolerance,
+} from './scorers';
 export type {
   JsonSchema,
   LlmTool,

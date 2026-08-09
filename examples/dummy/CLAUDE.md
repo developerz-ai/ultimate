@@ -76,6 +76,9 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - `idempotencyKey` on every job is required by the type. Keys derive from `input` only.
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
+- Every prompt carries `<name>.evals.ts` (the cases) and `<name>.vN.baseline.json` (the recorded
+  scores). A prompt with no eval fails `x verify` with `X_EVAL_MISSING`; the gate is the drop from
+  the baseline, so re-record with `ULTIMATE_EVAL_RECORD=1 x test eval` and commit the diff.
 - Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `clock`,
   `mail` and `runJobs` are the framework's; `seed` and `actorFor` are Postly's. A test that
   destructures anything else fails with `X_TEST_FIXTURE_UNKNOWN` — register it there, once.

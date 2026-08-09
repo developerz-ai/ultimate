@@ -126,14 +126,17 @@ Missing at call time is `X_AI_GATEWAY_MISSING`, never a silent default provider.
 
 ## Evals are a test type
 
-Not a notebook, not a weekly report — a `bun test` case that fails CI. A prompt change that
-drops accuracy below its threshold breaks the build exactly like a type error does.
+Not a notebook, not a weekly report — a `bun test` case that fails CI. **Every prompt has an
+eval**; a `definePrompt` no `defineEval` names is `X_EVAL_MISSING` in `x verify`, because an
+unevaluated prompt is untested code that costs money and answers users.
+
+The gate is the **drop from a recorded baseline**, never an absolute score. An absolute floor
+fails every eval at once the day a provider ships a slightly different model, which teaches
+everyone to lower thresholds until they measure nothing.
 
 ```ts
-// app/support/summarize.eval.ts
+// app/support/summarize.evals.ts — the declaration the gate reads
 import { defineEval, exact, jsonSchemaValid } from '@ultimat3/ai';
-import { test } from 'bun:test';
-import { ai } from '~/ai';
 import { summarize } from './prompts';
 
 export const summarizeEval = defineEval({
@@ -144,21 +147,31 @@ export const summarizeEval = defineEval({
     { name: 'outage', vars: { ticket: 'the site is down' }, expected: 'incident' },
   ],
   scorers: [exact, jsonSchemaValid(['category', 'summary'])],
-  threshold: 0.9,
-});
-
-test('summarize holds its bar', async () => {
-  await summarizeEval.assert(ai);   // throws X_EVAL_THRESHOLD below 0.9
+  baseline: import.meta.resolve('./summarize.baseline.json'),   // committed scores
+  tolerance: 0.05,                                              // how far one may fall
 });
 ```
 
-A failure names the score, the bar, the exact prompt hash, and the three worst cases:
+```ts
+// app/support/summarize.eval.test.ts — the suite `x verify` runs
+test('summarize holds its recorded scores', async () => {
+  await summarizeEval.assert(ai);   // throws X_EVAL_THRESHOLD on a drop past 0.05
+});
+```
+
+`ULTIMATE_EVAL_RECORD=1 x test eval` writes the baselines instead of gating on them, so
+accepting a new number is a reviewable diff. An eval that has never been recorded fails with
+`X_EVAL_BASELINE_MISSING` — gating on nothing is not passing.
+
+A failure names the score, what it fell from, the exact prompt hash, and every case that moved:
 
 ```
-X_EVAL_THRESHOLD: eval scored below threshold
-  cause: eval "summarize" scored 0.333 against a threshold of 0.900 on prompt version
-         summarize@1.0.0 (a3f1…); worst cases: refund=0.00, outage=0.00, tone=0.50
-  fix:   x ai eval summarize --verbose
+X_EVAL_THRESHOLD: an eval scored below its tolerance
+  cause: eval "summarize" scored 0.667 against a recorded baseline of 1.000
+         (tolerance 0.050) on prompt version summarize@1.0.0 (a3f1…);
+         regressed: overall 0.67 ← 1.00, refund 0.00 ← 1.00
+  fix:   x test summarize to see per-case scores, then fix the prompt — or
+         ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff
 ```
 
 Built-in scorers: `exact`, `contains`, `jsonValid`, `jsonSchemaValid(keys)`,

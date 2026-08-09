@@ -12,6 +12,9 @@ export const AI_ERROR_CODES = [
   'X_AI_PROMPT_VERSION',
   'X_LLM_OUTPUT_INVALID',
   'X_EVAL_THRESHOLD',
+  'X_EVAL_BASELINE_MISSING',
+  'X_EVAL_BASELINE_INVALID',
+  'X_EVAL_MISSING',
   'X_VECTOR_DIM_MISMATCH',
   'X_VECTOR_SCOPE_WIDENED',
 ] as const;
@@ -27,6 +30,9 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_PROMPT_VERSION: 'prompt version or slots are wrong',
   X_LLM_OUTPUT_INVALID: 'structured output failed its schema on the answer and the repair turn',
   X_EVAL_THRESHOLD: 'an eval scored below its tolerance',
+  X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
+  X_EVAL_BASELINE_INVALID: 'a recorded baseline cannot be read',
+  X_EVAL_MISSING: 'a prompt has no eval',
   X_VECTOR_DIM_MISMATCH: 'embedding dimensions differ from the store',
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
 };
@@ -140,23 +146,72 @@ export class AiPromptRenderError extends UltimateError {
   }
 }
 
-/** An eval scored below its declared threshold. This is a test failure, not a warning. */
+/**
+ * An eval scored further below its recorded baseline than its tolerance allows. The gate is the
+ * DROP, not an absolute number — a model that got marginally worse everywhere is not the same
+ * event as a prompt edit that broke one case, and only the second one is anybody's fault.
+ *
+ * This is a test failure, not a warning.
+ */
 export class EvalThresholdError extends UltimateError {
   constructor(input: {
     eval: string;
     score: number;
-    threshold: number;
+    baseline: number;
+    tolerance: number;
     promptVersion: string;
-    worst: readonly string[];
+    regressed: readonly string[];
   }) {
     super({
       code: 'X_EVAL_THRESHOLD',
       cause:
-        `eval "${input.eval}" scored ${input.score.toFixed(3)} against a threshold of ` +
-        `${input.threshold.toFixed(3)} on prompt version ${input.promptVersion}; ` +
-        `worst cases: ${input.worst.join(', ')}`,
-      fix: `x ai eval ${input.eval} --verbose to see per-case scores, then fix the prompt or lower the threshold deliberately`,
+        `eval "${input.eval}" scored ${input.score.toFixed(3)} against a recorded baseline of ` +
+        `${input.baseline.toFixed(3)} (tolerance ${input.tolerance.toFixed(3)}) on prompt ` +
+        `version ${input.promptVersion}; regressed: ${input.regressed.join(', ')}`,
+      fix: `x test ${input.eval} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
       docs: docsFor('X_EVAL_THRESHOLD'),
+    });
+  }
+}
+
+/**
+ * An eval declared a baseline that has never been recorded. Not a pass: an eval with nothing to
+ * compare against gates on nothing, and a step that cannot fail is a step that is not running.
+ */
+export class EvalBaselineMissingError extends UltimateError {
+  constructor(input: { eval: string; path: string; reason: string; fix?: string }) {
+    super({
+      code: 'X_EVAL_BASELINE_MISSING',
+      cause: `eval "${input.eval}" gates against ${input.path}, which ${input.reason}`,
+      fix: input.fix ?? `ULTIMATE_EVAL_RECORD=1 x test eval, then commit ${input.path}`,
+      docs: docsFor('X_EVAL_BASELINE_MISSING'),
+    });
+  }
+}
+
+/** A recorded baseline that cannot be read. Never treated as absent — that would erase a gate. */
+export class EvalBaselineInvalidError extends UltimateError {
+  constructor(input: { path: string; problem: string }) {
+    super({
+      code: 'X_EVAL_BASELINE_INVALID',
+      cause: `the recorded baseline ${input.path} ${input.problem}`,
+      fix: `ULTIMATE_EVAL_RECORD=1 x test eval to re-record ${input.path}`,
+      docs: docsFor('X_EVAL_BASELINE_INVALID'),
+    });
+  }
+}
+
+/**
+ * A registered prompt that no eval names. An unevaluated prompt is untested code that costs
+ * money and answers users, so the gate fails on it exactly like an untyped module.
+ */
+export class EvalMissingError extends UltimateError {
+  constructor(input: { prompt: string; id: string }) {
+    super({
+      code: 'X_EVAL_MISSING',
+      cause: `prompt "${input.prompt}" has no eval`,
+      fix: `defineEval({ name: '${input.id}', prompt, cases, scorers, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
+      docs: docsFor('X_EVAL_MISSING'),
     });
   }
 }

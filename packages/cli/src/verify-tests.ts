@@ -2,9 +2,18 @@
 // test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,
 // `*.e2e.test.ts` (or any file under an `e2e/` directory), `*.eval.test.ts`. Everything else is a
 // unit test, which is why the unit step is the only one that selects by exclusion.
+//
+// `eval` carries one rule beyond its suite — every prompt must have an eval — so it is the only
+// step here that can fail with no test file of its own.
 
+// Bun ships no `Bun.*` equivalent for either: `existsSync` answers whether this root is an app,
+// and `join` builds the host-separator path to its config file.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { checkEvalCoverage } from './app-evals';
+import { APP_CONFIG_FILE } from './app-root';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
-import { fromExec } from './verify-step';
+import { fromExec, fromFindings } from './verify-step';
 
 export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as const;
 
@@ -98,6 +107,29 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
   });
 };
 
+const isApp = (root: string): boolean => existsSync(join(root, APP_CONFIG_FILE));
+
+/**
+ * The eval step carries one rule beyond "the suite is green": every prompt must have an eval. So
+ * it is the one test step that applies with no suite of its own — an app whose only prompt has no
+ * eval file would otherwise skip this step and report a green gate over untested code.
+ */
+const evalStep: VerifyStep = {
+  name: 'eval',
+  summary: SUITES.eval.summary,
+  applies: async (ctx) => isApp(ctx.root) || (await exists(ctx.root, SUITES.eval.globs)),
+  async run(ctx) {
+    const coverage = isApp(ctx.root) ? await checkEvalCoverage(ctx.root) : [];
+    if (!(await exists(ctx.root, SUITES.eval.globs))) return fromFindings(coverage);
+    const suite = await runType(ctx, 'eval');
+    return {
+      ok: suite.ok && coverage.length === 0,
+      findings: [...coverage, ...suite.findings],
+      ...(suite.output === undefined ? {} : { output: suite.output }),
+    };
+  },
+};
+
 const stepFor = (type: TestType): VerifyStep => {
   if (type === 'unit') {
     return {
@@ -106,6 +138,7 @@ const stepFor = (type: TestType): VerifyStep => {
       run: (ctx) => runType(ctx, 'unit'),
     };
   }
+  if (type === 'eval') return evalStep;
   const suite = SUITES[type];
   return {
     name: type,

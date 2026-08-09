@@ -72,6 +72,31 @@ Each is a first-class runner with its own fixture shape — not a naming convent
 | **e2e** | `x test e2e` | real browser against the built output: render-mode behavior, streaming holes filling, hydration timing, SW install + offline fallback, version-skew reload | built app + cloned DB |
 | **eval** | `x test eval` | prompt quality vs. a baseline: exact, schema, rubric (judge), or regression tolerance | pinned models, recorded fixtures |
 
+### The eval step, in detail
+
+Two rules, both inside one step of `x verify`:
+
+| Rule | Shape | Fails with |
+|---|---|---|
+| Coverage | every registered prompt is named by a `defineEval` | `X_EVAL_MISSING` |
+| Regression | the run mean and every case, against the committed baseline | `X_EVAL_THRESHOLD` |
+
+Coverage is read from the app's own registries, never from filenames, so renaming a file cannot
+un-gate a prompt. It is why the eval step **applies with no eval suite at all**: an app whose only
+prompt has no eval would otherwise skip the step and report a green gate over untested code.
+
+The regression rule gates on the **drop**, not the absolute score. An absolute floor fails every
+eval at once the day a provider ships a slightly different model, which teaches everyone to lower
+thresholds until they measure nothing. `tolerance` is how far a score may fall; the run mean *and*
+each case are compared, because a mean that holds while one case collapses is the regression an
+eval exists to catch.
+
+| Situation | Outcome |
+|---|---|
+| never recorded | `X_EVAL_BASELINE_MISSING` — gating on nothing is not passing |
+| corrupt baseline | `X_EVAL_BASELINE_INVALID` — never read as "absent, so pass" |
+| accepting new numbers | `ULTIMATE_EVAL_RECORD=1 x test eval`, then commit the diff |
+
 ```ts
 // contract test — generated as a scaffold with the action
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
