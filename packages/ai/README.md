@@ -150,7 +150,7 @@ throws too, like an i18n miss.
 ## Retrieval
 
 ```ts
-const store = new MemoryVectorStore({ dimension: 256 });      // PgVectorStore in prod
+const store = new PgVectorStore({ name: 'doc_chunks', dimension: 256 });   // MemoryVectorStore in dev
 await indexDocument({ store, embedder, document: { id: 'faq', text } });
 
 const hits = await retrieve({ store, embedder, query, k: 8 });
@@ -158,9 +158,28 @@ const context = assembleContext({ hits, maxTokens: 8_000 });
 context.dropped;                                              // reported, never silent
 ```
 
-Retrieval is **hybrid by default** — vector + BM25 fused by reciprocal rank. Pure vector
+Retrieval is **hybrid by default** — vector + lexical, fused by reciprocal rank. Pure vector
 search loses on exactly the queries users type: error codes, SKUs, identifiers, rare terms.
 RRF fuses by *rank*, so the two score scales never have to be reconciled.
+
+`PgVectorStore` is the production path: pgvector cosine (`<=>`, HNSW) and Postgres FTS
+(`websearch_to_tsquery` + `ts_rank_cd`, GIN) in **the same Postgres**, fused by `1/(k+rank)` in
+one statement. `MemoryVectorStore` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
+the same envelope. `store.ddl()` prints the table and both indexes; `x db gen` emits it.
+
+### The scope is the leak-proofing
+
+```ts
+const tenantStore = store.scoped({ tenant: orgId, allow: { visibility: ['public', 'internal'] } });
+```
+
+Every read, write and delete a scoped store emits carries `tenant = $n` and the allow-list **in
+SQL** — including *both* halves of the hybrid fusion, since an unfiltered lexical ranking fused
+into a filtered dense one leaks through the back door. `(tenant, id)` is the primary key, so a
+cross-tenant overwrite is impossible at the storage layer rather than by remembering to check.
+Allow-lists are default deny: a row missing the key is invisible, and an empty list matches
+nothing. `scoped()` only ever **tightens** — re-scoping to a different tenant is
+`X_VECTOR_SCOPE_WIDENED`, never a silent widening.
 
 `chunk()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
 — a fact split across a boundary with no overlap is retrievable by neither chunk.
@@ -186,4 +205,5 @@ identically. The actor comes from the request context, never from the model.
 | `X_LLM_OUTPUT_INVALID` | the model failed its `output` schema on the answer and on the repair turn |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
+| `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |

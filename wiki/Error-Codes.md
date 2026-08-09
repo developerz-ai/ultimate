@@ -225,6 +225,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema on the answer and on the repair turn | the model would not produce the shape | describe the shape in the prompt template and bump its version, or widen `output` in the `llm()` declaration |
 | `X_EVAL_THRESHOLD` | an eval scored below its tolerance | a prompt edit regressed cases | `x ai eval <name> --verbose` for per-case scores |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
+| `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave its tenant | a handler re-scoped the store it was handed | derive from the unscoped store: `vectorStore.scoped({ tenant })` |
 
 ## Admin and manifest
 

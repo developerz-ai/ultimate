@@ -11,6 +11,7 @@ export const AI_ERROR_CODES = [
   'X_LLM_OUTPUT_INVALID',
   'X_EVAL_THRESHOLD',
   'X_VECTOR_DIM_MISMATCH',
+  'X_VECTOR_SCOPE_WIDENED',
   'X_NOT_IMPLEMENTED',
 ] as const;
 
@@ -148,6 +149,24 @@ export class VectorDimMismatchError extends UltimateError {
       cause: `store "${input.store}" expects ${input.expected} dimensions, got ${input.received}`,
       fix: 'use the same embedder that created the store, or x ai reindex to rebuild it',
       docs: docsFor('X_VECTOR_DIM_MISMATCH'),
+    });
+  }
+}
+
+/**
+ * A derived vector scope tried to leave the tenant it was bound to. Scopes only ever tighten,
+ * so this is always the same mistake: a request handler re-scoping the store it was handed
+ * instead of deriving from the unscoped one. Widening silently would be a cross-tenant read.
+ */
+export class VectorScopeWidenedError extends UltimateError {
+  constructor(input: { store: string; held: string; requested: string }) {
+    super({
+      code: 'X_VECTOR_SCOPE_WIDENED',
+      cause:
+        `store "${input.store}" is bound to tenant "${input.held}" and cannot be re-scoped ` +
+        `to "${input.requested}"`,
+      fix: `derive from the unscoped store instead: vectorStore.scoped({ tenant: '${input.requested}' })`,
+      docs: docsFor('X_VECTOR_SCOPE_WIDENED'),
     });
   }
 }

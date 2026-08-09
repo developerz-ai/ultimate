@@ -4,7 +4,7 @@ Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity pol
 query jobs realtime`. **Never** `mcp manifest render pwa ui admin testing cli`.
 
 Declared today: `action` (the primitive `llm()` returns), `cache` (semantic cache), `core`,
-`money`, `policy`, `schema`, `time`.
+`db` (pgvector), `money`, `policy`, `schema`, `time`.
 
 `mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`
 rather than imported. Same contract, two wire formats.
@@ -19,7 +19,10 @@ rather than imported. Same contract, two wire formats.
 | `prompt.ts` | `definePrompt`, content hashing, version registry |
 | `evals.ts` | `defineEval`, built-in scorers, threshold assertion |
 | `embeddings.ts` | `Embedder`, `HashEmbedder`, cosine helpers |
-| `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid, pgvector DDL |
+| `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid |
+| `vector-scope.ts` | the tenant + policy envelope, and the tighten-only derive rule |
+| `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
+| `pg-vector.ts` | `PgVectorStore` — the production store |
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; `runLlmToolCall` |
 | `llm.ts` | `llm()` — the model call, declared as an `action` |
@@ -54,6 +57,17 @@ rather than imported. Same contract, two wire formats.
 - `definePrompt` refuses a re-registered version whose hash moved.
 - Every eval result carries the prompt hash. A score without one is not a measurement.
 - Retrieval is hybrid by default. Do not add a vector-only convenience path.
+- `PgVectorStore` is the ONLY production vector path — pgvector and Postgres FTS in the app's own
+  Postgres, never a second datastore. `MemoryVectorStore` is the dev twin and enforces the same
+  envelope; a leak that only reproduces against real Postgres is a leak nobody finds.
+- Tenant and policy filters go **in SQL**, on every statement, through `conditionsSql` — and on
+  BOTH halves of the fusion. Filtering after the rows are loaded is not filtering.
+- `(tenant, id)` is the primary key. A cross-tenant overwrite is impossible at the storage layer
+  rather than conditional on every upsert remembering to check.
+- `scoped()` only ever TIGHTENS: tenants are set once, allow-lists intersect. Widening is
+  `X_VECTOR_SCOPE_WIDENED`. Same rule as `budget.derive`, for the same reason.
+- Metadata is bound `::text::jsonb`. A bound string cast straight to `::jsonb` is JSON-encoded
+  twice, reads back correctly, and makes every `metadata ->> key` filter match nothing.
 
 ## Commands
 

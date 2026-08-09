@@ -38,6 +38,7 @@ export {
   EvalThresholdError,
   LlmOutputInvalidError,
   VectorDimMismatchError,
+  VectorScopeWidenedError,
 } from './errors';
 export type {
   CaseResult,
@@ -68,6 +69,24 @@ export type {
   LlmVarsArgs,
 } from './llm';
 export { llm } from './llm';
+export type { PgVectorStoreInput } from './pg-vector';
+export { PgVectorStore } from './pg-vector';
+export type {
+  PgHybridArgs,
+  PgSearchArgs,
+  PgVectorRowInput,
+  PgVectorTable,
+} from './pg-vector-sql';
+export {
+  conditionsSql,
+  ddlSql,
+  deleteSql,
+  hybridSql,
+  searchSql,
+  textSql,
+  upsertSql,
+  vectorLiteral,
+} from './pg-vector-sql';
 export type { DefinePromptInput, Prompt, PromptVars } from './prompt';
 export {
   contentHash,
@@ -130,7 +149,10 @@ export type {
   MemoryVectorStoreInput,
   MetadataFilter,
   SearchHit,
+  StoredRecord,
   VectorRecord,
   VectorStore,
 } from './vector';
-export { fuse, MemoryVectorStore, PgVectorStore } from './vector';
+export { fuse, MemoryVectorStore } from './vector';
+export type { VectorScope } from './vector-scope';
+export { NO_TENANT, narrowScope, scopeAdmits, tenantOf, UNSCOPED } from './vector-scope';
