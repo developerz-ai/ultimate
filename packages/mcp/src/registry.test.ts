@@ -1,0 +1,255 @@
+// The catalog and the first two security outcomes: visibility (role/predicate) and the
+// resolve() ordering that must never leak a hidden tool's existence via a different error.
+
+import { describe, expect, test } from 'bun:test';
+import { agentActor } from '@ultimat3/core';
+import type { AnyMcpTool, McpCaller } from './registry';
+import { jsonResult, ToolRegistry, textResult, visibleToCaller } from './registry';
+import type { JsonSchema } from './wire';
+
+const NO_ARGS: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };
+const STRING_ARG: JsonSchema = {
+  type: 'object',
+  properties: { name: { type: 'string' } },
+  required: ['name'],
+  additionalProperties: false,
+};
+
+function caller(input: { role?: string; scopes?: readonly string[] } = {}): McpCaller {
+  const actor = agentActor({ id: 'agent-1' });
+  const scopes = new Set(input.scopes ?? []);
+  return input.role === undefined ? { actor, scopes } : { actor, scopes, role: input.role };
+}
+
+function tool(overrides: Partial<AnyMcpTool> & { name: string }): AnyMcpTool {
+  return {
+    description: 'a tool',
+    inputSchema: NO_ARGS,
+    async handle() {
+      return textResult('ok');
+    },
+    ...overrides,
+  };
+}
+
+/** App code failing for an ordinary reason: a missing actor, a registry miss, a cold cache. */
+function throwingVisibility(): boolean {
+  throw new TypeError('visibility predicate blew up');
+}
+
+describe('visibleToCaller', () => {
+  test('no visibleTo means everyone, including a roleless caller', () => {
+    expect(visibleToCaller(tool({ name: 'open' }), caller())).toBe(true);
+  });
+
+  test('a role list admits a matching role and refuses a roleless caller (fail-closed)', () => {
+    const t = tool({ name: 'admin.only', visibleTo: ['admin'] });
+    expect(visibleToCaller(t, caller({ role: 'admin' }))).toBe(true);
+    expect(visibleToCaller(t, caller({ role: 'support' }))).toBe(false);
+    expect(visibleToCaller(t, caller())).toBe(false);
+  });
+
+  test('a predicate decides from the caller only, never from call arguments', () => {
+    const t = tool({
+      name: 'predicate.gated',
+      visibleTo: (who) => who.actor.id === 'agent-allowed',
+    });
+    expect(visibleToCaller(t, caller())).toBe(false);
+    const allowed: McpCaller = { actor: agentActor({ id: 'agent-allowed' }), scopes: new Set() };
+    expect(visibleToCaller(t, allowed)).toBe(true);
+  });
+
+  test('a throwing predicate denies rather than escaping', () => {
+    const t = tool({ name: 'boom', visibleTo: throwingVisibility });
+    expect(visibleToCaller(t, caller({ role: 'admin' }))).toBe(false);
+  });
+
+  test('a truthy non-boolean does not widen the gate — only a literal true admits', () => {
+    // A JS caller (or a predicate returning the permission it matched) must not be an "allow".
+    const truthy = tool({ name: 'truthy', visibleTo: (() => 'admin') as () => boolean });
+    expect(visibleToCaller(truthy, caller({ role: 'admin' }))).toBe(false);
+  });
+});
+
+describe('ToolRegistry.register', () => {
+  test('registering the same name twice throws', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'dup' }));
+    expect(() => registry.register(tool({ name: 'dup' }))).toThrow();
+  });
+
+  test('registerAll registers every tool and returns the registry for chaining', () => {
+    const registry = new ToolRegistry();
+    const result = registry.registerAll([tool({ name: 'a' }), tool({ name: 'b' })]);
+    expect(result).toBe(registry);
+    expect(registry.get('a')).toBeDefined();
+    expect(registry.get('b')).toBeDefined();
+  });
+
+  test('get is a raw lookup with no gate applied', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'hidden', visibleTo: ['admin'] }));
+    expect(registry.get('hidden')).toBeDefined();
+  });
+});
+
+describe('ToolRegistry.list / names', () => {
+  test('list is name-sorted regardless of registration order', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([tool({ name: 'zebra' }), tool({ name: 'apple' })]);
+    expect(registry.names()).toEqual(['apple', 'zebra']);
+  });
+
+  test('list with no caller returns everything, gated or not', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([
+      tool({ name: 'open' }),
+      tool({ name: 'admin.only', visibleTo: ['admin'] }),
+    ]);
+    expect(registry.names()).toEqual(['admin.only', 'open']);
+  });
+
+  test('list with a caller filters to what that caller may see', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([
+      tool({ name: 'open' }),
+      tool({ name: 'admin.only', visibleTo: ['admin'] }),
+    ]);
+    expect(registry.names(caller())).toEqual(['open']);
+    expect(registry.names(caller({ role: 'admin' }))).toEqual(['admin.only', 'open']);
+  });
+
+  test('a tool whose predicate throws is hidden, and the rest of the catalog survives', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([
+      tool({ name: 'open' }),
+      tool({ name: 'boom', visibleTo: throwingVisibility }),
+      tool({ name: 'zebra' }),
+    ]);
+    // One broken audience must not empty the catalog — that would be a denial of service
+    // dressed up as a security control.
+    expect(registry.names(caller({ role: 'admin' }))).toEqual(['open', 'zebra']);
+  });
+
+  test('each entry is a complete, standalone row', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'echo', description: 'echoes', inputSchema: STRING_ARG }));
+    expect(registry.list()).toEqual([
+      { name: 'echo', description: 'echoes', inputSchema: STRING_ARG },
+    ]);
+  });
+});
+
+describe('ToolRegistry.resolve ordering: visibility -> scope -> args -> ok', () => {
+  test('an absent tool and a role-hidden tool answer the same not-found kind', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'admin.only', visibleTo: ['admin'] }));
+    expect(registry.resolve('missing', {}, caller())).toEqual({
+      kind: 'not-found',
+      name: 'missing',
+    });
+    expect(registry.resolve('admin.only', {}, caller())).toEqual({
+      kind: 'not-found',
+      name: 'admin.only',
+    });
+  });
+
+  test('a throwing predicate resolves not-found, indistinguishable from an absent tool', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'boom', visibleTo: throwingVisibility }));
+    // Propagating the throw would answer -32603 where a hidden tool answers -32601, and that
+    // difference is what a prober reads as "this tool exists".
+    expect(registry.resolve('boom', {}, caller({ role: 'admin' }))).toEqual({
+      kind: 'not-found',
+      name: 'boom',
+    });
+  });
+
+  test('a visible tool whose scope the token lacks is scope-denied, not not-found', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'reads', scope: 'dev:read' }));
+    expect(registry.resolve('reads', {}, caller())).toEqual({
+      kind: 'scope-denied',
+      name: 'reads',
+      scope: 'dev:read',
+    });
+    expect(registry.resolve('reads', {}, caller({ scopes: ['dev:read'] }))).toMatchObject({
+      kind: 'ok',
+    });
+  });
+
+  test('scope check runs before argument validation', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'strict', scope: 'dev:write', inputSchema: STRING_ARG }));
+    // Bad args AND missing scope: the caller learns about the scope, not the shape.
+    expect(registry.resolve('strict', {}, caller())).toEqual({
+      kind: 'scope-denied',
+      name: 'strict',
+      scope: 'dev:write',
+    });
+  });
+
+  test('invalid arguments are reported once the gates pass', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'echo', inputSchema: STRING_ARG }));
+    const resolved = registry.resolve('echo', {}, caller());
+    expect(resolved.kind).toBe('invalid-args');
+    if (resolved.kind === 'invalid-args') {
+      expect(resolved.issues).toEqual([{ path: 'name', message: 'is required' }]);
+    }
+  });
+
+  test('a fully valid call resolves ok with the coerced args and the tool itself', () => {
+    const registry = new ToolRegistry();
+    const t = tool({ name: 'echo', inputSchema: STRING_ARG });
+    registry.register(t);
+    const resolved = registry.resolve('echo', { name: 'hi' }, caller());
+    expect(resolved).toEqual({ kind: 'ok', tool: t, args: { name: 'hi' } });
+  });
+
+  test('a missing rawArgs defaults to an empty object rather than throwing', () => {
+    const registry = new ToolRegistry();
+    registry.register(tool({ name: 'open' }));
+    expect(registry.resolve('open', undefined, caller())).toEqual({
+      kind: 'ok',
+      tool: registry.get('open'),
+      args: {},
+    });
+  });
+});
+
+describe('ToolRegistry.verbClass', () => {
+  test('an unknown tool bills the strict write bucket, fail-closed', () => {
+    const registry = new ToolRegistry();
+    expect(registry.verbClass('nope')).toBe('write');
+  });
+
+  test('destructive true is write, everything else is read', () => {
+    const registry = new ToolRegistry();
+    registry.registerAll([tool({ name: 'reads' }), tool({ name: 'writes', destructive: true })]);
+    expect(registry.verbClass('reads')).toBe('read');
+    expect(registry.verbClass('writes')).toBe('write');
+  });
+});
+
+describe('textResult / jsonResult', () => {
+  test('textResult without isError omits the flag entirely', () => {
+    const result = textResult('hello');
+    expect(result).toEqual({ content: [{ type: 'text', text: 'hello' }] });
+    expect('isError' in result).toBe(false);
+  });
+
+  test('textResult with isError true sets the flag', () => {
+    expect(textResult('bad', true)).toEqual({
+      content: [{ type: 'text', text: 'bad' }],
+      isError: true,
+    });
+  });
+
+  test('jsonResult renders stable, diffable 2-space JSON', () => {
+    const result = jsonResult({ b: 1, a: 2 });
+    expect(result.content).toEqual([
+      { type: 'text', text: JSON.stringify({ b: 1, a: 2 }, null, 2) },
+    ]);
+  });
+});

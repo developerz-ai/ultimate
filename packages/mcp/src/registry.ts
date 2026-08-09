@@ -1,16 +1,22 @@
-// The tool catalog and the two independent security axes every MCP surface enforces.
+// The tool catalog and the first two of the three security outcomes every MCP surface owes
+// a caller. See `docs/architecture/11-ai-surface.md` § Security posture.
 //
-// AXIS 1 — visibility (role). A tool whose `visibleTo` excludes the caller's role is
-// omitted from `tools/list` and answers ToolNotFound (`-32601`) on call. Never Forbidden:
-// "Forbidden" confirms the tool exists, which turns an authz boundary into a catalog an
-// agent can enumerate by probing. Hidden ≠ Forbidden.
+// OUTCOME 1 — hidden (role). A tool whose `visibleTo` excludes the caller is omitted from
+// `tools/list` and answers ToolNotFound (`-32601`) on call, with the same message an absent
+// tool gets. Never Forbidden: "Forbidden" confirms the tool exists, which turns an authz
+// boundary into a catalog an agent can enumerate by probing. Hidden ≠ Forbidden.
 //
-// AXIS 2 — scope (capability). A tool the caller may SEE but whose `scope` its token does
-// not carry is refused (`-32600`). Being refused is correct here: the caller was shown the
-// tool, so naming it leaks nothing, and the message can say which scope to obtain.
+// OUTCOME 2 — scope (capability). A tool the caller may SEE but whose `scope` its token does
+// not carry is refused (`-32600`, `X_MCP_SCOPE_DENIED`). Being refused is correct here: the
+// caller was shown the tool, so naming it leaks nothing, and the message can say which scope
+// to obtain — hiding it would strand a well-behaved client that can legitimately fix this.
 //
-// The axes are orthogonal on purpose. A tool can be visible to a role and still refused
-// for a narrow token; a broad token still cannot see a tool its role may not.
+// OUTCOME 3 — policy (`X_POLICY_DENIED`) belongs to the tool's own `handle`, which reaches
+// `guard()` in @ultimat3/action. It is deliberately NOT here: the scope gate must decide
+// before any policy runs against attacker-supplied input.
+//
+// The outcomes are orthogonal on purpose. A tool can be visible and still refused for a
+// narrow token; a token holding every scope still cannot see a tool its role may not.
 
 import type { Actor } from '@ultimat3/core';
 import type { ArgIssue } from './validate-args';
@@ -32,6 +38,20 @@ export interface McpCaller {
   /** Absent = no role filter applies (the caller sees every unrestricted tool). */
   readonly role?: McpRole;
 }
+
+/**
+ * Who may see a tool: a role list, or a predicate over the caller for a surface that derives
+ * visibility from something richer than a role name (`@ultimat3/admin` derives it from the
+ * actor's admin permissions).
+ *
+ * The predicate takes `McpCaller` and nothing else — it structurally CANNOT see call
+ * arguments, which is what makes "visibility is input-independent" an invariant rather than a
+ * convention. Two calls with different arguments therefore cannot reveal a tool's existence.
+ *
+ * Declarations (`mcp: { visibleTo: [...] }` on an action) stay a plain role list: a declared
+ * fact has to be static and serialisable for the manifest.
+ */
+export type McpVisibility = readonly McpRole[] | ((caller: McpCaller) => boolean);
 
 export type ContentBlock =
   | { readonly type: 'text'; readonly text: string }
@@ -56,8 +76,8 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
   readonly inputSchema: JsonSchema;
   /** Required scope. Absent = no scope gate (the tool's own policy is the gate). */
   readonly scope?: string;
-  /** Roles that may see and call this tool. Absent = every role. */
-  readonly visibleTo?: readonly McpRole[];
+  /** Who may see and call this tool. Absent = everyone. See `McpVisibility`. */
+  readonly visibleTo?: McpVisibility;
   /**
    * Marks a tool that changes state. Drives the transport's rate-limit bucket and is
    * asserted by tests over the dev server, so a new mutating tool cannot be metered as
@@ -80,18 +100,41 @@ export interface ToolListEntry {
 /** Rate-limit class of a call. Derived from `destructive`, never declared twice. */
 export type McpVerbClass = 'read' | 'write';
 
-/** True when `caller` may see (and therefore call) `tool`. See AXIS 1 above. */
+/**
+ * True when `caller` may see (and therefore call) `tool`. See OUTCOME 1 above.
+ *
+ * FAIL-CLOSED, three ways:
+ *
+ *  1. A role list admits only the roles it names, so a caller with no role matches none of
+ *     them. The opposite — treating "no role" as "no filter applies" — hands an unroled
+ *     connection every restricted tool in the catalog.
+ *  2. A predicate must return the literal `true`. Author-supplied code returning something
+ *     merely truthy ("admin", 1, an object) would otherwise widen the gate by accident.
+ *  3. A predicate that THROWS denies. A predicate is app code that can fail for ordinary
+ *     reasons (`@ultimat3/admin` builds a request context inside its own), and an escaping
+ *     throw would answer `-32603` where a hidden tool answers `-32601` — a different error
+ *     code is exactly what a prober reads as "this tool exists", which is the enumeration
+ *     oracle OUTCOME 1 exists to remove. It would also break `list` outright for that
+ *     caller, turning one broken audience into an empty catalog.
+ */
 export function visibleToCaller(tool: AnyMcpTool, caller: McpCaller): boolean {
-  if (tool.visibleTo === undefined) return true;
-  if (caller.role === undefined) return true;
-  return tool.visibleTo.includes(caller.role);
+  const visibility = tool.visibleTo;
+  if (visibility === undefined) return true;
+  if (typeof visibility === 'function') {
+    try {
+      return visibility(caller) === true;
+    } catch {
+      return false;
+    }
+  }
+  return caller.role !== undefined && visibility.includes(caller.role);
 }
 
 /** The outcome of the two gates plus validation, before a tool runs. */
 export type ToolResolution =
   | { readonly kind: 'ok'; readonly tool: AnyMcpTool; readonly args: ToolArgs }
   | { readonly kind: 'not-found'; readonly name: string }
-  | { readonly kind: 'forbidden'; readonly name: string; readonly scope: string }
+  | { readonly kind: 'scope-denied'; readonly name: string; readonly scope: string }
   | { readonly kind: 'invalid-args'; readonly name: string; readonly issues: readonly ArgIssue[] };
 
 export class ToolRegistry {
@@ -133,10 +176,13 @@ export class ToolRegistry {
 
   /**
    * Both gates then validation, in the only order that is safe:
-   *   1. visibility → not-found  (never reveals existence)
-   *   2. scope      → forbidden  (safe: the caller was already shown the tool)
+   *   1. visibility → not-found     (never reveals existence)
+   *   2. scope      → scope-denied  (safe: the caller was already shown the tool)
    *   3. args       → invalid-args
-   * Validating before the gates would leak a schema to a caller that may not see the tool.
+   *   4. policy     → inside `tool.handle`, which is why it is not here
+   * Validating before the gates would leak a schema to a caller that may not see the tool;
+   * running the policy before the scope gate would decide a refusal from attacker-supplied
+   * input. Absent and hidden collapse into ONE branch so the two cannot drift apart.
    */
   resolve(name: string, rawArgs: unknown, caller: McpCaller): ToolResolution {
     const tool = this.tools.get(name);
@@ -144,7 +190,7 @@ export class ToolRegistry {
       return { kind: 'not-found', name };
     }
     if (tool.scope !== undefined && !caller.scopes.has(tool.scope)) {
-      return { kind: 'forbidden', name, scope: tool.scope };
+      return { kind: 'scope-denied', name, scope: tool.scope };
     }
     const validation = validateArgs(tool.inputSchema, rawArgs ?? {});
     if (!validation.ok) return { kind: 'invalid-args', name, issues: validation.issues };

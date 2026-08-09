@@ -44,8 +44,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - `isLive` is the declared boolean, `live()` is the subscription. Never name one after the other.
   `QueryDescriptor.live` keeps its name — `@ultimat3/manifest` and `@ultimat3/admin` read it.
-- `mcp` is opt-in for a read (`expose: true`), unlike an action's opt-out: rows reach an agent
-  only when the author said so.
+- `mcp` is opt-in (`expose: true`), exactly as it is for an action: rows reach an agent only when
+  the author said so.
 - `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
   is the same tier, so its naming is ported here, never imported.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.

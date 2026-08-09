@@ -14,9 +14,12 @@ import {
   createBranch,
   createPostgresClient,
   dropBranch,
+  ensureReadOnlyRole,
   introspect,
   listBranches,
   type PostgresClient,
+  READONLY_ROLE,
+  readOnlyQuery,
   sql,
 } from '@ultimat3/db';
 import { acquireWorkerDatabase, urlFor, type WorkerDatabase } from './template-db';
@@ -78,6 +81,97 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
       sql`update widgets set name = ${'left-hinge-v2'} where name = ${'left-hinge'}`,
     );
     expect(affected).toBe(1);
+  });
+
+  test('reserve() pins one real connection, so BEGIN and the statement share a session', async () => {
+    // A pooled `Bun.SQL` handle refuses a bare BEGIN outright (ERR_POSTGRES_UNSAFE_TRANSACTION),
+    // and no fake client can reproduce that — this is the only place the pin is provable.
+    const pinned = await client.reserve();
+    try {
+      await pinned.execute(sql`begin`);
+      await pinned.execute(sql`create temp table pinned_probe (id int)`);
+      await pinned.execute(sql`insert into pinned_probe values (1)`);
+      // A temp table is per-session: reading it back proves both statements ran on one connection.
+      const rows = await pinned.query<{ id: number }>(sql`select id from pinned_probe`);
+      expect(rows).toEqual([{ id: 1 }]);
+      await pinned.execute(sql`rollback`);
+    } finally {
+      pinned.release();
+    }
+  });
+
+  test('db.query layers 1 and 2 hold: a SELECT-only role inside BEGIN READ ONLY', async () => {
+    const role = await ensureReadOnlyRole(client);
+    expect(role).toBe(READONLY_ROLE);
+
+    const read = await readOnlyQuery<{ name: string }>('select name from widgets', {
+      client,
+      role,
+      timeoutMs: 4_000,
+    });
+    expect(read.guards).toEqual(['txn:read-only', 'timeout:4000ms', `role:${READONLY_ROLE}`]);
+
+    // The parse layer never ran here on purpose: Postgres itself has to be the one refusing.
+    for (const statement of [
+      `insert into widgets (name) values ('smuggled')`,
+      `update widgets set name = 'smuggled'`,
+      'create table smuggled (id int)',
+    ]) {
+      await expect(readOnlyQuery(statement, { client, role })).rejects.toBeUltimateError(
+        'X_DB_UNAVAILABLE',
+      );
+    }
+
+    // Nothing the transaction set may survive it, or one agent read would re-time every request
+    // the pool serves afterwards.
+    const after = await client.one<{ user: string; timeout: string }>(
+      sql`select current_user as user, current_setting('statement_timeout') as timeout`,
+    );
+    expect(after?.user).not.toBe(READONLY_ROLE);
+    expect(after?.timeout).not.toBe('4s');
+    expect(read.rows.length).toBeGreaterThanOrEqual(0);
+  });
+
+  test('maxRows bounds what the SERVER sends, not what the caller keeps', async () => {
+    const role = await ensureReadOnlyRole(client);
+    await client.execute(sql`
+      insert into widgets (name)
+      select 'w' || g from generate_series(1, 500) g
+    `);
+
+    // A recording client cannot tell a cursor from a slice — only a real server can, because
+    // only here does the unbounded form actually allocate all 500 rows in this process.
+    const bounded = await readOnlyQuery<{ id: number }>('select * from widgets', {
+      client,
+      role,
+      maxRows: 10,
+    });
+    expect(bounded.rows).toHaveLength(10);
+    expect(bounded.guards).toContain('fetch:10 rows');
+
+    const whole = await readOnlyQuery<{ id: number }>('select * from widgets', { client, role });
+    expect(whole.rows.length).toBeGreaterThan(400);
+    expect(whole.guards.some((guard) => guard.startsWith('fetch:'))).toBe(false);
+
+    // `EXPLAIN` has no cursor form, so it must survive the option rather than fail on it.
+    const explained = await readOnlyQuery('explain select 1', { client, role, maxRows: 10 });
+    expect(explained.rows.length).toBeGreaterThan(0);
+
+    // ROLLBACK closes the cursor; a leak would leave it visible to the next pooled statement.
+    const open = await client.query<{ name: string }>(sql`select name from pg_cursors`);
+    expect(open).toEqual([]);
+  });
+
+  test('ALTER DEFAULT PRIVILEGES covers tables created after the grant DDL ran', async () => {
+    const role = await ensureReadOnlyRole(client);
+    // The claim layer 1 makes is about the FUTURE: without `FOR ROLE`, Postgres scopes the
+    // default to the executing user's own objects, and a table created later stops being
+    // selectable. Nothing but a real server can refuse this.
+    await client.execute(sql`create table gadgets (id int)`);
+    await client.execute(sql`insert into gadgets values (7)`);
+
+    const read = await readOnlyQuery<{ id: number }>('select id from gadgets', { client, role });
+    expect(read.rows).toEqual([{ id: 7 }]);
   });
 
   test('checkDb pings the live connection instead of a fake one', async () => {

@@ -11,6 +11,8 @@ export type {
 export { appToolPrimitive, appToolPrimitives } from './app-tool';
 export type { AppMcp, AppToolSchemas, DefineAppMcpInput } from './app-tools';
 export { defineAppMcp } from './app-tools';
+export type { McpAuditEntry, McpOutcome } from './audit';
+export { auditToolCall, outcomeForCode } from './audit';
 export type { CreateDevServerInput } from './dev-host';
 export { createDevServer, devHost, frameworkIntrospection } from './dev-host';
 export type {
@@ -19,7 +21,6 @@ export type {
   DevIntrospection,
   ErrorExplanation,
   MigrateResult,
-  QueryResult,
   QueueDepth,
   TestRun,
   VerifyResult,
@@ -29,19 +30,36 @@ export { DEV_SCOPES, devTools } from './dev-server';
 export type { McpErrorCode } from './errors';
 export {
   MCP_ERROR_CODES,
+  MCP_ERROR_TITLES,
   McpArgsInvalidError,
+  McpNotBranchDbError,
   McpProtocolError,
-  McpReadOnlyViolationError,
-  McpScopeMissingError,
+  McpQueryRejectedError,
+  McpScopeDeniedError,
+  McpToolDuplicateError,
+  McpToolUndeclaredError,
   McpToolUnknownError,
   McpToolUnsafeError,
 } from './errors';
 export { exposedPrimitives } from './exposed';
 export type { McpExposure, ProjectablePrimitive } from './from-action';
-export { isExposed, toolFromAction, toolFromQuery, toolsFrom } from './from-action';
+export {
+  isExposed,
+  toolFromAction,
+  toolFromQuery,
+  toolsFrom,
+  toolsListed,
+} from './from-action';
 export { toWireSchema } from './input-schema';
+export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
+export {
+  capQueryRows,
+  DEFAULT_QUERY_ROWS,
+  QUERY_LIMITS,
+  resolveQueryLimits,
+} from './query-limits';
 export type { DatabaseTarget } from './readonly-sql';
-export { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
+export { assertBranchDatabase, assertReadOnlyQuery, PARSE_GUARD } from './readonly-sql';
 export type {
   AnyMcpTool,
   ContentBlock,
@@ -50,6 +68,7 @@ export type {
   McpTool,
   McpToolResult,
   McpVerbClass,
+  McpVisibility,
   ToolArgs,
   ToolListEntry,
   ToolResolution,

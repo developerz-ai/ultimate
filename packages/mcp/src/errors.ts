@@ -1,25 +1,48 @@
 // The X_* codes owned by @ultimat3/mcp. Each carries the exact next command, because the
 // caller reading it is usually an agent with no human to ask.
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MCP_ERROR_CODES = [
   'X_MCP_TOOL_UNKNOWN',
-  'X_MCP_SCOPE_MISSING',
+  'X_MCP_SCOPE_DENIED',
   'X_MCP_ARGS_INVALID',
   'X_MCP_PROTOCOL',
-  'X_MCP_READONLY_VIOLATION',
+  'X_MCP_QUERY_REJECTED',
+  'X_MCP_NOT_BRANCH_DB',
   'X_MCP_TOOL_UNSAFE',
+  'X_MCP_TOOL_UNDECLARED',
+  'X_MCP_TOOL_DUPLICATE',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
 
+export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
+  X_MCP_TOOL_UNKNOWN: 'no such tool for this caller',
+  X_MCP_SCOPE_DENIED: "the connection's token does not carry the tool's scope",
+  X_MCP_ARGS_INVALID: 'tool arguments failed the input schema',
+  X_MCP_PROTOCOL: 'the MCP handshake or auth is wrong',
+  X_MCP_QUERY_REJECTED: 'db.query was not given one read-only statement',
+  X_MCP_NOT_BRANCH_DB: 'db.migrate was aimed at a database that is not a branch',
+  X_MCP_TOOL_UNSAFE: 'an MCP tool declares no policy',
+  X_MCP_TOOL_UNDECLARED: 'defineAppMcp lists a primitive that declares no MCP exposure',
+  X_MCP_TOOL_DUPLICATE: 'two primitives project to one MCP tool name',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(MCP_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
+
 const docsFor = (code: McpErrorCode): string => `https://ultimate.dev/errors/${code}`;
 
 /**
- * A tool name reached the dispatcher that no visible tool answers to. Thrown by the
- * programmatic call path (`server.call`); over the wire the same condition is
- * `-32601` so a role-hidden tool is indistinguishable from an absent one.
+ * OUTCOME 1 of three: a tool name reached the dispatcher that no VISIBLE tool answers to —
+ * the tool is absent, or it exists and this caller's role may never invoke it. One error for
+ * both, on purpose. Thrown by in-process callers; over the wire the same condition is
+ * `-32601` with the same message, so a role-hidden tool is indistinguishable from an absent
+ * one even for a caller holding every scope in the system.
  */
 export class McpToolUnknownError extends UltimateError {
   constructor(input: { name: string; visible: readonly string[] }) {
@@ -34,15 +57,23 @@ export class McpToolUnknownError extends UltimateError {
   }
 }
 
-/** The caller may see the tool but its token does not carry the tool's scope. */
-export class McpScopeMissingError extends UltimateError {
+/**
+ * OUTCOME 2 of three: the caller may SEE the tool, but the connection's token does not carry
+ * its scope. Named out loud rather than hidden — the caller can legitimately fix this, and
+ * hiding it would strand a well-behaved client. Scope belongs to the token, not to the
+ * actor's permissions: granting it takes effect on the next connection, not this one.
+ */
+export class McpScopeDeniedError extends UltimateError {
+  readonly scope: string;
+
   constructor(input: { name: string; scope: string }) {
     super({
-      code: 'X_MCP_SCOPE_MISSING',
-      cause: `tool "${input.name}" requires scope "${input.scope}", which this token does not carry`,
-      fix: `x token grant ${input.scope}`,
-      docs: docsFor('X_MCP_SCOPE_MISSING'),
+      code: 'X_MCP_SCOPE_DENIED',
+      cause: `tool "${input.name}" requires scope "${input.scope}", which this connection's token does not carry`,
+      fix: `x token grant ${input.scope}   # then reconnect: scopes are fixed for the life of a connection`,
+      docs: docsFor('X_MCP_SCOPE_DENIED'),
     });
+    this.scope = input.scope;
   }
 }
 
@@ -74,6 +105,50 @@ export class McpToolUnsafeError extends UltimateError {
   }
 }
 
+/**
+ * A primitive was NAMED in `defineAppMcp`'s `actions`/`queries` but never declared
+ * `mcp: { expose: true }`. Naming it there is the request to expose it, so the only two honest
+ * answers are "project it" and "refuse": filtering it out silently ships a catalog missing a tool
+ * its author believes is in it, and nothing fails until an agent asks for a tool that is not
+ * there. Boot-time, with every offender named at once so one edit closes all of them.
+ *
+ * `include: 'exposed'` sweeps the registries and therefore DOES filter — that list is every
+ * primitive the app registered, not a list anyone wrote out.
+ */
+export class McpToolUndeclaredError extends UltimateError {
+  /** The offending primitive names, so a caller can report them without re-parsing `cause`. */
+  readonly names: readonly string[];
+
+  constructor(input: { names: readonly string[] }) {
+    const names = input.names.join(', ');
+    super({
+      code: 'X_MCP_TOOL_UNDECLARED',
+      cause: `listed in defineAppMcp but never declared mcp.expose: ${names}`,
+      fix:
+        "add mcp: { expose: true, description: '<what it does>' } beside the policy on each — " +
+        "or drop it from the list and let include: 'exposed' project what opted in",
+      docs: docsFor('X_MCP_TOOL_UNDECLARED'),
+    });
+    this.names = input.names;
+  }
+}
+
+/**
+ * Two primitives project to one tool name. Caught at boot rather than at first call: an agent
+ * asking for the name reaches whichever copy won, which is the worst failure mode available —
+ * a call that succeeds against the wrong handler and reports nothing.
+ */
+export class McpToolDuplicateError extends UltimateError {
+  constructor(input: { name: string }) {
+    super({
+      code: 'X_MCP_TOOL_DUPLICATE',
+      cause: `two primitives project to the MCP tool "${input.name}"`,
+      fix: "rename one: the tool name is the primitive's export name, or the `tools` record key",
+      docs: docsFor('X_MCP_TOOL_DUPLICATE'),
+    });
+  }
+}
+
 /** A malformed envelope or an unsupported method — a client bug, not an authz outcome. */
 export class McpProtocolError extends UltimateError {
   constructor(input: { cause: string; fix?: string }) {
@@ -87,17 +162,33 @@ export class McpProtocolError extends UltimateError {
 }
 
 /**
- * A read-only surface was asked to write: `db.query` given a mutating statement, or
- * `db.migrate` pointed at a database that is not a branch. Enforced, not documented —
- * the dev server holds real credentials.
+ * LAYER 3 of `db.query`'s four defences: the statement is not one read-only statement, so it
+ * never reaches the server. Separate from the migration refusal below because the two want
+ * different next commands, and a code that covers both tells the agent neither.
  */
-export class McpReadOnlyViolationError extends UltimateError {
-  constructor(input: { operation: string; cause: string; fix: string }) {
+export class McpQueryRejectedError extends UltimateError {
+  constructor(input: { cause: string; fix: string }) {
     super({
-      code: 'X_MCP_READONLY_VIOLATION',
-      cause: `${input.operation} refused: ${input.cause}`,
+      code: 'X_MCP_QUERY_REJECTED',
+      cause: `db.query refused: ${input.cause}`,
       fix: input.fix,
-      docs: docsFor('X_MCP_READONLY_VIOLATION'),
+      docs: docsFor('X_MCP_QUERY_REJECTED'),
+    });
+  }
+}
+
+/**
+ * `db.migrate` was pointed at a database that is not a branch. Enforced, not documented — the
+ * dev server holds real credentials, and a migration is the one dev tool that cannot be undone
+ * by reading the error afterwards.
+ */
+export class McpNotBranchDbError extends UltimateError {
+  constructor(input: { cause: string; fix: string }) {
+    super({
+      code: 'X_MCP_NOT_BRANCH_DB',
+      cause: `db.migrate refused: ${input.cause}`,
+      fix: input.fix,
+      docs: docsFor('X_MCP_NOT_BRANCH_DB'),
     });
   }
 }

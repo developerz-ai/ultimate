@@ -6,14 +6,16 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { agentActor, UltimateError } from '@ultimat3/core';
-import { raw, readLedger } from '@ultimat3/db';
+import type { DbClient } from '@ultimat3/db';
+import { ensureReadOnlyRole, readLedger, readOnlyQuery } from '@ultimat3/db';
 import { inspectJobList, inspectQueues } from '@ultimat3/jobs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import type {
   DevCapabilities,
   McpCaller,
   McpServer,
-  QueryResult,
+  QueryLimits,
+  QueryRows,
   VerifyResult,
   VerifyStep,
 } from '@ultimat3/mcp';
@@ -122,29 +124,54 @@ async function pendingMigrations(root: string, lazy: LazyServices): Promise<read
 
 // ── the capabilities ─────────────────────────────────────────────────────────
 
+/**
+ * `db.query`'s layers 1–2 against a real client: a SELECT-only role assumed inside a
+ * `BEGIN READ ONLY` transaction with a statement timeout, then the rows shaped into the tool's
+ * column-major form. Layer 3 (`assertReadOnlyQuery`) and layer 4 (the caps) run in the tool,
+ * before and after this — a second copy here would be a second place to keep right.
+ *
+ * Exported as the seam a test drives with a recording client, so the statement sequence is
+ * asserted without booting a database.
+ */
+export async function readOnlyRows(
+  db: DbClient,
+  sql: string,
+  limits: QueryLimits,
+  role: string | null,
+): Promise<QueryRows> {
+  const { rows, guards } = await readOnlyQuery<Record<string, unknown>>(sql, {
+    client: db,
+    role,
+    timeoutMs: limits.timeoutMs,
+    // One row past the ceiling: the tool needs to know there was more. Asked of the *server*,
+    // through the cursor the pinned read-only transaction already makes available, so a
+    // `select * from events` cannot be paged into this process before layer 4 gets to drop it.
+    // Wrapping the statement in `select * from (…) limit n` instead would change the meaning of
+    // a statement carrying its own LIMIT and fail outright on `EXPLAIN` and `SHOW`.
+    maxRows: limits.maxRows + 1,
+  });
+  const columns = Object.keys(rows[0] ?? {});
+  // `EXPLAIN` and `SHOW` are commands, not cursorable, so they arrive whole — the slice is the
+  // only bound they have.
+  const kept = rows.slice(0, limits.maxRows + 1);
+  return { columns, rows: kept.map((row) => columns.map((column) => row[column])), guards };
+}
+
 function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities {
   const { root, runner } = input;
+  // Layer 1 is seven idempotent DDL statements, and `db.query` is a tool an agent calls in a
+  // loop — resolve the role once per process and reuse the answer, `null` included.
+  let readOnlyRole: Promise<string | null> | undefined;
+
   return {
     database: databaseTarget(lazy.services),
 
-    // `assertReadOnlyQuery` already refused writes, batches and locking clauses inside the tool,
-    // before this host was reached; a second gate here would be a second place to keep right.
-    // The cap is applied in memory because there is no honest alternative: `DbClient` exposes no
-    // cursor or stream, and wrapping the statement in `select * from (…) limit n` would both
-    // change the meaning of a statement carrying its own LIMIT and fail outright on `EXPLAIN`
-    // and `SHOW`, which are commands rather than derived tables.
-    async runQuery(sql: string, limit: number): Promise<QueryResult> {
+    async runQuery(sql: string, limits: QueryLimits): Promise<QueryRows> {
       const { db } = await lazy.running();
-      const rows = await db.query<Record<string, unknown>>(raw(sql));
-      const columns = Object.keys(rows[0] ?? {});
-      const capped = rows.slice(0, limit);
-      return {
-        columns,
-        rows: capped.map((row) => columns.map((column) => row[column])),
-        // Counts what came back; `truncated` is how the caller learns there was more.
-        rowCount: capped.length,
-        truncated: rows.length > limit,
-      };
+      // A managed Postgres may refuse CREATE ROLE; `ensureReadOnlyRole` answers null and the
+      // layer is reported absent in `guards` rather than quietly assumed present.
+      readOnlyRole ??= ensureReadOnlyRole(db);
+      return readOnlyRows(db, sql, limits, await readOnlyRole);
     },
 
     async runMigrations(branch: string, dryRun: boolean) {

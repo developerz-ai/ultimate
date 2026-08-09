@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import type { AnyMcpTool, McpCaller } from './registry';
+import { UltimateError } from '@ultimat3/core';
+import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { textResult } from './registry';
 import { frameworkResources } from './resources';
 import { createMcpServer } from './server';
@@ -97,8 +98,10 @@ describe('hidden is not forbidden', () => {
     );
     expect(response?.error?.code).toBe(INVALID_REQUEST);
     expect(response?.error?.message).toBe('missing scope: db:read');
-    const data = response?.error?.data as { code: string } | undefined;
-    expect(data?.code).toBe('X_MCP_SCOPE_MISSING');
+    const data = response?.error?.data as { code: string; fix: string } | undefined;
+    expect(data?.code).toBe('X_MCP_SCOPE_DENIED');
+    // The caller can legitimately fix this, so the runnable command travels with the refusal.
+    expect(data?.fix).toContain('x token grant db:read');
   });
 });
 
@@ -156,5 +159,57 @@ describe('dispatch', () => {
     expect(server.classify(call('tools/call', { name: 'admin.only' }))).toBe('write');
     // Fail-closed: an unresolvable call pays the strict bucket.
     expect(server.classify(call('tools/call', {}))).toBe('write');
+  });
+});
+
+describe('a framework error reaches the model in the shape the terminal prints', () => {
+  const denial = new UltimateError({
+    code: 'X_POLICY_DENIED',
+    cause: 'refundOrder denied: actor lacks order:refund',
+    fix: 'x policy explain refundOrder --json',
+  });
+
+  const throwing: AnyMcpTool = {
+    name: 'orders.refund',
+    description: 'throws a real UltimateError, exactly as guard() throws it',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    async handle(): Promise<McpToolResult> {
+      throw denial;
+    },
+  };
+
+  /** A foreign object with `code`/`cause`/`fix` but no title — the fallback branch. */
+  const untitled: AnyMcpTool = {
+    name: 'orders.void',
+    description: 'throws a foreign coded object',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    async handle(): Promise<McpToolResult> {
+      throw { code: 'X_FOREIGN', cause: 'a package that is not core threw', fix: 'x doctor' };
+    },
+  };
+
+  const guarded = createMcpServer({ tools: [throwing, untitled] });
+
+  const textOf = async (name: string): Promise<string> => {
+    const response = await guarded.handle(
+      call('tools/call', { name, arguments: {} }),
+      caller(undefined, []),
+    );
+    const result = response?.result as { content: { text: string }[] } | undefined;
+    return result?.content[0]?.text ?? '';
+  };
+
+  test('the rendering IS UltimateError.format(), byte for byte', async () => {
+    // Pinned against `format()` itself rather than a literal: asserting the string shape
+    // alone would keep passing after the canonical rendering moved, which is the drift this
+    // test exists to catch.
+    expect(await textOf('orders.refund')).toBe(denial.format());
+    expect(denial.format().split('\n')[0]).toBe(`X_POLICY_DENIED: ${denial.title}`);
+  });
+
+  test('a thrown object with no title falls back to the bare code, still three lines', async () => {
+    expect(await textOf('orders.void')).toBe(
+      'X_FOREIGN\n  cause: a package that is not core threw\n  fix:   x doctor',
+    );
   });
 });

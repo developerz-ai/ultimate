@@ -15,12 +15,14 @@ The differentiator. Not a chat widget, not an "AI SDK integration" — the frame
 | `manifest.get` | the whole `x.manifest.json` | ten separate reads |
 | `tests.run` | run a test type or a single file, structured results | parsing terminal output |
 | `logs.tail` | structured logs + OTel spans, filterable | scrollback archaeology |
-| `db.query` | **read-only** SQL, row cap, `EXPLAIN` on request | inventing a query and hoping |
+| `db.query` | **read-only** SQL, 100-row default and 1000-row maximum, `EXPLAIN` on request | inventing a query and hoping |
 | `db.migrate` | generate + apply migrations **in a branch DB only** | mutating the dev database |
 | `errors.explain` | `X_*` code → cause, fix command, docs URL | web search |
 | `budgets.report` | per-route bytes/LCP with the import chain that caused a regression | bisecting bundles |
 
 Read tools are unrestricted in dev. Write tools (`db.migrate`, `tests.run` with fixtures) are scoped to branch environments. The dev server is never exposed in `ROLE=web`.
+
+`db.query` refuses structurally, before the host sees the string (`X_MCP_QUERY_REJECTED`): a batch, a non-read leading keyword, any statement-level write keyword — a data-modifying CTE included — a locking clause, `EXPLAIN ANALYZE`, or a function that reaches outside the database. Its Postgres role layer is conditional on the connection's own rights, so the answer's `guards` array names the defences that actually engaged.
 
 ## Generated facts, hand-written conventions
 

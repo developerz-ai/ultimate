@@ -5,7 +5,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { toRoute } from './http';
-import { toMcpTool } from './mcp-tool';
+import { isExposed, toMcpTool, toMcpTools } from './mcp-tool';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -86,5 +86,32 @@ describe('one authz system', () => {
     expect(tool.name).toBe('publish_post');
     expect(tool.action).toBe('publishPost');
     expect(tool.inputSchema['type']).toBe('object');
+  });
+});
+
+describe('exposure is opt-in', () => {
+  const declaring = (mcp?: { expose: boolean }) =>
+    action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      ...(mcp === undefined ? {} : { mcp }),
+      handle: () => ({ id: POST_ID, published: true }),
+    }).named('publishPost');
+
+  test('an action with no mcp block is NOT a tool — writing one grants no agent capability', () => {
+    expect(isExposed(declaring())).toBe(false);
+    expect(toMcpTools([declaring()])).toEqual([]);
+  });
+
+  test('expose: false is not a tool either', () => {
+    expect(isExposed(declaring({ expose: false }))).toBe(false);
+  });
+
+  test('a literal expose: true is the whole opt-in', () => {
+    expect(isExposed(declaring({ expose: true }))).toBe(true);
+    expect(toMcpTools([declaring({ expose: true })]).map((tool) => tool.action)).toEqual([
+      'publishPost',
+    ]);
   });
 });

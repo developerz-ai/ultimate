@@ -34,6 +34,8 @@ await withTransaction(async (tx) => {
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `readOnly()` | mutation-rejecting wrapper |
+| `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
+| `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only
@@ -48,6 +50,38 @@ trusted to remember the difference between a value and a fragment. So:
   `sql`/`raw` did not produce;
 - `raw(trusted)` is the one audited escape hatch, `identifier(name)` the safe way to interpolate
   a table or column, `literal(text)` for utility statements that reject bound parameters.
+
+## Read-only access for anything an LLM drives
+
+`As of 2026-07`: a bug in one defence must not become a write, so `db.query` on the MCP dev
+server stacks independent layers rather than trusting a single gate. This package owns the two
+layers that are Postgres facts rather than MCP facts — the tool-boundary layers (pre-parse scan,
+policy) live above it, and `@ultimat3/mcp` never imports this package directly.
+
+```ts
+import { ensureReadOnlyRole, readOnlyQuery } from '@ultimat3/db';
+
+const role = await ensureReadOnlyRole(db());                   // layer 1, once at boot
+const { rows, guards } = await readOnlyQuery(statement, { role }); // layer 2, per statement
+```
+
+| Layer | Export | |
+|---|---|---|
+| 1 | `ensureReadOnlyRole()` | idempotent DDL (`grantReadOnlySql()`) for `READONLY_ROLE`, a `NOLOGIN` role granted `SELECT` on every table and nothing else. Returns `null` instead of throwing when the connection cannot create or grant roles — a managed Postgres where the app user isn't a role admin |
+| 2 | `readOnlyQuery()` | runs one statement inside `BEGIN READ ONLY`, assumes `role` via `SET LOCAL ROLE` when given one, bounds it with `SET LOCAL statement_timeout` (`READONLY_TIMEOUT_MS` default, `timeoutMs: 0` to disable), and always exits via `ROLLBACK` |
+
+`readOnlyQuery()` reports which guards actually engaged (`result.guards`, e.g. `['txn:read-only',
+'timeout:5000ms', 'role:ultimate_readonly']`) instead of assuming every layer held — a silently
+degraded layer is a caller's problem to surface, never this package's to hide.
+
+Only layer 1 degrades. `readOnlyQuery()` **throws** — a pool that cannot reserve a connection
+(`X_DB_UNAVAILABLE`), a refused `SET LOCAL ROLE`, a failed transaction command, or the
+statement's own error. Every caller handles that failure; nothing here swallows it.
+
+`ALTER DEFAULT PRIVILEGES` is scoped to whoever creates an object, so pass
+`creators: ['migrator']` when migrations run as a different DB user than the one that ran
+`ensureReadOnlyRole()` — otherwise a table created later is not selectable by the role, and
+layer 1 covers only what existed at grant time.
 
 ## The drift contract
 

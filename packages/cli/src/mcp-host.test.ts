@@ -3,14 +3,15 @@
 // Driven against a fake `DevHost` so nothing here boots a database.
 
 import { describe, expect, test } from 'bun:test';
+import { createRecordingClient, READONLY_ROLE } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
-import { createMcpServer, devTools } from '@ultimat3/mcp';
+import { createMcpServer, devTools, resolveQueryLimits } from '@ultimat3/mcp';
 import type { DevServices } from './dev-services';
 import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
-import { DEV_TOOL_SCOPES, lazyServices, localCaller } from './mcp-host';
+import { DEV_TOOL_SCOPES, lazyServices, localCaller, readOnlyRows } from './mcp-host';
 import { parseBunTest } from './mcp-test-output';
 
 /** Every tool `@ultimat3/mcp` ships for dev, in `tools/list` order. */
@@ -54,7 +55,7 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
     database,
     async runQuery() {
       calls.runQuery += 1;
-      return { columns: [], rows: [], rowCount: 0, truncated: false };
+      return { columns: [], rows: [], guards: ['txn:read-only'] };
     },
     async runMigrations(branch: string) {
       calls.runMigrations += 1;
@@ -136,7 +137,7 @@ describe('unit · db.query refuses structurally, before the host runs', () => {
   ])('%s never reaches runQuery', async (_label, sql) => {
     const calls = noCalls();
     const response = await call(serverFor(BRANCH, calls), 'db.query', { sql });
-    expect(textOf(response)).toContain('X_MCP_READONLY_VIOLATION');
+    expect(textOf(response)).toContain('X_MCP_QUERY_REJECTED');
     expect(isErrorResult(response)).toBe(true);
     expect(calls.runQuery).toBe(0);
   });
@@ -153,7 +154,7 @@ describe('unit · db.migrate refuses a non-branch target', () => {
   test('a shared database never reaches runMigrations', async () => {
     const calls = noCalls();
     const response = await call(serverFor(SHARED, calls), 'db.migrate', {});
-    expect(textOf(response)).toContain('X_MCP_READONLY_VIOLATION');
+    expect(textOf(response)).toContain('X_MCP_NOT_BRANCH_DB');
     expect(textOf(response)).toContain('x db branch');
     expect(calls.runMigrations).toBe(0);
   });
@@ -162,6 +163,77 @@ describe('unit · db.migrate refuses a non-branch target', () => {
     const calls = noCalls();
     await call(serverFor(BRANCH, calls), 'db.migrate', {});
     expect(calls.runMigrations).toBe(1);
+  });
+});
+
+describe('unit · the host runs layers 1 and 2 on the real connection', () => {
+  const limits = resolveQueryLimits(2);
+
+  test('the statement runs inside BEGIN READ ONLY, timed out, as the SELECT-only role', async () => {
+    const db = createRecordingClient();
+    const answer = await readOnlyRows(db, 'select id from posts', limits, READONLY_ROLE);
+    expect(db.texts).toEqual([
+      'BEGIN READ ONLY',
+      `SET LOCAL statement_timeout = ${limits.timeoutMs}`,
+      `SET LOCAL ROLE "${READONLY_ROLE}"`,
+      'DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select id from posts',
+      `FETCH FORWARD ${limits.maxRows + 1} FROM ultimate_read_cursor`,
+      'ROLLBACK',
+    ]);
+    expect(answer.guards).toEqual([
+      'txn:read-only',
+      `timeout:${limits.timeoutMs}ms`,
+      `role:${READONLY_ROLE}`,
+      `fetch:${limits.maxRows + 1} rows`,
+    ]);
+  });
+
+  test('the ceiling is asked of the SERVER, so a wide table is never paged into this process', async () => {
+    const db = createRecordingClient();
+    await readOnlyRows(db, 'select * from events', limits, null);
+
+    // The bound that matters is on the FETCH, not on a slice afterwards: without it the driver
+    // has already allocated every row in `events` by the time layer 4 gets to drop them.
+    expect(db.texts).toContain(`FETCH FORWARD ${limits.maxRows + 1} FROM ultimate_read_cursor`);
+    expect(db.texts).not.toContain('select * from events');
+  });
+
+  test('EXPLAIN and SHOW have no cursor form, so they still run directly', async () => {
+    for (const statement of ['explain select 1', 'show statement_timeout']) {
+      const db = createRecordingClient();
+      const answer = await readOnlyRows(db, statement, limits, null);
+      expect(db.texts).toContain(statement);
+      expect(answer.guards.some((guard) => guard.startsWith('fetch:'))).toBe(false);
+    }
+  });
+
+  test('no role means the layer is absent from guards, never assumed present', async () => {
+    const db = createRecordingClient();
+    const answer = await readOnlyRows(db, 'select 1', limits, null);
+    expect(db.texts).not.toContain('SET LOCAL ROLE "ultimate_readonly"');
+    expect(answer.guards.some((guard) => guard.startsWith('role:'))).toBe(false);
+    // The transaction and the timeout still hold — one missing layer is not four.
+    expect(answer.guards).toContain('txn:read-only');
+  });
+
+  test('one row past the ceiling comes back, so the tool can report truncation', async () => {
+    // More rows than asked for: a server that over-delivers must still not widen the answer.
+    const db = createRecordingClient().on('FETCH', {
+      rows: Array.from({ length: 50 }, (_, id) => ({ id, title: `p${id}` })),
+    });
+    const answer = await readOnlyRows(db, 'select id, title from posts', limits, null);
+    expect(answer.columns).toEqual(['id', 'title']);
+    expect(answer.rows).toHaveLength(limits.maxRows + 1);
+    expect(answer.rows[0]).toEqual([0, 'p0']);
+  });
+
+  test('the statement reaches the driver byte-for-byte', async () => {
+    const db = createRecordingClient();
+    const sql = "select 'delete from posts' as note";
+    await readOnlyRows(db, sql, limits, null);
+    // Inside the cursor now, but still verbatim — stripping it would run
+    // `select   as note`.
+    expect(db.texts).toContain(`DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR ${sql}`);
   });
 });
 

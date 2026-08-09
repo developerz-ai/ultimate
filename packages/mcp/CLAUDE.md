@@ -11,10 +11,11 @@ import. The CLI wires it.
 | File | Job |
 |---|---|
 | `wire.ts` | JSON-RPC types, error codes, protocol version, `JsonSchema` subset |
-| `registry.ts` | catalog + the two security axes (visibility, scope) |
+| `registry.ts` | catalog + the first two security outcomes (visibility, scope) |
+| `audit.ts` | one structured line per `tools/call`, outcome → level |
 | `validate-args.ts` | JSON-Schema-subset arg validation, applies defaults |
 | `server.ts` | JSON-RPC dispatch, `classify` for rate-limit buckets |
-| `from-action.ts` | action/query → tool; the "one authz system" projection |
+| `from-action.ts` | action/query → tool; the "one authz system" projection; `toolsFrom` (sweep, skips) vs `toolsListed` (written out, refuses) |
 | `resources.ts` | resources + prompts, stable `ultimate://` URIs |
 | `dev-server.ts` | the 13 dev tools; depends only on an injected `DevHost` |
 | `dev-host.ts` | wires `describe*` from entity/action/query/jobs into a `DevHost` |
@@ -24,15 +25,51 @@ import. The CLI wires it.
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
 | `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
+| `readonly-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check |
+| `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 
 ## Invariants
 
-- Role-hidden → `-32601` ToolNotFound. Scope-missing → `-32600`. Never swap them.
-- Resolve order is visibility → scope → args. Validating first leaks a schema.
+- Three outcomes, never blurred: role-hidden → `-32601` ToolNotFound with no `data`;
+  scope → `-32600` `X_MCP_SCOPE_DENIED` naming the scope; policy → an `isError` result
+  carrying `X_POLICY_DENIED`. Swapping any two is an enumeration oracle.
+- `visibleTo` is **fail-closed** three ways: a role list admits only the roles it names (a
+  caller with no role matches none), a predicate must return the literal `true`, and a
+  predicate that THROWS hides the tool. A predicate takes the caller — never the arguments —
+  so existence cannot be probed by varying input. `tools/list` is answered per caller: one
+  `McpCaller` per HTTP request, one per stdio connection.
+- Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
+  running the policy first decides a refusal from attacker-supplied input.
+- A framework error rendered into a tool result is **byte-identical to
+  `UltimateError.format()`** — one denial must not read one way over MCP and another in the
+  terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
+- Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments
+  or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
+- `security.test.ts` is the executable contract for all of the above. Extend it, never
+  weaken it.
+- Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
+  `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
+  a written-out list is a request, so filtering it would ship a catalog missing a tool its
+  author believes is there. `include: 'exposed'` sweeps the registries and therefore skips,
+  because that list is every primitive the app registered, not one anyone wrote out.
+  `actions:` and `queries:` go through **one** `toolsListed` call over the concatenation: it
+  collects every offender before throwing, so one boot names all of them and one edit closes
+  all of them. Two calls would throw on the first array and never examine the second.
+- Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
+  throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`. The caller
+  reading them is usually an agent that needs `{ code, cause, fix }`.
 - A projected action tool has **no `scope`**. The action's policy is the only gate. A
   hand-written app tool is the same: its `policy` reaches `guard()` from `@ultimat3/action`,
   which is the one authz path — never a second check written for MCP.
-- `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs.
+- `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
+  (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
+  next commands).
+- `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
+  (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
+  `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
+- The caps run in the **tool**, not the host. A host that forgets them answers a million rows
+  into a model's context. `guards` names the layers that engaged; a layer that could not engage
+  is absent from the list, never assumed present.
 - `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
 

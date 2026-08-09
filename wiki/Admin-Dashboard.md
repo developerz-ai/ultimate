@@ -44,7 +44,7 @@ One authz seam for the whole admin: the rendered button, the HTTP call behind it
 | An admin-only user table or role table | admins are users with permissions; a parallel identity store drifts and gets forgotten in offboarding |
 | A "superuser" bypass | there is no flag that skips policy evaluation |
 | Writes without a policy | an action with no `policy` does not compile; the admin cannot invoke what does not exist |
-| A raw SQL console that writes | read-only SQL only, statement-capped and row-capped. Writes and data-modifying CTEs are refused with `X_MCP_READONLY_VIOLATION` |
+| A raw SQL console that writes | read-only SQL only, statement-capped and row-capped. Writes and data-modifying CTEs are refused with `X_MCP_QUERY_REJECTED` |
 | Offset pagination | offset re-scans every page and skips rows when the table is written to mid-page. Keyset only |
 | Hidden framework internals as user data | `/_x` panels are dev-only and gated by role |
 
@@ -63,6 +63,7 @@ mcp: { expose: true, description: 'Publish a draft post' },
 | Tool list is generated | adding a feature adds a capability; deleting one removes it |
 | Projected tools declare no MCP scope | adding one would be a second gate in front of the only gate that matters |
 | Ships on | day-one agent access to operations, not a v3 roadmap item |
+| Exposure | two surfaces, two defaults. Inside the admin's own catalog a registered action becomes a tool unless it sets `mcp: { expose: false }`. Projecting an `action` into an **app** MCP surface with `defineAppMcp` is opt-in: only `mcp: { expose: true }` makes a tool, and naming an un-exposed primitive there is `X_MCP_TOOL_UNDECLARED` at boot ([Actions](Actions)) |
 
 The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy evaluation lives inside `run`, so there is nothing to keep in sync. Details: [MCP and AI](MCP-And-AI).
 
@@ -123,7 +124,7 @@ See [Deployment](Deployment).
 - Read-only SQL, capped. No write console.
 - Keyset pagination only.
 - Every write emits an audit diff with `sensitive` fields redacted.
-- MCP on by default over the app's own actions, with the human's own permissions.
+- MCP runs with the human's own permissions. Projecting an `action` into an app MCP surface is opt-in — `mcp: { expose: true }`; inside the admin's own catalog a registered action opts out with `mcp: { expose: false }`.
 - Extend by adding routes to `apps/admin/`, never by forking `@ultimat3/admin`.
 
 Source: [`packages/admin/src`](https://github.com/developerz-ai/ultimate/blob/main/packages/admin/src)

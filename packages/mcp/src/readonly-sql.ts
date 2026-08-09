@@ -6,7 +6,10 @@
 // anywhere at statement level (which also catches a data-modifying CTE — `WITH x AS
 // (INSERT ...) SELECT`, which reads like a SELECT and is not one).
 
-import { McpReadOnlyViolationError } from './errors';
+import { McpNotBranchDbError, McpQueryRejectedError } from './errors';
+
+/** Named in `db.query`'s `guards`, so a caller can see that layer 3 actually ran. */
+export const PARSE_GUARD = 'parse:single-read';
 
 /** Statements that may begin a read-only query. */
 const READ_LEADERS = new Set(['select', 'with', 'explain', 'show', 'table', 'values']);
@@ -89,11 +92,10 @@ export function assertReadOnlyQuery(sql: string): string {
     .filter((s) => s.length > 0);
 
   if (statements.length === 0) {
-    throw violation('db.query', 'the statement is empty', 'send one SELECT statement');
+    throw rejected('the statement is empty', 'send one SELECT statement');
   }
   if (statements.length > 1) {
-    throw violation(
-      'db.query',
+    throw rejected(
       `${statements.length} statements were sent; batching hides a write behind a read`,
       'send exactly one SELECT statement per db.query call',
     );
@@ -103,33 +105,32 @@ export function assertReadOnlyQuery(sql: string): string {
   const words: readonly string[] = statement.toLowerCase().match(/[a-z_]+/g) ?? [];
   const leader = words[0] ?? '';
   if (!READ_LEADERS.has(leader)) {
-    throw violation(
-      'db.query',
+    throw rejected(
       `statement begins with "${leader}", which is not a read`,
       `begin with one of: ${[...READ_LEADERS].sort().join(', ')}`,
     );
   }
   for (const word of words) {
     if (WRITE_KEYWORDS.has(word)) {
-      throw violation(
-        'db.query',
+      throw rejected(
         `the statement contains the mutating keyword "${word}"`,
-        'use db.migrate on a branch database for anything that writes',
+        // `db.migrate` applies pending migrations; it is not an INSERT/UPDATE/DELETE path, and
+        // there is no MCP tool that is. Data changes go through an action, which carries a policy.
+        'db.query has no write path: change data by calling an action exposed with ' +
+          'mcp: { expose: true }, and change schema with db.migrate after x db branch <name>',
       );
     }
   }
   // `SELECT ... FOR UPDATE` takes row locks — a read that blocks other writers.
   if (/\bfor\s+(update|no\s+key\s+update|share|key\s+share)\b/i.test(statement)) {
-    throw violation(
-      'db.query',
+    throw rejected(
       'the statement takes row locks (FOR UPDATE/SHARE)',
       'drop the locking clause; db.query may not hold locks',
     );
   }
   for (const fn of FORBIDDEN_FUNCTIONS) {
     if (words.includes(fn)) {
-      throw violation(
-        'db.query',
+      throw rejected(
         `the statement calls ${fn}(), which reaches outside the database`,
         'query tables only',
       );
@@ -165,15 +166,13 @@ export interface DatabaseTarget {
  */
 export function assertBranchDatabase(target: DatabaseTarget): string {
   if (target.production) {
-    throw violation(
-      'db.migrate',
+    throw notBranch(
       `"${target.label}" is a production database`,
       'run migrations in production through the migrate role: ROLE=migrate in your deploy hook',
     );
   }
   if (target.branch === null) {
-    throw violation(
-      'db.migrate',
+    throw notBranch(
       `"${target.label}" is not a branch database`,
       'x db branch <name>, then retry db.migrate',
     );
@@ -181,8 +180,12 @@ export function assertBranchDatabase(target: DatabaseTarget): string {
   return target.branch;
 }
 
-function violation(operation: string, cause: string, fix: string): McpReadOnlyViolationError {
-  return new McpReadOnlyViolationError({ operation, cause, fix });
+function rejected(cause: string, fix: string): McpQueryRejectedError {
+  return new McpQueryRejectedError({ cause, fix });
+}
+
+function notBranch(cause: string, fix: string): McpNotBranchDbError {
+  return new McpNotBranchDbError({ cause, fix });
 }
 
 /**

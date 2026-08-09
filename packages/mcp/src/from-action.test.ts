@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import type { ProjectablePrimitive } from './from-action';
-import { toolFromAction, toolsFrom } from './from-action';
+import { toolFromAction, toolsFrom, toolsListed } from './from-action';
 import type { McpCaller } from './registry';
 
 const human = { kind: 'user', id: 'u1' } as unknown as Actor;
@@ -113,5 +113,55 @@ describe('projection is opt-in', () => {
     const tools = toolsFrom([action, hidden, readOnly]);
     expect(tools.map((t) => t.name)).toEqual(['aFeed', 'publishPost']);
     expect(tools[0]?.destructive).toBe(false);
+  });
+});
+
+describe('a list the author wrote out is refused, not filtered', () => {
+  const undeclared = (name: string, mcp?: { expose: boolean }): ProjectablePrimitive => ({
+    name,
+    ...(mcp === undefined ? {} : { mcp }),
+    async run() {
+      return null;
+    },
+  });
+
+  test('an undeclared primitive is X_MCP_TOOL_UNDECLARED, where toolsFrom would drop it', () => {
+    const list = [undeclared('deleteEverything')];
+
+    // The difference between the two projections, stated as one pair of assertions.
+    expect(toolsFrom(list)).toEqual([]);
+    expect(() => toolsListed(list)).toThrow('X_MCP_TOOL_UNDECLARED');
+  });
+
+  test('`expose: false` is undeclared too — only a literal opt-in counts', () => {
+    expect(() => toolsListed([undeclared('optedOut', { expose: false })])).toThrow(
+      'X_MCP_TOOL_UNDECLARED',
+    );
+  });
+
+  test('every offender is named in one throw, so one edit closes all of them', () => {
+    const error = (() => {
+      try {
+        toolsListed([undeclared('alpha'), makeAction().action, undeclared('omega')]);
+        return null;
+      } catch (thrown) {
+        return thrown as { code: string; cause: string; names: readonly string[] };
+      }
+    })();
+
+    expect(error?.code).toBe('X_MCP_TOOL_UNDECLARED');
+    expect(error?.names).toEqual(['alpha', 'omega']);
+    // The exposed one is not slandered by the message that names its neighbours.
+    expect(error?.cause).toBe('listed in defineAppMcp but never declared mcp.expose: alpha, omega');
+  });
+
+  test('an all-exposed list projects exactly as toolsFrom does — same tools, same order', () => {
+    const list = [
+      makeAction().action,
+      { name: 'aFeed', mcp: { expose: true }, mutates: false, run: async () => [] },
+    ];
+
+    expect(toolsListed(list).map((t) => t.name)).toEqual(toolsFrom(list).map((t) => t.name));
+    expect(toolsListed(list).map((t) => t.name)).toEqual(['aFeed', 'publishPost']);
   });
 });
