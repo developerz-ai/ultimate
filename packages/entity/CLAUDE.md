@@ -28,6 +28,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **Invariants run twice**: in the app on write AND as a Postgres CHECK/UNIQUE via `toSql()`. An
   untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a pretend CHECK.
 - **Row types are derived, never re-declared.** No `as unknown as` to fake the derivation.
+- **`src/index.ts` re-exports `t` from `@ultimat3/schema` verbatim**, so an entity file that also
+  hand-writes a view schema imports one package. Never wrap, spread or re-declare it: `t` delegates
+  to `schemaProvider()` on every access, and a copy would freeze the provider at import time.
+  `index.test.ts` asserts identity.
 - Never throw a bare `Error` — use `errors.ts`.
 - Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
   breaks an unrelated package's tests, as it did in `@ultimat3/policy`.

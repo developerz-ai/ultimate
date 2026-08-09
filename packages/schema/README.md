@@ -35,10 +35,18 @@ type PublishPost = Infer<typeof publishPost>;
 
 | Value schemas | Factories | Methods |
 |---|---|---|
-| `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `record` `optional` | `.default(v)` `.optional()` `.describe(s)` |
+| `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `record` `optional` `nullable` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` |
 | `money` `timezone` `locale` `slug` `cursor` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
 
+`nullable` is a value the row holds; `optional` is the caller omitting the key. Both ship as a
+namespace member (`t.nullable`) and a free function (`nullableSchema`) — symmetrically.
+
 Unknown object keys are **dropped**, never forwarded — an action cannot be mass-assigned.
+
+**You rarely import this package.** `action`, `query`, `jobs` and `entity` each re-export the same
+`t`, so an authoring file imports its primitive and nothing else. Import `@ultimat3/schema` directly
+only where there is no primitive to hang the schema off — app config, a standalone view schema, a
+provider swap.
 
 ## Errors tell an agent exactly what to send
 

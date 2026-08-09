@@ -7,6 +7,8 @@
  * framework died; there is exactly one here, structurally.
  */
 
+/** Re-exported so an `action` file needs one import, not two. Same object as schema's. */
+export { t } from '@ultimat3/schema';
 export type {
   Action,
   ActionCache,

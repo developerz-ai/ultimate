@@ -3,6 +3,8 @@
 A read. Optionally live. Never a mutation — writes are `action`.
 
 ```ts
+import { query, t } from '@ultimat3/query';
+
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid }),
   policy: can('feed:read'),

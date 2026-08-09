@@ -35,7 +35,12 @@ swaps only the actor: impersonation, not a second context.
 
 ## Declare
 
+`t` is re-exported here — the same object `@ultimat3/schema` exports, so an action file
+imports one package for the primitive and its schemas, never two.
+
 ```ts
+import { action, t } from '@ultimat3/action';
+
 export const publishPost = action({
   input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,

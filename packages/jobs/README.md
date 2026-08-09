@@ -4,6 +4,8 @@ Durable background work. Steps that replay, a transactional outbox that is on by
 and one driver interface so Postgres → Redis → NATS is a config line.
 
 ```ts
+import { job, t } from '@ultimat3/jobs';
+
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`,   // REQUIRED by the type

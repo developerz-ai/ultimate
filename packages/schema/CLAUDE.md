@@ -9,7 +9,8 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | New validator | add to `validators.ts` **and** `TNamespace` **and** `t.ts` **and** `json-schema.ts` |
 | IR | every schema carries `.node: SchemaNode`; generators read that, never the closure |
 | Coercion | HTTP boundary only — never call it from actions, jobs or MCP |
-| Exports | explicit in `src/index.ts`; no `export *` |
+| Exports | explicit in `src/index.ts`; no `export *`; a namespace member and its free function ship together (`t.nullable`/`nullableSchema`) |
+| Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
 
 Module order (no cycles): `node → builder → validators → provider → t`.
 `standard.ts` and `errors.ts` depend on nothing but each other.

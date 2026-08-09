@@ -39,6 +39,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - App code reaches a projection through the query (`liveFeed.tool()`), never through `.def`
   and never by importing the projection function. `facade.ts` is where a new method is bound;
   the projection itself keeps living in its own file.
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a query file imports
+  one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
+  access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - `isLive` is the declared boolean, `live()` is the subscription. Never name one after the other.
   `QueryDescriptor.live` keeps its name — `@ultimat3/manifest` and `@ultimat3/admin` read it.
 - `mcp` is opt-in for a read (`expose: true`), unlike an action's opt-out: rows reach an agent

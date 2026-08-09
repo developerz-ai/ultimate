@@ -5,6 +5,10 @@ the columns: `type Post = typeof posts.$row`. Declare the shape once — repos, 
 admin screen, cache tags and the manifest are all projections of that one call.
 
 ```ts
+import {
+  entity, enumerated, integer, invariant, text, timestamp, url, uuid,
+} from '@ultimat3/entity';
+
 export const posts = entity('posts', {
   tenant: 'orgId',
   columns: {
@@ -46,6 +50,10 @@ directly — `output: PostView` — and the projected type flows on to the clien
 
 There is no free `view(posts, [...])` function: a projection is reached through the entity, and
 every framework member is `$`-prefixed so a column may still be called `name`, `view` or `tenant`.
+
+A view the columns cannot express — a joined `authorName`, a computed `excerpt` — is a hand-written
+`t.object({...})`. `t` is re-exported here, the same object `@ultimat3/schema` exports, so that file
+still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 
 ## Blessed columns
 

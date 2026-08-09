@@ -1,5 +1,7 @@
 // Public API of @ultimat3/jobs. Explicit, no `export *`.
 
+/** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
+export { t } from '@ultimat3/schema';
 export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,

@@ -92,6 +92,7 @@ export {
   builtinT,
   enumSchema,
   literalSchema,
+  nullableSchema,
   objectSchema,
   optionalSchema,
   recordSchema,

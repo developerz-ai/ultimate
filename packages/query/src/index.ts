@@ -6,6 +6,8 @@
  * authorize or execute on its own. One authz system, structurally.
  */
 
+/** Re-exported so a `query` file needs one import, not two. Same object as schema's. */
+export { t } from '@ultimat3/schema';
 export type { ReadCache, ReadCacheEntry } from './cache';
 export {
   cacheKeyFor,

@@ -28,6 +28,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - Drivers implement exactly the six `JobDriver` methods plus optional `introspect`.
   New capabilities go behind the interface, never as a driver-specific export.
 - `inspect.ts` returns plain JSON-serialisable objects — CLI, `/_x` and MCP share them.
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a job/task file imports
+  one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
+  access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 
 ## Known coupling to other packages
 

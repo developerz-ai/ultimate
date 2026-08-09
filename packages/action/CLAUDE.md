@@ -47,6 +47,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   client, so there is nothing to authorize.
 - Registration names the action the app exported, in place — `import { publishPost }` is
   projectable after boot. Naming an already-named action is the only case that twins.
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so an action file imports
+  one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
+  access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - `serializeOpenApi` output must be byte-stable: sorted keys, sorted registry, no clock.
 - `client.ts` stays free of server imports — it is bundled into the browser.
