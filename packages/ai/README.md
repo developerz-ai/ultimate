@@ -45,6 +45,50 @@ Models, `As of 2026-07`:
 | `claude-sonnet-5` | 1M | 128K | $3 | $15 |
 | `claude-haiku-4-5` | 200K | 64K | $1 | $5 |
 
+## `llm()` — a model call, declared as an action
+
+Not a ninth primitive. A model call has an input schema, an output schema and a policy, which
+is an `action` — so `llm()` returns one, and everything an action projects, it projects.
+
+```ts
+import { llm } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+
+export const summarize = llm({
+  model:  'claude-sonnet-5',
+  input:  t.object({ postId: t.uuid }),
+  output: t.object({ summary: t.string, tags: t.array(t.string) }),
+  prompt: summarizePrompt,                                       // versioned artifact
+  vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
+  cache:  { semantic: { threshold: 0.97, ttl: '7d', scope: ({ orgId }) => orgId } },
+  budget: { tokensIn: 8_000, costPerCall: { minor: 5, currency: 'USD' } },
+  policy: can('post:read'),
+});
+
+summarize.tool();        // an MCP tool, gated by the same policy object
+summarize.openapi();     // an HTTP operation
+summarize.job();         // a job handle, for the long chains
+summarize.contract();    // the contract tests
+```
+
+| Declared | Behaviour |
+|---|---|
+| `output` | projected into the one tool the model may answer through; prose with a fenced JSON block still parses |
+| a schema failure | **one** repair turn naming the issues, then `X_LLM_OUTPUT_INVALID` |
+| `budget` | reserved against the worst case **before** the provider is reached — nothing spent, nothing truncated |
+| `cache.semantic` | one store per scope, keyed by embedding; a prompt version bump reaches a different store, so the bump *is* the invalidation |
+| `policy` | the same object every surface evaluates — an MCP call and an HTTP call are denied identically |
+| `vars` | the one declared place a model call loads data, so a reader can see what was sent |
+
+The gateway is ambient, installed once at boot — a declaration is evaluated at module scope,
+long before a provider exists:
+
+```ts
+configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) });
+```
+
+Missing at call time is `X_AI_GATEWAY_MISSING`, never a silent default provider.
+
 ## Evals are a test type
 
 Not a notebook, not a weekly report — a `bun test` case that fails CI. A prompt change that
@@ -137,7 +181,9 @@ identically. The actor comes from the request context, never from the model.
 |---|---|
 | `X_AI_PROVIDER_UNAVAILABLE` | every provider for the model failed; lists what each said |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains |
+| `X_AI_GATEWAY_MISSING` | an `llm()` action ran before `configureAi` |
 | `X_AI_PROMPT_VERSION` | version drift, or a render missing a declared variable |
+| `X_LLM_OUTPUT_INVALID` | the model failed its `output` schema on the answer and on the repair turn |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |

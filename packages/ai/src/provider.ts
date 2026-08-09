@@ -390,8 +390,28 @@ function lastUserMessage(messages: readonly AiMessage[]): string {
  * count from `usage` replaces it afterwards.
  */
 export function estimateTokens(request: GenerateRequest): number {
+  return estimateInputTokens(request) + request.maxTokens;
+}
+
+/** The prompt half alone — what the provider bills at the input rate. */
+export function estimateInputTokens(request: GenerateRequest): number {
   const body = request.messages.map((m) => m.content).join(' ');
-  return estimateTextTokens(body) + estimateTextTokens(request.system ?? '') + request.maxTokens;
+  return estimateTextTokens(body) + estimateTextTokens(request.system ?? '');
+}
+
+/**
+ * Worst-case price of a request before it exists: the prompt at the input rate, the FULL
+ * `maxTokens` at the output rate. Deliberately pessimistic — a ceiling checked against an
+ * optimistic estimate is a ceiling one long completion walks through.
+ */
+export function estimateCost(request: GenerateRequest): Money {
+  const model = request.model ?? DEFAULT_MODEL;
+  return costOf(model, {
+    inputTokens: estimateInputTokens(request),
+    outputTokens: Math.min(request.maxTokens, MODELS[model].maxOutput),
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  });
 }
 
 export function estimateTextTokens(text: string): number {

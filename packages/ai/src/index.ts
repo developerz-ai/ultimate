@@ -1,8 +1,20 @@
 // Public API of @ultimat3/ai. Explicit — a wildcard barrel would leak internals an app
 // could depend on, and the gateway's guarantees only hold if every call goes through it.
 
-export type { BudgetLedgerInput, BudgetLimits, BudgetReport, BudgetStore } from './budget';
-export { BudgetLedger, currentBudget, MemoryBudgetStore, withBudget } from './budget';
+export type {
+  BudgetLedgerInput,
+  BudgetLimits,
+  BudgetReport,
+  BudgetStore,
+  SpendEstimate,
+} from './budget';
+export {
+  BudgetLedger,
+  currentBudget,
+  estimateSpend,
+  MemoryBudgetStore,
+  withBudget,
+} from './budget';
 export type { Embedder, HashEmbedderInput } from './embeddings';
 export {
   cosine,
@@ -18,11 +30,13 @@ export type { AiErrorCode } from './errors';
 export {
   AI_ERROR_CODES,
   AiBudgetExceededError,
+  AiGatewayMissingError,
   AiNotImplementedError,
   AiPromptRenderError,
   AiPromptVersionError,
   AiProviderUnavailableError,
   EvalThresholdError,
+  LlmOutputInvalidError,
   VectorDimMismatchError,
 } from './errors';
 export type {
@@ -46,6 +60,14 @@ export {
 } from './evals';
 export type { CreateGatewayInput, Gateway, GatewayCache, RetryPolicy } from './gateway';
 export { backoffMs, cacheKeyFor, createGateway, DEFAULT_RETRY, isRetryable } from './gateway';
+export type {
+  LlmBudget,
+  LlmCache,
+  LlmDef,
+  LlmSemanticCache,
+  LlmVarsArgs,
+} from './llm';
+export { llm } from './llm';
 export type { DefinePromptInput, Prompt, PromptVars } from './prompt';
 export {
   contentHash,
@@ -75,6 +97,8 @@ export {
   costOf,
   DEFAULT_MODEL,
   EchoProvider,
+  estimateCost,
+  estimateInputTokens,
   estimateTextTokens,
   estimateTokens,
   MODEL_IDS,
@@ -91,6 +115,8 @@ export type {
   RetrieveInput,
 } from './rag';
 export { assembleContext, chunk, indexDocument, passthroughReranker, retrieve } from './rag';
+export type { AiRuntimeInput } from './runtime';
+export { aiEmbedder, aiGateway, configureAi, resetAiRuntime, semanticCacheFor } from './runtime';
 export type {
   JsonSchema,
   LlmTool,

@@ -17,7 +17,8 @@ export interface JsonSchema {
   readonly description?: string;
   readonly properties?: Readonly<Record<string, JsonSchema>>;
   readonly required?: readonly string[];
-  readonly additionalProperties?: boolean;
+  /** A schema, not just a flag: `@ultimat3/schema` emits one for open records. */
+  readonly additionalProperties?: boolean | JsonSchema;
   readonly items?: JsonSchema;
   readonly enum?: readonly (string | number | boolean | null)[];
   readonly default?: unknown;

@@ -6,7 +6,9 @@ import { UltimateError } from '@ultimat3/core';
 export const AI_ERROR_CODES = [
   'X_AI_PROVIDER_UNAVAILABLE',
   'X_AI_BUDGET_EXCEEDED',
+  'X_AI_GATEWAY_MISSING',
   'X_AI_PROMPT_VERSION',
+  'X_LLM_OUTPUT_INVALID',
   'X_EVAL_THRESHOLD',
   'X_VECTOR_DIM_MISMATCH',
   'X_NOT_IMPLEMENTED',
@@ -39,14 +41,50 @@ export class AiBudgetExceededError extends UltimateError {
     requested: number;
     remaining: number;
     limit: number;
+    /** What the numbers count. Money scopes pass minor units so nothing reads as a float. */
+    unit?: string;
   }) {
     super({
       code: 'X_AI_BUDGET_EXCEEDED',
       cause:
-        `request needs ${input.requested} tokens but scope "${input.scope}" has ` +
-        `${input.remaining} of ${input.limit} left`,
+        `request needs ${input.requested} ${input.unit ?? 'tokens'} but scope ` +
+        `"${input.scope}" has ${input.remaining} of ${input.limit} left`,
       fix: `raise ai.budget for "${input.scope}" in app.config.ts, or shorten the prompt`,
       docs: docsFor('X_AI_BUDGET_EXCEEDED'),
+    });
+  }
+}
+
+/**
+ * An `llm()` action ran with no gateway installed. Ambient rather than injected because a
+ * declaration is authored at module scope, long before a provider exists — so the miss is a
+ * boot-order fault, and naming the boot call is the whole fix.
+ */
+export class AiGatewayMissingError extends UltimateError {
+  constructor(input: { prompt: string }) {
+    super({
+      code: 'X_AI_GATEWAY_MISSING',
+      cause: `an llm action on prompt "${input.prompt}" ran before any gateway was configured`,
+      fix: 'configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) }) at boot',
+      docs: docsFor('X_AI_GATEWAY_MISSING'),
+    });
+  }
+}
+
+/**
+ * The model's answer failed the action's `output` schema on the first turn AND on the repair
+ * turn that followed. Two failures is a disagreement between the prompt and the schema, not a
+ * bad roll — a third attempt only spends money, so this throws instead of looping.
+ */
+export class LlmOutputInvalidError extends UltimateError {
+  constructor(input: { prompt: string; attempts: number; issues: string }) {
+    super({
+      code: 'X_LLM_OUTPUT_INVALID',
+      cause:
+        `prompt "${input.prompt}" returned output failing its schema on all ` +
+        `${input.attempts} attempts: ${input.issues}`,
+      fix: 'describe the output shape in the prompt template and bump its version, or widen `output` in the llm() declaration',
+      docs: docsFor('X_LLM_OUTPUT_INVALID'),
     });
   }
 }

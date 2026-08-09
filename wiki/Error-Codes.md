@@ -219,9 +219,10 @@ X_DB_DRIFT: schema differs from migrations
 | `X_MCP_READONLY_VIOLATION` | a write attempted through a read-only tool | `db.query` with an `INSERT` | use `db.migrate` in a branch DB, or an action |
 | `X_MCP_PROTOCOL` | the MCP handshake or auth is wrong | missing bearer token, or a user-shaped actor | send `Authorization: Bearer <token>`; resolve MCP callers as agents |
 | `X_AI_BUDGET_EXCEEDED` | a model call would exceed its budget | prompt too large, or cost cap reached | raise `ai.budget` for the scope, or shorten the prompt |
+| `X_AI_GATEWAY_MISSING` | an `llm()` action ran with no gateway installed | boot never called `configureAi` | `configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) })` at boot |
 | `X_AI_PROMPT_VERSION` | prompt version or slots are wrong | an edited prompt with no version bump, or a missing variable | bump the version in `definePrompt`, then `x manifest` |
 | `X_AI_PROVIDER_UNAVAILABLE` | the model provider is unreachable | missing API key, or an outage | check `ai.providers` and the provider key env var |
-| `X_LLM_OUTPUT_INVALID` | structured output failed its schema after one retry | the model would not produce the shape | tighten the prompt, or widen `output` deliberately |
+| `X_LLM_OUTPUT_INVALID` | structured output failed its schema on the answer and on the repair turn | the model would not produce the shape | describe the shape in the prompt template and bump its version, or widen `output` in the `llm()` declaration |
 | `X_EVAL_THRESHOLD` | an eval scored below its tolerance | a prompt edit regressed cases | `x ai eval <name> --verbose` for per-case scores |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
 

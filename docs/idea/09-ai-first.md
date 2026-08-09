@@ -76,17 +76,26 @@ Competing frameworks make "add an AI feature" a project. Here it is the default 
 
 One typed entry point for model calls — provider-agnostic, observable, cached, evaluated.
 
+**`llm()` is an action factory, not a ninth primitive.** It returns an `action`, so a model
+call carries the same MCP tool, OpenAPI operation, typed client, job handle and contract tests
+every action does, gated by the same one policy object. A new capability arrives as a factory
+over an existing primitive; the eight stay eight.
+
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-5',
   input:  t.object({ postId: t.uuid }),
-  output: t.object({ summary: t.string, tags: t.string.array() }),
+  output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact
+  vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
   cache:  { semantic: { threshold: 0.97, ttl: '7d' } },
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
   policy: can('post:read'),
 });
 ```
+
+`vars` is the one declared place a model call loads data: the input is an id, the prompt needs
+the row behind it, and a reader can see exactly what was sent.
 
 | Feature | Behavior |
 |---|---|

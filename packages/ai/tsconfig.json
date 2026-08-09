@@ -9,10 +9,25 @@
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {
+      "path": "../action"
+    },
+    {
+      "path": "../cache"
+    },
+    {
       "path": "../core"
     },
     {
       "path": "../money"
+    },
+    {
+      "path": "../policy"
+    },
+    {
+      "path": "../schema"
+    },
+    {
+      "path": "../time"
     }
   ]
 }

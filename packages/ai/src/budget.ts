@@ -11,18 +11,52 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Money } from '@ultimat3/money';
+import { assertSameCurrency } from '@ultimat3/money';
 import { AiBudgetExceededError } from './errors';
-import type { TokenUsage } from './provider';
-import { totalTokens } from './provider';
+import type { GenerateRequest, TokenUsage } from './provider';
+import { estimateCost, estimateInputTokens, estimateTokens, totalTokens } from './provider';
 
-/** Token ceilings. An omitted scope is unlimited — declare the ones that matter. */
+/** Ceilings. An omitted scope is unlimited — declare the ones that matter. */
 export interface BudgetLimits {
-  /** Ceiling for one `generate`/`stream` call, including its pre-flight estimate. */
+  /** Token ceiling for one `generate`/`stream` call, including its pre-flight estimate. */
   readonly request?: number;
-  /** Ceiling for the acting identity across its whole window. */
+  /**
+   * Prompt-token ceiling for ONE call. Distinct from `request`, which counts the completion
+   * too: a prompt is what the caller assembles and can shorten, a completion is not.
+   */
+  readonly tokensIn?: number;
+  /** Token ceiling for the acting identity across its whole window. */
   readonly actor?: number;
-  /** Ceiling for the organisation across its whole window. */
+  /** Token ceiling for the organisation across its whole window. */
   readonly org?: number;
+  /**
+   * Money ceiling for ONE call, checked against the worst-case estimate before the call.
+   * Per call rather than accumulated, because that is the knob an app can reason about:
+   * "no single answer may cost more than this". Integer minor units, never a float.
+   */
+  readonly costPerCall?: Money;
+}
+
+/**
+ * What one call is about to cost, priced before it happens. One object rather than a growing
+ * argument list, so a new scope is a new field here and never a new call site.
+ */
+export interface SpendEstimate {
+  /** Prompt tokens — what `tokensIn` caps. */
+  readonly inputTokens: number;
+  /** Prompt plus worst-case completion — what the request/actor/org scopes count. */
+  readonly tokens: number;
+  /** Worst-case price, in integer minor units. */
+  readonly cost: Money;
+}
+
+/** Price a request pre-flight. The pessimistic read on purpose — see `estimateCost`. */
+export function estimateSpend(request: GenerateRequest): SpendEstimate {
+  return {
+    inputTokens: estimateInputTokens(request),
+    tokens: estimateTokens(request),
+    cost: estimateCost(request),
+  };
 }
 
 /** Where cross-request counters live. Swap for Redis in a multi-process deployment. */
@@ -84,19 +118,44 @@ export class BudgetLedger {
   }
 
   /**
-   * Check `tokens` against every applicable scope BEFORE the call. Throws on the first scope
-   * that cannot cover it, naming that scope — so the fix line points at one knob, not three.
+   * Check an estimate against every applicable scope BEFORE the call. Throws on the first
+   * scope that cannot cover it, naming that scope, so the fix line points at one knob rather
+   * than four. Nothing is debited here: `record` does that with the provider's real counts.
    */
-  async reserve(tokens: number): Promise<void> {
-    this.assertScope('request', this.limits.request, this.requestTokens, tokens);
+  async reserve(estimate: SpendEstimate): Promise<void> {
+    this.assertScope('request', this.limits.request, this.requestTokens, estimate.tokens);
+    // Per call, so nothing is "already spent" against it.
+    this.assertScope('tokensIn', this.limits.tokensIn, 0, estimate.inputTokens);
     if (this.limits.actor !== undefined && this.actorKey !== undefined) {
       const spent = await this.store.spent(this.actorKey);
-      this.assertScope(`actor:${this.actorKey}`, this.limits.actor, spent, tokens);
+      this.assertScope(`actor:${this.actorKey}`, this.limits.actor, spent, estimate.tokens);
     }
     if (this.limits.org !== undefined && this.orgKey !== undefined) {
       const spent = await this.store.spent(this.orgKey);
-      this.assertScope(`org:${this.orgKey}`, this.limits.org, spent, tokens);
+      this.assertScope(`org:${this.orgKey}`, this.limits.org, spent, estimate.tokens);
     }
+    this.assertCost(estimate.cost);
+  }
+
+  /**
+   * A nested ledger for one call: the TIGHTER of each limit, the same identity keys and the
+   * same store. Tightening rather than replacing is the point — a per-call budget declared on
+   * an `llm()` action must not be able to widen the actor or org ceiling it runs inside.
+   */
+  derive(limits: BudgetLimits): BudgetLedger {
+    return new BudgetLedger({
+      limits: {
+        ...pick('request', tighterNumber(this.limits.request, limits.request)),
+        ...pick('tokensIn', tighterNumber(this.limits.tokensIn, limits.tokensIn)),
+        ...pick('actor', tighterNumber(this.limits.actor, limits.actor)),
+        ...pick('org', tighterNumber(this.limits.org, limits.org)),
+        ...pick('costPerCall', tighterMoney(this.limits.costPerCall, limits.costPerCall)),
+      },
+      ...(this.actorKey !== undefined ? { actorKey: this.actorKey } : {}),
+      ...(this.orgKey !== undefined ? { orgKey: this.orgKey } : {}),
+      store: this.store,
+      currency: this.currency,
+    });
   }
 
   /** Debit ACTUAL usage after the call, replacing the estimate `reserve` worked from. */
@@ -125,6 +184,40 @@ export class BudgetLedger {
       throw new AiBudgetExceededError({ scope, requested: want, remaining, limit });
     }
   }
+
+  /** Per-call, so `remaining` IS the limit. Currencies must match; a mismatch is a config bug. */
+  private assertCost(cost: Money): void {
+    const limit = this.limits.costPerCall;
+    if (limit === undefined) return;
+    assertSameCurrency(limit, cost);
+    if (cost.minor > limit.minor) {
+      throw new AiBudgetExceededError({
+        scope: 'costPerCall',
+        requested: cost.minor,
+        remaining: limit.minor,
+        limit: limit.minor,
+        unit: `${limit.currency} minor units`,
+      });
+    }
+  }
+}
+
+/** Spreadable single-key record, so an absent limit stays absent under exactOptionalPropertyTypes. */
+function pick<K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, V>);
+}
+
+function tighterNumber(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return Math.min(a, b);
+}
+
+function tighterMoney(a: Money | undefined, b: Money | undefined): Money | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  assertSameCurrency(a, b);
+  return a.minor <= b.minor ? a : b;
 }
 
 const storage = new AsyncLocalStorage<BudgetLedger>();

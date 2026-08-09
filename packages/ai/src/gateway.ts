@@ -6,10 +6,10 @@
 
 import type { Money } from '@ultimat3/money';
 import type { BudgetLimits, BudgetStore } from './budget';
-import { BudgetLedger, currentBudget, withBudget } from './budget';
+import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
 import { AiProviderUnavailableError } from './errors';
 import type { GenerateRequest, GenerateResult, ModelId, Provider, StreamChunk } from './provider';
-import { DEFAULT_MODEL, estimateTokens } from './provider';
+import { DEFAULT_MODEL } from './provider';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as
@@ -93,10 +93,11 @@ class GatewayImpl implements Gateway {
       return JSON.parse(cached) as GenerateResult;
     }
 
-    // Reserve against the ESTIMATE before spending anything. `record` below replaces it
-    // with the provider's real counts.
+    // Reserve against the ESTIMATE before spending anything — tokens AND money, since a
+    // cheap-in-tokens call on an expensive model is still a cost cap the app declared.
+    // `record` below replaces the estimate with the provider's real counts.
     const ledger = currentBudget();
-    await ledger?.reserve(estimateTokens(resolved));
+    await ledger?.reserve(estimateSpend(resolved));
 
     const result = await this.attempt(model, (provider) => provider.generate(resolved));
     await ledger?.record(result.usage, result.cost);
@@ -108,7 +109,7 @@ class GatewayImpl implements Gateway {
     const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
     const resolved: GenerateRequest = { ...request, model };
     const ledger = currentBudget();
-    await ledger?.reserve(estimateTokens(resolved));
+    await ledger?.reserve(estimateSpend(resolved));
 
     // A stream is not retried mid-flight: the consumer has already seen tokens, and
     // replaying from the top would duplicate them. Only the handshake retries.
