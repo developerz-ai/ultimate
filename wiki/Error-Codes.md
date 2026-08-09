@@ -85,6 +85,19 @@ X_DB_DRIFT: schema differs from migrations
 | `X_ACTION_POLICY_MISSING` | an action was registered without a policy | build-time check on the action registry | add `policy: can('<name>')` to the declaration |
 | `X_QUERY_POLICY_MISSING` | a query was registered without a policy | same, for reads | add `policy: can('<name>')` to the query |
 
+## Auth and sessions
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_SESSION_EXPIRED` | session passed its idle or absolute expiry | `cause` names which of the two clocks ran out | sign in again, or raise `session.absoluteTtlMs` / `session.idleTtlMs` in `defineAuth` |
+| `X_MFA_REQUIRED` | password proven, second factor outstanding | the user has TOTP enrolled | `POST /auth/mfa/verify { code }` with the 6-digit code, then retry |
+| `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match | a replayed callback URL, a handshake that expired, or a token minted for another browser | restart the flow at `GET /auth/oauth/<provider>` — a callback URL is single-use |
+| `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange or returned no usable identity | wrong client secret, an unregistered `redirect_uri`, a spent code, or a missing scope | `cause` names the stage and the provider's own status; `meta.stage` is `token` or `userinfo` |
+| `X_OAUTH_TOKEN_INVALID` | the id token failed its issuer, audience or expiry check | the client id in `.env` is not the one the authorize URL was built with, or this host's clock is skewed | match `<PROVIDER>_CLIENT_ID` to the id `beginOAuth()` used, then restart the flow |
+| `X_PASSWORD_WEAK` | strength check rejected the password | too short, or a known-common password | choose a longer, uncommon password — or relax `defineAuth({ password: { minLength } })` |
+| `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout | repeated failed attempts | wait out the seconds named in `cause`, or raise `defineAuth({ rateLimit })` |
+| `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong | one shape for all four — a precise message is an enumeration oracle | `x auth keys list --json`, then issue a fresh key |
+
 ## Entity and database
 
 | Code | Means | Typical cause | Fix |
