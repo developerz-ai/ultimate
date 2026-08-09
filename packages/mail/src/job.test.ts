@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { registerMailCatalog } from './catalog';
-import { mailIdempotencyKey, sendMailJob } from './job';
+import { mailIdempotencyKey } from './idempotency';
+import { sendMailJob } from './job';
 import { renderMessage, type SendOptions } from './mail';
 import { welcomeMail } from './templates';
 

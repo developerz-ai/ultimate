@@ -210,6 +210,18 @@ X_DB_DRIFT: schema differs from migrations
 | `X_DST_AMBIGUOUS` | the local time occurs twice | a fall-back overlap | pass `{ overlap: 'first' }` or `{ overlap: 'second' }` |
 | `X_DST_NONEXISTENT` | the local time does not exist | a spring-forward gap | pass `{ gap: 'next' }` or `{ gap: 'previous' }` |
 
+## Mail
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_MAIL_LOCALE_MISSING` | `send()` was called without a locale | a JS caller, or a cast that dropped the required field | `send(mail, data, { to, locale: ctx.locale })` |
+| `X_MAIL_TEMPLATE_UNKNOWN` | no mail is registered under that id | the module holding `defineMail({ id })` was never imported (also raised for an unregistered layout) | export the `defineMail` and import it at boot |
+| `X_MAIL_DUPLICATE` | two mails claim the same id | a copy-pasted `defineMail` | rename one of the two declarations |
+| `X_MAIL_TEXT_MISSING` | the rendered mail has no plain-text part | a template of images and buttons only | add a text-bearing block: `blocks.paragraph('mail.<id>.body')` |
+| `X_MAIL_DRIVER_UNAVAILABLE` | no mail driver is configured | `setMailDriver` was never called | `setMailDriver(createMemoryDriver())` in dev, `createSmtpDriver({ url: env.SMTP_URL })` live |
+| `X_MAIL_HEADER_INVALID` | a header value carries a line break | interpolated data with a CR/LF reached `Subject` — header injection | strip line breaks from the value before it reaches the header |
+| `X_MAIL_SEND_FAILED` | the mail transport refused the message | a rejected recipient, bad credentials, a throttle, a dead socket | the `cause` names the stage, the provider's own status and whether a retry can help |
+
 ## MCP and AI
 
 | Code | Means | Typical cause | Fix |

@@ -9,23 +9,24 @@ export type {
   MailDriver,
   MailMessage,
   MemoryMailDriver,
-  ResendDriverOptions,
   SendResult,
   SentMail,
-  SmtpDriverOptions,
 } from './driver';
 export {
   createLogDriver,
   createMemoryDriver,
-  createResendDriver,
-  createSmtpDriver,
+  envelopeRecipients,
   mailDriver,
   messageHeaders,
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
 } from './driver';
-export type { MailErrorCode, MailErrorInit } from './errors';
+export type { MailFetch, ResendDriverOptions } from './driver-resend';
+export { createResendDriver, RESEND_BASE_URL } from './driver-resend';
+export type { SmtpDriverOptions } from './driver-smtp';
+export { createSmtpDriver } from './driver-smtp';
+export type { MailErrorCode, MailErrorInit, SendFailure } from './errors';
 export {
   driverUnavailable,
   layoutUnknown,
@@ -34,14 +35,15 @@ export {
   MAIL_ERROR_TITLES,
   MailError,
   mailDuplicate,
+  sendFailed,
   templateUnknown,
   textMissing,
-  transportNotImplemented,
 } from './errors';
 
 export { escapeHtml, safeUrl } from './html';
 
-export { mailIdempotencyKey, mailMessageSchema, sendMailJob } from './job';
+export { mailIdempotencyKey } from './idempotency';
+export { mailMessageSchema, sendMailJob } from './job';
 export type {
   ColorScheme,
   DarkRule,
@@ -76,6 +78,7 @@ export {
 } from './mail';
 export type { RenderableMail, RenderedMail, RenderOptions } from './render';
 export { FOOTER_KEYS, renderMail, textOf, UNSUBSCRIBE_KEY } from './render';
+export type { SmtpConnector, SmtpStream } from './smtp-client';
 
 export {
   FRAMEWORK_MAILS,

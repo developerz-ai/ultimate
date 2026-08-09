@@ -160,9 +160,9 @@ Per surface, overridable per route via `budget` on `defineRoute`.
 
 | field | type | default | notes |
 |---|---|---|---|
-| `mail.from` | `string` | required if mail is used | `Name <addr>` |
-| `mail.driver` | `'smtp' \| 'log'` | `'log'` in dev, `'smtp'` otherwise | sends are always a `job` |
-| `mail.url` | `string` | — | SMTP URL from env |
+| `mail.from` | `string` | required if mail is used | `Name <addr>`; also the envelope sender and the `Message-ID` domain |
+| `mail.driver` | `'smtp' \| 'resend' \| 'log' \| 'memory'` | `'log'` in dev, `'smtp'` otherwise | sends are always a `job` |
+| `mail.url` | `string` | — | `SMTP_URL` from env: `smtps://user:pass@host:465`, or `smtp://host:587` for STARTTLS |
 | `storage.driver` | `'s3' \| 'local'` | `'local'` in dev, `'s3'` otherwise | `s3` is `Bun.s3`; `local` is a directory |
 | `storage.bucket` | `string` | — | required for `s3`; `local` uses `storage.dir`, default `'.x/storage'` |
 | `otel.endpoint` | `string` | — | OTLP collector. Absent = spans still recorded, exported nowhere |
