@@ -3,12 +3,44 @@
  * live queries, jobs, MCP tools and the admin dashboard all evaluate these exact functions.
  */
 
-import { isOrgAdmin, type MemberId, type MemberRole, type OrgId } from '@postly/domain';
+import {
+  isMemberRole,
+  isOrgAdmin,
+  type MemberId,
+  type MemberRole,
+  memberId,
+  type OrgId,
+  orgId as toOrgId,
+} from '@postly/domain';
 
 export type Actor = {
   readonly memberId: MemberId;
   readonly orgId: OrgId;
   readonly role: MemberRole;
+};
+
+/**
+ * The subset of a framework actor these rules read. Structural on purpose: `@postly/core` holds
+ * business rules and depends on no framework package, so the same predicates run in a test, a
+ * job and an MCP tool without any of them importing an authz type.
+ */
+export type ActorLike = {
+  readonly id: string;
+  readonly orgId?: string | null | undefined;
+  readonly roles?: readonly string[] | undefined;
+};
+
+/**
+ * Project whoever is calling onto Postly's membership actor. Anyone without an org or without a
+ * membership role is `null` — a policy predicate then denies on a value it can see, instead of
+ * reading `undefined` off a half-built actor and deciding for the wrong reason.
+ */
+export const memberOf = (actor: ActorLike | null | undefined): Actor | null => {
+  if (actor === null || actor === undefined) return null;
+  if (actor.orgId === null || actor.orgId === undefined) return null;
+  const role = (actor.roles ?? []).find(isMemberRole);
+  if (role === undefined) return null;
+  return { memberId: memberId(actor.id), orgId: toOrgId(actor.orgId), role };
 };
 
 export type OwnedRecord = {

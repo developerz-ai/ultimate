@@ -29,6 +29,16 @@ export interface ActionCache {
 export interface ActionMcp {
   /** Default `true`: every action is a tool unless it opts out. */
   readonly expose: boolean;
+  /**
+   * Contract text, NOT UI text — deliberately outside `t()`. It becomes the OpenAPI
+   * operation `summary` (`toOpenApiOperation`), and `buildOpenApi`'s bytes are what
+   * `x verify` diffs for contract drift. Resolving it through the ambient, request-scoped
+   * translator would make `openapi.json` depend on whichever locale happened to be active
+   * when it was generated, which is exactly the determinism that file's header forbids.
+   * Localised agent-facing text needs a separate, locale-resolved projection; there is no
+   * second field for it here until that exists, because two ways to describe one tool is
+   * the drift axiom 1 rejects.
+   */
   readonly description?: string;
 }
 
@@ -42,15 +52,38 @@ export interface ActionHandlerArgs<TInput extends StandardSchemaV1> {
   readonly ctx: Ctx;
 }
 
-export interface ActionDef<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1> {
+/** What a row loader gets: the parsed input and the context, never the request. */
+export interface ActionRowArgs<TInput extends StandardSchemaV1> {
+  readonly input: InferOutput<TInput>;
+  readonly ctx: Ctx;
+}
+
+export interface ActionDef<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+> {
   readonly input: TInput;
   readonly output: TOutput;
-  readonly policy: ActionPolicy;
+  readonly policy: ActionPolicy<TRow>;
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
   /** Marks the action safe to retry with an `Idempotency-Key`. */
   readonly idempotent?: boolean;
+  /**
+   * Loads the row a row-level `policy` decides about, once per invocation, after the
+   * input parse and before the guard. This is the async half authz is not allowed to
+   * have: a predicate stays synchronous — a live query re-evaluates one per subscriber
+   * on every change, so an `await` inside it would be a database round trip per row per
+   * connected client. The caller loads what the rule needs and passes it in; here, the
+   * caller is the framework.
+   *
+   * Omitted means the rule decides on input alone and `row` reaches it as `null`. A rule
+   * that reads `row` must therefore fail closed on `null`, because "no loader declared"
+   * and "row not found" are the same value and neither is evidence of permission.
+   */
+  row?(args: ActionRowArgs<TInput>): TRow | null | Promise<TRow | null>;
   handle(args: ActionHandlerArgs<TInput>): Promise<InferOutput<TOutput>> | InferOutput<TOutput>;
 }
 
@@ -104,6 +137,7 @@ export interface AnyActionDef {
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
   readonly idempotent?: boolean;
+  row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
 }
 
@@ -153,9 +187,11 @@ export type ActionFacade<TInput extends StandardSchemaV1, TOutput extends Standa
   'input' | 'output' | 'policy' | 'mcp' | 'as' | 'tool' | 'openapi' | 'client' | 'job' | 'contract'
 >;
 
-export function action<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
-  def: ActionDef<TInput, TOutput>,
-): Action<TInput, TOutput> {
+export function action<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  TRow = unknown,
+>(def: ActionDef<TInput, TOutput, TRow>): Action<TInput, TOutput> {
   return build(def, '');
 }
 
@@ -183,8 +219,8 @@ export function nameAction<A extends AnyAction>(target: A, name: string): A {
   return target;
 }
 
-function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
-  def: ActionDef<TInput, TOutput>,
+function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1, TRow>(
+  def: ActionDef<TInput, TOutput, TRow>,
   name: string,
 ): Action<TInput, TOutput> {
   const callable = (

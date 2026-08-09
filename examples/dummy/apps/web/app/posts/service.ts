@@ -56,17 +56,25 @@ export const postsService = defineService('posts', (ctx: Ctx) => ({
   },
 
   /**
-   * The server half of `toggleLike`. Returns the authoritative row, which is what the client
+   * The server half of `likePost`. Returns the authoritative row, which is what the client
    * rebases its optimistic count onto.
+   *
+   * The `byId` first is the tenancy check, and it is load-bearing: `insertLike` trusts the three
+   * ids it is handed, so a caller pairing its own authorised `orgId` with another org's `postId`
+   * used to write a `likes` row pointing across tenants — and `recountLikes`, scoped properly,
+   * then matched no post and updated nothing. A write that silently does nothing is a worse bug
+   * than a denial, so a foreign post id has to be `X_POST_NOT_FOUND` before anything is written.
    */
   async like(postId: PostId): Promise<PostView> {
-    await insertLike(ctx.actor.orgId, postId, ctx.actor.memberId);
-    return recountLikes(ctx.actor.orgId, postId);
+    const post = await this.byId(postId);
+    await insertLike(ctx.actor.orgId, post.id as PostId, ctx.actor.memberId);
+    return recountLikes(ctx.actor.orgId, post.id as PostId);
   },
 
   async unlike(postId: PostId): Promise<PostView> {
-    await deleteLike(ctx.actor.orgId, postId, ctx.actor.memberId);
-    return recountLikes(ctx.actor.orgId, postId);
+    const post = await this.byId(postId); // same tenancy check, same reason
+    await deleteLike(ctx.actor.orgId, post.id as PostId, ctx.actor.memberId);
+    return recountLikes(ctx.actor.orgId, post.id as PostId);
   },
 
   /** Comments are part of the post aggregate, so they live in this service, not a fourth feature. */
@@ -83,6 +91,10 @@ export const postsService = defineService('posts', (ctx: Ctx) => ({
   /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
   publishedSince,
 
-  /** Used by `policy.ts` only: two columns, no tenancy filter, because tenancy is what it checks. */
+  /**
+   * The row `postPublish` decides about, loaded by `publishPost`'s `row:` loader before the guard.
+   * Two columns, and no tenancy filter on purpose: tenancy is what the rule compares, so scoping
+   * this read would report a cross-org post as "no such row" instead of as the denial it is.
+   */
   authorship: authorshipOf,
 }));

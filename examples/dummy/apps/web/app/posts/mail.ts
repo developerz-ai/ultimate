@@ -3,22 +3,26 @@
  * recipient's locale, in the `worker` role, with no DOM and no request in scope.
  */
 
-import type { Member } from '@postly/db';
-import { defineMail } from '@ultimat3/mail';
-import type { PostView } from './entity';
+import { blocks, defineMail } from '@ultimat3/mail';
+import { type Infer, t } from '@ultimat3/schema';
+import { MemberView } from '../orgs/entity';
+import { PostView } from './entity';
 
-type PostPublishedData = { post: PostView; member: Member };
+export const PostPublishedData = t.object({ post: PostView, member: MemberView });
 
-export const postPublished = defineMail<PostPublishedData>('post.published', {
-  subject: ({ t, data }) =>
-    t('mail.postPublished.subject', { title: data.post.title, org: data.member.orgId }),
-  body: ({ t, data }) => [
-    t('mail.greeting', { name: data.member.name }),
-    t('mail.postPublished.body', { author: data.post.authorName, org: data.member.orgId }),
-    t('mail.signoff'),
+export type PostPublishedData = Infer<typeof PostPublishedData>;
+
+export const postPublished = defineMail<PostPublishedData>({
+  id: 'post.published',
+  subject: 'mail.postPublished.subject',
+  input: PostPublishedData,
+  template: ({ data }) => [
+    blocks.heading('mail.greeting', { name: data.member.name }),
+    blocks.paragraph('mail.postPublished.body', {
+      author: data.post.authorName,
+      org: data.member.orgId,
+    }),
+    blocks.button('mail.postPublished.cta', `/posts/${data.post.id}`),
+    blocks.paragraph('mail.signoff'),
   ],
-  cta: ({ t, data }) => ({
-    label: t('mail.postPublished.cta'),
-    href: `/posts/${data.post.id}`,
-  }),
 });

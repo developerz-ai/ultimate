@@ -44,8 +44,31 @@ interface PolicyLike {
   evaluate(context: Readonly<Record<string, unknown>>): boolean | Promise<boolean>;
 }
 
+/** A `Policy` from @ultimat3/policy. It decides through `run()`; there is no `evaluate()` on it. */
+interface RunnablePolicy {
+  run(args: Readonly<Record<string, unknown>>): { readonly allowed: boolean };
+}
+
 const isPolicy = (value: unknown): value is PolicyLike =>
   isRecord(value) && typeof value['evaluate'] === 'function';
+
+const isRunnablePolicy = (value: unknown): value is RunnablePolicy =>
+  isRecord(value) && typeof value['run'] === 'function';
+
+/**
+ * `undefined` means "not a policy at all", which is a different failure from a denial.
+ * `row` is defaulted the way `evaluate()` in @ultimat3/policy defaults it, so a test about a
+ * rule that decides on input alone does not have to write `row: null` for the predicate to see
+ * the field — and a row-level test still passes its own `row` and wins, because it comes second.
+ */
+async function decide(
+  policy: unknown,
+  context: Readonly<Record<string, unknown>>,
+): Promise<boolean | undefined> {
+  if (isRunnablePolicy(policy)) return policy.run({ row: null, ...context }).allowed;
+  if (isPolicy(policy)) return policy.evaluate(context);
+  return undefined;
+}
 
 interface JobLike {
   run(context: {
@@ -94,10 +117,13 @@ expect.extend({
   },
 
   async toDenyPolicy(received: unknown, context: Readonly<Record<string, unknown>>) {
-    if (!isPolicy(received)) {
-      return result(false, 'expected a policy declaration with an evaluate() method');
+    const allowed = await decide(received, context);
+    if (allowed === undefined) {
+      return result(
+        false,
+        'expected a policy — an object with run() (@ultimat3/policy) or evaluate()',
+      );
     }
-    const allowed = await received.evaluate(context);
     return result(!allowed, `expected the policy to deny ${JSON.stringify(context)}`);
   },
 

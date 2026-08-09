@@ -43,4 +43,4 @@ Entities + migrations + cache tags + seeds. Nothing else.
 - Editing an entity without running `x db gen` fails `x verify` with `X_DB_DRIFT`.
 - Adding a column that live queries select changes the replication payload; re-run `x test live`.
 - `likes` has no surrogate key on purpose: the composite primary key is what makes a replayed
-  offline `toggleLike` idempotent.
+  offline `likePost` idempotent.

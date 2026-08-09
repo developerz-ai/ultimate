@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { UnknownCommandError } from './errors';
 import type { CommandSpec } from './parse';
 import { flagBool, flagString, parseArgs } from './parse';
+import { thrownBy } from './thrown-by';
 
 const SPECS: readonly CommandSpec[] = [
   {
@@ -65,35 +66,21 @@ describe('unit · parseArgs', () => {
 
   test('an unknown command throws X_CLI_UNKNOWN_COMMAND with a suggestion', () => {
     expect(() => parseArgs(['verfy'], SPECS)).toThrow(UnknownCommandError);
-    try {
-      parseArgs(['verfy'], SPECS);
-    } catch (error) {
-      const failure = error as UnknownCommandError & { fix: string; code: string };
-      expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
-      expect(failure.fix).toBe('x verify');
-    }
+    const failure = thrownBy(() => parseArgs(['verfy'], SPECS));
+    expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
+    expect(failure.fix).toBe('x verify');
   });
 
   test('an unknown subcommand names the command path, not just the token', () => {
-    try {
-      parseArgs(['db', 'frobnicate'], SPECS);
-      throw new Error('expected a throw');
-    } catch (error) {
-      const failure = error as { code?: string; cause?: string };
-      expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
-      expect(String(failure.cause)).toContain('db frobnicate');
-    }
+    const failure = thrownBy(() => parseArgs(['db', 'frobnicate'], SPECS));
+    expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
+    expect(String(failure.cause)).toContain('db frobnicate');
   });
 
   test('an unknown flag throws X_CLI_BAD_FLAG pointing at the command help', () => {
-    try {
-      parseArgs(['verify', '--onl', 'lint'], SPECS);
-      throw new Error('expected a throw');
-    } catch (error) {
-      const failure = error as { code?: string; fix?: string };
-      expect(failure.code).toBe('X_CLI_BAD_FLAG');
-      expect(failure.fix).toBe('x verify --help');
-    }
+    const failure = thrownBy(() => parseArgs(['verify', '--onl', 'lint'], SPECS));
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.fix).toBe('x verify --help');
   });
 
   test('a string flag with no value is an error, not a silent empty string', () => {

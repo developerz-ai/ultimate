@@ -1,0 +1,76 @@
+// The one locale resolver for generated catalogs: the default set, validation, canonical form and
+// dedupe. A locale is not a label here, it is a directory name — `packages/i18n/catalogs/<locale>/`
+// — so an unvalidated tag is a path, and `--locales=../../../../tmp` would write outside the app.
+
+import { BadFlagError, ScaffoldPathEscapeError } from '../errors';
+
+/** What a generated catalog ships for when the caller names no locale. */
+export const DEFAULT_LOCALES: readonly string[] = ['en'];
+
+/** Where every generated catalog lands. The locale is the next segment, hence the containment. */
+export const CATALOG_ROOT = 'packages/i18n/catalogs';
+
+/** The catalog layout, written down once: `x g route` and `x g resource` both emit into it. */
+export const catalogPath = (locale: string, feature: string): string =>
+  `${CATALOG_ROOT}/${locale}/${feature}.json`;
+
+/** The runnable form of the flag, used as the fix on every rejection below. */
+const LOCALES_FIX = 'x g resource <name> --locales=en,es';
+
+/**
+ * Anything that could steer a write out of `CATALOG_ROOT`. A path segment is safe exactly when it
+ * holds no separator, no NUL and is not a dot segment, so this is a complete check at this level —
+ * `writeFiles` proves containment again on the assembled path.
+ */
+const escapesCatalogRoot = (tag: string): boolean =>
+  tag.startsWith('.') || tag.includes('/') || tag.includes('\\') || tag.includes('\0');
+
+/**
+ * The repo's own definition of a BCP-47 tag — the predicate `defineConfig` validates `locales`
+ * with. `Intl` canonicalizes (`EN` → `en`, `zh-Hant` stays) and throws on anything that is not a
+ * tag, which is why `x-priv`, `en_US` and `1234` never reach the filesystem.
+ */
+const canonicalTag = (tag: string): string | undefined => {
+  try {
+    const canonical = Intl.getCanonicalLocales(tag);
+    return canonical.length === 1 ? canonical[0] : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Every locale a generated catalog ships for: trimmed, validated, lowercased and deduped, or the
+ * default when the caller names none. Loud rather than lenient — a typo silently resolved to `en`
+ * writes a catalog the app never reads, and a traversal silently dropped writes one it never sees.
+ */
+export function resolveLocales(requested?: readonly string[]): readonly string[] {
+  if (requested === undefined) return DEFAULT_LOCALES;
+  const resolved: string[] = [];
+  for (const raw of requested) {
+    const tag = raw.trim();
+    // `--locales=en,,es` is a typing artefact, not a request for a nameless catalog.
+    if (tag.length === 0) continue;
+    if (escapesCatalogRoot(tag)) {
+      throw new ScaffoldPathEscapeError({
+        path: `${CATALOG_ROOT}/${tag}`,
+        dir: CATALOG_ROOT,
+        fix: LOCALES_FIX,
+      });
+    }
+    const canonical = canonicalTag(tag);
+    if (canonical === undefined) {
+      throw new BadFlagError({
+        flag: 'locales',
+        command: 'g',
+        reason: `"${tag}" is not a BCP-47 locale`,
+        fix: LOCALES_FIX,
+      });
+    }
+    // Lowercase, because the tag is a directory name: `en-US` and `en-us` are one directory on a
+    // case-insensitive filesystem, and `zh-hant` is the normalized form @ultimat3/i18n resolves to.
+    const dir = canonical.toLowerCase();
+    if (!resolved.includes(dir)) resolved.push(dir);
+  }
+  return resolved.length === 0 ? DEFAULT_LOCALES : resolved;
+}

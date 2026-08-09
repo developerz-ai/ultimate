@@ -3,11 +3,13 @@
 // the blessed path; the individual generators exist for adding to a slice that already exists.
 
 import { actionFiles } from './action';
+import { adminFiles } from './admin';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import { jobFiles } from './job';
+import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile, NameSet } from './naming';
-import { names } from './naming';
+import { names, pascal } from './naming';
 import { policyFiles } from './policy';
 import { queryFiles } from './query';
 import { routeFiles } from './route';
@@ -16,9 +18,10 @@ const serviceSource = (
   feature: NameSet,
 ): string => `// Business logic for ${feature.pluralKebab}. Knows nothing about HTTP or requests, so a job and an
 // action can both call it. Takes values, not a request.
+
+import type { ${feature.pascal} } from './entity';
 import { ${feature.pascal}NotFoundError } from './errors';
 import * as repo from './repo';
-import type { ${feature.pascal} } from './entity';
 
 /** Derived from the row, never restated: a new column reaches this input without an edit here. */
 export type Create${feature.pascal}Input = Omit<${feature.pascal}, 'id' | 'createdAt'>;
@@ -51,10 +54,11 @@ const uiSource = (
   feature: NameSet,
 ): string => `// Presentation only. No fetching, no business logic: the list arrives as a prop from the route,
 // which got it from the live query.
-import { For } from 'solid-js';
+
 import { t } from '@ultimat3/i18n';
-import styles from './ui.module.scss';
+import { For } from 'solid-js';
 import type { ${feature.pascal} } from './entity';
+import styles from './ui.module.scss';
 
 export interface ${feature.pascal}ListProps {
   readonly rows: readonly ${feature.pascal}[];
@@ -88,10 +92,86 @@ const uiStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-export function resourceFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
+const cardSource = (
+  feature: NameSet,
+): string => `// One ${feature.camel} rendered on its own — the list's \`item\` shown outside a list, so a
+// detail route and a search result render the identical markup.
+
+import { t } from '@ultimat3/i18n';
+import type { ${feature.pascal} } from '../entity';
+import styles from '../ui.module.scss';
+
+export interface ${feature.pascal}CardProps {
+  readonly row: ${feature.pascal};
+}
+
+export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {
+  return (
+    <article class={styles.item}>
+      <h3>{props.row.title}</h3>
+      <p>{t('app.${feature.kebab}.updated')}</p>
+    </article>
+  );
+}
+`;
+
+const formSource = (
+  feature: NameSet,
+): string => `// Presentation only: the mutator this submits to owns validation server-side, so this form
+// never re-implements the invariant — a blank title fails at the boundary, not in the DOM.
+
+import { t } from '@ultimat3/i18n';
+import { createSignal } from 'solid-js';
+import styles from '../ui.module.scss';
+
+export interface ${feature.pascal}FormProps {
+  readonly onSubmit: (title: string) => void;
+}
+
+export function ${feature.pascal}Form(props: ${feature.pascal}FormProps) {
+  const [title, setTitle] = createSignal('');
+  return (
+    <form
+      class={styles.item}
+      onSubmit={(event) => {
+        event.preventDefault();
+        props.onSubmit(title());
+      }}
+    >
+      <label>
+        {t('app.${feature.kebab}.titleLabel')}
+        <input value={title()} onInput={(event) => setTitle(event.currentTarget.value)} />
+      </label>
+      <button type="submit">{t('app.${feature.kebab}.submit')}</button>
+    </form>
+  );
+}
+`;
+
+// `admin.<feature>.title` is always here, `--admin` or not: `defineAdmin()` resolves that key the
+// moment anyone writes the override, and a missing key renders ⟦key⟧ and fails the i18n gate,
+// while an unused key is only ever reported (`auditCatalogs` fails on `missing`, never `unused`).
+const catalogSource = (feature: NameSet): string => `{
+  "app.${feature.kebab}.empty": "No ${feature.pluralKebab} yet.",
+  "app.${feature.kebab}.updated": "Last updated",
+  "app.${feature.kebab}.titleLabel": "Title",
+  "app.${feature.kebab}.submit": "Save",
+  "admin.${feature.kebab}.title": "${pascal(feature.plural)}"
+}
+`;
+
+export interface ResourceOptions extends FeatureTarget {
+  /** `x g resource post --admin` — also emits the per-entity admin override. */
+  readonly admin?: boolean;
+  /** Every locale the feature's catalog ships for. Defaults to `['en']`. */
+  readonly locales?: readonly string[];
+}
+
+export function resourceFiles(rawName: string, target: ResourceOptions): readonly GeneratedFile[] {
   const feature = names(rawName);
   const slice: FeatureTarget = { surfaceDir: target.surfaceDir, feature: feature.kebab };
   const dir = `${slice.surfaceDir}/${slice.feature}`;
+  const locales = resolveLocales(target.locales);
   return [
     ...entityFiles(rawName, slice),
     ...policyFiles(rawName, slice),
@@ -103,6 +183,15 @@ export function resourceFiles(rawName: string, target: FeatureTarget): readonly 
     { path: `${dir}/service.test.ts`, contents: serviceTest(feature) },
     { path: `${dir}/ui.tsx`, contents: uiSource(feature) },
     { path: `${dir}/ui.module.scss`, contents: uiStyle() },
-    ...routeFiles(feature.pluralKebab, { surface: 'app' }),
+    { path: `${dir}/ui/${feature.kebab}-card.tsx`, contents: cardSource(feature) },
+    { path: `${dir}/ui/${feature.kebab}-form.tsx`, contents: formSource(feature) },
+    ...locales.map((locale) => ({
+      path: catalogPath(locale, feature.kebab),
+      contents: catalogSource(feature),
+    })),
+    // Always an app route: a slice ships a live query, a form and actions, and `generate()`
+    // refuses `--surface site` for a resource rather than emit them behind a 0kb budget.
+    ...routeFiles(feature.pluralKebab, { surface: 'app', locales }),
+    ...(target.admin === true ? adminFiles(rawName, slice) : []),
   ];
 }

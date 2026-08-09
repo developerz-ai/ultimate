@@ -33,7 +33,15 @@ export interface TaskDefinition {
   readonly cron: string;
   /** REQUIRED IANA zone, e.g. `'UTC'`, `'America/New_York'`. */
   readonly tz: string;
-  enqueue: () => readonly TaskEnqueueEntry[];
+  /**
+   * Builds the entries for ONE occurrence, given that occurrence's instant in epoch ms.
+   *
+   * The argument exists because catch-up does: a tick dispatched late, or replayed for a
+   * missed occurrence, has a wall clock that no longer matches the occurrence being fired.
+   * A payload derived from `Date.now()` there is silently for the wrong day — and the
+   * scheduler's own key is occurrence-scoped, so nothing downstream catches it.
+   */
+  enqueue: (occurrenceMs: number) => readonly TaskEnqueueEntry[];
   readonly catchUp?: CatchUpPolicy;
   readonly maxCatchUp?: number;
 }
@@ -62,7 +70,12 @@ export interface TaskHandle {
   readonly tz: string;
   readonly catchUp: CatchUpPolicy;
   readonly maxCatchUp: number;
-  entries(): readonly TaskEnqueueEntry[];
+  /**
+   * Entries for `occurrenceMs`. Defaults to now, which is the honest answer for the two
+   * callers that have no occurrence: a manual `task.enqueue()` and `describe()`, which only
+   * wants the job names.
+   */
+  entries(occurrenceMs?: number): readonly TaskEnqueueEntry[];
   /**
    * Fire this task's declared entries now, through the same facade `JobHandle.enqueue` uses —
    * the backfill and "run it again" path, with no scheduler and no leader involved.
@@ -117,7 +130,9 @@ export function task(definition: TaskDefinition): TaskHandle {
     tz: definition.tz,
     catchUp: definition.catchUp ?? 'skip',
     maxCatchUp: definition.maxCatchUp ?? 10,
-    entries: () => definition.enqueue(),
+    // `nowMs()` and not `Date.now()`: every reading of time in this package goes through a
+    // Clock so a frozen one cannot be bypassed.
+    entries: (occurrenceMs: number = nowMs()) => definition.enqueue(occurrenceMs),
     async enqueue(options?: EnqueueOptions): Promise<readonly TaskJobResult[]> {
       const fired: TaskJobResult[] = [];
       for (const [handleForJob, input] of handle.entries()) {
@@ -261,7 +276,9 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     catchUp: boolean,
   ): Promise<DispatchedOccurrence> => {
     const jobs: TaskJobResult[] = [];
-    for (const [handleForJob, input] of handle.entries()) {
+    // The occurrence, not `at`: a catch-up dispatch runs long after the instant it fires for,
+    // and the payload has to describe the occurrence the email/report claims to be about.
+    for (const [handleForJob, input] of handle.entries(occurrenceMs)) {
       const result = await options.driver.enqueue({
         name: handleForJob.name,
         queue: handleForJob.queue,

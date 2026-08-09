@@ -17,6 +17,7 @@ const entitySource = (
   table: string,
 ): string => `// The ${name.camel} table, its domain type and its invariants. No I/O beyond the column
 // definitions: repo.ts owns every query that touches this table.
+
 import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
 
 export const ${name.camel} = entity('${table}', {
@@ -57,6 +58,7 @@ const repoSource = (
 // queries; actions call services; services call this.
 // \`db()\` is the ambient handle: inside a transaction it IS the transaction, so these functions
 // join the caller's transaction without knowing one is open.
+
 import { db, sql } from '@ultimat3/db';
 import { dbDrift, newId } from '@ultimat3/entity';
 import type { ${name.pascal} } from './entity';
@@ -89,12 +91,12 @@ const entityTest = (
   snake: string,
   table: string,
 ): string => `import { expect, unitTest } from '@ultimat3/testing';
-import { ${name.camel}, ${name.pascal}View } from './entity';
 import type { ${name.pascal} } from './entity';
+import { ${name.pascal}View, ${name.camel} } from './entity';
 
 const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
-  id: '00000000-0000-0000-0000-000000000001',
-  orgId: '00000000-0000-0000-0000-000000000002',
+  id: '00000000-0000-4000-8000-000000000001',
+  orgId: '00000000-0000-4000-8000-000000000002',
   title: 'valid title',
   // \`money()\` puts \`MoneyValue\` on the row, whose minor units are bigint — the column is a
   // Postgres bigint, and a JS number would silently lose precision above 2^53 minor units.
@@ -110,20 +112,37 @@ unitTest('${name.camel} declares a table with invariants', () => {
   expect(named).toContain('${snake}_title_not_blank');
 });
 
-unitTest('${name.pascal}View projects the row an action returns', () => {
-  const result = ${name.pascal}View['~standard'].validate(row());
-  expect('value' in result && Object.keys(result.value)).toEqual([
-    'id',
-    'title',
-    'price',
-    'createdAt',
-  ]);
+unitTest('${name.camel} describes itself for the manifest', () => {
+  // \`$describe()\` is what x manifest, /_x and the MCP dev tools all read — one projection, so
+  // a column added below reaches every one of them without a second declaration.
+  const described = ${name.camel}.$describe();
+  expect(described.orgScoped).toBe(true);
+  // One \`price\` property, two physical columns: integer minor units plus the ISO code. The
+  // description is where that shows, and it is what fails here if money ever becomes a float.
+  expect(described.columns.map((column) => column.column)).toContain('price_minor');
+  expect(described.columns.map((column) => column.column)).toContain('price_currency');
+  expect(described.invariants.map((rule) => rule.name)).toContain('${snake}_price_non_negative');
+});
+
+unitTest('${name.pascal}View projects the row an action returns, without the tenant', () => {
+  expect(${name.pascal}View.$keys).toEqual(['id', 'title', 'price', 'createdAt']);
+  // The org id is the caller's context, never the client's data: a view that leaked it would
+  // let a response carry a tenant boundary the policy already decided.
+  expect(${name.pascal}View.$keys).not.toContain('orgId');
 });
 
 unitTest('${name.camel} invariants reject a blank title and a negative price', () => {
   expect(() => ${name.camel}.$assert(row())).not.toThrow();
   expect(() => ${name.camel}.$assert(row({ title: '   ' }))).toThrow();
   expect(() => ${name.camel}.$assert(row({ price: { minor: -1n, currency: 'USD' } }))).toThrow();
+});
+
+unitTest('${name.camel} parses a row through its own columns', () => {
+  // \`$parse\` is the entity's own coercion, so a row read back from SQL and a row built in a
+  // test go through the same code — a drifting column type fails here first.
+  const parsed = ${name.camel}.$parse(row());
+  expect(parsed.title).toBe('valid title');
+  expect(parsed.price.currency).toBe('USD');
 });
 `;
 

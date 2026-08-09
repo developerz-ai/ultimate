@@ -2,6 +2,7 @@
 // The generated test pins metadata presence and the offline fallback: a route with no title is an
 // SEO regression and a route with no fallback is a blank screen on a train.
 
+import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { kebab, pascal, titleKey } from './naming';
 
@@ -36,8 +37,9 @@ const pageSource = (surface: Surface, path: string): string => {
   );
   return `// Route: /${path} on the ${surface} surface. Config first: render mode, offline
 // strategy and budget are declarations, not runtime choices.
-import { defineRoute } from '@ultimat3/render';
+
 import { t } from '@ultimat3/i18n';
+import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -79,7 +81,9 @@ const routeTest = (
 import { config } from './page';
 
 unitTest('/${path} declares metadata', async () => {
-  // meta() takes the route's data and always resolves — awaiting is the one shape.
+  expect(config.kind).toBe('route');
+  // meta() takes the route's data and always resolves — awaiting is the one shape, whether the
+  // declaration was written sync or async.
   const meta = await config.meta({});
   expect(meta.title ?? '').not.toBe('');
   expect(meta.description ?? '').not.toBe('');
@@ -112,15 +116,21 @@ const catalogSource = (path: string): string => `{
 
 export interface RouteOptions {
   readonly surface: Surface;
+  /** Every locale the catalog entry ships for. Defaults to `['en']` — an app narrows or grows it. */
+  readonly locales?: readonly string[];
 }
 
 export function routeFiles(rawPath: string, options: RouteOptions): readonly GeneratedFile[] {
   const path = rawPath.replace(/^\/+/, '');
   const dir = routeDir(options.surface, path);
+  const locales = resolveLocales(options.locales);
   return [
     { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path) },
     { path: `${dir}/page.module.scss`, contents: styleSource() },
     { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
-    { path: `packages/i18n/catalogs/en/${kebab(path)}.json`, contents: catalogSource(path) },
+    ...locales.map((locale) => ({
+      path: catalogPath(locale, kebab(path)),
+      contents: catalogSource(path),
+    })),
   ];
 }

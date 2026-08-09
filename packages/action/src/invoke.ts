@@ -84,7 +84,17 @@ async function core(
   const def = defOf(target);
   const name = actionName(target);
   const input = await validateInput(def.input, raw, name);
-  guard(def.policy, { actor: actorOf(ctx), input, ctx, action: name }, options.surface ?? 'server');
+  // The one place a row-level rule gets its row. Once per invocation, never per row:
+  // that asymmetry is what lets the predicate stay synchronous, so a live query can
+  // re-evaluate the same policy per subscriber without a query per change event. An
+  // action with no loader hands the rule `null` — unchanged, and never a silent allow,
+  // because a rule that reads `row` has to decide what `null` means.
+  const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
+  guard(
+    def.policy,
+    { actor: actorOf(ctx), input, row, ctx, action: name },
+    options.surface ?? 'server',
+  );
 
   // Output parsing sits inside `run` so a replayed idempotent response is the
   // parsed value too — one shape on the wire, first call and every retry.

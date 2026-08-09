@@ -109,17 +109,17 @@ Keyset pagination is correct under concurrent writes because the cursor names a 
 
 ## Transactional outbox
 
-`ctx.jobs.enqueue` writes the job row **in the same transaction as the business write**.
+`<job>.enqueue` writes the job row **in the same transaction as the business write**.
 
 ```ts
 async handle({ input, ctx }) {
   const post = await ctx.posts.publish(input.postId);              // INSERT/UPDATE
-  if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });  // same tx
+  if (input.notify) await notifySubscribers.enqueue({ postId: post.id });  // same tx
   return post;
 }
 ```
 
-How `enqueue` finds the transaction: the pipeline's `handler` stage opens the transaction and puts the handle in the ALS store. `ctx.jobs.enqueue` reads it. There is no `tx` parameter to pass, therefore none to forget.
+How `enqueue` finds the transaction: the pipeline's `handler` stage opens the transaction and puts the handle in the ALS store. The job handle's `enqueue` resolves the ambient jobs facade — what `ctx.jobs` names — and that facade reads it. There is no `tx` parameter to pass, therefore none to forget.
 
 ```
 stage 13 handler

@@ -3,8 +3,18 @@
  * need it too; what a *post looks like on the wire* is this feature's business, so it lives here.
  */
 
+import type { Post } from '@postly/db';
 import { EXCERPT_MAX, POST_STATUSES, SLUG_MAX, TITLE_MAX } from '@postly/domain';
-import { t } from '@ultimat3/schema';
+import { type Infer, t } from '@ultimat3/schema';
+
+/**
+ * Hop 4 of the type chain (docs/architecture/05-type-chain.md): every field below except
+ * `authorName` must still name a real column on `posts`. `authorName` has no column of its own —
+ * it comes from the join in `repo.ts` — so it is added back, not picked. A column renamed or
+ * dropped in `packages/db/src/schema/posts.ts` fails to compile on the object literal below,
+ * instead of surfacing three hops downstream as a field that silently arrives `undefined`.
+ */
+type PostViewKeys = Exclude<keyof Post, 'createdAt' | 'updatedAt'> | 'authorName';
 
 /** The output of every post action and query. Drives OpenAPI, the MCP tool, and the typed client. */
 export const PostView = t.object({
@@ -21,14 +31,14 @@ export const PostView = t.object({
   publishedAt: t.nullable(t.date),
   authorId: t.uuid,
   authorName: t.string,
-});
+} satisfies Record<PostViewKeys, unknown>);
 
-export type PostView = typeof PostView.infer;
+export type PostView = Infer<typeof PostView>;
 
 /** The feed row: same post, minus the body, because 50 bodies is not a feed. */
 export const PostSummary = PostView.omit('body');
 
-export type PostSummary = typeof PostSummary.infer;
+export type PostSummary = Infer<typeof PostSummary>;
 
 export const CommentView = t.object({
   id: t.uuid,
@@ -38,7 +48,7 @@ export const CommentView = t.object({
   createdAt: t.date,
 });
 
-export type CommentView = typeof CommentView.infer;
+export type CommentView = Infer<typeof CommentView>;
 
 export const CreatePostInput = t.object({
   title: t.string.max(TITLE_MAX),
@@ -47,4 +57,4 @@ export const CreatePostInput = t.object({
   slug: t.string.max(SLUG_MAX).optional(),
 });
 
-export type CreatePostInput = typeof CreatePostInput.infer;
+export type CreatePostInput = Infer<typeof CreatePostInput>;

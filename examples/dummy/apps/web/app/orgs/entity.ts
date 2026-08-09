@@ -12,7 +12,7 @@ import {
   SUPPORTED_ZONES,
   THEMES,
 } from '@postly/domain';
-import { t } from '@ultimat3/schema';
+import { type Infer, t } from '@ultimat3/schema';
 
 export const MoneyView = t.object({
   minor: t.number.int(),
@@ -29,7 +29,7 @@ export const OrgView = t.object({
   seatsUsed: t.number.int().min(0),
 });
 
-export type OrgView = typeof OrgView.infer;
+export type OrgView = Infer<typeof OrgView>;
 
 export const MemberView = t.object({
   id: t.uuid,
@@ -43,7 +43,7 @@ export const MemberView = t.object({
   digestOptIn: t.boolean,
 });
 
-export type MemberView = typeof MemberView.infer;
+export type MemberView = Infer<typeof MemberView>;
 
 /** What the org is charged today, what it will pay monthly, and what was credited back. */
 export const UpgradeReceipt = t.object({
@@ -53,7 +53,7 @@ export const UpgradeReceipt = t.object({
   nextPeriod: MoneyView,
 });
 
-export type UpgradeReceipt = typeof UpgradeReceipt.infer;
+export type UpgradeReceipt = Infer<typeof UpgradeReceipt>;
 
 export const InviteInput = t.object({
   email: t.email,
@@ -63,4 +63,4 @@ export const InviteInput = t.object({
   locale: t.enumerated(...SUPPORTED_LOCALES).optional(),
 });
 
-export type InviteInput = typeof InviteInput.infer;
+export type InviteInput = Infer<typeof InviteInput>;

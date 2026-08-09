@@ -8,6 +8,7 @@
  */
 
 /** Re-exported so an `action` file needs one import, not two. Same object as schema's. */
+export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type {
   Action,
@@ -18,6 +19,7 @@ export type {
   ActionHandlerArgs,
   ActionMcp,
   ActionRateLimit,
+  ActionRowArgs,
   AnyAction,
   InvokeOptions,
   McpDescriptorMeta,

@@ -31,13 +31,17 @@ export class UnknownCommandError extends UltimateError {
   }
 }
 
-/** An unknown flag, a missing value, or a value on a boolean flag. */
+/**
+ * An unknown flag, a missing value, a value on a boolean flag, or a value the command refuses.
+ * `fix` defaults to the command's help; a caller that knows the working invocation passes it,
+ * because a runnable command beats a page to read.
+ */
 export class BadFlagError extends UltimateError {
-  constructor(input: { flag: string; command: string; reason: string }) {
+  constructor(input: { flag: string; command: string; reason: string; fix?: string }) {
     super({
       code: 'X_CLI_BAD_FLAG',
       cause: `--${input.flag} on "x ${input.command}": ${input.reason}`,
-      fix: `x ${input.command} --help`,
+      fix: input.fix ?? `x ${input.command} --help`,
       docs: docsFor('X_CLI_BAD_FLAG'),
     });
   }
@@ -93,16 +97,19 @@ export class NoTestFilesError extends UltimateError {
 }
 
 /**
- * A generated file's path resolves outside the sandbox the scaffold gate writes into. `..` in a
- * `GeneratedFile.path` would put template output on the developer's real disk, so it fails here
- * rather than after the write.
+ * A generated path resolves outside the directory it is being written into — the scaffold gate's
+ * sandbox, the app root `x g` writes into, or the catalog root a `--locales` segment names. `..`
+ * or a separator would put template output on the developer's real disk, so it fails before the
+ * write, not after. `fix` names the invocation that works when the caller knows it.
  */
 export class ScaffoldPathEscapeError extends UltimateError {
-  constructor(input: { path: string; dir: string }) {
+  constructor(input: { path: string; dir: string; fix?: string }) {
     super({
       code: 'X_SCAFFOLD_PATH_ESCAPE',
-      cause: `generated path "${input.path}" resolves outside the sandbox ${input.dir}`,
-      fix: `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
+      cause: `generated path "${input.path}" resolves outside ${input.dir}`,
+      fix:
+        input.fix ??
+        `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
       docs: docsFor('X_SCAFFOLD_PATH_ESCAPE'),
     });
   }

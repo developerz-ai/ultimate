@@ -1,6 +1,6 @@
 /**
  * A like. Deliberately keyless apart from `(postId, memberId)`: that composite primary key is
- * what makes a `toggleLike` replayed from the offline queue idempotent at the storage layer,
+ * what makes a `likePost` replayed from the offline queue idempotent at the storage layer,
  * rather than idempotent because the client remembered to de-duplicate.
  */
 

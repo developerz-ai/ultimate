@@ -29,6 +29,7 @@ export interface QueryCache {
 export interface QueryMcp {
   /** Opt-in: a read reaches an agent only when it says so. Silence exposes nothing. */
   readonly expose: boolean;
+  /** Contract text, not UI text — see `ActionMcp.description` for why it stays outside `t()`. */
   readonly description?: string;
 }
 

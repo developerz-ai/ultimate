@@ -18,6 +18,16 @@ const readerActor = userActor({ id: 'u2' });
 const editor = createContext({ actor: editorActor });
 const SURFACES: readonly Surface[] = ['server', 'http', 'mcp', 'job'];
 
+/** The two halves a row rule needs: what the surface parsed, and what it loaded. */
+type Parsed = { readonly postId: string };
+type Draft = { readonly authorId: string };
+
+/** Fails closed: `null` is "no loader" or "no such row", and neither grants anything. */
+const ownDraft = can<Parsed, Draft>(
+  'post:publish',
+  ({ actor, row }) => row !== null && row.authorId === actor?.id,
+);
+
 afterEach(() => {
   resetRegistry();
 });
@@ -124,6 +134,104 @@ describe('the invocation core', () => {
     expect(replay).toEqual({ id: POST_ID, published: true });
   });
 
+  test('no row loader hands the rule `row: null`', async () => {
+    const seen: unknown[] = [];
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can<Parsed, Draft>('post:publish', ({ row }) => {
+        seen.push(row);
+        return true;
+      }),
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+    await invoke(target, { postId: POST_ID }, { ctx: editor });
+
+    // `null`, never `undefined`: an absent row is a value the predicate branches on.
+    expect(seen).toEqual([null]);
+  });
+
+  test('a declared loader reaches the predicate, and does so before the handler', async () => {
+    const order: string[] = [];
+    const seen: (Draft | null)[] = [];
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can<Parsed, Draft>('post:publish', ({ row }) => {
+        order.push('policy');
+        seen.push(row);
+        return true;
+      }),
+      row: async ({ input }) => {
+        order.push('row');
+        return { authorId: `wrote-${input.postId}` };
+      },
+      handle: ({ input }) => {
+        order.push('handle');
+        return { id: input.postId, published: true };
+      },
+    }).named('publishPost');
+
+    await invoke(target, { postId: POST_ID }, { ctx: editor });
+
+    // Load, decide, then act. A handler that ran first would be the authorization.
+    expect(order).toEqual(['row', 'policy', 'handle']);
+    expect(seen).toEqual([{ authorId: `wrote-${POST_ID}` }]);
+  });
+
+  test('a denial from a row rule short-circuits the handler', async () => {
+    let runs = 0;
+    // One policy, one actor, one input — the loaded row is the only thing that differs,
+    // so the pair fails unless the row genuinely reaches the predicate.
+    const publisher = (authorId: string) =>
+      action({
+        input: Input,
+        output: Output,
+        policy: ownDraft,
+        row: () => ({ authorId }),
+        handle: ({ input }) => {
+          runs += 1;
+          return { id: input.postId, published: true };
+        },
+      }).named('publishPost');
+
+    expect(await invoke(publisher('u1'), { postId: POST_ID }, { ctx: editor })).toEqual({
+      id: POST_ID,
+      published: true,
+    });
+
+    const failure = await invoke(publisher('u2'), { postId: POST_ID }, { ctx: editor }).catch(
+      (error: unknown) => error,
+    );
+
+    expect((failure as { code?: string }).code).toBe('X_FORBIDDEN');
+    expect(runs).toBe(1); // the author's own draft only
+  });
+
+  test('a loader that finds nothing denies rather than falling through', async () => {
+    let ran = false;
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: ownDraft,
+      // The hole this exists to close: a row the surface could not load used to reach
+      // the rule as `null` and be read as "no row-level objection".
+      row: () => null,
+      handle: ({ input }) => {
+        ran = true;
+        return { id: input.postId, published: true };
+      },
+    }).named('publishPost');
+
+    const failure = await invoke(target, { postId: POST_ID }, { ctx: editor }).catch(
+      (error: unknown) => error,
+    );
+
+    expect((failure as { code?: string }).code).toBe('X_FORBIDDEN');
+    expect(ran).toBe(false);
+  });
+
   test('the declaration is unreachable — an action carries no def', () => {
     const target = action({
       input: Input,
@@ -135,6 +243,24 @@ describe('the invocation core', () => {
     expect('def' in target).toBe(false);
     expect('handle' in target).toBe(false);
     expect(Object.keys(target)).not.toContain('def');
+  });
+
+  test('a row loader runs once per invocation, not once per rule', async () => {
+    let loads = 0;
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can<Parsed, Draft>('post:publish', () => true),
+      row: () => {
+        loads += 1;
+        return { authorId: 'u1' };
+      },
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+    await invoke(target, { postId: POST_ID }, { ctx: editor });
+
+    expect(loads).toBe(1);
   });
 
   test('a look-alike is not an action: it never registers and never projects', () => {

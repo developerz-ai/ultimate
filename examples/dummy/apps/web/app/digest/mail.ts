@@ -1,28 +1,35 @@
 /**
  * The digest email. Rendered in the `worker` role with the member's locale and — the part that is
- * usually wrong — the member's timezone. `format.date` requires an explicit zone, so "yesterday"
- * means yesterday where the reader is.
+ * usually wrong — the member's timezone. `localDate` is computed once by the job, in the member's
+ * zone, and travels as a string: nothing here reaches for a clock, so "yesterday" means yesterday
+ * where the reader is rather than where the worker runs.
  */
 
-import { defineMail } from '@ultimat3/core';
-import type { MemberView } from '../orgs/entity';
-import type { PostSummary } from '../posts/entity';
+import { blocks, defineMail } from '@ultimat3/mail';
+import { type Infer, t } from '@ultimat3/schema';
+import { MemberView } from '../orgs/entity';
+import { PostSummary } from '../posts/entity';
 
-type DigestData = {
-  member: MemberView;
-  posts: readonly PostSummary[];
-  localDate: string;
-};
+export const DigestData = t.object({
+  member: MemberView,
+  posts: t.array(PostSummary),
+  localDate: t.string,
+});
 
-export const digestEmail = defineMail<DigestData>('digest.daily', {
-  subject: ({ t, format, data }) =>
-    t('digest.subject', { date: format.date(data.localDate, { zone: data.member.tz }) }),
-  body: ({ t, data }) => [
-    t('digest.greeting', { name: data.member.name }),
-    t('digest.intro', { count: data.posts.length, org: data.member.orgId }),
-    ...data.posts.map((post) => `• ${post.title}`),
-    t('digest.footer', { zone: data.member.tz }),
+export type DigestData = Infer<typeof DigestData>;
+
+export const digestEmail = defineMail<DigestData>({
+  id: 'digest.daily',
+  subject: 'digest.subject',
+  input: DigestData,
+  template: ({ data }) => [
+    blocks.heading('digest.greeting', { name: data.member.name }),
+    blocks.paragraph('digest.intro', { count: data.posts.length, org: data.member.orgId }),
+    // Already localised by the job, so it is a value the renderer prints rather than a key it
+    // has to format — a date without an explicit zone has no correct rendering here.
+    blocks.detail('digest.date', data.localDate),
+    ...data.posts.map((post) => blocks.detail('digest.post', post.title)),
+    blocks.button('digest.readAction', '/feed'),
+    blocks.paragraph('digest.footer', { zone: data.member.tz }),
   ],
-  cta: ({ t }) => ({ label: t('digest.readAction'), href: '/feed' }),
-  footerLinks: ({ t }) => [{ label: t('digest.unsubscribe'), href: '/settings' }],
 });

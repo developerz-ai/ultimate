@@ -5,7 +5,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 ## Boundary
 
 - May import: `core`, `schema`, `entity`, `policy`, `cache`, `time`. Never `http`, `render`, `ui`.
-- Consumers: `action` (`ctx.jobs.enqueue`), `cli`, `mcp`, `admin`.
+- Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
 - External deps: none. Postgres access goes through the injected `PgExecutor`.
 
 ## Rules

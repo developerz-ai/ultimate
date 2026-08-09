@@ -1,20 +1,23 @@
 /**
  * The posts feature's commands. Declarations only — every body delegates to `ctx.posts`, so the
  * same logic runs whether the caller is HTTP, the typed client, a job, an MCP tool or admin.
+ *
+ * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
 
 import { COMMENT_MAX, tag } from '@postly/db';
-import { action } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { postId } from '@postly/domain';
+import { action, t } from '@ultimat3/action';
 import { CommentView, CreatePostInput, PostView } from './entity';
 import { notifySubscribers } from './jobs';
-import { ownsPost } from './policy';
+import { postCreate, postPublish, postRead } from './policy';
 
 export const createPost = action({
-  input: CreatePostInput,
+  // orgId is part of the input because the policy decides on it — authz reads the declaration,
+  // never the database. A predicate that fetched a row would cost one query per live subscriber.
+  input: CreatePostInput.extend({ orgId: t.uuid }),
   output: PostView,
-  policy: can('post:create'),
+  policy: postCreate,
   cache: { invalidates: [tag.feed] },
   mcp: { expose: true, description: 'Create a draft post in the actor’s organisation' },
   async handle({ input, ctx }) {
@@ -23,25 +26,36 @@ export const createPost = action({
 });
 
 export const publishPost = action({
-  input: t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
+  input: t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
-  policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
-  cache: { invalidates: [tag.post, tag.feed] },
+  policy: postPublish,
+  // `postPublish` decides about a post, not just about an org, so the post has to be loaded
+  // before the guard rather than inside it — the predicate stays synchronous, and this runs once
+  // per invocation instead of once per live subscriber. Deliberately NOT tenant-scoped: tenancy
+  // is exactly what the rule compares, so filtering by the actor's org here would turn a
+  // cross-org id into a null row and hand the rule back the fail-open it just lost.
+  row: ({ input, ctx }) => ctx.posts.authorship(postId(input.postId)),
+  // `blog` too: publishing is the ONE write that puts a post on the public, anonymous blog, and
+  // `site/blog/*` sets `revalidate: { tags: [tag.blog] }`. Omitting it left those ISR pages
+  // pinned to whatever the build saw — the tag existed, nothing ever evicted it.
+  cache: { invalidates: [tag.post, tag.feed, tag.blog] },
   mcp: { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
-    const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });
+    const post = await ctx.posts.publish(postId(input.postId));
+    // The job enqueues itself through its own handle, in the same transaction as the publish: a
+    // rolled-back publish never mails anybody and a committed one always does.
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
     return post;
   },
 });
 
 export const createComment = action({
-  input: t.object({ postId: t.uuid, body: t.string.min(1).max(COMMENT_MAX) }),
+  input: t.object({ postId: t.uuid, orgId: t.uuid, body: t.string.min(1).max(COMMENT_MAX) }),
   output: CommentView,
-  policy: can('post:read'),
+  policy: postRead,
   cache: { invalidates: [tag.comment, tag.post] },
   mcp: { expose: true, description: 'Comment on a post the actor can read' },
   async handle({ input, ctx }) {
-    return ctx.posts.comment(input.postId, input.body);
+    return ctx.posts.comment(postId(input.postId), input.body);
   },
 });

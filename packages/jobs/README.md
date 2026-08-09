@@ -76,7 +76,7 @@ duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control f
 ```ts
 await ctx.tx(async (tx) => {
   const post = await ctx.posts.publish(input.postId, tx);
-  await ctx.jobs.enqueue(notifySubscribers, { postId: post.id }); // joins `tx`
+  await notifySubscribers.enqueue({ postId: post.id }); // joins `tx`
 });
 ```
 

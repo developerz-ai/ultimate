@@ -78,8 +78,21 @@ export function createContext(init: CtxInit = {}): Ctx {
   const requestId = init.requestId ?? uuid(clock);
   const trace = init.traceId ?? newTraceId();
   const base = init.logger ?? rootLogger;
-  const services: ServiceBag = { ...(init.services ?? {}) };
-  const ctx: Ctx = {
+  const services: ServiceBag = Object.freeze({ ...(init.services ?? {}) });
+  const ctx = {
+    // Services ride ON the context, not only under `ctx.services`: `CtxServices` exists to be
+    // augmented, so `ctx.posts` has to BE the service. Spread first, so a service that collides
+    // with a framework field (`actor`, `logger`) loses — it stays reachable as
+    // `ctx.services.actor`, and the context's own meaning never depends on what an app named a
+    // service. The assertion is the one thing this package cannot prove: an augmentation
+    // declares which services exist, only the boot code knows whether it passed them. So a
+    // service the boot never installed reads as `undefined` through `ctx.posts` — this is a
+    // frozen plain object, and it stays one on purpose: a get-trap proxy that threw on absent
+    // keys would also throw on `await ctx` (the runtime probes `.then`), on `JSON.stringify`,
+    // and on every optional-property check. `useService(name)` is the path that names the
+    // failure instead of leaving a bare `TypeError` at the first call: it throws
+    // `X_SERVICE_MISSING`, with the installed names and the fix.
+    ...services,
     requestId,
     traceId: trace,
     actor: init.actor ?? anonymousActor(),
@@ -91,8 +104,8 @@ export function createContext(init: CtxInit = {}): Ctx {
     now: () => clock.now(),
     logger: base.child({ requestId, traceId: trace }),
     signal: init.signal ?? neverAborted,
-    services: Object.freeze(services),
-  };
+    services,
+  } as Ctx;
   return Object.freeze(ctx);
 }
 

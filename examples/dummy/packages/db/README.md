@@ -15,7 +15,7 @@ indexes, and invariants; anything that decides *whether* something may happen li
 | `members` | `orgId()` | `tz()` and `locale()` per member — the digest and every timestamp read them |
 | `posts` | `orgId()` | `(orgId, slug)` unique; `likeCount` is a denormalised counter the mutator maintains |
 | `comments` | `orgId()` | cascades with its post |
-| `likes` | `orgId()` | composite key `(postId, memberId)` — the uniqueness *is* the idempotency of `toggleLike` |
+| `likes` | `orgId()` | composite key `(postId, memberId)` — the uniqueness *is* the idempotency of `likePost` |
 | `plans` | none (catalog) | `money()` price, one row per `(code, currency)` |
 
 ## Public API
