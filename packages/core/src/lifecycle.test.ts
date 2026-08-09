@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   beginWork,
   configureLifecycle,
@@ -13,6 +13,12 @@ import {
   resetLifecycle,
 } from './lifecycle';
 import { createLogger } from './logger';
+
+// Lifecycle state is process-global, and any suite that boots a server calls `markReady()` — so
+// this resets on the way IN as well as out, or the first assertion reads another file's process.
+beforeEach(() => {
+  resetLifecycle();
+});
 
 afterEach(() => {
   resetLifecycle();

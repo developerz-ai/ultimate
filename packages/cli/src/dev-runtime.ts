@@ -6,7 +6,13 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
-import { createPgliteClient, createPostgresClient, raw, setDbClient } from '@ultimat3/db';
+import {
+  createPgliteClient,
+  createPostgresClient,
+  pgliteDataDir,
+  raw,
+  setDbClient,
+} from '@ultimat3/db';
 import type { EventBus, JobDriver, PgExecutor } from '@ultimat3/jobs';
 import {
   createMemoryEventBus,
@@ -37,14 +43,15 @@ export interface RunningServices {
   stop(): Promise<void>;
 }
 
-const PGLITE_SCHEME = 'pglite://';
 const FILE_SCHEME = 'file://';
 
 function startDb(services: DevServices): DevDbClient {
   const binding = services.db;
   const client =
     binding.mode === 'embedded'
-      ? createPgliteClient({ dataDir: binding.url.slice(PGLITE_SCHEME.length) })
+      ? // `pgliteDataDir` is `@ultimat3/db`'s own reader of the `pglite://` form; a second parser
+        // here is a second thing to keep right when the form changes.
+        createPgliteClient({ dataDir: pgliteDataDir(binding.url) })
       : createPostgresClient({ url: binding.url });
   setDbClient(client);
   return client;
@@ -103,35 +110,64 @@ function startTransport(services: DevServices): Transport {
     : new NatsTransport({ url: services.events.url, bucket: 'x-dev' });
 }
 
+/** Undo what has already started, newest first. A failure here must not hide the boot failure. */
+async function unwind(steps: readonly (() => void | Promise<void>)[]): Promise<void> {
+  for (const step of [...steps].reverse()) {
+    try {
+      await step();
+    } catch {
+      // The rejection that started the unwind is the one worth reporting; this one is noise.
+    }
+  }
+}
+
 export async function startServices(services: DevServices): Promise<RunningServices> {
   const db = startDb(services);
-  // Pay the Postgres boot here, so the first request is not the slow one and a broken database
-  // fails at `x dev` rather than on some later route.
-  await db.ping();
-  const jobs = await startJobs(db);
-  const events = createMemoryEventBus();
-  setEventBus(events);
-  const transport = startTransport(services);
-  const storage = startStorage(services);
-  // Caught, not sent: the `/_x` mail panel reads this outbox, so the local loop can check what a
-  // template renders in every locale without a mailbox, an API key, or a message escaping to a
-  // real address.
-  const mail = createMemoryDriver();
-  setMailDriver(mail);
-
-  return {
-    services,
-    db,
-    jobs,
-    events,
-    transport,
-    storage,
-    mail,
-    async stop() {
-      await transport.close();
-      resetMailDriver();
+  // Boot is a sequence of external resources, and every step after the first can reject —
+  // `db.ping()` is where a broken database is supposed to fail. Without this, `x dev` exits
+  // holding the PGlite lock and the ambient `db()` accessor, and nothing is left to release them.
+  const started: (() => void | Promise<void>)[] = [
+    async () => {
       setDbClient(undefined);
       await db.close();
     },
-  };
+  ];
+  try {
+    // Pay the Postgres boot here, so the first request is not the slow one and a broken database
+    // fails at `x dev` rather than on some later route.
+    await db.ping();
+    const jobs = await startJobs(db);
+    const events = createMemoryEventBus();
+    setEventBus(events);
+    const transport = startTransport(services);
+    started.push(() => transport.close());
+    const storage = startStorage(services);
+    // Caught, not sent: the `/_x` mail panel reads this outbox, so the local loop can check what a
+    // template renders in every locale without a mailbox, an API key, or a message escaping to a
+    // real address.
+    const mail = createMemoryDriver();
+    setMailDriver(mail);
+    started.push(() => resetMailDriver());
+
+    return {
+      services,
+      db,
+      jobs,
+      events,
+      transport,
+      storage,
+      mail,
+      // Reverse boot order, and a stop that fails says so — only the unwind after a failed boot
+      // is allowed to swallow, because there the boot error is the one worth reporting.
+      async stop() {
+        await transport.close();
+        resetMailDriver();
+        setDbClient(undefined);
+        await db.close();
+      },
+    };
+  } catch (error) {
+    await unwind(started);
+    throw error;
+  }
 }

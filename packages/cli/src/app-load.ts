@@ -3,6 +3,8 @@
 // `registerQueries` / `registerRoute` name the rest — so `x manifest`, `x routes` and `x verify`
 // read exactly the tables the running server reads.
 
+// Bun ships no `Bun.*` path API: `relative`/`sep` turn an absolute scan hit into the app-root-
+// relative POSIX path every finding and every manifest fact is keyed by.
 import { relative, sep } from 'node:path';
 import { registerActions } from '@ultimat3/action';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
@@ -28,8 +30,12 @@ export interface LoadedApp {
   readonly findings: readonly Finding[];
 }
 
-// `import()` caches, but a registry rejects a second registration of the same name — so a file
-// is registered exactly once per process. `x dev` rescans on every save and must not trip on it.
+// A module is imported and registered exactly once per PROCESS: `import()` caches, and a registry
+// rejects a second registration of a name. So a rescan refreshes only the facts DERIVED from the
+// registries — the manifest and its build id — and never the primitives themselves: an edited route
+// config, action or query needs a restart. Clearing the registries would not change that. Bun
+// exposes no way to invalidate a cached module, so the re-import hands back the same stale exports,
+// and a cache-busting query string leaks a fresh module instance on every save.
 const registered = new Set<string>();
 // A registration failure is sticky: the file is never retried, so the finding is replayed.
 const failures = new Map<string, Finding>();

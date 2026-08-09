@@ -41,7 +41,7 @@ Nothing here relies on you reading a changelog carefully. Each class is a build 
 
 | Class | Detected by | Code | Fix |
 |---|---|---|---|
-| Action/query contract change | contract diff against the committed `x.manifest.json` | `X_CONTRACT_DRIFT` | version the action, or accept the diff with `x contract accept` |
+| Action/query contract change | `x verify`'s `contract-diff` step, against the committed `x.manifest.json` | `X_MANIFEST_BREAKING` | `x verify --json` to read the finding, then bump the major version or restore the input/output shape |
 | Breaking published surface | manifest contract diff, breaking subset | `X_MANIFEST_BREAKING` | bump the app's major version; old clients keep the old shape |
 | Schema vs migrations | schema introspection vs migration history | `X_DB_DRIFT` | `x db gen "<message>"` then `x db apply` |
 | Stale generated facts | manifest freshness check | `X_MANIFEST_STALE` | `x manifest` |

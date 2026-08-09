@@ -61,7 +61,10 @@ export const routesCommand: CliCommand = {
     return {
       ok: findings.length === 0,
       command: 'routes',
-      summary: routes.length === 0 ? msg('cli.routes.empty') : `${routes.length} routes`,
+      summary:
+        routes.length === 0
+          ? msg('cli.routes.empty')
+          : msg('cli.routes.count', { count: routes.length }),
       lines: routes.length === 0 ? [] : renderRouteTable(routes).map((line) => `  ${line}`),
       findings,
       data: { routes: routeJson(routes) },

@@ -46,19 +46,33 @@ export const manifestCommand: CliCommand = {
       return {
         ok: fresh && findings.length === 0,
         command: 'manifest',
-        summary: fresh ? 'manifest is fresh' : 'manifest is stale',
+        summary: fresh ? msg('cli.manifest.fresh') : msg('cli.manifest.stale'),
         findings: fresh
           ? findings
           : [
               ...findings,
               {
-                code: 'X_MANIFEST_STALE',
+                // The same condition `x verify` reports through `assertNoDrift`, so it carries the
+                // same code: `X_MANIFEST_STALE` belongs to `openapi.json`, which drifts separately.
+                code: 'X_MANIFEST_DRIFT',
                 cause: `${MANIFEST_FILENAME} does not match build ${manifest.buildId}`,
                 fix: 'x manifest',
-                docs: 'https://ultimate.dev/errors/X_MANIFEST_STALE',
+                docs: 'https://ultimate.dev/errors/X_MANIFEST_DRIFT',
                 at: MANIFEST_FILENAME,
               },
             ],
+        data: { buildId: manifest.buildId, counts },
+      };
+    }
+
+    // A module that would not load is omitted from the registries, so this projection describes a
+    // subset of the app — and `x.manifest.json` is the compatibility contract. Write nothing.
+    if (findings.length > 0) {
+      return {
+        ok: false,
+        command: 'manifest',
+        summary: msg('cli.manifest.blocked', { count: findings.length }),
+        findings,
         data: { buildId: manifest.buildId, counts },
       };
     }
@@ -68,14 +82,13 @@ export const manifestCommand: CliCommand = {
       await Bun.write(join(root, OPENAPI_FILE), openApiJson(manifest));
     }
     return {
-      ok: findings.length === 0,
+      ok: true,
       command: 'manifest',
       summary: msg('cli.manifest.wrote', {
         path: MANIFEST_FILENAME,
         routes: manifest.routes.length,
         actions: manifest.actions.length,
       }),
-      findings,
       data: { path, buildId: manifest.buildId, counts },
     };
   },

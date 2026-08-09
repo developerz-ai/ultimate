@@ -3,7 +3,7 @@
 // supplies only the app, the caller and the socket. A tool answered here would be a second answer
 // to a question the framework already answers.
 
-import { markListening, nanoid } from '@ultimat3/core';
+import { markListening, nanoid, onShutdown } from '@ultimat3/core';
 import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -18,8 +18,10 @@ const DEFAULT_PORT = 9229;
 const TRANSPORTS = ['stdio', 'http'] as const;
 type Transport = (typeof TRANSPORTS)[number];
 
-const scopeLine = (): string =>
-  msg('cli.mcp.scopes', { scopes: [...DEV_TOOL_SCOPES].sort().join(' ') });
+/** One reading of the entitlement, so `--json` and the terminal can never disagree about it. */
+const scopes = (): readonly string[] => [...DEV_TOOL_SCOPES].sort();
+
+const scopeLine = (): string => msg('cli.mcp.scopes', { scopes: scopes().join(' ') });
 
 const isTransport = (value: string): value is Transport =>
   (TRANSPORTS as readonly string[]).includes(value);
@@ -32,7 +34,12 @@ async function catalog(host: CliMcpServer): Promise<CommandResult> {
     ok: true,
     command: 'mcp',
     summary: msg('cli.mcp.serving', { transport: 'none', tools: tools.length }),
-    data: tools.map((tool) => ({ name: tool.name, description: tool.description })),
+    // `scopes` rides in `data` because it rides in `lines`: every fact the terminal prints is a
+    // fact `--json` carries, or the two renderers have drifted.
+    data: {
+      tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
+      scopes: scopes(),
+    },
     lines: [...tools.map((tool) => `  ${tool.name.padEnd(20)} ${tool.description}`), scopeLine()],
   };
 }
@@ -47,11 +54,21 @@ const notFound = (path: string): Response =>
     { status: 404, headers: { 'content-type': 'application/json' } },
   );
 
+/** A running HTTP transport. `stop()` releases the socket AND the host's lazily booted services. */
+export interface McpHttpServer {
+  readonly result: CommandResult;
+  stop(): Promise<void>;
+}
+
 /**
  * HTTP demands a bearer token, and a token in a config file is one more thing to keep in sync — so
  * it is minted per process and returned in `data`, where `--json` puts it one read away.
+ *
+ * Exported with its stop handle rather than swallowing it: the socket and the host's PGlite data
+ * directory outlive `run()` otherwise, and nothing — a test, an embedding caller, or a signal —
+ * could ever release them.
  */
-function serveHttp(host: CliMcpServer, port: number): CommandResult {
+export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
   const token = nanoid(32);
   const route = mcpHttpRoute({
     server: host.server,
@@ -70,15 +87,21 @@ function serveHttp(host: CliMcpServer, port: number): CommandResult {
     },
   });
   // Announces the socket as this process's own, so a caller on it is never mistaken for egress.
-  markListening(handle.url.origin);
+  const stopListening = markListening(handle.url.origin);
   const url = `${handle.url.origin}${route.path}`;
-  // Long-running: the process stays alive on the server handle until SIGINT.
   return {
-    ok: true,
-    command: 'mcp',
-    summary: msg('cli.mcp.serving', { transport: 'http', tools: host.tools.length }),
-    data: { url, token, tools: host.tools.length },
-    lines: [`  POST ${url}`, `  authorization: Bearer ${token}`, scopeLine()],
+    result: {
+      ok: true,
+      command: 'mcp',
+      summary: msg('cli.mcp.serving', { transport: 'http', tools: host.tools.length }),
+      data: { url, token, tools: host.tools.length, scopes: scopes() },
+      lines: [`  POST ${url}`, `  authorization: Bearer ${token}`, scopeLine()],
+    },
+    async stop() {
+      await handle.stop(true);
+      stopListening();
+      await host.close();
+    },
   };
 }
 
@@ -139,6 +162,11 @@ export const mcpCommand: CliCommand = {
     const port = readPort(ctx);
     const host = await createDevMcpServer({ root, env: ctx.env, runner: ctx.runner });
     if (ctx.args.subcommand === 'tools') return catalog(host);
-    return transport === 'http' ? serveHttp(host, port) : serveOverStdio(host);
+    if (transport !== 'http') return serveOverStdio(host);
+    // Long-running: the process stays alive on the server handle. The stop handle goes to the
+    // shutdown registry so a signal releases the socket and the database, not the exit code alone.
+    const served = startMcpHttp(host, port);
+    onShutdown('cli:mcp-http', () => served.stop());
+    return served.result;
   },
 };

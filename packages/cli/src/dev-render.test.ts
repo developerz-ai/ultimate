@@ -76,7 +76,8 @@ describe('unit · x dev renders the app routes', () => {
       (await get(path)).headers.get('cache-control');
 
     expect(await cacheControl('/')).toContain('must-revalidate');
-    expect(await cacheControl('/pricing')).toContain('s-maxage=60');
+    // The route declared `ttl: '5m'`, and that TTL is what the CDN is told — not a fixed 60.
+    expect(await cacheControl('/pricing')).toContain('s-maxage=300');
     expect(await cacheControl('/blog/hello')).toContain('s-maxage=30');
     expect(await cacheControl('/feed')).toBe('private, no-store');
   });

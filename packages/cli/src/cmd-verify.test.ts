@@ -1,4 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+// Bun ships no `Bun.*` equivalent for either: `mkdtemp`/`rm` own a throwaway app root's lifetime,
+// and `join` builds the host-separator paths the committed contract files are written to.
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { OPENAPI_FILE } from './app-openapi';
 import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 import { exitCodeFor } from './output';
 import type { VerifyContext, VerifyStep } from './verify-step';
@@ -126,6 +133,56 @@ describe('unit · x verify', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.steps?.[0]?.findings[0]?.code).toBe('X_BOUNDARY_VIOLATION');
+  });
+
+  // `openapi.json` is a published contract on its own — the typed client is generated from it —
+  // so gating the step on `x.manifest.json` let a stale spec ship a wrong client unchecked.
+  describe('contract-diff applies to either committed contract', () => {
+    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'contract-diff');
+
+    const withRoot = async (
+      files: Readonly<Record<string, string>>,
+      assert: (root: string) => Promise<void>,
+    ): Promise<void> => {
+      const root = await mkdtemp(join(tmpdir(), 'x-contract-diff-'));
+      try {
+        for (const [name, body] of Object.entries(files)) await Bun.write(join(root, name), body);
+        await assert(root);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    };
+
+    test('neither file committed: the step is skipped, as before', async () => {
+      await withRoot({}, async (root) => {
+        expect(await step?.applies?.({ ...ctx, root })).toBe(false);
+      });
+    });
+
+    test('openapi.json alone is enough to run it', async () => {
+      await withRoot({ [OPENAPI_FILE]: '{}' }, async (root) => {
+        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+      });
+    });
+
+    test('x.manifest.json alone is still enough to run it', async () => {
+      await withRoot({ [MANIFEST_FILENAME]: '{}' }, async (root) => {
+        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+      });
+    });
+
+    test('an openapi.json that no longer matches the code fails with no manifest present', async () => {
+      const files = {
+        [OPENAPI_FILE]: '{"openapi":"3.1.0"}',
+        'package.json': JSON.stringify({ name: 'spec-only', version: '1.0.0' }),
+      };
+      await withRoot(files, async (root) => {
+        const outcome = await step?.run({ ...ctx, root });
+        expect(outcome?.ok).toBe(false);
+        expect(outcome?.findings.map((finding) => finding.at)).toContain(OPENAPI_FILE);
+        expect(outcome?.findings[0]?.fix).toBe('x manifest');
+      });
+    });
   });
 
   test('a step that throws becomes a finding, not a crash', async () => {

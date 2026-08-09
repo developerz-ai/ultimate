@@ -6,13 +6,12 @@ import { describe, expect, test } from 'bun:test';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
 import { createMcpServer, devTools } from '@ultimat3/mcp';
 import type { DevServices } from './dev-services';
-import {
-  DEV_TOOL_SCOPES,
-  databaseTarget,
-  explainErrorCode,
-  localCaller,
-  parseBunTest,
-} from './mcp-host';
+import { CliNotImplementedError } from './errors';
+import type { Runner } from './exec';
+import { databaseTarget } from './mcp-db-target';
+import { explainErrorCode } from './mcp-errors';
+import { DEV_TOOL_SCOPES, lazyServices, localCaller } from './mcp-host';
+import { parseBunTest } from './mcp-test-output';
 
 /** Every tool `@ultimat3/mcp` ships for dev, in `tools/list` order. */
 const TOOL_NAMES = [
@@ -304,5 +303,27 @@ describe('unit · the database target', () => {
 
   test('nothing `x dev` resolves is production — the branch gate is what refuses', () => {
     expect(databaseTarget(services('pglite:///app/.x/pgdata', 'embedded')).production).toBe(false);
+  });
+});
+
+const noRunner: Runner = (command) => {
+  throw new CliNotImplementedError({
+    feature: `a subprocess in this test (${command.join(' ')})`,
+    fix: 'x mcp tools --json',
+  });
+};
+
+describe('unit · the lazily booted services', () => {
+  test('a tool call after close() is refused instead of booting a database nobody stops', async () => {
+    const lazy = lazyServices({ root: '/tmp/nonexistent-app', env: {}, runner: noRunner });
+    await lazy.close();
+    expect(() => lazy.running()).toThrow(/X_NOT_IMPLEMENTED/);
+  });
+
+  test('close() is idempotent, so both transports may call it on the way out', async () => {
+    const lazy = lazyServices({ root: '/tmp/nonexistent-app', env: {}, runner: noRunner });
+    await lazy.close();
+    await lazy.close();
+    expect(lazy.services.db.url).toContain('pglite://');
   });
 });

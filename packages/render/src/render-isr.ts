@@ -267,10 +267,23 @@ function segmentPattern(segment: string): string {
   return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Tag-only routes have no clock of their own; a tag bust reaches the CDN through the fanout. */
+const TAG_ONLY_S_MAX_AGE_SECONDS = 60;
+
+/**
+ * The declared TTL is the route's own contract with the CDN: a shared cache must not hold the
+ * page longer than the app said it stays true. A flat `s-maxage=60` made `revalidate: { ttl:
+ * '5m' }` a lie in one direction and `ttl: '30s'` a lie in the other.
+ */
+function cacheControl(ttlMs: number | null): string {
+  const sMaxAge = ttlMs === null ? TAG_ONLY_S_MAX_AGE_SECONDS : Math.round(ttlMs / 1_000);
+  return `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=86400`;
+}
+
 function toResult(entry: IsrEntry, buildId: string, servedStale = false): RenderResult {
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
-    'cache-control': 'public, max-age=0, s-maxage=60, stale-while-revalidate=86400',
+    'cache-control': cacheControl(entry.ttlMs),
   };
   if (servedStale) headers['x-ultimate-isr'] = 'stale';
   return { status: 200, headers, body: entry.html };

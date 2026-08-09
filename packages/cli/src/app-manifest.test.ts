@@ -3,6 +3,8 @@
 // a fixture that only pretended to be a module would prove nothing.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// Bun ships no `Bun.*` equivalent for either: `rm` tears the fixture tree down recursively between
+// runs, and `join` builds the host-separator paths the fixture is written to and read from.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
@@ -13,6 +15,7 @@ import { resetRegistry as resetQueries } from '@ultimat3/query';
 import { clearRoutes } from '@ultimat3/render';
 import { loadApp, resetAppLoad } from './app-load';
 import { appManifest } from './app-manifest';
+import type { ThrownShape } from './thrown-by';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
@@ -160,5 +163,69 @@ describe('unit · x manifest', () => {
     expect(manifest.actions).toHaveLength(1);
     expect(manifest.queries).toHaveLength(1);
     expect(findings.map((finding) => finding.code)).toHaveLength(1);
+  });
+});
+
+/** `thrownBy` is synchronous and `appManifest` is not; the assertion is the same three fields. */
+async function rejectedBy(call: () => Promise<unknown>): Promise<ThrownShape> {
+  try {
+    await call();
+  } catch (error) {
+    return error as ThrownShape;
+  }
+  return expect.unreachable('expected a rejection');
+}
+
+// The manifest's `app.version` IS the semver compatibility gate, so every way of not knowing the
+// app's identity has to fail here — a default would publish a contract the app never claimed.
+describe('unit · app identity', () => {
+  const IDENTITY_ROOT = join(import.meta.dir, '..', '.identity-fixture');
+
+  const withPackageJson = async (
+    contents: string | undefined,
+    assert: (shape: ThrownShape) => void,
+  ): Promise<void> => {
+    await rm(IDENTITY_ROOT, { recursive: true, force: true });
+    if (contents === undefined) await Bun.write(join(IDENTITY_ROOT, '.keep'), '');
+    else await Bun.write(join(IDENTITY_ROOT, 'package.json'), contents);
+    try {
+      assert(await rejectedBy(() => appManifest(IDENTITY_ROOT)));
+    } finally {
+      await rm(IDENTITY_ROOT, { recursive: true, force: true });
+    }
+  };
+
+  test('a well-formed package.json is the app identity, verbatim', async () => {
+    const { manifest } = await appManifest(ROOT);
+    expect(manifest.app).toEqual({ name: 'fixture-app', version: '2.1.0' });
+  });
+
+  test('a missing package.json fails with the command that creates the fields', async () => {
+    await withPackageJson(undefined, (shape) => {
+      expect(shape.code).toBe('X_APP_PACKAGE_INVALID');
+      expect(shape.cause).toContain('does not exist');
+      expect(shape.fix).toBe('bun pm pkg set name=<app> version=0.1.0');
+    });
+  });
+
+  test('malformed JSON fails instead of defaulting to app@0.0.0', async () => {
+    await withPackageJson('{ "name": ', (shape) => {
+      expect(shape.code).toBe('X_APP_PACKAGE_INVALID');
+      expect(shape.cause).toContain('is not a JSON object');
+    });
+  });
+
+  test('a missing name fails, naming the field', async () => {
+    await withPackageJson(JSON.stringify({ version: '1.0.0' }), (shape) => {
+      expect(shape.code).toBe('X_APP_PACKAGE_INVALID');
+      expect(shape.cause).toContain('"name"');
+    });
+  });
+
+  test('a non-string version fails, naming the field', async () => {
+    await withPackageJson(JSON.stringify({ name: 'app', version: 2 }), (shape) => {
+      expect(shape.code).toBe('X_APP_PACKAGE_INVALID');
+      expect(shape.cause).toContain('"version"');
+    });
   });
 });

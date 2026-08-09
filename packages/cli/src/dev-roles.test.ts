@@ -124,4 +124,38 @@ describe('unit · x dev --role', () => {
     const response = await running.server?.fetch(new Request('http://dev.test/_x/ping'));
     expect(await response?.text()).toBe('pong');
   });
+
+  test('the sync role reports the socket it bound, not the port that was asked for', async () => {
+    running = await startRoles({
+      roles: selectRoles('sync'),
+      // The bug: `port + 1` turned an ephemeral request into a request for port 1, and the
+      // reported url was built from the number rather than read from the listener.
+      port: 0,
+      buildId: 'test',
+      runtime: fakeRuntime(),
+      routes: [],
+    });
+
+    const url = new URL(running.syncUrl ?? '');
+    expect(url.protocol).toBe('ws:');
+    expect(Number.parseInt(url.port, 10)).toBeGreaterThan(1);
+  });
+
+  test('a role that cannot bind rejects instead of handing back a half-started set', async () => {
+    // Occupy the port the sync role will ask for, so `startSync` is the step that throws and the
+    // web role started before it is the one the unwind has to give back.
+    const blocker = Bun.serve({ port: 0, fetch: () => new Response('taken') });
+
+    await expect(
+      startRoles({
+        roles: selectRoles('web,sync'),
+        port: blocker.port - 1,
+        buildId: 'test',
+        runtime: fakeRuntime(),
+        routes: [],
+      }),
+    ).rejects.toThrow();
+
+    blocker.stop(true);
+  });
 });

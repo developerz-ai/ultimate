@@ -26,6 +26,7 @@ import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import { findingFrom } from './output';
 import { flagString } from './parse';
 
 const DEFAULT_PORT = 3000;
@@ -34,7 +35,9 @@ export interface DevServer {
   readonly url: string;
   readonly services: DevServices;
   readonly roles: readonly Role[];
-  /** Modules that would not import, and primitives that would not register. */
+  /** The manifest as it stands now — a reload that registers a new route moves it. */
+  readonly buildId: string;
+  /** Modules that would not import, primitives that would not register, reloads that would not build. */
   readonly findings: readonly Finding[];
   readonly running: RunningRoles;
   readonly runtime: RunningServices;
@@ -46,6 +49,8 @@ export interface DevServer {
 interface DevState {
   manifest: Manifest;
   reloads: number;
+  /** A save that will not build. Replaced on every attempt, so a fixed file clears it. */
+  reloadFinding: Finding | undefined;
 }
 
 /** Debounced: a save that touches five files is one reload, not five. */
@@ -92,9 +97,16 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const services = resolveServices(options.root, options.env);
   const runtime: RunningServices = await startServices(services);
   const app = await loadApp(options.root);
-  const state: DevState = { manifest: (await appManifest(options.root)).manifest, reloads: 0 };
+  const state: DevState = {
+    manifest: (await appManifest(options.root)).manifest,
+    reloads: 0,
+    reloadFinding: undefined,
+  };
   // The manifest's build id is a content hash of every fact below it, so a dev document's
-  // `x-ultimate-build` header names the exact shape the client was served against.
+  // `x-ultimate-build` header names the exact shape the client was served against. Pinned at
+  // boot on purpose: the header is handed to the HTTP config and the render modes once, and a
+  // reload cannot re-pin it — `state.manifest.buildId` is what `/_x` and `--json` report, so a
+  // divergence between the two is visible rather than silent, and a restart closes it.
   const buildId = state.manifest.buildId;
 
   let server: DevServer;
@@ -130,18 +142,34 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
 
   const stopWatching = watchApp(options.root, (file) => {
     const started = performance.now();
-    void appManifest(options.root).then(({ manifest }) => {
-      state.manifest = manifest;
-      state.reloads += 1;
-      options.onReload?.(file, Math.round(performance.now() - started));
-    });
+    void appManifest(options.root)
+      .then(({ manifest }) => {
+        state.manifest = manifest;
+        state.reloads += 1;
+        state.reloadFinding = undefined;
+        options.onReload?.(file, Math.round(performance.now() - started));
+      })
+      // Same rule as a module that will not import: a save the manifest cannot be rebuilt from is
+      // a finding on `/_x`, never an unhandled rejection that takes the dev server down.
+      .catch((error: unknown) => {
+        state.reloadFinding = { ...findingFrom(error), at: file };
+      });
   });
 
   server = {
     url: running.url ?? `http://localhost:${options.port}`,
     services,
     roles: running.roles,
-    findings: app.findings,
+    get buildId(): string {
+      return state.manifest.buildId;
+    },
+    // A getter, not a snapshot: `/_x` and `--json` must show the reload that just failed, not the
+    // findings as they were when the route table was built.
+    get findings(): readonly Finding[] {
+      return state.reloadFinding === undefined
+        ? app.findings
+        : [...app.findings, state.reloadFinding];
+    },
     running,
     runtime,
     panels,
@@ -193,6 +221,8 @@ export const devCommand: CliCommand = {
         services: describeServices(server.services),
       }),
       findings: server.findings,
+      // Every fact `lines` prints is a fact `--json` carries, `manifest` included — or the two
+      // renderers have drifted and only one of them can be scripted against.
       data: {
         url: server.url,
         roles: [...server.roles],
@@ -201,14 +231,16 @@ export const devCommand: CliCommand = {
         db: server.services.db.url,
         events: server.services.events.url,
         storage: server.services.storage.url,
+        buildId: server.buildId,
+        manifest: join(root, MANIFEST_FILENAME),
         introspect: `${server.url}/_x`,
         panels: [...server.panels],
       },
       lines: [
         msg('cli.dev.roles', { roles: server.roles.join(', ') }),
         msg('cli.dev.panels', { panels: server.panels.join(', ') }),
-        `  manifest ${join(root, MANIFEST_FILENAME)}`,
-        `  introspect ${server.url}/_x`,
+        msg('cli.dev.manifest', { path: join(root, MANIFEST_FILENAME) }),
+        msg('cli.dev.introspect', { url: `${server.url}/_x` }),
       ],
     };
     if (ctx.args.flags.get('once') === true) {

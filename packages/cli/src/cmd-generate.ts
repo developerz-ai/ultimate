@@ -268,13 +268,20 @@ export const generateCommand: CliCommand = {
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.
     let buildId: string | undefined;
+    // A module that would not load is omitted from the registries, so a manifest written over a
+    // partial load would replace the compatibility contract with a subset of the app. The scaffold
+    // stays on disk — only the projection is withheld, and the load failures travel as findings.
+    const loadFailures: Finding[] = [];
     if (report.written.length > 0) {
-      const { manifest } = await appManifest(root);
-      await writeAppManifest(root, manifest);
-      buildId = manifest.buildId;
+      const { manifest, findings } = await appManifest(root);
+      if (findings.length === 0) {
+        await writeAppManifest(root, manifest);
+        buildId = manifest.buildId;
+      } else loadFailures.push(...findings);
     }
+    const findings = [...report.conflicts, ...loadFailures];
     return {
-      ok: report.conflicts.length === 0,
+      ok: findings.length === 0,
       command: 'g',
       summary: msg('cli.generate.wrote', { count: report.written.length, kind, name }),
       data: {
@@ -285,7 +292,7 @@ export const generateCommand: CliCommand = {
         ...report.written.map((path) => `  + ${path}`),
         ...(buildId === undefined ? [] : [`  + ${MANIFEST_FILENAME}`]),
       ],
-      findings: report.conflicts,
+      findings,
     };
   },
 };

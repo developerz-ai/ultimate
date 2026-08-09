@@ -37,7 +37,8 @@ describe('unit · app boundaries', () => {
       file('apps/web/app/orders/page.tsx', "import { db } from '@acme/db';"),
     ]);
     expect(findings[0]?.code).toBe('X_BOUNDARY_ROUTE_TO_DB');
-    expect(findings[0]?.fix).toContain('x g query');
+    // Every fix is a line a caller can paste: a command first, the rest behind a `#`.
+    expect(findings[0]?.fix).toStartWith('x g query orders');
   });
 
   test('a service may not know about HTTP', () => {
@@ -45,6 +46,7 @@ describe('unit · app boundaries', () => {
       file('apps/web/app/orders/service.ts', "import { request } from '@ultimat3/http';"),
     ]);
     expect(findings[0]?.code).toBe('X_BOUNDARY_SERVICE_TO_HTTP');
+    expect(findings[0]?.fix).toStartWith('x g action orders');
   });
 
   test('a legal import graph produces no findings', () => {

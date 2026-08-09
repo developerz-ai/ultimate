@@ -1,3 +1,7 @@
+// Pins the `@ultimat3/seo` → `HeadRenderers` adapter — `seoRenderers`, `toHeadTag`, `headTagKey`.
+// A route's `meta()` has to keep rendering into a real `<head>`: deduped by tag identity, scripts
+// in declaration order, canonical from the route path. Drift here ships wrong `<head>` markup.
+
 import { describe, expect, test } from 'bun:test';
 import { ld } from '@ultimat3/seo';
 import { headFromMeta, renderHead } from './head';

@@ -81,14 +81,16 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'contract-diff',
     summary: 'the published contract vs the committed manifest',
-    applies: async (ctx) => existsSync(join(ctx.root, MANIFEST_FILENAME)),
+    // Either file is a published contract on its own: `openapi.json` generates the typed client,
+    // so gating on the manifest alone let a stale spec ship a wrong client unchecked.
+    applies: async (ctx) =>
+      existsSync(join(ctx.root, MANIFEST_FILENAME)) || existsSync(join(ctx.root, OPENAPI_FILE)),
     async run(ctx) {
       const committed = await readAppManifest(ctx.root);
-      if (committed === undefined) return passed;
       const { manifest, findings } = await appManifest(ctx.root);
       return fromFindings([
         ...findings,
-        ...contractFindings(committed, manifest),
+        ...(committed === undefined ? [] : contractFindings(committed, manifest)),
         ...(await specFindings(ctx.root, manifest)),
       ]);
     },

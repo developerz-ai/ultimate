@@ -31,15 +31,38 @@ const chainOf = (stats: RouteStats): string =>
 
 const jsBudgetOf = (route: RouteFact): number | null => parseByteBudget(route.budget?.js);
 
-/** Compare declared budgets against measured stats. No stats = nothing to compare, not a pass. */
+/** Which budgets the route declared, for a cause line that names what went unmeasured. */
+function declaredBudgets(js: number | null, lcp: number | undefined): string {
+  const labels: string[] = [];
+  if (js !== null) labels.push('JS');
+  if (lcp !== undefined) labels.push('LCP');
+  return labels.join(' and ');
+}
+
+/**
+ * Compare declared budgets against measured stats. A declared budget with no measurement is a
+ * finding, never a pass: a route that clears the gate without ever being weighed is exactly the
+ * false green axiom 5 exists to prevent. Only a route that declares nothing is skipped.
+ */
 export function checkBudgets(manifest: Manifest, stats: BuildStats): readonly Finding[] {
   const byPath = new Map(stats.routes.map((route) => [route.path, route]));
   const findings: Finding[] = [];
   for (const route of manifest.routes) {
     const measured = byPath.get(route.url);
-    if (measured === undefined) continue;
     const js = jsBudgetOf(route);
     const lcp = route.budget?.lcp;
+    if (measured === undefined) {
+      if (js !== null || lcp !== undefined) {
+        findings.push({
+          code: 'X_BUDGET_UNMEASURED',
+          cause: `${route.url} declares a ${declaredBudgets(js, lcp)} budget but ${BUILD_STATS_FILE} has no entry for it`,
+          fix: 'x build && x verify',
+          docs: 'https://ultimate.dev/errors/X_BUDGET_UNMEASURED',
+          at: route.url,
+        });
+      }
+      continue;
+    }
     if (js !== null && measured.jsBytes > js) {
       findings.push({
         code: 'X_BUDGET_EXCEEDED',

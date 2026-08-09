@@ -4,19 +4,16 @@
 // is a second catalog of routes, entities, actions, queries or jobs.
 
 import { existsSync } from 'node:fs';
-import { basename, join } from 'node:path';
-import { agentActor, describeErrorCode, hasErrorCode, UltimateError } from '@ultimat3/core';
-import { pgliteDataDir, raw, readLedger } from '@ultimat3/db';
+import { join } from 'node:path';
+import { agentActor, UltimateError } from '@ultimat3/core';
+import { raw, readLedger } from '@ultimat3/db';
 import { inspectJobList, inspectQueues } from '@ultimat3/jobs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import type {
-  DatabaseTarget,
   DevCapabilities,
-  ErrorExplanation,
   McpCaller,
   McpServer,
   QueryResult,
-  TestRun,
   VerifyResult,
   VerifyStep,
 } from '@ultimat3/mcp';
@@ -30,10 +27,12 @@ import { startServices } from './dev-runtime';
 import type { DevServices, Env } from './dev-services';
 import { resolveServices } from './dev-services';
 import { MIGRATIONS_DIR } from './drift';
-import type { CliErrorCode } from './errors';
-import { CLI_ERROR_CODES, CliNotImplementedError, docsFor } from './errors';
+import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
+import { databaseTarget } from './mcp-db-target';
+import { explainErrorCode } from './mcp-errors';
+import { parseBunTest } from './mcp-test-output';
 
 export interface DevHostInput {
   readonly root: string;
@@ -65,142 +64,9 @@ export function localCaller(): McpCaller {
   };
 }
 
-// ── the database this host is pointed at ─────────────────────────────────────
-
-/**
- * `production` is always false: this target is whatever `x dev` resolved — embedded PGlite under
- * `.x/`, or the `DATABASE_URL` of a developer's shell. Production is reached through `ROLE=migrate`
- * in a deploy hook, never through MCP. What actually stops a migration against a shared database is
- * `branch`, which is null unless the name says otherwise.
- */
-export function databaseTarget(services: DevServices): DatabaseTarget {
-  const url = services.db.url;
-  return services.db.mode === 'embedded'
-    ? { label: url, branch: pgliteBranch(url, services.stateDir), production: false }
-    : { label: safeLabel(url), branch: postgresBranch(url), production: false };
-}
-
-/** An external `DATABASE_URL` may carry credentials, and this string gets printed. */
-function safeLabel(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
-  } catch {
-    return 'external database';
-  }
-}
-
-/** `x db branch <name>` names an external clone `<source>_branch_<name>` (`branchDatabaseName`). */
-function postgresBranch(url: string): string | null {
-  let database: string;
-  try {
-    database = new URL(url).pathname.replace(/^\//, '');
-  } catch {
-    return null;
-  }
-  return /_branch_(.+)$/.exec(database)?.[1] ?? null;
-}
-
-/** `branchPglite` copies `<stateDir>/pgdata` to `<stateDir>/pgdata-<name>`; the dev dir is no branch. */
-function pgliteBranch(url: string, stateDir: string): string | null {
-  const dir = pgliteDataDir(url);
-  const dev = join(stateDir, 'pgdata');
-  if (dir === dev || basename(dir) === basename(dev)) return null;
-  return dir.startsWith(`${dev}-`) ? dir.slice(dev.length + 1) : null;
-}
-
-// ── errors.explain ───────────────────────────────────────────────────────────
-
-/** One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build. */
-const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
-  X_CLI_UNKNOWN_COMMAND: 'x help',
-  X_CLI_BAD_FLAG: 'x help <command>',
-  X_VERIFY_FAILED: 'x verify --json',
-  X_NOT_IN_APP: 'x new myapp && cd myapp',
-  X_BUN_VERSION: 'bun upgrade',
-  X_NOT_IMPLEMENTED: 'x doctor --json',
-  X_TEST_NO_FILES: 'x test --cwd <repo root>',
-  X_TEST_SHARD_FAILED: 'x test --workers 1',
-  X_SCAFFOLD_PATH_ESCAPE: 'x g route <name>   # a path with no ".." segment',
-};
-
-const isCliCode = (code: string): code is CliErrorCode =>
-  (CLI_ERROR_CODES as readonly string[]).includes(code);
-
-/**
- * `undefined` for a code nobody registered — the tool then answers "unknown error code", which
- * beats an invented explanation. The framework-wide registry holds a title and a docs URL but no
- * fix (a thrown error carries its own), so a non-CLI code points at the gate that surfaces it.
- */
-export function explainErrorCode(code: string): ErrorExplanation | undefined {
-  const cli = isCliCode(code);
-  if (!cli && !hasErrorCode(code)) return undefined;
-  const described = describeErrorCode(code);
-  return {
-    code,
-    cause: described.title,
-    fix: cli ? CLI_FIXES[code] : 'x verify --json',
-    docs: cli ? docsFor(code) : described.docs,
-  };
-}
-
-// ── tests.run ────────────────────────────────────────────────────────────────
-
-const TAIL_LINES = 20;
-const FAIL_LINE = /^\(fail\)\s+(.*?)(?:\s+\[[\d.]+\s*m?s\])?$/;
-const ERROR_LINE = /^\s*error:\s*(.+)$/;
-
-const lastCount = (output: string, label: string): number | undefined => {
-  const last = [...output.matchAll(new RegExp(`^\\s*(\\d+)\\s+${label}\\b`, 'gm'))].at(-1);
-  return last === undefined ? undefined : Number.parseInt(last[1] ?? '0', 10);
-};
-
-const tailOf = (output: string): string => {
-  const lines = output.split('\n').filter((line) => line.trim().length > 0);
-  return lines.length === 0 ? 'bun test produced no output' : lines.slice(-TAIL_LINES).join('\n');
-};
-
-/**
- * Bun prints its own summary, so this reads it instead of counting anything a second time. Output
- * it cannot recognise is reported as a FAILED run carrying the raw tail: returning zeros there
- * would turn a runner that crashed before it started into a green run.
- */
-export function parseBunTest(output: string, durationMs: number): TestRun {
-  const passed = lastCount(output, 'pass');
-  const failed = lastCount(output, 'fail');
-  if (passed === undefined && failed === undefined) {
-    const failure = { test: 'bun test', message: tailOf(output) };
-    return { passed: 0, failed: 1, skipped: 0, durationMs, failures: [failure] };
-  }
-  const failures: { test: string; message: string }[] = [];
-  let message = '';
-  for (const line of output.split('\n')) {
-    const error = ERROR_LINE.exec(line);
-    if (error !== null) {
-      message = error[1] ?? '';
-      continue;
-    }
-    const fail = FAIL_LINE.exec(line.trimEnd());
-    if (fail === null) continue;
-    failures.push({
-      test: (fail[1] ?? '').trim(),
-      message: message === '' ? 'no error message in the run output' : message,
-    });
-    message = '';
-  }
-  return {
-    passed: passed ?? 0,
-    failed: failed ?? 0,
-    // `skip` and `todo` print on separate lines and both mean "not run".
-    skipped: (lastCount(output, 'skip') ?? 0) + (lastCount(output, 'todo') ?? 0),
-    durationMs,
-    failures,
-  };
-}
-
 // ── the lazily booted services ───────────────────────────────────────────────
 
-interface LazyServices {
+export interface LazyServices {
   readonly services: DevServices;
   running(): Promise<RunningServices>;
   close(): Promise<void>;
@@ -209,15 +75,23 @@ interface LazyServices {
 /**
  * The database boots on FIRST USE, once, and is shared: answering `routes.list` must not pay a
  * PGlite boot. Same resolver and same drivers as `x dev` — a dev-only second driver is exactly the
- * bug that design exists to prevent.
+ * bug that design exists to prevent. Exported as the boot seam a test can drive without a server.
  */
-function lazyServices(input: DevHostInput): LazyServices {
+export function lazyServices(input: DevHostInput): LazyServices {
   const services = resolveServices(input.root, input.env);
   let started: Promise<RunningServices> | undefined;
   let closed = false;
   return {
     services,
     running(): Promise<RunningServices> {
+      // A boot started after close() would hold the PGlite data directory for the life of the
+      // process with nobody left to stop it — the host is closed, so the call is the bug.
+      if (closed) {
+        throw new CliNotImplementedError({
+          feature: 'an MCP tool that needs the database after the host closed',
+          fix: 'x mcp serve --transport stdio   # keep the host open for the whole session',
+        });
+      }
       started ??= startServices(services);
       return started;
     },
@@ -255,8 +129,10 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
 
     // `assertReadOnlyQuery` already refused writes, batches and locking clauses inside the tool,
     // before this host was reached; a second gate here would be a second place to keep right.
-    // The cap is applied in memory rather than by appending a LIMIT, which would change the
-    // meaning of a statement that carries its own.
+    // The cap is applied in memory because there is no honest alternative: `DbClient` exposes no
+    // cursor or stream, and wrapping the statement in `select * from (…) limit n` would both
+    // change the meaning of a statement carrying its own LIMIT and fail outright on `EXPLAIN`
+    // and `SHOW`, which are commands rather than derived tables.
     async runQuery(sql: string, limit: number): Promise<QueryResult> {
       const { db } = await lazy.running();
       const rows = await db.query<Record<string, unknown>>(raw(sql));

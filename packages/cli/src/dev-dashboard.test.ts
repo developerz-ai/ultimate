@@ -14,6 +14,7 @@ import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 import type { RunningServices } from './dev-runtime';
 import type { DevServices, ServiceBinding } from './dev-services';
+import { CliNotImplementedError } from './errors';
 
 /** The nine panels `@ultimat3/admin` ships. Spelled out so a silent drop is a failure here. */
 const FRAMEWORK_PANELS = [
@@ -82,7 +83,13 @@ const inputFor = (
 
 const panelFor = (input: DevDashboardInput, key: string): DevPanel => {
   const panel = devPanels(input).find((candidate) => candidate.key === key);
-  if (panel === undefined) throw new Error(`no /_x panel named "${key}"`);
+  // Never a bare Error, tests included: a throw without a code and a fix is not an instruction.
+  if (panel === undefined) {
+    throw new CliNotImplementedError({
+      feature: `a /_x panel named "${key}"`,
+      fix: 'x dev --json   # `panels` lists every key devPanels() mounts',
+    });
+  }
   return panel;
 };
 

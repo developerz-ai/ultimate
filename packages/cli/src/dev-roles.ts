@@ -94,7 +94,13 @@ function startWeb(options: StartRolesOptions): ServerHandle {
   }).start();
 }
 
-/** The sync role owns its own socket: websockets and the request pipeline drain differently. */
+/**
+ * The sync role owns its own socket: websockets and the request pipeline drain differently.
+ *
+ * Port 0 is passed straight through rather than incremented — `+ 1` would ask the kernel for
+ * port 1 instead of an ephemeral one — and the reported url is the listener's own bound address,
+ * never a string built from the port that was requested.
+ */
 async function startSync(
   options: StartRolesOptions,
 ): Promise<{ url: string; stop: () => Promise<void> }> {
@@ -107,47 +113,67 @@ async function startSync(
     sockets,
   });
   await node.start();
-  const port = options.port + 1;
-  const listener = listenSyncNode(node, { port });
-  return {
-    url: `ws://localhost:${port}`,
-    stop: async () => {
-      listener.stop();
-      await node.stop();
-    },
-  };
+  try {
+    const listener = listenSyncNode(node, { port: options.port === 0 ? 0 : options.port + 1 });
+    return {
+      url: listener.url,
+      stop: async () => {
+        listener.stop();
+        await node.stop();
+      },
+    };
+  } catch (error) {
+    await node.stop();
+    throw error;
+  }
 }
 
 export async function startRoles(options: StartRolesOptions): Promise<RunningRoles> {
   const selected = options.roles;
-  const server = selected.includes('web') ? startWeb(options) : null;
-  const sync = selected.includes('sync') ? await startSync(options) : null;
+  // Roles bind sockets in order, so a role that fails to start has to release the ones before it.
+  // Without this a failed `sync` leaves the web server bound and unreachable by any caller.
+  const started: (() => Promise<void>)[] = [];
+  try {
+    const server = selected.includes('web') ? startWeb(options) : null;
+    if (server !== null) started.push(() => server.stop());
 
-  const worker = selected.includes('worker')
-    ? createWorker({
-        driver: options.runtime.jobs,
-        context: () => createContext({ role: 'worker', buildId: options.buildId }),
-      })
-    : null;
-  worker?.start();
+    const sync = selected.includes('sync') ? await startSync(options) : null;
+    if (sync !== null) started.push(sync.stop);
 
-  const scheduler = selected.includes('scheduler')
-    ? createScheduler({ driver: options.runtime.jobs })
-    : null;
-  scheduler?.start();
+    const worker = selected.includes('worker')
+      ? createWorker({
+          driver: options.runtime.jobs,
+          context: () => createContext({ role: 'worker', buildId: options.buildId }),
+        })
+      : null;
+    worker?.start();
+    if (worker !== null) started.push(() => worker.stop('x dev stopped'));
 
-  return {
-    roles: selected,
-    url: server === null ? null : server.url(),
-    syncUrl: sync?.url ?? null,
-    server,
-    worker,
-    scheduler,
-    async stop() {
-      await scheduler?.stop();
-      await worker?.stop('x dev stopped');
-      await sync?.stop();
-      await server?.stop();
-    },
-  };
+    const scheduler = selected.includes('scheduler')
+      ? createScheduler({ driver: options.runtime.jobs })
+      : null;
+    scheduler?.start();
+    if (scheduler !== null) started.push(() => scheduler.stop());
+
+    return {
+      roles: selected,
+      url: server === null ? null : server.url(),
+      syncUrl: sync?.url ?? null,
+      server,
+      worker,
+      scheduler,
+      async stop() {
+        await scheduler?.stop();
+        await worker?.stop('x dev stopped');
+        await sync?.stop();
+        await server?.stop();
+      },
+    };
+  } catch (error) {
+    for (const stop of started.reverse()) {
+      // The role that refused to start is the failure worth reporting, not a stop on the way out.
+      await stop().catch(() => undefined);
+    }
+    throw error;
+  }
 }

@@ -1,6 +1,6 @@
 # @ultimat3/admin — boundary
 
-Tier 5. May import tiers 0–4. Nothing imports this.
+Tier 5. May import tiers 0–4. Exactly one importer: `@ultimat3/cli`, and only of `@ultimat3/admin/dev` — `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`) so `x dev` can **mount** `/_x`. The root barrel `@ultimat3/admin` has no importer.
 
 Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev/index.ts`) = the `/_x` dev dashboard, `@ultimat3/admin` (`src/index.ts`) = the generated app admin (production, authz'd, AI-first). Keep them apart; nothing in `src/dev/` may be imported by an admin view, and the root barrel does not re-export the dev half — a host that mounts `/_x` (the CLI) must not load a Solid component to do it.
 

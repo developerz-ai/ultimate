@@ -6,10 +6,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetAppLoad } from './app-load';
-import { mcpCommand } from './cmd-mcp';
+import type { McpHttpServer } from './cmd-mcp';
+import { mcpCommand, startMcpHttp } from './cmd-mcp';
 import type { CommandContext } from './command';
+import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
-import type { CommandResult } from './output';
+import { createDevMcpServer } from './mcp-host';
 import { renderJson } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
@@ -25,7 +27,10 @@ const FILES: Readonly<Record<string, string>> = {
 
 /** No subprocess is reachable from `x mcp tools` or the HTTP mount; a call here is the bug. */
 const runner: Runner = (command) => {
-  throw new Error(`no subprocess expected, got: ${command.join(' ')}`);
+  throw new CliNotImplementedError({
+    feature: `a subprocess from x mcp (${command.join(' ')})`,
+    fix: 'x mcp tools --json',
+  });
 };
 
 const context = (argv: readonly string[]): CommandContext => ({
@@ -41,11 +46,19 @@ interface ToolRow {
   readonly description: string;
 }
 
+interface CatalogData {
+  readonly tools: readonly ToolRow[];
+  readonly scopes: readonly string[];
+}
+
 interface ServeData {
   readonly url: string;
   readonly token: string;
   readonly tools: number;
+  readonly scopes: readonly string[];
 }
+
+const SCOPES = ['db:migrate', 'db:read', 'dev:logs', 'dev:read', 'dev:test'];
 
 beforeAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
@@ -63,21 +76,24 @@ afterAll(async () => {
 describe('unit · x mcp tools', () => {
   test('prints the framework catalog, not a list the CLI keeps', async () => {
     const result = await mcpCommand.run(context(['mcp', 'tools', '--json']));
-    const tools = result.data as readonly ToolRow[];
+    const { tools } = result.data as unknown as CatalogData;
     expect(tools).toHaveLength(13);
     expect(tools.map((tool) => tool.name)).toContain('verify.run');
     for (const tool of tools) expect(tool.description.length).toBeGreaterThan(20);
     expect(result.summary).toBe('mcp none serving 13 tools');
   });
 
-  test('--json carries the same catalog the terminal renders, plus the scopes', async () => {
+  test('--json carries every line the terminal renders, the scopes included', async () => {
     const result = await mcpCommand.run(context(['mcp', 'tools', '--json']));
-    const payload = JSON.parse(renderJson(result)) as { data: readonly ToolRow[] };
+    const payload = JSON.parse(renderJson(result)) as { data: CatalogData };
     const rendered = (result.lines ?? []).filter((line) => !line.startsWith('  scopes'));
-    expect(payload.data.map((tool) => tool.name)).toEqual(
+    expect(payload.data.tools.map((tool) => tool.name)).toEqual(
       rendered.map((line) => line.trim().split(/\s+/)[0] ?? ''),
     );
-    expect(result.lines?.at(-1)).toBe('  scopes db:migrate db:read dev:logs dev:read dev:test');
+    // The gap this closes: the scope line used to exist only in `lines`, so `--json` could not
+    // reproduce what the terminal printed.
+    expect(payload.data.scopes).toEqual(SCOPES);
+    expect(result.lines?.at(-1)).toBe(`  scopes ${SCOPES.join(' ')}`);
   });
 
   test('the server closes cleanly, so a second run is identical', async () => {
@@ -88,20 +104,35 @@ describe('unit · x mcp tools', () => {
   });
 
   test('an unknown transport is refused before the app is loaded', async () => {
-    expect(mcpCommand.run(context(['mcp', 'serve', '--transport', 'grpc']))).rejects.toThrow(
+    // Awaited: an unawaited `.rejects` settles after the test body returns, so the assertion
+    // could never fail the run.
+    await expect(mcpCommand.run(context(['mcp', 'serve', '--transport', 'grpc']))).rejects.toThrow(
       /X_CLI_BAD_FLAG/,
     );
+  });
+
+  test('a port outside 0..65535 is refused with the working invocation', async () => {
+    await expect(
+      mcpCommand.run(context(['mcp', 'serve', '--transport', 'http', '--port', '70000'])),
+    ).rejects.toThrow(/X_CLI_BAD_FLAG/);
   });
 });
 
 describe('unit · x mcp serve --transport http', () => {
-  let served: CommandResult;
+  let server: McpHttpServer;
   let data: ServeData;
 
   beforeAll(async () => {
+    // Driven through `startMcpHttp` rather than `run` for one reason: this suite has to give the
+    // socket and the host's lazy services back, and only the stop handle can.
+    const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
     // Port 0: the kernel picks one, so this never collides with a running `x mcp serve`.
-    served = await mcpCommand.run(context(['mcp', 'serve', '--transport', 'http', '--port', '0']));
-    data = served.data as unknown as ServeData;
+    server = startMcpHttp(host, 0);
+    data = server.result.data as unknown as ServeData;
+  });
+
+  afterAll(async () => {
+    await server.stop();
   });
 
   const rpc = (body: unknown, token?: string): Promise<Response> =>
@@ -118,7 +149,8 @@ describe('unit · x mcp serve --transport http', () => {
     expect(data.url).toMatch(/^http:\/\/localhost:\d+\/mcp$/);
     expect(data.token.length).toBeGreaterThan(16);
     expect(data.tools).toBe(13);
-    expect(served.summary).toBe('mcp http serving 13 tools');
+    expect(data.scopes).toEqual(SCOPES);
+    expect(server.result.summary).toBe('mcp http serving 13 tools');
   });
 
   test('no token is 401, and the body says how to get one', async () => {

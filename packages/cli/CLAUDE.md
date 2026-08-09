@@ -36,6 +36,9 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
 | `cmd-dev.ts` | boot order, mounting `/_x`, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
+| `mcp-db-target.ts` | which database the host is pointed at, and whether it is a branch |
+| `mcp-errors.ts` | `errors.explain`: one runnable command per code, typed over `CliErrorCode` |
+| `mcp-test-output.ts` | reading `bun test`'s own summary back into a `TestRun` |
 | `cmd-mcp.ts` | `x mcp serve`: the two transports, and the local developer's caller |
 
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only

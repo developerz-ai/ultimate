@@ -24,6 +24,9 @@
       "path": "../entity"
     },
     {
+      "path": "../http"
+    },
+    {
       "path": "../i18n"
     },
     {

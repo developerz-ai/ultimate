@@ -10,7 +10,9 @@
 // exactly the distinction the `app/ -> api/` rule needs (`import type` is allowed, a value
 // import is not).
 
+// Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
 import { join as joinPath } from 'node:path';
+// The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize } from 'node:path/posix';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph } from '@ultimat3/render';
@@ -113,6 +115,13 @@ const surfaceFindings = (graph: ImportGraph): readonly Finding[] =>
     };
   });
 
+/** `apps/web/app/posts/service.ts` → `posts`: the primitive a generator would be told to make. */
+const subjectOf = (path: string, fallback: string): string => path.split('/').at(-2) ?? fallback;
+
+/**
+ * Both fixes are one runnable line, with the rest of the instruction behind a `#` — a fix a
+ * caller has to edit before it runs is prose, and prose is what "errors are instructions" bans.
+ */
 function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of scanned) {
@@ -121,7 +130,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
         findings.push({
           code: 'X_BOUNDARY_ROUTE_TO_DB',
           cause: `route imports the database ("${specifier}") — routes call actions and queries`,
-          fix: `x g query ${file.path.split('/').at(-2) ?? 'rows'} and call it from the route`,
+          fix: `x g query ${subjectOf(file.path, 'rows')}   # then call it from the route`,
           docs: docs('X_BOUNDARY_ROUTE_TO_DB'),
           at: file.path,
         });
@@ -130,7 +139,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
         findings.push({
           code: 'X_BOUNDARY_SERVICE_TO_HTTP',
           cause: `service imports HTTP ("${specifier}") — a service that knows about requests cannot be reused by a job`,
-          fix: `take the values the service needs as arguments; let the action read the request`,
+          fix: `x g action ${subjectOf(file.path, 'service')}   # read the request there, pass the service plain values`,
           docs: docs('X_BOUNDARY_SERVICE_TO_HTTP'),
           at: file.path,
         });

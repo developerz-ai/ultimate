@@ -13,6 +13,7 @@ export const CLI_ERROR_CODES = [
   'X_TEST_NO_FILES',
   'X_TEST_SHARD_FAILED',
   'X_SCAFFOLD_PATH_ESCAPE',
+  'X_APP_PACKAGE_INVALID',
 ] as const;
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
@@ -111,6 +112,22 @@ export class ScaffoldPathEscapeError extends UltimateError {
         input.fix ??
         `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
       docs: docsFor('X_SCAFFOLD_PATH_ESCAPE'),
+    });
+  }
+}
+
+/**
+ * The app's `package.json` cannot supply a name and a version. Defaulting to `app@0.0.0` would put
+ * a fabricated identity into `x.manifest.json`, whose version IS the semver compatibility gate —
+ * so the contract would be overwritten with a lie no downstream check could catch.
+ */
+export class AppPackageInvalidError extends UltimateError {
+  constructor(input: { path: string; problem: string }) {
+    super({
+      code: 'X_APP_PACKAGE_INVALID',
+      cause: `${input.path} ${input.problem}, so the manifest has no app name or version to gate on`,
+      fix: 'bun pm pkg set name=<app> version=0.1.0',
+      docs: docsFor('X_APP_PACKAGE_INVALID'),
     });
   }
 }

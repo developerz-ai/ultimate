@@ -18,6 +18,7 @@ import { clearRoutes } from '@ultimat3/render';
 import { resetAppLoad } from './app-load';
 import type { DevServer } from './cmd-dev';
 import { devCommand, startDev } from './cmd-dev';
+import { CliNotImplementedError } from './errors';
 
 // Under `packages/cli/` so the fixture's `@ultimat3/*` imports resolve through the same tsconfig
 // paths the framework's own sources use; a dot-prefixed name keeps it out of every workspace glob.
@@ -98,7 +99,13 @@ afterAll(async () => {
 
 const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {
   const handle = server.running.server;
-  if (handle === null) throw new Error('the web role did not start');
+  // Never a bare Error, tests included: a throw without a code and a fix is not an instruction.
+  if (handle === null) {
+    throw new CliNotImplementedError({
+      feature: 'fetching from x dev without the web role',
+      fix: 'x dev --role web',
+    });
+  }
   return handle.fetch(new Request(`http://dev.test${path}`, init));
 };
 

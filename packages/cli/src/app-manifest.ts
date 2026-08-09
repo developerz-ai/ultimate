@@ -2,6 +2,7 @@
 // supplies only the facts no registry holds — the app's name and version, the route table, which
 // surface enforces each permission, and the error codes its workspaces export.
 
+// Bun ships no `Bun.*` path API: `join` builds the host-separator path to `x.manifest.json`.
 import { join } from 'node:path';
 import { describeActions } from '@ultimat3/action';
 import { registeredTasks } from '@ultimat3/jobs';
@@ -18,6 +19,7 @@ import { describeQueries } from '@ultimat3/query';
 import type { RouteDescriptor } from '@ultimat3/render';
 import { describeRoutes } from '@ultimat3/render';
 import { loadApp } from './app-load';
+import { AppPackageInvalidError } from './errors';
 import type { Finding } from './output';
 
 export interface AppManifest {
@@ -50,15 +52,31 @@ export async function writeAppManifest(root: string, manifest: Manifest): Promis
 export const readAppManifest = async (root: string): Promise<Manifest | undefined> =>
   readManifest(join(root, MANIFEST_FILENAME));
 
-/** Name and version come from `package.json`: the manifest's version gate is a semver gate. */
+const jsonObject = async (file: Bun.BunFile): Promise<Record<string, unknown> | undefined> => {
+  const parsed: unknown = await file.json().catch(() => undefined);
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : undefined;
+};
+
+/**
+ * Name and version come from `package.json`: the manifest's version gate is a semver gate, so a
+ * default of `app@0.0.0` would silently overwrite the compatibility contract with an identity the
+ * app never claimed. Every way of not knowing fails here instead.
+ */
 async function appIdentity(root: string): Promise<{ name: string; version: string }> {
-  const file = Bun.file(join(root, 'package.json'));
-  if (!(await file.exists())) return { name: 'app', version: '0.0.0' };
-  const parsed = (await file.json().catch(() => ({}))) as { name?: unknown; version?: unknown };
-  return {
-    name: typeof parsed.name === 'string' ? parsed.name : 'app',
-    version: typeof parsed.version === 'string' ? parsed.version : '0.0.0',
-  };
+  const path = join(root, 'package.json');
+  const file = Bun.file(path);
+  if (!(await file.exists())) throw new AppPackageInvalidError({ path, problem: 'does not exist' });
+  const parsed = await jsonObject(file);
+  if (parsed === undefined)
+    throw new AppPackageInvalidError({ path, problem: 'is not a JSON object' });
+  const { name, version } = parsed;
+  if (typeof name !== 'string')
+    throw new AppPackageInvalidError({ path, problem: 'has no string "name"' });
+  if (typeof version !== 'string')
+    throw new AppPackageInvalidError({ path, problem: 'has no string "version"' });
+  return { name, version };
 }
 
 type UrlRoute = RouteDescriptor & { readonly surface: 'site' | 'app' | 'api' };

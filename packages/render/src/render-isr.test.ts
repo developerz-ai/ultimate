@@ -3,7 +3,7 @@ import type { CacheTag } from '@ultimat3/cache';
 import { resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
 import { createIsrController, parseTtlMs } from './render-isr';
-import type { RouteMetaFn } from './route';
+import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
 const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
@@ -11,17 +11,21 @@ const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as
 const postTag: CacheTag = tag('post');
 const orgTag: CacheTag = tag('org');
 
-function isrRoute(file: string, tags: readonly CacheTag[]): void {
+function isrRoute(file: string, tags: readonly CacheTag[], ttl?: string): void {
   registerRoute({
     file,
     config: defineRoute({
       render: 'isr',
-      revalidate: { tags },
+      revalidate: ttl === undefined ? { tags } : { tags, ttl },
       offline: 'precache',
       hydrate: 'never',
       meta,
     }),
   });
+}
+
+function sMaxAge(result: RenderResult): string | undefined {
+  return /s-maxage=(\d+)/.exec(result.headers['cache-control'] ?? '')?.[1];
 }
 
 beforeEach(() => {
@@ -87,6 +91,48 @@ describe('single-flight regeneration', () => {
     const fresh = await controller.serve('/blog/a', render);
     expect(fresh.state).toBe('hit');
     expect(fresh.result.body).toBe('<p>v2</p>');
+  });
+});
+
+describe('the CDN is told the TTL the route declared', () => {
+  test("revalidate: { ttl: '5m' } advertises s-maxage=300, not a house default", async () => {
+    isrRoute('apps/web/site/pricing.tsx', [postTag], '5m');
+    const controller = createIsrController({ routes: describeRoutes });
+
+    const { result } = await controller.serve('/pricing', () => '<p>pricing</p>');
+    expect(sMaxAge(result)).toBe('300');
+    expect(result.headers['cache-control']).toBe(
+      'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
+    );
+  });
+
+  test('a sub-minute ttl shortens the shared cache too', async () => {
+    isrRoute('apps/web/site/status.tsx', [postTag], '30s');
+    const controller = createIsrController({ routes: describeRoutes });
+
+    expect(sMaxAge((await controller.serve('/status', () => '<p>ok</p>')).result)).toBe('30');
+  });
+
+  test('a tag-only route keeps the 60s floor: its clock is the invalidation graph', async () => {
+    isrRoute('apps/web/site/team/page.tsx', [orgTag]);
+    const controller = createIsrController({ routes: describeRoutes });
+
+    const { entry, result } = await controller.serve('/team', () => '<p>team</p>');
+    expect(entry.ttlMs).toBe(null);
+    expect(sMaxAge(result)).toBe('60');
+  });
+
+  test('the served-stale copy keeps its own TTL and is marked stale', async () => {
+    isrRoute('apps/web/site/pricing.tsx', [postTag], '5m');
+    const controller = createIsrController({ routes: describeRoutes });
+
+    await controller.serve('/pricing', () => '<p>v1</p>');
+    controller.markStale('/pricing');
+
+    const stale = await controller.serve('/pricing', () => '<p>v2</p>');
+    expect(stale.state).toBe('stale');
+    expect(stale.result.headers['x-ultimate-isr']).toBe('stale');
+    expect(sMaxAge(stale.result)).toBe('300');
   });
 });
 

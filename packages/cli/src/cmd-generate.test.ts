@@ -1,9 +1,15 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// Bun ships no `Bun.*` equivalent for any of these: `existsSync` proves a write did or did not
+// happen, `mkdtemp`/`rm` own a throwaway app root's lifetime, and `join`/`resolve` build the
+// host-separator paths — `resolve` because only resolving proves a path stayed inside the root.
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { GENERATORS, generate, writeFiles } from './cmd-generate';
+import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { resetAppLoad } from './app-load';
+import { GENERATORS, generate, generateCommand, writeFiles } from './cmd-generate';
+import type { CommandContext } from './command';
 import type { GeneratedFile } from './templates';
 import { thrownBy } from './thrown-by';
 
@@ -323,5 +329,64 @@ describe('unit · x g writes inside the app and nowhere else', () => {
       expect(failure.code).toBe('X_SCAFFOLD_PATH_ESCAPE');
       expect(existsSync(outside)).toBe(false);
     });
+  });
+});
+
+// `x g` refreshes `x.manifest.json` so the table an agent reads after a scaffold is current. That
+// only holds if the load was whole: a module that would not import is missing from the registries,
+// and persisting the projection anyway replaces the compatibility contract with a subset.
+describe('unit · x g keeps the manifest off a partial load', () => {
+  // Under `packages/cli/` so the scaffold's `@ultimat3/*` imports resolve through the same tsconfig
+  // paths the framework's own sources use; a dot-prefixed name stays out of every workspace glob.
+  const ROOT = join(import.meta.dir, '..', '.generate-fixture');
+  const BROKEN = 'apps/web/app/broken.ts';
+
+  const contextFor = (): CommandContext => ({
+    args: {
+      command: 'g',
+      subcommand: undefined,
+      positionals: ['policy', 'scaffold-probe'],
+      flags: new Map(),
+      json: false,
+      help: false,
+      passthrough: [],
+    },
+    cwd: ROOT,
+    runner: async () => ({
+      command: ['true'],
+      code: 0,
+      ok: true,
+      stdout: '',
+      stderr: '',
+      durationMs: 0,
+    }),
+    env: {},
+    bunVersion: '1.3.0',
+  });
+
+  beforeAll(async () => {
+    await rm(ROOT, { recursive: true, force: true });
+    await Bun.write(join(ROOT, 'app.config.ts'), `export const config = { name: 'gen' };\n`);
+    await Bun.write(
+      join(ROOT, 'package.json'),
+      JSON.stringify({ name: 'generate-fixture', version: '1.0.0' }),
+    );
+    await Bun.write(join(ROOT, BROKEN), `export { nope } from './does-not-exist';\n`);
+    resetAppLoad();
+  });
+
+  afterAll(async () => {
+    await rm(ROOT, { recursive: true, force: true });
+    resetAppLoad();
+  });
+
+  test('the scaffold lands, the manifest does not, and the load failure is the finding', async () => {
+    const result = await generateCommand.run(contextFor());
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => finding.at)).toContain(BROKEN);
+    expect((result.data as { files?: readonly string[] }).files?.length).toBeGreaterThan(0);
+    expect(existsSync(join(ROOT, MANIFEST_FILENAME))).toBe(false);
+    // No `+ x.manifest.json` line either: the human render may not claim a write that never was.
+    expect(result.lines?.some((line) => line.includes(MANIFEST_FILENAME))).toBe(false);
   });
 });
