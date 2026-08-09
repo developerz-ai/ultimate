@@ -90,6 +90,19 @@ describe('request context', () => {
     expect(ctx.services['posts']).toBe(posts);
   });
 
+  test('a service the boot never installed is undefined on ctx, X_SERVICE_MISSING through useService', () => {
+    // Pins the comment on the `...services` spread. `ctx` is a frozen plain object, not a
+    // get-trap proxy, so a `CtxServices`-declared service that boot never passed reads
+    // `undefined` and its first call is a bare TypeError. Only `useService()` names it.
+    const ctx = createContext({ services: { mail: { send: () => true } } });
+    const posts = ctx as unknown as { posts?: { byId(): string } };
+    expect(posts.posts).toBeUndefined();
+    expect(() => (posts as { posts: { byId(): string } }).posts.byId()).toThrow(TypeError);
+    runWithContext(ctx, () => {
+      expect(() => useService('posts')).toThrow(/X_SERVICE_MISSING/);
+    });
+  });
+
   test('a service may not shadow a context field', () => {
     // An app is free to call a service `logger`; the context's own logger still wins, and the
     // service stays reachable by name. Otherwise naming a service would change what `ctx` means.

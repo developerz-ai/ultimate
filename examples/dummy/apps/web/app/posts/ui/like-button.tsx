@@ -13,6 +13,12 @@ import styles from './like-button.module.scss';
 
 export type LikeButtonProps = {
   readonly postId: string;
+  /**
+   * The post's org, because `postLike` decides on it. It rides in the mutator's input rather than
+   * being read off the session inside the handler: a policy decides on what it was given, and the
+   * same input has to reach the rule from an offline queue replayed hours later.
+   */
+  readonly orgId: string;
   /** Comes from the live query's row, so it is already the optimistic value while queued. */
   readonly likeCount: number;
 };
@@ -24,7 +30,7 @@ export const LikeButton = (props: LikeButtonProps): JSX.Element => {
 
   return (
     <div class={styles.row}>
-      <Button tone="ghost" onClick={() => like({ postId: props.postId })}>
+      <Button tone="ghost" onClick={() => like({ postId: props.postId, orgId: props.orgId })}>
         {t('app.post.like')}
       </Button>
 

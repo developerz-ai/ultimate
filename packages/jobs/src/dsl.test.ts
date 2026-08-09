@@ -14,6 +14,7 @@ import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
+import type { TaskEnqueueEntry, TaskHandle } from './scheduler';
 import { resetTasks, task } from './scheduler';
 
 /** Minimal Standard Schema so these tests do not depend on ArkType's surface. */
@@ -73,6 +74,32 @@ function defineJob(): JobHandle<OrgInput> {
   });
 }
 
+/** 2023-11-14T22:13:20Z — any fixed instant that is nowhere near the wall clock. */
+const OCCURRENCE_MS = 1_700_000_000_000;
+
+interface RecordingTask {
+  readonly handle: TaskHandle;
+  readonly entries: readonly TaskEnqueueEntry[];
+  /** Every occurrence the handle handed to the declaration, in call order. */
+  readonly seen: readonly number[];
+}
+
+function defineRecordingTask(name: string): RecordingTask {
+  const notify = defineJob();
+  const entries: readonly TaskEnqueueEntry[] = [[notify, { orgId: 'org-1' }]];
+  const seen: number[] = [];
+  const handle = task({
+    name,
+    cron: '0 3 * * *',
+    tz: 'UTC',
+    enqueue: (occurrenceMs) => {
+      seen.push(occurrenceMs);
+      return entries;
+    },
+  });
+  return { handle, entries, seen };
+}
+
 beforeEach(() => {
   resetJobs();
   resetTasks();
@@ -124,18 +151,26 @@ describe('the task DSL surface', () => {
     for (const member of TASK_MEMBERS) expect(handle).toHaveProperty(member);
   });
 
-  test('.entries() delegates to the declared enqueue() thunk verbatim', () => {
-    const notify = defineJob();
-    const entries: readonly (readonly [JobHandle<OrgInput>, OrgInput])[] = [
-      [notify, { orgId: 'org-1' }],
-    ];
-    const handle = task({
-      name: 'dslDigest2',
-      cron: '0 3 * * *',
-      tz: 'UTC',
-      enqueue: () => entries,
-    });
-    expect(handle.entries()).toBe(entries);
+  test('.entries(occurrenceMs) delegates to the declared enqueue(), occurrence and all', () => {
+    const recorder = defineRecordingTask('dslDigest2');
+    expect(recorder.handle.entries(OCCURRENCE_MS)).toBe(recorder.entries);
+    // The occurrence reaches the declaration untouched: that argument is the only way a
+    // payload can describe the occurrence being fired rather than the worker's wall clock.
+    expect(recorder.seen).toEqual([OCCURRENCE_MS]);
+  });
+
+  test('.entries() with no occurrence defaults to now — the manual and describe() paths', () => {
+    const recorder = defineRecordingTask('dslDigest2b');
+    const before = Date.now();
+    recorder.handle.entries();
+    recorder.handle.describe();
+    const after = Date.now();
+
+    expect(recorder.seen).toHaveLength(2);
+    for (const seen of recorder.seen) {
+      expect(seen).toBeGreaterThanOrEqual(before);
+      expect(seen).toBeLessThanOrEqual(after);
+    }
   });
 
   test('.enqueue() fires each entry through the job handle it declared, not a copy', async () => {

@@ -9,6 +9,14 @@
  * Every read is ordered and bounded. `live: true` requires it — an unbounded live query is a
  * memory leak that only shows up under load — and the others keep the shape so promoting one
  * later is a one-line change.
+ *
+ * Every order ends with a key that is unique in the row shape, and that is not decoration: the
+ * live matcher computes a row's insertion position and decides whether a change moved it from
+ * this `orderBy` list alone. `createdAt desc` by itself is a partial order, so two posts written
+ * in the same millisecond can swap places between evaluations and a bounded page can drop or
+ * repeat one at the boundary. `repo.ts` gets its tail key for free — @ultimat3/entity appends the
+ * primary key to every plan — but `from()` builds the shape declared here, so it is written out.
+ * Ascending, to match the direction the repo appends.
  */
 
 import { tag } from '@postly/db';
@@ -30,6 +38,7 @@ export const liveFeed = query({
     from<PostSummary>('posts', () => repo.feedPage(toOrgId(orgId), limit))
       .where({ orgId })
       .orderBy('createdAt', 'desc')
+      .orderBy('id')
       .limit(limit),
 });
 
@@ -43,6 +52,7 @@ export const postById = query({
     from<PostWithComments>('posts', () => repo.withComments(toOrgId(orgId), toPostId(postId)))
       .where({ orgId, id: postId })
       .orderBy('createdAt')
+      .orderBy('id')
       .limit(1),
 });
 
@@ -61,10 +71,15 @@ export const publicPost = query({
     from<PostView>('posts', () => repo.publishedBySlug(slug))
       .where({ slug, status: 'published' })
       .orderBy('publishedAt', 'desc')
+      .orderBy('id')
       .limit(1),
 });
 
-/** Feeds `prerender()` on the blog route: one row per page the build must emit. */
+/**
+ * Feeds `prerender()` on the blog route: one row per page the build must emit. The tail key is
+ * `slug`, not `id` — this projection has no `id` column to sort on, and `slug` is unique across
+ * every org by invariant, which is the same property the public URL relies on.
+ */
 export const publicPostSlugs = query({
   input: t.object({}),
   policy: publicPostRead,
@@ -73,6 +88,7 @@ export const publicPostSlugs = query({
     from<PublishedSlug>('posts', repo.publishedSlugs)
       .where({ status: 'published' })
       .orderBy('publishedAt', 'desc')
+      .orderBy('slug')
       .limit(1000),
 });
 
@@ -86,5 +102,6 @@ export const postBySlug = query({
     from<PostView>('posts', () => repo.publishedBySlugInOrg(toOrgId(orgId), slug))
       .where({ orgId, slug, status: 'published' })
       .orderBy('publishedAt', 'desc')
+      .orderBy('id')
       .limit(1),
 });

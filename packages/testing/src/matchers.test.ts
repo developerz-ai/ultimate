@@ -54,8 +54,19 @@ describe('unit · matchers', () => {
     expect(denies.seen).toEqual([null, { id: 'r' }]);
   });
 
-  test('toDenyPolicy fails loudly on something that is not a policy at all', async () => {
-    await expect({ nope: true }).not.toDenyPolicy({ actor: null });
+  // `.not.toDenyPolicy` passes here for the wrong reason: `.not` is satisfied by any `pass: false`,
+  // and "the policy allowed" returns exactly that — so it holds even with the type guards deleted.
+  // Assert the message instead. Bun settles an async matcher inside `expect()` and throws the
+  // failure synchronously, so `expect(fn).toThrow()` sees it; `.rejects` wants a promise, and the
+  // call has already thrown by the time it gets one.
+  test('toDenyPolicy fails loudly on something that is not a policy at all', () => {
+    expect(() => expect({ nope: true }).toDenyPolicy({ actor: null })).toThrow(
+      'expected a policy — an object with run() (@ultimat3/policy) or evaluate()',
+    );
+    // ...and that diagnostic is a different one from a policy that simply allowed.
+    expect(() => expect(policy(true)).toDenyPolicy({ actor: null })).toThrow(
+      'expected the policy to deny {"actor":null}',
+    );
   });
 
   test('toEmitSteps pins the step sequence', async () => {

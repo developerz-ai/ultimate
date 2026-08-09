@@ -2,6 +2,7 @@
 // The generated test pins metadata presence and the offline fallback: a route with no title is an
 // SEO regression and a route with no fallback is a blank screen on a train.
 
+import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { kebab, pascal, titleKey } from './naming';
 
@@ -119,19 +120,16 @@ export interface RouteOptions {
   readonly locales?: readonly string[];
 }
 
-const DEFAULT_LOCALES: readonly string[] = ['en'];
-
 export function routeFiles(rawPath: string, options: RouteOptions): readonly GeneratedFile[] {
   const path = rawPath.replace(/^\/+/, '');
   const dir = routeDir(options.surface, path);
-  const locales =
-    options.locales !== undefined && options.locales.length > 0 ? options.locales : DEFAULT_LOCALES;
+  const locales = resolveLocales(options.locales);
   return [
     { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path) },
     { path: `${dir}/page.module.scss`, contents: styleSource() },
     { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
     ...locales.map((locale) => ({
-      path: `packages/i18n/catalogs/${locale}/${kebab(path)}.json`,
+      path: catalogPath(locale, kebab(path)),
       contents: catalogSource(path),
     })),
   ];

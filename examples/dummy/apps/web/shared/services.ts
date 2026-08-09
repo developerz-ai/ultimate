@@ -23,6 +23,7 @@ import type {
 } from '@postly/domain';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
+import type { PostRow } from '../app/posts/policy';
 
 export interface PostsService {
   byId(postId: PostId): Promise<PostView>;
@@ -34,6 +35,12 @@ export interface PostsService {
   comment(postId: PostId, body: string): Promise<CommentView>;
   /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
   publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
+  /**
+   * The two columns `postPublish` decides about, for `publishPost`'s `row:` loader. Unscoped by
+   * design — the rule compares tenancy itself, and `null` here means the post does not exist at
+   * all, which the rule reads as a denial rather than as nothing to object to.
+   */
+  authorship(postId: PostId): Promise<PostRow | null>;
 }
 
 export interface OrgsService {

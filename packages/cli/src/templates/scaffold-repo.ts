@@ -9,7 +9,10 @@ const rootPackage = (app: NameSet): string => `{
   "name": "${app.kebab}",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "setup": "bin/setup",
     "dev": "x dev",
@@ -44,7 +47,9 @@ const rootPackage = (app: NameSet): string => `{
     "@ultimat3/ui": "^0.0.1",
     "solid-js": "^2.0.0"
   },
-  "engines": { "bun": ">=1.3.0" }
+  "engines": {
+    "bun": ">=1.3.0"
+  }
 }
 `;
 
@@ -238,7 +243,9 @@ export async function seed(): Promise<number> {
 
 if (import.meta.main) {
   const count = await seed();
-  process.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
+  // Bun's stdout, not process.stdout: one runtime, one API. Awaited because the write resolves
+  // asynchronously, and this JSON line is the whole output of \`bun run db:seed\`.
+  await Bun.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
 }
 `;
 

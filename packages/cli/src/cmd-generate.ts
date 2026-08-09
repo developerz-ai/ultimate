@@ -2,17 +2,24 @@
 // emits a TODO has moved the work, not done it; every file this writes typechecks, and every
 // primitive arrives with the test that pins its distant invariants (policy, idempotency, budget).
 
+// `resolve`/`sep` and not `join`: only resolving the assembled path can prove it stayed inside the
+// app root, and `node:path` is the only API that resolves one. `node:fs` for the exists check.
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { requireAppRoot } from './app-root';
 import { writeManifest } from './cmd-manifest';
 import type { CliCommand, CommandContext } from './command';
-import { CliNotImplementedError, UnknownCommandError } from './errors';
+import {
+  BadFlagError,
+  CliNotImplementedError,
+  ScaffoldPathEscapeError,
+  UnknownCommandError,
+} from './errors';
 import type { AppManifest } from './manifest-scan';
 import { scanApp } from './manifest-scan';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { flagBool, flagString } from './parse';
+import { flagBool, flagList, flagString } from './parse';
 import type { GeneratedFile, Surface } from './templates';
 import {
   actionFiles,
@@ -20,6 +27,7 @@ import {
   jobFiles,
   policyFiles,
   queryFiles,
+  resolveLocales,
   resourceFiles,
   routeFiles,
   taskFiles,
@@ -64,11 +72,29 @@ function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
 }
 
 /**
+ * A resource slice is app-surface by construction: it ships a live query, a form with a signal,
+ * two actions and a policy, and `site/` is the 0kb, never-hydrated surface that may not import
+ * `app/`. The documented shape is the slice in `app/` plus a separate public route
+ * (`docs/architecture/15-adding-a-feature.md`), so the flag is refused before anything is written
+ * rather than emitting a slice that fails the app's own budget and boundary gates.
+ */
+function assertSurfaceSupported(kind: Generator, surface: Surface): void {
+  if (kind !== 'resource' || surface !== 'site') return;
+  throw new BadFlagError({
+    flag: 'surface',
+    command: 'g resource',
+    reason: 'a resource slice is app-surface — site/ ships 0kb JS and may not import app/',
+    fix: 'x g resource <name> && x g route <name> --surface site',
+  });
+}
+
+/**
  * Pure: returns the files a generator would write. `x g` writes them, the generator test asserts
  * on them, and nothing has to run a filesystem to review what a generator produces.
  */
 export function generate(options: GenerateOptions): readonly GeneratedFile[] {
   const surface: Surface = options.surface ?? 'app';
+  assertSurfaceSupported(options.kind, surface);
   const surfaceDir = DEFAULT_SURFACE_DIR[surface];
   const feature = options.feature ?? options.name;
   const target = { surfaceDir, feature };
@@ -96,7 +122,14 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
     case 'task':
       return dedupe(taskFiles(options.name, target));
     case 'route':
-      return dedupe(routeFiles(options.name, { surface }));
+      // `--locales` reaches the route generator too: its catalog entry is the route's title and
+      // description, and a locale asked for on the command line is a locale that gets a file.
+      return dedupe(
+        routeFiles(options.name, {
+          surface,
+          ...(options.locales === undefined ? {} : { locales: options.locales }),
+        }),
+      );
     default:
       throw new CliNotImplementedError({
         feature: `generator "${String(options.kind)}"`,
@@ -110,6 +143,19 @@ export interface WriteReport {
   readonly conflicts: readonly Finding[];
 }
 
+/**
+ * `GeneratedFile.path` is documented as relative-POSIX, not enforced as it: `join` would happily
+ * walk out of the app on a `..` segment or ignore the root entirely on an absolute path. Proven
+ * before the write, once per file, because after the write there is nothing left to prove.
+ */
+export function containedPath(root: string, path: string): string {
+  const base = resolve(root);
+  const target = resolve(base, path);
+  if (target !== base && !target.startsWith(`${base}${sep}`))
+    throw new ScaffoldPathEscapeError({ path, dir: base });
+  return target;
+}
+
 /** Never clobbers. A generator that overwrites is a generator nobody runs twice. */
 export async function writeFiles(
   root: string,
@@ -118,8 +164,10 @@ export async function writeFiles(
 ): Promise<WriteReport> {
   const written: string[] = [];
   const conflicts: Finding[] = [];
-  for (const file of files) {
-    const absolute = join(root, file.path);
+  // Containment first, for every file: a run that stopped at the offender would already have put
+  // the earlier files on disk, so the whole set is proven before any of it lands.
+  const targets = files.map((file) => ({ file, absolute: containedPath(root, file.path) }));
+  for (const { file, absolute } of targets) {
     if (!force && existsSync(absolute)) {
       conflicts.push({
         code: 'X_GENERATE_CONFLICT',
@@ -144,6 +192,18 @@ function readKind(raw: string | undefined): Generator {
     path: `g ${raw ?? ''}`.trim(),
     known: GENERATORS,
     suggestion: 'g resource',
+  });
+}
+
+/** Two surfaces, spelled exactly. A typo that fell through to `app` would scaffold the wrong one. */
+function readSurface(raw: string | undefined, kind: Generator): Surface {
+  if (raw === undefined || raw === 'app') return 'app';
+  if (raw === 'site') return 'site';
+  throw new BadFlagError({
+    flag: 'surface',
+    command: 'g',
+    reason: `"${raw}" is not a surface (site, app)`,
+    fix: `x g ${kind} <name> --surface app`,
   });
 }
 
@@ -175,21 +235,19 @@ export const generateCommand: CliCommand = {
         suggestion: `g ${kind} <name>`,
       });
     }
-    const surfaceFlag = flagString(ctx.args, 'surface');
     const featureFlag = flagString(ctx.args, 'feature');
-    const localesFlag = flagString(ctx.args, 'locales');
-    const locales = localesFlag
-      ?.split(',')
-      .map((locale) => locale.trim())
-      .filter((locale) => locale.length > 0);
+    // Both flags are resolved before a single file is planned: a bad surface or a locale that is
+    // really a path fails here, with nothing written and nothing to undo.
+    const surface = readSurface(flagString(ctx.args, 'surface'), kind);
+    const locales = resolveLocales(flagList(ctx.args, 'locales'));
     const files = generate({
       kind,
       name,
       ...(featureFlag === undefined ? {} : { feature: featureFlag }),
-      surface: surfaceFlag === 'site' ? 'site' : 'app',
+      surface,
       live: flagBool(ctx.args, 'live'),
       admin: flagBool(ctx.args, 'admin'),
-      ...(locales === undefined || locales.length === 0 ? {} : { locales }),
+      locales,
     });
     if (flagBool(ctx.args, 'dry-run')) {
       return {

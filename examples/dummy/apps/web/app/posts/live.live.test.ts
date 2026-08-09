@@ -48,9 +48,9 @@ test('a row that fails the policy is never delivered', async ({ seed, actorFor, 
   const feed = await subscribe(liveFeed.as(actorFor(mara), { orgId: tinta.id }));
 
   expect(feed.rows().some((row) => row.orgId === acme.id)).toBe(false);
-  await expect(subscribe(liveFeed.as(actorFor(mara), { orgId: acme.id }))).rejects.toMatchError(
-    'X_POLICY_DENIED',
-  );
+  await expect(
+    subscribe(liveFeed.as(actorFor(mara), { orgId: acme.id })),
+  ).rejects.toBeUltimateError('X_POLICY_DENIED');
 });
 
 test('an offline like applies locally, queues, and reconciles on reconnect', async ({
@@ -59,17 +59,19 @@ test('an offline like applies locally, queues, and reconciles on reconnect', asy
   subscribe,
   network,
 }) => {
+  // Ada's own org, and a post that starts at zero likes: the mutator's `orgId` is what `postLike`
+  // decides on, so a post from another org would be denied rather than queued.
   const { ada, acme, post } = await seed('dev').pick({
     ada: 'member:ada',
     acme: 'org:acme',
-    post: 'post:offline',
+    post: 'post:draft-money',
   });
 
   const feed = await subscribe(liveFeed.as(actorFor(ada), { orgId: acme.id }));
   const mutate = toggleLike.as(actorFor(ada));
 
   network.offline();
-  await mutate({ postId: post.id });
+  await mutate({ postId: post.id, orgId: acme.id });
   expect(feed.local(post.id)?.likeCount).toBe(1); // optimistic twin, applied immediately
   expect(mutate.queued()).toBe(1);
 

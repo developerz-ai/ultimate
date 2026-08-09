@@ -1,6 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import type { SourceFile } from './boundaries';
-import { checkBoundaries, findingFor, packageOf, scopedName } from './boundaries';
+import {
+  checkBoundaries,
+  checkSharedLeaf,
+  collectSharedFiles,
+  findingFor,
+  packageOf,
+  resolveSpecifier,
+  scopedName,
+  sharedLeafFindingFor,
+  surfaceOf,
+} from './boundaries';
+import { repoRoot } from './lib/run';
 import { checkTier, tierOf } from './lib/tiers';
 
 const file = (path: string, source: string): SourceFile => ({ path, source });
@@ -114,5 +125,90 @@ describe('unit · boundaries', () => {
     expect(checkTier('cli', 'core').allowed).toBe(true);
     expect(checkTier('core', 'cli').allowed).toBe(false);
     expect(checkTier('ui', 'admin').allowed).toBe(false);
+  });
+});
+
+const LEAF = 'examples/dummy/apps/web/shared/client.ts';
+
+describe('unit · shared/ is a leaf', () => {
+  test('a VALUE import into app/ is a violation naming the file, the import and the surface', () => {
+    const leaks = checkSharedLeaf([
+      file(LEAF, "import { publishPost } from '../app/posts/actions';"),
+    ]);
+    expect(leaks).toHaveLength(1);
+    expect(leaks[0]).toMatchObject({
+      file: LEAF,
+      specifier: '../app/posts/actions',
+      surface: 'app',
+    });
+  });
+
+  test('the same import as `import type` is NOT a violation — that is the whole rule', () => {
+    expect(
+      checkSharedLeaf([
+        file(LEAF, "import type { PostView } from '../app/posts/entity';"),
+        file(
+          'examples/dummy/apps/web/shared/services.ts',
+          "import type { X } from '../app/orgs/entity';",
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('the leak renders as a finding with a code, a cause and a runnable fix', () => {
+    const leak = checkSharedLeaf([file(LEAF, "export { feed } from '../app/feed';")])[0];
+    if (leak === undefined) throw new Error('expected a leak');
+    const finding = sharedLeafFindingFor(leak);
+    expect(finding.code).toBe('X_BOUNDARY_SHARED_LEAF');
+    expect(finding.cause).toContain('runtime import of "../app/feed"');
+    expect(finding.cause).toContain('shared/ is a leaf');
+    expect(finding.fix).toContain('import type');
+    expect(finding.at).toBe(LEAF);
+  });
+
+  test('site/ is closed to the leaf too, and a dynamic import counts', () => {
+    const leaks = checkSharedLeaf([
+      file(LEAF, "export const load = () => import('../site/pricing');"),
+    ]);
+    expect(leaks[0]).toMatchObject({ specifier: '../site/pricing', surface: 'site' });
+  });
+
+  test('api/, packages and bare specifiers stay legal for a leaf', () => {
+    expect(
+      checkSharedLeaf([
+        file(LEAF, "import { boot } from '../api';"),
+        file(
+          'examples/dummy/apps/web/shared/policies.ts',
+          "import { allow } from '@ultimat3/policy';",
+        ),
+        file('examples/dummy/apps/web/shared/entities.ts', "import { x } from './viewer';"),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('only shared/ is subject to the rule — app/ may import app/', () => {
+    expect(
+      checkSharedLeaf([
+        file('examples/dummy/apps/web/app/feed.tsx', "import { x } from './posts/live';"),
+        file('packages/core/src/index.ts', "import { x } from '../app/thing';"),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('surfaces and relative specifiers resolve from the path, not from a guess', () => {
+    expect(surfaceOf(LEAF)).toBe('shared');
+    expect(surfaceOf('examples/dummy/packages/db/src/tags.ts')).toBeUndefined();
+    expect(resolveSpecifier(LEAF, '../app/posts/actions')).toBe(
+      'examples/dummy/apps/web/app/posts/actions',
+    );
+    expect(resolveSpecifier(LEAF, '@ultimat3/action')).toBe('@ultimat3/action');
+  });
+
+  // A checker pointed at an empty file list passes forever. That is how a rule dies quietly, so
+  // the glob is pinned to a leaf that exists rather than trusted.
+  test('the collector actually finds the reference app leaf, and it is clean today', async () => {
+    const files = await collectSharedFiles(repoRoot());
+    expect(files.map((entry) => entry.path)).toContain(LEAF);
+    expect(checkSharedLeaf(files)).toEqual([]);
   });
 });

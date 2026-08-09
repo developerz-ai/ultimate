@@ -7,8 +7,9 @@ import { adminFiles } from './admin';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import { jobFiles } from './job';
+import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile, NameSet } from './naming';
-import { names } from './naming';
+import { names, pascal } from './naming';
 import { policyFiles } from './policy';
 import { queryFiles } from './query';
 import { routeFiles } from './route';
@@ -147,15 +148,17 @@ export function ${feature.pascal}Form(props: ${feature.pascal}FormProps) {
 }
 `;
 
+// `admin.<feature>.title` is always here, `--admin` or not: `defineAdmin()` resolves that key the
+// moment anyone writes the override, and a missing key renders ⟦key⟧ and fails the i18n gate,
+// while an unused key is only ever reported (`auditCatalogs` fails on `missing`, never `unused`).
 const catalogSource = (feature: NameSet): string => `{
   "app.${feature.kebab}.empty": "No ${feature.pluralKebab} yet.",
   "app.${feature.kebab}.updated": "Last updated",
   "app.${feature.kebab}.titleLabel": "Title",
-  "app.${feature.kebab}.submit": "Save"
+  "app.${feature.kebab}.submit": "Save",
+  "admin.${feature.kebab}.title": "${pascal(feature.plural)}"
 }
 `;
-
-const DEFAULT_LOCALES: readonly string[] = ['en'];
 
 export interface ResourceOptions extends FeatureTarget {
   /** `x g resource post --admin` — also emits the per-entity admin override. */
@@ -168,8 +171,7 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
   const feature = names(rawName);
   const slice: FeatureTarget = { surfaceDir: target.surfaceDir, feature: feature.kebab };
   const dir = `${slice.surfaceDir}/${slice.feature}`;
-  const locales =
-    target.locales !== undefined && target.locales.length > 0 ? target.locales : DEFAULT_LOCALES;
+  const locales = resolveLocales(target.locales);
   return [
     ...entityFiles(rawName, slice),
     ...policyFiles(rawName, slice),
@@ -184,9 +186,11 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
     { path: `${dir}/ui/${feature.kebab}-card.tsx`, contents: cardSource(feature) },
     { path: `${dir}/ui/${feature.kebab}-form.tsx`, contents: formSource(feature) },
     ...locales.map((locale) => ({
-      path: `packages/i18n/catalogs/${locale}/${feature.kebab}.json`,
+      path: catalogPath(locale, feature.kebab),
       contents: catalogSource(feature),
     })),
+    // Always an app route: a slice ships a live query, a form and actions, and `generate()`
+    // refuses `--surface site` for a resource rather than emit them behind a 0kb budget.
     ...routeFiles(feature.pluralKebab, { surface: 'app', locales }),
     ...(target.admin === true ? adminFiles(rawName, slice) : []),
   ];

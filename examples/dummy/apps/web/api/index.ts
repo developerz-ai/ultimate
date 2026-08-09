@@ -6,7 +6,16 @@
  *
  * Registration takes whole modules, so the export name IS the primitive's name: there is no
  * second list of strings to keep in step with the declarations, and adding an action to a
- * feature is one edit rather than two.
+ * feature is one edit rather than two. Two features exporting one name collide at registration
+ * with `X_ACTION_DUPLICATE`; the `Api` intersection below would merge them silently, so the
+ * runtime check is what enforces uniqueness, not the type.
+ *
+ * Importing this module IS the boot — the calls below run on import, and nothing else registers
+ * anything. The only importer today is the framework's own module scan, which dynamic-imports
+ * every file under an app's surface directories; that is what backs `x manifest`, `x routes`,
+ * `x dev` and `x verify`. No long-running process imports it, because the entry that would —
+ * `apps/web/server.ts`, what `x build --target binary` compiles and what the image starts as
+ * `dist/server.js` — has not been written yet.
  */
 
 import { registerActions } from '@ultimat3/action';

@@ -8,14 +8,28 @@
 
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import { exec, exitCodeFor, render, runVerify, VERIFY_STEPS } from '@ultimat3/cli';
-import { checkBoundaries, collectSourceFiles, findingFor } from './boundaries';
+import {
+  checkBoundaries,
+  checkSharedLeaf,
+  collectSharedFiles,
+  collectSourceFiles,
+  findingFor,
+  sharedLeafFindingFor,
+} from './boundaries';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { repoRoot } from './lib/run';
 import { buildManifest, DEFAULT_OUT } from './manifest';
 
-/** The tier table, enforced: a package may import only from a strictly lower tier. */
-export const tierBoundaries: HostCheck = async (root) =>
-  checkBoundaries(await collectSourceFiles(root)).map(findingFor);
+/**
+ * Two rules on one step. The tier table: a package may import only from a strictly lower tier.
+ * The `shared/` leaf: an example app's `shared/` may hold types from `app/` but never a runtime
+ * edge into it — `x verify` inside the app already checks that, and this repo's own gate must
+ * too, because the reference-app job is advisory and this one blocks.
+ */
+export const tierBoundaries: HostCheck = async (root) => [
+  ...checkBoundaries(await collectSourceFiles(root)).map(findingFor),
+  ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
+];
 
 /** The framework's own manifest is generated from the packages; it must still generate. */
 export const frameworkManifest: HostCheck = async (root) => {

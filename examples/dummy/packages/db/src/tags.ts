@@ -6,9 +6,11 @@
  * A tag names the *resource* (`post`), not the table (`posts`): actions, routes and live queries
  * all speak the resource, and one vocabulary is the point of tags.
  *
- * `feed` and `blog` are projections, not tables: nothing writes to them directly, but a write
- * to `post` or `like` must evict them. That cascade is declared here and registered with the
- * cache graph — one invalidation graph, not a second one hidden inside the tag objects.
+ * `feed` and `blog` are projections, not tables: nothing writes to them directly, so every write
+ * that stales one names it in its own `cache.invalidates` — see `publishPost`. There is no
+ * cascade map here on purpose: `@ultimat3/cache`'s graph maps a tag to cache keys, ISR routes,
+ * CDN paths and live queries, never to another tag, so a map of tag -> tag would be a second
+ * invalidation graph that nothing reads.
  */
 
 import { declareTags, tag } from '@ultimat3/cache';
@@ -50,9 +52,3 @@ declareTags([...TAG_NAMES]);
  * a single row, which is what a live query subscribes to so one edit does not wake every reader.
  */
 export { tag };
-
-/** Which projections a write to each entity must also evict. Consumed by the cache graph. */
-export const TAG_CASCADE: Readonly<Record<string, readonly string[]>> = {
-  post: ['feed', 'blog'],
-  like: ['feed'],
-};

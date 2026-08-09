@@ -19,6 +19,7 @@ export type {
   ActionHandlerArgs,
   ActionMcp,
   ActionRateLimit,
+  ActionRowArgs,
   AnyAction,
   InvokeOptions,
   McpDescriptorMeta,

@@ -78,7 +78,15 @@ export const insertComment = (row: {
   body: string;
 }): Promise<CommentView> => db.comments.insert(row).returning();
 
-/** The org feed's page. Ordered and bounded here as well as in the query — `live: true` needs it. */
+/**
+ * The org feed's page. Ordered and bounded here as well as in the query — `live: true` needs it.
+ *
+ * `createdAt` alone is a partial order, but the tail key is not written out here: @ultimat3/entity
+ * appends the primary key to every plan (`repo.ts`, `planFor`) precisely so a cursor page has a
+ * total order. Repeating it would be a second declaration of the same rule, and an ascending `id`
+ * spelled `desc` by hand would silently disagree with the page the driver actually returns. The
+ * live query in `live.ts` does write it out, because `from()` builds its shape from that call.
+ */
 export const feedPage = (orgId: OrgId, limit: number): Promise<PostSummary[]> =>
   db.posts
     .where({ orgId })

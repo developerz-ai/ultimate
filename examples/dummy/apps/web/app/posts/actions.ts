@@ -29,7 +29,16 @@ export const publishPost = action({
   input: t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
   policy: postPublish,
-  cache: { invalidates: [tag.post, tag.feed] },
+  // `postPublish` decides about a post, not just about an org, so the post has to be loaded
+  // before the guard rather than inside it — the predicate stays synchronous, and this runs once
+  // per invocation instead of once per live subscriber. Deliberately NOT tenant-scoped: tenancy
+  // is exactly what the rule compares, so filtering by the actor's org here would turn a
+  // cross-org id into a null row and hand the rule back the fail-open it just lost.
+  row: ({ input, ctx }) => ctx.posts.authorship(postId(input.postId)),
+  // `blog` too: publishing is the ONE write that puts a post on the public, anonymous blog, and
+  // `site/blog/*` sets `revalidate: { tags: [tag.blog] }`. Omitting it left those ISR pages
+  // pinned to whatever the build saw — the tag existed, nothing ever evicted it.
+  cache: { invalidates: [tag.post, tag.feed, tag.blog] },
   mcp: { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(postId(input.postId));

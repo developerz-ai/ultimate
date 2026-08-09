@@ -49,6 +49,24 @@ const dailyAt3: CronResolver = (cron, options) => {
 // 2026-07-26T00:00:00Z, a Sunday.
 const T0 = Date.UTC(2026, 6, 26, 0, 0, 0);
 
+/** The UTC calendar date of an instant — what a real digest payload keys itself on. */
+const utcDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+interface DatedInput {
+  readonly runDate: string;
+}
+
+/** A job whose payload names a day, so a payload built for the wrong day is visible. */
+function datedDigestJob(): JobHandle<DatedInput> {
+  return job<DatedInput>({
+    name: 'datedDigest',
+    input: passthrough<DatedInput>(),
+    idempotencyKey: ({ runDate }) => `digest:${runDate}`,
+    retry: { attempts: 3 },
+    run: () => Promise.resolve(),
+  });
+}
+
 let sendDigest: JobHandle<Record<string, never>>;
 let sweepLogs: JobHandle<Record<string, never>>;
 
@@ -275,6 +293,64 @@ describe('scheduler', () => {
       '2026-07-29T03:00:00.000Z',
     );
     expect(byCatching.length).toBe(4);
+  });
+
+  test('a late dispatch builds its payload from the occurrence, not the wall clock', async () => {
+    const dated = datedDigestJob();
+    const nightly = task({
+      name: 'datedNightly',
+      cron: '0 3 * * *',
+      tz: 'UTC',
+      enqueue: (occurrenceMs) => [[dated, { runDate: utcDate(occurrenceMs) }]],
+    });
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const scheduler = createScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
+
+    await scheduler.tick(); // Arms it for 2026-07-26T03:00Z.
+    // Down for 25 hours: the missed occurrence is still the 26th, but the worker's wall clock
+    // has crossed midnight into the 27th. Deriving the payload from "now" here dates the
+    // digest a day forward, and the scheduler's occurrence-scoped key hides it.
+    clock.advance(25 * 3_600_000);
+    const dispatched = await scheduler.tick();
+
+    expect(utcDate(clock.now().getTime())).toBe('2026-07-27');
+    expect(new Date(dispatched[0]?.occurrenceMs ?? 0).toISOString()).toBe(
+      '2026-07-26T03:00:00.000Z',
+    );
+    const rows = (await driver.introspect?.list()) ?? [];
+    expect(rows.map((row) => dated.parse(row.input).runDate)).toEqual(['2026-07-26']);
+    expect(rows[0]?.idempotencyKey).toBe(
+      `datedNightly:${dispatched[0]?.occurrenceMs}:digest:2026-07-26`,
+    );
+  });
+
+  test('catch-up gives every missed occurrence a payload for its own day', async () => {
+    const dated = datedDigestJob();
+    const nightly = task({
+      name: 'datedNightly',
+      cron: '0 3 * * *',
+      tz: 'UTC',
+      catchUp: 'run-all',
+      enqueue: (occurrenceMs) => [[dated, { runDate: utcDate(occurrenceMs) }]],
+    });
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const scheduler = createScheduler({ driver, clock, cron: dailyAt3, tasks: [nightly] });
+
+    await scheduler.tick();
+    clock.advance(3 * 86_400_000 + 4 * 3_600_000); // Down three days.
+    expect((await scheduler.tick()).length).toBe(4);
+
+    const rows = (await driver.introspect?.list()) ?? [];
+    // Four days, four payloads. One shared wall-clock date would be four copies of the same
+    // digest wearing four different occurrence keys — a duplicate nothing can dedupe.
+    expect(
+      rows
+        .slice()
+        .sort((a, b) => a.runAt - b.runAt)
+        .map((row) => dated.parse(row.input).runDate),
+    ).toEqual(['2026-07-26', '2026-07-27', '2026-07-28', '2026-07-29']);
   });
 
   test('a node that loses the advisory lock dispatches nothing', async () => {

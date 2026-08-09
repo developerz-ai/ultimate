@@ -35,6 +35,10 @@ export const ${name.camel} = query({
     from<${feature.pascal}>('${feature.table}', () => repo.listByOrg(orgId, limit))
       .where({ orgId })
       .orderBy('createdAt')
+      // The primary key last is what makes the order TOTAL: \`createdAt\` alone ties, and two
+      // rows that tie can swap between evaluations — a bounded read then drops one and repeats
+      // the other, and a live subscription patches a row it never sent.
+      .orderBy('id')
       .limit(limit),
 });
 `;
@@ -66,15 +70,19 @@ ${wrapper}('${name.camel} is a declared ${live ? 'live ' : ''}query', () => {
   expect(target.isLive).toBe(${String(live)});
 });
 
-${wrapper}('${name.camel} is bounded and ordered', async () => {
+${wrapper}('${name.camel} is bounded and TOTALLY ordered', async () => {
   // The SQL text is the contract an agent reads to self-correct, so assert on it, not on a
   // shape. \`sourceFor\` is the one read path — it parses the input and builds the source exactly
   // as a request does. \`actor: null\` gives the call a context of its own rather than borrowing
   // an ambient one, and \`enforce: false\` leaves the policy to the test below.
   const source = await sourceFor(target, { orgId, limit: 50 }, { actor: null, enforce: false });
   const { sql } = source.toSQL();
-  expect(sql.toLowerCase()).toContain('order by');
-  expect(sql.toLowerCase()).toContain('limit');
+  const text = sql.toLowerCase();
+  expect(text).toContain('order by');
+  expect(text).toContain('limit');
+  // "ordered" is not enough. Dropping the id tiebreak still leaves an ORDER BY, so asserting on
+  // its presence alone would keep passing while the read went non-deterministic under ties.
+  expect(text.slice(text.lastIndexOf('order by'))).toContain('id');
 });
 
 ${wrapper}('${name.camel} denies a foreign org before it reads a row', async () => {

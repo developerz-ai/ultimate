@@ -62,14 +62,21 @@ export const postCreate = can<PostScope>('post:create', ({ actor, input }) => {
 });
 
 /**
- * Owns-or-org-admin when the surface loaded the post, tenancy when it did not. Both branches are
- * the same rule: an actor may publish inside their own org, and inside it only their own drafts
- * unless they are an admin.
+ * Owns-or-org-admin, on a row the surface loaded. Tenancy is necessary and never sufficient: an
+ * actor may publish inside their own org, and inside it only their own drafts unless they are an
+ * admin.
+ *
+ * `row === null` is a DENIAL, not a pass. It used to mean "the surface did not load a post, so
+ * there is nothing to object to", which handed every same-org holder of `post:publish` a way to
+ * publish a colleague's draft — the caller simply never passed a row. `null` carries no evidence
+ * of authorship, and a rule that treats an absent fact as a satisfied one is a rule that fails
+ * open. The row now arrives from `publishPost`'s `row:` loader, which runs once per invocation
+ * before the guard.
  */
 export const postPublish = can<PostScope, PostRow>('post:publish', ({ actor, input, row }) => {
   const member = memberOf(actor);
   if (member === null || member.orgId !== input.orgId) return false;
-  return row === null || ownsPost(member, row);
+  return row !== null && ownsPost(member, row);
 });
 
 /** Reading one post: membership in the post's org, nothing finer. Drafts stay inside the org. */
@@ -88,6 +95,14 @@ export const postLike = can<PostScope>(
  * Re-evaluated at subscribe and again per delivered row, so a post that leaves the actor's org
  * mid-stream is dropped rather than pushed. The per-row branch reads `row`, which the matcher
  * passes without touching the database.
+ *
+ * `row === null` allows here, and unlike `postPublish` that is deliberate rather than a hole. The
+ * subscribe call genuinely has no row — @ultimat3/realtime passes `null` at subscribe time and the
+ * loaded row on every delivery — and the question being asked at subscribe is "may this member
+ * read this org's feed", which `mayReadFeed` above has already answered in full. The null branch
+ * grants nothing the line before it did not; it says "no further row-level objection", not "skip
+ * the check". `postPublish` was different because authorship was the ONLY thing its row branch
+ * checked, so skipping it skipped the rule.
  */
 export const feedRead = can<PostScope, PostRow>('feed:read', ({ actor, input, row }) => {
   const member = memberOf(actor);

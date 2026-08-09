@@ -25,6 +25,7 @@ export const publishPost = action({
   input:  t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
   policy: postPublish,                // declared once in the feature's policy.ts
+  row:    ({ input, ctx }) => ctx.posts.authorship(input.postId),  // once, before the guard
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
@@ -35,9 +36,11 @@ export const publishPost = action({
 });
 ```
 
-`orgId` is in the `input` because the policy decides on it. A predicate is synchronous — see
-[`policy`](#policy) — so authz reads the declaration, never the database. The policy object is
-named, never re-declared inline: an action and its live query evaluate the same instance.
+`orgId` is in the `input` because the policy decides on it. `row` is the async half authz is not
+allowed to have: the predicate stays synchronous — see [`policy`](#policy) — and the framework loads
+the row once per invocation, after the input parse and before the guard. Omit `row` and the rule
+gets `null`, which a row-level rule must read as a denial. The policy object is named, never
+re-declared inline: an action and its live query evaluate the same instance.
 
 ### Six generated artifacts
 
@@ -45,10 +48,10 @@ named, never re-declared inline: an action and its live query evaluate the same 
 |---|---|---|---|
 | 1 | **HTTP route** | name + `input` | `POST /_x/action/publish-post`, body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
-| 3 | **Typed client function** | `input` + `output` | `await publishPost({ postId })` in `app/`, no fetch, no codegen step to remember |
-| 4 | **Job handle** | the whole declaration | `ctx.jobs.enqueue(publishPost, input)` runs the same handler durably; see [`04-jobs.md`](./04-jobs.md) |
+| 3 | **Typed client function** | `input` + `output` | `await publishPost({ postId, orgId })` in `app/`, no fetch, no codegen step to remember |
+| 4 | **Job handle** | the whole declaration | `publishPost.job()` — the action's `input`, a namespaced job name, an `idempotencyKey` derived from the payload, and an `invoke` that lands in the same execution core with `surface: 'job'`; see [`04-jobs.md`](./04-jobs.md) |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | one tool per exposed action, JSON Schema from `input`, authz unchanged |
-| 6 | **Test scaffold** | `input` + `policy` | a contract test asserting schema round-trip and a denial test per policy branch |
+| 6 | **Contract tests** | `input` + `policy` | `.contract()` runs what every action owes — garbage input rejected, anonymous actor denied, operation present in OpenAPI — and `x g` emits a cross-org denial through `.as()` beside it; all passing on the first run |
 
 Plus cache invalidation: `cache.invalidates` propagates to every tier in one hop ([`05-caching.md`](./05-caching.md)).
 
@@ -82,21 +85,30 @@ An authz rule, evaluated in every surface. A predicate always receives `{ input,
 whichever surface called it.
 
 ```ts
-// decides on input — `row` is null
+// decides on input alone — `row` arrives as null and the rule never reads it
 export const postCreate = can<PostScope>('post:create',
   ({ actor, input }) => actor?.orgId === input.orgId);
 
-// decides about a row the SURFACE already loaded — a live query passes one per change event
+// decides about a row — null is a DENIAL, never a pass
 export const postPublish = can<PostScope, PostRow>('post:publish',
   ({ actor, input, row }) =>
-    actor?.orgId === input.orgId && (row === null || ownsPost(actor, row)));
+    actor?.orgId === input.orgId && row !== null && ownsPost(actor, row));
 ```
 
 **Predicates are synchronous, and that is the constraint everything else follows from.** A live query
 re-evaluates one per subscriber on every change, so an `await` here would be one database round trip
 per row per connected client — a 10k-watcher feed would cost 10k reads per write. The caller loads
-what a rule needs and passes it in: tenancy travels in `input`, an already-loaded row in `row`. Never
-reach for a row through `input`.
+what a rule needs and passes it in: tenancy travels in `input`, the row through the surface. A live
+query passes one per change event; an action declares a `row` loader, which the framework runs once
+per invocation between the input parse and the guard. Never reach for a row through `input`.
+
+**A rule that reads `row` fails closed on `null`.** `row === null || ownsPost(actor, row)` reads like
+a convenience for the surfaces that have no row, and it is a bypass: "no loader declared" and "row
+not found" are the same `null`, so any same-org holder of `post:publish` publishes a colleague's
+draft by calling an action that never loaded one. `null` is the absence of evidence, and absent
+evidence denies. A rule whose row branch adds nothing the input branch has not already decided — a
+feed subscription re-checking the org it already filtered on — may allow `null`, and should say in a
+comment why that is not this mistake.
 
 | Aspect | Rule |
 |---|---|
@@ -114,41 +126,62 @@ export const toggleLike = mutator({
   input:  t.object({ postId: t.uuid, orgId: t.uuid }),
   output: PostView,
   policy: postLike,
-  local(tx, { postId }) { tx.posts.update(postId, (p) => ({ likeCount: p.likeCount + 1 })); },
+  // Convergent, not incremental: applying it N times equals applying it once.
+  local(tx, { postId }) {
+    tx.posts.update(postId, (p) =>
+      p.likedByMe ? {} : { likedByMe: true, likeCount: p.likeCount + 1 });
+  },
   async server(ctx, { postId }) { return ctx.posts.like(postId); },
   conflict: 'server-wins', // | 'last-write-wins' | custom(merge)
 });
 ```
 
+**Replayable means convergent, not merely deterministic.** `local` re-runs on every rebase, so
+`likeCount: p.likeCount + 1` — pure, clock-free, random-free — still counts one member's like three
+times on a device that replayed its queue three times. The fix is to derive the counter from a flag
+the mutation itself sets, so the second application is a no-op. `likedByMe` is per-device state
+about the acting member, not a column: the authoritative row is a `likes` composite key, and the
+server half converges for the same reason — insert-or-ignore on that key, then recount from it.
+
 | Aspect | Rule |
 |---|---|
 | Projects to | everything `action` does, plus a local-store transaction and a rebase entry |
 | Owns | conflict strategy |
-| Never | let `local` do I/O, randomness, or `Date.now()` — it must be replayable |
+| Never | let `local` do I/O, randomness, or `Date.now()`, or write a value that depends on how many times it has already run |
 
 ## `query`
 
 A read; optionally live (subscribable).
 
 ```ts
-// query — `t` and `from` come from @ultimat3/query; a query file imports one package
+// query — `t` and `from` come from @ultimat3/query; a query file imports one framework package
 import { from, query, t } from '@ultimat3/query';
+import { orgId as toOrgId } from '@myapp/domain';   // uuid string in, branded OrgId out
 
 export const liveFeed = query({
   input: t.object({ orgId: t.uuid, limit: t.number.int().min(1).max(50).default(50) }),
   policy: feedRead,
   live: true,
   sql: ({ orgId, limit }) =>
-    from<PostSummary>('posts', () => repo.feedPage(orgId, limit))
-      .where({ orgId }).orderBy('createdAt', 'desc').limit(limit),
+    from<PostSummary>('posts', () => repo.feedPage(toOrgId(orgId), limit))
+      .where({ orgId })
+      .orderBy('createdAt', 'desc')
+      .orderBy('id')                // the tail key — see below
+      .limit(limit),
 });
 ```
+
+**Every order ends with a key that is unique in the row shape.** The matcher computes a row's
+insertion position, and whether a change moved it, from this `orderBy` list and nothing else.
+`createdAt desc` alone is a partial order: two posts written in the same millisecond may swap places
+between evaluations, and a bounded page then drops or repeats one at the limit boundary. The tail
+key is what makes the order total, so a live read is stable and a cursor over it is resumable.
 
 | Aspect | Rule |
 |---|---|
 | Projects to | HTTP GET, typed client hook, live subscription (`live: true`), cache entry with tags, MCP read tool |
 | Owns | shape + row-level filtering |
-| Never | write, enqueue, or send mail. `live: true` requires a deterministic, bounded `sql` |
+| Never | write, enqueue, or send mail. `live: true` requires a deterministic, bounded `sql` whose final sort key is unique |
 
 ## `job`
 

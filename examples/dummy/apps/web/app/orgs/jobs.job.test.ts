@@ -70,7 +70,7 @@ test('a rolled-back invite never enqueues its mail', async ({ seed, actorFor, ru
 
   await expect(
     inviteMember.as(actor, { orgId: owner.orgId, email: 'fourth@tinta.example', role: 'author' }),
-  ).rejects.toMatchError('X_BILLING_SEATS_EXCEEDED');
+  ).rejects.toBeUltimateError('X_BILLING_SEATS_EXCEEDED');
 
   expect(await runJobs.depth(sendInvite)).toBe(1); // no ghost job from the failed transaction
 });

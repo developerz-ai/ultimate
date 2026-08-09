@@ -85,8 +85,13 @@ export function createContext(init: CtxInit = {}): Ctx {
     // with a framework field (`actor`, `logger`) loses — it stays reachable as
     // `ctx.services.actor`, and the context's own meaning never depends on what an app named a
     // service. The assertion is the one thing this package cannot prove: an augmentation
-    // declares which services exist, only the boot code knows whether it passed them. A missing
-    // one throws `X_SERVICE_MISSING` on first use rather than reading as `undefined`.
+    // declares which services exist, only the boot code knows whether it passed them. So a
+    // service the boot never installed reads as `undefined` through `ctx.posts` — this is a
+    // frozen plain object, and it stays one on purpose: a get-trap proxy that threw on absent
+    // keys would also throw on `await ctx` (the runtime probes `.then`), on `JSON.stringify`,
+    // and on every optional-property check. `useService(name)` is the path that names the
+    // failure instead of leaving a bare `TypeError` at the first call: it throws
+    // `X_SERVICE_MISSING`, with the installed names and the fix.
     ...services,
     requestId,
     traceId: trace,

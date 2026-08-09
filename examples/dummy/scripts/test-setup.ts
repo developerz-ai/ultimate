@@ -10,12 +10,21 @@
 // depend on workspace symlinks. A generated app writes `@ultimat3/testing` here. For the same
 // reason `scripts/` is not in tsconfig's `include` — a composite project cannot reach across
 // into another one's sources. Both go away when the app joins the workspace.
+//
+// Booting `apps/web/api` is the other job, and it belongs HERE rather than in a test file. It is
+// the registration pass: it stamps each export name onto its declaration, which is what gives a
+// projection a stable name to project under. A test in `app/` that imported it would be `app/`
+// reaching into `api/` at runtime — the boundary `x verify` rejects with `X_BOUNDARY_VIOLATION`,
+// because it is the edge along which a page could call a handler instead of the typed client.
+// The preload is outside both, runs once for the whole suite, and is already where the app says
+// what its tests need. Same relative-path convention, same reason.
 
+import '../../../packages/testing/src/preload';
+import '../apps/web/api';
 import { assert, userActor } from '../../../packages/core/src/index';
 import type { Driver, EntityCore, Repo, Seed } from '../../../packages/entity/src/index';
 import { memoryDriver, seedId } from '../../../packages/entity/src/index';
 import { defineFixtures } from '../../../packages/testing/src/index';
-import '../../../packages/testing/src/preload';
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
 export interface SeedRow {
