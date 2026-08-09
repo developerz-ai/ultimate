@@ -23,18 +23,21 @@ export {
   fnv1a,
   HashEmbedder,
   normalize,
-  RemoteEmbedder,
   tokenize,
 } from './embeddings';
 export type { AiErrorCode } from './errors';
 export {
   AI_ERROR_CODES,
+  AI_ERROR_TITLES,
   AiBudgetExceededError,
   AiGatewayMissingError,
-  AiNotImplementedError,
+  AiKeyMissingError,
   AiPromptRenderError,
   AiPromptVersionError,
   AiProviderUnavailableError,
+  AiRequestInvalidError,
+  AiTransportError,
+  EmbedderDimMismatchError,
   EvalThresholdError,
   LlmOutputInvalidError,
   VectorDimMismatchError,
@@ -124,7 +127,6 @@ export {
   MODELS,
   parseMessage,
   totalTokens,
-  ZERO_USAGE,
 } from './provider';
 export type {
   AssembledContext,
@@ -134,6 +136,8 @@ export type {
   RetrieveInput,
 } from './rag';
 export { assembleContext, chunk, indexDocument, passthroughReranker, retrieve } from './rag';
+export type { RemoteEmbedderInput } from './remote-embedder';
+export { RemoteEmbedder } from './remote-embedder';
 export type { AiRuntimeInput } from './runtime';
 export { aiEmbedder, aiGateway, configureAi, resetAiRuntime, semanticCacheFor } from './runtime';
 export type {
@@ -156,3 +160,4 @@ export type {
 export { fuse, MemoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
 export { NO_TENANT, narrowScope, scopeAdmits, tenantOf, UNSCOPED } from './vector-scope';
+export { ZERO_USAGE } from './wire';

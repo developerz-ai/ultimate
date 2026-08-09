@@ -13,12 +13,15 @@ rather than imported. Same contract, two wire formats.
 
 | File | Job |
 |---|---|
-| `provider.ts` | `Provider` interface, model catalogue + prices, Anthropic + Echo |
+| `provider.ts` | `Provider` interface, model catalogue + prices, the request half, Anthropic + Echo |
+| `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
+| `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
 | `gateway.ts` | routing, retries, cache, budget wiring |
 | `budget.ts` | token ledgers per request/actor/org, ALS carrier |
 | `prompt.ts` | `definePrompt`, content hashing, version registry |
-| `evals.ts` | `defineEval`, built-in scorers, threshold assertion |
 | `embeddings.ts` | `Embedder`, `HashEmbedder`, cosine helpers |
+| `remote-embedder.ts` | `RemoteEmbedder` — the production `/v1/embeddings` client |
+| `evals.ts` | `defineEval`, built-in scorers, threshold assertion |
 | `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid |
 | `vector-scope.ts` | the tenant + policy envelope, and the tighten-only derive rule |
 | `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
@@ -50,6 +53,18 @@ rather than imported. Same contract, two wire formats.
 
 - Cost is `Money` (integer minor units), rounded **up**. Never a float, never a division
   that loses a fraction.
+- Every non-2xx and every in-band `error` frame becomes `AiTransportError`, which carries a real
+  `status` field — that field IS the gateway's retry rule. A body parsed as a message would read
+  as an empty, successful answer, which is the one outcome nothing downstream can detect.
+- A stream that ends without `message_stop` throws. A truncated answer that returns `end_turn`
+  is a confidently wrong answer with no signal, which the budget rule already forbids.
+- A tool call is emitted whole. `input_json_delta` fragments are not arguments until the block
+  closes, so nothing partial reaches a caller.
+- Thinking chunks are never appended to `text`. A consumer concatenating every chunk must not
+  end up shipping the reasoning to the user.
+- One `RemoteEmbedder` for every vendor: `baseUrl` selects the provider, the wire shape is the
+  same. Vectors are L2-normalised on arrival so `cosine` stays a dot product, and a width other
+  than the declared one is `X_VECTOR_DIM_MISMATCH` before anything reaches a store.
 - A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate.
 - Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
   `output_config`, `thinking: 'disabled'` only at effort ≤ `high`. All 400s otherwise.

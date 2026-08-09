@@ -7,7 +7,7 @@ and cost accounting cannot be bypassed by a stray `fetch`.
 import { createGateway, AnthropicProvider, EchoProvider } from '@ultimat3/ai';
 
 export const ai = createGateway({
-  providers: [new AnthropicProvider({ fetch }), new EchoProvider()],
+  providers: [new AnthropicProvider(), new EchoProvider()],   // ANTHROPIC_API_KEY, or { apiKey }
   budget: { request: 40_000, actor: 500_000, org: 20_000_000 },  // tokens
   cache: memoCache,
 });
@@ -37,7 +37,42 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 | Retries use **full jitter** | synchronised retries from N workers reproduce the rate limit |
 | A 4xx is never retried | the same body gets the same rejection and burns the budget |
 
-Models, `As of 2026-07`:
+## Streaming
+
+`stream()` yields as the model writes and ends with one `done` chunk carrying the assembled
+result — so a consumer that only wants the answer can ignore everything before it. Mandatory
+above ~16k `maxTokens`: a non-streaming request that large hits the HTTP timeout first.
+
+```ts
+for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {
+  if (chunk.type === 'text') process.stdout.write(chunk.text);
+  if (chunk.type === 'tool-call') await runLlmToolCall(tools, chunk.call, actor);
+  if (chunk.type === 'done') debit(chunk.result.cost);   // real usage, not the estimate
+}
+```
+
+| Rule | Why |
+|---|---|
+| A `tool-call` chunk arrives whole | `input_json_delta` fragments are not arguments until the block closes |
+| `thinking` chunks never join `text` | concatenating every chunk must not ship the reasoning to the user |
+| A stream cut before `message_stop` **throws** | a truncated answer reporting `end_turn` is wrong with no signal |
+| An in-band `error` frame carries a status | `overloaded_error` mid-stream retries like a 529 on the handshake |
+
+## Embeddings
+
+`RemoteEmbedder` speaks the one `/v1/embeddings` shape every hosted and self-hosted embedder
+uses; `baseUrl` selects the provider. `HashEmbedder` is the deterministic offline twin `x dev`
+and the test suite run on.
+
+```ts
+const embedder = new RemoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY
+```
+
+Vectors are L2-normalised on arrival, so `cosine` stays a dot product. A width other than the
+declared `dimension` is `X_VECTOR_DIM_MISMATCH` **before** anything reaches a store — a store
+half-written at the wrong width has no error to report, only worse answers.
+
+Models, `As of 2026-08`:
 
 | Model | Context | Max output | Input / MTok | Output / MTok |
 |---|---|---|---|---|

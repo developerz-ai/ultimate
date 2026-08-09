@@ -221,7 +221,9 @@ X_DB_DRIFT: schema differs from migrations
 | `X_AI_BUDGET_EXCEEDED` | a model call would exceed its budget | prompt too large, or cost cap reached | raise `ai.budget` for the scope, or shorten the prompt |
 | `X_AI_GATEWAY_MISSING` | an `llm()` action ran with no gateway installed | boot never called `configureAi` | `configureAi({ gateway: createGateway({ providers: [new AnthropicProvider()] }) })` at boot |
 | `X_AI_PROMPT_VERSION` | prompt version or slots are wrong | an edited prompt with no version bump, or a missing variable | bump the version in `definePrompt`, then `x manifest` |
-| `X_AI_PROVIDER_UNAVAILABLE` | the model provider is unreachable | missing API key, or an outage | check `ai.providers` and the provider key env var |
+| `X_AI_PROVIDER_UNAVAILABLE` | the model provider is unreachable | a non-2xx, an in-band `error` event, or a stream cut before `message_stop` | retry a 429/5xx (the gateway already does); fix the request a 4xx names |
+| `X_AI_KEY_MISSING` | the provider API key is not set | `ANTHROPIC_API_KEY` / `EMBEDDINGS_API_KEY` unset and no `apiKey` passed | `export ANTHROPIC_API_KEY=<key>`, or pass `{ apiKey }` to the provider |
+| `X_AI_REQUEST_INVALID` | the provider would reject this request | `thinking: 'disabled'` above `high` effort | use `effort: 'high'` or below, or leave thinking adaptive |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema on the answer and on the repair turn | the model would not produce the shape | describe the shape in the prompt template and bump its version, or widen `output` in the `llm()` declaration |
 | `X_EVAL_THRESHOLD` | an eval scored below its tolerance | a prompt edit regressed cases | `x ai eval <name> --verbose` for per-case scores |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |

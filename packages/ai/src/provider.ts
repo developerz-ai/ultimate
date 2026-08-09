@@ -1,15 +1,19 @@
 // The `Provider` interface, the model catalogue with its prices, and two implementations:
-// `AnthropicProvider` (shaped for the real Messages API) and `EchoProvider` (deterministic,
-// for tests and `x dev` without a key).
+// `AnthropicProvider` (the real Messages API, streaming and not) and `EchoProvider`
+// (deterministic, for tests and `x dev` without a key).
+//
+// This file owns the REQUEST half and the prices; ./wire owns the response half.
 //
 // Prices live here in INTEGER MINOR UNITS per million tokens. Token spend is money, and the
 // house rule applies to money regardless of where it comes from: never a float.
 //
-// As of 2026-07. Model IDs are exact alias strings — never append a date suffix.
+// As of 2026-08. Model IDs are exact alias strings — never append a date suffix.
 
 import type { Money } from '@ultimat3/money';
-import { AiNotImplementedError } from './errors';
+import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
+import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
+import { MessageStream, parseStopReason, parseUsage } from './wire';
 
 /** Blessed models. Opus 5 is the default; the others are explicit downgrades. */
 export const MODEL_IDS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
@@ -157,24 +161,20 @@ export function totalTokens(usage: TokenUsage): number {
   return usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
 }
 
-export const ZERO_USAGE: TokenUsage = {
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheReadTokens: 0,
-  cacheWriteTokens: 0,
-};
-
 // ── Anthropic ────────────────────────────────────────────────────────────────
 
 export interface AnthropicProviderInput {
   /** Reads `ANTHROPIC_API_KEY` when omitted. Absent at call time is a labelled throw. */
   readonly apiKey?: string;
   readonly baseUrl?: string;
-  /** Injectable so a test can assert the request body without a network. */
+  /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
   readonly fetch?: typeof fetch;
 }
 
 const ANTHROPIC_VERSION = '2023-06-01';
+const API_KEY_ENV = 'ANTHROPIC_API_KEY';
+/** Enough of an error body to name the field that was wrong, not enough to fill a log. */
+const DETAIL_LIMIT = 300;
 
 /**
  * The real Messages API shape. Three request-surface rules are encoded here rather than
@@ -193,24 +193,43 @@ export class AnthropicProvider implements Provider {
   }
 
   async generate(request: GenerateRequest): Promise<GenerateResult> {
-    const response = await this.post({ ...this.body(request), stream: false });
-    return parseMessage(request.model ?? DEFAULT_MODEL, response);
+    const response = await this.send({ ...this.body(request), stream: false });
+    const raw = (await response.json()) as Record<string, unknown>;
+    return parseMessage(request.model ?? DEFAULT_MODEL, raw);
   }
 
   /**
-   * Streaming is mandatory above ~16k `maxTokens`: a non-streaming request that large hits
-   * the HTTP timeout before the model finishes.
+   * Streaming is mandatory above ~16k `maxTokens`: a non-streaming request that large hits the
+   * HTTP timeout before the model finishes. The final `done` chunk carries the assembled
+   * result, so a consumer that only wants the answer can ignore every chunk before it.
    */
-  // Not a generator: it has nothing to yield, and `async *` with no `yield` is a lint error
-  // for good reason — a caller would see an empty stream that ends cleanly instead of the
-  // throw. Returning `AsyncIterable` keeps the signature identical for consumers.
-  stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
-    // The SSE reader belongs to the transport half, which needs a real connection.
-    void this.body(request);
-    throw new AiNotImplementedError({
-      feature: 'AnthropicProvider.stream (SSE reader)',
-      fix: 'set ANTHROPIC_API_KEY and pass a real `fetch` to createGateway, or use EchoProvider in tests',
-    });
+  async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
+    const model = request.model ?? DEFAULT_MODEL;
+    const response = await this.send({ ...this.body(request), stream: true });
+    if (response.body === null) {
+      throw new AiTransportError({
+        provider: this.name,
+        status: response.status,
+        detail: 'a streaming response arrived with no body',
+      });
+    }
+    const message = new MessageStream();
+    for await (const frame of readSse(response.body)) {
+      for (const chunk of message.push(frame)) yield chunk;
+    }
+    // A connection cut mid-answer must fail, not resolve: the partial text reads as a complete
+    // answer, and `end_turn` would be a lie the caller has no way to detect.
+    if (!message.isComplete()) {
+      throw new AiTransportError({
+        provider: this.name,
+        detail: 'the stream ended before message_stop — the answer is truncated',
+      });
+    }
+    const state = message.state();
+    yield {
+      type: 'done',
+      result: { model, ...state, cost: costOf(model, state.usage) },
+    };
   }
 
   /** The request body. Pure and side-effect free so a test can assert it directly. */
@@ -235,15 +254,17 @@ export class AnthropicProvider implements Provider {
     return body;
   }
 
-  private async post(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const apiKey = this.config.apiKey ?? Bun.env['ANTHROPIC_API_KEY'];
-    const doFetch = this.config.fetch;
-    if (apiKey === undefined || apiKey === '' || doFetch === undefined) {
-      throw new AiNotImplementedError({
-        feature: 'AnthropicProvider remote transport',
-        fix: 'export ANTHROPIC_API_KEY=sk-ant-... and pass { fetch } to AnthropicProvider',
-      });
+  /**
+   * The one place a request leaves the process. A non-2xx becomes an `AiTransportError`
+   * carrying its status, because the gateway decides whether to retry from that status and a
+   * body parsed as if it were a message would read as an empty, successful answer.
+   */
+  private async send(body: Record<string, unknown>): Promise<Response> {
+    const apiKey = this.config.apiKey ?? Bun.env[API_KEY_ENV];
+    if (apiKey === undefined || apiKey === '') {
+      throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
     }
+    const doFetch = this.config.fetch ?? fetch;
     const url = `${this.config.baseUrl ?? 'https://api.anthropic.com'}/v1/messages`;
     const response = await doFetch(url, {
       method: 'POST',
@@ -251,18 +272,44 @@ export class AnthropicProvider implements Provider {
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
         'content-type': 'application/json',
+        accept: body['stream'] === true ? 'text/event-stream' : 'application/json',
       },
       body: JSON.stringify(body),
     });
-    return (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new AiTransportError({
+        provider: this.name,
+        status: response.status,
+        detail: await detailOf(response),
+      });
+    }
+    return response;
   }
+}
+
+/** The provider's own message, when it sent one — it names the offending field, we name the fix. */
+async function detailOf(response: Response): Promise<string> {
+  const body = await response.text().catch(() => '');
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed === 'object' && parsed !== null) {
+      const error = (parsed as Record<string, unknown>)['error'];
+      if (typeof error === 'object' && error !== null) {
+        const message = (error as Record<string, unknown>)['message'];
+        if (typeof message === 'string') return message.slice(0, DETAIL_LIMIT);
+      }
+    }
+  } catch {
+    // Not JSON — a proxy or a gateway timeout page. The raw text is still the best evidence.
+  }
+  return body === '' ? response.statusText : body.slice(0, DETAIL_LIMIT);
 }
 
 /** `thinking: 'disabled'` above `high` effort is a 400 — refuse locally with a real code. */
 function assertDisableAllowed(effort: Effort): Record<string, unknown> {
   if (effort === 'xhigh' || effort === 'max') {
-    throw new AiNotImplementedError({
-      feature: `thinking: 'disabled' at effort "${effort}"`,
+    throw new AiRequestInvalidError({
+      detail: `thinking cannot be disabled at effort "${effort}" — the API allows it only at 'high' or below`,
       fix: `use effort 'high' or below with thinking disabled, or leave thinking adaptive`,
     });
   }
@@ -295,31 +342,6 @@ export function parseMessage(model: ModelId, raw: Record<string, unknown>): Gene
     usage,
     cost: costOf(model, usage),
   };
-}
-
-function parseUsage(raw: unknown): TokenUsage {
-  if (typeof raw !== 'object' || raw === null) return ZERO_USAGE;
-  const u = raw as Record<string, unknown>;
-  const num = (key: string): number => (typeof u[key] === 'number' ? (u[key] as number) : 0);
-  return {
-    inputTokens: num('input_tokens'),
-    outputTokens: num('output_tokens'),
-    cacheReadTokens: num('cache_read_input_tokens'),
-    cacheWriteTokens: num('cache_creation_input_tokens'),
-  };
-}
-
-const STOP_REASONS: readonly StopReason[] = [
-  'end_turn',
-  'max_tokens',
-  'stop_sequence',
-  'tool_use',
-  'pause_turn',
-  'refusal',
-];
-
-function parseStopReason(raw: unknown): StopReason {
-  return STOP_REASONS.find((r) => r === raw) ?? 'end_turn';
 }
 
 // ── Echo ─────────────────────────────────────────────────────────────────────
