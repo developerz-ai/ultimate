@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { action, runAction } from './action';
+import { action } from './action';
+import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -23,7 +24,7 @@ const publishPost = action({
 
 describe('action', () => {
   test('is callable server-side and returns the handler output', async () => {
-    const result = await runAction(publishPost, { postId: POST_ID }, { ctx: member });
+    const result = await invoke(publishPost, { postId: POST_ID }, { ctx: member });
     expect(result).toEqual({ id: POST_ID, published: true });
   });
 
@@ -39,7 +40,7 @@ describe('action', () => {
       },
     }).named('publishPost');
 
-    const failure = await runAction(guarded, { postId: 'not-a-uuid' }, { ctx: member }).catch(
+    const failure = await invoke(guarded, { postId: 'not-a-uuid' }, { ctx: member }).catch(
       (error: unknown) => error,
     );
     expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');

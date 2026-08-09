@@ -10,11 +10,13 @@ const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
 /** Titles for the framework-wide code table. Guarded: `X_INPUT_INVALID` is shared. */
 const TITLES: Readonly<Record<string, string>> = {
   X_ACTION_DUPLICATE: 'two actions are registered under one name',
+  X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
   X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
   X_ACTION_UNREGISTERED: 'an action was projected before it was registered',
   X_CONTRACT_DRIFT: 'client and server disagree about the contract',
   X_IDEMPOTENCY_CONFLICT: 'idempotency key reused with a different payload or still in flight',
   X_INPUT_INVALID: 'input failed schema validation',
+  X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
 };
 
@@ -30,6 +32,23 @@ export class ActionUnregisteredError extends UltimateError {
       cause: 'an action was projected before it was registered, so it has no name',
       fix: "call registerActions(await import('./actions')) at boot, before mounting routes",
       docs: docs('X_ACTION_UNREGISTERED'),
+    });
+  }
+}
+
+/**
+ * Thrown when a projection is handed something that never came out of `action()`.
+ * The declaration is private to `invoke.ts`, so an object that merely looks like
+ * an action has no handler to run and no policy to evaluate — refusing it here is
+ * how "there is one execution path" stays true at runtime, not just in the types.
+ */
+export class ActionForeignError extends UltimateError {
+  constructor(name: string) {
+    super({
+      code: 'X_ACTION_FOREIGN',
+      cause: `"${name === '' ? 'anonymous' : name}" is not an action built by action()`,
+      fix: "declare it as `export const name = action({ input, output, policy, handle })` from '@ultimat3/action'",
+      docs: docs('X_ACTION_FOREIGN'),
     });
   }
 }
@@ -111,6 +130,22 @@ export class InputInvalidError extends UltimateError {
       cause: `input for action "${name}" failed validation: ${detail}`,
       fix: `x actions describe ${name} --json  # prints the expected input schema`,
       docs: docs('X_INPUT_INVALID'),
+    });
+  }
+}
+
+/**
+ * The mirror of `InputInvalidError`, and a server bug rather than a caller's:
+ * the handler produced something its own `output` schema rejects, so the client,
+ * the OpenAPI response and the MCP `outputSchema` would all have been lied to.
+ */
+export class OutputInvalidError extends UltimateError {
+  constructor(name: string, detail: string) {
+    super({
+      code: 'X_OUTPUT_INVALID',
+      cause: `action "${name}" returned a value its output schema rejects: ${detail}`,
+      fix: `x actions describe ${name} --json  # compare the handler's return against \`output:\``,
+      docs: docs('X_OUTPUT_INVALID'),
     });
   }
 }

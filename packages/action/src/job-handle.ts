@@ -6,7 +6,7 @@
 import type { Ctx } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
-import { actionName, runAction } from './action';
+import { actionName, invoke } from './invoke';
 import { fingerprint } from './stable';
 
 export interface ActionJobHandle<
@@ -29,10 +29,10 @@ export function toJobHandle<TInput extends StandardSchemaV1, TOutput extends Sta
   return {
     kind: 'action-job',
     name: `action:${name}`,
-    input: target.def.input,
+    input: target.input,
     idempotencyKey: (input) => `action:${name}:${fingerprint(input)}`,
     // Schema-erased at the seam; the output type is this action's by construction.
     invoke: (input, ctx) =>
-      runAction(target, input, { surface: 'job', ctx }) as Promise<InferOutput<TOutput>>,
+      invoke(target, input, { surface: 'job', ctx }) as Promise<InferOutput<TOutput>>,
   };
 }

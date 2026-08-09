@@ -5,29 +5,21 @@
  */
 
 import type { CacheTag } from '@ultimat3/cache';
-import { invalidateTags } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
-import { useContext, withSpan } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
-import { ActionUnregisteredError } from './errors';
 import { facadeFor } from './facade';
 import type { OpenApiOperation } from './http';
-import {
-  getIdempotencyStore,
-  type IdempotencyStore,
-  idempotencyKeyFor,
-  withIdempotency,
-} from './idempotency';
+import type { IdempotencyStore } from './idempotency';
+import { actionName, defOf, hasDef, invoke, stashDef } from './invoke';
 import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
 import type { McpToolDescriptor } from './mcp-tool';
 import { derivePath, toToolName } from './naming';
-import { type ActionPolicy, actorOf, guard, policyCapability, type Surface } from './policy-gate';
+import { type ActionPolicy, policyCapability, type Surface } from './policy-gate';
 import { tagKeys } from './tags';
-import { validateInput } from './validate';
 
 export interface ActionCache {
   /** Tags dropped from every cache tier after the handler settles. */
@@ -65,6 +57,12 @@ export interface ActionDef<TInput extends StandardSchemaV1, TOutput extends Stan
 export interface InvokeOptions {
   /** Explicit context. Omitted means "take the ambient request context". */
   readonly ctx?: Ctx;
+  /**
+   * Run as someone else. Omitted keeps the context's own actor; `null` is the
+   * signed-out caller. The rest of the context is untouched, so impersonation
+   * stays on the one execution path instead of forking a second one.
+   */
+  readonly actor?: Actor | null;
   readonly surface?: Surface;
   readonly idempotencyKey?: string | null;
   readonly store?: IdempotencyStore;
@@ -94,10 +92,9 @@ export interface ActionDescriptor {
 }
 
 /**
- * Schema-erased view of a definition. Projections that only *describe* an action
- * take this, so a concrete `Action<In, Out>` needs no variance gymnastics to be
- * passed to `toRoute`, `toMcpTool` or the registry. Members stay method-syntax on
- * purpose: bivariant parameters are what make the erasure assignable.
+ * Schema-erased view of a definition, held only by `invoke.ts`'s private store —
+ * never reachable from an action. Members stay method-syntax on purpose:
+ * bivariant parameters are what make the erasure assignable.
  */
 export interface AnyActionDef {
   readonly input: StandardSchemaV1;
@@ -113,8 +110,7 @@ export interface AnyActionDef {
 export interface AnyAction {
   readonly kind: 'action';
   readonly name: string;
-  readonly def: AnyActionDef;
-  /** Lifted off `def`: the declaration is readable without reaching through it. */
+  /** The declaration, minus `handle`: readable, and never a way to run it. */
   readonly input: StandardSchemaV1;
   readonly output: StandardSchemaV1;
   readonly policy: ActionPolicy;
@@ -122,7 +118,7 @@ export interface AnyAction {
   describe(): ActionDescriptor;
   /** A twin under another name. Registration uses `nameAction`, which names in place. */
   named(name: string): AnyAction;
-  /** Run as this actor. Same `runAction` path, only the context's actor changes. */
+  /** Run as this actor. Same `invoke` core, only the context's actor changes. */
   as(actor: Actor | null, input: unknown, options?: InvokeOptions): Promise<unknown>;
   tool(): McpToolDescriptor;
   openapi(): OpenApiOperation;
@@ -135,7 +131,6 @@ export interface Action<
 > extends AnyAction {
   /** Callable server-side with the same types the client and MCP tool see. */
   (input: InferInput<TInput>, opts?: InvokeOptions): Promise<InferOutput<TOutput>>;
-  readonly def: ActionDef<TInput, TOutput>;
   readonly input: TInput;
   readonly output: TOutput;
   named(name: string): Action<TInput, TOutput>;
@@ -164,8 +159,15 @@ export function action<TInput extends StandardSchemaV1, TOutput extends Standard
   return build(def, '');
 }
 
+/**
+ * Structural, not nominal: an object only counts as an action if `action()` built
+ * it, because only then does a declaration exist for `invoke` to run. A look-alike
+ * with `kind: 'action'` never reaches the registry or a projection.
+ */
 export function isAction(value: unknown): value is AnyAction {
-  return typeof value === 'function' && (value as { kind?: unknown }).kind === 'action';
+  return (
+    typeof value === 'function' && (value as { kind?: unknown }).kind === 'action' && hasDef(value)
+  );
 }
 
 /**
@@ -189,58 +191,25 @@ function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1
     input: InferInput<TInput>,
     opts: InvokeOptions = {},
   ): Promise<InferOutput<TOutput>> =>
-    // `runAction` is schema-erased; the output type is this action's by construction.
-    runAction(self, input, opts) as Promise<InferOutput<TOutput>>;
+    // `invoke` is schema-erased; the output type is this action's by construction.
+    invoke(self, input, opts) as Promise<InferOutput<TOutput>>;
 
   const self: Action<TInput, TOutput> = Object.assign(callable, {
     kind: 'action' as const,
-    def,
     describe: (): ActionDescriptor => describeAction(self),
     named: (next: string): Action<TInput, TOutput> => build(def, next),
     ...facadeFor(def, () => self),
   });
   // `name` on a function is non-writable, so Object.assign cannot set it.
   Object.defineProperty(self, 'name', { value: name, configurable: true });
+  // The declaration goes to `invoke.ts` and stays there: `handle` has no other reader.
+  stashDef(self, def);
   return self;
-}
-
-/**
- * The one execution path. HTTP, MCP, jobs and direct calls differ only in the
- * `surface` they pass, which selects how a denial is rendered — never whether
- * authz runs, and never how the input is validated.
- */
-export async function runAction(
-  target: AnyAction,
-  raw: unknown,
-  opts: InvokeOptions = {},
-): Promise<unknown> {
-  const { def } = target;
-  const name = actionName(target);
-  const ctx = opts.ctx ?? useContext();
-  const input = await validateInput(def.input, raw, name);
-  const subject = { actor: actorOf(ctx), input, ctx, action: name };
-  guard(def.policy, subject, opts.surface ?? 'server');
-
-  const run = (): Promise<unknown> =>
-    withSpan(`action.${name}`, () => Promise.resolve(def.handle({ input, ctx })));
-
-  const key = def.idempotent === true ? (opts.idempotencyKey ?? null) : null;
-  let value: unknown;
-  if (key === null) {
-    value = await run();
-  } else {
-    const store = opts.store ?? getIdempotencyStore();
-    const outcome = await withIdempotency(store, idempotencyKeyFor(name, key), input, run);
-    if (outcome.replayed) opts.onReplay?.();
-    value = outcome.value;
-  }
-  if (def.cache !== undefined) await invalidateTags(def.cache.invalidates);
-  return value;
 }
 
 export function describeAction(target: AnyAction): ActionDescriptor {
   const name = actionName(target);
-  const { def } = target;
+  const def = defOf(target);
   const path = derivePath(name);
   const mcp = def.mcp;
   return {
@@ -262,10 +231,4 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     },
     rateLimit: def.rateLimit ?? null,
   };
-}
-
-/** Projections need a stable name; an unregistered action has none yet. */
-export function actionName(target: AnyAction): string {
-  if (target.name.length === 0) throw new ActionUnregisteredError();
-  return target.name;
 }

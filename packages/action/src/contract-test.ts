@@ -7,8 +7,8 @@
 import type { Ctx } from '@ultimat3/core';
 import { createContext, isUltimateError } from '@ultimat3/core';
 import type { AnyAction } from './action';
-import { actionName, runAction } from './action';
 import { ContractDriftError } from './errors';
+import { actionName, invoke } from './invoke';
 import { derivePath } from './naming';
 import { buildOpenApi } from './openapi';
 
@@ -41,7 +41,7 @@ export function contractTestsFor(
       name: `${name}: input schema rejects garbage`,
       run: async () => {
         await expectThrow(
-          () => runAction(target, garbage, { ctx, surface: 'http' }),
+          () => invoke(target, garbage, { ctx, surface: 'http' }),
           'X_INPUT_INVALID',
           `${name} accepted ${JSON.stringify(garbage) ?? 'undefined'} as input`,
           `tighten \`input:\` in the ${name} definition`,
@@ -52,7 +52,7 @@ export function contractTestsFor(
       name: `${name}: policy denies an anonymous actor`,
       run: async () => {
         await expectThrow(
-          () => runAction(target, emptyInput(), { ctx, surface: 'http' }),
+          () => invoke(target, emptyInput(), { ctx, surface: 'http' }),
           null,
           `${name} ran for an actor of null`,
           `make the ${name} policy require an authenticated actor`,

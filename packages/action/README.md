@@ -69,15 +69,26 @@ kebab-cased.
 | `toggleLike` | `POST /api/likes/toggle` | `toggle_like` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
-## One authz system
+## One invocation core
 
-`runAction()` is the only execution path. HTTP, MCP, jobs and direct server calls
-differ **only** in the `surface` they hand to `enforce()` from `@ultimat3/policy`,
-which selects how a denial renders (problem+json / tool error / failed job) — never
-whether authz runs. The denial keeps the policy's own code, so an anonymous caller
-gets `X_UNAUTHENTICATED` (401) on both surfaces and a permission gap gets
-`X_FORBIDDEN` (403). Registering an action without `policy:` throws
-`X_ACTION_POLICY_MISSING`; there is no bypass flag.
+`invoke()` is the only execution path: **parse input → evaluate policy → handle →
+parse output**. HTTP, MCP, jobs and direct server calls differ **only** in the
+`surface` they hand to `enforce()` from `@ultimat3/policy`, which selects how a
+denial renders (problem+json / tool error / failed job) — never whether authz runs.
+
+Enforced structurally, not by convention: the declaration is held in a private
+store inside `invoke.ts`, so `handle` is reachable from nowhere else. An action has
+no `.def`. A second authz path cannot be written without deleting that store.
+
+| Stage | Failure |
+|---|---|
+| parse input | `X_INPUT_INVALID` |
+| evaluate policy | the policy's own code — `X_UNAUTHENTICATED` (401), `X_FORBIDDEN` (403) |
+| handle | whatever the handler throws |
+| parse output | `X_OUTPUT_INVALID` — and fields the schema never declared are dropped |
+
+Registering an action without `policy:` throws `X_ACTION_POLICY_MISSING`; there is
+no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FOREIGN`.
 
 ## mutator = action + local twin
 

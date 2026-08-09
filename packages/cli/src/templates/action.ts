@@ -114,16 +114,16 @@ ${
 });
 
 unitTest('${name.camel} rejects input that is not a uuid', async () => {
-  await expect(${name.camel}.def.input).toRejectInput({ id: 'not-a-uuid', orgId${
+  await expect(${name.camel}.input).toRejectInput({ id: 'not-a-uuid', orgId${
     isMutator ? ", title: 'a title'" : ''
   } });
-  await expect(${name.camel}.def.input).toAcceptInput({ id, orgId${
+  await expect(${name.camel}.input).toAcceptInput({ id, orgId${
     isMutator ? ", title: 'a title'" : ''
   } });
 });
 
 unitTest('${name.camel} denies an anonymous actor', async () => {
-  await expect(${name.camel}.def.policy).toDenyPolicy({ actor: null, input: { orgId } });
+  await expect(${name.camel}.policy).toDenyPolicy({ actor: null, input: { orgId } });
 });
 
 ${
@@ -133,8 +133,8 @@ ${
   expect(typeof ${name.camel}.applyLocal).toBe('function');
 });`
     : `contractTest('${name.camel} is exposed as an MCP tool with a description', () => {
-  expect(${name.camel}.def.mcp?.expose).toBe(true);
-  expect(${name.camel}.def.mcp?.description ?? '').not.toBe('');
+  expect(${name.camel}.mcp?.expose).toBe(true);
+  expect(${name.camel}.mcp?.description ?? '').not.toBe('');
 });`
 }
 `;

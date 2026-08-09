@@ -184,7 +184,7 @@ import { health } from './health';
 
 contractTest('health is an action exposed over MCP', () => {
   expect(health.kind).toBe('action');
-  expect(health.def.mcp?.expose).toBe(true);
+  expect(health.mcp?.expose).toBe(true);
 });
 `;
 

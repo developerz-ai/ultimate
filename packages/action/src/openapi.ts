@@ -8,8 +8,8 @@
  */
 
 import type { AnyAction } from './action';
-import { actionName } from './action';
 import { toOpenApiOperation } from './http';
+import { actionName } from './invoke';
 import { type JsonSchemaObject, jsonSchemaOf, sortSchema } from './json-schema';
 import { derivePath, inputSchemaName, outputSchemaName, PROBLEM_SCHEMA_NAME } from './naming';
 import { listActions } from './registry';
@@ -45,8 +45,8 @@ export function buildOpenApi(options: BuildOpenApiOptions = {}): OpenApiDocument
     const name = actionName(target);
     const { path, resource } = derivePath(name);
     paths[path] = { post: toOpenApiOperation(target) };
-    schemas[inputSchemaName(name)] = sortSchema(jsonSchemaOf(target.def.input));
-    schemas[outputSchemaName(name)] = sortSchema(jsonSchemaOf(target.def.output));
+    schemas[inputSchemaName(name)] = sortSchema(jsonSchemaOf(target.input));
+    schemas[outputSchemaName(name)] = sortSchema(jsonSchemaOf(target.output));
     tags.add(resource);
   }
 

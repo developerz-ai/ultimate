@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { runAction } from './action';
+import { invoke } from './invoke';
 import type { LocalRow, LocalTable, LocalTx } from './mutator';
 import { custom, mutator, resolveConflict } from './mutator';
 
@@ -61,7 +61,7 @@ describe('mutator', () => {
     toggleLike.applyLocal(fakeTx(rows), { postId: POST_ID });
     expect(rows.get(POST_ID)?.likes).toBe(4);
 
-    const authoritative = await runAction(toggleLike, { postId: POST_ID }, { ctx });
+    const authoritative = await invoke(toggleLike, { postId: POST_ID }, { ctx });
     expect(authoritative).toEqual({ id: POST_ID, likes: 7 });
   });
 

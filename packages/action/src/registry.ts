@@ -17,7 +17,7 @@ const registry = new Map<string, AnyAction>();
  */
 export function registerAction<A extends AnyAction>(name: string, target: A): A {
   if (registry.has(name)) throw new ActionDuplicateError(name);
-  if (target.def.policy === undefined || target.def.policy === null) {
+  if (target.policy === undefined || target.policy === null) {
     throw new ActionPolicyMissingError(name);
   }
   const named = nameAction(target, name);

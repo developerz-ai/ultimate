@@ -1,4 +1,11 @@
-/** Public API of @ultimat3/action: the primitive plus its six projections. */
+/**
+ * Public API of @ultimat3/action: the primitive plus its six projections.
+ *
+ * `handle` is deliberately absent. An action's declaration lives in `invoke.ts`'s
+ * private store, and `invoke` is the only thing that reads it — so no adapter can
+ * parse, authorize or run on its own. Two authz systems is how every Meteor-like
+ * framework died; there is exactly one here, structurally.
+ */
 
 export type {
   Action,
@@ -10,11 +17,10 @@ export type {
   ActionMcp,
   ActionRateLimit,
   AnyAction,
-  AnyActionDef,
   InvokeOptions,
   McpDescriptorMeta,
 } from './action';
-export { action, actionName, describeAction, isAction, runAction } from './action';
+export { action, describeAction, isAction } from './action';
 export type {
   ActionLike,
   ActionMap,
@@ -31,11 +37,13 @@ export type { IdempotencyConflictReason } from './errors';
 export {
   ActionDeniedError,
   ActionDuplicateError,
+  ActionForeignError,
   ActionPolicyMissingError,
   ActionUnregisteredError,
   ContractDriftError,
   IdempotencyConflictError,
   InputInvalidError,
+  OutputInvalidError,
   RpcFailedError,
 } from './errors';
 export type { OpenApiOperation } from './http';
@@ -59,6 +67,8 @@ export {
   setIdempotencyStore,
   withIdempotency,
 } from './idempotency';
+/** The one execution path. `defOf` stays unexported — that is the enforcement. */
+export { actionName, invoke } from './invoke';
 export type { ActionJobHandle } from './job-handle';
 export { toJobHandle } from './job-handle';
 export type { JsonSchemaObject } from './json-schema';

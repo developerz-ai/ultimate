@@ -32,9 +32,9 @@ function definePublish() {
 describe('the fluent surface', () => {
   test('lifts the declaration so nothing reaches through .def', () => {
     const { target } = definePublish();
-    expect(target.input).toBe(target.def.input);
-    expect(target.output).toBe(target.def.output);
-    expect(target.policy).toBe(target.def.policy);
+    expect(target.input).toBe(Input);
+    expect(target.output).toBe(Output);
+    expect(target.policy).toBe(target.tool().policy);
     expect(target.mcp).toEqual({ expose: true, description: 'Publish a draft post' });
   });
 
