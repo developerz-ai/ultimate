@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { decodeCursor, encodeCursor, fetchPage, listQuery, pageFrom } from './pagination';
+import { decodeAdminCursor, encodeAdminCursor, fetchPage, listQuery, pageFrom } from './pagination';
 import type { AdminEntity, AdminListQuery, AdminRow } from './registry';
 import { adminResource } from './resource';
 
@@ -8,6 +8,15 @@ const post: AdminEntity = {
   columns: {
     id: { type: 'uuid', primaryKey: true },
     title: { type: 'varchar', index: true },
+    createdAt: { type: 'timestamptz', generated: true },
+  },
+};
+
+const user: AdminEntity = {
+  name: 'user',
+  columns: {
+    id: { type: 'uuid', primaryKey: true },
+    email: { type: 'varchar', index: true },
     createdAt: { type: 'timestamptz', generated: true },
   },
 };
@@ -35,7 +44,7 @@ describe('cursor pagination', () => {
     expect(page.hasMore).toBe(true);
     expect(page.prevCursor).toBeNull();
 
-    const cursor = decodeCursor(page.nextCursor);
+    const cursor = decodeAdminCursor(resource, page.nextCursor);
     expect(cursor).toEqual({
       direction: 'after',
       field: 'createdAt',
@@ -58,18 +67,86 @@ describe('cursor pagination', () => {
   test('the last page reports no more, and offers a way back', () => {
     const page = pageFrom(
       resource,
-      { cursor: encodeCursor({ direction: 'after', field: 'createdAt', value: 'x', id: 'p_2' }) },
+      {
+        cursor: encodeAdminCursor(resource, {
+          direction: 'after',
+          field: 'createdAt',
+          value: 'x',
+          id: 'p_2',
+        }),
+      },
       rows.slice(2),
     );
     expect(page.hasMore).toBe(false);
     expect(page.nextCursor).toBeNull();
-    expect(decodeCursor(page.prevCursor)?.direction).toBe('before');
+    expect(decodeAdminCursor(resource, page.prevCursor)?.direction).toBe('before');
+  });
+
+  test('a page-one cursor walks to page two and back, unchanged', () => {
+    const first = pageFrom(resource, {}, rows);
+    const second = pageFrom(resource, { cursor: first.nextCursor }, rows.slice(2));
+
+    expect(second.rows.map((row) => row['id'])).toEqual(['p_3']);
+    expect(listQuery(resource, { cursor: second.prevCursor }).before).toEqual({
+      field: 'createdAt',
+      value: '2026-07-01T00:00:00.000Z',
+      id: 'p_3',
+    });
   });
 
   test('a corrupt cursor means page one, not an error page', () => {
-    expect(decodeCursor('not-a-cursor')).toBeNull();
-    expect(decodeCursor('')).toBeNull();
+    expect(decodeAdminCursor(resource, 'not-a-cursor')).toBeNull();
+    expect(decodeAdminCursor(resource, '')).toBeNull();
     expect(listQuery(resource, { cursor: 'not-a-cursor' }).after).toBeUndefined();
+  });
+
+  test('a tampered signature means page one, never a fabricated position', () => {
+    const cursor = encodeAdminCursor(resource, {
+      direction: 'after',
+      field: 'createdAt',
+      value: '2026-07-02T00:00:00.000Z',
+      id: 'p_2',
+    });
+    const flipped = `${cursor.slice(0, -1)}${cursor.endsWith('a') ? 'b' : 'a'}`;
+
+    expect(flipped).not.toBe(cursor);
+    expect(decodeAdminCursor(resource, flipped)).toBeNull();
+    expect(listQuery(resource, { cursor: flipped }).after).toBeUndefined();
+  });
+
+  test('a body spliced onto a signature it was not signed with is refused', () => {
+    const mine = encodeAdminCursor(resource, {
+      direction: 'after',
+      field: 'createdAt',
+      value: '2026-07-02T00:00:00.000Z',
+      id: 'p_2',
+    });
+    const forged = encodeAdminCursor(resource, {
+      direction: 'after',
+      field: 'createdAt',
+      value: '1999-01-01T00:00:00.000Z',
+      id: 'p_9',
+    });
+    const spliced = `${forged.slice(0, forged.lastIndexOf('.'))}.${mine.slice(mine.lastIndexOf('.') + 1)}`;
+
+    expect(decodeAdminCursor(resource, spliced)).toBeNull();
+    expect(listQuery(resource, { cursor: spliced }).after).toBeUndefined();
+  });
+
+  test('a cursor from another resource cannot page this one', () => {
+    const users = adminResource(user, { pageSize: 2 });
+    const bound = {
+      direction: 'after',
+      field: 'createdAt',
+      value: '2026-07-02T00:00:00.000Z',
+      id: 'p_2',
+    } as const;
+    const postCursor = encodeAdminCursor(resource, bound);
+
+    expect(encodeAdminCursor(users, bound)).not.toBe(postCursor);
+    expect(decodeAdminCursor(users, postCursor)).toBeNull();
+    expect(listQuery(users, { cursor: postCursor }).after).toBeUndefined();
+    expect(decodeAdminCursor(resource, postCursor)).toEqual(bound);
   });
 
   test('fetchPage passes the derived query straight to the repo', async () => {

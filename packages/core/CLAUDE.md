@@ -31,5 +31,15 @@ Gotchas:
 - `Ctx` carries a string index signature so apps can augment `CtxServices` for `ctx.posts`.
 - Tests that touch the registry, the lifecycle or the listener table must call
   `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
+- The error-code registry is process-global and every package fills it once, at import time. A
+  test that resets it must take `errorCodeSnapshot()` first and call the returned undo in
+  `afterAll` — a reset that is not handed back strips the titles of every package imported before
+  that file, and their errors render the humanised fallback (`X_DB_DRIFT: db drift`) for the rest
+  of the run. That is a load-order flake: green locally, red on whichever CI ordering hits it.
 - Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
   That is what tells the sealed test network a loopback request is this process, not egress.
+- `cursor.ts` is the framework's ONE keyset-cursor codec — `entity`, `query` and `admin` all sign
+  and verify here. `decodeCursor(cursor, scope)` takes the scope as a required argument on
+  purpose: an optional check is one a call site can forget, and a forgotten one pages a listing
+  with another read's cursor. A second codec anywhere is the regression this file exists to
+  prevent. Tests that call `configureCursorSigning()` must restore the previous secret.

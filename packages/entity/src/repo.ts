@@ -7,10 +7,11 @@
 //     table silently skips and repeats rows. A keyset cursor is stable because it names a
 //     position in the sort order, not a row count.
 
-import type { EntityCore } from './entity';
-import { invariantViolated, notFound } from './errors';
+import { cursorFor, seekFrom, valueAt } from './cursor';
+import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
+import { notFound } from './errors';
+import { idPlan, readPlan, singleKeyOf } from './plan';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
-import { assertScoped } from './tenancy';
 
 export interface Tx {
   readonly id: string;
@@ -56,32 +57,31 @@ export interface Transactor {
   run<R>(work: (tx: Tx) => Promise<R>): Promise<R>;
 }
 
-export const encodeCursor = (key: string, id: string): string =>
-  btoa(JSON.stringify({ k: key, id }));
-
-export const decodeCursor = (cursor: string): { key: string; id: string } | null => {
-  try {
-    const parsed: { k?: unknown; id?: unknown } = JSON.parse(atob(cursor));
-    return typeof parsed.k === 'string' && typeof parsed.id === 'string'
-      ? { key: parsed.k, id: parsed.id }
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 const field = (row: unknown, property: string): unknown =>
   typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[property] : undefined;
+
+/**
+ * `===` on two Dates compares identity, so `where({ publishedAt })` would match nothing here
+ * and every row in Postgres. Equality has to mean the same thing in both drivers or the
+ * in-memory one stops being a preview of production.
+ */
+const sameValue = (left: unknown, right: unknown): boolean =>
+  left instanceof Date && right instanceof Date
+    ? left.getTime() === right.getTime()
+    : left === right;
 
 const matches = (row: unknown, predicate: Predicate): boolean => {
   const actual = field(row, predicate.column);
   switch (predicate.op) {
     case 'eq':
-      return actual === predicate.value;
+      return sameValue(actual, predicate.value);
     case 'neq':
-      return actual !== predicate.value;
+      return !sameValue(actual, predicate.value);
     case 'in':
-      return Array.isArray(predicate.value) && predicate.value.includes(actual);
+      return (
+        Array.isArray(predicate.value) &&
+        predicate.value.some((candidate) => sameValue(candidate, actual))
+      );
     case 'gt':
       return compare(actual, predicate.value) > 0;
     case 'gte':
@@ -90,14 +90,26 @@ const matches = (row: unknown, predicate: Predicate): boolean => {
       return compare(actual, predicate.value) < 0;
     case 'lte':
       return compare(actual, predicate.value) <= 0;
+    // Real LIKE semantics, so `'draft%'` means "starts with" here exactly as it does in
+    // Postgres. Treating the pattern as a substring would make the two drivers disagree.
     case 'like':
-      return String(actual).includes(String(predicate.value).replaceAll('%', ''));
+      return likePattern(String(predicate.value)).test(String(actual));
     case 'is-null':
       return actual === null || actual === undefined;
     case 'is-not-null':
       return actual !== null && actual !== undefined;
   }
 };
+
+/** `%` and `_` are the wildcards; everything else in the pattern is literal, as in SQL. */
+const likePattern = (pattern: string): RegExp =>
+  new RegExp(
+    `^${pattern
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      .replaceAll('%', '.*')
+      .replaceAll('_', '.')}$`,
+    's',
+  );
 
 const compare = (left: unknown, right: unknown): number => {
   if (left instanceof Date && right instanceof Date) return left.getTime() - right.getTime();
@@ -109,13 +121,30 @@ const compare = (left: unknown, right: unknown): number => {
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
-const sortKey = (row: unknown, plan: QueryPlan): string =>
-  plan.orderBy
-    .map((entry) => {
-      const value = field(row, entry.column);
-      return value instanceof Date ? value.toISOString() : String(value);
-    })
-    .join(' ');
+/** Lexicographic over the sort keys, direction applied. `> 0` means "after the cursor". */
+const compareToSeek = (plan: QueryPlan, row: unknown, seek: readonly unknown[]): number => {
+  for (const [index, entry] of plan.orderBy.entries()) {
+    const order = compare(valueAt(row, entry.column), seek[index]);
+    if (order !== 0) return entry.direction === 'desc' ? -order : order;
+  }
+  return 0;
+};
+
+/**
+ * Where the next page starts. By sort position, not by the previous row's id: that row may have
+ * been deleted between the two requests, and an id that is no longer there would restart
+ * pagination at the top instead of continuing it.
+ */
+const afterCursor = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  found: readonly Row[],
+): number => {
+  const seek = seekFrom(entity, plan);
+  if (seek === undefined) return 0;
+  const start = found.findIndex((row) => compareToSeek(plan, row, seek) > 0);
+  return start === -1 ? found.length : start;
+};
 
 /**
  * The default driver: correct semantics, no database. `x dev` uses it before the first
@@ -127,61 +156,27 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
     entity.$primaryKey.map((property) => String(field(row, property))).join('');
   const rows = new Map<string, Row>(seed.map((row) => [keyOf(row), row]));
 
-  const singleKey = (operation: string): string => {
-    const [only] = entity.$primaryKey;
-    if (entity.$primaryKey.length !== 1 || only === undefined) {
-      throw invariantViolated(
-        entity.$name,
-        operation,
-        `${entity.$name} has a composite primary key (${entity.$primaryKey.join(', ')}) — ` +
-          'use findMany({ where }) instead of an id',
-      );
-    }
-    return only;
-  };
-
-  const planFor = (args: FindManyArgs): QueryPlan => {
-    const scoped =
-      args.orgId === undefined || entity.$tenantColumn === null
-        ? []
-        : [{ column: entity.$tenantColumn, op: 'eq', value: args.orgId } satisfies Predicate];
-    const ordered = args.orderBy ?? [];
-    return {
-      entity: entity.$name,
-      where: [...(args.where ?? []), ...scoped],
-      // The primary key is always the final sort key: a cursor needs a total order, or two
-      // rows with the same sort value straddle a page boundary.
-      orderBy: [
-        ...ordered,
-        ...entity.$primaryKey
-          .filter((property) => !ordered.some((entry) => entry.column === property))
-          .map((property) => ({ column: property, direction: 'asc' as const })),
-      ],
-      limit: args.limit ?? 50,
-      ...(args.cursor === undefined || args.cursor === null ? {} : { cursor: args.cursor }),
-      ...(args.select === undefined ? {} : { select: args.select }),
-    };
-  };
-
-  const select = (args: FindManyArgs, operation: string): { plan: QueryPlan; found: Row[] } => {
-    const plan = planFor(args);
-    assertScoped(entity.$name, entity.$tenantColumn, operation, plan);
+  const rowsOf = (plan: QueryPlan, args: FindManyArgs): Row[] => {
     const visible = (row: Row): boolean =>
       !entity.$softDelete ||
       args.includeDeleted === true ||
-      field(row, 'deletedAt') === null ||
-      field(row, 'deletedAt') === undefined;
-    const found = [...rows.values()]
+      field(row, SOFT_DELETE_COLUMN) === null ||
+      field(row, SOFT_DELETE_COLUMN) === undefined;
+    return [...rows.values()]
       .filter((row) => plan.where.every((predicate) => matches(row, predicate)))
       .filter(visible)
       .sort((left, right) => {
         for (const entry of plan.orderBy) {
-          const order = compare(field(left, entry.column), field(right, entry.column));
+          const order = compare(valueAt(left, entry.column), valueAt(right, entry.column));
           if (order !== 0) return entry.direction === 'desc' ? -order : order;
         }
         return 0;
       });
-    return { plan, found };
+  };
+
+  const select = (args: FindManyArgs, operation: string): { plan: QueryPlan; found: Row[] } => {
+    const plan = readPlan(entity, args, operation);
+    return { plan, found: rowsOf(plan, args) };
   };
 
   const write = (row: Row, options: RepoOptions | undefined): Row => {
@@ -196,9 +191,25 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
     return row;
   };
 
-  const byId = (id: string): Row => {
+  // The same guard the read path applies: on a tenant-scoped entity an id alone is not enough
+  // to name a row, so `update`/`delete` resolve through a plan rather than through the map.
+  const addressed = (id: string, options: RepoOptions | undefined, operation: string): Row => {
+    const plan = idPlan(entity, id, options, operation);
     const current = rows.get(id);
-    if (current === undefined) throw notFound(entity.$name, id);
+    // A soft-deleted row is hidden from writes too — `delete` on one is `X_NOT_FOUND`, not a
+    // second stamp, which is what the Postgres driver's `deleted_at is null` clause already says.
+    const hidden =
+      current !== undefined &&
+      entity.$softDelete &&
+      field(current, SOFT_DELETE_COLUMN) !== null &&
+      field(current, SOFT_DELETE_COLUMN) !== undefined;
+    if (
+      current === undefined ||
+      hidden ||
+      !plan.where.every((predicate) => matches(current, predicate))
+    ) {
+      throw notFound(entity.$name, id);
+    }
     return current;
   };
 
@@ -206,9 +217,8 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
   // synchronously, or half the call sites would need two error paths.
   return {
     async findById(id, options) {
-      const property = singleKey('findById');
       const { found } = select(
-        { ...options, where: [{ column: property, op: 'eq', value: id }] },
+        { ...options, where: [{ column: singleKeyOf(entity, 'findById'), op: 'eq', value: id }] },
         'findById',
       );
       return found[0] ?? null;
@@ -216,15 +226,13 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
 
     async findMany(args = {}) {
       const { plan, found } = select(args, 'findMany');
-      const decoded = plan.cursor === undefined ? null : decodeCursor(plan.cursor);
-      const start = decoded === null ? 0 : found.findIndex((row) => keyOf(row) === decoded.id) + 1;
+      const start = afterCursor(entity, plan, found);
       const page = found.slice(start, start + plan.limit);
       const last = page.at(-1);
       const more = start + page.length < found.length;
       return {
         rows: page,
-        nextCursor:
-          more && last !== undefined ? encodeCursor(sortKey(last, plan), keyOf(last)) : null,
+        nextCursor: more && last !== undefined ? cursorFor(plan, last, keyOf(last)) : null,
       };
     },
 
@@ -233,16 +241,14 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
     },
 
     async update(id, patch, options) {
-      singleKey('update');
-      return write(Object.assign({}, byId(id), patch), options);
+      return write(Object.assign({}, addressed(id, options, 'update'), patch), options);
     },
 
     async delete(id, options) {
-      singleKey('delete');
-      const current = byId(id);
+      const current = addressed(id, options, 'delete');
       // Soft delete hides the row without losing it; the column's presence is the switch.
       if (entity.$softDelete) {
-        write(Object.assign({}, current, { deletedAt: new Date() }), options);
+        write(Object.assign({}, current, { [SOFT_DELETE_COLUMN]: new Date() }), options);
         return;
       }
       const key = keyOf(current);

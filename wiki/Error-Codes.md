@@ -37,6 +37,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_DRAINING` | process is draining and refuses new work | work arrived after SIGTERM | retry against another replica; the LB should already have removed this one |
 | `X_SHUTDOWN_TIMEOUT` | graceful shutdown exceeded its deadline | an in-flight handler outlived `DRAIN_TIMEOUT` | raise `configureLifecycle({ deadlineMs })` or shorten the slow handler |
 | `X_ID_INVALID` | value is not a valid id | a hand-built string passed where a typed id is required | generate ids with `uuid()` / `typedId<'post'>()` from `@ultimat3/core` |
+| `X_CURSOR_INVALID` | pagination cursor is malformed, tampered with or from another query | signature mismatch — an edited cursor, or `ULTIMATE_CURSOR_SECRET` rotated — or a cursor built for a different query, filter or sort order | drop the cursor and request the first page (`after: null`) |
 | `X_ERROR_CODE_DUPLICATE` | error code registered twice | two packages declared the same code | rename the colliding code in the registering package's `src/errors.ts` |
 
 ## Config and environment
@@ -114,7 +115,6 @@ X_DB_DRIFT: schema differs from migrations
 | `X_QUERY_FOREIGN` | a value that is not a query was projected as one | a hand-rolled object with `kind: 'query'`, or a query from a duplicated copy of `@ultimat3/query` | declare it as `export const name = query({ input, policy, sql })` |
 | `X_QUERY_UNREGISTERED` | a query was projected before it was registered | `.tool()` / `.client()` / `.live()` on a read `registerQueries()` never named | `registerQueries(await import('./live'))` at boot, before serving reads |
 | `X_MATCHER_UNSUPPORTED` | the live matcher cannot evaluate this SQL incrementally | a join, aggregate or unbounded predicate under `live: true` | simplify the `sql`, add `orderBy` + `limit`, or drop `live` |
-| `X_CURSOR_INVALID` | the pagination cursor is unreadable | a cursor from an older build | drop the cursor and request the first page |
 | `X_CACHE_UNTAGGED_QUERY` | a cached query carries no tag | a query whose tables no tag covers | declare the tag on the entity; `x cache graph --json` |
 
 ## Jobs

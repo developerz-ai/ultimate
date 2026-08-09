@@ -26,6 +26,7 @@ const rootPackage = (app: NameSet): string => `{
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
+    "@electric-sql/pglite": "^0.5.4",
     "@types/bun": "^1.3.14",
     "@ultimat3/testing": "^0.0.1",
     "typescript": "^6.0.3"

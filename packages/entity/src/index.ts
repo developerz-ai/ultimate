@@ -41,6 +41,8 @@ export {
   invariantsToSql,
   toSql,
 } from './invariants';
+export type { PostgresDriverOptions } from './pg-driver';
+export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 export type { ReadBuilder, Table } from './query';
 export { tableFor } from './query';
 export type {
@@ -57,7 +59,7 @@ export {
   registerEntity,
 } from './registry';
 export type { FindManyArgs, Page, Repo, RepoOptions, Transactor, Tx } from './repo';
-export { decodeCursor, encodeCursor, memoryRepo, memoryTransactor } from './repo';
+export { memoryRepo, memoryTransactor } from './repo';
 export type { Seed, SeedContext, SeedOptions } from './seed';
 export { defineSeed, seedId } from './seed';
 export type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';

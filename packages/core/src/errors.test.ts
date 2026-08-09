@@ -1,6 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import {
   describeErrorCode,
+  errorCodeSnapshot,
+  hasErrorCode,
   listErrorCodes,
   registerErrorCodes,
   resetErrorCodes,
@@ -13,6 +15,14 @@ import {
   toUltimateError,
   UltimateError,
 } from './errors';
+
+// Every package registers its codes once, at import time, and bun shares one process across
+// files. The resets below would otherwise strip whatever ran before this file — `@ultimat3/db`'s
+// `X_DB_DRIFT` then renders as `db drift` in a later file, which is a load-order flake rather
+// than a failure. Same guard, same reason as packages/testing/src/fixtures.test.ts.
+const restoreRegistry = errorCodeSnapshot();
+
+afterAll(restoreRegistry);
 
 describe('UltimateError', () => {
   test('renders the contract 3-line format with aligned labels', () => {
@@ -101,6 +111,19 @@ describe('error code registry', () => {
       /X_ERROR_CODE_DUPLICATE/,
     );
     resetErrorCodes();
+  });
+
+  test('a snapshot hands the registry back exactly, so a reset cannot leak across files', () => {
+    registerErrorCodes({ X_PKG_TWO: { title: 'a package registered this at import time' } });
+    const restore = errorCodeSnapshot();
+
+    resetErrorCodes();
+    expect(hasErrorCode('X_PKG_TWO')).toBe(false);
+    // The fallback is what a later file would see: a humanised title instead of the pinned one.
+    expect(describeErrorCode('X_PKG_TWO').title).toBe('pkg two');
+
+    restore();
+    expect(describeErrorCode('X_PKG_TWO').title).toBe('a package registered this at import time');
   });
 
   test('lists codes sorted for stable --json output', () => {

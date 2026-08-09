@@ -97,3 +97,22 @@ loosening.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
   deadline; `readyzPayload()` flips to 503 the moment draining starts, `healthzPayload()` stays
   200 until stopped.
+
+## One cursor, everywhere
+
+```ts
+encodeCursor({ scope, key: ['2026-01-01T00:00:00.000Z'], id: 'p_9' }); // base64url(body).hmac
+decodeCursor(cursor, scope);                                          // or X_CURSOR_INVALID
+```
+
+Keyset pagination is the repo's, the read primitive's and the admin's — so the codec is here,
+signed once and verified once. `scope` binds a cursor to one read: the entity plus its filters
+and sort order for a repo page, `queryHash(name, input)` for a `query`, the resource for the
+admin. Replaying another read's cursor is `X_CURSOR_INVALID`, never a silently wrong page.
+
+| | |
+|---|---|
+| Signature | truncated HMAC-SHA256, compared in constant time |
+| Secret | `ULTIMATE_CURSOR_SECRET`, or `configureCursorSigning()` at boot. Rotating it invalidates every open cursor |
+| Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
+| `usesDevCursorSecret()` | true while the shipped dev key is in use |

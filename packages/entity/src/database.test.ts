@@ -134,11 +134,23 @@ describe('database()', () => {
 
   test('update stamps the onUpdateNow column, delete removes the row', async () => {
     const created = await db.posts.insert({ orgId: ORG, slug: 'x', title: 'X' });
-    const updated = await db.posts.update(created.id, { title: 'Y' });
+    const updated = await db.posts.update(created.id, { title: 'Y' }, { orgId: ORG });
     expect(updated.title).toBe('Y');
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(created.updatedAt.getTime());
-    await db.posts.delete(created.id);
+    await db.posts.delete(created.id, { orgId: ORG });
     expect(await db.posts.where({ orgId: ORG, slug: 'x' }).one()).toBeNull();
+  });
+
+  test('a write addressed by id alone is refused on a tenant-scoped entity', async () => {
+    const created = await db.posts.insert({ orgId: ORG, slug: 'guarded', title: 'Guarded' });
+    await expect(db.posts.update(created.id, { title: 'Z' })).rejects.toBeUltimateError(
+      'X_TENANCY_UNSCOPED',
+    );
+    await expect(db.posts.delete(created.id)).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+    // Another tenant's id is not addressable either — it reads as absent, never as someone else's.
+    await expect(
+      db.posts.update(created.id, { title: 'Z' }, { orgId: 'org-other' }),
+    ).rejects.toBeUltimateError('X_NOT_FOUND');
   });
 });
 

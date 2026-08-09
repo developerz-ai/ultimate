@@ -1,7 +1,9 @@
 // Cursor pagination, and only cursor pagination. `AdminListQuery` has no `offset` field, so
 // "page 400" cannot be expressed: an operator paging a table that is being written to would
 // otherwise skip and repeat rows, and every page would re-scan everything before it.
+// The position itself is encoded by `@ultimat3/core` — one signed cursor format, framework-wide.
 
+import { decodeCursor, encodeCursor, isUltimateError } from '@ultimat3/core';
 import type { AdminFilter, AdminListQuery, AdminRow, AdminSort } from './registry';
 import { rowId } from './registry';
 import { type AdminResource, repoOf } from './resource';
@@ -13,37 +15,46 @@ export interface AdminCursor {
   readonly direction: 'after' | 'before';
 }
 
-const b64url = (raw: string): string =>
-  btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+/** Asking for the name alone keeps the codec free of the row generic. */
+type CursorResource = Pick<AdminResource, 'name'>;
 
-const unb64url = (raw: string): string =>
-  atob(
-    raw
-      .replace(/-/g, '+')
-      .replace(/_/g, '/')
-      .padEnd(Math.ceil(raw.length / 4) * 4, '='),
-  );
+/**
+ * The signed scope binds a cursor to the resource that issued it: a position taken from the
+ * posts table cannot be replayed against users, whatever an operator pastes into the URL.
+ */
+const cursorScope = (resource: CursorResource): string => `admin:${resource.name}`;
 
-export function encodeCursor(cursor: AdminCursor): string {
-  return b64url(JSON.stringify([cursor.direction, cursor.field, cursor.value, cursor.id]));
+export function encodeAdminCursor(resource: CursorResource, cursor: AdminCursor): string {
+  return encodeCursor({
+    scope: cursorScope(resource),
+    key: [cursor.direction, cursor.field, cursor.value],
+    id: cursor.id,
+  });
 }
 
 /**
- * A malformed cursor yields `null`, i.e. the first page — a stale bookmark or a hand-edited
- * URL should show the operator page one, not an error page.
+ * An unreadable cursor yields `null`, i.e. the first page — a stale bookmark or a hand-edited
+ * URL should show the operator page one, not an error page. Deliberately softer than the repo
+ * and the read primitive, which surface `X_CURSOR_INVALID`: those are called by code that must
+ * learn it paged wrong, while a human just wants the table to render. Forgery is covered either
+ * way — core verifies the signature before the payload is trusted, so a tampered or borrowed
+ * cursor lands on page one instead of a seek position the client invented.
  */
-export function decodeCursor(raw: string | null | undefined): AdminCursor | null {
+export function decodeAdminCursor(
+  resource: CursorResource,
+  raw: string | null | undefined,
+): AdminCursor | null {
   if (raw === null || raw === undefined || raw === '') return null;
   try {
-    const parsed: unknown = JSON.parse(unb64url(raw));
-    if (!Array.isArray(parsed) || parsed.length !== 4) return null;
-    const [direction, field, value, id] = parsed as readonly unknown[];
+    const payload = decodeCursor(raw, cursorScope(resource));
+    if (payload.key.length !== 3) return null;
+    const [direction, field, value] = payload.key;
     if (direction !== 'after' && direction !== 'before') return null;
-    if (typeof field !== 'string' || typeof value !== 'string' || typeof id !== 'string')
-      return null;
-    return { direction, field, value, id };
-  } catch {
-    return null;
+    if (typeof field !== 'string' || typeof value !== 'string') return null;
+    return { direction, field, value, id: payload.id };
+  } catch (error) {
+    if (isUltimateError(error) && error.code === 'X_CURSOR_INVALID') return null;
+    throw error;
   }
 }
 
@@ -70,7 +81,7 @@ export function listQuery<Row extends AdminRow>(
 ): AdminListQuery {
   const sort = req.sort ?? resource.defaultSort;
   const limit = Math.max(1, Math.min(req.limit ?? resource.pageSize, 200));
-  const cursor = decodeCursor(req.cursor);
+  const cursor = decodeAdminCursor(resource, req.cursor);
   const bound =
     cursor === null ? undefined : { field: cursor.field, value: cursor.value, id: cursor.id };
 
@@ -104,7 +115,7 @@ export function pageFrom<Row extends AdminRow>(
   const rows = hasMore ? fetched.slice(0, pageSize) : fetched;
   const last = rows[rows.length - 1];
   const first = rows[0];
-  const incoming = decodeCursor(req.cursor);
+  const incoming = decodeAdminCursor(resource, req.cursor);
 
   return {
     rows,
@@ -113,7 +124,7 @@ export function pageFrom<Row extends AdminRow>(
     hasMore,
     nextCursor:
       hasMore && last !== undefined
-        ? encodeCursor({
+        ? encodeAdminCursor(resource, {
             direction: 'after',
             field: sort.field,
             value: cursorValue(last, sort.field),
@@ -122,7 +133,7 @@ export function pageFrom<Row extends AdminRow>(
         : null,
     prevCursor:
       incoming !== null && first !== undefined
-        ? encodeCursor({
+        ? encodeAdminCursor(resource, {
             direction: 'before',
             field: sort.field,
             value: cursorValue(first, sort.field),

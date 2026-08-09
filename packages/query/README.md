@@ -49,7 +49,7 @@ merely looks like a query (`kind: 'query'`, no declaration) is `X_QUERY_FOREIGN`
 | `naming.ts` | export name → wire path + tool name |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
-| `pagination.ts` | signed keyset cursors, `paginate()` |
+| `pagination.ts` | `paginate()` — keyset pages over core's cursor codec |
 | `sql.ts` | `explain()` — the generated SQL, verbatim |
 | `cache.ts` | request memo + tag-keyed tier, one invalidation graph |
 | `source.ts` | the `SqlSource` contract + `from()`, the in-memory reference |
@@ -93,6 +93,12 @@ throws away (O(offset) per page), and any concurrent insert or delete before the
 shifts every later page, so users see duplicates and holes. Cursors are opaque,
 HMAC-signed, and bound to one query + arguments — a cursor from another query is
 `X_CURSOR_INVALID`.
+
+The codec lives in `@ultimat3/core`, not here: `encodeCursor`, `decodeCursor`,
+`configureCursorSigning` (set the signing secret once at boot; rotating it invalidates every
+open cursor) and `usesDevCursorSecret` are all imported from there. `paginate()` supplies the
+only thing that is this package's business — the scope, `queryHash(name, input)` — and
+re-exports `CursorInvalidError` so the failure keeps its name on this surface.
 
 ## Caching
 

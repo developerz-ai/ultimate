@@ -3,10 +3,11 @@
 Postgres access for Ultimate: parameterised SQL, transactions, migrations, drift detection,
 branch databases, and a read-only client for anything an LLM drives.
 
-Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/time`, `@ultimat3/money` only.
-No runtime dependencies. **Drizzle is the production backing for the query builder and entity
-schema definitions**; this package declares the narrow structural types it consumes (`DbClient`,
-`SqlFragment`, `EntityDescriptionLike`) so the SQL stays readable and the boundary stays thin.
+Tier 1. Imports `@ultimat3/core` only. No runtime dependencies; `@electric-sql/pglite` is an
+**optional peer**, loaded at first query and only by the embedded driver. **Drizzle is the
+production backing for the query builder and entity schema definitions**; this package declares
+the narrow structural types it consumes (`DbClient`, `SqlFragment`, `EntityDescriptionLike`) so
+the SQL stays readable and the boundary stays thin.
 
 ## Public API
 
@@ -31,6 +32,7 @@ await withTransaction(async (tx) => {
 | `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL |
 | `introspect()` | live schema → `SchemaDescription` |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
+| `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `readOnly()` | mutation-rejecting wrapper |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
@@ -66,6 +68,26 @@ X_DB_DRIFT: schema differs from migrations
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 
 `checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x verify` fails on it.
+
+## The embedded database
+
+No `DATABASE_URL` means no Docker: `createPgliteClient()` runs Postgres as WASM inside this
+process. The module is resolved on the first statement, never at import, so an image that only
+ever talks to a managed Postgres never loads it.
+
+```ts
+const dev = createPgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://
+await dev.ping();                                       // pay the ~3s boot before serving
+setDbClient(dev);
+
+const branch = await branchPglite('feature_x', { from: '.x/pgdata' });
+setDbClient(createPgliteClient({ dataDir: branch.dataDir }));
+```
+
+PGlite has no `CREATE DATABASE ... TEMPLATE`, so `branchPglite()` copies the data directory —
+close the source first, and expect `X_NOT_IMPLEMENTED` on `memory://`, which has no directory to
+copy. Branch names go through the same `assertBranchName()` as the Postgres path: here the name
+lands in a filesystem path, so an unvalidated one is traversal rather than a typo.
 
 ## Pool sizing by role
 
@@ -106,7 +128,7 @@ Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durati
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |
 | `X_BRANCH_EXISTS` | branch database already exists (or is the connected one) |
 | `X_READONLY_VIOLATION` | a mutating statement reached a `readOnly()` client |
-| `X_NOT_IMPLEMENTED` | deferred driver (PGlite WASM, branch-on-PGlite) |
+| `X_NOT_IMPLEMENTED` | branching an in-memory PGlite — a copy needs a directory |
 
 ```bash
 x db migrate --json

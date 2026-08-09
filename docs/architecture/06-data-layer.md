@@ -103,9 +103,32 @@ Keyset pagination is correct under concurrent writes because the cursor names a 
 |---|---|
 | Cost | offset scans and discards `OFFSET` rows; page 500 costs 500× page 1. Keyset is an index seek — page 500 costs the same as page 1 |
 | Total order required | `orderBy` must end in a unique column (usually `id`), or `x verify` fails the query: a non-total order makes the cursor ambiguous |
-| Cursor contents | base64url of the ordering tuple + the query shape hash, HMAC-signed. A tampered or cross-query cursor is `X_CURSOR_INVALID`, not a silent wrong page |
+| Cursor contents | `base64url([scope, id, key])` + a truncated HMAC-SHA256 of that body. A tampered or cross-query cursor is `X_CURSOR_INVALID`, not a silent wrong page — [below](#cursor-contents) |
 | Live queries | the same total-order requirement, because the matcher needs a deterministic window ([`07-realtime-internals.md`](./07-realtime-internals.md)) |
 | UI need for page numbers | answered with an approximate count (`reltuples` or a windowed count), never by offsetting |
+
+### Cursor contents
+
+One codec for the whole framework — `encodeCursor` / `decodeCursor` in `@ultimat3/core`. The repo, the read primitive's `paginate()` and the admin's tables sign and verify the same string, so a cursor cannot mean three things with three trust levels.
+
+```text
+base64url(JSON [scope, id, key]) "." hmac-sha256(body, secret)[0:32]
+```
+
+| Part | Contents | Buys |
+|---|---|---|
+| `scope` | the read plus its arguments: entity, filters, sort order | a cursor from another query, another filter or a flipped sort is `X_CURSOR_INVALID`, never a wrong page |
+| `key` | the ordering tuple of the last row of the page, in `orderBy` order | the keyset predicate is rebuilt from the cursor — no server-side page state to expire |
+| `id` | that row's primary key | the tiebreak that makes the order total |
+| signature | truncated HMAC-SHA256 over the body, compared in constant time | a client can replay a position it was handed, never invent one |
+
+| Rule | Detail |
+|---|---|
+| Secret | `ULTIMATE_CURSOR_SECRET`, with a dev default so `x dev` pages unconfigured. `configureCursorSigning(secret)` overrides it in-process; `usesDevCursorSecret()` reports the dev key is still in use |
+| Rotation | rotating the secret invalidates every open cursor — clients restart from `after: null` |
+| Signed, not encrypted | the client already holds the rows the cursor points at. Tamper-evidence, not authorization: policy still runs per page |
+| Opaque | never parsed, extended or built by hand on either side of the wire |
+| Admin tables | `@ultimat3/admin` catches `X_CURSOR_INVALID` and renders page one — a stale bookmark should not be an error page for an operator |
 
 ## Transactional outbox
 
@@ -184,6 +207,6 @@ The short version of why not transaction-rollback isolation: the outbox commits,
 | `X_MIGRATION_NOT_REVERSIBLE` | no down path and no `irreversible:` marker | add the marker or a down migration |
 | `X_MIGRATE_CONCURRENT` | another version's migration is in flight | wait, then `x db status --json` |
 | `X_TENANT_MISMATCH` | row tenant ≠ request tenant | scope the query to `ctx.tenantId` |
-| `X_CURSOR_INVALID` | signature or query-shape mismatch | restart pagination from `after: null` |
+| `X_CURSOR_INVALID` | signature mismatch, or a cursor from another query, filter or sort order | restart pagination from `after: null` |
 | `X_INVARIANT_VIOLATED` | a write broke a declared invariant; `data.invariant` names it | fix the value, or relax the invariant |
 | `X_QUERY_UNBOUNDED` | `list`/live query without `limit` + total order | add `limit` and a unique tiebreak column |

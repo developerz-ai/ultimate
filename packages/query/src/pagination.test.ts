@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import {
+  configureCursorSigning,
+  createContext,
+  decodeCursor,
+  encodeCursor,
+  userActor,
+} from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { configureCursorSigning, decodeCursor, encodeCursor, paginate } from './pagination';
+import { CursorInvalidError } from './errors';
+import { paginate } from './pagination';
 import { query } from './query';
 import { registerQuery, resetRegistry } from './registry';
 import { from } from './source';
@@ -38,29 +45,39 @@ describe('cursor pagination', () => {
   });
 
   test('encode/decode round trips and stays opaque', () => {
-    const cursor = encodeCursor({ q: 'feed:abc', seek: { key: [20], id: 'b' } });
+    const cursor = encodeCursor({ scope: 'feed:abc', key: [20], id: 'b' });
     expect(cursor).not.toContain('feed');
-    expect(decodeCursor(cursor)).toEqual({ q: 'feed:abc', seek: { key: [20], id: 'b' } });
+    expect(decodeCursor(cursor, 'feed:abc')).toEqual({ scope: 'feed:abc', key: [20], id: 'b' });
+  });
+
+  test('a key holding non-ASCII text round trips', () => {
+    // `btoa` alone throws above code point 0xFF, so this package's old encoder broke
+    // paging on one accented title. The codec encodes UTF-8 bytes; keep it that way.
+    const key = ['café — piñata 🎉'];
+    const cursor = encodeCursor({ scope: 'feed:abc', key, id: 'b' });
+    expect(decodeCursor(cursor, 'feed:abc').key).toEqual(key);
   });
 
   test('a tampered cursor is X_CURSOR_INVALID', () => {
-    const cursor = encodeCursor({ q: 'feed:abc', seek: { key: [20], id: 'b' } });
+    const cursor = encodeCursor({ scope: 'feed:abc', key: [20], id: 'b' });
     const [body, signature] = cursor.split('.');
-    const forged = encodeCursor({ q: 'feed:abc', seek: { key: [40], id: 'd' } }).split('.')[0];
+    const forged = encodeCursor({ scope: 'feed:abc', key: [40], id: 'd' }).split('.')[0];
 
     for (const tampered of [`${forged}.${signature}`, `${body}.deadbeef`, 'garbage']) {
-      let code: unknown;
+      let failure: unknown;
       try {
-        decodeCursor(tampered);
+        decodeCursor(tampered, 'feed:abc');
       } catch (error) {
-        code = (error as { code?: string }).code;
+        failure = error;
       }
-      expect(code).toBe('X_CURSOR_INVALID');
+      // The class this package re-exports must be the one core throws: one code, one class.
+      expect(failure).toBeInstanceOf(CursorInvalidError);
+      expect((failure as { code?: string }).code).toBe('X_CURSOR_INVALID');
     }
   });
 
   test('a cursor from another query is refused', () => {
-    const cursor = encodeCursor({ q: 'other:abc', seek: { key: [20], id: 'b' } });
+    const cursor = encodeCursor({ scope: 'other:abc', key: [20], id: 'b' });
     expect(() => decodeCursor(cursor, 'feed:abc')).toThrow();
   });
 
@@ -81,5 +98,13 @@ describe('cursor pagination', () => {
     );
     expect(second.rows.map((row) => row.id)).toEqual(['c', 'd']);
     expect(second.hasNextPage).toBe(false);
+  });
+
+  test('a cursor from another query cannot page this one', async () => {
+    const feed = registerQuery('orgFeed', defineFeed());
+    const foreign = encodeCursor({ scope: 'other:abc', key: [20], id: 'b' });
+    await expect(paginate(feed, { orgId: ORG }, { first: 2, ctx, after: foreign })).rejects.toThrow(
+      CursorInvalidError,
+    );
   });
 });

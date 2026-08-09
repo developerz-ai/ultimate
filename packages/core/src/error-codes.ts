@@ -29,6 +29,7 @@ export function errorDocsUrl(code: string): string {
 const CORE_CODE_TITLES = {
   X_ABORTED: 'operation aborted',
   X_CONFIG_INVALID: 'app.config.ts is invalid',
+  X_CURSOR_INVALID: 'pagination cursor is malformed, tampered with or from another query',
   X_DRAINING: 'process is draining and refuses new work',
   X_ENV_MISSING: 'required environment variables are missing or invalid',
   X_ERROR_CODE_DUPLICATE: 'error code registered twice',
@@ -105,4 +106,19 @@ export function listErrorCodes(): readonly ErrorCodeEntry[] {
 export function resetErrorCodes(): void {
   registry.clear();
   for (const [code, value] of Object.entries(CORE_ERROR_CODES)) registry.set(code, value);
+}
+
+/**
+ * Test-only: capture the registry and get the undo back. Every package registers its codes once,
+ * at import time, and bun shares one process across test files — so a file that resets the
+ * registry permanently strips the titles of every package imported before it, and their errors
+ * render the humanised fallback (`X_DB_DRIFT: db drift`) for the rest of the run. Returning the
+ * restore rather than a value is deliberate: there is nothing to hand back to the wrong registry.
+ */
+export function errorCodeSnapshot(): () => void {
+  const saved = new Map(registry);
+  return () => {
+    registry.clear();
+    for (const [code, value] of saved) registry.set(code, value);
+  };
 }

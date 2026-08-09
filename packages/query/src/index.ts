@@ -45,8 +45,9 @@ export { assertMatchable, match, positionFor } from './matcher';
 export type { QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
 export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
 export { derivePath, toKebabCase, toToolName } from './naming';
-export type { CursorPayload, Page, PaginateArgs } from './pagination';
-export { configureCursorSigning, decodeCursor, encodeCursor, paginate } from './pagination';
+export type { Page, PaginateArgs } from './pagination';
+/** The codec itself is `@ultimat3/core`'s — one place to encode, decode or re-key a cursor. */
+export { paginate } from './pagination';
 export type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
 export { actorOf, guard, policyCapability } from './policy-gate';
 export type {

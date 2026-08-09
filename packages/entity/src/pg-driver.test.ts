@@ -1,0 +1,305 @@
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { boolean, money, text, timestamp, uuid } from './columns';
+import { database } from './database';
+import { entity } from './entity';
+import { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
+import { clearRegistry } from './registry';
+import { memoryRepo } from './repo';
+
+const orgs = entity('pg_test_orgs', {
+  columns: { id: uuid().primaryKey(), slug: text({ max: 40 }).unique() },
+});
+
+const invoices = entity('pg_test_invoices', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid()
+      .references(() => orgs.id)
+      .tenant(),
+    reference: text({ max: 40 }),
+    total: money(),
+    paid: boolean().default(false),
+    note: text().nullable(),
+    issuedAt: timestamp().defaultNow(),
+    deletedAt: timestamp().nullable(),
+  },
+});
+
+type Invoice = typeof invoices.$row;
+
+const ORG = '00000000-0000-7000-8000-0000000000a1';
+const ID = '00000000-0000-7000-8000-000000000101';
+
+/** What Bun.SQL hands back: snake_case names, int8 as a string, timestamptz as an ISO string. */
+const physical = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: ID,
+  org_id: ORG,
+  reference: 'INV-1',
+  total_minor: '129900',
+  total_currency: 'EUR',
+  paid: false,
+  note: null,
+  issued_at: '2026-01-02T03:04:05.000Z',
+  deleted_at: null,
+  ...over,
+});
+
+const ROW: Invoice = {
+  id: ID,
+  orgId: ORG,
+  reference: 'INV-1',
+  total: { minor: 129900n, currency: 'EUR' },
+  paid: false,
+  note: null,
+  issuedAt: new Date('2026-01-02T03:04:05.000Z'),
+  deletedAt: null,
+};
+
+let client: RecordingClient;
+
+beforeEach(() => {
+  client = createRecordingClient();
+  setDbClient(client);
+});
+
+afterAll(() => {
+  setDbClient(undefined);
+  clearRegistry();
+});
+
+const repo = () => postgresRepo(invoices);
+const lastText = (): string => client.texts.at(-1) ?? '';
+const lastValues = (): readonly unknown[] => client.statements.at(-1)?.values ?? [];
+
+describe('postgresRepo() reads', () => {
+  test('every value is bound, never spliced into the text', async () => {
+    await repo().findMany({
+      orgId: ORG,
+      where: [{ column: 'reference', op: 'eq', value: "x'; drop table pg_test_invoices; --" }],
+    });
+    expect(lastText()).not.toContain('drop table');
+    expect(lastText()).toContain('"reference" = $1');
+    expect(lastValues().slice(0, 2)).toEqual(["x'; drop table pg_test_invoices; --", ORG]);
+  });
+
+  test('a read hides soft-deleted rows, totally orders, and fetches one row past the page', async () => {
+    await repo().findMany({ orgId: ORG, limit: 5 });
+    expect(lastText()).toContain('"deleted_at" is null');
+    expect(lastText()).toContain('order by "id" asc');
+    expect(lastText()).toEndWith('limit $2');
+    expect(lastValues().at(-1)).toBe(6);
+  });
+
+  test('includeDeleted drops the soft-delete filter', async () => {
+    await repo().findMany({ orgId: ORG, includeDeleted: true });
+    expect(lastText()).not.toContain('"deleted_at" is null');
+  });
+
+  test('a projection still carries the primary key and the sort keys', async () => {
+    await repo().findMany({
+      orgId: ORG,
+      select: ['reference'],
+      orderBy: [{ column: 'issuedAt', direction: 'desc' }],
+    });
+    expect(lastText()).toStartWith('select "reference", "id", "issued_at" from "pg_test_invoices"');
+    expect(lastText()).toContain('order by "issued_at" desc, "id" asc');
+  });
+
+  test('a row from the driver is re-parsed by the column that declared it', async () => {
+    client.on('select', { rows: [physical()] });
+    const [row] = (await repo().findMany({ orgId: ORG })).rows;
+    expect(row?.total).toEqual({ minor: 129900n, currency: 'EUR' });
+    expect(row?.issuedAt).toBeInstanceOf(Date);
+    expect(row?.issuedAt.toISOString()).toBe('2026-01-02T03:04:05.000Z');
+    expect(row?.note).toBeNull();
+  });
+
+  test('an empty in-list matches nothing instead of emitting invalid SQL', async () => {
+    await repo().count({ orgId: ORG, where: [{ column: 'reference', op: 'in', value: [] }] });
+    expect(lastText()).toStartWith('select count(*) as count from "pg_test_invoices" where 1 = 0');
+  });
+
+  test('like keeps its SQL meaning and stays a bound parameter', async () => {
+    await repo().findMany({
+      orgId: ORG,
+      where: [{ column: 'reference', op: 'like', value: 'INV-%' }],
+    });
+    expect(lastText()).toContain('"reference" like $1');
+    expect(lastValues()[0]).toBe('INV-%');
+  });
+
+  test('an undeclared column is a declaration error, not a query', async () => {
+    await expect(
+      repo().findMany({ orgId: ORG, where: [{ column: 'secret', op: 'eq', value: 1 }] }),
+    ).rejects.toThrow(/no column "secret"/);
+    expect(client.statements).toHaveLength(0);
+  });
+
+  test('money must be addressed by part, because two columns back it', async () => {
+    await expect(
+      repo().findMany({ orgId: ORG, where: [{ column: 'total', op: 'gt', value: 1 }] }),
+    ).rejects.toThrow(/total is money: name total\.minor or total\.currency/);
+    await repo().findMany({
+      orgId: ORG,
+      where: [{ column: 'total.minor', op: 'gt', value: 100n }],
+    });
+    expect(lastText()).toContain('"total_minor" > $1');
+  });
+});
+
+describe('postgresRepo() writes', () => {
+  test('insert splits money into two columns and returns what Postgres stored', async () => {
+    client.on('insert into', { rows: [physical()] });
+    const row = await repo().insert(ROW);
+    expect(lastText()).toContain('"total_minor", "total_currency"');
+    expect(lastText()).toEndWith('returning *');
+    expect(lastValues()).toContain(129900n);
+    expect(lastValues()).toContain('EUR');
+    expect(row.total).toEqual({ minor: 129900n, currency: 'EUR' });
+  });
+
+  test('update sets only the patched columns and scopes by tenant', async () => {
+    client.on('update', { rows: [physical({ reference: 'INV-2' })] });
+    const row = await repo().update(ID, { reference: 'INV-2' }, { orgId: ORG });
+    expect(lastText()).toStartWith(
+      'update "pg_test_invoices" set "reference" = $1 where "id" = $2 and "org_id" = $3',
+    );
+    expect(lastText()).toEndWith('returning *');
+    expect(row.reference).toBe('INV-2');
+  });
+
+  test('update raises X_NOT_FOUND when the scoped row is not there', async () => {
+    await expect(repo().update(ID, { reference: 'x' }, { orgId: ORG })).rejects.toBeUltimateError(
+      'X_NOT_FOUND',
+    );
+  });
+
+  test('delete soft-deletes when the entity carries the column', async () => {
+    client.on('update', { affected: 1 });
+    await repo().delete(ID, { orgId: ORG });
+    expect(lastText()).toStartWith('update "pg_test_invoices" set "deleted_at" = $1');
+    expect(lastValues()[0]).toBeInstanceOf(Date);
+  });
+
+  test('delete raises X_NOT_FOUND when nothing was affected', async () => {
+    await expect(repo().delete(ID, { orgId: ORG })).rejects.toBeUltimateError('X_NOT_FOUND');
+  });
+
+  test('a hard delete is a delete when there is no soft-delete column', async () => {
+    client.on('delete from', { affected: 1 });
+    await postgresRepo(orgs).delete(ORG);
+    expect(lastText()).toBe('delete from "pg_test_orgs" where "id" = $1');
+  });
+});
+
+describe('tenancy', () => {
+  test('every operation refuses to run without an org predicate', async () => {
+    await expect(repo().findMany()).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+    await expect(repo().findById(ID)).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+    await expect(repo().count()).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+    await expect(repo().update(ID, {})).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+    await expect(repo().delete(ID)).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+    expect(client.statements).toHaveLength(0);
+  });
+});
+
+describe('keyset pagination', () => {
+  const page = (count: number): readonly Record<string, unknown>[] =>
+    Array.from({ length: count }, (_, index) =>
+      physical({
+        id: `00000000-0000-7000-8000-0000000002${String(index).padStart(2, '0')}`,
+        issued_at: `2026-01-0${index + 1}T00:00:00.000Z`,
+      }),
+    );
+
+  const descending = {
+    orgId: ORG,
+    limit: 3,
+    orderBy: [{ column: 'issuedAt', direction: 'desc' as const }],
+  };
+
+  test('a cursor appears only when a row past the page came back', async () => {
+    client.on('select', { rows: page(3) });
+    expect((await repo().findMany({ orgId: ORG, limit: 3 })).nextCursor).toBeNull();
+    client.on('select', { rows: page(4) });
+    expect((await repo().findMany({ orgId: ORG, limit: 3 })).nextCursor).not.toBeNull();
+  });
+
+  test('the cursor becomes a seek predicate, never an offset', async () => {
+    client.on('select', { rows: page(4) });
+    const first = await repo().findMany(descending);
+    await repo().findMany({ ...descending, cursor: first.nextCursor });
+    expect(lastText()).not.toContain('offset');
+    // `desc` on the first key and `asc` on the tie-breaking primary key: one row comparison
+    // cannot express that, which is why the seek is spelled out as an or-chain.
+    expect(lastText()).toContain('(("issued_at" < $2) or ("issued_at" = $3 and "id" > $4))');
+    expect(lastValues()[1]).toBeInstanceOf(Date);
+  });
+
+  test('a nullable sort column cannot carry a cursor', async () => {
+    const byDeletedAt = {
+      orgId: ORG,
+      limit: 3,
+      includeDeleted: true,
+      orderBy: [{ column: 'deletedAt', direction: 'asc' as const }],
+    };
+    client.on('select', { rows: page(4) });
+    const first = await repo().findMany(byDeletedAt);
+    await expect(repo().findMany({ ...byDeletedAt, cursor: first.nextCursor })).rejects.toThrow(
+      /deletedAt is nullable and cannot carry a cursor/,
+    );
+  });
+});
+
+describe('parity with the in-memory driver', () => {
+  test('both drivers expose the same repository surface', () => {
+    expect(Object.keys(postgresRepo(invoices)).sort()).toEqual(
+      Object.keys(memoryRepo(invoices)).sort(),
+    );
+  });
+
+  test('a cursor from memory is a seek predicate in Postgres', async () => {
+    const memory = memoryRepo(invoices, [
+      ROW,
+      { ...ROW, id: `${ID.slice(0, -1)}2`, issuedAt: new Date('2026-02-02T00:00:00.000Z') },
+    ]);
+    const first = await memory.findMany({ orgId: ORG, limit: 1 });
+    expect(first.nextCursor).not.toBeNull();
+
+    await postgresRepo(invoices).findMany({ orgId: ORG, limit: 1, cursor: first.nextCursor });
+    expect(lastText()).toContain('("id" > $2)');
+    expect(lastValues()[1]).toBe(ID);
+  });
+});
+
+describe('composition', () => {
+  test('postgresDriver() gives database() a Postgres-backed table per entity', async () => {
+    client.on('select', { rows: [physical()] });
+    const db = database({ orgs, invoices }, { driver: postgresDriver({ client }) });
+    const row = await db.invoices.where({ orgId: ORG }).one();
+    expect(row?.reference).toBe('INV-1');
+    expect(lastText()).toContain('from "pg_test_invoices"');
+  });
+
+  test('a repo inside postgresTransactor() joins the transaction without being handed one', async () => {
+    client.on('insert into', { rows: [physical()] });
+    await postgresTransactor().run(async () => {
+      await repo().insert(ROW);
+    });
+    expect(client.texts[0]).toBe('BEGIN');
+    expect(client.texts[1]).toStartWith('insert into "pg_test_invoices"');
+    expect(client.texts.at(-1)).toBe('COMMIT');
+  });
+
+  test('a failing unit of work rolls back and never commits', async () => {
+    await expect(
+      postgresTransactor().run(async () => {
+        await repo().count({ orgId: ORG });
+        throw new RangeError('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(client.texts).toContain('ROLLBACK');
+    expect(client.texts).not.toContain('COMMIT');
+  });
+});

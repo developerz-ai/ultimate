@@ -1,8 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { decodeCursor } from '@ultimat3/core';
 import { text, timestamp, uuid } from './columns';
+import { planScope } from './cursor';
 import { entity } from './entity';
+import { planFor } from './plan';
 import { clearRegistry } from './registry';
-import { decodeCursor, memoryRepo, memoryTransactor } from './repo';
+import type { FindManyArgs } from './repo';
+import { memoryRepo, memoryTransactor } from './repo';
 
 const notes = entity('repo_test_notes', {
   columns: {
@@ -48,6 +52,9 @@ describe('tenancy guard', () => {
 });
 
 describe('cursor pagination', () => {
+  /** The scope a cursor for these arguments is signed with — see `planScope`. */
+  const scopeOf = (args: FindManyArgs): string => planScope(planFor(notes, args));
+
   test('walks every row exactly once', async () => {
     const repo = memoryRepo(notes, seed);
     const seen: string[] = [];
@@ -64,9 +71,9 @@ describe('cursor pagination', () => {
 
   test('the cursor names a position in the sort order, never a row count', async () => {
     const repo = memoryRepo(notes, seed);
-    const first = await repo.findMany({ orgId: org(1), limit: 2 });
-    const decoded = decodeCursor(first.nextCursor ?? '');
-    expect(decoded?.id).toBe(ids[1] ?? '');
+    const args = { orgId: org(1), limit: 2 };
+    const first = await repo.findMany(args);
+    expect(decodeCursor(first.nextCursor ?? '', scopeOf(args)).id).toBe(ids[1] ?? '');
     // An insert before the page boundary must not shift the next page — the failure OFFSET has.
     await repo.insert({
       id: '00000000-0000-7000-8000-000000000999',
@@ -81,6 +88,136 @@ describe('cursor pagination', () => {
   test('the last page reports no cursor', async () => {
     const repo = memoryRepo(notes, seed);
     expect((await repo.findMany({ orgId: org(1), limit: 10 })).nextCursor).toBeNull();
+  });
+
+  // Every one of these used to be a silent page one: the old codec answered `null` and the
+  // caller read that as "no cursor", so a tampered or borrowed bookmark restarted the listing
+  // instead of saying so.
+  test('a tampered cursor is refused, never served as page one', async () => {
+    const repo = memoryRepo(notes, seed);
+    const { nextCursor } = await repo.findMany({ orgId: org(1), limit: 2 });
+    const [body = '', signature = ''] = (nextCursor ?? '').split('.');
+    // Flipped to a digit the signature does not already end in: `+ '0'` on one that ends in `0`
+    // is not a tamper, and the case would pass one run in sixteen for the wrong reason.
+    const flipped = `${signature.slice(0, -1)}${signature.endsWith('0') ? '1' : '0'}`;
+
+    for (const cursor of [`${body}x.${signature}`, `${body}.${flipped}`, 'garbage', '']) {
+      await expect(repo.findMany({ orgId: org(1), limit: 2, cursor })).rejects.toBeUltimateError(
+        'X_CURSOR_INVALID',
+      );
+    }
+  });
+
+  test('a cursor from another tenant cannot page this one', async () => {
+    const repo = memoryRepo(notes, seed);
+    const other = await repo.findMany({ orgId: org(2), limit: 1 });
+    // org(2) has one row, so it hands back no cursor: forge the position it would name.
+    expect(other.nextCursor).toBeNull();
+    const mine = await repo.findMany({ orgId: org(1), limit: 2 });
+    await expect(
+      repo.findMany({ orgId: org(2), limit: 2, cursor: mine.nextCursor }),
+    ).rejects.toBeUltimateError('X_CURSOR_INVALID');
+  });
+
+  test('a cursor from another sort order cannot page this one', async () => {
+    const repo = memoryRepo(notes, seed);
+    const byId = await repo.findMany({ orgId: org(1), limit: 2 });
+    await expect(
+      repo.findMany({
+        orgId: org(1),
+        limit: 2,
+        cursor: byId.nextCursor,
+        orderBy: [{ column: 'title', direction: 'desc' }],
+      }),
+    ).rejects.toBeUltimateError('X_CURSOR_INVALID');
+  });
+
+  test('a bigger next page is not a different query — the cursor still works', async () => {
+    const repo = memoryRepo(notes, seed);
+    const first = await repo.findMany({ orgId: org(1), limit: 2 });
+    const second = await repo.findMany({ orgId: org(1), limit: 10, cursor: first.nextCursor });
+    expect(second.rows.map((row) => row.id)).toEqual(ids.slice(2, 4));
+  });
+});
+
+// Each of these is a place the in-memory driver used to mean something Postgres does not.
+// A divergence here is the worst kind of bug the framework can ship: the test is green and
+// production is wrong.
+describe('semantics shared with the Postgres driver', () => {
+  const events = entity('repo_test_events', {
+    columns: { id: uuid().primaryKey(), label: text(), at: timestamp() },
+  });
+  const AT = new Date('2026-03-04T05:06:07.000Z');
+  const rows = [
+    { id: org(1), label: 'draft-one', at: AT },
+    { id: org(2), label: 'published-two', at: new Date('2026-03-05T00:00:00.000Z') },
+  ];
+
+  test('equality on a timestamp compares the instant, not the object', async () => {
+    const repo = memoryRepo(events, rows);
+    const page = await repo.findMany({ where: [{ column: 'at', op: 'eq', value: new Date(AT) }] });
+    expect(page.rows.map((row) => row.id)).toEqual([org(1)]);
+  });
+
+  test('an in-list of timestamps matches by instant too', async () => {
+    const repo = memoryRepo(events, rows);
+    const page = await repo.findMany({
+      where: [{ column: 'at', op: 'in', value: [new Date(AT)] }],
+    });
+    expect(page.rows).toHaveLength(1);
+  });
+
+  test('like is a SQL pattern, not a substring test', async () => {
+    const repo = memoryRepo(events, rows);
+    const anchored = await repo.findMany({
+      where: [{ column: 'label', op: 'like', value: 'draft%' }],
+    });
+    expect(anchored.rows.map((row) => row.label)).toEqual(['draft-one']);
+    // A bare pattern anchors at both ends, exactly as `like 'draft'` does in Postgres.
+    expect(
+      (await repo.findMany({ where: [{ column: 'label', op: 'like', value: 'draft' }] })).rows,
+    ).toHaveLength(0);
+    expect(
+      (await repo.findMany({ where: [{ column: 'label', op: 'like', value: '%-t_o' }] })).rows,
+    ).toHaveLength(1);
+  });
+
+  test('a soft-deleted row is hidden from writes, not just from reads', async () => {
+    const repo = memoryRepo(notes, seed);
+    const id = ids[0] ?? '';
+    await repo.delete(id, { orgId: org(1) });
+    await expect(repo.delete(id, { orgId: org(1) })).rejects.toBeUltimateError('X_NOT_FOUND');
+    await expect(repo.update(id, { title: 'zombie' }, { orgId: org(1) })).rejects.toBeUltimateError(
+      'X_NOT_FOUND',
+    );
+  });
+
+  test('the page after a deleted boundary row continues, it does not restart', async () => {
+    const repo = memoryRepo(notes, seed);
+    const first = await repo.findMany({ orgId: org(1), limit: 2 });
+    // The row the cursor was taken from disappears between the two requests. Seeking by its id
+    // would find nothing and silently serve page one again.
+    await repo.delete(ids[1] ?? '', { orgId: org(1) });
+    const second = await repo.findMany({ orgId: org(1), limit: 2, cursor: first.nextCursor });
+    expect(second.rows.map((row) => row.id)).toEqual(ids.slice(2, 4));
+  });
+
+  test('a cursor survives a sort value that is not latin-1', async () => {
+    const repo = memoryRepo(events, [
+      { id: org(1), label: 'café — piñata 🎉', at: AT },
+      { id: org(2), label: 'zulu', at: AT },
+    ]);
+    const args = { limit: 1, orderBy: [{ column: 'label', direction: 'asc' as const }] };
+    const first = await repo.findMany(args);
+    expect(first.nextCursor).not.toBeNull();
+    const decoded = decodeCursor(first.nextCursor ?? '', planScope(planFor(events, args)));
+    expect(decoded.key[0]).toBe('café — piñata 🎉');
+    const second = await repo.findMany({
+      limit: 1,
+      orderBy: [{ column: 'label', direction: 'asc' }],
+      cursor: first.nextCursor,
+    });
+    expect(second.rows.map((row) => row.label)).toEqual(['zulu']);
   });
 });
 

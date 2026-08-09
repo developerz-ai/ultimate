@@ -21,7 +21,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `registry.ts` | export-name registration, `describeQueries()` |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `matcher.ts` | change event → minimal patch, or `X_MATCHER_UNSUPPORTED` |
-| `pagination.ts` | signed keyset cursors, `paginate()` — no offset, ever |
+| `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
 | `sql.ts` | `explain()` / `describeSql()` |
 | `cache.ts` | request memo + `ReadCache` tier + `invalidateTags` |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
@@ -51,7 +51,10 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` parameter and must never grow one.
-- Cursors are signed and query-bound; an unverified cursor is `X_CURSOR_INVALID`.
+- The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
+  This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
+  signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown
+  by core's `CursorInvalidError`, which `errors.ts` re-exports so the name stays on this surface.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
   `@ultimat3/policy`; a live denial keeps its 4403 close code on `QueryDeniedError.denial`.
   `policy-gate.ts` is the only file that imports the policy package.
