@@ -30,5 +30,13 @@
   },
   "dependencies": {
     "@ultimat3/core": "0.0.1"
+  },
+  "peerDependencies": {
+    "@electric-sql/pglite": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    }
   }
 }

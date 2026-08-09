@@ -100,8 +100,23 @@ export {
   rollback,
   runningAppVersion,
 } from './migrate';
-export type { PgliteClient, PgliteDriver, PgliteOptions } from './pglite';
-export { branchPglite, createPgliteClient, loadPgliteDriver, PGLITE_FIX } from './pglite';
+export type {
+  PgliteClient,
+  PgliteDriver,
+  PgliteLoader,
+  PgliteModule,
+  PgliteOptions,
+  PgliteResult,
+} from './pglite';
+export {
+  createPgliteClient,
+  loadPgliteDriver,
+  PGLITE_FIX,
+  PGLITE_MEMORY,
+  pgliteDataDir,
+} from './pglite';
+export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';
+export { branchPglite, pgliteBranchDir } from './pglite-branch';
 export type { MutationVerdict, ReadOnlyOptions } from './readonly';
 export { assertReadOnly, inspectStatement, readOnly, stripSqlNoise } from './readonly';
 export type { SqlFragment } from './sql';

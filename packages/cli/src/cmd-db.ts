@@ -5,6 +5,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { branchPglite } from '@ultimat3/db';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { resolveServices } from './dev-services';
@@ -14,6 +15,7 @@ import type { ExecResult } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import { findingFrom } from './output';
 import { flagString } from './parse';
 
 export const DB_SUBCOMMANDS = ['gen', 'migrate', 'reset', 'studio', 'branch'] as const;
@@ -46,24 +48,24 @@ async function runBranch(
   const port = Number.parseInt(ctx.env['PORT'] ?? '3000', 10);
   const url = previewUrl(branch, port);
   if (services.db.mode === 'embedded') {
-    const source = join(services.stateDir, 'pgdata');
-    const target = join(services.stateDir, `pgdata-${branch}`);
-    // --reflink=auto gives a copy-on-write clone on btrfs/xfs and a plain copy elsewhere.
-    const copy = await ctx.runner(['cp', '-r', '--reflink=auto', source, target], { cwd: root });
-    if (!copy.ok) {
+    // @ultimat3/db owns embedded branching, name validation and the on-disk layout. Shelling out
+    // to `cp` here was a second implementation of all three — and `--reflink` is a GNU-only flag.
+    try {
+      const info = await branchPglite(branch, { from: services.db.url });
+      return {
+        ok: true,
+        command: 'db',
+        summary: msg('cli.db.branch.ready', { name: branch }),
+        data: { branch, database: info.dataDir, preview: url, mode: 'embedded' },
+      };
+    } catch (error) {
       return {
         ok: false,
         command: 'db',
         summary: msg('cli.usage'),
-        findings: [failure(copy, 'X_DB_BRANCH_FAILED', `x db reset && x db branch ${branch}`)],
+        findings: [findingFrom(error)],
       };
     }
-    return {
-      ok: true,
-      command: 'db',
-      summary: msg('cli.db.branch.ready', { name: branch }),
-      data: { branch, database: target, preview: url, mode: 'embedded' },
-    };
   }
   const source = services.db.url.split('/').at(-1) ?? 'postgres';
   const database = branchDatabaseName(source, branch);

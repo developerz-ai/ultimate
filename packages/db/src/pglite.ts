@@ -1,76 +1,152 @@
-// Single responsibility: the embedded development database, so `x dev` needs no Docker and no
-// DATABASE_URL. The `DbClient` surface is complete; the PGlite WASM binding is the one piece
-// deferred, and it fails with a labelled X_NOT_IMPLEMENTED carrying the command that fixes it
-// rather than a mystery module-resolution error at 9am on someone's first day.
+// Single responsibility: the embedded development database — Postgres compiled to WASM, running
+// inside this process, so `x dev` needs no Docker, no DATABASE_URL and no container to wait for.
+// The module is resolved at first query and never at import: it is an OPTIONAL peer, and an image
+// that only ever talks to a managed Postgres must not carry 26 MB of WASM it will never load.
 
-import { notImplemented } from '@ultimat3/core';
 import type { DbClient } from './client';
-import { dbNotImplemented } from './errors';
+import { DbError, dbUnavailable } from './errors';
 import type { SqlFragment } from './sql';
+
+/** What PGlite answers with. `rows` is empty for a write, which is why the count is separate. */
+export interface PgliteResult {
+  readonly rows: readonly unknown[];
+  /** Postgres' command-tag count — the only truthful answer for INSERT/UPDATE/DELETE. */
+  readonly affectedRows?: number | undefined;
+}
 
 /** The slice of PGlite we need. Declared structurally — this package has no dependencies. */
 export interface PgliteDriver {
-  query(text: string, values?: readonly unknown[]): Promise<{ rows: readonly unknown[] }>;
+  query(text: string, values?: readonly unknown[]): Promise<PgliteResult>;
   exec?(text: string): Promise<unknown>;
   close(): Promise<void>;
 }
 
+/** The one export taken off `@electric-sql/pglite`. */
+export interface PgliteModule {
+  readonly PGlite: new (dataDir?: string) => PgliteDriver;
+}
+
+/** Returns the module namespace. Unknown, not typed, because it is validated before use. */
+export type PgliteLoader = () => Promise<unknown>;
+
 export interface PgliteOptions {
-  /** `memory://` (default) or a directory. Preview branches use a directory per branch. */
+  /** `memory://` (default) or a directory. Branches are a directory per branch. */
   readonly dataDir?: string | undefined;
-  /** Inject a driver — the CLI does this once `@electric-sql/pglite` is a real dependency. */
+  /** Inject a driver — tests do this so no test needs the WASM build. */
   readonly driver?: PgliteDriver | undefined;
+  /** Swap the module loader. Tests use it; nothing in the framework does. */
+  readonly load?: PgliteLoader | undefined;
 }
 
 export const PGLITE_FIX =
   'bun add @electric-sql/pglite, or set DATABASE_URL to a Postgres server and re-run';
 
-/** Deferred: PGlite ships as WASM and is not vendored yet. */
-export function loadPgliteDriver(options: PgliteOptions = {}): PgliteDriver {
+/** Postgres with no filesystem behind it: the default, and what a test wants. */
+export const PGLITE_MEMORY = 'memory://';
+
+const PGLITE_URL = 'pglite://';
+
+const PGLITE_PACKAGE = '@electric-sql/pglite';
+
+/**
+ * The specifier is held in a variable on purpose: a literal would make every consumer's `tsc`
+ * resolve an optional peer that is legitimately absent, and every bundler inline it.
+ */
+const importPglite: PgliteLoader = () => import(PGLITE_PACKAGE);
+
+const missing = (cause: string, sourceError?: unknown): DbError =>
+  new DbError({ code: 'X_DB_UNAVAILABLE', cause, fix: PGLITE_FIX, sourceError });
+
+/**
+ * `pglite://<dir>` and `pglite://memory/<name>` — the URLs `x dev` and the test template already
+ * print — read back as the dataDir the driver takes. One parser, so no caller invents a second.
+ */
+export function pgliteDataDir(url: string): string {
+  if (!url.startsWith(PGLITE_URL)) return url;
+  const rest = url.slice(PGLITE_URL.length);
+  return rest === '' || rest === 'memory' || rest.startsWith('memory/') ? PGLITE_MEMORY : rest;
+}
+
+function pgliteConstructor(loaded: unknown): PgliteModule['PGlite'] {
+  const exported = (loaded as { readonly PGlite?: unknown } | null | undefined)?.PGlite;
+  if (typeof exported !== 'function') {
+    throw missing(`${PGLITE_PACKAGE} resolved but exports no PGlite constructor`);
+  }
+  return exported as PgliteModule['PGlite'];
+}
+
+/** Boots one embedded Postgres. Costs seconds — `createPgliteClient` calls it exactly once. */
+export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<PgliteDriver> {
   if (options.driver !== undefined) return options.driver;
-  const dataDir = options.dataDir ?? 'memory://';
-  return notImplemented(`the embedded PGlite driver (dataDir=${dataDir})`, PGLITE_FIX);
+  const dataDir = options.dataDir ?? PGLITE_MEMORY;
+  let loaded: unknown;
+  try {
+    loaded = await (options.load ?? importPglite)();
+  } catch (error) {
+    throw missing(`${PGLITE_PACKAGE} is not installed, so there is no embedded database`, error);
+  }
+  const PGlite = pgliteConstructor(loaded);
+  try {
+    return new PGlite(dataDir);
+  } catch (error) {
+    throw missing(`PGlite could not open its data directory (dataDir=${dataDir})`, error);
+  }
 }
 
 export interface PgliteClient extends DbClient {
+  /** Pay the boot up front. `x dev` calls it so the first request is not the slow one. */
+  ping(): Promise<void>;
   close(): Promise<void>;
 }
 
+/** Lazily boots: constructing a client opens nothing, exactly like `createPostgresClient`. */
 export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
-  let driver: PgliteDriver | undefined = options.driver;
+  // One in-flight boot, shared. PGlite takes seconds to start, so two concurrent first queries
+  // would otherwise build two instances over the same data directory and orphan one of them.
+  let booting: Promise<PgliteDriver> | undefined;
 
-  function connect(): PgliteDriver {
-    driver ??= loadPgliteDriver(options);
-    return driver;
+  function connect(): Promise<PgliteDriver> {
+    booting ??= loadPgliteDriver(options).catch((error: unknown) => {
+      // A failed boot must not be cached: the fix is `bun add`, and then this has to work.
+      booting = undefined;
+      throw error;
+    });
+    return booting;
   }
 
-  async function rows(fragment: SqlFragment): Promise<readonly unknown[]> {
-    const result = await connect().query(fragment.text, fragment.values);
-    return result.rows;
+  async function run(fragment: SqlFragment): Promise<PgliteResult> {
+    const driver = await connect();
+    try {
+      return await driver.query(fragment.text, fragment.values);
+    } catch (error) {
+      throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
+    }
   }
 
   return {
     async query<T>(fragment: SqlFragment): Promise<readonly T[]> {
-      return (await rows(fragment)) as readonly T[];
+      return (await run(fragment)).rows as readonly T[];
     },
     async one<T>(fragment: SqlFragment): Promise<T | null> {
-      const result = await rows(fragment);
-      return (result[0] as T | undefined) ?? null;
+      const { rows } = await run(fragment);
+      return (rows[0] as T | undefined) ?? null;
     },
     async execute(fragment: SqlFragment): Promise<number> {
-      return (await rows(fragment)).length;
+      const result = await run(fragment);
+      return result.affectedRows ?? result.rows.length;
+    },
+    async ping(): Promise<void> {
+      await connect();
     },
     async close(): Promise<void> {
-      await driver?.close();
-      driver = undefined;
+      const pending = booting;
+      booting = undefined;
+      // A boot that never finished has nothing to close, and re-throwing its failure here would
+      // mask whatever the process was actually shutting down for.
+      await pending?.then(
+        (driver) => driver.close(),
+        () => undefined,
+      );
     },
   };
-}
-
-/** `x db branch` against PGlite copies the data directory; there is no TEMPLATE to copy. */
-export function branchPglite(): never {
-  throw dbNotImplemented(
-    'copy-on-write branching on PGlite',
-    'x db branch --driver postgres   # branching needs CREATE DATABASE ... TEMPLATE',
-  );
 }

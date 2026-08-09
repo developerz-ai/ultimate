@@ -7,7 +7,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 
 | Rule | |
 |---|---|
-| Deps | none (`bun-types` only). Drizzle is documented, not depended on |
+| Deps | none. `@electric-sql/pglite` is an **optional peer**, imported by variable specifier inside `loadPgliteDriver()` so no consumer's `tsc` or bundler resolves it. Drizzle is documented, not depended on |
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
 | Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point |
 | Errors | subclass `DbError`; never `throw new Error` |
