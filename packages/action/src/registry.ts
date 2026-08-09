@@ -5,21 +5,22 @@
  */
 
 import type { ActionDescriptor, AnyAction } from './action';
-import { isAction } from './action';
+import { isAction, nameAction } from './action';
 import { ActionDuplicateError, ActionPolicyMissingError } from './errors';
 
 const registry = new Map<string, AnyAction>();
 
 /**
- * Register one action under an explicit name. Returns the *named* twin — the
- * unnamed value you passed stays unnamed, so always use the return value.
+ * Register one action under an explicit name. The name lands on the action you
+ * passed, so the module's own export is projectable after boot and there is no
+ * "use the return value instead" rule to forget.
  */
 export function registerAction<A extends AnyAction>(name: string, target: A): A {
   if (registry.has(name)) throw new ActionDuplicateError(name);
   if (target.def.policy === undefined || target.def.policy === null) {
     throw new ActionPolicyMissingError(name);
   }
-  const named = target.named(name) as A;
+  const named = nameAction(target, name);
   registry.set(name, named);
   return named;
 }

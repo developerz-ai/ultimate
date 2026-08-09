@@ -2,14 +2,36 @@
 
 One declaration → six artifacts.
 
-| # | Artifact | Produced by | Guarantees |
+| # | Artifact | Reach it with | Guarantees |
 |---|---|---|---|
-| 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(action)` | policy + validation + idempotency + invalidation, non-optional |
-| 2 | OpenAPI 3.1 operation + document | `toOpenApiOperation` / `buildOpenApi` | byte-stable output, diffed by `x verify` |
-| 3 | Typed RPC client | `createClient<typeof actions>()` | server typo = compile error in Solid |
-| 4 | MCP tool | `toMcpTool(action)` | *identical* policy evaluation to the route |
-| 5 | Job handle | `toJobHandle(action)` | enqueue durable work, no rewrite |
-| 6 | Contract tests | `contractTestsFor(action)` | garbage rejected, anonymous denied, spec present |
+| 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(action)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
+| 2 | OpenAPI 3.1 operation + document | `action.openapi()` / `buildOpenApi()` | byte-stable output, diffed by `x verify` |
+| 3 | Typed RPC client | `action.client({ baseUrl })` / `createClient<typeof actions>()` | server typo = compile error in Solid |
+| 4 | MCP tool | `action.tool()` | *identical* policy evaluation to the route |
+| 5 | Job handle | `action.job()` | enqueue durable work, no rewrite |
+| 6 | Contract tests | `action.contract()` | garbage rejected, anonymous denied, spec present |
+
+## The fluent surface
+
+An action carries its own projections, so app code never reaches through `.def` and
+never imports a projection function:
+
+```ts
+publishPost.input                              // the declared input schema
+publishPost.output                             // the declared output schema
+publishPost.policy                             // the one policy object
+publishPost.mcp                                // { expose, description }, as declared
+await publishPost.as(actor, { postId })        // run as someone, one execution path
+publishPost.tool()                             // MCP descriptor
+publishPost.openapi()                          // OpenAPI operation
+publishPost.client({ baseUrl })                // typed RPC method
+publishPost.job()                              // durable-work handle
+publishPost.contract()                         // the three generated assertions
+```
+
+`publishPost.tool().policy === publishPost.policy` — the same object, so an MCP call
+cannot reach a different authz path. `.as()` keeps the surrounding context whole and
+swaps only the actor: impersonation, not a second context.
 
 ## Declare
 
@@ -31,7 +53,9 @@ export const publishPost = action({
 
 Then, once, at boot: `registerActions(await import('./actions'))`. Names come from
 **export names** — that is what makes the path, the tool name and the OpenAPI
-`operationId` derivable everywhere without a second declaration.
+`operationId` derivable everywhere without a second declaration. Registration stamps
+the name onto the action the module exported, so the binding you imported is the one
+that projects; a projection attempted before boot is `X_ACTION_UNREGISTERED`.
 
 ## Path derivation
 

@@ -13,6 +13,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | File | Job |
 |---|---|
 | `action.ts` | the primitive + `runAction`, the one execution path |
+| `facade.ts` | the fluent surface — binds each projection to the action, re-implements none |
 | `mutator.ts` | action + optimistic local twin + conflict strategy |
 | `registry.ts` | export-name registration, collisions, `describeActions()` |
 | `http.ts` | route projection + OpenAPI operation |
@@ -29,6 +30,11 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 - Every surface goes through `runAction`. Adding a second execution path is the one
   unforgivable change in this package.
+- App code reaches a projection through the action (`publishPost.tool()`), never through
+  `.def` and never by importing the projection function. `facade.ts` is where a new method
+  is bound; the projection itself keeps living in its own file.
+- Registration names the action the app exported, in place — `import { publishPost }` is
+  projectable after boot. Naming an already-named action is the only case that twins.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - `serializeOpenApi` output must be byte-stable: sorted keys, sorted registry, no clock.
 - `client.ts` stays free of server imports — it is bundled into the browser.

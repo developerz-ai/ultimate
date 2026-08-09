@@ -50,21 +50,33 @@ export interface ClientOptions {
 }
 
 export function createClient<TActions extends ActionMap>(options: ClientOptions): Client<TActions> {
-  const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
-  const base = options.baseUrl.replace(/\/+$/, '');
-
   const proxy = new Proxy(
     {},
     {
       get(_target, property: string | symbol) {
         if (typeof property !== 'string') return undefined;
-        return (input: unknown, callOptions: CallOptions = {}): Promise<unknown> =>
-          call(doFetch, base, options, property, input, callOptions);
+        return clientMethodFor(property, options);
       },
     },
   );
   // The proxy realizes the mapped type structurally; TS cannot check a Proxy.
   return proxy as Client<TActions>;
+}
+
+/**
+ * One action's method — what `createClient` proxies to and what `action.client()`
+ * returns. Both spellings are the same call, so a per-action client can never
+ * drift from the map-wide one.
+ */
+export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
+  name: string,
+  options: ClientOptions,
+): ClientMethod<TInput, TOutput> {
+  const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
+  const base = options.baseUrl.replace(/\/+$/, '');
+  // Erased at the wire seam; the response type is this action's by construction.
+  return (input, callOptions = {}) =>
+    call(doFetch, base, options, name, input, callOptions) as Promise<InferOutput<TOutput>>;
 }
 
 async function call(

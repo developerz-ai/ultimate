@@ -6,18 +6,24 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { invalidateTags } from '@ultimat3/cache';
-import type { Ctx } from '@ultimat3/core';
+import type { Actor, Ctx } from '@ultimat3/core';
 import { useContext, withSpan } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { ClientMethod, ClientOptions } from './client';
+import type { ContractTest, ContractTestOptions } from './contract-test';
 import { ActionUnregisteredError } from './errors';
+import { facadeFor } from './facade';
+import type { OpenApiOperation } from './http';
 import {
   getIdempotencyStore,
   type IdempotencyStore,
   idempotencyKeyFor,
   withIdempotency,
 } from './idempotency';
+import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
+import type { McpToolDescriptor } from './mcp-tool';
 import { derivePath, toToolName } from './naming';
 import { type ActionPolicy, actorOf, guard, policyCapability, type Surface } from './policy-gate';
 import { tagKeys } from './tags';
@@ -108,9 +114,19 @@ export interface AnyAction {
   readonly kind: 'action';
   readonly name: string;
   readonly def: AnyActionDef;
+  /** Lifted off `def`: the declaration is readable without reaching through it. */
+  readonly input: StandardSchemaV1;
+  readonly output: StandardSchemaV1;
+  readonly policy: ActionPolicy;
+  readonly mcp?: ActionMcp;
   describe(): ActionDescriptor;
-  /** Returns a named twin. The registry uses this to stamp the export name. */
+  /** A twin under another name. Registration uses `nameAction`, which names in place. */
   named(name: string): AnyAction;
+  /** Run as this actor. Same `runAction` path, only the context's actor changes. */
+  as(actor: Actor | null, input: unknown, options?: InvokeOptions): Promise<unknown>;
+  tool(): McpToolDescriptor;
+  openapi(): OpenApiOperation;
+  contract(options?: ContractTestOptions): readonly ContractTest[];
 }
 
 export interface Action<
@@ -120,8 +136,27 @@ export interface Action<
   /** Callable server-side with the same types the client and MCP tool see. */
   (input: InferInput<TInput>, opts?: InvokeOptions): Promise<InferOutput<TOutput>>;
   readonly def: ActionDef<TInput, TOutput>;
+  readonly input: TInput;
+  readonly output: TOutput;
   named(name: string): Action<TInput, TOutput>;
+  as(
+    actor: Actor | null,
+    input: InferInput<TInput>,
+    options?: InvokeOptions,
+  ): Promise<InferOutput<TOutput>>;
+  /**
+   * Typed against this action's schemas, which is the whole point of both — so they
+   * live here and not on the schema-erased `AnyAction` view.
+   */
+  client(options: ClientOptions): ClientMethod<TInput, TOutput>;
+  job(): ActionJobHandle<TInput, TOutput>;
 }
+
+/** The fluent half of an action: lifted declaration plus one method per projection. */
+export type ActionFacade<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1> = Pick<
+  Action<TInput, TOutput>,
+  'input' | 'output' | 'policy' | 'mcp' | 'as' | 'tool' | 'openapi' | 'client' | 'job' | 'contract'
+>;
 
 export function action<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   def: ActionDef<TInput, TOutput>,
@@ -131,6 +166,19 @@ export function action<TInput extends StandardSchemaV1, TOutput extends Standard
 
 export function isAction(value: unknown): value is AnyAction {
   return typeof value === 'function' && (value as { kind?: unknown }).kind === 'action';
+}
+
+/**
+ * Stamp the export name onto the action the app declared, rather than handing back a
+ * differently-named copy of it. `import { publishPost } from './actions'` is then the
+ * action that projects — `publishPost.tool()` after boot, with nothing to remember.
+ * Naming twice is the one case that still needs a twin: one object, one name, forever.
+ */
+export function nameAction<A extends AnyAction>(target: A, name: string): A {
+  if (target.name === name) return target;
+  if (target.name.length > 0) return target.named(name) as A;
+  Object.defineProperty(target, 'name', { value: name, configurable: true });
+  return target;
 }
 
 function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
@@ -149,6 +197,7 @@ function build<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1
     def,
     describe: (): ActionDescriptor => describeAction(self),
     named: (next: string): Action<TInput, TOutput> => build(def, next),
+    ...facadeFor(def, () => self),
   });
   // `name` on a function is non-writable, so Object.assign cannot set it.
   Object.defineProperty(self, 'name', { value: name, configurable: true });

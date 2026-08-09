@@ -8,6 +8,7 @@ import type { AnyAction } from './action';
 import { actionName, runAction } from './action';
 import { type JsonSchemaObject, mcpSchemaOf, sortSchema } from './json-schema';
 import { toToolName } from './naming';
+import type { ActionPolicy } from './policy-gate';
 import { listActions } from './registry';
 
 export interface McpToolDescriptor {
@@ -15,6 +16,11 @@ export interface McpToolDescriptor {
   /** The action's `mcp.description`, or its name when the author gave none. */
   readonly description: string;
   readonly action: string;
+  /**
+   * The action's own policy object, not a copy — `tool().policy === action.policy`
+   * is what makes "an MCP call cannot reach a different authz path" checkable.
+   */
+  readonly policy: ActionPolicy;
   readonly inputSchema: JsonSchemaObject;
   readonly outputSchema: JsonSchemaObject;
   invoke(input: unknown, options?: McpInvokeOptions): Promise<unknown>;
@@ -32,6 +38,7 @@ export function toMcpTool(target: AnyAction): McpToolDescriptor {
     name: toToolName(name),
     description: def.mcp?.description ?? name,
     action: name,
+    policy: def.policy,
     inputSchema: sortSchema(mcpSchemaOf(def.input)),
     outputSchema: sortSchema(mcpSchemaOf(def.output)),
     invoke: (input, options = {}) =>
