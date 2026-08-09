@@ -59,6 +59,12 @@ jobTest('${name.camel} is idempotent for the same input', () => {
   expect(${name.camel}.idempotencyKeyFor({ id })).toBe(${name.camel}.idempotencyKeyFor({ id }));
 });
 
+jobTest('${name.camel} projects itself into the manifest', () => {
+  const described = ${name.camel}.describe();
+  expect(described.queue).toBe('default');
+  expect(described.retry.attempts).toBe(5);
+});
+
 jobTest('${name.camel} runs its steps in order', async () => {
   await expect(${name.camel}).toEmitSteps(['load', 'process']);
 });
@@ -81,6 +87,12 @@ jobTest('${name.camel} enqueues ${jobName.camel} and nothing else', () => {
   const pairs = ${name.camel}.entries();
   expect(pairs).toHaveLength(1);
   expect(pairs[0]?.[0]).toBe(${jobName.camel});
+});
+
+jobTest('${name.camel} describes its schedule and its jobs', () => {
+  const described = ${name.camel}.describe();
+  expect(described.tz).toBe('UTC');
+  expect(described.jobs).toHaveLength(1);
 });
 `;
 

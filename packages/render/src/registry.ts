@@ -215,8 +215,8 @@ export function describeRoutes(): readonly RouteDescriptor[] {
     dynamic: entry.pattern.keys.length > 0,
     hasPolicy: entry.config.policy !== undefined,
     islands: entry.islands,
-    budgetJs: entry.config.budget?.js ?? null,
-    budgetLcp: entry.config.budget?.lcp ?? null,
+    budgetJs: entry.config.budget.js ?? null,
+    budgetLcp: entry.config.budget.lcp ?? null,
   }));
 }
 

@@ -128,9 +128,11 @@ unitTest('${name.camel} denies an anonymous actor', async () => {
 
 ${
   isMutator
-    ? `unitTest('${name.camel} declares a conflict strategy and an optimistic local half', () => {
+    ? `unitTest('${name.camel} projects both halves and a conflict strategy', () => {
   expect(${name.camel}.conflict).toBe('server-wins');
-  expect(typeof ${name.camel}.applyLocal).toBe('function');
+  // The projected names mirror the declaration: local() optimistic, server() authoritative.
+  expect(typeof ${name.camel}.local).toBe('function');
+  expect(typeof ${name.camel}.server).toBe('function');
 });`
     : `contractTest('${name.camel} is exposed as an MCP tool with a description', () => {
   expect(${name.camel}.mcp?.expose).toBe(true);

@@ -36,7 +36,7 @@ export async function explain<TInput extends StandardSchemaV1, TRow extends obje
     sql: text.sql,
     params: text.params,
     shape: source.shape(),
-    live: target.live,
+    live: target.isLive,
   };
 }
 
@@ -61,14 +61,14 @@ export async function describeSql(
     const name = queryName(target);
     const sample = samples[name];
     if (sample === undefined) {
-      entries.push({ query: name, live: target.live, sql: null });
+      entries.push({ query: name, live: target.isLive, sql: null });
       continue;
     }
     const source = await sourceFor(target, sample, {
       enforce: false,
       ...(ctx === undefined ? {} : { ctx }),
     });
-    entries.push({ query: name, live: target.live, sql: source.toSQL().sql });
+    entries.push({ query: name, live: target.isLive, sql: source.toSQL().sql });
   }
   return entries;
 }

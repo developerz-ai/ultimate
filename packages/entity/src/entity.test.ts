@@ -90,6 +90,16 @@ describe('entity()', () => {
     expect(posts.$columns.title.$meta.length).toBe(120);
   });
 
+  test('a column may be called view, because every framework member is $-prefixed', () => {
+    const widgets = entity('entity_test_widgets', {
+      columns: { id: uuid().primaryKey(), view: text(), tenant: text() },
+    });
+    expect(widgets.view.$meta.kind).toBe('text');
+    expect(widgets.tenant.$meta.kind).toBe('text');
+    // The column did not shadow the projection, and the projection can pick the column.
+    expect(widgets.$view(['id', 'view']).$keys).toEqual(['id', 'view']);
+  });
+
   test('$assert runs the invariants on write', () => {
     expect(() => posts.$assert(sample)).not.toThrow();
     expect(() => posts.$assert({ ...sample, title: '  ' })).toThrow(/title_present/);

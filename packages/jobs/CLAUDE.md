@@ -11,7 +11,16 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 ## Rules
 
 - `idempotencyKey` is NON-OPTIONAL in `JobDefinition`. Never relax it, never default it.
-- `tz` is NON-OPTIONAL in `TaskDefinition`. A task never contains a handler body.
+- `tz` is NON-OPTIONAL in `TaskDefinition`, and checked against the runtime's IANA database —
+  a non-empty string is not a timezone. A task never contains a handler body.
+- **One enqueue implementation.** Everything (`handle.enqueue`, `handle.as`, `task.enqueue`)
+  goes through `jobsFacade()`; the only other `driver.enqueue(...)` call sites are the outbox
+  relay and the scheduler's occurrence dispatch. Never add a third.
+- `handle.as(actor, input)` QUEUES. A job's execution surface is the queue, so it must never
+  run the handler inline — `worker.ts`'s `executeJob` is the one execution path.
+- The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`) and `task.enqueue()`'s
+  is the job's plain key. Deliberate: the first stops two schedulers double-firing a tick, the
+  second is a manual run with no occurrence to scope to.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
@@ -31,9 +40,10 @@ change in `@ultimat3/time` is a one-line fix, not a sweep.
 
 | File | Owns |
 |---|---|
-| `job.ts` | the `job()` primitive + registry |
+| `job.ts` | the `job()` primitive + registry + the handle's fluent surface |
+| `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
-| `outbox.ts` | staging in a `Tx`, the relay, `ctx.jobs.enqueue` facade, outbox SQL |
+| `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot, outbox SQL |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, real SQL constants, advisory-lock leader |
 | `driver-memory.ts` | `x dev` / tests |

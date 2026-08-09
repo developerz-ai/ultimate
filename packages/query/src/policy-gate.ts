@@ -18,6 +18,12 @@ export type QuerySurface = 'server' | 'http' | 'live';
 export interface QuerySubject {
   readonly actor: Actor | null;
   readonly input: unknown;
+  /**
+   * The already-loaded row a row-level rule decides about — the live row gate supplies it
+   * per subscriber per row. Omitted for a subscribe-time or whole-query decision. It is a
+   * field of its own and never folded into `input`: the predicate reads `args.row`.
+   */
+  readonly row?: unknown;
   readonly ctx: Ctx;
   readonly query: string;
 }
@@ -26,6 +32,7 @@ export function guard(policy: QueryPolicy, subject: QuerySubject, surface: Query
   const denial = enforce(policySurface(surface), policy, {
     input: subject.input,
     actor: subject.actor,
+    row: subject.row,
     ctx: subject.ctx,
   });
   if (denial !== undefined) throw new QueryDeniedError(subject.query, denial);

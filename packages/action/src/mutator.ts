@@ -7,7 +7,7 @@
 
 import type { Ctx } from '@ultimat3/core';
 import { assertNever } from '@ultimat3/core';
-import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, ActionCache, ActionDef, ActionDescriptor, ActionMcp } from './action';
 import { action } from './action';
 import type { ActionPolicy } from './policy-gate';
@@ -91,8 +91,19 @@ export interface Mutator<
 > extends Action<TInput, TOutput> {
   readonly isMutator: true;
   readonly conflict: Conflict<InferOutput<TOutput>>;
-  /** Applied on the client before the server round trip, and re-applied on rebase. */
-  applyLocal(tx: LocalTx, input: InferOutput<TInput>): void;
+  /**
+   * Applied on the client before the server round trip, and replayed on every
+   * rebase — so it must stay a pure function of `(tx, input)`: no I/O, no clock,
+   * no randomness. Takes parsed input because nothing re-parses on this half.
+   */
+  local(tx: LocalTx, input: InferOutput<TInput>): void;
+  /**
+   * The authoritative half. Routes through the action's own callable, never the
+   * declared `server` — so input parsing, policy, the handler and output parsing
+   * run exactly once, in the one core, the same as every other surface. Takes raw
+   * input, like the callable and `.as()`, because this is where parsing happens.
+   */
+  server(ctx: Ctx, input: InferInput<TInput>): Promise<InferOutput<TOutput>>;
   describeMutator(): MutatorDescriptor;
   named(name: string): Mutator<TInput, TOutput>;
 }
@@ -126,9 +137,14 @@ function wrap<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>
   const self: Mutator<TInput, TOutput> = Object.assign(base, {
     isMutator: true as const,
     conflict: def.conflict,
-    applyLocal: (tx: LocalTx, input: InferOutput<TInput>): void => {
+    local: (tx: LocalTx, input: InferOutput<TInput>): void => {
       def.local(tx, input);
     },
+    // `base(...)` and not `def.server(...)`: the callable IS `invoke`, so the
+    // authoritative half cannot skip the input parse, the policy or the output
+    // parse. Calling the declaration here would be the second execution path.
+    server: (ctx: Ctx, input: InferInput<TInput>): Promise<InferOutput<TOutput>> =>
+      base(input, { ctx }),
     describeMutator: (): MutatorDescriptor => ({
       ...base.describe(),
       kind: 'mutator' as const,

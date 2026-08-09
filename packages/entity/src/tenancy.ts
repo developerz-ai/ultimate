@@ -2,7 +2,7 @@
 // through a plan that carries an org predicate; building one without it throws
 // `X_TENANCY_UNSCOPED` at the seam instead of leaking another tenant's rows.
 
-import { tenancyUnscoped } from './errors';
+import { invariantViolated, tenancyUnscoped } from './errors';
 import type { ColumnMap } from './types';
 
 export type Operator =
@@ -55,6 +55,28 @@ export const tenantColumnOf = (columns: ColumnMap): string | null => {
 };
 
 export const isOrgScoped = (columns: ColumnMap): boolean => tenantColumnOf(columns) !== null;
+
+/**
+ * `entity(name, { tenant: 'workspaceId' })` wins over inference — a tenant column need not be
+ * called `orgId` and need not carry `.tenant()`. Omitting it keeps the inference, so an entity
+ * cannot become unscoped by forgetting the key; naming a column that does not exist is a
+ * declaration error, because the alternative is a silently unscoped table.
+ */
+export const resolveTenantColumn = (
+  entityName: string,
+  columns: ColumnMap,
+  declared: string | undefined,
+): string | null => {
+  if (declared === undefined) return tenantColumnOf(columns);
+  if (!Object.hasOwn(columns, declared)) {
+    throw invariantViolated(
+      entityName,
+      'tenant',
+      `tenant: '${declared}' names no column — pick from: ${Object.keys(columns).join(', ')}`,
+    );
+  }
+  return declared;
+};
 
 export const emptyPlan = (entity: string, limit = 50): QueryPlan => ({
   entity,

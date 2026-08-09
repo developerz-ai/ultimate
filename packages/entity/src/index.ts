@@ -86,3 +86,5 @@ export type {
   TypeOf,
   UuidColumn,
 } from './types';
+// `viewFor` stays internal: a view is reached through the entity, as `posts.$view([...])`.
+export type { EntityView } from './view';

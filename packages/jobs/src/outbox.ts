@@ -15,8 +15,8 @@ import { logger, uuid } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
-import { DEFAULT_QUEUE } from './driver';
-import { OutboxNoTxError } from './errors';
+import { DEFAULT_QUEUE, jobDriver } from './driver';
+import { DriverUnavailableError, OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
 
 export interface OutboxRecord {
@@ -174,6 +174,54 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       return { ...STAGED_RESULT, id: record.id };
     },
   };
+}
+
+let ambient: JobsFacade | undefined;
+let fallback: JobsFacade | undefined;
+
+/**
+ * Installed once at boot, next to `setJobDriver`, with the app's outbox store and its
+ * transaction accessor. `handle.enqueue()` then joins the caller's transaction wherever it is
+ * called from — which is the only reason the outbox protects anything.
+ */
+export function setJobsFacade(facade: JobsFacade | null): void {
+  ambient = facade ?? undefined;
+}
+
+/**
+ * The one enqueue path. With no facade installed the fallback publishes straight to the
+ * ambient driver, so a script, a test or `x dev` enqueues without wiring anything — an app
+ * that installed the outbox gets the outbox, at the same call site.
+ */
+export function jobsFacade(): JobsFacade {
+  if (ambient !== undefined) return ambient;
+  fallback ??= createJobsFacade(
+    {
+      // A getter, not a snapshot: `setJobDriver()` after the first enqueue is honoured, and a
+      // missing driver is an error at the call rather than at import time.
+      get driver(): JobDriver {
+        const installed = jobDriver();
+        if (installed === undefined) {
+          throw new DriverUnavailableError({
+            driver: 'none',
+            cause: 'no queue driver is installed in this process',
+            fix: 'call setJobDriver(createMemoryDriver()) before enqueuing — or set jobs.driver in app.config.ts and run `x dev`',
+          });
+        }
+        return installed;
+      },
+      // Unreachable while `currentTx` is `() => undefined`; present because `OutboxDeps`
+      // requires a store, and a real one is cheaper than an assertion that cannot fire.
+      store: createMemoryOutboxStore(),
+    },
+    () => undefined,
+  );
+  return fallback;
+}
+
+/** Test/CLI seam, the counterpart to `resetJobDriver()`: forget the installed facade. */
+export function resetJobsFacade(): void {
+  ambient = undefined;
 }
 
 export interface RelayOptions extends OutboxDeps {

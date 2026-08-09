@@ -30,6 +30,25 @@ a route that forgets its offline strategy or its `<head>` does not compile. `def
 re-checks the same three at runtime (`X_ROUTE_OFFLINE_MISSING`, `X_ROUTE_META_MISSING`) for
 JS callers and generators.
 
+## `defineRoute` returns a descriptor, not the object you passed
+
+Two fields come back narrower than they went in, so nothing downstream branches on shape:
+
+| Field | The declaration accepts | The descriptor always is |
+|---|---|---|
+| `meta` | `(data) => RouteMeta \| Promise<RouteMeta>` | `(data) => Promise<RouteMeta>` |
+| `budget` | omitted, or a `RouteBudget` | a `RouteBudget` — `{}` when undeclared |
+
+```ts
+const meta = await config.meta({ post });   // always. sync or async declaration, one call
+const js = config.budget.js ?? null;        // never config.budget?.js
+```
+
+No author is forced to write `async`, and a `meta` that throws synchronously comes back as
+a rejection, so one `catch` covers both. The budget's *fields* stay optional:
+`budget.js === undefined` still means "declared no JS budget", which is exactly what fails
+a hydrating `site/` route below.
+
 ## Mode invariants, checked at registration
 
 | Mode | Invariant | Error if violated |

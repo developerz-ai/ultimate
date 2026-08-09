@@ -11,6 +11,9 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 |---|---|
 | `offline`, `hydrate`, `meta` | required by `RouteDefinition`. Never make them optional. |
 | `defineRoute` shape | exactly the contract's 8 keys. New route metadata goes inside `meta`. |
+| Descriptor `meta` | always `(data) => Promise<RouteMeta>`. Authors may declare it sync; consumers never branch. |
+| Descriptor `budget` | always an object, `{}` when undeclared. Its *fields* stay optional — `budget.js === undefined` is the site/ hydration failure. |
+| No `describe()` on a route | `describeRoutes()` is the one route list. A per-route projection would be a second one. |
 | Mode invariants | `modes.ts` only. Never inline a mode check in a render-\* file. |
 | Route truth | `registry.ts`. Never keep a second route list anywhere. |
 | Descriptors | `describeRoutes()` must stay JSON-safe, sorted by path, deterministic. |

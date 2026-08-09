@@ -7,6 +7,7 @@ export const liveFeed = query({
   input: t.object({ orgId: t.uuid }),
   policy: can('feed:read'),
   live: true,
+  mcp: { expose: true, description: 'The org feed' },
   sql: ({ orgId }) => db.posts.where({ orgId }).orderBy('createdAt').limit(50),
 });
 
@@ -16,11 +17,34 @@ const rows = await liveFeed({ orgId });        // typed rows, policy enforced
 Register once at boot: `registerQueries(await import('./live'))`. Export names become
 query names, which the manifest, the live protocol and `/_x` all address.
 
+## One declaration, five projections
+
+Every projection is a method on the query itself. A query has no `.def`.
+
+| Call | Gives |
+|---|---|
+| `liveFeed({ orgId })` | the rows, policy enforced, through the cache tiers |
+| `liveFeed.as(actor, { orgId })` | the same read as another actor — the surrounding context is untouched, `null` is signed out |
+| `liveFeed.live({ orgId })` | the `LiveQuery` `@ultimat3/realtime` subscribes to, carrying the same policy object |
+| `liveFeed.tool()` | the MCP read tool. `tool().policy === liveFeed.policy`, and it reads fresh |
+| `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
+| `liveFeed.describe()` | the manifest row |
+
+The declaration is lifted too: `.input`, `.policy`, `.cache`, `.mcp`, `.isLive`. `sql` is not
+among them — it lives in a private store inside `read.ts`, so `sourceFor` is the only thing
+that can build a source and there is nowhere for a second authz path to hide. Something that
+merely looks like a query (`kind: 'query'`, no declaration) is `X_QUERY_FOREIGN`.
+
 ## What each file owns
 
 | File | Job |
 |---|---|
-| `query.ts` | the primitive, `runQuery`, `sourceFor` |
+| `query.ts` | the primitive, `describeQuery`, `queryHash` |
+| `read.ts` | the one read path — `runQuery`, `sourceFor` — and the declaration store |
+| `facade.ts` | binds each projection to the query; re-implements none of them |
+| `mcp-tool.ts` | the MCP read descriptor |
+| `client.ts` | the typed read client (browser-safe) |
+| `naming.ts` | export name → wire path + tool name |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
 | `pagination.ts` | signed keyset cursors, `paginate()` |
@@ -85,6 +109,8 @@ Request memo (same read twice in one render ⇒ one round trip), then the tier b
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x queries describe <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
+| `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |
+| `X_RPC_FAILED` | `.client()` got a non-`problem+json` failure | check the gateway in front of the app |
 
 Denials re-throw the policy layer's own codes and keep the surface denial on
 `QueryDeniedError.denial`, so a live socket closes with 4403 instead of guessing.

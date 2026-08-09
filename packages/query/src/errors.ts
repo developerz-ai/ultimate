@@ -10,8 +10,10 @@ const TITLES: Readonly<Record<string, string>> = {
   X_INPUT_INVALID: 'input failed schema validation',
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
+  X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
   X_QUERY_POLICY_MISSING: 'a query was registered without a policy',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
+  X_RPC_FAILED: 'an RPC call failed without a problem+json body',
 };
 
 for (const [code, title] of Object.entries(TITLES)) {
@@ -78,6 +80,23 @@ export class QueryUnregisteredError extends UltimateError {
   }
 }
 
+/**
+ * Thrown when a projection is handed something that never came out of `query()`.
+ * The declaration is private to `read.ts`, so an object that merely looks like a
+ * query has no `sql` to build and no policy to evaluate — refusing it here is how
+ * "there is one read path" stays true at runtime, not just in the types.
+ */
+export class QueryForeignError extends UltimateError {
+  constructor(name: string) {
+    super({
+      code: 'X_QUERY_FOREIGN',
+      cause: `"${name === '' ? 'anonymous' : name}" is not a query built by query()`,
+      fix: "declare it as `export const name = query({ input, policy, sql })` from '@ultimat3/query'",
+      docs: docs('X_QUERY_FOREIGN'),
+    });
+  }
+}
+
 export class QueryDuplicateError extends UltimateError {
   constructor(name: string) {
     super({
@@ -132,4 +151,37 @@ export class QueryInputInvalidError extends UltimateError {
       docs: docs('X_INPUT_INVALID'),
     });
   }
+}
+
+/** The `problem+json` fields a failing read can send back. All optional: a proxy sends none. */
+export interface QueryProblem {
+  readonly code?: unknown;
+  readonly cause?: unknown;
+  readonly detail?: unknown;
+  readonly fix?: unknown;
+  readonly docs?: unknown;
+}
+
+/**
+ * The typed client's failure. A `problem+json` body is re-thrown verbatim — the
+ * server already said what broke and how to fix it, and inventing a second story
+ * here would bury it. Anything else answered instead of the app, so it is
+ * `X_RPC_FAILED` and the fix line points at the gateway.
+ */
+export class QueryRequestFailedError extends UltimateError {
+  constructor(name: string, status: number, problem: QueryProblem = {}) {
+    const code = text(problem.code) ?? 'X_RPC_FAILED';
+    super({
+      code,
+      cause: text(problem.cause) ?? text(problem.detail) ?? `${name} returned HTTP ${status}`,
+      fix:
+        text(problem.fix) ??
+        `check the gateway in front of the app, then: x queries describe ${name} --json`,
+      docs: text(problem.docs) ?? docs(code),
+    });
+  }
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }

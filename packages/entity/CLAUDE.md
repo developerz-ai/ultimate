@@ -19,7 +19,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   never an implied single currency.
 - **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
 - **A tenant column means every query needs an org predicate** — runtime guard, not convention.
-  Missing ⇒ `X_TENANCY_UNSCOPED`.
+  Missing ⇒ `X_TENANCY_UNSCOPED`. `tenant: 'orgId'` declares it; omitted, inference still applies
+  (`.tenant()`, else a column named `orgId`), so silence never means unscoped. Never make the
+  declaration the only switch.
+- **Every framework member on an entity is `$`-prefixed** — the columns are `Object.assign`ed onto
+  the core, so an unprefixed member would make `view`, `name` or `tenant` an illegal column name.
+  `$view`, never `view`; no free `view(entity, keys)` either — one way to write a projection.
 - **Invariants run twice**: in the app on write AND as a Postgres CHECK/UNIQUE via `toSql()`. An
   untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a pretend CHECK.
 - **Row types are derived, never re-declared.** No `as unknown as` to fake the derivation.
@@ -35,6 +40,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders |
 | `expr.ts` / `invariants.ts` | the `(c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
+| `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
 | `repo.ts` / `tenancy.ts` | `Repo<T>`, cursor codec, tx rollback; `QueryPlan` + `assertScoped()` |
 | `registry.ts` | duplicate detection + `describeEntities()` for the manifest |

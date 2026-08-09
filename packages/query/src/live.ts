@@ -11,7 +11,8 @@ import { assertMatchable } from './matcher';
 import type { QueryPolicy, QuerySubject } from './policy-gate';
 import { guard } from './policy-gate';
 import type { Query } from './query';
-import { queryHash, queryName, sourceFor } from './query';
+import { queryHash } from './query';
+import { queryName, sourceFor } from './read';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
 import { tagKeys } from './tags';
@@ -92,8 +93,9 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
 
   const epoch = options.epoch ?? liveEpoch();
   const hash = queryHash(name, input);
-  const reads = [...new Set([shape.entity, ...tagKeys(target.def.cache?.tags ?? [])])].sort();
-  const policy = target.def.policy;
+  const reads = [...new Set([shape.entity, ...tagKeys(target.cache?.tags ?? [])])].sort();
+  // The query's own policy object, not a copy: the same authz a direct read runs.
+  const policy = target.policy;
 
   return {
     name,

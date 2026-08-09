@@ -5,16 +5,21 @@
  */
 import { QueryDuplicateError, QueryPolicyMissingError } from './errors';
 import type { AnyQuery, QueryDescriptor } from './query';
-import { isQuery } from './query';
+import { isQuery, nameQuery } from './query';
 
 const registry = new Map<string, AnyQuery>();
 
+/**
+ * Register one query under an explicit name. The name lands on the query you passed,
+ * so the module's own export is projectable after boot and there is no "use the
+ * return value instead" rule to forget.
+ */
 export function registerQuery<Q extends AnyQuery>(name: string, target: Q): Q {
   if (registry.has(name)) throw new QueryDuplicateError(name);
-  if (target.def.policy === undefined || target.def.policy === null) {
+  if (target.policy === undefined || target.policy === null) {
     throw new QueryPolicyMissingError(name);
   }
-  const named = target.named(name) as Q;
+  const named = nameQuery(target, name);
   registry.set(name, named);
   return named;
 }

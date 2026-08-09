@@ -5,9 +5,16 @@ import type { Ctx } from '@ultimat3/core';
 import type { Policy, PolicyDecision, TraceEntry } from './policy';
 import type { Actor } from './roles';
 
-export interface EvaluateArgs<I> {
+/**
+ * What a *caller* supplies. `row` is optional here and required in `PolicyArgs`: a surface
+ * that decides on input alone should not have to write `row: null`, but the predicate it
+ * reaches must still see the field. `evaluate()` is the one place that gap is closed.
+ */
+export interface EvaluateArgs<I, R = unknown> {
   readonly input: I;
   readonly actor: Actor | null;
+  /** The already-loaded row for a row-level rule. Omitted means "this rule has no row". */
+  readonly row?: R;
   readonly ctx?: Ctx;
 }
 
@@ -21,12 +28,19 @@ export interface PolicyEvaluation {
   readonly label: string;
 }
 
-export const evaluate = <I>(policy: Policy<I>, args: EvaluateArgs<I>): PolicyEvaluation => {
+export const evaluate = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
+): PolicyEvaluation => {
   const trace: TraceEntry[] = [];
   const decision = policy.run(
     {
       input: args.input,
       actor: args.actor,
+      // Normalising here is what keeps `row` a required field of `PolicyArgs`: an absent row
+      // and an explicit `null` reach the predicate as the same value, so no rule needs to
+      // handle both.
+      row: args.row ?? null,
       ...(args.ctx === undefined ? {} : { ctx: args.ctx }),
     },
     (entry) => trace.push(entry),

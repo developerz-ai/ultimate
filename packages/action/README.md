@@ -107,6 +107,21 @@ export const toggleLike = mutator({
 });
 ```
 
+The projected surface carries the same three names the declaration used, on top of
+every action member above:
+
+```ts
+toggleLike.local(tx, { postId })            // the optimistic write, replayed on rebase
+await toggleLike.server(ctx, { postId })    // the authoritative write
+toggleLike.conflict                         // the declared strategy
+```
+
+`.server()` is not a shortcut past `invoke` — it calls the action's own callable, so
+the input parse, the policy and the output parse all still run: an actor the policy
+denies is denied there exactly as over HTTP. `.local()` is the only half that skips
+the core, because it never leaves the client; keep it a pure function of `(tx, input)`
+— no I/O, no clock, no randomness — since every rebase replays it.
+
 `LocalTx` is the client write surface (`@ultimat3/realtime` implements it over OPFS
 SQLite). Type your tables once: `declare module '@ultimat3/action' { interface
 LocalTables { posts: PostRow } }`.

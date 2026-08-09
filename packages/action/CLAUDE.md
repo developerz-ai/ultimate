@@ -15,7 +15,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `action.ts` | the primitive: `action()`, `describeAction`, the registry-facing name stamp |
 | `invoke.ts` | **the one execution path** + the private declaration store `handle` lives in |
 | `facade.ts` | the fluent surface — binds each projection to the action, re-implements none |
-| `mutator.ts` | action + optimistic local twin + conflict strategy |
+| `mutator.ts` | action + optimistic `.local` twin + authoritative `.server` + `.conflict` |
 | `registry.ts` | export-name registration, collisions, `describeActions()` |
 | `http.ts` | route projection + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
@@ -38,6 +38,13 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.
+- A mutator projects the three names it was authored with — `.local`, `.server`, `.conflict` —
+  plus every action façade member, through `named()` and registration alike. No aliases: the
+  old `.applyLocal` is gone, not deprecated.
+- `mutator.server()` calls the action's own callable, so it lands in `invoke` like every other
+  surface. Reaching the declared `server` from there is the second execution path this package
+  exists to prevent. `.local()` is the one member that skips the core — it never leaves the
+  client, so there is nothing to authorize.
 - Registration names the action the app exported, in place — `import { publishPost }` is
   projectable after boot. Naming an already-named action is the only case that twins.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.

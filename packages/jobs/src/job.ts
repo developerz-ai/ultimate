@@ -13,10 +13,16 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { toMs } from './clock';
+import type { JobDescriptor } from './describe';
+import { describeJob } from './describe';
+import type { EnqueueResult } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { IdempotencyRequiredError } from './errors';
+import { NO_TENANT, tenantKeyFrom } from './limits';
+import type { EnqueueOptions } from './outbox';
+import { jobsFacade } from './outbox';
 import type { RetryPolicy } from './retry';
-import { type BackoffStrategy, DEFAULT_RETRY } from './retry';
+import { DEFAULT_RETRY } from './retry';
 import type { StepApi } from './steps';
 
 export interface JobRunArgs<I> {
@@ -44,6 +50,14 @@ export interface JobDefinition<I> {
 }
 
 /**
+ * Whoever the enqueue is for. Structural, exactly like `tenantKeyFrom` in `limits.ts`: the
+ * queue needs the actor's org and nothing else, so this package never imports the auth types.
+ */
+export interface JobActor {
+  readonly orgId?: string | undefined;
+}
+
+/**
  * Methods (not function-typed properties) throughout, so `JobHandle<Specific>` is assignable
  * to `AnyJobHandle` and heterogeneous handles can share a registry and a task's enqueue list.
  */
@@ -58,6 +72,18 @@ export interface JobHandle<I = unknown> {
   parse(raw: unknown): I;
   idempotencyKeyFor(input: I): string;
   run(args: JobRunArgs<I>): Promise<unknown>;
+  /**
+   * Put this job on the queue. Joins the caller's transaction when the app installed the
+   * outbox — same call site in a request handler, a job, a script or a test.
+   */
+  enqueue(input: I, options?: EnqueueOptions): Promise<EnqueueResult>;
+  /**
+   * Enqueue on behalf of `actor`: fills `tenantId` from the actor's org so per-tenant limits
+   * apply. It queues rather than running inline because a job's execution surface IS the
+   * queue — an inline run would be a second execution path alongside `executeJob`.
+   */
+  as(actor: JobActor | null, input: I, options?: EnqueueOptions): Promise<EnqueueResult>;
+  describe(): JobDescriptor;
 }
 
 export type AnyJobHandle = JobHandle<unknown>;
@@ -102,10 +128,32 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     run(args: JobRunArgs<I>): Promise<unknown> {
       return definition.run(args);
     },
+    enqueue(input: I, options?: EnqueueOptions): Promise<EnqueueResult> {
+      return jobsFacade().enqueue(handle, input, options);
+    },
+    as(actor: JobActor | null, input: I, options: EnqueueOptions = {}): Promise<EnqueueResult> {
+      const tenantId = options.tenantId ?? tenantFor(actor);
+      // `NO_TENANT` is the limiter's own bucket for an absent tenant, so leaving the column
+      // empty is the same limit and one less fake org id on the row.
+      return handle.enqueue(input, {
+        ...options,
+        ...(tenantId === NO_TENANT ? {} : { tenantId }),
+      });
+    },
+    // Reads `handle`, never the captured `name`: `nameJobs()` rebinds the property in place.
+    describe(): JobDescriptor {
+      return describeJob(handle);
+    },
   };
 
   registry.set(name, handle as AnyJobHandle);
   return handle;
+}
+
+/** `orgId` is optional-with-undefined on an actor and optional-only on `tenantKeyFrom`. */
+function tenantFor(actor: JobActor | null): string {
+  const orgId = actor?.orgId;
+  return tenantKeyFrom(orgId === undefined ? undefined : { orgId });
 }
 
 /**
@@ -137,34 +185,10 @@ export function resetJobs(): void {
 
 /**
  * Registered jobs as the manifest, the `/_x` jobs panel and the MCP dev server need them.
- * Name-sorted and JSON-safe because `x.manifest.json` is committed and diffed — an
- * iteration-order-dependent field would show up as a spurious change on every build.
- * `steps` stays in declaration order: it is a sequence, not a set.
+ * Name-sorted because `x.manifest.json` is committed and diffed — an iteration-order-dependent
+ * list would show up as a spurious change on every build. Each row is the handle's own
+ * `describe()`, so the list and the single job can never disagree.
  */
-export function describeJobs(): readonly {
-  readonly name: string;
-  readonly input: unknown;
-  readonly queue: string;
-  readonly retry: { readonly attempts: number; readonly backoff: BackoffStrategy };
-  readonly steps: readonly string[];
-}[] {
-  return registeredJobs().map((handle) => ({
-    name: handle.name,
-    input: describeSchema(handle.input),
-    queue: handle.queue,
-    retry: {
-      attempts: handle.retry.attempts,
-      backoff: handle.retry.backoff ?? DEFAULT_RETRY.backoff,
-    },
-    // Empty by design: step names are chosen inside `run()` at execution time, so they are
-    // not statically knowable. `inspect(name)` reports the steps an actual run recorded.
-    steps: [],
-  }));
-}
-
-/** Best-effort JSON view of a Standard Schema; the vendor decides how much it exposes. */
-function describeSchema(schema: unknown): unknown {
-  if (schema === null || typeof schema !== 'object') return null;
-  const vendor = (schema as { readonly '~standard'?: { readonly vendor?: string } })['~standard'];
-  return { vendor: vendor?.vendor ?? 'unknown' };
+export function describeJobs(): readonly JobDescriptor[] {
+  return registeredJobs().map((handle) => handle.describe());
 }

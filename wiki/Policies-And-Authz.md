@@ -11,16 +11,16 @@ policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `permission` | `string` | yes | a capability id, `resource:verb`. Must exist in the declared permission set or the build fails (`X_PERMISSION_UNKNOWN`) |
-| `predicate` | `(subject) => boolean \| Promise<boolean>` | no | the row-level condition. Omitted means the capability alone decides |
+| `predicate` | `(args: PolicyArgs) => boolean \| PolicyDecision` | no | the row-level condition. Omitted means the capability alone decides. **Synchronous** — a live query evaluates it per subscriber per change, so an `await` here costs one round trip per watcher |
 
-The `subject` handed to the predicate:
+`PolicyArgs` — the one signature, identical on every surface:
 
 | Member | Type | Notes |
 |---|---|---|
 | `actor` | `Actor \| null` | `{ kind: 'user' \| 'service' \| 'agent' \| 'anonymous', id, orgId?, roles, scopes }`. Anonymous is `null`-safe; policies branch on it |
 | `input` | parsed input | already validated against the primitive's `input` schema |
+| `row` | `R \| null` | the already-loaded row a row-level rule decides about; `null` when the rule decides on input alone. Never pass a row through `input` |
 | `ctx` | `Ctx` | repos for lookups, `ctx.tz`, `ctx.logger`. Read-only use |
-| `action` | `string` | the name of the primitive being guarded — for logging and denial text |
 
 Policies live in `<feature>/policy.ts` and are referenced by name from `actions.ts` and `live.ts`. `agent` is a first-class actor kind: an MCP caller goes through this same function, with no separate path.
 

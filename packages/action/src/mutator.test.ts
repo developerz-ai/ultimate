@@ -10,7 +10,9 @@ const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, likes: t.number });
 const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 const likerActor = { ...userActor({ id: 'u1' }), permissions: ['post:like'] };
+const strangerActor = userActor({ id: 'u2' });
 const ctx = createContext({ actor: likerActor });
+const stranger = createContext({ actor: strangerActor });
 
 interface PostRow extends LocalRow {
   readonly likes: number;
@@ -35,14 +37,19 @@ function fakeTx(rows: Map<string, PostRow>) {
   return { table: () => table } as unknown as LocalTx;
 }
 
+/** Counts the declared half's runs: proof that a denied `.server()` never reached it. */
+let serverRuns = 0;
+
 const toggleLike = mutator({
   input: Input,
   output: Output,
   policy: can('post:like'),
+  mcp: { expose: true, description: 'Like a post' },
   local(tx, { postId }) {
     tx.table<PostRow>('posts').update(postId, (post) => ({ likes: post.likes + 1 }));
   },
   async server(_ctx, { postId }) {
+    serverRuns += 1;
     return { id: postId, likes: 7 };
   },
   conflict: 'server-wins',
@@ -56,13 +63,73 @@ describe('mutator', () => {
     expect(toggleLike.isMutator).toBe(true);
   });
 
-  test('the local twin writes optimistically, the server twin is authoritative', async () => {
+  test('.local applies the optimistic twin against the client store', () => {
     const rows = new Map<string, PostRow>([[POST_ID, { id: POST_ID, likes: 3 }]]);
-    toggleLike.applyLocal(fakeTx(rows), { postId: POST_ID });
+    toggleLike.local(fakeTx(rows), { postId: POST_ID });
     expect(rows.get(POST_ID)?.likes).toBe(4);
+  });
 
-    const authoritative = await invoke(toggleLike, { postId: POST_ID }, { ctx });
-    expect(authoritative).toEqual({ id: POST_ID, likes: 7 });
+  test('.applyLocal is gone: the projected name is the authored one, once', () => {
+    expect('applyLocal' in toggleLike).toBe(false);
+  });
+
+  test('.server returns the authoritative value', async () => {
+    expect(await toggleLike.server(ctx, { postId: POST_ID })).toEqual({ id: POST_ID, likes: 7 });
+    // Same value over the raw core, so `.server` is that core and not a shortcut past it.
+    expect(await invoke(toggleLike, { postId: POST_ID }, { ctx })).toEqual({
+      id: POST_ID,
+      likes: 7,
+    });
+  });
+
+  test('.server is not a second execution path: the policy still denies', async () => {
+    const before = serverRuns;
+    const denial = await toggleLike.server(stranger, { postId: POST_ID }).catch((e: unknown) => e);
+    expect((denial as { code?: string }).code).toBe('X_FORBIDDEN');
+
+    const anonymous = await toggleLike
+      .server(createContext({}), { postId: POST_ID })
+      .catch((e: unknown) => e);
+    expect((anonymous as { code?: string }).code).toBe('X_UNAUTHENTICATED');
+    expect(serverRuns).toBe(before);
+  });
+
+  test('.server parses its input before the declared half runs', async () => {
+    const before = serverRuns;
+    const failure = await toggleLike.server(ctx, { postId: 'not-a-uuid' }).catch((e: unknown) => e);
+    expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');
+    expect(serverRuns).toBe(before);
+  });
+
+  test('a renamed mutator keeps both halves, its conflict and the action façade', async () => {
+    const renamed = toggleLike.named('likePost');
+    expect(renamed.isMutator).toBe(true);
+    expect(renamed.conflict).toBe('server-wins');
+    expect(renamed.describeMutator().conflict).toBe('server-wins');
+    expect(renamed.describe().name).toBe('likePost');
+
+    const rows = new Map<string, PostRow>([[POST_ID, { id: POST_ID, likes: 3 }]]);
+    renamed.local(fakeTx(rows), { postId: POST_ID });
+    expect(rows.get(POST_ID)?.likes).toBe(4);
+    expect(await renamed.server(ctx, { postId: POST_ID })).toEqual({ id: POST_ID, likes: 7 });
+
+    // The inherited façade, member by member: a rewrap that drops one is a regression.
+    expect(renamed.input).toBe(Input);
+    expect(renamed.output).toBe(Output);
+    expect(renamed.policy).toBe(toggleLike.policy);
+    expect(renamed.mcp).toEqual({ expose: true, description: 'Like a post' });
+    expect(await renamed.as(likerActor, { postId: POST_ID })).toEqual({ id: POST_ID, likes: 7 });
+    expect(renamed.tool().name).toBe('like_post');
+    expect(renamed.openapi().operationId).toBe('likePost');
+    expect(typeof renamed.client({ baseUrl: 'https://app.test' })).toBe('function');
+    expect(renamed.job().name).toBe('action:likePost');
+    expect(renamed.contract().map((contract) => contract.name)).toEqual([
+      'likePost: input schema rejects garbage',
+      'likePost: policy denies an anonymous actor',
+      'likePost: OpenAPI document contains its operation',
+    ]);
+    // The original keeps its own name: renaming twins, it never mutates in place.
+    expect(toggleLike.describe().name).toBe('toggleLike');
   });
 
   test('conflict strategies pick a winner', () => {

@@ -16,6 +16,7 @@ import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
 import type { AnyJobHandle } from './job';
+import type { EnqueueOptions } from './outbox';
 
 /** `[[sendDigest, {}]]` — a job handle plus its input. */
 export type TaskEnqueueEntry = readonly [AnyJobHandle, unknown];
@@ -37,6 +38,23 @@ export interface TaskDefinition {
   readonly maxCatchUp?: number;
 }
 
+/** One entry's outcome, from a scheduled dispatch or a manual `task.enqueue()` alike. */
+export interface TaskJobResult {
+  readonly job: string;
+  readonly result: EnqueueResult;
+}
+
+/** JSON-safe view of a task for the manifest, `/_x` and the MCP dev server. */
+export interface TaskDescriptor {
+  readonly kind: 'task';
+  readonly name: string;
+  readonly cron: string;
+  readonly tz: string;
+  readonly catchUp: CatchUpPolicy;
+  readonly maxCatchUp: number;
+  readonly jobs: readonly string[];
+}
+
 export interface TaskHandle {
   readonly kind: 'task';
   readonly name: string;
@@ -45,6 +63,12 @@ export interface TaskHandle {
   readonly catchUp: CatchUpPolicy;
   readonly maxCatchUp: number;
   entries(): readonly TaskEnqueueEntry[];
+  /**
+   * Fire this task's declared entries now, through the same facade `JobHandle.enqueue` uses —
+   * the backfill and "run it again" path, with no scheduler and no leader involved.
+   */
+  enqueue(options?: EnqueueOptions): Promise<readonly TaskJobResult[]>;
+  describe(): TaskDescriptor;
 }
 
 /** Resolves the next fire time. Injected so scheduling logic is testable without a cron impl. */
@@ -57,6 +81,18 @@ const defaultCronResolver: CronResolver = (cron, options) =>
 const registry = new Map<string, TaskHandle>();
 let anonymous = 0;
 
+/**
+ * `Intl` carries the runtime's copy of the tz database and rejects anything not in it with a
+ * `RangeError`, so it is the only check that can tell `America/Bogota` from `Bogota`.
+ */
+function isIanaZone(tz: string): boolean {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: tz }).resolvedOptions().timeZone.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function task(definition: TaskDefinition): TaskHandle {
   anonymous += 1;
   const name = definition.name ?? `anonymous-task-${anonymous}`;
@@ -65,6 +101,13 @@ export function task(definition: TaskDefinition): TaskHandle {
     typeof definition.tz === 'string' && definition.tz.length > 0,
     `task "${name}" needs an explicit IANA tz — a cron without a timezone is a bug`,
     `add tz to task("${name}"), e.g. tz: 'UTC' — an unzoned cron silently drifts by an hour at every DST transition`,
+  );
+  // A non-empty string is not a timezone. `tz: 'Bogota'` would otherwise resolve every
+  // occurrence in UTC and the cron would run five hours off, silently, forever.
+  assert(
+    isIanaZone(definition.tz),
+    `task "${name}" has tz "${definition.tz}", which is not a zone in the IANA tz database`,
+    `use the full zone id on task("${name}"), e.g. tz: 'America/Bogota' — list the valid ones with: bun -e "console.log(Intl.supportedValuesOf('timeZone').join('\\n'))"`,
   );
 
   const handle: TaskHandle = {
@@ -75,6 +118,29 @@ export function task(definition: TaskDefinition): TaskHandle {
     catchUp: definition.catchUp ?? 'skip',
     maxCatchUp: definition.maxCatchUp ?? 10,
     entries: () => definition.enqueue(),
+    async enqueue(options?: EnqueueOptions): Promise<readonly TaskJobResult[]> {
+      const fired: TaskJobResult[] = [];
+      for (const [handleForJob, input] of handle.entries()) {
+        // The job's PLAIN key, deliberately not `dispatch()`'s `task:occurrence:key`: that one
+        // is occurrence-scoped so two schedulers cannot double-fire the same tick, and reusing
+        // it here would make a manual run dedupe against whichever occurrence it landed in.
+        fired.push({ job: handleForJob.name, result: await handleForJob.enqueue(input, options) });
+      }
+      return fired;
+    },
+    // Reads `handle`, never the captured `name`: `nameTasks()` rebinds the property in place.
+    describe(): TaskDescriptor {
+      return {
+        kind: 'task',
+        name: handle.name,
+        cron: handle.cron,
+        tz: handle.tz,
+        catchUp: handle.catchUp,
+        maxCatchUp: handle.maxCatchUp,
+        // Declaration order: a task's entries are a sequence, not a set.
+        jobs: handle.entries().map(([entry]) => entry.name),
+      };
+    },
   };
   registry.set(name, handle);
   return handle;
@@ -146,7 +212,7 @@ export interface SchedulerOptions {
 export interface DispatchedOccurrence {
   readonly task: string;
   readonly occurrenceMs: number;
-  readonly jobs: readonly { readonly job: string; readonly result: EnqueueResult }[];
+  readonly jobs: readonly TaskJobResult[];
   readonly catchUp: boolean;
 }
 
@@ -194,7 +260,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     occurrenceMs: number,
     catchUp: boolean,
   ): Promise<DispatchedOccurrence> => {
-    const jobs: { job: string; result: EnqueueResult }[] = [];
+    const jobs: TaskJobResult[] = [];
     for (const [handleForJob, input] of handle.entries()) {
       const result = await options.driver.enqueue({
         name: handleForJob.name,

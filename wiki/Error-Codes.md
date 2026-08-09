@@ -104,13 +104,15 @@ X_DB_DRIFT: schema differs from migrations
 | `X_ACTION_FOREIGN` | a value that is not an action was projected as one | a hand-rolled object with `kind: 'action'`, or an action from a duplicated copy of `@ultimat3/action` | declare it as `export const name = action({ input, output, policy, handle })` |
 | `X_IDEMPOTENCY_CONFLICT` | idempotency key reused with a different payload, or still in flight | a retried request mutated its body | send a fresh `Idempotency-Key` for a different payload; otherwise retry after the first settles |
 | `X_CONTRACT_DRIFT` | the published contract changed | input/output shape moved without a version bump | give new inputs a `.default()`, or bump the package version |
-| `X_RPC_FAILED` | the typed client could not reach the action | gateway, network, or a non-JSON response | check the gateway, then `x actions describe <name> --json` |
+| `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, or a non-JSON response | check the gateway, then `x actions describe <name> --json` (`x queries describe` for a read) |
 
 ## Queries and live queries
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_QUERY_DUPLICATE` | two queries registered under one name | duplicated export | rename one; `x queries list --json` |
+| `X_QUERY_FOREIGN` | a value that is not a query was projected as one | a hand-rolled object with `kind: 'query'`, or a query from a duplicated copy of `@ultimat3/query` | declare it as `export const name = query({ input, policy, sql })` |
+| `X_QUERY_UNREGISTERED` | a query was projected before it was registered | `.tool()` / `.client()` / `.live()` on a read `registerQueries()` never named | `registerQueries(await import('./live'))` at boot, before serving reads |
 | `X_MATCHER_UNSUPPORTED` | the live matcher cannot evaluate this SQL incrementally | a join, aggregate or unbounded predicate under `live: true` | simplify the `sql`, add `orderBy` + `limit`, or drop `live` |
 | `X_CURSOR_INVALID` | the pagination cursor is unreadable | a cursor from an older build | drop the cursor and request the first page |
 | `X_CACHE_UNTAGGED_QUERY` | a cached query carries no tag | a query whose tables no tag covers | declare the tag on the entity; `x cache graph --json` |

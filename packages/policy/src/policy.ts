@@ -1,4 +1,4 @@
-// A policy is a pure function of (input, actor, ctx). Purity is what lets the same
+// A policy is a pure function of (input, actor, row, ctx). Purity is what lets the same
 // object be evaluated in an HTTP request, a job, a live query and an MCP tool without
 // any of them re-implementing the rule — one authz system, never two.
 import type { Ctx } from '@ultimat3/core';
@@ -17,13 +17,29 @@ export const denied = (reason: string, code = 'X_FORBIDDEN'): PolicyDecision => 
   code,
 });
 
-export interface PolicyArgs<I> {
+/**
+ * The one shape every predicate sees, on every surface. An input-level rule reads `input`,
+ * a row-level rule reads `row`, and neither has to know which surface called it.
+ */
+export interface PolicyArgs<I = unknown, R = unknown> {
   readonly input: I;
   readonly actor: Actor | null;
+  /**
+   * The already-loaded row a row-level rule decides about; `null` when the rule decides on
+   * input alone.
+   *
+   * Required and nullable rather than optional, deliberately. An optional `row?: R` lets the
+   * two shapes drift apart again: a surface that forgets to pass it still typechecks, so a
+   * row rule reading `args.row` silently sees `undefined` and denies (or worse, allows) for
+   * the wrong reason. `R | null` forces every caller to say which case it is, and makes
+   * "no row here" a value the predicate can branch on instead of an absence it must guess at.
+   * This is the field that used to be smuggled inside `input` by the realtime row gate.
+   */
+  readonly row: R | null;
   readonly ctx?: Ctx;
 }
 
-export type PolicyPredicate<I> = (args: PolicyArgs<I>) => boolean | PolicyDecision;
+export type PolicyPredicate<I, R = unknown> = (args: PolicyArgs<I, R>) => boolean | PolicyDecision;
 
 export type PolicyKind = 'permission' | 'allow' | 'deny' | 'and' | 'or' | 'not';
 
@@ -38,13 +54,14 @@ export interface TraceEntry {
 
 export type Recorder = (entry: TraceEntry) => void;
 
-export interface Policy<I = unknown> {
+/** `R` is defaulted so `Policy<Input>` keeps meaning "decides on input, any row or none". */
+export interface Policy<I = unknown, R = unknown> {
   readonly kind: PolicyKind;
   /** Stable, human-readable, safe to log: shown in traces and denial reasons. */
   readonly label: string;
   readonly permissions: readonly Permission[];
-  readonly children: readonly Policy<I>[];
-  run(args: PolicyArgs<I>, record?: Recorder, depth?: number): PolicyDecision;
+  readonly children: readonly Policy<I, R>[];
+  run(args: PolicyArgs<I, R>, record?: Recorder, depth?: number): PolicyDecision;
 }
 
 const record = (
@@ -76,10 +93,10 @@ const asDecision = (result: boolean | PolicyDecision, label: string): PolicyDeci
  * predicate second, so a denial reason distinguishes "you may never do this" from
  * "you may, but not to this row" — an agent can act on the difference.
  */
-export const can = <I = unknown>(
+export const can = <I = unknown, R = unknown>(
   permission: KnownPermission,
-  predicate?: PolicyPredicate<I>,
-): Policy<I> => {
+  predicate?: PolicyPredicate<I, R>,
+): Policy<I, R> => {
   assertPermission(permission);
   const label = permission;
   return {
@@ -101,7 +118,7 @@ export const can = <I = unknown>(
 };
 
 /** Explicitly public. Saying so is required; forgetting a policy is a build error. */
-export const allow = <I = unknown>(label = 'allow'): Policy<I> => ({
+export const allow = <I = unknown, R = unknown>(label = 'allow'): Policy<I, R> => ({
   kind: 'allow',
   label,
   permissions: [],
@@ -111,7 +128,10 @@ export const allow = <I = unknown>(label = 'allow'): Policy<I> => ({
   },
 });
 
-export const deny = <I = unknown>(reason: string, code = 'X_FORBIDDEN'): Policy<I> => ({
+export const deny = <I = unknown, R = unknown>(
+  reason: string,
+  code = 'X_FORBIDDEN',
+): Policy<I, R> => ({
   kind: 'deny',
   label: `deny(${reason})`,
   permissions: [],
@@ -121,12 +141,14 @@ export const deny = <I = unknown>(reason: string, code = 'X_FORBIDDEN'): Policy<
   },
 });
 
-const combined = <I>(
+// Combinators hand `args` to every child untouched — `row` included. A clause that rewrote
+// the args would be the second authz shape all over again.
+const combined = <I, R>(
   kind: PolicyKind,
   label: string,
-  children: readonly Policy<I>[],
-  decide: (args: PolicyArgs<I>, recorder: Recorder | undefined, depth: number) => PolicyDecision,
-): Policy<I> => ({
+  children: readonly Policy<I, R>[],
+  decide: (args: PolicyArgs<I, R>, recorder: Recorder | undefined, depth: number) => PolicyDecision,
+): Policy<I, R> => ({
   kind,
   label,
   permissions: children.flatMap((child) => child.permissions),
@@ -137,7 +159,7 @@ const combined = <I>(
 });
 
 /** First denial wins, and its reason is the reason — short-circuit, left to right. */
-export const and = <I>(...policies: readonly Policy<I>[]): Policy<I> =>
+export const and = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy<I, R> =>
   combined(
     'and',
     `and(${policies.map((policy) => policy.label).join(', ')})`,
@@ -152,7 +174,7 @@ export const and = <I>(...policies: readonly Policy<I>[]): Policy<I> =>
   );
 
 /** First allowance wins; if none allow, the LAST denial is reported. */
-export const or = <I>(...policies: readonly Policy<I>[]): Policy<I> =>
+export const or = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy<I, R> =>
   combined(
     'or',
     `or(${policies.map((policy) => policy.label).join(', ')})`,
@@ -168,7 +190,7 @@ export const or = <I>(...policies: readonly Policy<I>[]): Policy<I> =>
     },
   );
 
-export const not = <I>(policy: Policy<I>): Policy<I> =>
+export const not = <I, R = unknown>(policy: Policy<I, R>): Policy<I, R> =>
   combined('not', `not(${policy.label})`, [policy], (args, recorder, depth) => {
     const decision = policy.run(args, recorder, depth);
     return decision.allowed ? denied(`not(${policy.label}) — inner clause allowed`) : ALLOWED;

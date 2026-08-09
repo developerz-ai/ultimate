@@ -37,6 +37,46 @@ describe('detection', () => {
     });
     expect(comments.$tenantColumn).toBe('orgId');
   });
+
+  test('neither a tenant column nor an orgId column leaves the entity unscoped', () => {
+    expect(settings.$tenantColumn).toBeNull();
+    expect(settings.$describe().orgScoped).toBe(false);
+  });
+});
+
+describe('an explicitly declared tenant', () => {
+  test('names the column itself, and beats both inference rules', () => {
+    const docs = entity('tenancy_test_docs', {
+      tenant: 'workspaceId',
+      columns: {
+        id: uuid().primaryKey(),
+        // Neither marked nor conventionally named — the declaration is the whole switch.
+        workspaceId: uuid(),
+        orgId: uuid(),
+        title: text(),
+      },
+    });
+    expect(docs.$tenantColumn).toBe('workspaceId');
+    expect(docs.$describe().orgScoped).toBe(true);
+    expect(tenantColumnOf(docs.$columns)).toBe('orgId');
+  });
+
+  test('naming a column that does not exist is a declaration error', () => {
+    // `tsc` already refuses the key; the cast is what a JS caller or a renamed column looks like.
+    const withRenamedColumn = () =>
+      entity('tenancy_test_broken', {
+        tenant: 'notAColumn' as 'id',
+        columns: { id: uuid().primaryKey(), workspaceId: uuid() },
+      });
+    try {
+      withRenamedColumn();
+      throw new Error('expected a throw');
+    } catch (error) {
+      expect((error as { code?: string }).code).toBe('X_INVARIANT_VIOLATED');
+      // The cause lists the columns, so the fix is readable without opening the file.
+      expect(String((error as { cause?: string }).cause)).toContain('workspaceId');
+    }
+  });
 });
 
 describe('assertScoped', () => {

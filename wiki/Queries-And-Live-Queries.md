@@ -25,9 +25,28 @@ export const liveFeed = query({
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
 | `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. v2 |
 | `sql` | yes | `(input) => builder`. Drizzle-shaped, SQL-transparent — the generated SQL is printable so an agent can read it and self-correct |
+| `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
 Nothing else is a query field. Sorting, paging, and filtering are `input` fields consumed by `sql`.
+
+## The fluent surface
+
+Every projection is a method on the query — `liveFeed.tool()`, never `toQueryTool(liveFeed)` — and every declared field is lifted onto it. A query has no `.def`.
+
+| Member | Is | Rule |
+|---|---|---|
+| `liveFeed(input, options?)` | the read | parse input → evaluate policy → build source → execute, through the cache tiers |
+| `.as(actor, input, options?)` | the same read, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
+| `.live(input, options?)` | the subscription descriptor | a `LiveQuery` carrying the **same** policy object, re-evaluated per subscriber |
+| `.tool()` | the MCP read tool | `liveFeed.tool().policy === liveFeed.policy`. Reads fresh: an agent diffing two calls must be reading rows, not a TTL |
+| `.client({ baseUrl })` | the typed browser method | `GET /_x/query/live-feed?orgId=…`, keys sorted so one input is one URL |
+| `.describe()` | the manifest row | name, capability, tags, ttl, `live` |
+| `.input` `.policy` `.cache` `.mcp` `.isLive` | the declaration, lifted | readable. `sql` is not among them |
+
+`sql` is unreachable by design. The declaration lives in a private store inside `read.ts` and `@ultimat3/query` exports no reader for it, so `sourceFor` is the only thing that can build a source — one read path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'query'` is `X_QUERY_FOREIGN`, never a registered read.
+
+`isLive` is the declared boolean; `live()` is the subscription itself. Every projection needs the name `registerQueries()` stamps on — before that, `X_QUERY_UNREGISTERED`.
 
 ## Five projections
 

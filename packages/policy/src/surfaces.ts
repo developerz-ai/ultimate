@@ -51,9 +51,9 @@ const reason = (evaluation: PolicyEvaluation): string => reasonOf(evaluation.dec
 
 const code = (evaluation: PolicyEvaluation): string => codeOf(evaluation.decision) ?? 'X_FORBIDDEN';
 
-export const enforceHttp = <I>(
-  policy: Policy<I>,
-  args: EvaluateArgs<I>,
+export const enforceHttp = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
 ): HttpDenial | undefined => {
   const evaluation = evaluate(policy, args);
   if (evaluation.allowed) return undefined;
@@ -69,16 +69,19 @@ export const enforceHttp = <I>(
   };
 };
 
-export const enforceLive = <I>(
-  policy: Policy<I>,
-  args: EvaluateArgs<I>,
+export const enforceLive = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
 ): LiveDenial | undefined => {
   const evaluation = evaluate(policy, args);
   if (evaluation.allowed) return undefined;
   return { surface: 'live', close: 4403, code: code(evaluation), reason: reason(evaluation) };
 };
 
-export const enforceJob = <I>(policy: Policy<I>, args: EvaluateArgs<I>): JobDenial | undefined => {
+export const enforceJob = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
+): JobDenial | undefined => {
   const evaluation = evaluate(policy, args);
   if (evaluation.allowed) return undefined;
   return {
@@ -90,7 +93,10 @@ export const enforceJob = <I>(policy: Policy<I>, args: EvaluateArgs<I>): JobDeni
   };
 };
 
-export const enforceMcp = <I>(policy: Policy<I>, args: EvaluateArgs<I>): McpDenial | undefined => {
+export const enforceMcp = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
+): McpDenial | undefined => {
   const evaluation = evaluate(policy, args);
   if (evaluation.allowed) return undefined;
   return {
@@ -103,7 +109,7 @@ export const enforceMcp = <I>(policy: Policy<I>, args: EvaluateArgs<I>): McpDeni
 
 export type SurfaceDenial = HttpDenial | LiveDenial | JobDenial | McpDenial;
 
-type Adapter = <I>(policy: Policy<I>, args: EvaluateArgs<I>) => SurfaceDenial | undefined;
+type Adapter = <I, R>(policy: Policy<I, R>, args: EvaluateArgs<I, R>) => SurfaceDenial | undefined;
 
 const adapters: Readonly<Record<Surface, Adapter>> = {
   http: enforceHttp,
@@ -113,14 +119,17 @@ const adapters: Readonly<Record<Surface, Adapter>> = {
 };
 
 /** Dispatcher for code that is generic over surfaces (the action projector). */
-export const enforce = <I>(
+export const enforce = <I, R = unknown>(
   surface: Surface,
-  policy: Policy<I>,
-  args: EvaluateArgs<I>,
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
 ): SurfaceDenial | undefined => adapters[surface](policy, args);
 
 /** For call sites that would rather throw than branch. Same decision, same reason. */
-export const assertAllowed = <I>(policy: Policy<I>, args: EvaluateArgs<I>): PolicyEvaluation => {
+export const assertAllowed = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: EvaluateArgs<I, R>,
+): PolicyEvaluation => {
   const evaluation = evaluate(policy, args);
   if (!evaluation.allowed) throw forbidden(policy.label, reason(evaluation));
   return evaluation;

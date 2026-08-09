@@ -27,15 +27,22 @@ export interface PolicyMatrix {
   toTable(): string;
 }
 
-export interface MatrixArgs<I> extends Omit<EvaluateArgs<I>, 'actor'> {
+/** Everything `evaluate` takes except the actor — `row` included, so a row rule is testable. */
+export interface MatrixArgs<I, R = unknown> extends Omit<EvaluateArgs<I, R>, 'actor'> {
   readonly actors: readonly NamedActor[];
 }
 
-export const policyMatrix = <I>(policy: Policy<I>, args: MatrixArgs<I>): PolicyMatrix => {
+export const policyMatrix = <I, R = unknown>(
+  policy: Policy<I, R>,
+  args: MatrixArgs<I, R>,
+): PolicyMatrix => {
   const rows = args.actors.map((entry): MatrixRow => {
+    // Every field but the actor is forwarded verbatim: a matrix that dropped `row` would
+    // report a row rule as denying everyone, and the table would lie.
     const evaluation = evaluate(policy, {
       input: args.input,
       actor: entry.actor,
+      ...(args.row === undefined ? {} : { row: args.row }),
       ...(args.ctx === undefined ? {} : { ctx: args.ctx }),
     });
     return {

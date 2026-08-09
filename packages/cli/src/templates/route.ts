@@ -79,7 +79,7 @@ const routeTest = (
 import { config } from './page';
 
 unitTest('/${path} declares metadata', async () => {
-  // meta() takes the route's data and may be async, so a caller always awaits it.
+  // meta() takes the route's data and always resolves — awaiting is the one shape.
   const meta = await config.meta({});
   expect(meta.title ?? '').not.toBe('');
   expect(meta.description ?? '').not.toBe('');
@@ -88,11 +88,12 @@ unitTest('/${path} declares metadata', async () => {
 unitTest('/${path} declares a render mode, an offline strategy and a budget', () => {
   expect(config.render).toBe('${RENDER[surface]}');
   expect(config.offline).toBe('${OFFLINE[surface]}');
-  expect(config.budget).toBeDefined();
+  // budget is always on the descriptor, so pin the number: presence cannot fail.
+  expect(config.budget.lcp).toBe(${BUDGET[surface].lcp});
 });
 
 unitTest('/${path} stays inside its byte budget declaration', () => {
-  expect(config.budget?.js).toBe('${BUDGET[surface].js}');
+  expect(config.budget.js).toBe('${BUDGET[surface].js}');
 });
 
 e2eTest('/${path} renders offline from its fallback', async ({ page, offline }) => {

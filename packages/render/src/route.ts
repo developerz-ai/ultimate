@@ -1,6 +1,7 @@
 /**
  * The `route` primitive. `defineRoute` is the only way to declare a URL's render mode,
- * offline strategy, hydration timing and metadata.
+ * offline strategy, hydration timing and metadata, and it hands back a descriptor that is
+ * already normalized: `meta` always awaits, `budget` is always there.
  *
  * `offline`, `hydrate` and `meta` are REQUIRED BY THE TYPE. That is axiom 3 — enforced,
  * not documented — expressed in the type system: a route that forgets its offline
@@ -49,7 +50,11 @@ export interface RouteGuard {
   readonly permission: string;
 }
 
+/** What an author writes. Sync or async, whichever the page's data needs. */
 export type RouteMetaFn<TData = RouteData> = (data: TData) => RouteMeta | Promise<RouteMeta>;
+
+/** What the descriptor hands back. One shape, so no consumer branches on a thenable. */
+export type RouteMetaAsyncFn<TData = RouteData> = (data: TData) => Promise<RouteMeta>;
 
 /** Returns the params to build at deploy time. Bare strings fill a single dynamic param. */
 export type PrerenderFn = () =>
@@ -68,9 +73,18 @@ export interface RouteDefinition<TData = RouteData> {
   readonly policy?: RouteGuard;
 }
 
-/** The frozen, normalized result. `kind` lets the registry reject non-route exports. */
+/**
+ * The frozen descriptor. `kind` lets the registry reject non-route exports.
+ *
+ * Two fields are narrower here than in the declaration so every consumer reads one shape:
+ * `meta` always returns a promise, and `budget` is always an object. Its *fields* stay
+ * optional — `budget.js === undefined` still means "this route declared no JS budget",
+ * which is exactly what `modes.ts` fails a hydrating `site/` route on.
+ */
 export interface RouteConfig<TData = RouteData> extends RouteDefinition<TData> {
   readonly kind: 'route';
+  readonly meta: RouteMetaAsyncFn<TData>;
+  readonly budget: RouteBudget;
 }
 
 /** What every render mode hands back to `@ultimat3/http`'s `html()` / `stream()`. */
@@ -117,15 +131,21 @@ export function defineRoute<TData = RouteData>(
     );
   }
 
+  const declaredMeta = def.meta;
   const config: RouteConfig<TData> = {
     kind: 'route',
     render: def.render as RenderMode,
     offline: def.offline,
     hydrate: def.hydrate as HydrateStrategy,
-    meta: def.meta,
+    // Wrapped rather than stored: the declaration may be sync, the descriptor never is.
+    // A meta that throws synchronously becomes a rejection here, so `await config.meta(d)`
+    // is the one way to fail as well as the one way to succeed.
+    meta: async (data: TData) => declaredMeta(data),
+    // Always an object. `budget.js` is the only reach a consumer needs, so an undeclared
+    // budget is `{}` instead of a second undefined-check at every call site.
+    budget: def.budget ?? {},
     ...(def.revalidate ? { revalidate: def.revalidate } : {}),
     ...(def.prerender ? { prerender: def.prerender } : {}),
-    ...(def.budget ? { budget: def.budget } : {}),
     ...(def.policy ? { policy: def.policy } : {}),
   };
 

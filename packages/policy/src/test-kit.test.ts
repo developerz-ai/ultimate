@@ -78,6 +78,22 @@ describe('policyMatrix', () => {
     );
   });
 
+  test('forwards `row`, so a row-level rule is not reported as denying everyone', () => {
+    const ownsRow = can<Input, { readonly authorId: string }>(
+      'post:read',
+      ({ actor, row }) => row?.authorId === actor?.id,
+    );
+    const base = { input: { postId: 'p1', ownerId: 'owner' }, actors: actors() };
+
+    // No row: the rule correctly denies — `row` is `null`, not `undefined`.
+    expect(policyMatrix(ownsRow, base).allowedFor('owner')).toBe(false);
+    // With a row: the same rule allows its author. A matrix that dropped `row` could not
+    // tell these two tables apart, and would report the second one wrong.
+    expect(policyMatrix(ownsRow, { ...base, row: { authorId: 'owner' } }).allowedFor('owner')).toBe(
+      true,
+    );
+  });
+
   test('toTable() renders one line per actor for a snapshot', () => {
     const matrix = policyMatrix(publishOwnPost(), {
       input: { postId: 'p1', ownerId: 'owner' },

@@ -20,6 +20,33 @@ export const onboardOrg = job({
 `welcome-email` fails? Attempt 2 replays `provision` **from storage** and re-sends only the
 email. The 3-day sleep does not hold a process: the run suspends and the queue redelivers it.
 
+## The handle is the surface
+
+```ts
+await onboardOrg.enqueue({ orgId });              // joins the ambient transaction
+await onboardOrg.as(ctx.actor, { orgId });        // same, tenantId stamped from the actor
+onboardOrg.describe();                            // the manifest row for this job
+await nightlyDigest.enqueue();                    // fire a task's entries now
+nightlyDigest.describe();                         // { kind: 'task', cron, tz, jobs, … }
+```
+
+| Member | On | Behaviour |
+|---|---|---|
+| `enqueue(input, options?)` | `JobHandle` | queues through `jobsFacade()`; joins the caller's `tx` when the outbox is installed |
+| `as(actor, input, options?)` | `JobHandle` | enqueue on behalf of an actor — fills `tenantId` from `actor.orgId` so per-tenant limits apply |
+| `describe()` | `JobHandle` | the `JobDescriptor` the manifest, `/_x` and MCP read |
+| `entries()` | `TaskHandle` | the declared `[job, input]` pairs |
+| `enqueue(options?)` | `TaskHandle` | fires every declared entry now, one result per entry |
+| `describe()` | `TaskHandle` | `TaskDescriptor` — cron, tz, catch-up, jobs in declaration order |
+
+`.as()` **queues**; it never runs the handler inline. A job's execution surface is the queue,
+so an inline run would be a second execution path next to the worker's — with no retry, no
+dedupe and no dead letter. Its idempotency key is the job's own, so a manual `task.enqueue()`
+and the scheduler's occurrence-scoped fire stay distinct rows on purpose.
+
+With no facade installed, `enqueue` publishes straight to `jobDriver()`; with none of those
+either, it is `X_DRIVER_UNAVAILABLE` at the call, not a silently dropped job.
+
 ## `idempotencyKey` is required by the type
 
 Not a convention, not a lint rule — a non-optional field on `JobDefinition`. Queues deliver
@@ -95,8 +122,10 @@ export const nightlyDigest = task({
 });
 ```
 
-`tz` is required by the type. `0 3 * * *` in a DST zone runs twice or zero times on the
-switch day. Catch-up after downtime is explicit: `skip` (default), `run-once`, `run-all`.
+`tz` is required by the type *and* validated against the runtime's IANA database, because a
+non-empty string is not a timezone: `tz: 'Bogota'` would resolve every occurrence in UTC and
+run five hours off, silently, forever. `0 3 * * *` in a DST zone runs twice or zero times on
+the switch day. Catch-up after downtime is explicit: `skip` (default), `run-once`, `run-all`.
 
 ## Retries
 
