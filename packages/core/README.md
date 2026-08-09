@@ -19,6 +19,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
+| decode → resize → encode, the one image pipeline | `image/` |
 | `assertNever`, `invariant` | `assert.ts` |
 
 ## Errors are instructions
@@ -123,3 +124,23 @@ admin. Replaying another read's cursor is `X_CURSOR_INVALID`, never a silently w
 | Secret | `ULTIMATE_CURSOR_SECRET`, or `configureCursorSigning()` at boot. Rotating it invalidates every open cursor |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
+
+## One image pipeline, everywhere
+
+```ts
+probeImage(bytes);                                     // { format, width, height, mimeType }
+transformImageBytes(bytes, { width: 640, format: 'jpeg', quality: 80 });
+blurDataUrl(bytes);                                    // 16px PNG data: URI, the LQIP
+```
+
+`storage` variants, `seo` `<picture>` sources and `pwa` icons are the same three steps —
+decode, resize, encode — with different numbers, so there is one implementation and no second
+scaler for an icon to grow a halo in. Zero dependencies: no `sharp`, no native module.
+
+| | |
+|---|---|
+| Decode / encode | PNG and JPEG. `canDecode()` / `canEncode()` publish the real list |
+| Probe only | WebP, AVIF, GIF, SVG — measured from the header so `width`/`height` still inline and CLS stays 0 |
+| Anything else | `X_IMAGE_UNSUPPORTED`, naming the format and pointing at an `ImageTransformDriver` |
+| Ceiling | `MAX_IMAGE_PIXELS` (64MP), checked from the header **before** a byte is allocated |
+| Determinism | same bytes + same spec → same output bytes. No clock, no randomness |

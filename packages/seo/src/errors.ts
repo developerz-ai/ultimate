@@ -117,11 +117,19 @@ export function sitemapTooLarge(count: number, max: number): SeoError {
   });
 }
 
+/**
+ * The vocabulary a **user-supplied** `ImageTransformDriver` uses to report a capability it
+ * does not implement — a CDN driver with no blur endpoint, say. `builtinImageDriver` needs it
+ * for nothing; it implements both entry points. Exported so a partial driver fails with a code
+ * and a fix instead of returning an unoptimised original and calling that a transform.
+ */
 export function notImplementedDriver(driver: string, capability: string): SeoError {
   return new SeoError({
     code: 'X_NOT_IMPLEMENTED',
     cause: `the ${driver} image driver does not implement ${capability} yet`,
-    fix: `pass a custom ImageTransformDriver to renderResponsiveImage(), or use the default driver`,
+    fix:
+      `implement ${capability} in the ${driver} driver, or pass builtinImageDriver({ read }) ` +
+      'instead — it encodes png and jpeg with no dependencies',
     meta: { driver, capability },
   });
 }

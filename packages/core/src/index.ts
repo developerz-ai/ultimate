@@ -123,6 +123,48 @@ export {
   uuid,
   uuidTimestamp,
 } from './ids';
+export {
+  ImageDecodeFailedError,
+  ImageTooLargeError,
+  ImageUnsupportedError,
+  imageDecodeFailed,
+  imageTooLarge,
+  imageUnsupported,
+} from './image/errors';
+export { decodeJpeg } from './image/jpeg-decode';
+export { encodeJpeg } from './image/jpeg-encode';
+export { DEFAULT_JPEG_QUALITY } from './image/jpeg-tables';
+export type {
+  DecodableFormat,
+  EncodableFormat,
+  ImageTransformSpec,
+} from './image/pipeline';
+export {
+  BLUR_PLACEHOLDER_WIDTH,
+  blurDataUrl,
+  canDecode,
+  canEncode,
+  DECODABLE_FORMATS,
+  dataUrl,
+  decodeImage,
+  defaultFormatFor,
+  ENCODABLE_FORMATS,
+  encodeImage,
+  transformImageBytes,
+} from './image/pipeline';
+export { decodePng, encodePng } from './image/png';
+export type { ImageFormat, ImageInfo } from './image/probe';
+export { IMAGE_FORMATS, IMAGE_MIME_TYPES, probeImage, sniffImageFormat } from './image/probe';
+export type { ImageSize, Raster } from './image/raster';
+export {
+  assertPixelBudget,
+  createRaster,
+  hasAlpha,
+  MAX_IMAGE_PIXELS,
+  rasterFrom,
+} from './image/raster';
+export type { ImageFit, ResizeSpec } from './image/resize';
+export { fitBox, parseColor, resizeRaster, scaledToFit } from './image/resize';
 export type {
   HealthPayload,
   HealthReport,

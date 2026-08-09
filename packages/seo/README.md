@@ -32,7 +32,8 @@ X_SEO_META_MISSING: a site/ route is missing required metadata
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k |
 | `robots.ts` | `buildRobots()`, environment-aware and fail-closed |
 | `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list |
-| `images.ts` | `srcset` widths, AVIF → WebP → original, blur placeholders, inlined intrinsic dimensions |
+| `images.ts` | `srcset` widths, AVIF → WebP → original, inlined intrinsic dimensions |
+| `image-driver.ts` | `ImageTransformDriver` + `builtinImageDriver()`: the variant bytes and the blur placeholder |
 | `budgets.ts` | `checkBudgets()` / `assertBudgets()`, the CI gate |
 
 ## Type-level enforcement
@@ -57,6 +58,38 @@ Disallow: /
 ```
 
 No sitemap line either — advertising one invites the crawl that was just refused.
+
+## Image transforms
+
+`builtinImageDriver({ read })` is the one built-in `ImageTransformDriver`, and it runs
+`@ultimat3/core`'s pipeline — zero dependencies, no `sharp`, no native binary.
+
+```ts
+const images = builtinImageDriver({ read: (src) => Bun.file(`public${src}`).bytes() });
+
+// a 1200x630 source
+await images.transform({ src: '/img/hero.png', width: 640 });
+// → { bytes, contentType: 'image/jpeg', width: 640, height: 336 }
+await images.blurPlaceholder('/img/hero.png');
+// → 'data:image/png;base64,…'
+```
+
+| | |
+|---|---|
+| decodes | `png`, `jpeg` |
+| encodes | `png`, `jpeg` |
+| probes only | `webp`, `avif`, `gif`, `svg` — intrinsic size, never a transform |
+
+- **`read` is required.** `src` is a string and only the app knows whether it is a path, a
+  storage key or a URL. Guessing would mean a filesystem read off a URL-shaped string.
+- **No `format` → the pixels decide:** PNG when the raster has alpha, JPEG otherwise. A logo
+  never grows a black background because nobody passed a format.
+- **`format: 'avif'` or `'webp'` → `X_IMAGE_UNSUPPORTED`,** with the fix line. Those `<source>`
+  entries need a CDN driver; the framework will not pretend to encode what it cannot.
+- **`width`/`height` are probed off the output bytes,** never echoed from the request. A width
+  above the intrinsic one clamps to the source and reports the source's size, so the box the
+  browser reserves is the box the bytes fill.
+- `blurPlaceholder()` returns a 16px-wide PNG `data:` URI, ready for `ImageInput.blurDataUrl`.
 
 ## Usage
 

@@ -41,6 +41,16 @@ X_DB_DRIFT: schema differs from migrations
 | `X_CURSOR_INVALID` | pagination cursor is malformed, tampered with or from another query | signature mismatch — an edited cursor, or `ULTIMATE_CURSOR_SECRET` rotated — or a cursor built for a different query, filter or sort order | drop the cursor and request the first page (`after: null`) |
 | `X_ERROR_CODE_DUPLICATE` | error code registered twice | two packages declared the same code | rename the colliding code in the registering package's `src/errors.ts` |
 
+## Images
+
+One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes and encodes PNG and JPEG only**; WebP, AVIF, GIF and SVG are identified and measured — enough to inline `width`/`height` and keep CLS at 0 — but never synthesised. A variant in one of those formats comes from a CDN or an `ImageTransformDriver`, never from a silent passthrough.
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_IMAGE_UNSUPPORTED` | the built-in image pipeline cannot read or write this format | a WebP/AVIF source, a request for an AVIF variant, or a colour that is not hex or `transparent` | request `png` or `jpeg`, or pass an `ImageTransformDriver` that can produce the format |
+| `X_IMAGE_DECODE_FAILED` | image bytes are malformed, truncated or internally inconsistent | a partial upload, a corrupted file, or a header that disagrees with the data that follows | `file <path>` to confirm the type, then re-export the image and retry |
+| `X_IMAGE_TOO_LARGE` | image exceeds the pipeline pixel ceiling | a header declaring more than 64 megapixels — usually a decompression bomb, occasionally a real scan | downscale the source before it reaches the pipeline, or raise `MAX_IMAGE_PIXELS` deliberately |
+
 ## Config and environment
 
 | Code | Means | Typical cause | Fix |

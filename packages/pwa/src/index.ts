@@ -43,7 +43,7 @@ export type {
 } from './icons';
 export {
   appleTouchLinks,
-  BunImagePipeline,
+  BuiltinImagePipeline,
   ICON_MATRIX,
   MASKABLE_PADDING,
   maskableSafeZone,

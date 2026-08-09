@@ -16,17 +16,20 @@ export {
   sitemapTooLarge,
 } from './errors';
 export type {
+  BuiltinImageDriverOptions,
+  ImageTransformDriver,
+  TransformedImage,
+  TransformRequest,
+} from './image-driver';
+export { builtinImageDriver } from './image-driver';
+export type {
   ImageInput,
   ImageSourceSet,
-  ImageTransformDriver,
   ModernFormat,
   ResponsiveImage,
   ResponsiveImageOptions,
-  TransformedImage,
-  TransformRequest,
 } from './images';
 export {
-  bunImageDriver,
   DEFAULT_WIDTHS,
   extensionOf,
   FORMAT_ORDER,

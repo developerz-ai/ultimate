@@ -47,3 +47,10 @@ Gotchas:
   purpose: an optional check is one a call site can forget, and a forgotten one pages a listing
   with another read's cursor. A second codec anywhere is the regression this file exists to
   prevent. Tests that call `configureCursorSigning()` must restore the previous secret.
+- `image/` is the framework's ONE image pipeline — `storage`, `seo` and `pwa` all call
+  `transformImageBytes`/`blurDataUrl` and none of them owns a second scaler. It is the one place
+  in core allowed to exceed the 200-line target: the JPEG and PNG codecs are single algorithms
+  that do not split into smaller responsibilities without inventing seams. Adding a format means
+  a decoder plus an entry in `DECODABLE_FORMATS`/`ENCODABLE_FORMATS` — never a second dispatch.
+  `image/fixtures.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only
+  round-trips against itself proves nothing. Never regenerate a fixture with our own encoder.

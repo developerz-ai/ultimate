@@ -19,7 +19,9 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Capabilities | gate the manifest member **and** the SW block. Disabled → zero bytes. |
 | Outbox | queue lives in `@ultimat3/realtime`. This package only registers the sync trigger. |
 | Push strings | i18n keys only, rendered per subscriber locale. Never a literal. |
-| Colours | token values passed in via `PwaConfig.tokens`. Never a hex literal in this package. |
+| Colours | token values passed in via `PwaConfig.tokens`. Never a hex literal in this package — a test fixture asserting the parser is the one exception. |
+| Icons | one source image → `BuiltinImagePipeline` → a square PNG per `ICON_MATRIX` entry, rendered by `@ultimat3/core`'s image pipeline. Never a second scaler, never `sharp`, never a vendor CDN. |
+| Icon background | `IconSourceConfig.background`, hex or `transparent` — core's grammar has no named colours. Default transparent. |
 | Errors | `errors.ts` subclasses only. `X_NOT_IMPLEMENTED` must carry a real `fix:`. |
 
 ```

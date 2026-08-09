@@ -93,7 +93,7 @@ Each row is a dependency subtree that never enters the lockfile. Target: **under
 | `bun test` | `vitest` / `jest`, `@types/jest`, coverage + mock + snapshot plugins | ~30 |
 | `Bun.build` | `esbuild` / `rollup` / `vite` + framework plugin + postcss chain | ~40 |
 | `Bun.Transpiler` / macros | `ts-node`, `tsx`, `swc`, babel presets | ~15 |
-| Bun image | `sharp` + libvips + `imagemin` plugins | ~12 |
+| `@ultimat3/core` image | `sharp` + libvips + `imagemin` plugins | ~12 |
 | `Bun.password` | `bcrypt` / `argon2` native addons | ~4 |
 | `Bun.file` / `Bun.write` | `fs-extra`, `graceful-fs`, `globby` | ~6 |
 | `bun --hot` | `nodemon`, `concurrently`, HMR middleware | ~5 |
