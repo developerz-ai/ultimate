@@ -24,6 +24,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
   total. The cursor carries the sort **values**, not just an id — seeking by an id that was
   deleted between two requests would restart pagination at the top.
+- **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
+  `cursorFor(plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. This package owns only
+  what a cursor is *bound* to — `planScope(plan)`: the entity, its filters and its sort order,
+  hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
+  cannot move a row). A cursor that fails either the signature or the scope is `X_CURSOR_INVALID`;
+  it must never decode to "start from the top", which is what the old codec's `null` did.
+- **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
+  that reason alone: `$parse` throws, and a call site should not need two error paths for one
+  mistake.
 - **Tenancy applies to writes too.** `update(id, patch)` and `delete(id)` build the same plan a
   read does, so an id alone never addresses a row on a tenant-scoped entity. Another tenant's id
   reads as `X_NOT_FOUND`, never as their row.

@@ -1,53 +1,16 @@
-// Single responsibility: the keyset cursor — one opaque string that names a position in a sort
-// order. Both drivers encode and read the same one, so a page taken in a test against memory
-// means the same thing as a page taken in production against Postgres.
+// Single responsibility: what an entity cursor *means*. The codec is `@ultimat3/core`'s — this
+// file decides what a page position is bound to (the plan that produced it) and how a sort value
+// survives the round trip (the column's kind).
 //
-// It carries the sort VALUES, not just an id: seeking by id alone needs the row to still exist,
-// and a row deleted between two pages would silently restart pagination at the top.
+// Both drivers call `cursorFor` and `seekFrom` and nothing else, so a rule added to one is added
+// to both. The cursor carries the sort VALUES, not just an id: seeking by id alone needs the row
+// to still exist, and a row deleted between two pages would silently restart pagination.
 
+import { CursorInvalidError, decodeCursor, encodeCursor } from '@ultimat3/core';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
+import type { QueryPlan } from './tenancy';
 import type { AnyColumn, ColumnKind } from './types';
-
-export interface Cursor {
-  /** The sort position, rendered for humans and logs. Never parsed back. */
-  readonly key: string;
-  /** Primary key of the last row on the page. */
-  readonly id: string;
-  /** One string per sort key, in `orderBy` order. Absent on a cursor from an older release. */
-  readonly values?: readonly string[];
-}
-
-// A cursor travels in a query string and now carries row values, so the encoding has to survive
-// both: base64url (no `+`, `/` or `=` for a caller to re-encode) over UTF-8 bytes (`btoa` alone
-// throws above code point 0xFF — one accented title would otherwise break pagination).
-const toBase64Url = (text: string): string => {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-};
-
-const fromBase64Url = (encoded: string): string => {
-  const binary = atob(encoded.replaceAll('-', '+').replaceAll('_', '/'));
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
-};
-
-export const encodeCursor = (key: string, id: string, values?: readonly string[]): string =>
-  toBase64Url(JSON.stringify(values === undefined ? { k: key, id } : { k: key, id, v: values }));
-
-export const decodeCursor = (cursor: string): Cursor | null => {
-  try {
-    const parsed: { k?: unknown; id?: unknown; v?: unknown } = JSON.parse(fromBase64Url(cursor));
-    if (typeof parsed.k !== 'string' || typeof parsed.id !== 'string') return null;
-    const values = parsed.v;
-    return Array.isArray(values) && values.every((part) => typeof part === 'string')
-      ? { key: parsed.k, id: parsed.id, values: values as readonly string[] }
-      : { key: parsed.k, id: parsed.id };
-  } catch {
-    return null;
-  }
-};
 
 const MONEY_PARTS: Readonly<Record<string, ColumnKind>> = { minor: 'bigint', currency: 'char' };
 
@@ -66,7 +29,7 @@ const columnAt = <Row>(entity: EntityCore<Row>, path: string): AnyColumn => {
 };
 
 /** The physical type a sort key holds — what tells `revive` how to read its string back. */
-export const kindAt = <Row>(entity: EntityCore<Row>, path: string): ColumnKind => {
+const kindAt = <Row>(entity: EntityCore<Row>, path: string): ColumnKind => {
   const { part } = partsOf(path);
   const kind = columnAt(entity, path).$meta.kind;
   if (part === undefined) return kind;
@@ -88,13 +51,13 @@ export const valueAt = (row: unknown, path: string): unknown => {
 };
 
 /** Stringified so the cursor is JSON; `revive` restores the type from the column's kind. */
-export const serializeSortValue = (value: unknown): string => {
+const serializeSortValue = (value: unknown): string => {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'bigint') return value.toString();
   return String(value);
 };
 
-export const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
+const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
   switch (kind) {
     case 'timestamptz':
       return new Date(text);
@@ -127,4 +90,71 @@ export const assertSeekable = <Row>(
         `(add .orderBy('${entity.$primaryKey[0] ?? 'id'}') or make ${key.column} not null)`,
     );
   }
+};
+
+/** Deterministic, and total over the value shapes a predicate can hold. */
+const renderValue = (value: unknown): string => {
+  if (value === null || value === undefined) return 'null';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'bigint') return `${value}n`;
+  if (Array.isArray(value)) return `[${value.map(renderValue).join(',')}]`;
+  if (typeof value === 'object') {
+    const record = value as Readonly<Record<string, unknown>>;
+    const keys = Object.keys(record).sort();
+    return `{${keys.map((key) => `${key}:${renderValue(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(String(value));
+};
+
+/**
+ * What a cursor is bound to: this entity, these filters, this sort order. Not the page size — a
+ * client may legitimately ask for a bigger next page — and not the projection, which cannot move
+ * a row's position. Filters are sorted because `and` is commutative, so two chains that build the
+ * same predicate set page each other's cursors.
+ *
+ * Hashed rather than spelled out: a cursor is base64, not encrypted, and the caller's filter
+ * values are not the client's to read.
+ */
+export const planScope = (plan: QueryPlan): string => {
+  const where = plan.where
+    .map((predicate) => `${predicate.column} ${predicate.op} ${renderValue(predicate.value)}`)
+    .sort()
+    .join('&');
+  const order = plan.orderBy.map((key) => `${key.column} ${key.direction}`).join(',');
+  return new Bun.CryptoHasher('sha256')
+    .update(`${plan.entity}|${where}|${order}`)
+    .digest('hex')
+    .slice(0, 16);
+};
+
+/** The cursor that continues this plan after `row`. Signed by core, scoped by the plan. */
+export const cursorFor = (plan: QueryPlan, row: unknown, id: string): string =>
+  encodeCursor({
+    scope: planScope(plan),
+    key: plan.orderBy.map((entry) => serializeSortValue(valueAt(row, entry.column))),
+    id,
+  });
+
+/**
+ * The keyset position a plan resumes from, revived to the types its columns hold — `undefined`
+ * when the plan has no cursor. A cursor that was tampered with, or taken from another entity,
+ * another filter or another sort order, is `X_CURSOR_INVALID` here rather than a silent page one.
+ */
+export const seekFrom = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+): readonly unknown[] | undefined => {
+  if (plan.cursor === undefined) return undefined;
+  const { key } = decodeCursor(plan.cursor, planScope(plan));
+  assertSeekable(entity, plan.orderBy);
+  // Unreachable through the scope check, which already pins the sort order — kept because the
+  // alternative to a bad arity is `?? ''`, and that seeks from an empty string.
+  if (key.length !== plan.orderBy.length) {
+    throw new CursorInvalidError(
+      `it carries ${key.length} sort values, this order needs ${plan.orderBy.length}`,
+    );
+  }
+  return plan.orderBy.map((entry, index) =>
+    reviveSortValue(kindAt(entity, entry.column), String(key[index])),
+  );
 };

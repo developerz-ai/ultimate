@@ -52,6 +52,14 @@ export {
   useService,
   withChildContext,
 } from './context';
+export type { CursorPayload } from './cursor';
+export {
+  CursorInvalidError,
+  configureCursorSigning,
+  decodeCursor,
+  encodeCursor,
+  usesDevCursorSecret,
+} from './cursor';
 export type {
   Env,
   EnvBooleanVar,

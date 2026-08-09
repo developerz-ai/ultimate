@@ -130,12 +130,15 @@ const touch = <Row>(entity: EntityCore<Row>, patch: Partial<Row>): Partial<Row> 
   return Object.assign({}, patch, stamped);
 };
 
+// Every write is `async`, matching the repository contract: a failing call rejects and never
+// throws synchronously. `$parse` throws — without the wrapper, a bad row escapes at call time
+// while a bad id rejects, and every call site would need two error paths for one mistake.
 export const tableFor = <Row, C extends ColumnMap>(
   entity: EntityCore<Row, C>,
   repo: Repo<Row>,
 ): Table<Row, C> => ({
   ...builder<Row, Row>(entity, repo, EMPTY, (row) => row),
-  insert: (values, options) => repo.insert(entity.$parse(values), options),
-  update: (id, patch, options) => repo.update(id, touch(entity, patch), options),
-  delete: (id, options) => repo.delete(id, options),
+  insert: async (values, options) => repo.insert(entity.$parse(values), options),
+  update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
+  delete: async (id, options) => repo.delete(id, options),
 });

@@ -9,15 +9,7 @@
 
 import { type DbClient, db, type TransactionOptions, withTransaction } from '@ultimat3/db';
 import { snake } from './column';
-import {
-  assertSeekable,
-  decodeCursor,
-  encodeCursor,
-  kindAt,
-  reviveSortValue,
-  serializeSortValue,
-  valueAt,
-} from './cursor';
+import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
@@ -48,21 +40,6 @@ const shapeOf = (args: FindManyArgs, seek?: readonly unknown[]): ReadShape => ({
   ...(seek === undefined ? {} : { seek }),
 });
 
-const seekOf = <Row>(entity: EntityCore<Row>, plan: QueryPlan): readonly unknown[] | undefined => {
-  if (plan.cursor === undefined) return undefined;
-  const encoded = decodeCursor(plan.cursor)?.values;
-  if (encoded === undefined) return undefined;
-  assertSeekable(entity, plan.orderBy);
-  return plan.orderBy.map((entry, index) =>
-    reviveSortValue(kindAt(entity, entry.column), encoded[index] ?? ''),
-  );
-};
-
-const cursorFor = <Row>(plan: QueryPlan, row: Row, id: string): string => {
-  const values = plan.orderBy.map((entry) => serializeSortValue(valueAt(row, entry.column)));
-  return encodeCursor(values.join(' '), id, values);
-};
-
 export const postgresRepo = <Row>(
   entity: EntityCore<Row>,
   config: PostgresDriverOptions = {},
@@ -89,7 +66,7 @@ export const postgresRepo = <Row>(
       // One row past the page: the presence of that row is what says there is a next cursor,
       // and it costs one row instead of a second `count(*)` over the same predicate.
       const found = await client().query<PhysicalRow>(
-        selectStatement(entity, plan, shapeOf(args, seekOf(entity, plan)), plan.limit + 1),
+        selectStatement(entity, plan, shapeOf(args, seekFrom(entity, plan)), plan.limit + 1),
       );
       const rows = found.slice(0, plan.limit).map((row) => decodeRow(entity, row));
       const last = rows.at(-1);

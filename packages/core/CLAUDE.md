@@ -33,3 +33,8 @@ Gotchas:
   `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
 - Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
   That is what tells the sealed test network a loopback request is this process, not egress.
+- `cursor.ts` is the framework's ONE keyset-cursor codec — `entity`, `query` and `admin` all sign
+  and verify here. `decodeCursor(cursor, scope)` takes the scope as a required argument on
+  purpose: an optional check is one a call site can forget, and a forgotten one pages a listing
+  with another read's cursor. A second codec anywhere is the regression this file exists to
+  prevent. Tests that call `configureCursorSigning()` must restore the previous secret.

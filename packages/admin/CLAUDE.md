@@ -10,6 +10,7 @@ Two products, one package: `src/dev/*` = the `/_x` dev dashboard (dev only), `sr
 - **One bridge per foreign package.** `policy-bridge.ts` is the only file calling `evaluate`/`definePermissions`; `routes.ts` the only one calling `defineRoute`; `mcp.ts` the only one calling `defineAppMcp`; `dev/data.ts` the only one importing introspection (dynamically — `/_x` must stay out of the production graph).
 - **Structural registry types** (`registry.ts`) — the admin reads `name`/`columns`/repo methods, so a registry that grows a field changes one file.
 - Money through `assertMoney`, timestamps through `assertZone`, pagination through `pagination.ts`. No `offset`, ever.
+- **One cursor codec.** `pagination.ts` is the only file calling core's `encodeCursor`/`decodeCursor`; it wraps them as `encodeAdminCursor`/`decodeAdminCursor`, scoped `admin:<resource>`. An invalid cursor is page one here, not an error page — but the signature is checked first, so a forged one cannot seek.
 - Labels are i18n keys derived in `resource.ts` (`admin.<entity>.field.<name>`); only `.tsx` calls `t()`. MCP tool descriptions are literal English (protocol payload, not UI copy).
 - Colours only via `ThemeTokenRef` (`--x-*`). Raw hex does not typecheck.
 - Views are pure functions of props — no `createSignal`, no local state; the route owns it.

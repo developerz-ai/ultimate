@@ -7,15 +7,7 @@
 //     table silently skips and repeats rows. A keyset cursor is stable because it names a
 //     position in the sort order, not a row count.
 
-import {
-  assertSeekable,
-  decodeCursor,
-  encodeCursor,
-  kindAt,
-  reviveSortValue,
-  serializeSortValue,
-  valueAt,
-} from './cursor';
+import { cursorFor, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
 import { idPlan, readPlan, singleKeyOf } from './plan';
@@ -129,9 +121,6 @@ const compare = (left: unknown, right: unknown): number => {
   return a < b ? -1 : a > b ? 1 : 0;
 };
 
-const sortValues = (plan: QueryPlan, row: unknown): readonly string[] =>
-  plan.orderBy.map((entry) => serializeSortValue(valueAt(row, entry.column)));
-
 /** Lexicographic over the sort keys, direction applied. `> 0` means "after the cursor". */
 const compareToSeek = (plan: QueryPlan, row: unknown, seek: readonly unknown[]): number => {
   for (const [index, entry] of plan.orderBy.entries()) {
@@ -151,13 +140,8 @@ const afterCursor = <Row>(
   plan: QueryPlan,
   found: readonly Row[],
 ): number => {
-  if (plan.cursor === undefined) return 0;
-  const encoded = decodeCursor(plan.cursor)?.values;
-  if (encoded === undefined) return 0;
-  assertSeekable(entity, plan.orderBy);
-  const seek = plan.orderBy.map((entry, index) =>
-    reviveSortValue(kindAt(entity, entry.column), encoded[index] ?? ''),
-  );
+  const seek = seekFrom(entity, plan);
+  if (seek === undefined) return 0;
   const start = found.findIndex((row) => compareToSeek(plan, row, seek) > 0);
   return start === -1 ? found.length : start;
 };
@@ -248,10 +232,7 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
       const more = start + page.length < found.length;
       return {
         rows: page,
-        nextCursor:
-          more && last !== undefined
-            ? encodeCursor(sortValues(plan, last).join(' '), keyOf(last), sortValues(plan, last))
-            : null,
+        nextCursor: more && last !== undefined ? cursorFor(plan, last, keyOf(last)) : null,
       };
     },
 

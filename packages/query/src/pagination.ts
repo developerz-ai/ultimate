@@ -5,21 +5,17 @@
  * will throw away (O(offset) per page), and any insert or delete before the
  * offset shifts every later page, so users see duplicates and holes. A keyset
  * cursor is O(log n) on the ordering index and stable under concurrent writes.
+ *
+ * The codec is `@ultimat3/core`'s. This file only decides what a cursor is bound
+ * to — `queryHash(name, input)` — so one read's cursor cannot page another.
  */
+import { decodeCursor, encodeCursor } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { CursorInvalidError } from './errors';
 import type { Query, SourceOptions } from './query';
 import { queryHash, queryName, sourceFor } from './query';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
 import type { SqlSource } from './source';
-import { isJsonObject, stableStringify } from './stable';
-
-export interface CursorPayload {
-  /** Ties the cursor to one query + arguments: a cursor is not portable. */
-  readonly q: string;
-  readonly seek: SeekKey;
-}
 
 export interface Page<TRow> {
   readonly rows: readonly TRow[];
@@ -30,40 +26,6 @@ export interface Page<TRow> {
 export interface PaginateArgs extends SourceOptions {
   readonly first: number;
   readonly after?: string;
-}
-
-let secret = Bun.env['ULTIMATE_CURSOR_SECRET'] ?? 'ultimate-dev-cursor-secret';
-
-/** Set once at boot from the app secret. Rotating it invalidates open cursors. */
-export function configureCursorSigning(next: string): void {
-  secret = next;
-}
-
-/** Opaque + signed: base64url(payload).signature. Clients must not parse it. */
-export function encodeCursor(payload: CursorPayload): string {
-  const body = base64UrlEncode(stableStringify(payload));
-  return `${body}.${sign(body)}`;
-}
-
-export function decodeCursor(cursor: string, expectedQueryHash?: string): CursorPayload {
-  const dot = cursor.lastIndexOf('.');
-  if (dot <= 0) throw new CursorInvalidError('malformed cursor');
-  const body = cursor.slice(0, dot);
-  const signature = cursor.slice(dot + 1);
-  if (sign(body) !== signature) throw new CursorInvalidError('signature mismatch');
-
-  const parsed: unknown = safeParse(base64UrlDecode(body));
-  if (!isJsonObject(parsed) || typeof parsed['q'] !== 'string' || !isJsonObject(parsed['seek'])) {
-    throw new CursorInvalidError('payload is not a cursor');
-  }
-  const seek = parsed['seek'];
-  if (!Array.isArray(seek['key']) || typeof seek['id'] !== 'string') {
-    throw new CursorInvalidError('payload is not a cursor');
-  }
-  if (expectedQueryHash !== undefined && parsed['q'] !== expectedQueryHash) {
-    throw new CursorInvalidError('cursor belongs to a different query');
-  }
-  return { q: parsed['q'], seek: { key: seek['key'], id: seek['id'] } };
 }
 
 /**
@@ -77,7 +39,10 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
 ): Promise<Page<TRow>> {
   const name = queryName(target);
   const hash = queryHash(name, input);
-  const after = args.after === undefined ? null : decodeCursor(args.after, hash).seek;
+  // The scope is this read plus these arguments: a cursor from anywhere else is
+  // already `X_CURSOR_INVALID` by the time it gets here.
+  const decoded = args.after === undefined ? null : decodeCursor(args.after, hash);
+  const after: SeekKey | null = decoded === null ? null : { key: decoded.key, id: decoded.id };
   const base = await sourceFor(target, input, args);
   const shape = base.shape();
 
@@ -89,10 +54,11 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   // The source came from this query's own `sql()`, so its rows are TRow.
   const rows = scoped.slice(0, args.first) as unknown as readonly TRow[];
   const last = rows[rows.length - 1];
+  const seek = last === undefined ? null : seekKeyOf(last, shape);
 
   return {
     rows,
-    endCursor: last === undefined ? null : encodeCursor({ q: hash, seek: seekKeyOf(last, shape) }),
+    endCursor: seek === null ? null : encodeCursor({ scope: hash, key: seek.key, id: seek.id }),
     hasNextPage: scoped.length > args.first,
   };
 }
@@ -105,26 +71,4 @@ function sliceAfter(
   if (after === null) return rows;
   const index = rows.findIndex((row) => seekKeyOf(row, shape).id === after.id);
   return index === -1 ? rows : rows.slice(index + 1);
-}
-
-/** Truncated HMAC-SHA256. Cursors are tamper-evident, never confidential. */
-function sign(body: string): string {
-  return new Bun.CryptoHasher('sha256', secret).update(body).digest('hex').slice(0, 32);
-}
-
-function base64UrlEncode(value: string): string {
-  return btoa(value).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-}
-
-function base64UrlDecode(value: string): string {
-  const padded = value.replaceAll('-', '+').replaceAll('_', '/');
-  return atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), '='));
-}
-
-function safeParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new CursorInvalidError('payload is not JSON');
-  }
 }

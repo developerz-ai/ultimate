@@ -4,9 +4,11 @@ import type { SurfaceDenial } from '@ultimat3/policy';
 
 const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
 
+/** One class, one code: core owns the cursor codec, so core owns `X_CURSOR_INVALID`. */
+export { CursorInvalidError } from '@ultimat3/core';
+
 /** Titles for the framework-wide code table. Guarded: `X_INPUT_INVALID` is shared. */
 const TITLES: Readonly<Record<string, string>> = {
-  X_CURSOR_INVALID: 'pagination cursor is malformed, tampered with or from another query',
   X_INPUT_INVALID: 'input failed schema validation',
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
@@ -127,17 +129,6 @@ export class MatcherUnsupportedError extends UltimateError {
       cause: `live query "${name}" uses ${feature}, which the incremental matcher cannot patch`,
       fix: `set \`live: false\` and poll, or reshape the query to equality filters + orderBy + limit`,
       docs: docs('X_MATCHER_UNSUPPORTED'),
-    });
-  }
-}
-
-export class CursorInvalidError extends UltimateError {
-  constructor(reason: string) {
-    super({
-      code: 'X_CURSOR_INVALID',
-      cause: `cursor rejected: ${reason}`,
-      fix: 'drop the cursor and request the first page again',
-      docs: docs('X_CURSOR_INVALID'),
     });
   }
 }

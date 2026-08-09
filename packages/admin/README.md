@@ -62,6 +62,7 @@ export const routes = adminRoutes(admin); // every page `spa`, `network-only`, n
 | Money is `{ minor, currency }` — a float throws `X_ADMIN_FIELD_UNSUPPORTED` | `widgetProps` |
 | A timestamp never renders without an IANA zone | `assertZone` |
 | Pagination is keyset — `AdminListQuery` has no `offset` field | `pagination.ts` |
+| A cursor is signed by `@ultimat3/core` and scoped to its resource — a forged or borrowed one is page one, never another table's position | `pagination.ts` |
 | A button an actor cannot press is never rendered, and the call is refused by the same decision | `action-gate.ts` |
 | Destructive operations re-confirm (`<entity>:<id>`) and are always audited | `permissions.ts`, `crud.ts` |
 | Every mutation and every denial is on the audit log, with a before/after diff | `audit.ts` |

@@ -17,8 +17,6 @@ export {
   url,
   uuid,
 } from './columns';
-export type { Cursor } from './cursor';
-export { decodeCursor, encodeCursor } from './cursor';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, memoryDriver } from './database';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';

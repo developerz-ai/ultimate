@@ -96,6 +96,11 @@ db.posts.where({ orgId }).orderBy('createdAt').limit(50).page(); // { rows, next
 under concurrent writes, because an insert before the offset shifts every later page and the
 client silently skips and repeats rows.
 
+`nextCursor` is signed by `@ultimat3/core` and scoped to the plan that produced it — this entity,
+these filters, this sort order. A tampered cursor, or one taken from another listing, is
+`X_CURSOR_INVALID` rather than a silent page one. The page size is deliberately outside the scope:
+asking for a bigger next page is the same query.
+
 ## Two drivers, one meaning
 
 ```ts

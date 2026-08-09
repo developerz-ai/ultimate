@@ -164,8 +164,8 @@ export { adminNav, type NavGroup, type NavItem, type NavOptions, visibleNav } fr
 export {
   type AdminCursor,
   type AdminPage,
-  decodeCursor,
-  encodeCursor,
+  decodeAdminCursor,
+  encodeAdminCursor,
   fetchPage,
   listQuery,
   type PageRequest,
