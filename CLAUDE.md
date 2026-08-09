@@ -59,16 +59,20 @@ llms.txt        the machine-readable repo map
 
 ## Package tiers — imports may only go DOWN
 
-A package may import from strictly lower tiers. Never sideways within a tier, never upward. Enforced by `bun run boundaries`; a violation is a build error.
+A package may import from strictly lower tiers. Never sideways within a tier, never upward. Enforced by `bun run boundaries`; a violation is a build error. The table below is prose — [`scripts/lib/tiers.ts`](scripts/lib/tiers.ts) is the executable copy, and they must agree.
 
 | Tier | Packages |
 |---|---|
 | 0 | `core`, `schema` |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo` |
-| 2 | `entity`, `policy`, `http` |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage` |
+| 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest` |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` |
 | 5 | `ui`, `admin`, `testing`, `cli` |
+
+Declared sideways edges, each earning its line: `admin → ui`, `realtime → query`, `create-ultimate → cli`.
+
+**`db` is tier 1, decided 2026-08.** It imports `core` and nothing else, so tier 1 is the lowest its real imports allow — and that is what lets `entity` (tier 2) hold its own Postgres driver (`postgresDriver()`) instead of exiling it to a tier-3 package. Two things would have been wrong: a second package owning `Driver`'s only production implementation (two places to look for "where rows live"), and `database()` callers importing the seam from one package and the driver from another. Same shape as `auth → db`.
 
 Adding a package means picking its tier first. If it doesn't fit a tier, the design is wrong — fix the design, don't widen the table.
 

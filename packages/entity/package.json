@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@ultimat3/core": "0.0.1",
+    "@ultimat3/db": "0.0.1",
     "@ultimat3/schema": "0.0.1"
   }
 }

@@ -1,8 +1,9 @@
 # @ultimat3/db — agent notes
 
-Tier 2. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/time`, `@ultimat3/money`.
-**Never** `@ultimat3/entity`, `jobs`, `http`, or anything higher — entity snapshots arrive as a
-parameter (`EntityDescriptionLike`), never as an import.
+Tier 1 — it imports `@ultimat3/core` and nothing else, so tier 1 is the lowest its real imports
+allow. That placement is load-bearing: `@ultimat3/entity` (tier 2) owns the Postgres driver and
+reaches down to this package for it. **Never** import `entity`, `jobs`, `http` or anything higher
+— entity snapshots arrive as a parameter (`EntityDescriptionLike`), never as an import.
 
 | Rule | |
 |---|---|
@@ -15,8 +16,10 @@ parameter (`EntityDescriptionLike`), never as an import.
 | Files | < 200 LOC, one responsibility, `kebab-case.ts`, test beside source |
 
 Pinned public seam — `@ultimat3/auth`, `@ultimat3/entity` and `@ultimat3/jobs` are written
-against these exact names: `SqlFragment`, `sql`, `raw`, `DbClient`, `DbTx`, `db`, `setDbClient`,
-`withTransaction`, `currentTx`. Changing a signature here breaks three packages.
+against these exact names: `SqlFragment`, `sql`, `raw`, `identifier`, `join`, `DbClient`, `DbTx`,
+`db`, `setDbClient`, `withTransaction`, `currentTx`. Changing a signature here breaks three
+packages — `entity`'s `postgresDriver()` compiles every statement out of `sql`/`identifier`/`join`
+and finds its connection through `db()`.
 
 Deliberate cycle (safe — nothing is referenced at module-evaluation time):
 `client.ts ⇄ transaction.ts`. `db()` consults `currentTx()`; `withTransaction` uses

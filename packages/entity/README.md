@@ -94,8 +94,30 @@ db.posts.where({ orgId }).orderBy('createdAt').limit(50).page(); // { rows, next
 
 `db.posts` exists because `posts` was declared. Pagination is **cursor-only**: `OFFSET` is wrong
 under concurrent writes, because an insert before the offset shifts every later page and the
-client silently skips and repeats rows. `memoryDriver()` is the default (tests, `x dev` before
-the first migration); Postgres is production and implements the same `Repo<T>`.
+client silently skips and repeats rows.
+
+## Two drivers, one meaning
+
+```ts
+database({ orgs, posts });                                 // memoryDriver() — the default
+database({ orgs, posts }, { driver: postgresDriver() });   // production
+```
+
+| | `memoryDriver()` | `postgresDriver()` |
+|---|---|---|
+| Rows live | in a `Map` | in Postgres |
+| For | tests, `x dev` before the first migration | production |
+| Transaction | `memoryTransactor()` — undo closures | `postgresTransactor()` — real `BEGIN`/`COMMIT` |
+
+They are not two implementations of an idea. They share the plan (scope, sort order, page size),
+the cursor codec and the `Repo<T>` contract, so a page taken in a test means the same thing as a
+page taken in production. `postgresDriver()` takes no connection: `db()` from `@ultimat3/db`
+returns the open transaction when there is one, so a repository call inside `withTransaction`
+joins it without being told — which is how a job's outbox row lands atomically with the write
+that enqueued it.
+
+Every value is bound to `$n` and every identifier is resolved through the entity, so a column
+name can only be one the entity declared and a row value can never become SQL.
 
 ## Tenancy is a guard
 
@@ -104,7 +126,8 @@ the first migration); Postgres is production and implements the same `Repo<T>`.
 key; name a column that does not exist and the declaration fails with `X_INVARIANT_VIOLATED`.
 
 Either way, every read then needs an org predicate. Without one: `X_TENANCY_UNSCOPED`, at the
-seam, every time.
+seam, every time. Writes are reads: `update(id, patch)` and `delete(id)` build the same plan, so
+an id alone never addresses a row, and another tenant's id is `X_NOT_FOUND` rather than theirs.
 
 ## Seeds
 
@@ -119,7 +142,9 @@ the invariants, which makes a seed a test of the schema as well.
 
 ## Boundaries
 
-Tier 2. Imports `@ultimat3/core` and `@ultimat3/schema` only. No `drizzle-orm` dependency:
+Tier 2. Imports `@ultimat3/core`, `@ultimat3/schema` and `@ultimat3/db` only — `db` is tier 1
+(it imports `core` and nothing else), which is what keeps `Driver` and its production
+implementation in one package instead of two. No `drizzle-orm` dependency:
 `types.ts` declares the narrow structural column vocabulary this package consumes, so the
 generated SQL stays readable and an agent can self-correct against it. `@ultimat3/cache`
 invalidates by the `entity:<name>` tag.

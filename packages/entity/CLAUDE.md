@@ -4,17 +4,32 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Boundary
 
-- May import `@ultimat3/core` and `@ultimat3/schema`. Nothing else — `http` and `policy` are the
-  same tier.
+- May import `@ultimat3/core`, `@ultimat3/schema` and `@ultimat3/db`. Nothing else — `http`,
+  `policy` and `auth` are the same tier.
+- `db` is tier 1 (it imports only `core`), which is what lets the Postgres driver live **here**
+  rather than in a tier-3 package: `Driver` and its production implementation stay in one place.
+  See [`docs/architecture/01-package-map.md`](../../docs/architecture/01-package-map.md).
 - No `drizzle-orm`. `types.ts` declares the column vocabulary we consume; Drizzle is the
   production backing, documented not imported.
 
 ## Do not regress
 
+- **Two drivers, one meaning.** `memoryDriver()` and `postgresDriver()` share `plan.ts` (scope,
+  sort order, page size), `cursor.ts` (one codec, values included) and the `Repo` contract, so a
+  test that passes against memory says something about Postgres. A guard, an operator or a sort
+  rule added to one and not the other is the bug this split exists to prevent — `pg-driver.test.ts`
+  pins the parity.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
-  total.
+  total. The cursor carries the sort **values**, not just an id — seeking by an id that was
+  deleted between two requests would restart pagination at the top.
+- **Tenancy applies to writes too.** `update(id, patch)` and `delete(id)` build the same plan a
+  read does, so an id alone never addresses a row on a tenant-scoped entity. Another tenant's id
+  reads as `X_NOT_FOUND`, never as their row.
+- **Nothing is interpolated into SQL.** `pg-sql.ts` binds every value through `sql` and resolves
+  every identifier through the entity, so a column name can only be one the entity declared.
+  `raw()` appears exactly twice, for `asc|desc` and the seek operator — both closed sets.
 - **Money is `bigint` minor units + `char(3)` currency.** A float throws. Never one column,
   never an implied single currency.
 - **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
@@ -46,7 +61,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
-| `repo.ts` / `tenancy.ts` | `Repo<T>`, cursor codec, tx rollback; `QueryPlan` + `assertScoped()` |
+| `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
+| `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
+| `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
+| `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection + `describeEntities()` for the manifest |
 
 ## Commands

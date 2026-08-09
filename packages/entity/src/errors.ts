@@ -1,7 +1,7 @@
 // The entity layer's stable error codes. Each factory produces the exact command
 // that fixes the situation — `X_DB_DRIFT` is the flagship: it names the table, the
 // column and the generator invocation.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const ENTITY_ERROR_CODES = [
   'X_ENTITY_DUPLICATE',
@@ -23,10 +23,13 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
 
 // Registered at module load, like every other package's errors.ts. Without this the
 // registry humanises the code (`X_DB_DRIFT` → "db drift") and the terminal, the overlay
-// and `--json` all render a title this package never wrote.
-registerErrorCodes(
-  Object.fromEntries(Object.entries(ENTITY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
-);
+// and `--json` all render a title this package never wrote. Guarded per code because
+// `X_DB_DRIFT` is also declared by `@ultimat3/db`, which this package now imports —
+// registering a code twice throws `X_ERROR_CODE_DUPLICATE` at import, and whichever module
+// happens to load second would be the one to blow up.
+for (const [code, title] of Object.entries(ENTITY_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 export class EntityError extends UltimateError {
   override readonly name = 'EntityError';
