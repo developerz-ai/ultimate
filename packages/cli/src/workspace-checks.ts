@@ -74,9 +74,21 @@ export interface ManifestFacts {
   readonly name: string;
   readonly version: string;
   readonly private: boolean;
-  /** Every `@ultimat3/*` dependency and the range it is pinned to, in declaration order. */
+  /** Every `@ultimat3/*` pin npm publishes and the range it is pinned to, in declaration order. */
   readonly frameworkDeps: readonly (readonly [name: string, range: string])[];
 }
+
+/**
+ * The manifest fields a published package carries to the registry. `devDependencies` is absent
+ * deliberately: npm does not install it for a consumer, so a stale one there cannot break anybody's
+ * install — while a stale `peerDependencies` or `optionalDependencies` pin resolves at install time
+ * exactly like `dependencies` does, and skipping them let skew reach the registry unreported.
+ */
+export const PUBLISHED_DEP_FIELDS = [
+  'dependencies',
+  'peerDependencies',
+  'optionalDependencies',
+] as const;
 
 export const versionSkewFinding = (dir: string, found: string, expected: string): Finding => ({
   code: 'X_RELEASE_VERSION_SKEW',
@@ -129,12 +141,17 @@ export function checkLockstep(manifests: readonly ManifestFacts[]): readonly Fin
 }
 
 export function frameworkDepsOf(manifest: unknown): ManifestFacts['frameworkDeps'] {
-  const record = typeof manifest === 'object' && manifest !== null ? manifest : {};
-  const deps = (record as { dependencies?: unknown }).dependencies;
-  if (typeof deps !== 'object' || deps === null) return [];
-  return Object.entries(deps).flatMap(([name, range]) =>
-    name.startsWith('@ultimat3/') && typeof range === 'string' ? [[name, range] as const] : [],
-  );
+  const record = (typeof manifest === 'object' && manifest !== null ? manifest : {}) as Record<
+    string,
+    unknown
+  >;
+  return PUBLISHED_DEP_FIELDS.flatMap((field) => {
+    const deps = record[field];
+    if (typeof deps !== 'object' || deps === null) return [];
+    return Object.entries(deps).flatMap(([name, range]) =>
+      name.startsWith('@ultimat3/') && typeof range === 'string' ? [[name, range] as const] : [],
+    );
+  });
 }
 
 export async function workspacePackages(root: string): Promise<readonly string[]> {

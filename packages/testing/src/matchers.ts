@@ -32,7 +32,7 @@ const isStandardSchema = (value: unknown): value is StandardSchema =>
 async function hasIssues(schema: unknown, input: unknown): Promise<boolean> {
   if (!isStandardSchema(schema)) {
     throw new TypeError(
-      'toRejectInput expects a Standard Schema (ArkType `t`) — pass action.input, not the action',
+      'toRejectInput expects a Standard Schema (`t`) — pass action.input, not the action',
     );
   }
   const result = await schema['~standard'].validate(input);

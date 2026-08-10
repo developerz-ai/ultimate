@@ -108,28 +108,36 @@ A rate-limited or concurrency-blocked job is **deferred, never dropped** — it 
 
 ## Driver interface
 
-One interface, three implementations. **Job code never changes.**
+One interface. **Job code never changes.** Step persistence hangs off the same object (`steps`), so it is identical on every implementation.
 
 ```ts
 export interface JobDriver {
-  enqueue(job: JobRef, input: unknown, opts: EnqueueOpts, tx?: Tx): Promise<JobId>;
-  claim(queue: string, limit: number): Promise<ClaimedJob[]>;
-  heartbeat(id: JobId): Promise<void>;
-  complete(id: JobId, result: unknown): Promise<void>;
-  fail(id: JobId, err: SerializedError, retryAt: Date | null): Promise<void>;
-  saveStep(id: JobId, name: string, result: unknown): Promise<void>;
-  loadSteps(id: JobId): Promise<Record<string, unknown>>;
-  sleepUntil(id: JobId, at: Date): Promise<void>;
+  readonly name: string;
+  /** Step persistence lives with the queue: one store, one transaction boundary. */
+  readonly steps: StepStore;
+  enqueue(request: EnqueueRequest): Promise<EnqueueResult>;
+  claim(options: ClaimOptions): Promise<readonly ClaimedJob[]>;
+  ack(jobId: string): Promise<void>;
+  nack(jobId: string, options: NackOptions): Promise<void>;
+  heartbeat(jobId: string, options: { readonly visibilityTimeoutMs: number }): Promise<void>;
+  stats(): Promise<readonly QueueStats[]>;
+  readonly introspect?: JobIntrospection;
+  close?(): Promise<void>;
 }
 ```
 
-| Driver | When | Trade-off |
-|---|---|---|
-| `pg` (default) | always, up to ~thousands of jobs/sec | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
-| `redis` | high-throughput, short jobs | needs the outbox relay; loses "queue state in one backup" |
-| `nats` | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
+Two implementations ship in 1.0.0. Two more are **v2** — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
 
-Switching is a config line in `app.config.ts` plus a migration of in-flight rows (`x jobs drain --to redis`). Because `saveStep` / `loadSteps` are driver methods, step persistence is identical on all three.
+| Driver | Status `As of 2026-08` | When | Trade-off |
+|---|---|---|---|
+| `postgres` (default) | **shipped** | always, up to ~thousands of jobs/sec. `x dev` runs it too, against the embedded PGlite | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
+| `memory` | **shipped**, not a `jobs.driver` value | tests and fixtures — reached through `createMemoryDriver()`, and as `x jobs drain --to memory` | in-process; nothing survives a restart |
+| `redis` | **v2 — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
+| `nats` | **v2 — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
+
+`jobs.driver` in `app.config.ts` accepts `'postgres' | 'redis' | 'nats'` — and only `'postgres'` runs. Setting it to `redis` or `nats` typechecks and boots, then throws on the first enqueue: deliberate, and why the stubs exist instead of an absent export.
+
+`x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. The cross-driver migration procedure is v2 — see [Upgrading](Upgrading).
 
 ## Dead letter
 
@@ -150,7 +158,7 @@ Draining a worker mid-job is safe: it finishes the current step, persists it, an
 | `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job |
 | `x jobs ls --json` | one row per job: state, queue, attempts, `runAt`, idempotency key |
 | `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason |
-| MCP tools | `jobs.list`, `jobs.status`, `jobs.retry` — same authz as the actions |
+| MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
 
 Every command supports `--json`. See [CLI reference](CLI-Reference).
@@ -165,6 +173,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
 | `X_POLICY_DENIED` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
+| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — both are v2 | set `jobs.driver: 'postgres'` in `app.config.ts` (it is already the default) |
 
 Full index: [Error codes](Error-Codes). Verbatim error shapes live in each package's `src/errors.ts`.
 

@@ -40,7 +40,7 @@ That line is the entire integration.
 | MCP requirement | Source |
 |---|---|
 | tool name | action name |
-| JSON Schema for input | the ArkType `input` (Standard Schema → JSON Schema) |
+| JSON Schema for input | the action's `input` (Standard Schema → JSON Schema) |
 | output schema | `output` |
 | description | `mcp.description` |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |
@@ -116,10 +116,14 @@ x db branch feat-new-billing
   ✓ database    myapp_feat_new_billing   (copy-on-write from dev template)
 ```
 
-An agent can migrate, seed and test against that database without risking anything shared, and
-the branch build ID scopes the service-worker cache, so a preview can never poison prod caches.
-The full `x branch` — the same copy-on-write database plus a preview URL and a scoped MCP socket
-in one command — is planned; `x db branch <name>` is the half that ships today.
+An agent can migrate, seed and test against that database without risking anything shared.
+`x db branch <name>` clones the database and computes the preview URL — nothing more; it produces
+no build ID, so it scopes no service-worker cache.
+
+| Surface | Status | Ships |
+|---|---|---|
+| `x db branch <name>` | shipped | copy-on-write database + the preview URL, in `--json` as `database` and `preview` |
+| `x branch <name>` | planned | the same clone plus its own build ID, a served preview and a scoped MCP socket — and with the build ID, a service-worker cache namespace a preview can never leak into prod |
 
 ## `--json` everywhere
 

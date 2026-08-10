@@ -13,8 +13,13 @@ import {
   hasWorkspacePackages,
   LINE_CEILING,
   PACKAGE_FILES,
+  pinSkewFinding,
   workspacePackages,
 } from './workspace-checks';
+
+/** A sibling pin the release script bumped everywhere except here — the skew that actually shipped. */
+const STALE_PEER = { '@ultimat3/action': '0.0.1' };
+const STALE_OPTIONAL = { '@ultimat3/db': '0.0.1' };
 
 const REPO_ROOT = new URL('../../..', import.meta.url).pathname.replace(/\/$/, '');
 
@@ -205,8 +210,49 @@ describe('frameworkDepsOf', () => {
     ).toEqual([['@ultimat3/core', '1.0.0']]);
   });
 
+  test('peer and optional pins are published too, so they count', () => {
+    expect(
+      frameworkDepsOf({
+        dependencies: { '@ultimat3/core': '1.0.0' },
+        peerDependencies: { '@ultimat3/http': '1.0.0' },
+        optionalDependencies: { '@ultimat3/schema': '1.0.0' },
+      }),
+    ).toEqual([
+      ['@ultimat3/core', '1.0.0'],
+      ['@ultimat3/http', '1.0.0'],
+      ['@ultimat3/schema', '1.0.0'],
+    ]);
+  });
+
+  test('devDependencies stay excluded — npm never installs them for a consumer', () => {
+    expect(frameworkDepsOf({ devDependencies: { '@ultimat3/testing': '0.0.1' } })).toEqual([]);
+  });
+
   test('a manifest with no dependencies block reads as none', () => {
     expect(frameworkDepsOf({})).toEqual([]);
     expect(frameworkDepsOf(null)).toEqual([]);
+  });
+});
+
+describe('a stale pin in any published field is skew', () => {
+  test('a peer pin left behind is reported', () => {
+    expect(
+      checkLockstep([
+        pkg({ dir: 'core' }),
+        pkg({ dir: 'render', frameworkDeps: frameworkDepsOf({ peerDependencies: STALE_PEER }) }),
+      ]),
+    ).toEqual([pinSkewFinding('render', '@ultimat3/action', '0.0.1', '1.0.0')]);
+  });
+
+  test('an optional pin left behind is reported', () => {
+    expect(
+      checkLockstep([
+        pkg({ dir: 'core' }),
+        pkg({
+          dir: 'ai',
+          frameworkDeps: frameworkDepsOf({ optionalDependencies: STALE_OPTIONAL }),
+        }),
+      ]),
+    ).toEqual([pinSkewFinding('ai', '@ultimat3/db', '0.0.1', '1.0.0')]);
   });
 });

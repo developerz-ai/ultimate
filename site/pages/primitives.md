@@ -25,7 +25,7 @@ the parse boundary.
 
 | Aspect | Rule |
 |---|---|
-| Projects to | Drizzle table, domain type, migration, repo type, admin screen, seed factory |
+| Projects to | Postgres table, domain type, migration, repo (`postgresRepo`), admin screen, seed factory |
 | Owns | column types, defaults, invariants, tenant column |
 | Never | business logic, I/O, HTTP awareness, policy decisions |
 

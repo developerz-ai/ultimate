@@ -8,8 +8,8 @@ One choice per layer. No alternatives, no adapters, no `driver:` config for thin
 |---|---|---|
 | Runtime | Bun >= 1.3 (target 2.0), **only**. No Node APIs unless via `node:` and unavoidable. | natives replace whole dependency trees; one runtime means one perf profile to reason about |
 | HTTP | thin layer over `Bun.serve` routes; own the lifecycle for ALS context / tracing / authz | policy must run on every surface — impossible if a third-party router owns the request |
-| DB | Postgres + Drizzle | Postgres does queue, pubsub, vectors, logical replication. Drizzle's SQL is legible, so an agent reads the generated statement and self-corrects |
-| Validation | Standard Schema interface; **ArkType** blessed, exposed as `t` | one schema drives runtime parse + TS type + OpenAPI + MCP tool schema |
+| DB | **Postgres**, no ORM — the framework owns its SQL | Postgres does queue, pubsub, vectors, logical replication. `entity()` is the one table declaration and `postgresDriver()` emits hand-written parameterised SQL, so an agent reads the statement and self-corrects |
+| Validation | Standard Schema interface; **our dependency-free builtin validators** blessed, exposed as `t` | one schema drives runtime parse + TS type + OpenAPI + MCP tool schema; Standard Schema is the seam, so ArkType/Zod/Valibot swap in behind `configureSchemaProvider()` with a ~40-line adapter you write — none ships |
 | Auth | Better Auth, wrapped, with our `policy` layer on top | sessions/OAuth/passkeys are solved; authorization is ours because it must be identical in HTTP, WS, jobs, and MCP |
 | Frontend | SolidJS 2 + our own minimal router | fine-grained reactivity → streaming shells cost ~0 hydration; the router must own render mode + offline strategy, so it can't be a dependency |
 | Styling | **SCSS modules + design tokens** | build-time only, zero runtime, dark theme is a token flip. No Tailwind, no CSS-in-JS |
@@ -54,7 +54,7 @@ Costs, stated plainly: no native-addon packages, and long-running-process maturi
 |---|---|
 | GraphQL | typed `action` + `query`; OpenAPI is generated |
 | Multi-runtime (Node/Deno/workerd) | Bun only |
-| Multi-ORM | Drizzle only |
+| Multi-ORM | no ORM at all — one hand-written Postgres driver |
 | Tailwind / CSS-in-JS / a second CSS system | SCSS modules + tokens |
 | React Server Components | Solid `stream` render mode + `<Suspense>` |
 | A plugin API before v1 | fork the blessed path; extension points earn their way in |
@@ -64,4 +64,4 @@ Costs, stated plainly: no native-addon packages, and long-running-process maturi
 
 ## Versions
 
-`As of 2026-07`: Bun 1.3 is the floor, Bun 2.0 the target. SolidJS 2 is in beta — the router and UI kit are ours precisely because the ecosystem around Solid 2 is thin. ArkType and Drizzle are both pre-1.0-stable in places; pin exactly and treat their upgrades as framework work, not app work.
+`As of 2026-07`: Bun 1.3 is the floor, Bun 2.0 the target. SolidJS 2 is in beta — the router and UI kit are ours precisely because the ecosystem around Solid 2 is thin. There is no ORM and no schema library to pin: the SQL driver (`postgresDriver()`) and the validators behind `t` are both ours, so a change to either is framework work by definition, never app work.

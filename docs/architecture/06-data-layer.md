@@ -1,29 +1,40 @@
 # Data layer
 
-Postgres + Drizzle. SQL stays legible so an agent can read the generated statement and self-correct ([`../idea/01-stack.md`](../idea/01-stack.md)). `@ultimat3/entity` owns the schema→type→repo chain; nothing else touches SQL.
+Postgres, no ORM. `postgresDriver()` (`packages/entity/src/pg-driver.ts`, `pg-sql.ts`) emits hand-written parameterised SQL, and it stays legible so an agent can read the statement and self-correct ([`../idea/01-stack.md`](../idea/01-stack.md)). `@ultimat3/entity` owns the schema→type→repo chain; nothing else touches SQL.
 
 ## Entity
 
 A table + its domain type + invariants **the database also enforces**.
 
 ```ts
-export const Post = entity(posts, {
+export const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }),
+    title: text({ max: TITLE_MAX }),
+    status: enumerated(POST_STATUSES).default('draft'),
+    publishedAt: timestamp().nullable(),
+    createdAt: timestamp().defaultNow(),
+    deletedAt: timestamp().nullable(),   // presence alone makes the entity soft-deletable
+  },
   tenant: 'orgId',
-  softDelete: 'deletedAt',
   invariants: [
-    inv('title-not-blank', (p) => p.title.trim().length > 0, { db: "length(btrim(title)) > 0" }),
-    inv('published-after-created', (p) => !p.publishedAt || p.publishedAt >= p.createdAt,
-        { db: 'published_at IS NULL OR published_at >= created_at' }),
+    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
+    invariant('post_publish_coherent', (c) =>
+      c.satisfies(hasCoherentPublishState, ['status', 'publishedAt'])),
   ],
+  indexes: [{ on: ['orgId', 'publishedAt'], order: 'desc' }],
 });
 ```
 
 | Aspect | Rule |
 |---|---|
-| Projects to | Drizzle table, domain type, migration, repo, admin screen, seed factory, cache tag |
-| `tenant` | required on any multi-tenant entity; names the column, not a value |
-| `invariants` | checked in TS on write **and** emitted as a `CHECK` constraint when `db` is given |
-| A TS-only invariant | allowed, but `x verify` warns: a rule the DB does not know is a rule a migration script can violate |
+| Signature | `entity(name, init)` — name first, `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }` |
+| Projects to | SQL DDL, domain type (`typeof posts.$row`), migration, repo, admin screen, seed factory, cache tag |
+| `tenant` | required on any multi-tenant entity; names the column, not a value. `.tenant()` on the column says the same thing, `init` wins when both appear, and with neither a column named `orgId` is inferred — silence never means unscoped |
+| `invariants` | plural, and each one is `invariant(name, build)` written in the expression language, so one declaration yields the TS check **and** the `CHECK`/`UNIQUE` the migration emits |
+| A JS-predicate invariant | `c.satisfies(fn, [...columns])` and `c.matches(fn)` cannot be translated, so they report `kind: 'assert'` with `sql: null` — a rule the DB does not know is a rule a migration script can violate, and it is never faked as a CHECK |
+| Soft delete | the presence of a `deletedAt` column, not a flag — there is no `softDelete:` option |
 | Never | business logic, I/O, HTTP awareness, policy decisions |
 
 Two enforcement points, one declaration. The TS check gives a typed error with a field path; the DB constraint means a bulk `UPDATE` from a migration, a psql session, or another service cannot write a row the app considers impossible.
@@ -182,7 +193,7 @@ X_DB_DRIFT: schema differs from migrations
   fix:   x db gen "add publish_at"
 ```
 
-Drift detection compares three things — the Drizzle schema, the migration ledger, and the live catalog — so it catches both "you edited the schema and forgot to generate" and "someone ran DDL by hand".
+Drift detection compares three things — the declared entities, the migration ledger, and the live catalog — so it catches both "you edited an entity and forgot to generate" and "someone ran DDL by hand".
 
 ## Template-DB parallel testing
 

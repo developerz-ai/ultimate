@@ -28,7 +28,7 @@
 | Lockstep releases | one release bumps all 28 packages — 27 `@ultimat3/*` plus `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
 | Published with provenance | npm via OIDC trusted publishing, no `NPM_TOKEN` |
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
-| Dependency upgrades are framework work | ArkType, Drizzle, and SolidJS 2 are pre-1.0-stable in places. Bumping them is a framework release, never an app-level `bun update` |
+| Dependency upgrades are framework work | SolidJS 2 is pre-1.0-stable in places. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |
 | Deferred to v2, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
@@ -96,22 +96,21 @@ Server behavior on a stale build ID:
 
 Full detail: [PWA and offline](PWA-And-Offline).
 
-## Migrating jobs between drivers
+## Migrating jobs between drivers — **v2**
 
-Switching `jobs.driver` is a config line plus a migration of in-flight rows. Job code never changes — `saveStep` / `loadSteps` are driver methods, so step persistence works identically on all three drivers.
+Two job drivers ship in 1.0.0: `postgres` (the default) and `memory`. `redis` and `nats` are interface-complete stubs that throw `X_NOT_IMPLEMENTED`, so **there is no 1.0.0 driver migration to perform** — `x jobs drain --to redis` constructs the target and fails on its first enqueue.
 
-```
-x jobs drain --to redis --json     # move in-flight rows, then flip the config
-```
+`x jobs drain --to memory` works today, and it is the same command, so the procedure below is written against the interface that already ships and applies unchanged the moment a driver does:
 
 | Order | Step |
 |---|---|
 | 1 | deploy with the old driver still configured |
-| 2 | `x jobs drain --to <driver>` — stops claiming from the old queue, relays committed outbox rows to the new one |
-| 3 | flip `jobs.driver` in `app.config.ts`, `x verify`, deploy |
-| 4 | confirm with `x jobs ls --json` that the old queue is empty before removing its infra |
+| 2 | `x jobs drain --to <driver> --dry-run --json` — read the plan; a skipped candidate is a job whose `runAt` has not arrived, not an error |
+| 3 | `x jobs drain --to <driver>` — leases the batch off the old queue, copies steps, enqueues, then acks |
+| 4 | flip `jobs.driver` in `app.config.ts`, `x verify`, deploy |
+| 5 | confirm with `x jobs ls --json` that the old queue is empty before removing its infra |
 
-The outbox table stays the transactional record on every driver. At-least-once delivery is preserved; atomicity is not negotiable ([Jobs and workflows](Jobs-And-Workflows)).
+Job code never changes across a driver: `steps` is a driver member, so step persistence is identical on all of them. The outbox table stays the transactional record. At-least-once delivery is preserved; atomicity is not negotiable ([Jobs and workflows](Jobs-And-Workflows)).
 
 ## Migrating realtime tiers
 

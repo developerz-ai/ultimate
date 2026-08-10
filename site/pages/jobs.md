@@ -114,9 +114,10 @@ later `runAt`.
 | `redis` | v2 | high-throughput, short jobs | needs the outbox relay; loses "queue state in one backup" |
 | `nats` | v2 | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
 
-`redis` and `nats` are **interface-complete and not implemented** in 1.0.0. Every method throws
-`X_NOT_IMPLEMENTED` with `use driver: "pg" (default) or "memory"` as its `fix:` — an app can be
-written and typechecked against the interface, and nothing is ever dropped silently.
+`redis` and `nats` are **interface-complete and not implemented** in 1.0.0. Every method raises
+`X_NOT_IMPLEMENTED` — an app can be written and typechecked against the interface, and nothing is
+ever dropped silently. Getting off a stub is one command: `x jobs drain --to memory --json`. Which
+driver the app runs on afterwards is a config line, not the drain — see below.
 
 ```ts
 export interface JobDriver {
@@ -131,10 +132,13 @@ export interface JobDriver {
 }
 ```
 
-Switching drivers is a config line plus a migration of in-flight rows
-(`x jobs drain --to <driver>`, `--dry-run` for the plan). Because `saveStep` / `loadSteps` are
-driver methods, step persistence works identically on every driver. **Job code never changes.**
-Draining to `redis` or `nats` throws `X_NOT_IMPLEMENTED` until those drivers land in v2.
+Switching drivers is a config line — `jobs: { driver: 'postgres' }` in `app.config.ts` — plus a
+migration of in-flight rows (`x jobs drain --to memory|redis|nats`, `--dry-run` for the plan).
+Because `saveStep` / `loadSteps` are driver methods, step persistence works identically on every
+driver. **Job code never changes.** Draining *to* `redis` or `nats` moves nothing until those
+drivers land in v2: the stub's `enqueue` raises `X_NOT_IMPLEMENTED` per record, `x jobs drain`
+reports each one in `findings` and exits non-zero, and every leased job goes back to the source
+without burning an attempt.
 
 ## Scheduling
 

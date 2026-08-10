@@ -23,8 +23,8 @@ status the files on disk do not support.
 
 | # | Status | Milestone | Contents | Done when |
 |---|---|---|---|---|
-| 0 | shipped | **Skeleton + error contract** | `core` (`UltimateError`, ALS context, config loader), `schema` (ArkType as `t`), root tooling, `scripts/boundaries.ts`, the `x verify` shell | a thrown `X_*` renders identically in terminal and `--json`; boundary violations fail the build |
-| 1 | shipped | **HTTP + entity + policy** | `http` over `Bun.serve`, `entity` on Drizzle, `policy`, typed env validated at boot | demo: one entity, one protected route, one denial; a missing env key fails in milliseconds |
+| 0 | shipped | **Skeleton + error contract** | `core` (`UltimateError`, ALS context, config loader), `schema` (Standard Schema over a dependency-free builtin provider, exposed as `t`), root tooling, `scripts/boundaries.ts`, the `x verify` shell | a thrown `X_*` renders identically in terminal and `--json`; boundary violations fail the build |
+| 1 | shipped | **HTTP + entity + policy** | `http` over `Bun.serve`, `entity` over a hand-written `postgresDriver()`, `policy`, typed env validated at boot | demo: one entity, one protected route, one denial; a missing env key fails in milliseconds |
 | 2 | shipped | **`action` + `query` + typed client** | generated HTTP routes, OpenAPI, the typed client, contract tests | demo: CRUD driven entirely by the typed client, no hand-written fetch; contract diff in `x verify` |
 | 3 | shipped | **Rendering + router + site/app split** | Solid 2 integration, our router, five render modes, `stream` default, the hard `site/` → `app/` boundary | demo: a 0kb-JS landing page and a streaming dashboard; a deliberate cross-surface import fails the build |
 | 4 | shipped | **SEO + images + budgets** | typed `meta`, `ld.*` helpers, sitemap/robots/RSS from the route table, image pipeline, per-route budgets | demo: CLS 0; deleting a description is a build error; a budget regression names the import chain |
@@ -51,7 +51,7 @@ consumes the attention everything else needs.
 |---|---|
 | Milestones are strictly ordered; no parallel starts | one demo app grows through all twelve, so regressions surface immediately |
 | Every milestone ends green | `x verify` never carries known failures forward |
-| Realtime is gated on a measured benchmark (M6) | the one rule 1.0.0 did not meet: tiers 1–2 shipped, the benchmark did not |
+| Realtime is gated on a measured benchmark (M6) | the one rule 1.0.0 **waived**: tiers 1–2 shipped, the benchmark did not run |
 | Tier 3 local-first is out of v1 | it lands in v2 as `persist: true` on an existing query — a flag, not a rewrite |
 | Scope cuts come off the back, never the middle | dropping M11's Helm chart is acceptable; dropping M4's budgets is not |
 | A milestone that grows past its demo gets split | a milestone with no demo has no definition of done |
@@ -79,9 +79,16 @@ consumes the attention everything else needs.
 | 5 | **Bun-only constraints** | medium-high | no native addons by design; Bun natives cover image, hashing, Postgres, Redis, S3; explicit memory-profiling and soak tests at M6 and M11 |
 | 6 | **Static path rot** | medium | 0kb default on `site/`, emitting JS without an explicit `hydrate` + `budget` is a build error, and the starter landing page lives in `site/` |
 
-**Kill criterion, resolved:** tier 2 shipped in 1.0.0. The 50k-socket reconnect benchmark it was
-gated on has still not been run, so no throughput, latency or socket-count figure is published
-anywhere on this site — capacity numbers are targets, not results.
+**Kill criterion, waived — not resolved.** Tier 2 shipped in 1.0.0 by exception: the 50k-socket
+forced-restart benchmark it was gated on has never been run, and an unmeasured criterion cannot be
+called met.
+
+| Waiver | Terms |
+|---|---|
+| What was gated | tier 2 realtime ships only on a measured 50k-socket forced-restart benchmark |
+| Why it shipped anyway | tiers 1–2 are complete and under semver; the benchmark needs infrastructure the release did not have |
+| Replacement condition | the criterion is resolved when the benchmark runs and its throughput, latency and socket-count numbers are published — not before |
+| Held meanwhile | no throughput, latency or socket-count figure appears anywhere on this site; every capacity number is a target, not a result |
 
 ## What is deliberately never coming
 

@@ -4,27 +4,27 @@ An `entity` is a table + its domain type + its invariants. The single source of 
 
 | Aspect | Rule |
 |---|---|
-| Projects to | Drizzle table, domain type, migration, repo type, admin screen, seed factory |
+| Projects to | SQL DDL, domain type (`typeof posts.$row`), migration, repo type, admin screen, seed factory |
 | Owns | column types, defaults, invariants, tenant column |
 | Never | business logic, I/O, HTTP awareness, policy decisions |
 
-Declared in `<feature>/entity.ts`; the Drizzle schema and migrations live in `packages/db` and hold **no business logic**.
+One `entity()` call per table, in `packages/db/src/schema/<name>.ts`; a feature's own `entity.ts` holds only that feature's view schemas. Migrations sit beside the entities in `packages/db/migrations/` as plain SQL. Neither holds **any business logic**. Reads and writes go through `@ultimat3/entity`'s own `postgresDriver()`, which compiles a query plan to parameterised SQL — no ORM in the request path ([`pg-driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/entity/src/pg-driver.ts)).
 
 ## Six projections
 
 | Projection | Where it lands | Consumed by |
 |---|---|---|
-| Drizzle table | `packages/db/schema.ts` | `repo.ts` — the only file that touches SQL |
-| Domain type | `packages/domain` | actions, queries, Solid component props |
-| Migration | `packages/db/migrations/` | `x db apply`, `ROLE=migrate` |
+| SQL DDL | the generated migration — columns, CHECKs, indexes | Postgres |
+| Domain type | `export type Post = typeof posts.$row` | actions, queries, Solid component props |
+| Migration | `packages/db/migrations/*.sql` | `x db apply`, `ROLE=migrate` |
 | Repo type | the feature's `repo.ts` signature | `ctx.<service>` inside `handle` |
 | Admin screen | `apps/admin/` | operators, and the admin app's MCP surface |
 | Seed factory | `seed(name)` fixtures | all six test types |
 
 One inferred chain, no hand-typed link:
 
-```
-Drizzle table  →  entity type + invariants  →  action input/output  →  typed client + MCP tool  →  component props
+```text
+entity('posts', { columns })  →  typeof posts.$row + invariants  →  action input/output  →  typed client + MCP tool  →  component props
 ```
 
 Rename a column and the entity type changes, the action's output stops matching, and the component prop errors — all at typecheck, before a test runs.
@@ -34,30 +34,41 @@ Rename a column and the entity type changes, the action's output stops matching,
 `As of 2026-08`:
 
 ```ts
-export const post = entity({
-  table: 'posts',
-  tenant: 'orgId',
+export const posts = entity('posts', {
   columns: {
-    id:          c.uuid.primary,
-    orgId:       c.uuid.references(org),
-    title:       c.text,
-    body:        c.text,
-    publishedAt: c.timestamptz.nullable,
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }).tenant(),
+    title: text({ max: TITLE_MAX }),
+    body: text(),
+    status: enumerated(POST_STATUSES).default('draft'),
+    likeCount: integer().default(0),
+    publishedAt: timestamp().nullable(),
+    createdAt: timestamp().defaultNow(),
+    updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
+  tenant: 'orgId',   // said out loud; inferred from `.tenant()` or an `orgId` column if omitted
   invariants: [
-    inv('published-post-has-title', (p) => p.publishedAt === null || p.title.length > 0),
+    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
+    invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0)),
   ],
-  embed: { field: 'body', model: 'text-embedding-3-large' },
+  indexes: [{ on: ['orgId', 'publishedAt'], order: 'desc' }],
 });
+
+export type Post = typeof posts.$row;
 ```
+
+The table name is the first argument. Everything else is the init object:
 
 | Field | Meaning |
 |---|---|
-| `table` | physical table name; snake_case, plural |
-| `tenant` | the tenant column. Required on any multi-tenant table |
-| `columns` | types + defaults + FKs. Money is `{ minor, currency }`, never a float; timestamps are `timestamptz`, stored UTC |
-| `invariants` | named predicates enforced on write, projected to a CHECK constraint where expressible |
-| `embed` | opt-in vector column + HNSW index + backfill job |
+| `columns` | types + defaults + FKs. Money is `bigint` minor units + `char(3)` currency, never a float; timestamps are `timestamptz`, stored UTC |
+| `tenant` | the tenant column. Omitted, it is inferred from `.tenant()` or a column named `orgId` — silence never means unscoped |
+| `invariants` | named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible |
+| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead |
+| `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
+| `tags` | extra cache tags this entity participates in, beyond its own `entity:<name>` |
+
+Presence of a `deletedAt` column is what makes an entity soft-deletable — not a flag.
 
 ## Tenant column rule
 
@@ -130,7 +141,7 @@ X_DB_DRIFT: schema differs from migrations
 | DB has what migrations lack | someone changed the database by hand; generate a migration or revert the change |
 | Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping |
 
-There is no separate migration tool and no "regenerate types" step. Drift is check 5 of nine in `x verify` ([Testing](Testing)).
+There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s seventeen steps — the list, in order, is in [Testing](Testing).
 
 ## Reversible or marked
 

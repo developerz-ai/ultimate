@@ -27,7 +27,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, studio, branch | shipped |
-| `x verify` | the gate: typecheck, lint, boundaries, errors, all tests, drift, contract, budgets, manifest | shipped |
+| `x verify` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -128,7 +128,7 @@ rather than an empty tab.
 | `NATS_URL` | in-process fanout | that NATS server |
 | `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
 
-`migrate` and `replicator` are real roles but not dev roles: `migrate` is `x db apply`, and the
+`migrate` and `replicator` are real roles but not dev roles: `migrate` is `x db migrate`, and the
 replicator needs logical replication the embedded database does not serve. Naming either is
 `X_CLI_BAD_FLAG`, never a silently ignored value. Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`,
 `X_ENV_MISSING`, `X_DB_DRIFT`.
@@ -161,11 +161,15 @@ x db gen "add publish_at" | migrate | reset | studio | branch <name>
 |---|---|---|
 | `gen "<name>"` | diff entities against migrations and write the next migration | the message is required and becomes the filename |
 | `migrate` | apply pending migrations | the same code path as `ROLE=migrate` |
-| `reset` | drop, recreate, migrate, seed | dev only; refuses when `NODE_ENV=production` |
+| `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `studio` | open the Drizzle studio against the dev database | read/write, dev only |
-| `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone | the isolation an agent should use before migrating |
+| `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating |
 
-Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_DB_STUDIO_FAILED`, `X_MIGRATE_CONCURRENT`.
+`gen`, `migrate` and `reset` shell out to `bunx drizzle-kit generate|migrate` for the migration
+files, and `studio` to `bunx drizzle-kit studio`. Nothing in the request path goes through an ORM:
+reads and writes run on `@ultimat3/entity`'s hand-written `postgresDriver()`.
+
+Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_DB_STUDIO_FAILED`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`.
 
 ## x verify
 
@@ -228,10 +232,10 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--target` | string | `docker` | `docker` (one image, all roles), `binary` (`bun build --compile`), `static` (prerendered `site/`) |
-| `--tag` | string | app name + build id | image tag, docker target |
-| `--out` | string | `dist/` | output path, binary and static targets |
+| `--tag` | string | `ultimate-app:dev` | image tag, docker target |
+| `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
 
-Runs `x verify`'s static checks first — a build that would fail `x verify` does not produce an artifact. All targets share one content-hash build ID, stamped into the image, the HTML, the assets, `sw.js` and `x.manifest.json`. Errors: `X_BUILD_FAILED`, `X_BUDGET_EXCEEDED`, `X_PWA_NO_ICON_SOURCE`, `X_PWA_NO_FALLBACK`.
+Execs exactly one command per target and nothing else: `docker build -f docker/Dockerfile` for `docker`, `bun build --compile` over `apps/web/server.ts` for `binary`, `apps/web/prerender.ts` for `static`. It does **not** run `x verify` or any part of it — run the gate yourself first, because a build of code that fails the gate still produces an artifact. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND`.
 
 ## x deploy
 
@@ -241,12 +245,17 @@ x deploy --image repo/app:tag [--method compose|helm] [--dry-run] [--critical] [
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--image` | string | required | image reference to deploy |
+| `--image` | string | `ultimate-app:dev` | image reference to deploy |
 | `--method` | string | `compose` | `compose` or `helm` |
 | `--dry-run` | boolean | `false` | print the plan, run nothing |
 | `--critical` | boolean | `false` | security deploy: clients are forced to reload after the grace period |
 
-The plan is always migrate-first, then the serving roles, drain-aware. Errors: `X_DEPLOY_FAILED`, `X_MIGRATE_CONCURRENT`.
+`compose` is five ordered steps against `docker/docker-compose.prod.yml` — `run --rm migrate` to
+completion, then `up -d` for `web`, `sync`, `worker`, `scheduler`. `helm` is one
+`helm upgrade --install app docker/helm --set image=<ref>`; the chart is **committed** at
+`docker/helm`, there is no `--helm` flag and nothing generates it. `--method helm` in an app with
+no `docker/helm` exits `X_NOT_IMPLEMENTED` naming `x deploy --method compose`. Errors:
+`X_DEPLOY_FAILED`, `X_NOT_IMPLEMENTED`, `X_MIGRATE_CONCURRENT`.
 
 ## x manifest
 

@@ -195,10 +195,12 @@ describe('unit · x verify', () => {
     });
 
     test('applies and surfaces the host findings once one is registered', async () => {
+      // `cmd-verify` carries `fix` through to both renderers verbatim, so the fixture holds a real
+      // one: an exact edit naming the file, the row and the marker, not advice.
       const finding = {
         code: 'X_ROADMAP_STATUS_MISSING',
         cause: 'milestone 3 has no status marker',
-        fix: 'add a status marker to milestone 3',
+        fix: 'edit docs/idea/14-roadmap.md: put "✅" or "🚧" in the second cell of the row starting "| 3 |", then: bun run scripts/roadmap.ts --json',
       };
       const withHost: VerifyContext = { ...ctx, hostChecks: { roadmap: async () => [finding] } };
       expect(await step?.applies?.(withHost)).toBe(true);

@@ -99,7 +99,7 @@ If a feature doesn't fit a primitive, it doesn't ship.
 </div>
 
 <div class="grid">
-<article class="primitive"><span class="primitive__name">entity</span><p>A table + its domain type + invariants. Projects to a Drizzle table, a migration, a repo type, an admin screen and a seed factory.</p></article>
+<article class="primitive"><span class="primitive__name">entity</span><p>A table + its domain type + invariants. Projects to a Postgres table, a migration, a repo type, an admin screen and a seed factory.</p></article>
 <article class="primitive"><span class="primitive__name">policy</span><p>An authz rule, evaluated in every surface — HTTP guard, live-query row filter, job actor check, MCP tool gate, admin visibility.</p></article>
 <article class="primitive"><span class="primitive__name">action</span><p>A mutation or command, server-authoritative. Six generated artifacts, one declaration.</p></article>
 <article class="primitive"><span class="primitive__name">mutator</span><p>An action with an optimistic local twin. <code>local</code> runs on the client, <code>server</code> is the truth, <code>conflict</code> decides the rebase.</p></article>

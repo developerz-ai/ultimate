@@ -1,5 +1,5 @@
 // Validation goes through the Standard Schema interface, never through a vendor
-// API, so ArkType (`t`) is a default rather than a dependency of the HTTP layer.
+// API, so `t` is the schema layer's shipped default rather than a dependency of the HTTP layer.
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 
 export type Schema<Out = unknown> = StandardSchemaV1<unknown, Out>;

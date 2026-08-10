@@ -138,8 +138,8 @@ Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config
 |---|---|---|
 | Runtime | **Bun ≥ 1.3, only** | native SQL / Redis / S3 / WS / test / bundler / image — kills ~15 deps |
 | HTTP | thin layer over `Bun.serve` | we own the lifecycle, so context/tracing/authz can't be skipped |
-| DB | **Postgres + Drizzle** | SQL-transparent, so an agent reads the generated SQL and self-corrects |
-| Validation | Standard Schema, **ArkType** default | swappable interface, one blessed default |
+| DB | **Postgres**, no ORM | `entity()` is the one table declaration; `postgresDriver()` emits hand-written parameterised SQL, so an agent reads the statement and self-corrects |
+| Validation | **Standard Schema**, builtin provider default | dependency-free and shipped; ArkType/Zod/Valibot swap in behind `configureSchemaProvider()` with a ~40-line adapter you write |
 | Auth | **Better Auth**, wrapped | MIT, self-hosted, with our policy layer on top |
 | Frontend | **SolidJS 2** + our own router | fine-grained reactivity; we vendor the router rather than track an alpha |
 | Styling | **SCSS modules + design tokens** | no Tailwind (diff noise), no CSS-in-JS (runtime cost) |
@@ -187,7 +187,7 @@ myapp/
     desktop/      Tauri, later
   packages/
     domain/       pure types + constants, no I/O
-    db/           Drizzle schema + migrations, no business logic
+    db/           entity declarations + SQL migrations, no business logic
     core/         your business services — shared by web, admin, worker
     i18n/         your catalogs
     ui/           your components, on top of @ultimat3/ui

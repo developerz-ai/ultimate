@@ -29,7 +29,7 @@ Neither adapter may parse, authorize, or handle on its own. Both go through `inv
 | MCP requirement | Source | Notes |
 |---|---|---|
 | tool name | action name, kebab-cased | `publish-post` |
-| input JSON Schema | the ArkType `input` via Standard Schema → JSON Schema | the same schema HTTP parses |
+| input JSON Schema | the action's `input` via Standard Schema → JSON Schema | the same schema HTTP parses |
 | output schema | `output` | same |
 | description | `mcp.description` | required when `expose: true` |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical | one authz system |

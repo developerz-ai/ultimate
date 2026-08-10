@@ -91,17 +91,21 @@ export const posts = entity('posts', {
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
   tenant: 'orgId',      // said out loud; inferred from `.tenant()` or an `orgId` column if omitted
-  invariant: (c) => [
-    c.title.trimmed(),
-    c.likeCount.gte(0),
+  invariants: [
+    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
+    invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'status'] }],
 });
 ```
 
+`invariants` is plural, and each entry is a named `invariant(name, build)` — the name becomes the
+constraint name (`posts_post_title_present_check`), which is what makes a violation point at a rule
+instead of at a column.
+
 | Aspect | Rule |
 |---|---|
-| Projects to | Drizzle table, domain type, migration, repo type, admin screen, seed factory |
+| Projects to | SQL DDL, domain type (`typeof posts.$row`), migration, repo type, admin screen, seed factory |
 | Owns | column types, defaults, invariants, tenant column |
 | Never | business logic, I/O, HTTP awareness, policy decisions |
 

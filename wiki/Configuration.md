@@ -7,7 +7,9 @@ v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading))
 ```ts
 import { defineConfig, defineEnv } from '@ultimat3/core';
 
-const env = defineEnv({
+// Module scope, in `app.config.ts` itself: the file is imported at boot, so the env gate runs
+// before any listener binds. There is no separate `env.ts` — one config file means one.
+export const env = defineEnv({
   APP_URL: { type: 'url' },
   DATABASE_URL: { type: 'url' },
   SESSION_SECRET: { type: 'string', secret: true },
@@ -15,34 +17,44 @@ const env = defineEnv({
 
 export const config = defineConfig({
   name: 'postly',
-  url: env.APP_URL,
-  db: { url: env.DATABASE_URL },
-  pwa: { offline: { fallback: '/offline' } },
+  locales: ['en'],
+  defaultLocale: 'en',
+  defaultTimeZone: 'UTC',
+  defaultCurrency: 'USD',
+  // Env KEYS, never the value: the same image deploys to every environment.
+  database: { urlEnv: 'DATABASE_URL', poolSize: 10 },
+  jobs: { driver: 'postgres', queues: ['postly-default'], concurrency: 8 },
+  pwa: { enabled: true, offline: 'runtime' },
 });
 ```
 
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
+
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly thirteen keys `As of 2026-08`: `name`, `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `ai`. That type is the contract — a section below naming anything outside it describes a design-spec surface, not a field `defineConfig` accepts today.
 
 ## Top level
 
 | field | type | default | notes |
 |---|---|---|---|
 | `name` | `string` | required | `^[a-z][a-z0-9-]{1,63}$`. Names the dev DB, the image, the queue prefix |
-| `url` | `string` (URL) | required | canonical origin. Drives absolute SEO URLs, OAuth callbacks, `start_url` |
 | `locales` | `string[]` | `['en']` | BCP-47. Every locale needs a complete catalog or `X_CATALOG_MISSING_KEYS` |
 | `defaultLocale` | `string` | `'en'` | must appear in `locales` |
-| `timeZone` | IANA zone | `'UTC'` | display default only; a user's own `tz` column always wins |
-| `currency` | ISO 4217 | `'USD'` | default for `Money` formatting. Never a conversion rate |
+| `defaultTimeZone` | IANA zone | `'UTC'` | display default only; a user's own `tz` column always wins |
+| `defaultCurrency` | ISO 4217 | `'USD'` | default for `Money` formatting. Never a conversion rate |
+| `theme.defaultMode` | `'light' \| 'dark' \| 'system'` | `'system'` | `theme.tokens` is the semantic token map; raw hex is a lint error in components |
+| `roles` | `Role[]` | every `ROLE` | which runtime roles this app runs. Empty is `X_CONFIG_INVALID` |
 
-## `db`
+There is no `url` field. The canonical origin is an env key the app reads at its point of use (`APP_URL`), so the same image deploys to every environment.
+
+## `database`
 
 | field | type | default | notes |
 |---|---|---|---|
-| `db.url` | `string` | required | always `env.DATABASE_URL`, never a literal |
-| `db.pool` | `number` | `10` | per process. `web`×replicas + `worker`×concurrency must stay under Postgres `max_connections` |
-| `db.ssl` | `boolean \| 'require'` | `false` | `'require'` on managed Postgres |
-| `db.statementTimeout` | duration | `'10s'` | server-side cap; a longer query aborts with `X_TIMEOUT` |
-| `db.entities` | module id | `'@app/db'` | where `entity()` declarations live; `db.schema` defaults to `'public'` |
+| `database.urlEnv` | `string` | `'DATABASE_URL'` | the env **key** holding the connection string, never the string itself |
+| `database.driver` | `'postgres'` | `'postgres'` | one driver; `postgresDriver()` from `@ultimat3/entity` is its only implementation |
+| `database.poolSize` | `number` | `10` | per process. `web`×replicas + `worker`×concurrency must stay under Postgres `max_connections` |
+| `database.ssl` | `boolean` | `false` | `true` on managed Postgres |
+| `database.schema` | `string` | `'public'` | the Postgres schema `entity()` tables live in |
 
 ## `auth`
 
@@ -61,8 +73,7 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 
 | field | type | default | notes |
 |---|---|---|---|
-| `jobs.driver` | `'pg' \| 'redis' \| 'nats'` | `'pg'` | `pg` needs no extra infra. Redis/NATS still use the outbox ([Jobs and workflows](Jobs-And-Workflows)) |
-| `jobs.url` | `string` | — | required for `redis` / `nats` |
+| `jobs.driver` | `'postgres' \| 'redis' \| 'nats'` | `'postgres'` | `postgres` needs no extra infra and is the only shipped production driver. **`redis` and `nats` are v2** — the stubs throw `X_NOT_IMPLEMENTED` ([Jobs and workflows](Jobs-And-Workflows)) |
 | `jobs.queues` | `string[]` | `['default']` | a `worker` runs one pool per queue in `WORKER_QUEUES` |
 | `jobs.concurrency` | `number` | `8` | per pool, per process |
 | `jobs.retry.attempts` | `number` | `5` | per-job `retry` overrides |
@@ -106,33 +117,25 @@ Tiers are read in fixed order `memo → lru → redis → cdn → origin`. See [
 
 ## `pwa`
 
-`offline.fallback` is **required by the type — omitting it is a compile error.** A PWA without one shows the browser's dinosaur.
+`offline` is an `OfflineStrategy` **string**, not an object. Five booleans, one strategy — every field is optional and every default is off.
 
 ```ts
-pwa: {
-  offline: { fallback: '/offline' },   // required
-}
+pwa: { enabled: true, offline: 'runtime' },
 ```
 
 | field | type | default | notes |
 |---|---|---|---|
-| `pwa.offline.fallback` | route path | **required** | scaffolded in `site/` at 0kb JS by `x new` |
-| `pwa.icon` | file path | — | one SVG or >=1024px PNG. All icons, splashes, favicons generated from it |
-| `pwa.precache.maxBytes` | size | `'3mb'` | a budget; exceeding it fails `x verify` |
-| `pwa.retention.deploys` | `number` | `10` | asset retention, whichever is longer with `retention.window` |
-| `pwa.retention.window` | duration | `'7d'` | |
-| `pwa.push` | `{ enabled, vapid }` | `{ enabled: false }` | generates SW handler + subscription action + send job |
-| `pwa.backgroundSync` | `{ enabled, queues }` | `{ enabled: false }` | wires the SW sync event to the mutator queue |
-| `pwa.badging` | `{ enabled, count }` | `{ enabled: false }` | Chromium-only |
-| `pwa.shareTarget` | `{ enabled, accept }` | `{ enabled: false }` | the target route gets a required policy |
-| `pwa.fileHandlers` | `FileHandler[]` | `[]` | `{ action, accept }` — OS file association |
-| `pwa.periodicSync` | `{ enabled }` | `{ enabled: false }` | rarely granted; always have a fallback path |
+| `pwa.enabled` | `boolean` | `false` | off means no service worker is generated at all |
+| `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | the app-wide strategy; a `route` may narrow its own |
+| `pwa.installPrompt` | `boolean` | `false` | render your own install affordance from the deferred event |
+| `pwa.backgroundSync` | `boolean` | `false` | wires the SW sync event to the mutator queue |
+| `pwa.push` | `boolean` | `false` | generates the SW handler, the subscription action and the send job |
 
 ## `seo`
 
 | field | type | default | notes |
 |---|---|---|---|
-| `seo.siteUrl` | `string` | `url` | absolute-URL base for sitemap, feeds, canonical, OG |
+| `seo.siteUrl` | `string` | `env.APP_URL` | absolute-URL base for sitemap, feeds, canonical, OG |
 | `seo.sitemap` | `boolean` | `true` | generated from the route table |
 | `seo.robots.allow` | `string[]` | `['/']` | |
 | `seo.robots.disallow` | `string[]` | `['/app', '/admin', '/_x']` | |
@@ -167,31 +170,27 @@ Per surface, overridable per route via `budget` on `defineRoute`.
 | `otel.endpoint` | `string` | — | OTLP collector. Absent = spans still recorded, exported nowhere |
 | `otel.sampling` | `number` | `0.1` | head sampling ratio; errors are always sampled. Tracing is **always on, not a flag** |
 
-## `ai`, `i18n`, `mcp`
+## `ai`
+
+Three fields, and `ai.mcp` is where the app's own MCP surface is configured — there is no top-level `mcp` block.
 
 | field | type | default | notes |
 |---|---|---|---|
-| `ai.models` | `string[]` | `[]` | ordered; index 0 is primary |
-| `ai.fallback` | `'ordered' \| 'none'` | `'ordered'` | a fallback is recorded in the OTel span, never silent |
-| `ai.cache.semantic.threshold` | number | `0.97` | cosine similarity; never below `0.9` |
-| `ai.cache.semantic.ttl` | duration | `'7d'` | |
-| `ai.budget.perCall` | `Money` | — | `{ minor, currency }`. Exceeding throws before spending |
-| `ai.budget.perTenantMonthly` | `Money` | — | |
-| `i18n.catalogs` | module id | `'@app/i18n'` | flat key catalog; a miss renders `⟦key⟧` and fails `x verify` |
-| `i18n.fallbackChain` | `boolean` | `false` | off by design — a silent English fallback hides a missing key |
-| `mcp.expose` | `boolean` | `true` | the app's own MCP surface. Actions still opt in per `mcp.expose` |
-| `mcp.server` | module id | — | the app's hand-written tools, on top of the generated ones |
-| `mcp.devSocket` | `string` | `'ws://localhost:9229'` | `x dev` only. Never bound in `ROLE=web` |
+| `ai.modelEnv` | `string` | — | the env **key** for the model id, so no model string is baked into the image |
+| `ai.mcp.expose` | `boolean` | `true` | the app's own MCP surface. Actions still opt in per action `mcp.expose` |
+| `ai.mcp.path` | `string` | `'/mcp'` | where the HTTP transport mounts. Never bound in `ROLE=web` |
+
+`ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: top-level `locales` and `defaultLocale` are the whole surface.
 
 ## Env vars
 
-One typed schema, declared with `defineEnv` alongside `app.config.ts`, validated at boot. A missing or malformed key fails in **~40ms** with `X_ENV_MISSING` — never a 500 an hour later.
+One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`**, validated at boot. There is no `env.ts` — the one config file is also the one env gate. A missing or malformed key fails in **~40ms** with `X_ENV_MISSING`, every offender named in one error — never a 500 an hour later.
 
 | var | roles | required | notes |
 |---|---|---|---|
 | `ROLE` | all | no — default `web` | `web \| sync \| worker \| scheduler \| migrate \| replicator \| all`. Invalid → `X_ROLE_INVALID` |
 | `DATABASE_URL` | all | yes | |
-| `APP_URL` | `web`, `sync` | yes | must match `config.url`'s shape |
+| `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
 | `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
 | `REALTIME_TRANSPORT_URL` | `sync`, `replicator` | if transport ≠ `memory` | missing → `X_TRANSPORT_UNAVAILABLE` at readiness |
@@ -206,7 +205,8 @@ Rules:
 | Rule | Detail |
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
-| `env.X` reads through `defineEnv`'s schema | an unschema'd key is a `X_CONFIG_INVALID` at load |
+| `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
+| `X_CONFIG_INVALID` is `app.config.ts` only | it is what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `poolSize < 1`. Env failures never carry it |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |
 

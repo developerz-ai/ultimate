@@ -6,23 +6,23 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**v1.0.0 `As of 2026-08`.** Stable API, semver from here, all 28 packages published to npm in lockstep. That is exactly what 1.0.0 claims — a stable API under semver, not a promise about your infrastructure.
+**v1.0.0 `As of 2026-08`.** Stable API, semver from here, 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — published to npm in lockstep. That is exactly what 1.0.0 claims — a stable API under semver, not a promise about your infrastructure.
 
 What it does **not** claim:
 
 | Not claimed | Detail |
 |---|---|
 | A realtime benchmark | none published. The 50k-socket forced-restart number is still unmeasured, and per-node socket capacity is a target, not a result ([Realtime](Realtime)) |
-| The two-platform deploy proof | `x build --target docker\|binary\|static`, the compose files, and the Helm chart ship. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
+| The two-platform deploy proof | all three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
 | The v2 set | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
-All 28 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are shipped and enforced by `x verify`'s `roadmap` step; milestone 11 is open on its deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. See [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md).
+All 28 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
 
 ### What is left after 1.0.0?
 
-Milestone 11's two-platform deploy proof, and the realtime benchmark. Both land when they are measured, not on a date — publishing a date is how roadmaps become fiction. Everything else in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets).
+Two things, both listed under *Open at 1.0.0* in the roadmap: milestone 11's two-platform deploy proof, and the **50k-socket forced-restart benchmark**. The benchmark belongs to no milestone number — realtime tiers 1–2 shipped in milestone 6 and the number was never measured, so it is named as open rather than marked ✅. Both land when they are measured, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets).
 
 ## The stack
 
@@ -48,11 +48,13 @@ Wrong runtime for RSC, and the mental model taxes exactly the audience being opt
 
 ### Why SolidJS 2 and your own router?
 
-The router must own render mode, offline strategy, and metadata — those are framework concerns, so it cannot be a third-party dependency that disagrees with the build. `As of 2026-07` SolidJS 2 is in beta and the ecosystem around it is thin, which is also why the UI kit is ours.
+The router must own render mode, offline strategy, and metadata — those are framework concerns, so it cannot be a third-party dependency that disagrees with the build. `As of 2026-08` SolidJS 2 is still pre-release (`2.0.0-experimental.16`) and the ecosystem around it is thin, which is also why the UI kit is ours.
 
-### Why ArkType?
+### Which schema library?
 
-One schema drives runtime parse, TS type, OpenAPI, and the MCP tool's JSON Schema. It is exposed as `t` and sits behind the Standard Schema interface, so the blessed default is swappable at the framework level — not per app.
+None. `@ultimat3/schema` ships its own dependency-free validators (`vendor: 'ultimate'`), exposed as `t`. One schema drives runtime parse, TS type, OpenAPI, and the MCP tool's JSON Schema.
+
+Everything sits behind the Standard Schema v1 interface, so the default is swappable at the framework level — not per app. No ArkType, Zod or Valibot adapter ships; swapping to one means writing the ~40-line `configureSchemaProvider()` adapter yourself ([`packages/schema/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/schema/README.md)). A dependency the framework does not need is a dependency every app pays for.
 
 ## Design decisions people push back on
 
@@ -70,7 +72,7 @@ A convention that isn't a build error doesn't exist. A missing `description`, a 
 
 ### Is `x verify` really the only gate?
 
-Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check you cannot run locally. Seventeen steps: typecheck, lint, boundaries, filesize, package-shape, errors, all six test types (unit, contract, live, job, e2e, eval), drift, contract-diff, budgets, manifest, and roadmap. No `--only`, no `--skip`. See [Testing](Testing).
+Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check you cannot run locally. Seventeen steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap. No `--only`, no `--skip`. See [Testing](Testing).
 
 ### Why are there only eight primitives?
 
@@ -102,7 +104,7 @@ Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Milestone 6 is a reconnect benchmark — 50k sockets, a forced `sync` restart, measured time-to-consistent and DB load — and **topology is not frozen until that number exists**. If the incremental matcher is the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback. Tiers 1–2 ship in v1; tier 3 local-first is v2.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is v2. What did not ship is the reconnect benchmark — 50k sockets, a forced `sync` restart, measured time-to-consistent and DB load. **That number has never been measured**, which is why the roadmap lists it under *Open at 1.0.0* instead of marking it ✅, and why **topology is not frozen**. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -110,7 +112,7 @@ A half-built sync engine is worth nothing: it cannot be shipped partially, demoe
 
 ### What if Bun has a problem under sustained load?
 
-Stated risk, not a hidden one. `As of 2026-07` long-running Bun processes are less proven than Node's, so memory profiling under sustained socket load is explicit roadmap work. See [`docs/idea/15-risks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/15-risks.md).
+Stated risk, not a hidden one. `As of 2026-08` long-running Bun processes are less proven than Node's, so memory profiling under sustained socket load is explicit roadmap work. See [`docs/idea/15-risks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/15-risks.md).
 
 ## Scope
 

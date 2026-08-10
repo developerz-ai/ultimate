@@ -20,11 +20,11 @@ export const liveFeed = query({
 
 | Field | Required | Rule |
 |---|---|---|
-| `input` | yes | Standard Schema; ArkType exposed as `t`. Parsed before `policy`, before `sql`. Becomes the GET query string, the client hook argument, and the MCP tool's JSON Schema |
+| `input` | yes | Standard Schema; `t` re-exported from `@ultimat3/query`, so a query file imports one package. The shipped provider is `@ultimat3/schema`'s dependency-free builtin — ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider`, and no adapter ships. Parsed before `policy`, before `sql`. Becomes the GET query string, the client hook argument, and the MCP tool's JSON Schema |
 | `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
 | `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. v2 |
-| `sql` | yes | `(input) => builder`. Drizzle-shaped, SQL-transparent — the generated SQL is printable so an agent can read it and self-correct |
+| `sql` | yes | `(input) => SqlSource`. Built with `from()` from `@ultimat3/query` or an `@ultimat3/entity` repo plan — no ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
@@ -142,7 +142,7 @@ Verbatim shapes: [`packages/realtime/src/errors.ts`](https://github.com/develope
 | Reconnect delta | resume from an LSN produces the same state as a fresh snapshot |
 | Policy-filtered row never delivered | the per-row re-check actually runs |
 
-Every `query({ live: true })` emits a scaffold covering snapshot + one patch + one policy-filtered row. The scaffold fails until filled in — an untested live query is a red build.
+Every `query({ live: true })` emits a test covering snapshot + one patch + one policy-filtered row, green on the first run. Extend it as the query grows — an untested live query is a red build.
 
 ```
 x test live --json

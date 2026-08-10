@@ -4,10 +4,11 @@ Postgres access for Ultimate: parameterised SQL, transactions, migrations, drift
 branch databases, and a read-only client for anything an LLM drives.
 
 Tier 1. Imports `@ultimat3/core` only. No runtime dependencies; `@electric-sql/pglite` is an
-**optional peer**, loaded at first query and only by the embedded driver. **Drizzle is the
-production backing for the query builder and entity schema definitions**; this package declares
-the narrow structural types it consumes (`DbClient`, `SqlFragment`, `EntityDescriptionLike`) so
-the SQL stays readable and the boundary stays thin.
+**optional peer**, loaded at first query and only by the embedded driver. **No ORM backs any of
+this** — `@ultimat3/entity`'s hand-written `postgresDriver()` compiles every statement out of the
+`sql` / `identifier` / `join` fragments below; this package declares the narrow structural types it
+consumes (`DbClient`, `SqlFragment`, `EntityDescriptionLike`) so the SQL stays readable and the
+boundary stays thin.
 
 ## Public API
 

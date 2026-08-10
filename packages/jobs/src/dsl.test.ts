@@ -18,7 +18,7 @@ import { resetJobsFacade } from './outbox';
 import type { TaskEnqueueEntry, TaskHandle } from './scheduler';
 import { resetTasks, task } from './scheduler';
 
-/** Minimal Standard Schema so these tests do not depend on ArkType's surface. */
+/** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
     '~standard': {

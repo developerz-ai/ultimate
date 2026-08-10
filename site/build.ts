@@ -7,7 +7,7 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import { compileScript, compileStyles, copyDir, readText } from './lib/assets';
 import type { Page } from './lib/config';
-import { DIST, ORIGIN, PAGE_ORDER, REPO_ROOT, ROOT } from './lib/config';
+import { DIST, FRAMEWORK_VERSION, ORIGIN, PAGE_ORDER, REPO_ROOT, ROOT } from './lib/config';
 import { feedXml } from './lib/feed';
 import { renderCode } from './lib/highlight';
 import { jsonLd, navHtml, pagerHtml, tocHtml } from './lib/html';
@@ -61,12 +61,15 @@ async function build(): Promise<void> {
     }
     const rendered = markdown(source);
 
+    // `version` reaches every fill map, not just JSON-LD: the release number is one fact, and a
+    // template that hardcodes it is the drift the manifest read exists to remove.
     const body = isHome
       ? fill(homeTemplate, {
           headline: escapeHtml(page.meta.headline ?? page.meta.title ?? ''),
           lede: inline(page.meta.lede ?? page.meta.description ?? ''),
           hero_code: heroCode,
           content: rendered.html,
+          version: FRAMEWORK_VERSION,
         })
       : fill(docTemplate, {
           breadcrumb:
@@ -78,6 +81,7 @@ async function build(): Promise<void> {
           content: rendered.html,
           toc: tocHtml(rendered.headings),
           pager: pagerHtml(pages, index),
+          version: FRAMEWORK_VERSION,
         });
 
     const previous = pages[index - 1];
@@ -110,6 +114,7 @@ async function build(): Promise<void> {
       body,
       built,
       build_id: `build ${buildId}`,
+      version: FRAMEWORK_VERSION,
     });
 
     await Bun.write(isHome ? `${DIST}/index.html` : `${DIST}/${page.slug}/index.html`, html);

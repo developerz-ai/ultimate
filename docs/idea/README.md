@@ -33,7 +33,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 
 ## The one-paragraph version
 
-Bun-only, opinionated, full-stack. Postgres + Drizzle, SolidJS 2, SCSS modules + tokens, ArkType, Better Auth. Eight primitives — `entity policy action mutator query job route task` — and nothing else ships. One `action` declaration projects to an HTTP route, an OpenAPI operation, a typed client function, a job handle, an MCP tool, and a test scaffold, all sharing **one** authz system. Realtime is a three-rung ladder with the same mutator shape at every rung. Jobs are durable steps enqueued through a transactional outbox. Caching is four tiers behind one tag graph. `site/` cannot import `app/` — build error. SEO, budgets, migration drift, and import boundaries are build failures, not guidelines. `x verify` green means shippable. Deploy target = anything that runs containers.
+Bun-only, opinionated, full-stack. Postgres with no ORM, SolidJS 2, SCSS modules + tokens, Standard Schema behind a dependency-free builtin provider, Better Auth. Eight primitives — `entity policy action mutator query job route task` — and nothing else ships. One `action` declaration projects to an HTTP route, an OpenAPI operation, a typed client function, a job handle, an MCP tool, and a test scaffold, all sharing **one** authz system. Realtime is a three-rung ladder with the same mutator shape at every rung. Jobs are durable steps enqueued through a transactional outbox. Caching is four tiers behind one tag graph. `site/` cannot import `app/` — build error. SEO, budgets, migration drift, and import boundaries are build failures, not guidelines. `x verify` green means shippable. Deploy target = anything that runs containers.
 
 ## The axioms, in one table
 

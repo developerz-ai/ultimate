@@ -90,13 +90,21 @@ const view = await publishPost({ postId });        // typed client, no fetch, no
 ```
 
 ```bash
-$ curl -sX POST localhost:3000/_x/action/publish-post \
-    -H 'content-type: application/json' -d '{"postId":"1b9d…"}'
+curl -sX POST localhost:3000/_x/action/publish-post \
+  -H 'content-type: application/json' -d '{"postId":"1b9d…"}'
 ```
 
 ```bash
-$ x mcp serve            # publish-post is an MCP tool; the agent calls it by name
+curl -sX POST localhost:3000/mcp \
+  -H 'authorization: Bearer <agent-token>' -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"postly.publishPost","arguments":{"postId":"1b9d…"}}}'
 ```
+
+`mcp: { expose: true }` puts the action in the **app's** catalog: `defineAppMcp` projects it and
+mounts `POST /mcp` once the app resolves agent tokens, under the app's own tool name
+(`postly.publishPost` in the reference app). `x mcp serve` is a different server — the framework's
+dev tools, routes and schema and policies and tests, never an app action.
 
 An unauthorised caller gets the same answer in all three, with the same code:
 

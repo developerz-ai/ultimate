@@ -1,6 +1,6 @@
 # The eight primitives
 
-Everything in the framework is one of these. `x g resource <name>` scaffolds one of each, wired end-to-end, with failing test scaffolds.
+Everything in the framework is one of these. `x g resource <name>` scaffolds a whole feature slice — an entity + repo, a policy, **two** actions (`create-*`, `archive-*`), a live query, a job, an app route, plus service, UI and i18n files — each with a test that **passes on the first run**. Not one of each: the slice emits no `mutator` and no `task`. Those have their own generators.
 
 ```
 entity    — a table + its domain type + invariants
@@ -30,7 +30,7 @@ A table + its domain type + invariants. The single source of the DB schema, the 
 
 | Aspect | Rule |
 |---|---|
-| Projects to | Drizzle table, domain type, migration, repo type, admin screen, seed factory |
+| Projects to | Postgres table, domain type, migration, repo (`postgresRepo`), admin screen, seed factory |
 | Owns | column types, defaults, invariants, tenant column |
 | Never | business logic, I/O, HTTP awareness, policy decisions |
 
@@ -69,7 +69,7 @@ export const publishPost = action({
 
 | Aspect | Rule |
 |---|---|
-| Projects to | HTTP route, OpenAPI operation, typed client function, job handle, MCP tool, test scaffold |
+| Projects to | HTTP route, OpenAPI operation, typed client function, job handle, MCP tool, contract test |
 | Owns | input/output contract, its policy, what it invalidates, MCP exposure |
 | Never | read headers or cookies, render, authorize inside `handle`, do slow work inline |
 
@@ -135,7 +135,7 @@ export const onboardOrg = job({
 
 | Aspect | Rule |
 |---|---|
-| Projects to | queue row, per-step persistence, retry schedule, dashboard entry, MCP `jobs.status` tool |
+| Projects to | queue row, per-step persistence, retry schedule, dashboard entry, MCP `jobs.inspect` tool |
 | Owns | retries, steps, concurrency class |
 | Never | assume it runs once — assume at-least-once. Durable business state lives in your tables, never only in the payload |
 
@@ -178,7 +178,7 @@ export const nightlyDigest = task({
 
 | Aspect | Rule |
 |---|---|
-| Projects to | scheduler entry (advisory-lock leader), next-run introspection, MCP `tasks.list` |
+| Projects to | scheduler entry (advisory-lock leader), next-run introspection, a `tasks` row in `x.manifest.json` |
 | Owns | cron expression + explicit `tz` |
 | Never | contain a handler body. If it does work, it is a `job` |
 
@@ -191,13 +191,13 @@ entity ──> policy ──> action ──> job ──> task
    └──> mutator (action + local twin)
 ```
 
-Feature slicing puts one of each in a folder, not one layer per app:
+Feature slicing puts a feature's primitives in one folder, not one layer per app:
 
 ```
 apps/web/app/<feature>/{entity,repo,service,actions,live,jobs,policy,ui}.ts
 ```
 
-Every primitive emits a test scaffold that fails until filled in — an untested action is a red build, not a backlog item ([Testing](Testing)). Every primitive appears in `x.manifest.json`, so `x manifest --json` and the MCP `manifest.get` tool describe the whole app as data.
+Every primitive emits its test beside it, and that test **passes on the first run** — a generator that emits a `TODO` has moved the work, not done it. What it pins is the distant invariant the primitive owns: a policy denial, an idempotency key, a budget. Extend it as the feature grows ([Testing](Testing)). Every primitive appears in `x.manifest.json`, so `x manifest --json` and the MCP `manifest.read` tool describe the whole app as data.
 
 ## The rule
 

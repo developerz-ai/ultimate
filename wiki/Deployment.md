@@ -2,7 +2,7 @@
 
 One image, N roles. Build once; the `ROLE` env var selects behavior. No role-specific Dockerfile, no per-role dependency set, no drift between what you tested and what runs.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). `x build --target docker|binary|static`, the compose files, and the Helm chart all ship; what is still outstanding in milestone 11 ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)) is the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
 
 ```
 docker build -t myapp .          # once
@@ -86,7 +86,7 @@ Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubsc
 | Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
 | Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter |
 
-Tune with `realtime.drain` in [Configuration](Configuration). Topology is **not frozen** until milestone 6's benchmark exists: 50k sockets, forced `sync` restart, measured time-to-consistent and DB load ([Realtime](Realtime)).
+Tune with `realtime.drain` in [Configuration](Configuration). Topology is **not frozen** until the reconnect benchmark exists — 50k sockets, forced `sync` restart, measured time-to-consistent and DB load. That number has never been measured; the roadmap lists it under *Open at 1.0.0*, pinned to no milestone ([Realtime](Realtime)).
 
 ## `x build`
 

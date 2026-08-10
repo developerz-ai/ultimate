@@ -2,7 +2,9 @@
 
 A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
 
-**v1.0.0 `As of 2026-08`.** All 28 packages publish at 1.0.0 in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). No benchmark numbers exist yet. The marketing site is [ultimate.developerz.ai](https://ultimate.developerz.ai/); this wiki is the deeper reference.
+**v1.0.0 `As of 2026-08`.** 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish at 1.0.0 in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). Milestones 0–10 are ✅; milestone 11 is 🚧, open on its two-platform deploy proof. No benchmark numbers exist yet — the **50k-socket forced-restart number is unmeasured**, so every capacity figure in this wiki is a target, not a result. The marketing site is [ultimate.developerz.ai](https://ultimate.developerz.ai/); this wiki is the deeper reference.
+
+Those facts are repeated on several pages because the wiki is plain markdown with no build step. Change them at the source first, then here: [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) owns milestone status, [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) owns the version, and `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts) owns the `x verify` step list.
 
 ```bash
 bunx create-ultimate myapp && cd myapp && x dev

@@ -1,7 +1,8 @@
 /**
- * The `SqlSource` contract every read must satisfy, plus `from()` — the in-memory
- * reference implementation used by tests and fixtures. A real app returns a
- * Drizzle-backed source from `sql:`; it only has to answer these four questions.
+ * The `SqlSource` contract every read must satisfy, plus `from()` — the reference
+ * implementation used by tests, fixtures and app queries alike. No ORM backs it: a real
+ * app's `sql:` returns `from()` over an `@ultimat3/entity` repo, and a source only has to
+ * answer these four questions.
  */
 import type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
 import { compareRows, compareValues, matchesFilters } from './shape';

@@ -52,8 +52,10 @@ component dialect and no hydration pass over the shell.
 **Why your own router?** The router must own render mode, hydration timing and offline strategy
 to make those route-level properties enforceable. That cannot be a third-party dependency.
 
-**Why Drizzle and not Prisma?** Its generated SQL is legible, so an agent can read the statement
-it produced and self-correct. That is the whole selection criterion.
+**Why no ORM?** Two query builders would mean two migration stories and two sets of generated
+SQL for an agent to learn — so there is not even one. `entity()` is the single table declaration,
+and `@ultimat3/entity`'s hand-written `postgresDriver()` compiles it to parameterised SQL an
+agent can read back and self-correct against. That legibility is the whole selection criterion.
 
 ## Design rules
 

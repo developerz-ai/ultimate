@@ -152,7 +152,7 @@ primitive, and axiom 7 keeps those out. The output is plain files.
 |---|---|
 | Static build excludes the app image | a copy change or a new blog post does not redeploy the API |
 | Independent version, shared build-ID namespace | assets stay resolvable across N deploys |
-| ISR pages regenerate server-side and push to the CDN | no full rebuild for one changed record |
+| ISR pages regenerate server-side and are served by `web` | no full rebuild for one changed record; the framework uploads nothing — the CDN re-fetches once your `PurgeDriver` drops the surrogate key |
 | Rollback is a pointer swap | seconds, no container churn |
 | Cache purge | tag-driven, one hop from the write |
 

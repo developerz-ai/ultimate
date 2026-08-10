@@ -12,10 +12,10 @@ Every hop is inference, not generation. A generated artifact can be stale; an in
 
 | # | Hop | Mechanism | Stale-able? |
 |---|---|---|---|
-| 1 | column → row type | Drizzle `$inferSelect` / `$inferInsert` | no |
-| 2 | row type → entity domain type | `entity()` wraps the table; invariants narrow the type (branded ids, non-empty strings) | no |
+| 1 | column → row type | `RowOf<C>`, derived from the `columns` object — there is no ORM and no second table declaration | no |
+| 2 | column set → entity domain type | `entity(name, init)` binds the tenant column and the invariants; `$parse` is the write boundary | no |
 | 3 | entity → repo signatures | repo factory is generic over the entity | no |
-| 4 | entity → view schema | `view(posts, ['id','title','excerpt'])` — a compile error if a field does not exist | no |
+| 4 | entity → view schema | `posts.$view(['id','title','excerpt'])` — a compile error if a field does not exist | no |
 | 5 | view → action `output` | assignment; the handler's return type must satisfy it | no |
 | 6 | `input`/`output` → JSON Schema | Standard Schema → `toJsonSchema()` at build | **generated** — drift is `X_MANIFEST_STALE` |
 | 7 | action declaration → typed client | `typeof publishPost` projected to `(input) => Promise<output>` | no |
@@ -27,25 +27,35 @@ Only hops 6 and 9 emit files, and both have a drift check in `x verify`. Everyth
 ## Worked example
 
 ```ts
-// packages/db/src/schema/posts.ts                        ← hop 1
-export const posts = pgTable('posts', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  orgId: uuid('org_id').notNull(),
-  title: text('title').notNull(),
-  excerpt: text('excerpt').notNull(),
-  cover: text('cover'),
-  publishedAt: timestamp('published_at', { withTimezone: true }),
+// packages/db/src/schema/posts.ts                        ← hops 1, 2
+import { entity, integer, invariant, text, timestamp, url, uuid } from '@ultimat3/entity';
+
+export const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }).tenant(),
+    title: text({ max: TITLE_MAX }),
+    excerpt: text({ max: EXCERPT_MAX }),
+    cover: url().nullable(),
+    likeCount: integer().default(0),
+    publishedAt: timestamp().nullable(),
+  },
+  invariants: [invariant('post_title_present', (c) => c.title.trimmed().minLength(1))],
 });
+
+export type Post = typeof posts.$row;
 ```
 
-```ts
-// apps/web/app/posts/entity.ts                           ← hops 2, 4
-export const Post = entity(posts, {
-  tenant: 'orgId',
-  invariants: [inv('title-not-blank', (p) => p.title.trim().length > 0)],
-});
+`entity(name, init)` is name-first, and `init` is `{ columns, tenant?, primaryKey?, invariants?,
+indexes?, tags? }`. `tenant: 'orgId'` in `init` is the said-out-loud form of the `.tenant()` marker
+above; `init` wins when both appear, and with neither, a column named `orgId` is still inferred —
+silence never means unscoped.
 
-export const PostView = view(Post, ['id', 'title', 'excerpt', 'cover', 'publishedAt']);
+```ts
+// apps/web/app/posts/entity.ts                           ← hop 4
+export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publishedAt']);
+
+export type PostView = typeof PostView.$row;
 ```
 
 ```ts
@@ -83,7 +93,7 @@ Rename `excerpt` → `summary` in `packages/db/src/schema/posts.ts` and change n
 
 | Where it breaks | Error | Message shape |
 |---|---|---|
-| `apps/web/app/posts/entity.ts` | `tsc` | `view(Post, [...])` — `'excerpt'` is not assignable to `keyof Post` |
+| `apps/web/app/posts/entity.ts` | `tsc` | `posts.$view([...])` — `'excerpt'` is not assignable to `keyof Post` |
 | `apps/web/api/posts.ts` | `tsc` | handler return type missing `summary`, only after `PostView` is fixed |
 | `apps/web/app/posts/ui/post-card.tsx` | `tsc` | `Property 'excerpt' does not exist on type 'PostView'` |
 | `apps/web/site/blog/[slug]/page.tsx` | `tsc` | `meta: ({ post }) => ({ description: post.excerpt })` — same error, in the SEO callback |
@@ -121,7 +131,7 @@ Be honest about the seams. Each one is an explicit, greppable parse — never a 
 
 | Seam | Risk | Required handling |
 |---|---|---|
-| `jsonb` columns | Drizzle infers `unknown` | declare `$type<T>()` **and** parse with a schema on read |
+| a JSON payload column | no `jsonb()` builder ships at 1.0.0 — `ColumnKind` reserves the kind, nothing derives a type for it | parse with a schema on read; never a cast |
 | raw SQL (`sql\`...\``) | result shape is asserted, not inferred | wrap in a repo function whose return value is schema-parsed |
 | external HTTP / webhooks | `any` | `t` parse at the boundary; failure is `X_INPUT_INVALID` |
 | `process.env` | `string \| undefined` | the env schema below |
@@ -132,18 +142,27 @@ Be honest about the seams. Each one is an explicit, greppable parse — never a 
 
 ## Typed env, validated at boot
 
-```ts
-// env.ts
-import { defineEnv } from '@ultimat3/core';
+`defineEnv` runs at **module scope inside `app.config.ts`** — the one config file, and the one
+root marker the CLI walks up to find ([`app-root.ts`](../../packages/cli/src/app-root.ts)). There
+is no `env.ts` convention and no separate discovery mechanism: importing the config is what parses
+the environment, so a bad env fails before the first listener binds.
 
-export const env = defineEnv({
-  DATABASE_URL: { type: 'url' },
+```ts
+// app.config.ts
+import { defineConfig, defineEnv } from '@ultimat3/core';
+
+const env = defineEnv({
+  DATABASE_URL: { type: 'url', secret: true },
   REDIS_URL: { type: 'url', required: false },
-  ROLE: { type: 'enum', values: ['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator'] },
+  NATS_URL: { type: 'url', role: 'sync' },        // required for ROLE=sync only
   DRAIN_TIMEOUT_MS: { type: 'integer', default: 30_000 },
-  DEFAULT_LOCALE: { type: 'string', default: 'en-US' },
-  DEFAULT_TZ: { type: 'string', default: 'UTC' },
   VAPID_PUBLIC: { type: 'string', required: false },
+});
+
+export const config = defineConfig({
+  name: 'postly',
+  database: { urlEnv: 'DATABASE_URL', poolSize: 12 },
+  realtime: { enabled: true, tier: 'live-queries', transport: 'nats', urlEnv: 'NATS_URL' },
 });
 ```
 
@@ -151,10 +170,10 @@ export const env = defineEnv({
 |---|---|
 | When | at boot, before the first listener binds — a bad env fails in ~40ms, not on the first request |
 | Failure | `X_ENV_MISSING`, listing **every** missing/invalid key at once, with the expected type per key |
-| Access | `env.DATABASE_URL` is `string`; reading `process.env` directly outside the `defineEnv` module is a boundary violation |
+| Access | `env.DATABASE_URL` is `string`, `env.DRAIN_TIMEOUT_MS` is `number` — the declaration is the only place a key's type is written |
 | Defaults | in the schema, so there is one place to look — not scattered `?? 30000` |
-| Roles | `ROLE` is a union, so a role switch is exhaustively checked in `cli` ([`13-topology-runtime.md`](./13-topology-runtime.md)) |
-| Secrets | never logged; the boot report prints key names and `set`/`unset`, never values |
+| Roles | `role: 'sync'` makes a key required for that role only, so a `worker` does not fail on a key it never reads. `ROLE` itself is the framework's (`resolveRole()`), not a key you declare |
+| Secrets | `secret: true` is never logged; the boot report prints key names and `set`/`unset`, never values |
 
 `defineEnv` is a purpose-built declarative record, not the `@ultimat3/schema` `t` used by actions and
 entities — env vars are always strings on the wire and need coercion (`number`/`port`/`boolean`/`enum`),

@@ -53,9 +53,11 @@ What `x new` writes, and who owns it afterwards:
 
 ## Typed env, validated at boot
 
+Declared at module scope in `app.config.ts`, next to `defineConfig`. There is no `env.ts` — `app.config.ts` is the one file the CLI and the runtime both load, so it is the one place the env gate can run before anything binds.
+
 ```ts
-// env.ts
-import { defineEnv } from '@ultimat3/core';
+// app.config.ts
+import { defineConfig, defineEnv } from '@ultimat3/core';
 
 export const env = defineEnv({
   DATABASE_URL: { type: 'url' },
@@ -64,6 +66,8 @@ export const env = defineEnv({
   VAPID:        { type: 'string', required: false },
   STRIPE_KEY:   { type: 'string', pattern: /^sk_/, secret: true },
 });
+
+export const config = defineConfig({ name: 'myapp' /* … */ });
 ```
 
 Boot parses this before any listener binds. Failure costs ~40ms and exit 1 — not a 3am `undefined` in a payment handler.
@@ -115,19 +119,23 @@ Stated cost: no native-addon packages, and Bun's long-running-process maturity i
 claude mcp add ultimate --transport ws ws://localhost:9229
 ```
 
+Thirteen tools, `As of 2026-08` — the full catalog, and the exact names to call:
+
 | Tool | Replaces the agent's usual guess |
 |---|---|
 | `routes.list` | grepping a router directory |
 | `schema.describe` | reading migration files in order |
 | `policies.list` | "is this endpoint protected?" |
-| `actions.list` | reading `api/` by hand |
-| `manifest.get` | ten separate reads |
-| `tests.run` | parsing terminal output |
-| `logs.tail` | scrollback archaeology |
+| `actions.describe` | reading `api/` by hand — actions and queries in one call |
+| `jobs.inspect` | reading `jobs.ts` for retry policy and step names |
+| `queue.depth` | guessing whether the worker is keeping up |
+| `manifest.read` | ten separate reads |
+| `errors.explain` | a web search for an error string |
 | `db.query` | inventing a query and hoping (read-only; 100-row default, 1000-row maximum) |
 | `db.migrate` | mutating the dev DB — writes land in a **branch DB only** |
-| `errors.explain` | a web search for an error string |
-| `budgets.report` | bisecting bundles |
+| `tests.run` | parsing terminal output |
+| `verify.run` | guessing whether the work is shippable |
+| `logs.tail` | scrollback archaeology |
 
 Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. `db.query` refuses a batch, a write keyword anywhere at statement level (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, and `pg_read_file`-class functions — `X_MCP_QUERY_REJECTED`, before the host sees the string. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
 
@@ -140,4 +148,4 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |
 
-Version pinning: `As of 2026-07`, Bun 1.3 is the floor and 2.0 the target; SolidJS 2 is in beta; ArkType and Drizzle are pinned exactly and their upgrades are framework work, not app work. Details and codemod inventory in [Upgrading](Upgrading). Boot failures and port conflicts in [Troubleshooting](Troubleshooting).
+Version pinning: `As of 2026-08`, Bun 1.3 is the floor and 2.0 the target; SolidJS 2 is in beta and is pinned exactly, and its upgrade is framework work, not app work. There is no ArkType or Drizzle pin to carry — `@ultimat3/schema` ships its own dependency-free validators and `@ultimat3/entity` its own `postgresDriver()`. Details and codemod inventory in [Upgrading](Upgrading). Boot failures and port conflicts in [Troubleshooting](Troubleshooting).

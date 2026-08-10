@@ -9,7 +9,7 @@ Run these first, in this order. All support `--json`.
 | Command | Answers |
 |---|---|
 | `x doctor --json` | Bun version, env schema, DB/transport/storage reachability, port conflicts |
-| `x verify --json` | the gate: typecheck, lint, boundaries, six test types, drift, contract diff, budgets, SEO + i18n, manifest freshness |
+| `x verify --json` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
 | `x errors explain <CODE> --json` | cause, fix command, docs URL for any `X_*` code |
 | `x status --json` | roles up, build IDs, client build-ID distribution, queue depth, socket counts |
 | `x logs tail --json` | structured logs + OTel spans, filterable by role, trace, or code |
@@ -31,7 +31,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `X_DB_DRIFT` | schema differs from migrations (a column added by hand, or a generated migration never applied) | `x db gen "<message>"` then `x db apply` |
+| `X_DB_DRIFT` | schema differs from migrations (a column added by hand, or a generated migration never applied) | `x db gen "<message>"` then `x db migrate` |
 | `X_MIGRATE_CONCURRENT` | another version's `ROLE=migrate` holds the advisory lock | wait for it to exit 0; never run two deploys' migrations at once |
 | `ROLE=migrate` exits non-zero, deploy blocked | migration failure — correct, the roll is supposed to stop | read the SQL error, fix the migration, re-run. Do not start `web` on the old schema |
 | `X_TIMEOUT` on one query | past `db.statementTimeout` (default `'10s'`) | add the index the plan wants, or narrow the query. Raising the timeout hides it |

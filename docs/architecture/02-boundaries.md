@@ -23,7 +23,7 @@ One error code for the whole family: `X_BOUNDARY_VIOLATION`, plus a `rule` field
 | `site-imports-app` | `site/` → `app/`, transitively | the marketing page that ships a charting library three hops away from any reviewed file ([`../idea/06-surfaces.md`](../idea/06-surfaces.md)) |
 | `shared-imports-surface` | `shared/` → `site/` or `app/` | `shared/` stops being a leaf; the graph becomes bidirectional and unbudgetable |
 | `app-imports-api-runtime` | `app/` → `api/` as a value import | bundling server handlers into the client. `import type` is allowed; call the typed client instead |
-| `route-touches-db` | a route module importing `db` / a Drizzle table / `Bun.sql` | N+1 queries in a `<head>` computation, SQL that no policy guards, and a route that cannot be unit-tested |
+| `route-touches-db` | a route module importing `db` / `drizzle-orm` / `Bun.sql` | N+1 queries in a `<head>` computation, SQL that no policy guards, and a route that cannot be unit-tested |
 | `component-holds-logic` | `ui/**` importing `repo.ts` / `service.ts` / `db` | business rules duplicated per component, and a rule that changes in one screen but not the other |
 | `service-imports-http` | `service.ts` importing `Request`/`Response`/`@ultimat3/http` | a service that only works inside a request — so the identical logic gets re-implemented in a job |
 | `cross-feature-repo` | `feature-a/**` → `feature-b/repo.ts` | "just add a join" turning a feature slice into a distributed monolith |

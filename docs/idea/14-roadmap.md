@@ -13,8 +13,8 @@ missing the packages/files its own **Ships** column names. `As of 2026-08`.
 
 | # | Status | Milestone | Ships | Done when |
 |---|---|---|---|---|
-| 0 | ✅ | **Skeleton + error contract** | `packages/core` (`UltimateError`, ALS context, config loader), `schema` (ArkType wrapper `t`), root tooling, `scripts/boundaries.ts`, `x verify` shell | `x verify` runs and passes on an empty repo; a thrown `X_*` error renders identically in terminal and `--json`; boundary violations fail the build |
-| 1 | ✅ | **HTTP + entity + policy** | `http` over `Bun.serve`, `entity` on Drizzle, `policy`, typed env validated at boot | demo: a hello app with one entity, one protected route, one denial; `X_ENV_MISSING` fires in <100ms on a missing key |
+| 0 | ✅ | **Skeleton + error contract** | `packages/core` (`UltimateError`, ALS context, config loader), `schema` (Standard Schema over a dependency-free builtin provider, exposed as `t`), root tooling, `scripts/boundaries.ts`, `x verify` shell | `x verify` runs and passes on an empty repo; a thrown `X_*` error renders identically in terminal and `--json`; boundary violations fail the build |
+| 1 | ✅ | **HTTP + entity + policy** | `http` over `Bun.serve`, `entity` over a hand-written `postgresDriver()`, `policy`, typed env validated at boot | demo: a hello app with one entity, one protected route, one denial; `X_ENV_MISSING` fires in <100ms on a missing key |
 | 2 | ✅ | **`action` + `query` + typed client** | `action`, `query`, generated HTTP routes, OpenAPI, typed client, contract tests | demo: CRUD app driven entirely by the typed client, no hand-written fetch; `x verify` includes contract diff |
 | 3 | ✅ | **Rendering + router + `site`/`app` split** | Solid 2 integration, own router, five render modes, `stream` default, surfaces + hard `site/` → `app/` boundary | demo: landing page in `site/` at **0kb JS** and a streaming dashboard in `app/`; a deliberate cross-surface import fails the build |
 | 4 | ✅ | **SEO + images + budgets** | typed `meta`, `ld.*` helpers, sitemap/robots/RSS from the route table, image pipeline, per-route budgets in `x verify` | demo landing page scores 100 SEO with **CLS 0**; deleting a description is a build error; a budget regression names the import chain |
@@ -81,7 +81,7 @@ A half-built sync engine is worth nothing. It cannot be shipped partially, it ca
 |---|---|
 | Milestones are strictly ordered; no parallel starts | one demo app grows through all twelve, so regressions surface immediately |
 | Every milestone ends green | `x verify` never carries known failures forward |
-| Realtime is gated on a measured benchmark (M6) | topology decisions wait for numbers, not intuition |
+| Realtime was gated on a measured benchmark (M6) — **waived at 1.0.0** | the gate was not met. M6 shipped on API surface and tests alone; the benchmark is tracked under *Open at 1.0.0* and closes only when a 50k-socket forced-restart number is measured **and** published. Until then no capacity figure is quoted as a result |
 | Tier 3 local-first is **out of v1** | it lands in v2 as `persist: true` on an existing query — a flag, not a rewrite |
 | Scope cuts come off the back, never the middle | dropping M11's Helm chart is acceptable; dropping M4's budgets is not |
 | A milestone that grows past its demo gets split | a milestone with no demo is a milestone with no definition of done |

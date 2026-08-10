@@ -135,6 +135,10 @@ The single gate. Green means shippable.
 Seventeen steps, one list, in cost order. There is no `--only` and no `--skip` — "green" has to mean
 the same thing for everyone. A step with nothing to check reports as skipped (`-`), never as passed.
 
+The list is defined once, as `VERIFY_STEP_NAMES` in
+[`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts).
+This table is a hand-synced copy of it ([Contributing](Contributing)).
+
 | Step | Fails on |
 |---|---|
 | `typecheck` | any error; `any` is banned by lint, not tolerated by a cast |
@@ -157,7 +161,7 @@ the same thing for everyone. A step with nothing to check reports as skipped (`-
 
 Any failure fails the gate; flakes are failures.
 
-```
+```text
 $ x verify
   ✓ typecheck  ✓ lint  ✓ boundaries  ✓ filesize  ✓ package-shape  ✓ errors
   ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e  ✓ eval

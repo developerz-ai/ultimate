@@ -44,22 +44,35 @@ Generates schema, entity, repo, service, policy, actions, live query, job stub, 
 ## 2. Entity + invariants
 
 ```ts
-// apps/web/app/posts/entity.ts
-export const Post = entity(posts, {
-  tenant: 'orgId',
+// packages/db/src/schema/posts.ts
+export const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }).tenant(),
+    slug: text({ max: SLUG_MAX }),
+    title: text({ max: TITLE_MAX }),
+    excerpt: text({ max: EXCERPT_MAX }),
+    cover: url().nullable(),
+    publishedAt: timestamp().nullable(),
+    createdAt: timestamp().defaultNow(),
+  },
   invariants: [
-    inv('title-not-blank', (p) => p.title.trim().length > 0, { db: 'length(btrim(title)) > 0' }),
-    inv('published-after-created', (p) => !p.publishedAt || p.publishedAt >= p.createdAt,
-        { db: 'published_at IS NULL OR published_at >= created_at' }),
+    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
+    invariant('post_slug_unique', (c) => c.unique(['slug'])),
   ],
+  indexes: [{ on: ['orgId', 'publishedAt'], order: 'desc' }],
 });
-
-export const PostView = view(Post, ['id', 'title', 'excerpt', 'cover', 'publishedAt']);
 ```
 
-- `tenant` is required on a multi-tenant entity; the repo injects the filter, you never write it.
-- `db:` on an invariant emits a `CHECK` — a rule the DB does not know is a rule a migration can violate.
-- Money → `money('price')`; dates → `timestamptz`/`Instant`, wall-clock dates → `PlainDate` ([`10-cross-cutting.md`](./10-cross-cutting.md)).
+```ts
+// apps/web/app/posts/entity.ts
+export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publishedAt']);
+```
+
+- `entity(name, init)` is name-first; `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }`. `invariants` is plural.
+- Tenancy is `.tenant()` on the column or `tenant: 'orgId'` in `init`; with neither, a column named `orgId` is inferred. The repo injects the filter, you never write it.
+- Each invariant emits its own `CHECK`/`UNIQUE` automatically; only `c.satisfies(fn, [...])` and `c.matches(fn)` stay TS-only, and a rule the DB does not know is a rule a migration can violate.
+- Money → `money()`; dates → `timestamp()` (always `timestamptz`) ([`10-cross-cutting.md`](./10-cross-cutting.md)).
 
 ## 3–4. Migration
 

@@ -65,7 +65,7 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - Entities live in `packages/db`; a feature's `entity.ts` owns only that feature's view schemas.
 - One authz definition. `policy.ts` predicates are reused verbatim by HTTP, live queries, jobs,
   MCP tools, and admin. Never re-check authz inside `handle`.
-- `t` is two different things by file kind: ArkType (`@ultimat3/schema`) in schema/entity/action
+- `t` is two different things by file kind: the schema namespace (`@ultimat3/schema`) in schema/entity/action
   files, the i18n translator (`useI18n()`) in components. Never both in one file.
 - Money is `{ minor, currency }`. Arithmetic in `packages/core/src/billing.ts`; formatting only
   in `<Money>` at the edge.

@@ -1,14 +1,21 @@
-// Turns `docs/idea/14-roadmap.md` from prose into a gate step. Two rules, both decidable without
-// running the demo app: (1) every milestone row carries a status marker — the table this file
-// guards against shipped with zero, and a silent regression back to that state is exactly the bug
-// a reader would not notice; (2) a milestone marked shipped still has every artifact its own
-// "Ships" column names on disk — a status marker nobody checks is a claim, not a gate.
+// Turns `docs/idea/14-roadmap.md` from prose into a gate step. Three rules, all decidable without
+// running the demo app: (1) the roadmap file exists at all — deleting it must not silently pass
+// every other rule; (2) every milestone row carries a status marker — the table this file guards
+// shipped with zero, and a silent regression back to that state is exactly the bug a reader would
+// not notice; (3) a milestone the table marks shipped still has every artifact its own "Ships"
+// column names on disk — a status marker nobody checks is a claim, not a gate.
 //
 //   bun run scripts/roadmap.ts [--json]
 
+// `existsSync` and `join` have no Bun equivalent for this job: `Bun.file().exists()` is async and
+// answers `false` for a directory, and one required artifact (`packages/cli/src/templates`) is a
+// directory.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding, HostCheck } from '@ultimat3/cli';
+import { parseScriptArgs } from './lib/args';
+import { report } from './lib/log';
+import { repoRoot } from './lib/run';
 
 export const ROADMAP_FILE = 'docs/idea/14-roadmap.md';
 
@@ -19,166 +26,141 @@ export const STATUS_MARK: Readonly<Record<MilestoneStatus, string>> = {
   'in-progress': '🚧',
 };
 
-export interface Milestone {
+const STATUS_BY_MARK: ReadonlyMap<string, MilestoneStatus> = new Map(
+  Object.entries(STATUS_MARK).map(([status, mark]) => [mark, status as MilestoneStatus]),
+);
+
+/**
+ * Repo-relative paths each milestone's own "Ships" column claims exist, checked only once the
+ * table marks that milestone shipped — an in-progress milestone's artifacts are still landing, so
+ * their absence is not yet a regression.
+ *
+ * Status and title are **not** mirrored here: they are read back out of the table itself, so the
+ * roadmap is the one place either is stated (axiom 2). Only these paths live in code, because the
+ * "Ships" column is prose naming packages, not a machine-readable path list.
+ */
+export const REQUIRED_ARTIFACTS: Readonly<Record<number, readonly string[]>> = {
+  0: [
+    'packages/core/src/index.ts',
+    'packages/schema/src/index.ts',
+    'scripts/boundaries.ts',
+    'packages/cli/src/cmd-verify.ts',
+  ],
+  1: ['packages/http/src/index.ts', 'packages/entity/src/index.ts', 'packages/policy/src/index.ts'],
+  2: [
+    'packages/action/src/index.ts',
+    'packages/query/src/index.ts',
+    'packages/cli/src/app-openapi.ts',
+  ],
+  3: ['packages/render/src/index.ts', 'packages/cli/src/app-boundaries.ts'],
+  4: ['packages/seo/src/index.ts', 'packages/cli/src/budgets.ts'],
+  5: ['packages/jobs/src/index.ts', 'packages/mail/src/index.ts', 'packages/storage/src/index.ts'],
+  6: ['packages/realtime/src/index.ts'],
+  7: ['packages/cache/src/index.ts'],
+  8: ['packages/pwa/src/index.ts'],
+  9: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
+  10: [
+    'packages/admin/src/index.ts',
+    'packages/create-ultimate/src/index.ts',
+    'packages/cli/src/templates',
+  ],
+  11: [
+    'docker/Dockerfile',
+    'docker/docker-compose.dev.yml',
+    'docker/docker-compose.prod.yml',
+    'docker/helm',
+    'packages/cli/src/cmd-build.ts',
+    'wiki/Error-Codes.md',
+    'CHANGELOG.md',
+  ],
+};
+
+export const MILESTONE_NUMBERS: readonly number[] = Object.keys(REQUIRED_ARTIFACTS)
+  .map(Number)
+  .sort((a, b) => a - b);
+
+export interface MilestoneRow {
   readonly n: number;
-  readonly title: string;
   readonly status: MilestoneStatus;
-  /**
-   * Repo-relative paths the milestone's own "Ships" column claims exist. Checked only once the
-   * milestone is marked `shipped` — an `in-progress` milestone's artifacts are still landing, so
-   * their absence is not yet a regression.
-   */
-  readonly requires: readonly string[];
+  readonly title: string;
 }
 
 /**
- * One row per roadmap milestone (`docs/idea/14-roadmap.md`), mirrored here because a markdown
- * table cannot assert anything about the filesystem on its own. `As of 2026-08`: milestones 0–10
- * ship the packages/commands their rows name; 11 ships its artifacts but not its two-platform
- * deploy proof, which needs real infrastructure — see "Open at 1.0.0" in the roadmap.
+ * Read milestone `n` back out of its own `| n | marker | **Title** | ships | done when |` row.
+ * `undefined` means the row is absent, or present with no marker this table defines — the two
+ * cases rule (2) exists to catch, and the caller reports them identically.
  */
-export const MILESTONES: readonly Milestone[] = [
-  {
-    n: 0,
-    title: 'Skeleton + error contract',
-    status: 'shipped',
-    requires: [
-      'packages/core/src/index.ts',
-      'packages/schema/src/index.ts',
-      'scripts/boundaries.ts',
-      'packages/cli/src/cmd-verify.ts',
-    ],
-  },
-  {
-    n: 1,
-    title: 'HTTP + entity + policy',
-    status: 'shipped',
-    requires: [
-      'packages/http/src/index.ts',
-      'packages/entity/src/index.ts',
-      'packages/policy/src/index.ts',
-    ],
-  },
-  {
-    n: 2,
-    title: 'action + query + typed client',
-    status: 'shipped',
-    requires: [
-      'packages/action/src/index.ts',
-      'packages/query/src/index.ts',
-      'packages/cli/src/app-openapi.ts',
-    ],
-  },
-  {
-    n: 3,
-    title: 'Rendering + router + site/app split',
-    status: 'shipped',
-    requires: ['packages/render/src/index.ts', 'packages/cli/src/app-boundaries.ts'],
-  },
-  {
-    n: 4,
-    title: 'SEO + images + budgets',
-    status: 'shipped',
-    requires: ['packages/seo/src/index.ts', 'packages/cli/src/budgets.ts'],
-  },
-  {
-    n: 5,
-    title: 'Jobs + tasks + mail + storage + scheduler',
-    status: 'shipped',
-    requires: [
-      'packages/jobs/src/index.ts',
-      'packages/mail/src/index.ts',
-      'packages/storage/src/index.ts',
-    ],
-  },
-  // The reconnect benchmark left this row at 1.0.0: no number was ever measured, and a ✅ that
-  // covered an unmeasured claim is exactly what this step exists to catch. It is now tracked under
-  // "Open at 1.0.0" in the roadmap instead.
-  {
-    n: 6,
-    title: 'Realtime tier 1-2',
-    status: 'shipped',
-    requires: ['packages/realtime/src/index.ts'],
-  },
-  {
-    n: 7,
-    title: 'Caching, four tiers, one tag graph',
-    status: 'shipped',
-    requires: ['packages/cache/src/index.ts'],
-  },
-  {
-    n: 8,
-    title: 'PWA + offline + version skew',
-    status: 'shipped',
-    requires: ['packages/pwa/src/index.ts'],
-  },
-  {
-    n: 9,
-    title: 'AI-first surface',
-    status: 'shipped',
-    requires: ['packages/ai/src/index.ts', 'packages/mcp/src/index.ts'],
-  },
-  {
-    n: 10,
-    title: 'Admin + generators + x new',
-    status: 'shipped',
-    requires: [
-      'packages/admin/src/index.ts',
-      'packages/create-ultimate/src/index.ts',
-      'packages/cli/src/templates',
-    ],
-  },
-  {
-    n: 11,
-    title: 'Deploy + docs + 1.0',
-    status: 'in-progress',
-    requires: [
-      'docker/Dockerfile',
-      'docker/docker-compose.dev.yml',
-      'docker/docker-compose.prod.yml',
-      'docker/helm',
-      'packages/cli/src/cmd-build.ts',
-      'wiki/Error-Codes.md',
-      'CHANGELOG.md',
-    ],
-  },
-];
+export function milestoneRow(markdown: string, n: number): MilestoneRow | undefined {
+  const line = markdown
+    .split('\n')
+    .find((candidate) => new RegExp(`^\\|\\s*${n}\\s*\\|`).test(candidate));
+  if (line === undefined) return undefined;
+  const cells = line.split('|').map((cell) => cell.trim());
+  const marker = [...STATUS_BY_MARK.keys()].find((mark) => cells[2]?.includes(mark) === true);
+  const status = marker === undefined ? undefined : STATUS_BY_MARK.get(marker);
+  if (status === undefined) return undefined;
+  return { n, status, title: (cells[3] ?? '').replaceAll('*', '').trim() };
+}
 
-/** The markdown row for milestone `n` — `| n | title | ships | done when |`, status prefixed. */
-const rowFor = (markdown: string, n: number): string | undefined =>
-  markdown.split('\n').find((line) => new RegExp(`^\\|\\s*${n}\\s*\\|`).test(line));
+const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
 
-const missingStatusFinding = (m: Milestone): Finding => ({
-  code: 'X_ROADMAP_STATUS_MISSING',
-  cause: `milestone ${m.n} ("${m.title}") has no ${STATUS_MARK.shipped}/${STATUS_MARK['in-progress']} status marker in its row`,
-  fix: `add "${STATUS_MARK[m.status]}" to milestone ${m.n}'s row in ${ROADMAP_FILE}`,
-  docs: 'https://ultimate.dev/errors/X_ROADMAP_STATUS_MISSING',
+const missingFileFinding = (): Finding => ({
+  code: 'X_ROADMAP_FILE_MISSING',
+  cause: `${ROADMAP_FILE} does not exist, so no milestone status or shipped artifact can be checked`,
+  fix: `git checkout -- ${ROADMAP_FILE}`,
+  docs: docs('X_ROADMAP_FILE_MISSING'),
   at: ROADMAP_FILE,
 });
 
-const unverifiedFinding = (m: Milestone, missing: readonly string[]): Finding => ({
+const missingStatusFinding = (n: number): Finding => ({
+  code: 'X_ROADMAP_STATUS_MISSING',
+  cause: `milestone ${n} has no row in the milestone table, or its row's status cell holds neither ${STATUS_MARK.shipped} nor ${STATUS_MARK['in-progress']}`,
+  fix: `edit ${ROADMAP_FILE}: put "${STATUS_MARK.shipped}" or "${STATUS_MARK['in-progress']}" in the second cell of the row starting "| ${n} |", then: bun run scripts/roadmap.ts --json`,
+  docs: docs('X_ROADMAP_STATUS_MISSING'),
+  at: ROADMAP_FILE,
+});
+
+const unverifiedFinding = (row: MilestoneRow, missing: readonly string[]): Finding => ({
   code: 'X_ROADMAP_MILESTONE_UNVERIFIED',
-  cause: `milestone ${m.n} ("${m.title}") is marked ${STATUS_MARK.shipped} but ${missing.join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist`,
-  fix: `restore the missing path(s), or mark milestone ${m.n} "${STATUS_MARK['in-progress']}" in ${ROADMAP_FILE} until it does`,
-  docs: 'https://ultimate.dev/errors/X_ROADMAP_MILESTONE_UNVERIFIED',
+  cause: `milestone ${row.n} ("${row.title}") is marked ${STATUS_MARK.shipped} but ${missing.join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist`,
+  fix: `git checkout -- ${missing.join(' ')} — or edit ${ROADMAP_FILE} and put "${STATUS_MARK['in-progress']}" in the status cell of the row starting "| ${row.n} |"`,
+  docs: docs('X_ROADMAP_MILESTONE_UNVERIFIED'),
   at: ROADMAP_FILE,
 });
 
 /** Each milestone's "Done when" as a build error rather than a sentence nobody re-reads. */
 export const checkRoadmap: HostCheck = async (root) => {
   const path = join(root, ROADMAP_FILE);
-  if (!existsSync(path)) return [];
+  if (!existsSync(path)) return [missingFileFinding()];
   const markdown = await Bun.file(path).text();
   const findings: Finding[] = [];
-  for (const milestone of MILESTONES) {
-    const row = rowFor(markdown, milestone.n);
-    if (row === undefined || !row.includes(STATUS_MARK[milestone.status])) {
-      findings.push(missingStatusFinding(milestone));
+  for (const n of MILESTONE_NUMBERS) {
+    const row = milestoneRow(markdown, n);
+    if (row === undefined) {
+      findings.push(missingStatusFinding(n));
       continue;
     }
-    if (milestone.status !== 'shipped') continue;
-    const missing = milestone.requires.filter((rel) => !existsSync(join(root, rel)));
-    if (missing.length > 0) findings.push(unverifiedFinding(milestone, missing));
+    if (row.status !== 'shipped') continue;
+    const missing = (REQUIRED_ARTIFACTS[n] ?? []).filter((rel) => !existsSync(join(root, rel)));
+    if (missing.length > 0) findings.push(unverifiedFinding(row, missing));
   }
   return findings;
 };
+
+if (import.meta.main) {
+  const args = parseScriptArgs(Bun.argv.slice(2));
+  const findings = await checkRoadmap(repoRoot());
+  report(
+    {
+      ok: findings.length === 0,
+      script: 'roadmap',
+      summary:
+        findings.length === 0
+          ? `${MILESTONE_NUMBERS.length} milestones, every status marked and every shipped artifact present`
+          : `${findings.length} roadmap finding(s) across ${MILESTONE_NUMBERS.length} milestones`,
+      findings,
+      data: { file: ROADMAP_FILE, milestones: MILESTONE_NUMBERS },
+    },
+    args.json,
+  );
+}

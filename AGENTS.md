@@ -4,7 +4,9 @@ Hand-written, deliberately short. The *facts* about this codebase are generated 
 
 ## What this repo is
 
-The **Ultimate** web framework. Bun-only, Postgres + Drizzle, SolidJS, SCSS tokens. A monorepo of 27 `@ultimat3/*` packages — the `x` CLI among them — plus the unscoped `create-ultimate`. All 28 publish to npm at **1.0.0** in lockstep, `As of 2026-08`.
+The **Ultimate** web framework. Bun-only, Postgres, SolidJS, SCSS tokens. A monorepo of 27 `@ultimat3/*` packages — the `x` CLI among them — plus the unscoped `create-ultimate`. All 28 publish to npm at **1.0.0** in lockstep, `As of 2026-08`.
+
+No ORM dependency, `As of 2026-08`: `entity()` is the one table declaration, and `postgresDriver()` (`packages/entity/src/pg-driver.ts`, `pg-sql.ts`) is hand-written parameterised SQL. Generated apps declare their tables the same way — `packages/db/` holds those declarations plus plain-SQL migrations.
 
 Semver applies from 1.0.0: breaking the eight primitive shapes, the `x` CLI surface, the tier table, or an `X_*` code needs a major.
 
