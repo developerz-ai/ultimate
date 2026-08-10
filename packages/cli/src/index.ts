@@ -145,9 +145,12 @@ export type {
 export { VERIFY_STEP_NAMES } from './verify-step';
 export type { TestType } from './verify-tests';
 export { TEST_STEPS, TEST_TYPES, testStepCommand, typeFilterOf } from './verify-tests';
+export type { ManifestFacts } from './workspace-checks';
 export {
   checkFileSizes,
+  checkLockstep,
   checkPackageShape,
+  frameworkDepsOf,
   hasWorkspacePackages,
   LINE_CEILING,
   PACKAGE_FILES,

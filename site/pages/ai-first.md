@@ -4,7 +4,7 @@ menu: true
 nav: AI-first
 description: An MCP dev server, every action exposed as a tool with identical authz, generated facts instead of generated prose, and --json on everything.
 lede: Not a chat widget. The framework is built so an agent can read it, drive it, and verify its own work — and so the apps it generates have the same property.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ## Built-in MCP dev server
@@ -74,7 +74,7 @@ code you already wrote.
 | `x.manifest.json` | **generated**, every build | routes, entities, actions, mutators, queries, jobs, tasks, policies, cache tags, MCP tools, budgets, build ID | never hand-edited; drift is a `x verify` failure |
 | `openapi.json` | **generated** | HTTP surface from action/query declarations | contract diff in `x verify` |
 | `AGENTS.md` | **human-authored**, short | project-specific conventions an agent cannot infer | never generated, never auto-appended |
-| `CLAUDE.md` | **human-authored**, short | same, compressed-config style |
+| `CLAUDE.md` | **human-authored**, short | same, compressed-config style | same rule: never generated, never auto-appended |
 
 LLM-generated context files measurably reduce task success: a model writing "here is what this
 codebase does" produces confident, plausible, partly-wrong prose that the next agent treats as
@@ -112,15 +112,14 @@ evals file — no evals is a `x verify` failure**. `eval` is one of the six test
 ## Branch environments
 
 ```text
-x branch feat-new-billing
+x db branch feat-new-billing
   ✓ database    myapp_feat_new_billing   (copy-on-write from dev template)
-  ✓ build       build id 8f2a1c…
-  ✓ preview     http://feat-new-billing.localhost:3000
-  ✓ mcp         ws://localhost:9229/feat-new-billing
 ```
 
-An agent can migrate, seed, test and browse a preview without risking anything shared. The
-branch build ID scopes the service-worker cache, so a preview can never poison prod caches.
+An agent can migrate, seed and test against that database without risking anything shared, and
+the branch build ID scopes the service-worker cache, so a preview can never poison prod caches.
+The full `x branch` — the same copy-on-write database plus a preview URL and a scoped MCP socket
+in one command — is planned; `x db branch <name>` is the half that ships today.
 
 ## `--json` everywhere
 

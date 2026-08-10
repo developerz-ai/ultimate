@@ -5,7 +5,7 @@ nav: Home
 headline: Rails' philosophy for a stack whose primary user is an AI agent.
 lede: One way to do each thing. Eight primitives. One authz system across HTTP, WebSockets, jobs and MCP. Bun, Postgres and SolidJS, with the boring 40% of every app already in the box.
 description: Ultimate is a Bun-only, agent-first full-stack framework — eight primitives, one authz system, and a 0kb JS baseline on the static path.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ```bash
@@ -211,24 +211,32 @@ with one authz system.
 <div class="band__head">
 <span class="eyebrow">Status</span>
 
-## Honest state, As of 2026-07
+## Honest state, As of 2026-08
 
 </div>
 
 <p class="pill-row">
-<span class="pill pill--warn">pre-v1</span>
-<span class="pill pill--danger">not production-ready</span>
-<span class="pill pill--info">nothing published to npm yet</span>
+<span class="pill pill--ok">v1.0.0</span>
+<span class="pill pill--info">28 packages, one version</span>
+<span class="pill pill--warn">no realtime benchmark</span>
+<span class="pill pill--warn">deploy proof outstanding</span>
 </p>
 
-The plan is 12 milestones, each ending in a working demo app and a green `x verify`.
-Milestones 0–5 ship before any realtime work, because a framework that cannot render, migrate,
-enqueue and verify has no business synchronising anything. Realtime tiers 1–2 are v1 work;
-tier 3 (local-first) is v2. Milestone 6 is a reconnect benchmark — 50k sockets, a forced `sync`
-restart, measured time-to-consistent — and the sync topology is **not frozen** until that
-number exists. The sync engine is roughly 70% of the total effort and the single largest risk;
-if the benchmark says our matcher is the bottleneck, adopting an existing protocol beats
-inventing one.
+1.0.0 shipped on 2026-08-10: 27 `@ultimat3/*` packages plus `create-ultimate`, one version, one
+commit, one tag, published to npm by OIDC trusted publishing. **Semver applies from here** — a
+breaking change to a documented API needs a major. The `X_*` codes were always stable; the eight
+primitive shapes, the `x` CLI surface and the tier table now are too.
+
+What 1.0.0 does not claim:
+
+| Not proven | Detail |
+|---|---|
+| **No published realtime benchmark** | the 50k-socket forced-restart number is still unmeasured. Every capacity figure is a target, not a result |
+| **No two-platform deploy proof** | the `docker`, `binary` and `static` build targets and the Helm chart all ship; the demo app running on Compose **and** Kubernetes from one image, with an invisible rolling restart, has not been demonstrated |
+| **Deferred to v2** | tier 3 local-first (`persist: true`), a plugin API, multi-region replication, and the `redis` / `nats` job drivers — all behind the interfaces they will land on |
+
+The `redis` and `nats` job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than
+pretending to work. The sync engine remains the largest single risk in the project.
 
 No adoption numbers, no benchmark charts and no testimonials appear anywhere on this site,
 because none of them exist yet.

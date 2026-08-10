@@ -19,7 +19,7 @@ x version              # CLI version
 
 ## Command index
 
-`As of 2026-07`. **shipped** = implemented in `packages/cli`; **planned** = specified, not yet built — calling it exits with `X_NOT_IMPLEMENTED` and a `fix:` line pointing at the closest shipped command.
+`As of 2026-08`. **shipped** = implemented in `packages/cli`; **planned** = specified, not yet built — calling it exits with `X_NOT_IMPLEMENTED` and a `fix:` line pointing at the closest shipped command.
 
 | Command | Does | Status |
 |---|---|---|

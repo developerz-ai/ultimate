@@ -2,7 +2,7 @@
 
 The differentiator. Not a chat widget, not an "AI SDK integration" — the framework is built so an agent can read it, drive it, and verify its own work, and so the apps it generates have the same property.
 
-Pre-v1, not production-ready. `As of 2026-07`: the MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built; the `llm()` gateway, prompt versioning, vector search, and eval runner are contracted and partially implemented.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). The MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built, and so are the four that used to be contracted: `llm()` is an action factory ([`packages/ai/src/llm.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/llm.ts)), prompts are versioned, `PgVectorStore` fuses pgvector cosine with Postgres FTS via RRF, and evals gate on a committed baseline inside `x verify`'s `eval` step.
 
 ## Built-in MCP dev server
 
@@ -22,7 +22,7 @@ Pre-v1, not production-ready. `As of 2026-07`: the MCP registry, wire protocol, 
 | `errors.explain` | `X_*` code → cause, fix command, docs URL | web search |
 | `budgets.report` | per-route bytes/LCP with the import chain that caused a regression | bisecting bundles |
 
-Implemented names `as of 2026-07` differ slightly from the design table: `actions.describe` (actions + queries in one call), `manifest.read`, `jobs.inspect`, `queue.depth`, `verify.run`. Aliases land before v1.
+Shipped names `As of 2026-08` differ slightly from the design table above, and the shipped names are the ones to call: `actions.describe` (actions + queries in one call), `manifest.read`, `jobs.inspect`, `queue.depth`, `verify.run`. No aliases; renaming a tool is a major.
 
 | Class | Tools | Exposure |
 |---|---|---|

@@ -2,7 +2,7 @@
 // previous/next pager, and the JSON-LD graph.
 
 import type { Page } from './config';
-import { ORIGIN } from './config';
+import { FRAMEWORK_VERSION, ORIGIN } from './config';
 import { inline } from './markdown';
 import { escapeHtml } from './text';
 
@@ -54,7 +54,7 @@ export function jsonLd(page: Page, isHome: boolean): string {
         operatingSystem: 'Linux, macOS',
         description: page.meta.description,
         url: `${ORIGIN}/`,
-        softwareVersion: '0.0.1',
+        softwareVersion: FRAMEWORK_VERSION,
         license: 'https://opensource.org/licenses/MIT',
         codeRepository: 'https://github.com/developerz-ai/ultimate',
         runtimePlatform: 'Bun >= 1.3',

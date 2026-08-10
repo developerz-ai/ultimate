@@ -4,7 +4,9 @@ Hand-written, deliberately short. The *facts* about this codebase are generated 
 
 ## What this repo is
 
-The **Ultimate** web framework. Bun-only, Postgres + Drizzle, SolidJS, SCSS tokens. A monorepo of `@ultimat3/*` packages plus the `x` CLI. Pre-alpha.
+The **Ultimate** web framework. Bun-only, Postgres + Drizzle, SolidJS, SCSS tokens. A monorepo of 27 `@ultimat3/*` packages — the `x` CLI among them — plus the unscoped `create-ultimate`. All 28 publish to npm at **1.0.0** in lockstep, `As of 2026-08`.
+
+Semver applies from 1.0.0: breaking the eight primitive shapes, the `x` CLI surface, the tier table, or an `X_*` code needs a major.
 
 ## Before you start
 

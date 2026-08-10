@@ -1,6 +1,6 @@
 # Contributing
 
-Bun-only monorepo. One gate: `x verify`. Pre-v1 — internals move, so read the tier table before adding an import.
+Bun-only monorepo. One gate: `x verify`. v1.0.0 `As of 2026-08` — semver covers the documented surface, so read the tier table before adding an import and assume a rename is a major ([Upgrading](Upgrading)).
 
 ```
 bun install
@@ -28,7 +28,7 @@ Root also holds `scripts/` (verify, boundaries, manifest, setup), `docs/idea/` (
 ```json
 {
   "name": "@ultimat3/<name>",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "<one line>",
   "license": "MIT",
   "type": "module",
@@ -180,7 +180,7 @@ Never generate prose documentation at runtime. Facts come from code (`x.manifest
 
 | Expectation | Detail |
 |---|---|
-| Green `x verify` | typecheck, lint, boundaries, all six test types, migration drift, contract diff, budgets, SEO + i18n, manifest freshness |
+| Green `x verify` | all 17 steps: typecheck, lint, boundaries, filesize, package-shape, errors, the six test types, drift, contract-diff, budgets, manifest, roadmap |
 | No new dependency without justification in the PR body | target is **under 40 direct dependencies for the whole framework**. A Bun native beats a package |
 | No new alternative for something already locked | a second CSS system, a second ORM, a second validator, a second runtime is a closed PR ([Home](Home)) |
 | Feature fits one of the eight primitives | if it doesn't fit, it doesn't ship ([The eight primitives](The-Eight-Primitives)) |

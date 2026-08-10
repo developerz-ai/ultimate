@@ -2,7 +2,7 @@
 
 Three tiers, one ladder. Same mutator shape at every rung — climbing is a config change, never a rewrite.
 
-Tiers 1–2 ship in v1. Tier 3 (local-first) ships in v2. Pre-v1, not production-ready.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship in v1. Tier 3 (local-first) ships in v2.
 
 ## The ladder
 

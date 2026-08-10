@@ -6,15 +6,23 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-No. Pre-v1, `As of 2026-07`. No packages are published to npm and there is no stability promise. Milestones 0–5 (skeleton, HTTP + entity + policy, actions + queries, rendering + surfaces, SEO + budgets, jobs + tasks) ship before realtime is touched. Remote drivers — Redis, NATS, real S3, Postgres logical replication — are interface-complete and throw `X_NOT_IMPLEMENTED` with a `fix:` line rather than pretending to work.
+**v1.0.0 `As of 2026-08`.** Stable API, semver from here, all 28 packages published to npm in lockstep. That is exactly what 1.0.0 claims — a stable API under semver, not a promise about your infrastructure.
+
+What it does **not** claim:
+
+| Not claimed | Detail |
+|---|---|
+| A realtime benchmark | none published. The 50k-socket forced-restart number is still unmeasured, and per-node socket capacity is a target, not a result ([Realtime](Realtime)) |
+| The two-platform deploy proof | `x build --target docker\|binary\|static`, the compose files, and the Helm chart ship. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
+| The v2 set | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
-Package skeletons with complete public types, implemented happy paths, and typed throws for every named error. The 12-milestone roadmap is the honest picture: each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. See [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md).
+All 28 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are shipped and enforced by `x verify`'s `roadmap` step; milestone 11 is open on its deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. See [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md).
 
-### When is v1?
+### What is left after 1.0.0?
 
-When milestones 0–11 are done, not on a date. Publishing a release date for pre-alpha work is how roadmaps become fiction. Scope cuts come off the back (M11's Helm chart), never the middle (M4's budgets).
+Milestone 11's two-platform deploy proof, and the realtime benchmark. Both land when they are measured, not on a date — publishing a date is how roadmaps become fiction. Everything else in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets).
 
 ## The stack
 
@@ -62,7 +70,7 @@ A convention that isn't a build error doesn't exist. A missing `description`, a 
 
 ### Is `x verify` really the only gate?
 
-Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check you cannot run locally. It covers typecheck, lint, import boundaries, all six test types, migration drift, contract diff, budgets, SEO + i18n, and manifest freshness. See [Testing](Testing).
+Yes. CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check you cannot run locally. Seventeen steps: typecheck, lint, boundaries, filesize, package-shape, errors, all six test types (unit, contract, live, job, e2e, eval), drift, contract-diff, budgets, manifest, and roadmap. No `--only`, no `--skip`. See [Testing](Testing).
 
 ### Why are there only eight primitives?
 
@@ -88,13 +96,13 @@ One container running `ROLE=all` and one Postgres. Split roles when a signal tel
 
 ### Can I use it without the realtime tiers?
 
-Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 app needs no `sync` role, no `replicator`, and no NATS. Milestones 0–5 are a complete product without any realtime at all: entities, actions, a typed client, five render modes, a 0kb static path, and durable jobs.
+Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 app needs no `sync` role, no `replicator`, and no NATS. That is a complete product without any realtime at all: entities, actions, a typed client, five render modes, a 0kb static path, and durable jobs.
 
 ## Risk
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Milestone 6 is a reconnect benchmark — 50k sockets, a forced `sync` restart, measured time-to-consistent and DB load — and **topology is not frozen until that number exists**. If the incremental matcher is the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback. Tiers 1–2 target v1; tier 3 local-first is v2.
+It is roughly **70% of total effort** and the single largest risk. Milestone 6 is a reconnect benchmark — 50k sockets, a forced `sync` restart, measured time-to-consistent and DB load — and **topology is not frozen until that number exists**. If the incremental matcher is the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback. Tiers 1–2 ship in v1; tier 3 local-first is v2.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -108,7 +116,7 @@ Stated risk, not a hidden one. `As of 2026-07` long-running Bun processes are le
 
 ### Where do plugins fit?
 
-Nowhere, before v1. Plugins freeze internals, and internals are still moving. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
+Nowhere in 1.0 — the plugin API is v2. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
 
 ### Will you add an adapter for my host or my ORM?
 

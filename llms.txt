@@ -1,8 +1,8 @@
 # Ultimate
 
-> A full-stack, Bun-only, opinionated web framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer. Eight primitives, one authz system, and errors that carry an exact fix command. Pre-v1 as of 2026-07 — nothing is published to npm and no API is stable.
+> A full-stack, Bun-only, opinionated web framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer. Eight primitives, one authz system, and errors that carry an exact fix command. 1.0.0 as of 2026-08 — 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` publish to npm in lockstep at one version, and semver applies from here: a breaking change to a documented API needs a major. Install with `bunx create-ultimate myapp`.
 
-Everything in the framework is one of eight primitives: `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task`. One `action` declaration projects into six artifacts (HTTP route, OpenAPI operation, typed client function, job handle, MCP tool, test scaffold) that all share the same `policy` — there is never a second authorization system. The CLI binary is `x`; every command and every error has a `--json` form, and every framework error carries a stable `X_*` code, a concrete cause, and the exact command that fixes it. `x verify` is the single gate: typecheck, lint, import boundaries, six test types, migration drift, contract diff, budgets, SEO + i18n, manifest freshness. The stack is locked (Bun >= 1.3, Postgres + Drizzle, ArkType as `t`, Better Auth, SolidJS 2, SCSS modules + tokens, OpenTelemetry always on) and the exclusions are permanent (GraphQL, multi-runtime, multi-ORM, a second CSS system, RSC, vendor edge/KV primitives, a plugin API before v1). Deployment is containers only: one image, six roles selected by `ROLE`.
+Everything in the framework is one of eight primitives: `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task`. One `action` declaration projects into six artifacts (HTTP route, OpenAPI operation, typed client function, job handle, MCP tool, test scaffold) that all share the same `policy` — there is never a second authorization system. The CLI binary is `x`; every command and every error has a `--json` form, and every framework error carries a stable `X_*` code, a concrete cause, and the exact command that fixes it. `x verify` is the single gate, 17 steps in cost order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap. The stack is locked (Bun >= 1.3, Postgres + Drizzle, ArkType as `t`, Better Auth, SolidJS 2, SCSS modules + tokens, OpenTelemetry always on) and the exclusions are permanent (GraphQL, multi-runtime, multi-ORM, a second CSS system, RSC, vendor edge/KV primitives, a plugin API in 1.x). Deployment is containers only: one image, six roles selected by `ROLE`.
 
 ## Docs
 
@@ -25,7 +25,7 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 - [Topology](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/11-topology.md): one image, six roles, health endpoints, graceful drain.
 - [Build & deploy](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/12-build-deploy.md): docker / binary / static targets, compose, Helm.
 - [DX](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/13-dx.md): the first 60 seconds, no Docker, HMR that keeps state.
-- [Roadmap](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/14-roadmap.md): twelve strictly ordered milestones, each ending in a demo app and a green verify.
+- [Roadmap](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/14-roadmap.md): twelve strictly ordered milestones, each ending in a demo app and a green verify. 0–10 shipped; 11 is open on its two-platform deploy proof. The status markers are enforced by `x verify`'s `roadmap` step.
 - [Risks](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/15-risks.md): six risks, sized; the sync engine is ~70% of the effort.
 
 ## Architecture
@@ -56,7 +56,7 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 - [action](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/action/src/index.ts): server-authoritative mutation; six generated artifacts per declaration.
 - [query](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/query/src/index.ts): reads, optionally `live: true`; requires deterministic, bounded SQL.
 - [jobs](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/jobs/src/index.ts): durable steps, required `idempotencyKey`, `pg` driver by default.
-- [realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/realtime/src/index.ts): channels, live-query transport, mutator rebase, cursors.
+- [realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/realtime/src/index.ts): channels, live-query transport, mutator rebase, cursors. Tiers 1–2 ship at 1.0.0; tier 3 local-first (`persist: true`) is deferred to v2 behind the same interfaces. No published capacity benchmark — the figures in the docs are targets.
 - [render](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/render/src/index.ts): `defineRoute`, the five render modes, hydration timing, budgets.
 - [cache](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cache/src/index.ts): four tiers and the entity-tag invalidation graph.
 - [seo](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/seo/src/index.ts): typed `meta`, `ld.*` JSON-LD helpers, sitemap/robots/feeds.
@@ -66,12 +66,13 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 
 - [CLI reference](https://raw.githubusercontent.com/wiki/developerz-ai/ultimate/CLI-Reference.md): every `x` command and flag, with `--json` examples. Start here.
 - [cli source](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cli/src/index.ts): the implemented command surface.
-- `x new <name>` / `bunx create-ultimate <name>`: scaffold the monorepo. `x dev`: embedded Postgres, in-process NATS, MCP dev server.
-- `x verify [--json]`: the single gate — typecheck, lint, boundaries, six test types, drift, contract diff, budgets, SEO, manifest freshness.
-- `x g resource|entity|action|job|route <name>`: generators that emit code plus failing test scaffolds.
-- `x db gen "<name>"` / `x db apply` / `x db drift` / `x db studio`: migrations; drift is a verify failure.
-- `x jobs ls|show|retry|drain`, `x cache graph|bust|clear`, `x routes list`, `x actions list|describe`, `x policy explain`, `x i18n add|sync|check`: introspection, all with `--json`.
-- `x build --target docker|binary|static`, `x deploy compose|static`, `x branch <name>`, `x status`, `x upgrade`, `x doctor`, `x errors explain <CODE>`.
+- `x new <name>` / `bunx create-ultimate <name>`: scaffold the monorepo, every `@ultimat3/*` dependency pinned to one exact version. `x dev`: embedded Postgres, in-process NATS, MCP dev server.
+- `x verify [--json]`: the single gate — 17 steps: typecheck, lint, boundaries, filesize, package-shape, errors, the six test types (unit, contract, live, job, e2e, eval), drift, contract-diff, budgets, manifest, roadmap.
+- `x g resource|action|mutator|job|route|policy|entity|query|task <name>`: generators that emit code plus failing test scaffolds.
+- `x db gen "<name>" | migrate | reset | studio | branch <name>`: migrations and branch databases; drift is a verify failure.
+- `x jobs ls|show|retry|drain`, `x routes`, `x actions|queries|entities [list|describe <name>]`, `x manifest [--check]`, `x errors explain <CODE>|list`: introspection, all with `--json`.
+- `x build --target docker|binary|static`, `x deploy --image <ref> [--method compose|helm]`, `x doctor`, `x test`, `x fix boundary <file>`, `x mcp tools|serve`.
+- Planned commands are in the registry and labelled `(planned)`: `x policy`, `x tasks`, `x cache`, `x i18n`, `x branch`, `x status`, `x upgrade`, `x env`, `x logs`, `x token`, `x ai`, `x money`, `x config`. Each exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command — not `X_CLI_UNKNOWN_COMMAND`, because "not built yet" and "not a command" are different facts.
 
 ## Error codes
 

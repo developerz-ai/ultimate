@@ -1,17 +1,36 @@
 # Upgrading
 
-`As of 2026-07`: pre-v1. **No semver promise, no published npm packages, no stability guarantee.** Every `@ultimat3/*` version is pinned exactly and moves in lockstep. Anything below can change until v1.
+**v1.0.0 `As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-## Pre-v1 policy
+## What semver covers
+
+| Surface | From |
+|---|---|
+| `X_*` error codes | already stable forever — a shipped code never changes meaning and is never reused |
+| The eight primitive shapes | `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` and their declared fields — 1.0.0 |
+| The `x` CLI surface | commands, flags, exit codes, and `--json` output shape — 1.0.0 |
+| The import tier table | which package may import which — 1.0.0 |
+| `app.config.ts` field names | renaming or removing a field is a major — 1.0.0 |
+
+| Bump | Means | Examples |
+|---|---|---|
+| **major** | a covered surface changed incompatibly | a removed config field, a renamed CLI flag, a changed primitive field, a narrowed tier |
+| **minor** | additive, old code still compiles and still passes `x verify` | a new optional field, a new command, a new driver behind an existing interface |
+| **patch** | no surface change | a bug fix, a perf change, a corrected `fix:` line |
+
+1.0.0 means a stable API under semver. It is not a claim about your infrastructure.
+
+## Release policy
 
 | Rule | Detail |
 |---|---|
 | Pinned exact versions | no `^`, no `~`, in the framework or in a generated app. A range is a silent upgrade |
-| Lockstep releases | one release bumps every `@ultimat3/*` package to the same version. A mixed set is unsupported |
+| Lockstep releases | one release bumps all 28 packages — 27 `@ultimat3/*` plus `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
+| Published with provenance | npm via OIDC trusted publishing, no `NPM_TOKEN` |
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
 | Dependency upgrades are framework work | ArkType, Drizzle, and SolidJS 2 are pre-1.0-stable in places. Bumping them is a framework release, never an app-level `bun update` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |
-| Milestone order is the release order | milestones 0–5 ship before realtime; tiers 1–2 in v1; tier 3 (local-first) in v2 |
+| Deferred to v2, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 Do not upgrade a transitive dependency of a `@ultimat3/*` package by hand. Open an issue instead — the pin is deliberate.
 
@@ -107,7 +126,7 @@ The outbox table stays the transactional record on every driver. At-least-once d
 | Source | Contents |
 |---|---|
 | [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) | Keep a Changelog format. `Added` / `Changed` / `Removed`, plus a **Migration** block per breaking change with the codemod name |
-| [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) | the 12 milestones. Each ends in a working demo app plus green `x verify` |
+| [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) | the twelve milestones, 0–10 shipped. Milestone 11's two-platform deploy proof is the one item still open |
 | [`docs/idea/15-risks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/15-risks.md) | what could still change shape — the sync engine is roughly 70% of total effort |
 | `x.manifest.json` | generated, per build. Diff two manifests to see exactly what a release changed in your app |
 

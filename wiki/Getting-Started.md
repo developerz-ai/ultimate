@@ -154,4 +154,4 @@ $ x verify
 
 ## Status
 
-`As of 2026-07`: pre-v1, not production-ready. Twelve milestones, each ending in a working demo app plus green `x verify`; milestones 0–5 ship before realtime. Realtime tiers 1–2 are v1, tier 3 (local-first) is v2. Milestone 6 is a 50k-socket forced-reconnect benchmark — realtime topology is not frozen until that number exists. See [FAQ](FAQ).
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All 28 packages publish at 1.0.0 in lockstep. Milestones 0–10 are shipped; milestone 11's two-platform deploy proof is the remaining item. Realtime tiers 1–2 are v1, tier 3 (local-first) is v2. No realtime benchmark is published — the 50k-socket forced-restart number is still unmeasured, so topology is not frozen. See [FAQ](FAQ).

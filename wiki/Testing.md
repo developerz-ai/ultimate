@@ -132,22 +132,36 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 The single gate. Green means shippable.
 
-| # | Check | Fails on |
-|---|---|---|
-| 1 | typecheck | any error; `any` is banned by lint, not tolerated by a cast |
-| 2 | lint (Biome) | formatting, `any`, default exports, bare `Error`, raw hex colours, hardcoded user-facing strings, `Intl` date formatting with no `timeZone` |
-| 3 | **import boundaries** | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages |
-| 4 | all six test types | any failure; flakes are failures |
-| 5 | **migration drift** | schema differs from migrations, or a migration is not reversible-or-marked |
-| 6 | **contract diff** | a breaking change to a published action/query without a version bump |
-| 7 | budgets | per-route JS bytes, LCP/CLS, Lighthouse thresholds, precache size |
-| 8 | SEO + i18n | missing title/description, duplicate meta, broken internal link, missing i18n key |
-| 9 | manifest freshness | `x.manifest.json` / `openapi.json` differ from what the code produces |
+Seventeen steps, one list, in cost order. There is no `--only` and no `--skip` — "green" has to mean
+the same thing for everyone. A step with nothing to check reports as skipped (`-`), never as passed.
+
+| Step | Fails on |
+|---|---|
+| `typecheck` | any error; `any` is banned by lint, not tolerated by a cast |
+| `lint` | formatting, `any`, default exports, bare `Error`, raw hex colours, hardcoded user-facing strings, `Intl` date formatting with no `timeZone` |
+| `boundaries` | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages |
+| `filesize` | a source file over 500 lines |
+| `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, or `src/index.ts` |
+| `errors` | an `X_*` code with no runnable fix or no docs page |
+| `unit` | pure logic — services, money, policy predicates, matchers |
+| `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
+| `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
+| `job` | step replay, idempotency dedupe, retry/backoff, concurrency, outbox atomicity |
+| `e2e` | the built output under Playwright, offline and SW update included |
+| `eval` | a prompt scoring below its committed baseline, or a prompt with no eval at all |
+| `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
+| `contract-diff` | a breaking change to a published action/query without a version bump |
+| `budgets` | per-route JS bytes and LCP |
+| `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces |
+| `roadmap` | framework repo only — a milestone missing its status marker, or a shipped milestone missing an artifact its own row names |
+
+Any failure fails the gate; flakes are failures.
 
 ```
 $ x verify
-  ✓ typecheck  ✓ lint  ✓ boundaries  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e
-  ✗ migration drift
+  ✓ typecheck  ✓ lint  ✓ boundaries  ✓ filesize  ✓ package-shape  ✓ errors
+  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e  ✓ eval
+  ✗ drift
       X_DB_DRIFT: schema differs from migrations
         cause: table "posts" has column "publish_at" not present in any migration
         fix:   x db gen "add publish_at"

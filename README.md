@@ -9,11 +9,19 @@
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange.svg)](docs/idea/14-roadmap.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
 
 </div>
 
-> **Status: pre-alpha.** The architecture, the docs, and the package skeletons are in place. Milestones 0–5 are the path to usable — see the [roadmap](docs/idea/14-roadmap.md). Nothing here is production-ready yet, and this README will say so until it isn't.
+> **Status: 1.0.0**, `As of 2026-08`. 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish to npm in lockstep: one version, one commit, one tag. Semver applies from here — a breaking change to a documented API needs a major. That is what 1.0.0 means: a stable API under semver, not a promise about your infrastructure.
+
+**Not claimed at 1.0.0:**
+
+| Open | Where it stands |
+|---|---|
+| **Realtime capacity** | no published benchmark. The 50k-socket forced-restart number is unmeasured; the capacity figures in the docs are targets, not results |
+| **Two-platform deploy proof** | `x build --target docker\|binary\|static`, the dev/prod compose files and the Helm chart all ship. The demo app on Compose **and** K8s from one image, with an invisible rolling restart, is [milestone 11](docs/idea/14-roadmap.md) and is not yet demonstrated |
+| **Deferred to v2** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 ---
 
@@ -44,6 +52,8 @@ bunx create-ultimate myapp && cd myapp && x dev
 ```
 
 No Docker. No env scavenger hunt. Embedded Postgres, in-process NATS, S3 → a local directory. What you get is a running app with auth, a seeded database, a working example route, and a dev dashboard at `/_x`.
+
+Every `@ultimat3/*` dependency it writes is pinned to one exact version. They move together — never mix versions across the scope.
 
 ## One `action`, six artifacts
 
@@ -112,13 +122,13 @@ Not "supported". Not "documented". **Enforced, and impossible to get wrong.**
 
 ## Realtime — a ladder, not a cliff
 
-Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite.
+Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship in 1.0.0; tier 3 lands in v2, behind the interfaces that are already here.
 
 | Tier | What | Covers |
 |---|---|---|
 | 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
 | 2 · **Live queries** | declare server-side with a policy, receive a Solid signal | **90% of "realtime app"** |
-| 3 · **Local-first** | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
+| 3 · **Local-first** *(v2)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
 
 → [Realtime design and its honest limits](docs/idea/03-realtime.md)
 
@@ -133,10 +143,10 @@ Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config
 | Auth | **Better Auth**, wrapped | MIT, self-hosted, with our policy layer on top |
 | Frontend | **SolidJS 2** + our own router | fine-grained reactivity; we vendor the router rather than track an alpha |
 | Styling | **SCSS modules + design tokens** | no Tailwind (diff noise), no CSS-in-JS (runtime cost) |
-| Jobs | Postgres queue default, Redis/NATS drivers | zero-infra start, a real scale path |
+| Jobs | Postgres queue default; Redis/NATS drivers in v2 | zero-infra start, a real scale path behind one interface |
 | Observability | **OpenTelemetry, always on** | one trace across HTTP → job → live query |
 
-**Excluded on purpose:** GraphQL · multi-runtime · multi-ORM · a second CSS solution · React Server Components · a plugin API before v1 · vendor edge/KV primitives.
+**Excluded on purpose:** GraphQL · multi-runtime · multi-ORM · a second CSS solution · React Server Components · a plugin API in 1.x · vendor edge/KV primitives.
 
 ## Steal explicitly
 
@@ -218,14 +228,14 @@ Every command takes `--json`. → [CLI reference](wiki/CLI-Reference.md)
 
 ```sh
 bun install
-bun run verify        # typecheck + lint + boundaries + tests. Green = shippable.
+bun run verify        # the 17-step gate: typecheck → lint → boundaries → tests → drift → budgets → manifest → roadmap. Green = shippable.
 ```
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture/00-conventions.md](docs/architecture/00-conventions.md) first. The tier boundaries in that second file are enforced by `bun run boundaries` — a sideways import fails the build, by design.
 
 ## Roadmap
 
-Twelve milestones, each ending in a working demo app and a green `x verify`. **The sequencing rule: ship 0–5 before touching realtime.** A framework with great DX, jobs, and SEO is already shippable; a half-built sync engine is worthless.
+Twelve milestones, each ending in a working demo app and a green `x verify`. **Milestones 0–10 are shipped.** Milestone 11 — deploy, docs, 1.0 — is open on one thing: the demo app proven on Compose **and** K8s from a single image, rolling restart invisible. The status markers in that table are enforced by `x verify`'s `roadmap` step, so they cannot quietly rot.
 
 → [The full roadmap](docs/idea/14-roadmap.md) · [The risks, stated plainly](docs/idea/15-risks.md)
 

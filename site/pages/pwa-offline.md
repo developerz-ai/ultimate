@@ -3,7 +3,7 @@ title: PWA and offline
 nav: PWA
 description: The service worker is a build artifact generated from the route table, and version skew — not caching strategy — is what actually breaks progressive web apps.
 lede: `sw.js` is generated from the route table and never hand-edited. Editing it is a build error.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ## Why generated
@@ -102,7 +102,7 @@ user opens app (build A) → keeps tab open 3 days → you deploy 6 times
 | 3 | **N-deploy asset retention** | old builds' assets stay served for N deploys (default 10) or a minimum window (default 7d), whichever is longer |
 | 4 | **`AppUpdateAvailable` signal, not a 404** | a Solid signal flips when the server reports a newer build. The app renders its own "Update available — reload" affordance. No forced navigation, no lost form state |
 | 5 | **Forced reload after a grace period** | `x deploy --critical` sets a deadline; the client shows a countdown, saves in-flight state via the mutator queue, then reloads. Grace default 30m |
-| 6 | **Skew is observable** | `/_x` and `x status --json` report the build-ID distribution of connected clients |
+| 6 | **Skew is observable** | `/_x` reports the build-ID distribution of connected clients. The CLI form, `x status`, is planned — it exits `X_NOT_IMPLEMENTED` today with `x doctor --json` as its `fix:` |
 | 7 | **Build ID scopes the SW cache** | preview/branch builds get their own cache namespace and SW scope, so a preview can never poison prod caches |
 
 | Request type | Response on a stale build ID |

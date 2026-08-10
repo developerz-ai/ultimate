@@ -12,12 +12,16 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** pre-1.0, `As of 2026-08`. All 28 `@ultimat3/*` packages are implemented (not skeletons) —
-entity/action/query/jobs/policy/route/mutator/task, HTTP, rendering, caching, realtime, auth,
-mail, storage, AI-first surface (MCP, `llm()`, evals), and admin/generators/`x new` all have real
-code and tests, several proven against live Postgres. Remaining work is deploy/docs/release
-hardening (roadmap milestone 11) and closing spec-vs-code divergences — not building primitives
-from scratch. See [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) for the milestone detail.
+**Status:** 1.0.0, `As of 2026-08`. 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
+28 in all — publish to npm at 1.0.0 in lockstep: one version, one commit, one tag, through OIDC
+trusted publishing. Semver applies from here — a breaking change to a documented API needs a major,
+and the eight primitive shapes, the `x` CLI surface and the tier table are now as stable as the
+`X_*` codes already were. Two things stay open: the realtime capacity benchmark (the 50k-socket
+forced-restart number is unmeasured — every capacity figure in the docs is a target, not a result),
+and roadmap milestone 11's two-platform deploy proof (`x build --target docker|binary|static`, the
+dev/prod compose files and the Helm chart all ship; the demo app running on Compose **and** K8s
+from one image with an invisible rolling restart is not yet demonstrated). See
+[`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) for the milestone detail.
 
 ## Design axioms (override any instinct that conflicts)
 
@@ -34,7 +38,7 @@ from scratch. See [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) for the m
 | Task | Command |
 |---|---|
 | install | `bun install` |
-| **the gate** | `bun run verify` — `x verify` at the repo root: typecheck, lint, boundaries, sizes, shape, every test type, drift, contracts, budgets, manifest. Green = shippable. |
+| **the gate** | `bun run verify` — `x verify` at the repo root, 17 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap. Green = shippable. |
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |

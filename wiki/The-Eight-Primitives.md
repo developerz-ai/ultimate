@@ -201,4 +201,4 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 ## The rule
 
-**If a feature doesn't fit a primitive, it doesn't ship.** No ninth primitive, no escape-hatch `mode:` option, no plugin API before v1. Removing an alternative is a feature — ambiguity is the tax agents pay. Source: [`docs/idea/02-primitives.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/02-primitives.md).
+**If a feature doesn't fit a primitive, it doesn't ship.** No ninth primitive, no escape-hatch `mode:` option, no plugin API in 1.0. Removing an alternative is a feature — ambiguity is the tax agents pay. Source: [`docs/idea/02-primitives.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/02-primitives.md).

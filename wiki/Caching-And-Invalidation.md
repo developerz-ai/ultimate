@@ -2,7 +2,7 @@
 
 Four tiers, one invalidation graph. You declare what a write touches; the framework decides what to evict.
 
-Pre-v1. Not production-ready.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The four tiers
 

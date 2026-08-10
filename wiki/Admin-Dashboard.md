@@ -102,7 +102,7 @@ Own routes in your own app. Never fork the framework.
 | Branding | edit `apps/admin/shared/tokens/` |
 | Hide an entity | the entity's policy denies `admin:read` — visibility is authz, not configuration |
 
-No plugin API before v1 ([axiom](Home)). The extension point is that the admin is your app.
+No plugin API in 1.0 ([axiom](Home)). The extension point is that the admin is your app.
 
 ## Deployment
 

@@ -42,7 +42,7 @@ Entities declare a money field once and the generated migration emits both colum
 
 ## Operations
 
-Allowed, total, and typed. `As of 2026-07` the package ships the currency table, the rounding modes, and the error codes; the arithmetic surface below is the contracted API.
+Allowed, total, and typed. `As of 2026-08` the package ships the currency table, the rounding modes, the error codes, and the arithmetic surface below.
 
 | Operation | Signature | Behavior |
 |---|---|---|

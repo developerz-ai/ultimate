@@ -19,12 +19,23 @@ missing the packages/files its own **Ships** column names. `As of 2026-08`.
 | 3 | ✅ | **Rendering + router + `site`/`app` split** | Solid 2 integration, own router, five render modes, `stream` default, surfaces + hard `site/` → `app/` boundary | demo: landing page in `site/` at **0kb JS** and a streaming dashboard in `app/`; a deliberate cross-surface import fails the build |
 | 4 | ✅ | **SEO + images + budgets** | typed `meta`, `ld.*` helpers, sitemap/robots/RSS from the route table, image pipeline, per-route budgets in `x verify` | demo landing page scores 100 SEO with **CLS 0**; deleting a description is a build error; a budget regression names the import chain |
 | 5 | ✅ | **Jobs + tasks + mail + storage + scheduler** | outbox enqueue, `step.run` / `step.sleep` / `step.waitForEvent`, `pg` driver, `task` cron with leader election, mail, `Bun.s3` storage | demo: signup → onboarding job with a 3-day sleep, verified with the frozen clock; a failing step retries **only that step**; job tests in `x verify` |
-| 6 | ✅ | **Realtime tier 1–2 (+ reconnect benchmark)** | channels, live `query`, `replicator` role, incremental matcher, NATS fanout, `sync` role | demo: collaborative list updating live across two browsers; **50k-socket forced-restart benchmark measured and published** before topology is frozen ([`03-realtime.md`](./03-realtime.md)) |
+| 6 | ✅ | **Realtime tier 1–2** | channels, live `query`, `replicator` role, incremental matcher, NATS fanout, `sync` role | demo: collaborative list updating live across two browsers. The **50k-socket forced-restart benchmark** moved out of this row — see *Open at 1.0.0* below ([`03-realtime.md`](./03-realtime.md)) |
 | 7 | ✅ | **Caching, four tiers, one tag graph** | request memo, in-process LRU, Redis tier, CDN headers + purge, `invalidates` fanout, ISR regeneration | demo: publish an ISR-backed post and observe memo/LRU/Redis/page/CDN all invalidate from one `invalidates: [tag.post]`; an untagged cached query fails `x verify` |
 | 8 | ✅ | **PWA + offline + version skew** | generated `sw.js`, precache derivation, manifest/icons/splash from one source icon, required offline fallback, immutable build ID, N-deploy retention, `AppUpdateAvailable` | demo: installable app, works offline, and **six deploys with a tab left open never 404s a chunk**; `x status` reports the client build-ID spread |
 | 9 | ✅ | **AI-first surface** | MCP dev server, `x.manifest.json`, every action as an MCP tool, `llm` gateway, versioned prompts + evals, pgvector hybrid search, branch environments | demo: an agent drives the demo app end-to-end through MCP only — migrate in a branch DB, run tests, publish a post — with **identical authz** to the UI; evals run in `x verify` |
 | 10 | ✅ | **Admin + generators + `x new`** | generated admin dashboard (with its own MCP surface), all `x gen` generators, `create-ultimate`, `/_x` dev dashboard complete | `bunx create-ultimate myapp && cd myapp && x dev` is <60s with **no Docker and no env editing**; every generator produces code that passes `x verify` unmodified |
 | 11 | 🚧 | **Deploy + docs + 1.0** | `x build --target docker\|binary\|static`, dev/prod compose, Helm with per-role HPAs, graceful drain everywhere, docs site, error-code pages | the demo app runs on Hetzner+Compose **and** a K8s cluster from one image; a rolling restart is invisible to connected clients; every `X_*` code has a docs page |
+
+## Open at 1.0.0
+
+1.0.0 shipped the 28 packages, the docs and the three build targets. Two claims this table once made are still unproven, and are named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
+
+| Open | Why it is not closed |
+|---|---|
+| **50k-socket forced-restart benchmark** | no number has been measured or published. Realtime tiers 1–2 ship and their API is under semver, but every documented capacity figure is a target derived from Bun's WebSocket implementation, not a result |
+| **Two-platform deploy proof** (milestone 11) | `x build --target docker\|binary\|static`, `docker/docker-compose.{dev,prod}.yml` and `docker/helm` all exist. Running the demo app on Hetzner+Compose **and** a K8s cluster from one image, with an invisible rolling restart, needs real infrastructure and has not been done |
+
+Both are measurements, not code. Neither blocks an app built on 1.0.0; both block the claims above being repeated as fact.
 
 ## One demo app, twelve stages
 

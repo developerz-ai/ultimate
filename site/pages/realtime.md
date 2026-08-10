@@ -4,7 +4,7 @@ menu: true
 nav: Realtime
 description: Three tiers — channels, live queries, local-first — with one mutator shape at every rung, so climbing is a config change rather than a rewrite.
 lede: Channels → live queries → local-first. A ladder, not three products. Same `mutator` at every rung.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ## The ladder
@@ -97,7 +97,7 @@ rolling restart becomes a self-inflicted thundering herd that outlasts the deplo
 
 | # | Mitigation | Detail |
 |---|---|---|
-| 1 | **Prototype before locking topology** | milestone 6 is a reconnect benchmark: 50k sockets, forced `sync` restart, measure time-to-consistent and DB load. Topology is not frozen until that number is known |
+| 1 | **Benchmark before any capacity claim** | the reconnect benchmark — 50k sockets, forced `sync` restart, time-to-consistent and DB load — is **still unrun at 1.0.0**. Until it exists, no capacity figure is published and every number here is a target |
 | 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
 | 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding |

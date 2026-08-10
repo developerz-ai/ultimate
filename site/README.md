@@ -40,7 +40,15 @@ cheaper than the machinery to avoid one.
 ## Files
 
 ```
-build.ts                  # markdown + highlighting + templating + sitemap/robots/feed
+build.ts                  # the one entry point: parse pages, fill templates, emit dist/
+lib/config.ts             # origin, roots, PAGE_ORDER, STYLE_ORDER — shared by every stage
+lib/text.ts               # escaping, slugs, {{var}} fills, frontmatter parsing
+lib/markdown.ts           # the block + inline grammar the pages use
+lib/highlight.ts          # local syntax highlighting, no dependency
+lib/html.ts               # nav, table of contents, pager, JSON-LD
+lib/seo.ts                # the title/description gate that fails the build
+lib/feed.ts               # feed.xml, parsed back out of the changelog page
+lib/assets.ts             # SCSS assembly, theme script, asset copying
 templates/layout.html     # document shell: head, theme script, nav, footer
 templates/home.html       # hero frame; {{hero_code}} is the first fenced block of index.md
 templates/doc.html        # breadcrumb, article, TOC, pager
@@ -70,7 +78,7 @@ Frontmatter, all required unless noted:
 | `headline` | home page only: the `<h1>`, which differs from the `<title>` |
 | `updated` | `YYYY-MM-DD`, used for `lastmod` and `dateModified` |
 
-Page order — nav order, pager order, sitemap order — is the `PAGE_ORDER` array in `build.ts`.
+Page order — nav order, pager order, sitemap order — is the `PAGE_ORDER` array in `lib/config.ts`.
 Adding a page means adding a file and one array entry.
 
 Markdown supported: headings (`##`–`####`, auto-linked anchors), paragraphs, lists, GFM tables
@@ -116,7 +124,9 @@ GitHub Pages, from `.github/workflows/pages.yml` (owned by another part of the r
 
 ```yaml
 - run: bun run site/build.ts
-- uses: actions/upload-pages-artifact@v3
+- uses: actions/configure-pages@v6
+  with: { enablement: true }
+- uses: actions/upload-pages-artifact@v5
   with: { path: site/dist }
 ```
 

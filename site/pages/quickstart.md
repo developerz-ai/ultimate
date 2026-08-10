@@ -4,7 +4,7 @@ menu: true
 nav: Quickstart
 description: From zero to a running Ultimate app in 60 seconds — no Docker, no .env scavenger hunt, one action, one green verify.
 lede: No Docker install. No `.env` scavenger hunt. Embedded Postgres, in-process NATS, S3 to a local directory — then one `action` that becomes six artifacts.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ## Requirements
@@ -29,6 +29,10 @@ $ bunx create-ultimate myapp && cd myapp && x dev
   ✓ mcp        ws://localhost:9229
   ✓ ready      http://localhost:3000
 ```
+
+`create-ultimate` pins every `@ultimat3/*` dependency to one exact version. 27 `@ultimat3/*`
+packages plus `create-ultimate` release in lockstep at `1.0.0` — one version, one tag. Never mix
+versions.
 
 ## What just started
 
@@ -91,7 +95,7 @@ $ curl -sX POST localhost:3000/_x/action/publish-post \
 ```
 
 ```bash
-$ x mcp call publish-post --json '{"postId":"1b9d…"}'
+$ x mcp serve            # publish-post is an MCP tool; the agent calls it by name
 ```
 
 An unauthorised caller gets the same answer in all three, with the same code:
@@ -106,16 +110,20 @@ X_POLICY_DENIED: policy denied this actor
 
 ```bash
 $ x verify
-  ✓ typecheck  ✓ lint  ✓ boundaries  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e
-  ✗ migration drift
+  ✓ typecheck  ✓ lint  ✓ boundaries  ✓ filesize  ✓ errors
+  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e  ✓ eval
+  ✗ drift
       X_DB_DRIFT: schema differs from migrations
         cause: table "posts" has column "publish_at" not present in any migration
         fix:   x db gen "add publish_at"
 ```
 
-One command means shippable. CI runs exactly `x verify` — a check that lives only in CI is a
-check developers cannot run. `x verify --json` emits the same content machine-readably, so an
-agent parses the failure and runs the `fix` line without a human.
+One command means shippable. The gate is 17 named steps — typecheck, lint, boundaries, filesize,
+package-shape, errors, the six test types, drift, contract-diff, budgets, manifest, roadmap —
+with no `--only` and no `--skip`, because a gate you can narrow means whatever the caller chose.
+CI runs exactly `x verify`: a check that lives only in CI is a check developers cannot run.
+`x verify --json` emits the same content machine-readably, so an agent parses the failure and
+runs the `fix` line without a human.
 
 ## Point your agent at it
 

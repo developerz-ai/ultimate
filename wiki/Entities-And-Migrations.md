@@ -31,7 +31,7 @@ Rename a column and the entity type changes, the action's output stops matching,
 
 ## Shape
 
-`As of 2026-07` (`entity` lands in milestone 1):
+`As of 2026-08`:
 
 ```ts
 export const post = entity({

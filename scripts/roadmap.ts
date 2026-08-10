@@ -34,8 +34,8 @@ export interface Milestone {
 /**
  * One row per roadmap milestone (`docs/idea/14-roadmap.md`), mirrored here because a markdown
  * table cannot assert anything about the filesystem on its own. `As of 2026-08`: milestones 0–10
- * ship the packages/commands their rows name; 11 (deploy/docs/release hardening) still has real
- * gaps — see root `CLAUDE.md`.
+ * ship the packages/commands their rows name; 11 ships its artifacts but not its two-platform
+ * deploy proof, which needs real infrastructure — see "Open at 1.0.0" in the roadmap.
  */
 export const MILESTONES: readonly Milestone[] = [
   {
@@ -91,9 +91,12 @@ export const MILESTONES: readonly Milestone[] = [
       'packages/storage/src/index.ts',
     ],
   },
+  // The reconnect benchmark left this row at 1.0.0: no number was ever measured, and a ✅ that
+  // covered an unmeasured claim is exactly what this step exists to catch. It is now tracked under
+  // "Open at 1.0.0" in the roadmap instead.
   {
     n: 6,
-    title: 'Realtime tier 1-2 (+ reconnect benchmark)',
+    title: 'Realtime tier 1-2',
     status: 'shipped',
     requires: ['packages/realtime/src/index.ts'],
   },
@@ -131,9 +134,12 @@ export const MILESTONES: readonly Milestone[] = [
     status: 'in-progress',
     requires: [
       'docker/Dockerfile',
+      'docker/docker-compose.dev.yml',
+      'docker/docker-compose.prod.yml',
       'docker/helm',
       'packages/cli/src/cmd-build.ts',
       'wiki/Error-Codes.md',
+      'CHANGELOG.md',
     ],
   },
 ];
