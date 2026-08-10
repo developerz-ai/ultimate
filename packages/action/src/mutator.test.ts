@@ -4,7 +4,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { invoke } from './invoke';
 import type { LocalRow, LocalTable, LocalTx } from './mutator';
-import { custom, mutator, resolveConflict } from './mutator';
+import { custom, isMutator, mutator, resolveConflict } from './mutator';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, likes: t.number });
@@ -130,6 +130,18 @@ describe('mutator', () => {
     ]);
     // The original keeps its own name: renaming twins, it never mutates in place.
     expect(likePost.describe().name).toBe('likePost');
+  });
+
+  test('isMutator is structural: the brand alone does not counterfeit one', () => {
+    expect(isMutator(likePost)).toBe(true);
+    // A look-alike carrying the brand has no declaration, so nothing can run it —
+    // the same refusal `isAction` gives a hand-rolled `kind: 'action'` object.
+    const counterfeit = Object.assign(() => Promise.resolve({}), {
+      kind: 'action' as const,
+      isMutator: true as const,
+    });
+    expect(isMutator(counterfeit)).toBe(false);
+    expect(isMutator({ isMutator: true })).toBe(false);
   });
 
   test('conflict strategies pick a winner', () => {

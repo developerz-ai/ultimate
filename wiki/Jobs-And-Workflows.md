@@ -21,6 +21,26 @@ export const onboardOrg = job({
 });
 ```
 
+## The fluent surface
+
+Every projection is a method on the job — `onboardOrg.enqueue({ orgId })`, never `enqueueJob(onboardOrg, input)` — and every declared field is lifted onto it. A job has no `.def`.
+
+| Member | Is | Rule |
+|---|---|---|
+| `onboardOrg.enqueue(input, options?)` | the enqueue | resolves the ambient jobs facade, so it **joins the caller's transaction** when the app installed the outbox. One call site works in a request handler, a job, a script and a test |
+| `.as(actor, input, options?)` | the same enqueue, on someone's behalf | fills `tenantId` from the actor's org, so per-tenant concurrency and rate limits apply. `null` — or an actor with no org — leaves `tenantId` unset: the limiter's own shared bucket, not a fake org id on the row. It **queues; it never runs inline** |
+| `.run(args)` | the handler itself | the worker calls it. App code does not — see below |
+| `.parse(raw)` | the payload check | a raw queue payload against the declared `input` |
+| `.idempotencyKeyFor(input)` | the dedupe key | whatever the declared `idempotencyKey` returned. An empty string throws `X_INVARIANT` at the call — an empty key makes every enqueue look like a duplicate of every other |
+| `.describe()` | the manifest row | `name`, `input` (vendor tag only), `queue`, `retry: { attempts, backoff }`, `steps` |
+| `.kind` `.name` `.queue` `.retry` `.concurrency` `.timeoutMs` `.input` | the declaration, lifted | readable, and already **resolved**: `kind` is `'job'`, `queue` is `'default'` when undeclared, `retry` carries the framework defaults merged underneath, `timeoutMs` is `timeout` normalized to ms |
+
+**One enqueue implementation.** `<job>.enqueue`, `<job>.as` and a [task](Scheduled-Tasks)'s own `enqueue()` all resolve the same ambient facade; the only other calls into a driver's `enqueue` are the outbox relay and the scheduler's occurrence dispatch. So "does this join the transaction?" has one answer for every enqueue an app writes, and there is no second path to forget about.
+
+`run` is on the handle and is still not yours to call. The worker's `executeJob` is the one execution path, and it owns the attempt counter, the step store, the timeout and the lease — none of which a direct call carries. That is also why `.as()` queues: on an [action](Actions) `.as()` *runs* the mutation as that actor, on a job it *enqueues* as that actor. Same word, and the difference is the primitive's execution surface, not an inconsistency.
+
+`describe().steps` is **empty by design**. Step names are chosen inside `run()` at execution time, so they are not statically knowable — the steps a run actually recorded come from the run itself, via `x jobs show <id> --json`. `x.manifest.json`, the `/_x` jobs panel and the MCP dev server read one list, and that list is a map over each handle's own `describe()` — so the list and a single job can never disagree. `name` is stamped from the export name by generated code; an unnamed handle enqueues fine and carries `anonymous-job-<n>` on the row instead.
+
 ## Transactional outbox by default
 
 `<job>.enqueue` inside an [action](Actions) writes the job row in the **same transaction** as the business write — the handle resolves the ambient jobs facade, the one `ctx.jobs` names. Commit *is* the enqueue.
