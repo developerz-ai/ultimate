@@ -6,6 +6,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { requireBunVersion } from './app-root';
 import { createHelpCommand } from './cmd-help';
 import type { CommandContext } from './command';
+import { UnknownCommandError } from './errors';
 import type { Runner } from './exec';
 import { exec } from './exec';
 import type { CommandResult } from './output';
@@ -53,7 +54,13 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
 
   const command = commandFor(args.command);
   if (command === undefined) {
-    const result = errorResult(args.command, new Error(`no handler for "${args.command}"`));
+    const result = errorResult(
+      args.command,
+      new UnknownCommandError({
+        path: args.command,
+        known: SPECS.map((spec) => spec.name),
+      }),
+    );
     options.write(render(result, args.json));
     return 1;
   }
