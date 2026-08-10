@@ -21,7 +21,7 @@ x sdk swift --out apps/mobile/ios/PostlyKit
 ```
 
 Generates a Swift package from `openapi.json`: one method per action, typed request and response
-structs, and the same error codes (`X_POLICY_DENIED`, `X_BILLING_SEATS_EXCEEDED`) as an enum.
+structs, and the same error codes (`X_FORBIDDEN`, `X_BILLING_SEATS_EXCEEDED`) as an enum.
 Auth is the same session cookie or bearer token the web app uses — Better Auth issues both.
 
 ## Kotlin

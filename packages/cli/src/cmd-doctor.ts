@@ -71,10 +71,14 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       ),
     );
   }
+  // `@ultimat3/pwa`'s own codes, not CLI twins of them. `X_PWA_NO_ICON_SOURCE` and
+  // `X_PWA_NO_FALLBACK` used to be declared here for the same two conditions the package already
+  // names — two codes for one condition, one of them registered by nobody, so `x errors explain`
+  // answered for the package's and refused the CLI's.
   if (!probe.exists(ICON_SOURCE)) {
     findings.push(
       finding(
-        'X_PWA_NO_ICON_SOURCE',
+        'X_PWA_ICON_MISSING',
         `${ICON_SOURCE} is missing, so install icons and og images cannot be generated`,
         `add a 1024px square ${ICON_SOURCE}, then run x manifest`,
         ICON_SOURCE,
@@ -84,7 +88,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   if (!probe.exists(OFFLINE_FALLBACK)) {
     findings.push(
       finding(
-        'X_PWA_NO_FALLBACK',
+        'X_PWA_NO_OFFLINE_FALLBACK',
         `${OFFLINE_FALLBACK} is missing, so an offline navigation falls back to the browser error page`,
         'x g route offline --surface app',
         OFFLINE_FALLBACK,

@@ -47,8 +47,6 @@ export const EXPECTED_RED: Readonly<Record<string, string>> = {
   job: 'the digest job writes through the same unscoped repo — data substrate',
   e2e: 'the built output serves pages backed by the same repo — data substrate',
   drift: 'migrations predate the current entity set; regenerated with the schema',
-  'contract-diff': 'x.manifest.json is hand-written — the manifest work owns it',
-  manifest: 'x.manifest.json is hand-written — the manifest work owns it',
 } satisfies Partial<Record<VerifyStepName, string>>;
 
 export interface GateStep {

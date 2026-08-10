@@ -50,7 +50,7 @@ test('a row that fails the policy is never delivered', async ({ seed, actorFor, 
   expect(feed.rows().some((row) => row.orgId === acme.id)).toBe(false);
   await expect(
     subscribe(liveFeed.as(actorFor(mara), { orgId: acme.id })),
-  ).rejects.toBeUltimateError('X_POLICY_DENIED');
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
 });
 
 test('an offline like applies locally, queues, and reconciles on reconnect', async ({

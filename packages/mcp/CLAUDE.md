@@ -35,7 +35,7 @@ import. The CLI wires it.
   every access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - Three outcomes, never blurred: role-hidden → `-32601` ToolNotFound with no `data`;
   scope → `-32600` `X_MCP_SCOPE_DENIED` naming the scope; policy → an `isError` result
-  carrying `X_POLICY_DENIED`. Swapping any two is an enumeration oracle.
+  carrying `X_FORBIDDEN`. Swapping any two is an enumeration oracle.
 - `visibleTo` is **fail-closed** three ways: a role list admits only the roles it names (a
   caller with no role matches none), a predicate must return the literal `true`, and a
   predicate that THROWS hides the tool. A predicate takes the caller — never the arguments —

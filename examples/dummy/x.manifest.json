@@ -1,690 +1,1726 @@
 {
-  "$comment": "GENERATED every build by `x build`. Never hand-edited — drift fails `x verify` (X_MANIFEST_STALE). Keys are sorted so a diff is a real change, not a reordering.",
-  "schemaVersion": 1,
-  "app": "postly",
-  "buildId": "8f2a1c4d9e7b3056",
-  "ultimate": "0.0.1",
-  "budgets": {
-    "app/feed/page": {
-      "js": "60kb",
-      "lcp": 2000,
-      "measuredJs": "41kb",
-      "measuredLcp": 1420
-    },
-    "app/posts/[id]/page": {
-      "js": "40kb",
-      "lcp": 2000,
-      "measuredJs": "28kb",
-      "measuredLcp": 1180
-    },
-    "app/posts/new/page": {
-      "js": "0kb",
-      "lcp": 1200,
-      "measuredJs": "0kb",
-      "measuredLcp": 540
-    },
-    "app/settings/page": {
-      "js": "45kb",
-      "lcp": 1800,
-      "measuredJs": "33kb",
-      "measuredLcp": 990
-    },
-    "site/blog/[slug]/page": {
-      "js": "0kb",
-      "lcp": 1800,
-      "measuredJs": "0kb",
-      "measuredLcp": 780
-    },
-    "site/blog/page": {
-      "js": "0kb",
-      "lcp": 1500,
-      "measuredJs": "0kb",
-      "measuredLcp": 660
-    },
-    "site/offline/page": {
-      "js": "8kb",
-      "lcp": 1000,
-      "measuredJs": "6kb",
-      "measuredLcp": 240
-    },
-    "site/page": {
-      "js": "0kb",
-      "lcp": 1200,
-      "measuredJs": "0kb",
-      "measuredLcp": 610
-    },
-    "site/pricing/page": {
-      "js": "0kb",
-      "lcp": 1500,
-      "measuredJs": "0kb",
-      "measuredLcp": 700
-    }
+  "manifestVersion": 1,
+  "buildId": "8e87ab5d54a06788",
+  "app": {
+    "name": "@postly/root",
+    "version": "0.0.1"
   },
-  "cacheTags": {
-    "blog": {
-      "kind": "derived",
-      "upstream": ["post"]
+  "routes": [
+    {
+      "url": "/",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1200
+      }
     },
-    "comment": {
-      "kind": "entity",
-      "table": "comments"
+    {
+      "url": "/blog",
+      "render": "isr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [
+        "blog"
+      ],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1500
+      }
     },
-    "feed": {
-      "kind": "derived",
-      "upstream": ["post", "like"]
+    {
+      "url": "/blog/:slug",
+      "render": "isr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [
+        "blog"
+      ],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1800
+      }
     },
-    "like": {
-      "kind": "entity",
-      "table": "likes"
+    {
+      "url": "/feed",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "60kb",
+        "lcp": 2000
+      }
     },
-    "member": {
-      "kind": "entity",
-      "table": "members"
+    {
+      "url": "/offline",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "8kb",
+        "lcp": 1000
+      }
     },
-    "org": {
-      "kind": "entity",
-      "table": "orgs"
+    {
+      "url": "/posts/:id",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "interaction",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "40kb",
+        "lcp": 2000
+      }
     },
-    "plan": {
-      "kind": "entity",
-      "table": "plans"
+    {
+      "url": "/posts/new",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1200
+      }
     },
-    "post": {
-      "kind": "entity",
-      "table": "posts"
+    {
+      "url": "/pricing",
+      "render": "isr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [
+        "plan"
+      ],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1500
+      }
+    },
+    {
+      "url": "/settings",
+      "render": "spa",
+      "offline": "precache",
+      "hydrate": "idle",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "45kb",
+        "lcp": 1800
+      }
     }
-  },
+  ],
   "entities": [
     {
       "name": "comments",
       "table": "comments",
-      "tenant": "orgId",
-      "primaryKey": ["id"],
-      "columns": ["id", "orgId", "postId", "authorId", "body", "createdAt"],
-      "invariants": ["comment_body_present"],
-      "indexes": ["comments_post_id_created_at_idx"]
+      "columns": [
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "members.id"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "posts.id"
+        }
+      ],
+      "invariants": [
+        "comment_body_present"
+      ]
     },
     {
       "name": "likes",
       "table": "likes",
-      "tenant": "orgId",
-      "primaryKey": ["postId", "memberId"],
-      "columns": ["orgId", "postId", "memberId", "createdAt"],
-      "invariants": [],
-      "indexes": ["likes_member_id_idx"]
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "member_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "members.id"
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "posts.id"
+        }
+      ],
+      "invariants": []
     },
     {
       "name": "members",
       "table": "members",
-      "tenant": "orgId",
-      "primaryKey": ["id"],
       "columns": [
-        "id",
-        "orgId",
-        "userId",
-        "email",
-        "name",
-        "role",
-        "tz",
-        "locale",
-        "theme",
-        "digestOptIn",
-        "createdAt"
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "digest_opt_in",
+          "type": "boolean",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "locale",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "theme",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "tz",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false
+        }
       ],
       "invariants": [
         "member_email_shape",
-        "member_locale_supported",
-        "member_tz_supported",
         "member_unique_per_org"
-      ],
-      "indexes": ["members_org_id_role_idx", "members_tz_idx"]
+      ]
     },
     {
       "name": "orgs",
       "table": "orgs",
-      "tenant": null,
-      "primaryKey": ["id"],
-      "columns": ["id", "slug", "name", "planCode", "billingCurrency", "createdAt", "updatedAt"],
-      "invariants": ["org_name_present", "org_slug_shape"],
-      "indexes": ["orgs_plan_code_idx"]
+      "columns": [
+        {
+          "name": "billing_currency",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "plan_code",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "org_name_present",
+        "org_slug_shape"
+      ]
     },
     {
       "name": "plans",
       "table": "plans",
-      "tenant": null,
-      "primaryKey": ["code", "currency"],
-      "columns": ["code", "currency", "monthly", "seats"],
-      "money": ["monthly"],
+      "columns": [
+        {
+          "name": "code",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "currency",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "monthly_currency",
+          "type": "char",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "monthly_minor",
+          "type": "bigint",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "seats",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
       "invariants": [
         "plan_currency_matches_price",
         "plan_price_non_negative",
         "plan_seats_positive"
-      ],
-      "indexes": []
+      ]
     },
     {
       "name": "posts",
       "table": "posts",
-      "tenant": "orgId",
-      "primaryKey": ["id"],
       "columns": [
-        "id",
-        "orgId",
-        "authorId",
-        "slug",
-        "title",
-        "excerpt",
-        "body",
-        "coverUrl",
-        "status",
-        "likeCount",
-        "publishedAt",
-        "createdAt",
-        "updatedAt"
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "members.id"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "cover_url",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "excerpt",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "like_count",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "org_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "orgs.id"
+        },
+        {
+          "name": "published_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        }
       ],
       "invariants": [
         "post_like_count_non_negative",
         "post_publish_coherent",
         "post_slug_shape",
-        "post_slug_unique_per_org"
-      ],
-      "indexes": ["posts_author_id_idx", "posts_feed_idx"],
-      "replicaIdentity": "full"
+        "post_slug_unique"
+      ]
     }
   ],
   "actions": [
     {
       "name": "createComment",
-      "file": "apps/web/app/posts/actions.ts",
-      "route": "POST /_x/action/create-comment",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "postId",
+          "orgId",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "postId",
+          "authorId",
+          "body",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
       "policy": "post:read",
-      "invalidates": ["comment", "post"],
+      "cacheInvalidates": [
+        "comment",
+        "post"
+      ],
       "mcp": {
         "expose": true,
-        "tool": "postly.createComment"
+        "description": "Comment on a post the actor can read"
       }
     },
     {
       "name": "createPost",
-      "file": "apps/web/app/posts/actions.ts",
-      "route": "POST /_x/action/create-post",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "title",
+          "body",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "coverUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "likeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "authorId",
+          "authorName"
+        ],
+        "additionalProperties": false
+      },
       "policy": "post:create",
-      "invalidates": ["feed"],
+      "cacheInvalidates": [
+        "feed"
+      ],
       "mcp": {
         "expose": true,
-        "tool": "postly.createPost"
+        "description": "Create a draft post in the actor’s organisation"
       }
     },
     {
       "name": "inviteMember",
-      "file": "apps/web/app/orgs/actions.ts",
-      "route": "POST /_x/action/invite-member",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ],
+            "default": "author"
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "email",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
       "policy": "org:invite",
-      "invalidates": ["member", "org"],
-      "enqueues": ["sendInvite"],
+      "cacheInvalidates": [
+        "member",
+        "org"
+      ],
       "mcp": {
         "expose": true,
-        "tool": "postly.inviteMember"
+        "description": "Invite a person to the actor’s organisation"
       }
     },
     {
-      "name": "publishPost",
-      "file": "apps/web/app/posts/actions.ts",
-      "route": "POST /_x/action/publish-post",
-      "policy": "post:publish",
-      "invalidates": ["post", "feed"],
-      "enqueues": ["notifySubscribers"],
+      "name": "likePost",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "coverUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "likeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "authorId",
+          "authorName"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:like",
+      "cacheInvalidates": [
+        "feed",
+        "post"
+      ],
       "mcp": {
         "expose": true,
-        "tool": "postly.publishPost"
+        "description": "Like a post on behalf of the acting member"
+      },
+      "mutator": true
+    },
+    {
+      "name": "publishPost",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "notify": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "coverUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "likeCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "authorId",
+          "authorName"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "cacheInvalidates": [
+        "blog",
+        "feed",
+        "post"
+      ],
+      "mcp": {
+        "expose": true,
+        "description": "Publish a draft post"
       }
     },
     {
       "name": "savePreferences",
-      "file": "apps/web/app/settings/actions.ts",
-      "route": "POST /_x/action/save-preferences",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "locale",
+          "tz",
+          "theme"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
       "policy": "member:self",
-      "invalidates": ["member"],
+      "cacheInvalidates": [
+        "member"
+      ],
       "mcp": {
         "expose": true,
-        "tool": "postly.savePreferences"
+        "description": "Update the acting member’s locale, timezone, theme and digest opt-in"
+      }
+    },
+    {
+      "name": "summarize",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "tags"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:read",
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Summarise a post into two sentences and up to four tags"
       }
     },
     {
       "name": "upgradePlan",
-      "file": "apps/web/app/orgs/actions.ts",
-      "route": "POST /_x/action/upgrade-plan",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "team",
+              "business"
+            ]
+          }
+        },
+        "required": [
+          "orgId",
+          "plan"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "org": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "slug": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "planCode": {
+                "type": "string",
+                "enum": [
+                  "free",
+                  "team",
+                  "business"
+                ]
+              },
+              "billingCurrency": {
+                "type": "string",
+                "enum": [
+                  "USD",
+                  "EUR"
+                ]
+              },
+              "seats": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "seatsUsed": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "slug",
+              "name",
+              "planCode",
+              "billingCurrency",
+              "seats",
+              "seatsUsed"
+            ],
+            "additionalProperties": false
+          },
+          "charge": {
+            "type": "object",
+            "properties": {
+              "minor": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "USD",
+                  "EUR"
+                ]
+              }
+            },
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "additionalProperties": false
+          },
+          "credit": {
+            "type": "object",
+            "properties": {
+              "minor": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "USD",
+                  "EUR"
+                ]
+              }
+            },
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "additionalProperties": false
+          },
+          "nextPeriod": {
+            "type": "object",
+            "properties": {
+              "minor": {
+                "type": "integer"
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "USD",
+                  "EUR"
+                ]
+              }
+            },
+            "required": [
+              "minor",
+              "currency"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "org",
+          "charge",
+          "credit",
+          "nextPeriod"
+        ],
+        "additionalProperties": false
+      },
       "policy": "org:administer",
-      "invalidates": ["org", "plan"],
-      "money": true,
+      "cacheInvalidates": [
+        "org",
+        "plan"
+      ],
       "mcp": {
         "expose": true,
-        "tool": "postly.upgradePlan"
-      }
-    }
-  ],
-  "mutators": [
-    {
-      "name": "likePost",
-      "file": "apps/web/app/posts/mutator.ts",
-      "route": "POST /_x/action/like-post",
-      "policy": "post:like",
-      "conflict": "server-wins",
-      "invalidates": ["post", "feed"],
-      "offlineQueue": "mutations",
-      "mcp": {
-        "expose": true,
-        "tool": "postly.likePost"
+        "description": "Move the organisation to a higher plan and return the prorated receipt"
       }
     }
   ],
   "queries": [
     {
       "name": "liveFeed",
-      "file": "apps/web/app/posts/live.ts",
       "policy": "feed:read",
       "live": true,
-      "persist": true,
-      "tables": ["posts"],
-      "tags": ["feed"],
-      "bounded": {
-        "orderBy": "createdAt",
-        "limit": 50
-      },
-      "mcp": {
-        "expose": false
-      }
+      "cacheTags": []
     },
     {
       "name": "postById",
-      "file": "apps/web/app/posts/live.ts",
       "policy": "post:read",
       "live": false,
-      "tables": ["posts", "comments"],
-      "tags": ["post", "comment"],
-      "ttl": "1m",
-      "mcp": {
-        "expose": true,
-        "tool": "postly.postById"
-      }
+      "cacheTags": [
+        "comment",
+        "post"
+      ]
     },
     {
       "name": "postBySlug",
-      "file": "apps/web/app/posts/live.ts",
       "policy": "feed:read",
       "live": false,
-      "tables": ["posts"],
-      "tags": ["post"],
-      "ttl": "5m",
-      "mcp": {
-        "expose": true,
-        "tool": "postly.postBySlug"
-      }
+      "cacheTags": [
+        "post"
+      ]
     },
     {
       "name": "publicPost",
-      "file": "apps/web/app/posts/live.ts",
       "policy": "post:read-public",
       "live": false,
-      "tables": ["posts"],
-      "tags": ["blog"],
-      "ttl": "1h",
-      "mcp": {
-        "expose": true,
-        "tool": "postly.publicPost"
-      }
+      "cacheTags": [
+        "blog"
+      ]
     },
     {
       "name": "publicPostSlugs",
-      "file": "apps/web/app/posts/live.ts",
       "policy": "post:read-public",
       "live": false,
-      "tables": ["posts"],
-      "tags": ["blog"],
-      "ttl": "1h",
-      "mcp": {
-        "expose": false
-      }
-    }
-  ],
-  "llm": [
-    {
-      "name": "summarize",
-      "file": "apps/web/app/posts/actions.ts",
-      "model": "claude-sonnet-5",
-      "prompt": "apps/web/app/posts/prompts/summarize.v4.md",
-      "promptVersion": 4,
-      "policy": "post:read",
-      "evals": "apps/web/app/posts/prompts/summarize.eval.test.ts",
-      "budget": {
-        "tokensIn": 8000,
-        "costPerCall": {
-          "minor": 5,
-          "currency": "USD"
-        }
-      },
-      "mcp": {
-        "expose": true,
-        "tool": "postly.summarize"
-      }
+      "cacheTags": [
+        "blog"
+      ]
     }
   ],
   "jobs": [
     {
       "name": "deliverDigest",
-      "file": "apps/web/app/digest/jobs.ts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "localDate": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slotAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "memberId",
+          "localDate",
+          "slotAt"
+        ],
+        "additionalProperties": false
+      },
       "queue": "mail",
-      "idempotencyKey": "digest:{memberId}:{localDate}",
-      "steps": ["load-member", "load-posts", "send"],
       "retry": {
         "attempts": 4,
         "backoff": "exponential"
       },
-      "concurrency": {
-        "key": "memberId",
-        "limit": 1
-      }
+      "steps": []
     },
     {
-      "name": "notifySubscribers",
-      "file": "apps/web/app/posts/jobs.ts",
-      "queue": "mail",
-      "idempotencyKey": "notify:{postId}",
-      "steps": ["load-post", "announce", "load-recipients", "send"],
+      "name": "mail.send",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mailId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "html": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          },
+          "tz": {
+            "type": "string",
+            "format": "iana-time-zone"
+          },
+          "replyTo": {
+            "type": "string",
+            "format": "email"
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "unsubscribeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "mailId",
+          "to",
+          "subject",
+          "html",
+          "text",
+          "locale",
+          "tz"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
       "retry": {
         "attempts": 5,
         "backoff": "exponential"
       },
-      "concurrency": {
-        "key": "postId",
-        "limit": 1
-      }
+      "steps": []
     },
     {
-      "name": "onboardOrg",
-      "file": "apps/web/app/orgs/jobs.ts",
-      "queue": "default",
-      "idempotencyKey": "onboard:{orgId}",
-      "steps": ["provision", "welcome-email", "sleep:3d", "nudge"],
+      "name": "notifySubscribers",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "mail",
       "retry": {
         "attempts": 5,
         "backoff": "exponential"
-      }
+      },
+      "steps": []
+    },
+    {
+      "name": "onboardOrg",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "to": {
+            "type": "string",
+            "format": "email"
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          }
+        },
+        "required": [
+          "orgId",
+          "to",
+          "locale"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
     },
     {
       "name": "sendDigest",
-      "file": "apps/web/app/digest/jobs.ts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runDate": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "runDate"
+        ],
+        "additionalProperties": false
+      },
       "queue": "digest",
-      "idempotencyKey": "digest:{runDate}",
-      "steps": ["load-recipients", "schedule:{zone}"],
       "retry": {
         "attempts": 3,
         "backoff": "exponential"
-      }
+      },
+      "steps": []
     },
     {
       "name": "sendInvite",
-      "file": "apps/web/app/orgs/jobs.ts",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "memberId"
+        ],
+        "additionalProperties": false
+      },
       "queue": "mail",
-      "idempotencyKey": "invite:{memberId}",
-      "steps": ["load-member", "send"],
       "retry": {
         "attempts": 3,
         "backoff": "exponential"
-      }
+      },
+      "steps": []
     }
   ],
   "tasks": [
     {
       "name": "nightlyDigest",
-      "file": "apps/web/api/tasks.ts",
       "cron": "0 3 * * *",
       "tz": "UTC",
-      "enqueues": ["sendDigest"],
-      "nextRun": "2026-07-27T03:00:00.000Z"
+      "enqueues": [
+        "sendDigest"
+      ]
     }
   ],
   "policies": [
     {
-      "name": "feed:read",
-      "file": "apps/web/app/posts/policy.ts",
-      "rowFilter": true,
-      "usedBy": ["liveFeed", "postBySlug"]
+      "permission": "feed:read",
+      "enforcedIn": [
+        "query:liveFeed",
+        "query:postBySlug"
+      ]
     },
     {
-      "name": "member:self",
-      "file": "apps/web/app/orgs/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["savePreferences", "postly.digestPreview"]
+      "permission": "member:self",
+      "enforcedIn": [
+        "action:savePreferences"
+      ]
     },
     {
-      "name": "org:administer",
-      "file": "apps/web/app/orgs/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["upgradePlan", "postly.planQuote", "postly.seatReport", "admin"]
+      "permission": "org:administer",
+      "enforcedIn": [
+        "action:upgradePlan"
+      ]
     },
     {
-      "name": "org:invite",
-      "file": "apps/web/app/orgs/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["inviteMember"]
+      "permission": "org:invite",
+      "enforcedIn": [
+        "action:inviteMember"
+      ]
     },
     {
-      "name": "post:create",
-      "file": "apps/web/app/posts/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["createPost"]
+      "permission": "post:create",
+      "enforcedIn": [
+        "action:createPost"
+      ]
     },
     {
-      "name": "post:like",
-      "file": "apps/web/app/posts/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["likePost"]
+      "permission": "post:like",
+      "enforcedIn": [
+        "action:likePost"
+      ]
     },
     {
-      "name": "post:publish",
-      "file": "apps/web/app/posts/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["publishPost", "admin"]
+      "permission": "post:publish",
+      "enforcedIn": [
+        "action:publishPost"
+      ]
     },
     {
-      "name": "post:read",
-      "file": "apps/web/app/posts/policy.ts",
-      "rowFilter": false,
-      "usedBy": ["postById", "createComment", "summarize"]
+      "permission": "post:read",
+      "enforcedIn": [
+        "action:createComment",
+        "action:summarize",
+        "query:postById"
+      ]
     },
     {
-      "name": "post:read-public",
-      "file": "apps/web/shared/policies.ts",
-      "anonymous": true,
-      "rowFilter": false,
-      "usedBy": ["publicPost", "publicPostSlugs"]
+      "permission": "post:read-public",
+      "enforcedIn": [
+        "query:publicPost",
+        "query:publicPostSlugs"
+      ]
     }
   ],
-  "routes": [
+  "permissions": [
+    "feed:read",
+    "member:self",
+    "org:administer",
+    "org:invite",
+    "post:create",
+    "post:like",
+    "post:publish",
+    "post:read",
+    "post:read-public"
+  ],
+  "locales": [
+    "en",
+    "es"
+  ],
+  "errorCodes": [
     {
-      "path": "/",
-      "file": "apps/web/site/page.tsx",
-      "surface": "site",
-      "render": "static",
-      "hydrate": "never",
-      "offline": "precache",
-      "indexable": true,
-      "meta": {
-        "title": true,
-        "description": true,
-        "og": true,
-        "ld": "SoftwareApplication"
-      }
+      "code": "X_ORG_NOT_FOUND",
+      "package": "apps/web"
     },
     {
-      "path": "/blog",
-      "file": "apps/web/site/blog/page.tsx",
-      "surface": "site",
-      "render": "isr",
-      "hydrate": "never",
-      "offline": "runtime",
-      "revalidate": {
-        "tags": ["blog"]
-      },
-      "indexable": true,
-      "feed": ["rss", "atom", "json"],
-      "meta": {
-        "title": true,
-        "description": true,
-        "og": true,
-        "ld": "BreadcrumbList"
-      }
+      "code": "X_POST_NOT_FOUND",
+      "package": "apps/web"
     },
     {
-      "path": "/blog/[slug]",
-      "file": "apps/web/site/blog/[slug]/page.tsx",
-      "surface": "site",
-      "render": "isr",
-      "hydrate": "never",
-      "offline": "runtime",
-      "revalidate": {
-        "tags": ["blog"]
-      },
-      "prerender": {
-        "query": "publicPostSlugs",
-        "count": 3
-      },
-      "indexable": true,
-      "meta": {
-        "title": true,
-        "description": true,
-        "og": true,
-        "ld": "Article"
-      }
+      "code": "X_BILLING_NOT_AN_UPGRADE",
+      "package": "packages/core"
     },
     {
-      "path": "/feed",
-      "file": "apps/web/app/feed/page.tsx",
-      "surface": "app",
-      "render": "stream",
-      "hydrate": "idle",
-      "offline": "runtime",
-      "indexable": false,
-      "live": ["liveFeed"],
-      "meta": {
-        "title": true,
-        "description": false,
-        "og": false,
-        "ld": null
-      }
+      "code": "X_BILLING_SEATS_EXCEEDED",
+      "package": "packages/core"
     },
     {
-      "path": "/offline",
-      "file": "apps/web/site/offline/page.tsx",
-      "surface": "site",
-      "render": "static",
-      "hydrate": "idle",
-      "offline": "precache",
-      "indexable": false,
-      "pwaFallback": true,
-      "meta": {
-        "title": true,
-        "description": true,
-        "og": false,
-        "ld": null
-      }
+      "code": "X_DB_TENANT_MISSING",
+      "package": "packages/db"
     },
     {
-      "path": "/posts/[id]",
-      "file": "apps/web/app/posts/[id]/page.tsx",
-      "surface": "app",
-      "render": "ssr",
-      "hydrate": "interaction",
-      "offline": "network-only",
-      "indexable": false,
-      "meta": {
-        "title": true,
-        "description": true,
-        "og": false,
-        "ld": null
-      }
+      "code": "X_DOMAIN_INVARIANT",
+      "package": "packages/domain"
     },
     {
-      "path": "/posts/new",
-      "file": "apps/web/app/posts/new/page.tsx",
-      "surface": "app",
-      "render": "stream",
-      "hydrate": "never",
-      "offline": "runtime",
-      "indexable": false,
-      "meta": {
-        "title": true,
-        "description": false,
-        "og": false,
-        "ld": null
-      }
-    },
-    {
-      "path": "/pricing",
-      "file": "apps/web/site/pricing/page.tsx",
-      "surface": "site",
-      "render": "isr",
-      "hydrate": "never",
-      "offline": "runtime",
-      "revalidate": {
-        "tags": ["plan"]
-      },
-      "indexable": true,
-      "meta": {
-        "title": true,
-        "description": true,
-        "og": true,
-        "ld": "Product"
-      }
-    },
-    {
-      "path": "/settings",
-      "file": "apps/web/app/settings/page.tsx",
-      "surface": "app",
-      "render": "spa",
-      "hydrate": "idle",
-      "offline": "precache",
-      "indexable": false,
-      "meta": {
-        "title": true,
-        "description": false,
-        "og": false,
-        "ld": null
-      }
+      "code": "X_MCP_TOOL_UNSAFE",
+      "package": "packages/mcp"
     }
-  ],
-  "mcpTools": [
-    "postly.createComment",
-    "postly.createPost",
-    "postly.digestPreview",
-    "postly.inviteMember",
-    "postly.likePost",
-    "postly.planQuote",
-    "postly.postById",
-    "postly.postBySlug",
-    "postly.publicPost",
-    "postly.publishPost",
-    "postly.savePreferences",
-    "postly.seatReport",
-    "postly.summarize",
-    "postly.upgradePlan"
-  ],
-  "i18n": {
-    "default": "en",
-    "locales": ["en", "es"],
-    "keys": 143,
-    "missing": []
-  },
-  "pwa": {
-    "fallback": "/offline",
-    "precacheBytes": 184320,
-    "precacheRoutes": ["/", "/offline", "/settings"],
-    "backgroundSync": ["mutations"]
-  },
-  "migrations": {
-    "latest": "0001_init",
-    "applied": ["0001_init"],
-    "drift": false
-  }
+  ]
 }

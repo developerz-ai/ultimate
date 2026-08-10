@@ -37,6 +37,7 @@ const sources: ManifestSources = {
       policy: 'post:archive',
       cacheInvalidates: ['post'],
       mcp: { expose: false },
+      mutator: true,
     },
   ],
   queries: [
@@ -122,6 +123,15 @@ describe('normalisation', () => {
     expect(manifest.locales).toEqual(['en', 'es']);
     // A job's steps are a sequence, not a set — sorting them would misrepresent the program.
     expect(manifest.jobs[0]?.steps).toEqual(['provision', 'welcome-email', 'nudge']);
+  });
+
+  // `normalizeAction` rebuilds every fact, so an optional field it forgets to carry disappears
+  // from the file with nothing to notice — and `x manifest`'s mutator count reads zero again.
+  test('the mutator flag survives normalisation, and is absent on a plain action', () => {
+    const actions = buildManifest(sources).actions;
+    // Sorted, so: archivePost carries the flag, publishPost does not carry the key at all.
+    expect(actions.map((action) => 'mutator' in action)).toEqual([true, false]);
+    expect(actions[0]?.mutator).toBe(true);
   });
 
   test('permissions are derived from policies and primitives, never declared twice', () => {

@@ -9,8 +9,11 @@
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {
   checkErrorCodeDocs,
+  checkErrorCodeRegistry,
+  collectDeclaredCodes,
   exec,
   exitCodeFor,
+  registeredErrorCodes,
   render,
   runVerify,
   VERIFY_STEPS,
@@ -28,7 +31,7 @@ import {
 } from './boundaries';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { repoRoot } from './lib/run';
-import { buildManifest, DEFAULT_OUT } from './manifest';
+import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { checkRoadmap } from './roadmap';
 
 /**
@@ -45,11 +48,15 @@ export const tierBoundaries: HostCheck = async (root) => [
   ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
 ];
 
-/** The framework's own manifest is generated from the packages; it must still generate. */
+/**
+ * The framework's own manifest is generated from the packages: it must still generate, and the
+ * committed copy must still match. Regenerating without comparing proves only that the generator
+ * runs — a step that cannot fail, which is worse than no step at all.
+ */
 export const frameworkManifest: HostCheck = async (root) => {
+  let drift: readonly string[];
   try {
-    await buildManifest(root);
-    return [];
+    drift = await frameworkManifestDrift(root);
   } catch (error) {
     return [
       {
@@ -64,6 +71,16 @@ export const frameworkManifest: HostCheck = async (root) => {
       },
     ];
   }
+  if (drift.length === 0) return [];
+  return [
+    {
+      code: 'X_MANIFEST_DRIFT',
+      cause: `${DEFAULT_OUT} no longer describes the code: ${drift.join(', ')}`,
+      fix: 'bun run manifest',
+      docs: 'https://ultimate.dev/errors/X_MANIFEST_DRIFT',
+      at: DEFAULT_OUT,
+    },
+  ];
 };
 
 /**
@@ -73,7 +90,35 @@ export const frameworkManifest: HostCheck = async (root) => {
  */
 export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
 
-export const errorCodeDocs: HostCheck = (root) => checkErrorCodeDocs(root, ERROR_REFERENCE);
+/**
+ * The codes this repo's own gate emits. `scripts/` never ships, so no package may register
+ * `X_ROADMAP_STATUS_MISSING` or `X_BOUNDARY_VIOLATION` — but the reference documents them, and a
+ * rule that demanded a registration would push a contributor-only code into every generated app.
+ * Scanned rather than listed, so a new script code needs no second edit here; a *documented* code
+ * that neither a package nor a script declares is still the ghost row the registry check exists
+ * to catch.
+ *
+ * The exemption follows the code's *declaration*, not every file that names it: a code a package
+ * declares and a script merely throws — `X_BUN_VERSION` — is the package's to register, and
+ * exempting it because `scripts/setup.ts` mentions it would waive the rule for a shipped code.
+ */
+const hostOwnedCodes = async (root: string): Promise<readonly string[]> =>
+  (await collectDeclaredCodes(root))
+    .filter((site) => site.at.startsWith('scripts/'))
+    .map((site) => site.code);
+
+/**
+ * Both halves of the reference's contract, on one step. Every shipped code has a row here, and
+ * every row this page presents as live resolves through `x errors explain` — the second half is
+ * what stops the page documenting a code the registry never heard of.
+ */
+export const errorCodeDocs: HostCheck = async (root) => {
+  const known = new Set([...(await registeredErrorCodes()), ...(await hostOwnedCodes(root))]);
+  return [
+    ...(await checkErrorCodeDocs(root, ERROR_REFERENCE)),
+    ...(await checkErrorCodeRegistry(root, ERROR_REFERENCE, known)),
+  ];
+};
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   boundaries: tierBoundaries,

@@ -20,7 +20,10 @@
       "!**/*.tsbuildinfo",
       "!**/migrations",
       "!site/templates",
-      "!wiki"
+      "!wiki",
+      "!framework.manifest.json",
+      "!**/x.manifest.json",
+      "!**/openapi.json"
     ]
   },
   "formatter": {

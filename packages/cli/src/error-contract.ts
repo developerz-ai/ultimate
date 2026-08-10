@@ -9,8 +9,8 @@ import { join } from 'node:path';
 import { docsFor } from './errors';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
-import type { FixSite } from './ts-scan';
-import { scanCodes, scanFixes } from './ts-scan';
+import type { CodeSite, FixSite } from './ts-scan';
+import { isCodeRegistry, scanBorrowedCodes, scanCodes, scanFixes } from './ts-scan';
 
 /** Advice, not instruction. The list is the one in `docs/architecture/04-error-contract.md`. */
 export const BANNED_PHRASES: readonly RegExp[] = [
@@ -89,6 +89,105 @@ const undocumentedFinding = (code: string, at: string, line: number, page: strin
 });
 
 /**
+ * The heading below which the reference stops making live claims. What follows is a code that is
+ * reserved (documented, nothing throws it yet) or a superseded name kept so an old log line still
+ * resolves. Both earn their rows; neither is a code an agent can be handed today, which is the
+ * only thing the registry rule below is about.
+ */
+export const RESERVED_HEADING = '## Reserved codes';
+
+/**
+ * The codes the reference presents as live: every one named above the reserved section.
+ *
+ * The heading is matched as a whole line, never as a substring. The same text is quoted in prose,
+ * in a fenced sample and in this file's own `unregisteredFinding` fix — and `indexOf` would cut the
+ * page at the first of those mentions, silently exempting every live code below it from the
+ * registry rule. A gate that stops reading halfway through the page reads green over the half it
+ * never saw.
+ */
+export function liveCodes(markdown: string): ReadonlySet<string> {
+  const lines = markdown.split('\n');
+  const cut = lines.findIndex((line) => line.trim() === RESERVED_HEADING);
+  return documentedCodes(cut === -1 ? markdown : lines.slice(0, cut).join('\n'));
+}
+
+const unregisteredFinding = (code: string, page: string): Finding => ({
+  code: 'X_ERROR_CODE_UNREGISTERED',
+  cause: `${page} documents ${code} as a live code and nothing registers it, so "x errors explain ${code}" refuses a code this page promises`,
+  fix: `register ${code} through registerErrorCodes() in its package's src/errors.ts, or move its row under "${RESERVED_HEADING}" in ${page}`,
+  docs: docsFor('X_ERROR_CODE_UNREGISTERED'),
+  at: page,
+});
+
+/**
+ * The other direction of the same contract, and the half nothing enforced: a code the reference
+ * documents that no package registers. `X_ERROR_CODE_UNDOCUMENTED` stops a shipped code losing its
+ * page; this stops a page inventing a code — a row an agent reads, acts on, and then cannot look
+ * up, because `x errors explain` answers from the registry and the registry never heard of it.
+ *
+ * `known` is what the host can answer for: the process-wide registry, plus whatever codes the host
+ * repo's own gate scripts declare (`X_ROADMAP_*` and friends never ship, so no package may own
+ * them). A missing page is `checkErrorCodeDocs`'s finding to report, not a second copy here.
+ */
+export async function checkErrorCodeRegistry(
+  root: string,
+  page: string,
+  known: ReadonlySet<string>,
+): Promise<readonly Finding[]> {
+  const reference = Bun.file(join(root, page));
+  if (!(await reference.exists())) return [];
+  return [...liveCodes(await reference.text())]
+    .filter((code) => !known.has(code))
+    .sort()
+    .map((code) => unregisteredFinding(code, page));
+}
+
+/**
+ * How strong a claim one site has on being *the* declaration of its code. A package declares the
+ * codes it owns in its own registry (`docs/architecture/04-error-contract.md`), and names the ones
+ * it borrows in that same file — so a registry that owns the code outranks a throw site, and a
+ * registry that has said the code is somebody else's ranks below both.
+ */
+const claim = (site: CodeSite, borrowed: ReadonlySet<string>): number => {
+  if (!isCodeRegistry(site.at)) return 1;
+  return borrowed.has(site.code) ? 0 : 2;
+};
+
+/**
+ * The stronger claim wins; equal claims settle by path, then line. Deliberately not glob order:
+ * `Bun.Glob` yields in directory order, which differs by filesystem, and a committed manifest
+ * keyed on the answer would drift between two machines reading the same tree.
+ */
+const declarationOf = (a: [CodeSite, number], b: [CodeSite, number]): [CodeSite, number] => {
+  if (a[1] !== b[1]) return a[1] > b[1] ? a : b;
+  if (a[0].at !== b[0].at) return a[0].at < b[0].at ? a : b;
+  return a[0].line <= b[0].line ? a : b;
+};
+
+/**
+ * Every `X_*` code shipped source declares, with the file and line that declares it — one walk of
+ * the whole source set, sorted by code, one entry per code. The answer to "which codes exist?"
+ * has exactly one implementation: the docs check below reads it, and so does the framework's
+ * generated manifest. A scanner that looked only at a package's own `src/errors.ts` would miss
+ * every code a gate script or a non-registry module throws, and two lists that disagree mean
+ * whichever one a reader trusts is the wrong one.
+ */
+export async function collectDeclaredCodes(root: string): Promise<readonly CodeSite[]> {
+  const sites = new Map<string, [CodeSite, number]>();
+  for await (const source of eachSourceFile(root)) {
+    if (isTest(source) || isGenerated(source)) continue;
+    const text = await Bun.file(join(root, source)).text();
+    const borrowed = scanBorrowedCodes(text);
+    for (const site of scanCodes(text, source)) {
+      const found: [CodeSite, number] = [site, claim(site, borrowed)];
+      const seen = sites.get(site.code);
+      sites.set(site.code, seen === undefined ? found : declarationOf(seen, found));
+    }
+  }
+  return [...sites.values()].map(([site]) => site).sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
  * Every `X_*` code shipped source declares must appear on the repo's error reference. The page is
  * the host repo's to name — a framework monorepo publishes one, a generated app does not — which
  * is why this arrives through the same host-check seam the tier table uses on `boundaries`.
@@ -107,15 +206,7 @@ export async function checkErrorCodeDocs(root: string, page: string): Promise<re
     ];
   }
   const documented = documentedCodes(await reference.text());
-  const findings: Finding[] = [];
-  const seen = new Set<string>();
-  for await (const source of eachSourceFile(root)) {
-    if (isTest(source) || isGenerated(source)) continue;
-    for (const site of scanCodes(await Bun.file(join(root, source)).text(), source)) {
-      if (documented.has(site.code) || seen.has(site.code)) continue;
-      seen.add(site.code);
-      findings.push(undocumentedFinding(site.code, site.at, site.line, page));
-    }
-  }
-  return findings;
+  return (await collectDeclaredCodes(root))
+    .filter((site) => !documented.has(site.code))
+    .map((site) => undocumentedFinding(site.code, site.at, site.line, page));
 }

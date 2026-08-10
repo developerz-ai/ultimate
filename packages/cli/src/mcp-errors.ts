@@ -7,26 +7,61 @@ import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliErrorCode } from './errors';
 import { CLI_ERROR_CODES, docsFor } from './errors';
 
-/** One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build. */
+/**
+ * One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build.
+ *
+ * Every `x` invocation here carries `--json`, because that is the flag the whole CLI is built
+ * around (`GLOBAL_FLAGS` in `parse.ts`, axiom 4): the agent that was handed one of these fixes ran
+ * a machine-readable command to get here, and a fix that drops back to prose breaks the loop it is
+ * meant to close. `bun`, `bunx` and the gate scripts keep their own surfaces — `--json` is the
+ * `x` CLI's contract, not a universal one.
+ */
 const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
-  X_CLI_UNKNOWN_COMMAND: 'x help',
-  X_CLI_BAD_FLAG: 'x help <command>',
+  X_CLI_UNKNOWN_COMMAND: 'x help --json',
+  X_CLI_BAD_FLAG: 'x help <command> --json',
   X_VERIFY_FAILED: 'x verify --json',
-  X_NOT_IN_APP: 'x new myapp && cd myapp',
+  X_NOT_IN_APP: 'x new myapp --json && cd myapp',
   X_BUN_VERSION: 'bun upgrade',
   X_NOT_IMPLEMENTED: 'x doctor --json',
-  X_TEST_NO_FILES: 'x test --cwd <repo root>',
-  X_TEST_SHARD_FAILED: 'x test --workers 1',
-  X_SCAFFOLD_PATH_ESCAPE: 'x g route <name>   # a path with no ".." segment',
+  X_TEST_NO_FILES: 'x test --cwd <repo root> --json',
+  X_TEST_SHARD_FAILED: 'x test --workers 1 --json',
+  X_SCAFFOLD_PATH_ESCAPE: 'x g route <name> --json   # a path with no ".." segment',
   X_GENERATE_JSON_INVALID:
     'bun test packages/cli/src/cmd-generate.test.ts   # the error names the template to fix',
   X_APP_PACKAGE_INVALID: 'bun pm pkg set name=<app> version=0.1.0',
   X_ERROR_CODE_UNKNOWN: 'x errors list --json',
   X_DECLARATION_UNKNOWN: 'x actions list --json',
   X_JOB_UNKNOWN: 'x jobs ls --json',
-  X_FIX_TARGET_UNKNOWN: 'x fix boundary apps/web/site/page.tsx',
+  X_FIX_TARGET_UNKNOWN: 'x fix boundary apps/web/site/page.tsx --json',
   X_ERROR_FIX_INVALID: 'x verify --json   # the finding names the file, the line and the fix text',
   X_ERROR_CODE_UNDOCUMENTED: 'x verify --json   # the finding names the code and the missing page',
+  X_ERROR_CODE_UNREGISTERED:
+    'x errors list --json   # register the code in its package src/errors.ts, or move its row under "Reserved codes"',
+  X_CLI_UNEXPECTED: 'x doctor --json',
+  X_TYPECHECK_FAILED: 'bunx tsc -b --pretty false',
+  X_LINT_FAILED: 'bunx biome check --write .',
+  X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
+  X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
+  X_PACKAGE_SHAPE: 'bun run scripts/new-package.ts <pkg> --only <file>',
+  X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',
+  X_MANIFEST_STALE: 'x manifest --json',
+  X_BUDGET_UNMEASURED: 'x build --json && x verify --json',
+  X_BUILD_FAILED: 'x build --json   # the finding names the failing step',
+  X_DEPLOY_FAILED: 'x deploy --json   # the finding carries the command to re-run directly',
+  X_GENERATE_CONFLICT: 'x g <kind> <name> --force --json',
+  X_PORT_IN_USE: 'x dev --port 3001 --json',
+  // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),
+  // so the fix answered a failed step with X_CLI_UNKNOWN_COMMAND. `x doctor` is what reports
+  // reachability and drift, and is already this table's answer for X_DB_STUDIO_FAILED.
+  X_DB_GEN_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
+  X_DB_MIGRATE_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
+  X_DB_BRANCH_FAILED: 'x db branch ls --json',
+  X_DB_STUDIO_FAILED: 'x doctor --json',
+  X_BOUNDARY_SITE_TO_APP: 'x fix boundary <file> --json',
+  X_BOUNDARY_SHARED_LEAF: 'x fix boundary <file> --json',
+  X_BOUNDARY_APP_TO_API: 'x fix boundary <file> --json',
+  X_BOUNDARY_ROUTE_TO_DB: 'x fix boundary <file> --json',
+  X_BOUNDARY_SERVICE_TO_HTTP: 'x fix boundary <file> --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

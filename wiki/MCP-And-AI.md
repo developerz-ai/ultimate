@@ -66,7 +66,7 @@ Role, scope and policy refuse in three distinguishable ways. The difference is t
 |---|---|---|
 | The actor's role can never invoke the tool | absent from `tools/list`; a direct call answers ToolNotFound | JSON-RPC `-32601`, message `tool not found: <name>`, no `data` at all |
 | The role could invoke it, but the connection's scope does not include it | explicit refusal naming the missing scope | JSON-RPC `-32600`, `data: { code: 'X_MCP_SCOPE_DENIED', scope, fix }` |
-| The tool was invoked and the policy denied this input | `X_POLICY_DENIED` with the denial reason | a normal `result` with `isError: true` — identical to the HTTP answer for the same call |
+| The tool was invoked and the policy denied this input | `X_FORBIDDEN` with the denial reason | a normal `result` with `isError: true` — identical to the HTTP answer for the same call |
 
 Hidden means hidden: `Forbidden` on a hidden tool is an enumeration oracle — an agent, or an attacker driving one, walks a name list and reads the org's feature set, entity names and internal operations off the difference between "not found" and "forbidden". A scope refusal is the opposite case: a well-behaved client can legitimately fix it, so hiding it would only strand the caller.
 
@@ -213,7 +213,7 @@ $ x verify --json
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send exactly one **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | use a branch DB (`x branch <name>`) |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
-| `X_POLICY_DENIED` | the action's policy refused this actor — identical to the HTTP denial | grant the permission, or act as an actor who has it |
+| `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | call `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |
 | `X_NOT_IMPLEMENTED` | a remote driver stub was reached | configure the local/PGlite driver, or wait for the release named in `fix` |
 

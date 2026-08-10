@@ -54,6 +54,8 @@ describe('action', () => {
     expect(described.method).toBe('POST');
     expect(described.mcp.tool).toBe('publish_post');
     expect(described.idempotent).toBe(false);
+    // Reported, not inferred downstream: `mutator.test.ts` holds the `true` half.
+    expect(described.mutator).toBe(false);
   });
 
   test('an unregistered action refuses to be projected', () => {

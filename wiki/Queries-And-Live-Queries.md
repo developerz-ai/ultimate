@@ -76,7 +76,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | `orderBy` on a total order | the matcher decides *enters / leaves / moves within* the result from the changed row alone | `x verify` error naming the query |
 | `limit` | an unbounded result set has no bounded change buffer and no bounded reconnect snapshot | `x verify` error naming the query |
 | No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
-| No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_POLICY_DENIED` at subscribe |
+| No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
 
 A non-live query has none of these constraints — it is just a read.
 
@@ -86,7 +86,7 @@ Policy is not a subscribe-time gate that then trusts the stream.
 
 | Moment | Check |
 |---|---|
-| Subscribe | `policy` evaluated against `{ input, actor }`. Denied → `X_POLICY_DENIED`, no subscription created |
+| Subscribe | `policy` evaluated against `{ input, actor }`. Denied → `X_FORBIDDEN`, no subscription created |
 | Initial snapshot | every row filtered through the same policy |
 | Each incremental patch | re-checked per row. A row that fails is **dropped, never sent** |
 | Actor change (role revoked, org left) | the subscription re-evaluates; rows that no longer pass are delivered as `delete` ops |
@@ -108,15 +108,17 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 
 Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres.
 
-## Untagged queries fail the build
+## Every cached query carries a tag
 
-```
-X_CACHE_UNTAGGED_QUERY: query "orgRollup" has no cache tag
-  cause: sql touches table "metrics_daily", which no entity declares a tag for
-  fix:   x manifest
-```
+The contract. **Not yet a gate** — `As of 2026-08` `X_CACHE_UNTAGGED_QUERY` is reserved: no code path raises it, and `x errors explain X_CACHE_UNTAGGED_QUERY` refuses it ([Error codes → Reserved codes](Error-Codes#reserved-codes)).
 
-A query whose tables are covered by no tag can never be invalidated, so it would be stale forever. `x verify` fails instead. Fix by declaring the entity tag — see `tags()` / `entityTag()` in [Caching and invalidation](Caching-And-Invalidation).
+| Case | Today |
+|---|---|
+| a cached query no tag covers | cached under a key no `invalidates` fan-out reaches — stale until its `ttlMs`, and forever without one |
+| a tag no entity declares | `X_CACHE_TAG_UNKNOWN`, `fix: x manifest` — the opposite mistake, and the one that is enforced |
+| the `x verify` gate | no step reads a query's tags. Nothing fails |
+
+Until it is a gate, tag coverage is a review item, not a build error. Declare the entity tag — `tags()` / `entityTag()` in [Caching and invalidation](Caching-And-Invalidation).
 
 ## Subscription caps
 

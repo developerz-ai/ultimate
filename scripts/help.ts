@@ -26,7 +26,7 @@ export const SCRIPTS: readonly Entry[] = [
   },
   {
     command: 'bun run scripts/manifest.ts',
-    does: 'generate .x/manifest.json: packages, tiers, error codes',
+    does: 'regenerate the committed framework.manifest.json: packages, tiers, error codes',
   },
   { command: 'bun run scripts/list-workspaces.ts', does: 'the workspace table, sorted by tier' },
   {

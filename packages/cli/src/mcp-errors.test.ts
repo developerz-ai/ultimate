@@ -1,0 +1,73 @@
+// The fix table behind `errors.explain`, held to the contract it exists to keep. A code with no
+// command is the failure "errors are instructions" prevents; an `x` command with no `--json` is the
+// quieter half of it — the agent that ran a machine-readable command to get here is handed prose.
+
+import { describe, expect, test } from 'bun:test';
+import { CLI_ERROR_CODES } from './errors';
+import { explainErrorCode } from './mcp-errors';
+import { parseArgs } from './parse';
+import { SPECS } from './registry';
+
+/**
+ * The `x` invocations inside one fix line: `&&` chains are two commands, and the trailing `# …`
+ * note is documentation, not argv. `cd myapp` and `bun upgrade` are not the `x` CLI and carry no
+ * `--json` — this is the CLI's contract, not a claim about every binary on the machine.
+ */
+const xCommands = (fix: string): readonly string[] =>
+  fix
+    .split('&&')
+    .map((part) => (part.split('#')[0] ?? '').trim())
+    .filter((part) => part.startsWith('x '));
+
+describe('unit · errors.explain', () => {
+  test('every CLI code answers with a non-empty command', () => {
+    for (const code of CLI_ERROR_CODES) {
+      expect(explainErrorCode(code)?.fix ?? '').not.toBe('');
+    }
+  });
+
+  // `--json` is a GLOBAL_FLAGS flag (axiom 4), so every one of these is runnable as written. A fix
+  // that drops it hands the next step's output to a parser that cannot read it.
+  test('every `x` command it hands out is machine-readable', () => {
+    for (const code of CLI_ERROR_CODES) {
+      const fix = explainErrorCode(code)?.fix ?? '';
+      for (const command of xCommands(fix)) {
+        expect(`${code}: ${command}`).toContain('--json');
+      }
+    }
+  });
+
+  // The quieter half of the same defect: a fix naming a command the registry does not have. Read
+  // through the real parser, which is how `x db status --json` — two rows, no such `x db`
+  // subcommand — was answering a failed step with X_CLI_UNKNOWN_COMMAND.
+  test('every `x` command it hands out is one the parser resolves', () => {
+    for (const code of CLI_ERROR_CODES) {
+      for (const command of xCommands(explainErrorCode(code)?.fix ?? '')) {
+        const argv = command.split(/\s+/).slice(1);
+        expect(() => parseArgs(argv, SPECS)).not.toThrow();
+      }
+    }
+  });
+
+  // The rule is about the `x` CLI and stops there: `--json` on `bun upgrade` is not a flag, it is a
+  // broken command, and a table that "fixed" every row uniformly would ship one.
+  test('a fix that runs another tool is left exactly as written', () => {
+    expect(explainErrorCode('X_BUN_VERSION')?.fix).toBe('bun upgrade');
+    expect(explainErrorCode('X_APP_PACKAGE_INVALID')?.fix).toBe(
+      'bun pm pkg set name=<app> version=0.1.0',
+    );
+  });
+
+  // The `# …` note is why the split above exists: without it the flag lands inside the comment,
+  // where a shell never sees it.
+  test('a trailing note stays a note, after the flag', () => {
+    expect(explainErrorCode('X_SCAFFOLD_PATH_ESCAPE')?.fix).toBe(
+      'x g route <name> --json   # a path with no ".." segment',
+    );
+  });
+
+  test('a chained fix carries the flag on both halves', () => {
+    expect(explainErrorCode('X_BUDGET_UNMEASURED')?.fix).toBe('x build --json && x verify --json');
+    expect(explainErrorCode('X_NOT_IN_APP')?.fix).toBe('x new myapp --json && cd myapp');
+  });
+});

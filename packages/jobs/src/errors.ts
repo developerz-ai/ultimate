@@ -56,6 +56,27 @@ export class JobDuplicateError extends UltimateError {
   }
 }
 
+/**
+ * Two things claim one durable name — two definitions setting the same `name:`, two handles under
+ * one export name, or one handle exported twice. Shares `X_JOB_DUPLICATE` with the enqueue-time
+ * collision because it is the same statement — this key already belongs to another job — caught
+ * one stage earlier. Left unrefused, the second claim would silently take over delivery of every
+ * row already queued under the first.
+ *
+ * The `fix` names the edit and the command that shows what is already seated. It cannot name a
+ * file: the registry holds handles, not source locations, and `name` is all a handle carries.
+ */
+export class JobNameTakenError extends UltimateError {
+  constructor(input: { kind: 'job' | 'task'; name: string }) {
+    super({
+      code: 'X_JOB_DUPLICATE',
+      cause: `two ${input.kind}s claim the name "${input.name}"`,
+      fix: `x jobs ls --json names the one already seated; rename the other's export, or its "name:" if it declares one — a ${input.kind} name is a durable queue key and is globally unique`,
+      docs: docsFor('X_JOB_DUPLICATE'),
+    });
+  }
+}
+
 /** Two steps in one run share a name, so replay cannot tell their persisted results apart. */
 export class StepDuplicateError extends UltimateError {
   constructor(input: { job: string; step: string }) {

@@ -107,6 +107,9 @@ export const config = defineConfig({
 
 const biome = (): string => `{
   "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  // x.manifest.json and openapi.json are emitted byte-for-byte by \`x manifest\`; a formatter
+  // rewriting them puts \`x manifest\` and \`x verify\` in a loop neither can win.
+  "files": { "includes": ["**", "!x.manifest.json", "!openapi.json"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {
     "rules": {

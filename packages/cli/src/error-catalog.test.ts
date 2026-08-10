@@ -5,8 +5,15 @@ import { describe, expect, test } from 'bun:test';
 // `node:` by necessity: Bun exposes no path-join primitive. `import.meta.dir` gives the directory
 // this file is in, and joining the repo root onto it still needs `node:path`.
 import { join } from 'node:path';
-import { hasErrorCode } from '@ultimat3/core';
-import { buildErrorCatalog, CATALOG_PACKAGES, loadErrorCatalog } from './error-catalog';
+import { hasErrorCode, listErrorCodes } from '@ultimat3/core';
+import {
+  buildErrorCatalog,
+  CATALOG_PACKAGES,
+  loadErrorCatalog,
+  registeredErrorCodes,
+} from './error-catalog';
+import { CLI_ERROR_CODES } from './errors';
+import { stripComments } from './ts-scan';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 
@@ -114,5 +121,47 @@ describe('unit · a package that will not load', () => {
     const catalog = await buildErrorCatalog(loaderFailing('@ultimat3/db', new Error('boom')));
     const seen = [...catalog.loaded, ...catalog.unavailable, ...catalog.failed.map((f) => f.at)];
     expect(seen.sort()).toEqual([...CATALOG_PACKAGES].sort());
+  });
+
+  test('registeredErrorCodes answers with the loaded registry, not a second table', async () => {
+    const codes = await registeredErrorCodes();
+    expect(codes.has('X_UNAUTHENTICATED')).toBe(true);
+    expect(codes.has('X_NOPE')).toBe(false);
+    expect(codes.size).toBe(listErrorCodes().length);
+  });
+});
+
+/**
+ * `X_*` string literals that are not error codes. Both are environment variable *names* that the
+ * `X_` prefix makes indistinguishable from a code by shape alone. The list is three entries long
+ * on purpose: a fourth wants a reason written next to it, not a widened pattern.
+ */
+const NOT_ERROR_CODES: ReadonlySet<string> = new Set(['X_ENV', 'X_BUILD_ID']);
+
+/**
+ * The hole this closes: `scanCodes` — and so `X_ERROR_CODE_UNDOCUMENTED` — reads `code:` keys and
+ * a package's own registry file, which is every code that is *thrown*. A code handed to a reader
+ * some other way (`finding('X_PORT_IN_USE', …)` positionally, `{ error: 'X_ADMIN_DENIED' }` on a
+ * result object) was invisible to every gate: unregistered, so `x errors explain` refused it, and
+ * undocumented, because the check that demands a row never saw it either. Registration is what
+ * makes a code real, so a literal in shipped source that nothing registered is the defect.
+ */
+describe('unit · every code shipped source hands a reader is registered', () => {
+  test('no X_* literal in packages/*/src escapes the registry', async () => {
+    await loadErrorCatalog();
+    // The catalog excludes `@ultimat3/cli` — it registers its own at import, which in this process
+    // means when something reads from `./errors`. That read is this line.
+    expect(CLI_ERROR_CODES.every((code) => hasErrorCode(code))).toBe(true);
+    const orphans = new Map<string, string>();
+    for await (const path of new Bun.Glob('packages/*/src/**/*.ts').scan({ cwd: REPO_ROOT })) {
+      if (path.endsWith('.test.ts') || path.endsWith('.d.ts')) continue;
+      const text = stripComments(await Bun.file(join(REPO_ROOT, path)).text());
+      for (const match of text.matchAll(/(['"`])(X_[A-Z0-9_]+)\1/g)) {
+        const code = match[2] as string;
+        if (NOT_ERROR_CODES.has(code) || hasErrorCode(code) || orphans.has(code)) continue;
+        orphans.set(code, path);
+      }
+    }
+    expect([...orphans.entries()]).toEqual([]);
   });
 });

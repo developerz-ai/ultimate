@@ -23,7 +23,7 @@ throw new UltimateError({
 | `docs` | derived | `https://ultimate.dev/errors/<code>` | generated from `code`; overridable, never hand-typed |
 | `title` | derived | the registry's one-line summary for the code | so every instance of a code reads the same |
 | `data` | no | structured detail: `{ route, field, chain, actual, limit }` | consumed by `--json` and by MCP tools |
-| `httpStatus` | no | default 500; `X_POLICY_DENIED` → 403, `X_INPUT_INVALID` → 422 | set in the registry, not at the throw site |
+| `httpStatus` | no | default 500; `X_FORBIDDEN` → 403, `X_INPUT_INVALID` → 422 | set in the registry, not at the throw site |
 | `retryable` | no | boolean | drives job retry and client backoff decisions |
 | `source` | auto | package + file + stage | filled from the ALS context |
 
@@ -39,6 +39,7 @@ throw new UltimateError({
 | Stability | **stable forever once shipped.** A code is a public API — agents match on it, docs URLs resolve to it, dashboards group by it |
 | Deprecation | never rename. Add the new code, keep the old one throwing with `data.supersededBy` |
 | Ownership | each package declares its own codes in `src/errors.ts` and subclasses `UltimateError` |
+| Borrowing | a package that throws another's code names it in `<PKG>_BORROWED_ERROR_CODES` and titles it nowhere. That line is the machine-readable half: it is how `framework.manifest.json` attributes `X_NOT_IMPLEMENTED` to `core` and not to the eleven packages that throw it |
 | Uniqueness | one code, one meaning, one package. `x verify` fails on a code declared in two packages |
 | Reuse | reuse an existing code rather than minting a near-synonym; add a `rule`/`kind` field in `data` to discriminate (see `X_BOUNDARY_VIOLATION` in [`02-boundaries.md`](./02-boundaries.md)) |
 
@@ -136,6 +137,8 @@ A **command token** is the `x` CLI, a known tool (`bun`, `bunx`, `git`, `docker`
 
 The docs half is a **host check** the framework repo contributes to the `errors` step — the same seam the tier table uses on `boundaries`.
 
+"Which codes exist?" has one implementation, `collectDeclaredCodes` in `packages/cli/src/error-contract.ts`: one walk of every shipped source file, one entry per code, the owning registry preferred over any throw site and over any registry that borrowed it. The docs check reads it, and so does `framework.manifest.json` — a second scanner over a narrower file set is how the manifest came to omit 26 codes and misattribute a 27th.
+
 Out of reach: a `fix` computed at runtime. `fix: input.fix` has no literal to read, so the step cannot judge it — the value's own author does.
 
 For deliberately unimplemented paths, the throw is still typed and still actionable:
@@ -160,7 +163,7 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_INTERNAL` | `core` | 500 | a non-`UltimateError` escaped | report with the trace id |
 | `X_INPUT_INVALID` | `schema` | 422 | `input` parse failed; `data.path` names the field | fix the caller's field |
 | `X_OUTPUT_INVALID` | `action` | 500 | handler returned a value the `output` schema rejects | fix the handler or the schema |
-| `X_POLICY_DENIED` | `policy` | 403 | authz refused; `data.reason` is the denial reason | grant the permission or change the actor |
+| `X_FORBIDDEN` | `policy` | 403 | authz refused; `data.reason` is the denial reason | grant the permission or change the actor |
 | `X_TENANT_MISMATCH` | `entity` | 403 | a row's tenant differs from the request tenant | scope the query to `ctx.tenantId` |
 | `X_DB_DRIFT` | `entity` | 500 | schema differs from migrations | `x db gen "<name>"` |
 | `X_BOUNDARY_VIOLATION` | `cli` | build | an import rule broke; `data.chain` is the path | `x fix boundary <file>` |

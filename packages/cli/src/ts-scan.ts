@@ -198,3 +198,20 @@ export function scanCodes(source: string, at: string): readonly CodeSite[] {
   }
   return [...sites.values()];
 }
+
+const BORROWED_LIST = /BORROWED_ERROR_CODES[^=]*=[^[]*\[([^\]]*)\]/g;
+
+/**
+ * The codes a registry names and says are not its own. Every borrower declares them in one place
+ * and one shape — `export const CLI_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const` — so
+ * "who owns this code?" is answerable from source rather than guessed at. Without it the answer
+ * for a code eleven packages throw and one titles is whichever file sorts first, which is how
+ * `X_NOT_IMPLEMENTED` came to be attributed to `storage` instead of `core`.
+ */
+export function scanBorrowedCodes(source: string): ReadonlySet<string> {
+  const borrowed = new Set<string>();
+  for (const list of stripComments(source).matchAll(BORROWED_LIST)) {
+    for (const code of (list[1] ?? '').matchAll(CODE_LITERAL)) borrowed.add(code[2] as string);
+  }
+  return borrowed;
+}

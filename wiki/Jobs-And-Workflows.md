@@ -39,7 +39,7 @@ Every projection is a method on the job — `onboardOrg.enqueue({ orgId })`, nev
 
 `run` is on the handle and is still not yours to call. The worker's `executeJob` is the one execution path, and it owns the attempt counter, the step store, the timeout and the lease — none of which a direct call carries. That is also why `.as()` queues: on an [action](Actions) `.as()` *runs* the mutation as that actor, on a job it *enqueues* as that actor. Same word, and the difference is the primitive's execution surface, not an inconsistency.
 
-`describe().steps` is **empty by design**. Step names are chosen inside `run()` at execution time, so they are not statically knowable — the steps a run actually recorded come from the run itself, via `x jobs show <id> --json`. `x.manifest.json`, the `/_x` jobs panel and the MCP dev server read one list, and that list is a map over each handle's own `describe()` — so the list and a single job can never disagree. `name` is stamped from the export name by generated code; an unnamed handle enqueues fine and carries `anonymous-job-<n>` on the row instead.
+`describe().steps` is **empty by design**. Step names are chosen inside `run()` at execution time, so they are not statically knowable — the steps a run actually recorded come from the run itself, via `x jobs show <id> --json`. `x.manifest.json`, the `/_x` jobs panel and the MCP dev server read one list, and that list is a map over each handle's own `describe()` — so the list and a single job can never disagree. `name` is the export name, stamped by `defineApi({ jobs: [postJobs] })` — the same call that names actions and queries. A module nobody hands over keeps `job()`'s positional `anonymous-job-<n>`, on the queue row and in `x.manifest.json`. A definition carrying its own `name:` keeps it: the name is a durable queue key, so queued and dead-lettered rows survive a renamed export.
 
 ## Transactional outbox by default
 
@@ -192,7 +192,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_JOB_STEP_FAILED` | a step exhausted its retries | `x jobs show <id> --json`, then `x jobs retry <id>` |
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
-| `X_POLICY_DENIED` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
+| `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
 | `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — both are v2 | set `jobs.driver: 'postgres'` in `app.config.ts` (it is already the default) |
 
 Full index: [Error codes](Error-Codes). Verbatim error shapes live in each package's `src/errors.ts`.

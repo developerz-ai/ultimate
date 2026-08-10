@@ -11,7 +11,7 @@
 // caller was shown the tool, so naming it leaks nothing, and the message can say which scope
 // to obtain — hiding it would strand a well-behaved client that can legitimately fix this.
 //
-// OUTCOME 3 — policy (`X_POLICY_DENIED`) belongs to the tool's own `handle`, which reaches
+// OUTCOME 3 — policy (`X_FORBIDDEN`) belongs to the tool's own `handle`, which reaches
 // `guard()` in @ultimat3/action. It is deliberately NOT here: the scope gate must decide
 // before any policy runs against attacker-supplied input.
 //

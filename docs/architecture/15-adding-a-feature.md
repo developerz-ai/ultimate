@@ -216,7 +216,7 @@ x test live     apps/web/app/posts/live.test.ts
 x test e2e      apps/web/site/blog
 ```
 
-The assertion that matters per type: **contract** — a non-owner is denied with `X_POLICY_DENIED`; **live** — a policy-failing row is never delivered; **job** — a replayed step's `executions` stays 1; **e2e** — the streamed hole fills and the offline fallback renders.
+The assertion that matters per type: **contract** — a non-owner is denied with `X_FORBIDDEN`; **live** — a policy-failing row is never delivered; **job** — a replayed step's `executions` stays 1; **e2e** — the streamed hole fills and the offline fallback renders.
 
 ## 13–14. Manifest + gate
 
@@ -234,7 +234,7 @@ Green = shippable. There is no `--skip`.
 |---|---|---|
 | `X_BOUNDARY_VIOLATION` | an import crossed a surface or tier; `data.chain` shows the path | `x fix boundary <file>` |
 | `X_DB_DRIFT` | schema ≠ migrations | `x db gen "<name>"` |
-| `X_POLICY_DENIED` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policies list --json` |
+| `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policies list --json` |
 | `X_I18N_MISSING_KEY` | a key missing in some locale | `x i18n add <key>` |
 | `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x fix boundary <file>` |
 | `X_QUERY_UNBOUNDED` | live query without total order + `limit` | add `orderBy` tiebreak + `limit` |

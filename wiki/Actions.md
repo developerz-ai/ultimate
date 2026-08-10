@@ -60,7 +60,7 @@ Every projection is a method on the action — `publishPost.tool()`, never `toMc
 | `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
 | `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |
 | `.contract()` | the generated assertions | garbage rejected, anonymous denied, spec present |
-| `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
+| `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mutator`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
 | `.input` `.output` `.policy` `.mcp` | the declaration, lifted | the whole lifted set — readable, and `.mcp` present only when declared. `cache.invalidates`, `rateLimit` and `idempotent` are not properties: read them off `describe()`, where `cache.invalidates` flattens to `invalidates` |
 
 `handle` and `row` — the declaration's two functions — are unreachable by design: neither lifted nor described. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `invoke` is the only thing that can run them — one execution path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'action'` is `X_ACTION_FOREIGN`, never a registered action.
@@ -133,8 +133,7 @@ export const likePost = mutator({
 | `X_ACTION_POLICY_MISSING` | an action registered without `policy` | add `policy: can('<name>')` to the declaration |
 | `X_ACTION_DUPLICATE` | two actions share an export name | rename one — names are globally unique |
 | `X_INPUT_INVALID` | body fails the `input` schema | `x actions describe <name> --json` prints the expected schema |
-| `X_POLICY_DENIED` | the policy said no | grant the capability, or call as an actor who has it |
-| `X_FORBIDDEN` | the HTTP/MCP rendering of a denial (403) | same as above |
+| `X_FORBIDDEN` | the policy said no — one code for the direct call, the HTTP 403 and the MCP tool error | grant the capability, or call as an actor who has it |
 | `X_UNAUTHENTICATED` | no session; anonymous actor hit a policy needing one (401) | sign in, or send a valid token |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a different payload, or still in flight | send a fresh `Idempotency-Key`, or retry after the first settles |
 | `X_CONTRACT_DRIFT` | client build id ≠ server build id, or a breaking published-contract change | reload the client / bump the action version |
@@ -154,8 +153,9 @@ Every code carries the same `{ code, cause, fix, docs }` in the terminal, the de
 ```
 $ x actions list --json
 {"ok":true,"command":"actions","summary":"1 action","findings":[],
- "data":[{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
-   "method":"POST","path":"/api/posts/publish","capability":"post:publish", …}]}
+ "data":[{"kind":"action","mutator":false,"name":"publishPost","verb":"publish",
+   "resource":"posts","method":"POST","path":"/api/posts/publish",
+   "capability":"post:publish", …}]}
 ```
 
 Both subcommands emit the same `describe()` row — `list` one per action, `describe` the named one. It is exactly what `publishPost.describe()` returns in process, so the CLI has no private view of a primitive:
@@ -163,8 +163,9 @@ Both subcommands emit the same `describe()` row — `list` one per action, `desc
 ```
 $ x actions describe publishPost --json
 {"ok":true,"command":"actions","summary":"action publishPost","findings":[],
- "data":{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
-  "method":"POST","path":"/api/posts/publish","capability":"post:publish",
+ "data":{"kind":"action","mutator":false,"name":"publishPost","verb":"publish",
+  "resource":"posts","method":"POST","path":"/api/posts/publish",
+  "capability":"post:publish",
   "input":{"type":"object","required":["postId"],
     "properties":{"postId":{"type":"string","format":"uuid"},
                   "notify":{"type":"boolean","default":true}}},
@@ -174,7 +175,7 @@ $ x actions describe publishPost --json
   "rateLimit":null}}
 ```
 
-`invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. The same data is the MCP `actions.describe` tool (actions and queries in one call) and the `/_x` **Routes** panel.
+`invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. `mutator` is `true` only for a `mutator()` declaration; `kind` stays `"action"` for both, which is why the flag is a field of its own and not a second `kind`. The same data is the MCP `actions.describe` tool (actions and queries in one call) and the `/_x` **Routes** panel.
 
 ## Generated contract test
 
@@ -185,7 +186,7 @@ Emitted with the action, and green on the first run: it pins the invariant the a
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_POLICY_DENIED');
+    .rejects.toBeUltimateError('X_FORBIDDEN');
 });
 ```
 

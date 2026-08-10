@@ -73,13 +73,25 @@ export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
 export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+export type { ErrorCatalog } from './error-catalog';
+export {
+  buildErrorCatalog,
+  CATALOG_PACKAGES,
+  loadErrorCatalog,
+  registeredErrorCodes,
+  resetErrorCatalog,
+} from './error-catalog';
 export {
   BANNED_PHRASES,
   COMMAND_TOKENS,
   checkErrorCodeDocs,
+  checkErrorCodeRegistry,
   checkErrorFixes,
+  collectDeclaredCodes,
   documentedCodes,
   fixProblem,
+  liveCodes,
+  RESERVED_HEADING,
   staticFix,
 } from './error-contract';
 export type { CliErrorCode } from './errors';
@@ -134,7 +146,14 @@ export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
 export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
 export type { CodeSite, FixSite, SourceSite } from './ts-scan';
-export { isCodeRegistry, maskLiterals, scanCodes, scanFixes, stripComments } from './ts-scan';
+export {
+  isCodeRegistry,
+  maskLiterals,
+  scanBorrowedCodes,
+  scanCodes,
+  scanFixes,
+  stripComments,
+} from './ts-scan';
 export type {
   HostCheck,
   StepOutcome,

@@ -10,6 +10,7 @@ import type { CronResolver, LeaderElection } from './scheduler';
 import {
   createMemorySchedulerState,
   createScheduler,
+  getTask,
   registeredTasks,
   resetTasks,
   task,
@@ -111,6 +112,17 @@ describe('task', () => {
 
   test('an empty tz is refused at runtime as well as by the type', () => {
     expect(() => task({ name: 'bad', cron: '0 3 * * *', tz: '', enqueue: () => [] })).toThrow();
+  });
+
+  // `registerTasks(module)` is what gives a task its export name; `task()` on its own is
+  // unchanged, and must stay so — 1.0.0 semver, and every existing caller declares only.
+  test('an unregistered task still takes a positional name and still schedules under it', () => {
+    const orphan = task({ cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] });
+
+    expect(orphan.name).toMatch(/^anonymous-task-\d+$/);
+    expect(getTask(orphan.name)).toBe(orphan);
+    expect(orphan.describe().name).toBe(orphan.name);
+    expect(registeredTasks().map((handle) => handle.name)).toEqual([orphan.name]);
   });
 
   test('a non-empty string that is not an IANA zone is refused too', () => {

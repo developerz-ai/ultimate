@@ -4,13 +4,14 @@
 
 import { join } from 'node:path';
 import type { Manifest } from '@ultimat3/manifest';
-import { MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { appManifest, readAppManifest, writeAppManifest } from './app-manifest';
+import { assertNoDrift, MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { appManifest, writeAppManifest } from './app-manifest';
 import { OPENAPI_FILE, openApiJson } from './app-openapi';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { msg } from './messages';
-import type { CommandResult, JsonValue } from './output';
+import type { CommandResult, Finding, JsonValue } from './output';
+import { findingFrom } from './output';
 import { flagBool } from './parse';
 
 const countsOf = (manifest: Manifest): JsonValue => ({
@@ -23,6 +24,21 @@ const countsOf = (manifest: Manifest): JsonValue => ({
   entities: manifest.entities.length,
   policies: manifest.policies.length,
 });
+
+/**
+ * The identical comparison `x verify`'s `manifest` step makes, through the identical function.
+ * A buildId equality test here would answer "fresh" for a hand-edited file whose body no longer
+ * hashes to the id it carries — and two commands giving two answers about one file is itself the
+ * drift the manifest exists to prevent.
+ */
+async function staleness(root: string, manifest: Manifest): Promise<Finding | undefined> {
+  try {
+    await assertNoDrift({ manifest, path: join(root, MANIFEST_FILENAME) });
+    return undefined;
+  } catch (error) {
+    return { ...findingFrom(error), at: MANIFEST_FILENAME };
+  }
+}
 
 export const manifestCommand: CliCommand = {
   spec: {
@@ -41,26 +57,12 @@ export const manifestCommand: CliCommand = {
     const counts = countsOf(manifest);
 
     if (flagBool(ctx.args, 'check')) {
-      const committed = await readAppManifest(root);
-      const fresh = committed?.buildId === manifest.buildId;
+      const stale = await staleness(root, manifest);
       return {
-        ok: fresh && findings.length === 0,
+        ok: stale === undefined && findings.length === 0,
         command: 'manifest',
-        summary: fresh ? msg('cli.manifest.fresh') : msg('cli.manifest.stale'),
-        findings: fresh
-          ? findings
-          : [
-              ...findings,
-              {
-                // The same condition `x verify` reports through `assertNoDrift`, so it carries the
-                // same code: `X_MANIFEST_STALE` belongs to `openapi.json`, which drifts separately.
-                code: 'X_MANIFEST_DRIFT',
-                cause: `${MANIFEST_FILENAME} does not match build ${manifest.buildId}`,
-                fix: 'x manifest',
-                docs: 'https://ultimate.dev/errors/X_MANIFEST_DRIFT',
-                at: MANIFEST_FILENAME,
-              },
-            ],
+        summary: stale === undefined ? msg('cli.manifest.fresh') : msg('cli.manifest.stale'),
+        findings: stale === undefined ? findings : [...findings, stale],
         data: { buildId: manifest.buildId, counts },
       };
     }

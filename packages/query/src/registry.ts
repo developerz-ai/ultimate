@@ -16,7 +16,15 @@ const registry = new Map<string, AnyQuery>();
  * return value instead" rule to forget.
  */
 export function registerQuery<Q extends AnyQuery>(name: string, target: Q): Q {
-  if (registry.has(name)) throw new QueryDuplicateError(name);
+  const seated = registry.get(name);
+  if (seated !== undefined) {
+    // Re-registering the SAME object under the SAME name is one registration seen twice, not a
+    // collision: `defineApi` registers a feature module at boot and the framework's module scan
+    // reaches the same declaration file directly, so both arrive at the identical query. Only a
+    // DIFFERENT query under a taken name is the ambiguity `X_QUERY_DUPLICATE` exists to refuse.
+    if (seated !== (target as AnyQuery)) throw new QueryDuplicateError(name);
+    return target;
+  }
   if (target.policy === undefined || target.policy === null) {
     throw new QueryPolicyMissingError(name);
   }

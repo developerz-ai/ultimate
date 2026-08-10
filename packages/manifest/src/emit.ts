@@ -84,6 +84,12 @@ export async function readManifest(path?: string): Promise<Manifest | undefined>
 }
 
 /**
+ * A file that does not describe itself. Kept apart from `describeDrift`'s section list because
+ * it is a different repair story: the code did not move, someone typed into the generated file.
+ */
+const HAND_EDITED = 'hand-edited — its buildId does not hash its own contents';
+
+/**
  * Fail if the committed file does not match a freshly built manifest. Drift means an agent
  * reading `x.manifest.json` is reading a description of a program that no longer exists —
  * strictly worse than no manifest at all.
@@ -96,6 +102,12 @@ export async function assertNoDrift(input: {
   const onDisk = await readManifest(path);
   if (onDisk === undefined) {
     throw new ManifestDriftError({ path, differences: ['file is missing or unreadable'] });
+  }
+  // Before the ids are compared, not after: a body edited by hand with its `buildId` left alone
+  // still carries the id a fresh build produces, so an id-only gate waves through the one
+  // manifest that lies about the code. `buildId` hashes the body, so the file convicts itself.
+  if (!verifyBuildId(onDisk)) {
+    throw new ManifestDriftError({ path, differences: [HAND_EDITED] });
   }
   if (onDisk.buildId === input.manifest.buildId) return;
 

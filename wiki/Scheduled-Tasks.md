@@ -64,7 +64,7 @@ Manual `enqueue()` and a scheduled tick differ in exactly one place: the key. A 
 | `enqueue` | yes | `(occurrenceMs) => [[jobRef, input], …]`. Zero or more pairs; an empty list is a valid no-op tick. Read back through the handle as `entries()`, never as `.enqueue` — that name on the handle is the *fire* method |
 | `catchUp` | no — default `'skip'` | what to do when the scheduler was down across one or more occurrences. `'skip'` waits for the next one, `'run-once'` fires a single catch-up, `'run-all'` fires one per missed occurrence |
 | `maxCatchUp` | no — default `10` | how many occurrences one tick walks forward from the last fire. Bounds `'run-all'` directly, and caps the lookback for every policy |
-| `name` | no | the export name, stamped by generated code. An unnamed task carries `anonymous-task-<n>` |
+| `name` | no | the export name, stamped by `defineApi({ tasks: [scheduledTasks] })`. A module nobody hands over keeps `anonymous-task-<n>`; a definition carrying its own `name:` keeps that |
 
 Nothing else. There is no `timeout`, no `retry`, no `concurrency` on a task — those belong to the job it enqueues. No `queue` either: the queue is the job's, and a per-call override rides on the fire, as `<task>.enqueue({ queue })`.
 
@@ -155,7 +155,7 @@ Runner: `x test job` (tasks are dispatch, jobs are the assertion surface). See [
 | Code | Cause | Fix |
 |---|---|---|
 | `X_JOB_NO_IDEMPOTENCY_KEY` | a task enqueues a job with no idempotency key — a double fire would duplicate work | add `idempotencyKey` to the job |
-| `X_POLICY_DENIED` | the task's system actor lacks a permission the enqueued action requires | grant it explicitly; a task never bypasses [policies](Policies-And-Authz) |
+| `X_FORBIDDEN` | the task's system actor lacks a permission the enqueued action requires | grant it explicitly; a task never bypasses [policies](Policies-And-Authz) |
 | `X_DRAINING` | a tick landed while the leader was releasing its lock | none — the standby promotes and the tick fires late |
 
 Full index: [Error codes](Error-Codes).

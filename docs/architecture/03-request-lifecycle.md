@@ -18,7 +18,7 @@ Order is fixed. Each row states why it cannot move earlier or later.
 | 8 | `rate-limit` | token bucket on `(tenant, actor, route)` | after the actor exists (per-tenant fairness), before the body is read (a flood must not cost a parse) |
 | 9 | `body-parse` | bounded read, content-type dispatch, size cap | after rate limiting; before validation |
 | 10 | `input-validate` | `input` schema parse → typed `input`; failure → `X_INPUT_INVALID` with the field path | authz reads validated input |
-| 11 | `authz` | `policy.evaluate({ actor, input, tenant })` → allow or `X_POLICY_DENIED` | **after validation, because policies read validated input.** `ownsPost(actor, input.postId)` on an unparsed body is how type confusion becomes privilege escalation |
+| 11 | `authz` | `policy.evaluate({ actor, input, tenant })` → allow or `X_FORBIDDEN` | **after validation, because policies read validated input.** `ownsPost(actor, input.postId)` on an unparsed body is how type confusion becomes privilege escalation |
 | 12 | `cache-lookup` | queries only: tier 1 → 2 → 3, key includes actor scope | **after authz** — a cache hit that precedes a policy check is a cross-tenant leak with a fast path |
 | 13 | `handler` | `handle({ input, ctx })` inside a DB transaction (mutations); `<job>.enqueue` joins that transaction | the only user code in the pipeline |
 | 14 | `commit` | commit; then release outbox rows and fan out `cache.invalidates` | invalidation *enqueued* in the tx, *executed* after commit: a rolled-back write never purges |
@@ -52,7 +52,7 @@ sequenceDiagram
   H->>A: tenantId
   H->>H: rate-limit, body-parse, input-validate
   H->>P: evaluate(actor, input, tenant)
-  P-->>H: allow | X_POLICY_DENIED
+  P-->>H: allow | X_FORBIDDEN
   H->>K: lookup (query only, key scoped by actor)
   K-->>H: hit | miss
   H->>D: BEGIN

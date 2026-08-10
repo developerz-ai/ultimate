@@ -57,6 +57,37 @@ describe('unit · the repo gate is the CLI gate', () => {
     }
   });
 
+  test('a documented code no package registers fails the same step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-registry-'));
+    try {
+      await Bun.write(join(dir, ERROR_REFERENCE), '# Error codes\n\n| `X_GHOST` | means |\n');
+      const findings = await errorCodeDocs(dir);
+      expect(findings.map((finding) => finding.code)).toEqual(['X_ERROR_CODE_UNREGISTERED']);
+      expect(findings[0]?.cause).toContain('X_GHOST');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * `scripts/` never ships, so no package may own `X_ROADMAP_STATUS_MISSING` — and demanding a
+   * registration for it would push a contributor-only code into every generated app. The host
+   * scans its own scripts instead, and this is the assertion that the seam actually engages.
+   */
+  test('a code only this repo’s gate scripts declare needs no package registration', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-host-codes-'));
+    try {
+      await Bun.write(
+        join(dir, 'scripts/thing.ts'),
+        "export const f = { code: 'X_HOST_ONLY', fix: 'bun run verify' };\n",
+      );
+      await Bun.write(join(dir, ERROR_REFERENCE), '# Error codes\n\n| `X_HOST_ONLY` | means |\n');
+      expect(await errorCodeDocs(dir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test('the tier table is enforced through the boundaries step', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-host-'));
     try {

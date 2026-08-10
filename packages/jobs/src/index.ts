@@ -1,4 +1,11 @@
 // Public API of @ultimat3/jobs. Explicit, no `export *`.
+//
+// `registerJob`/`registerJobs`/`registerTask`/`registerTasks`/`nameJobs`/`nameTasks` are
+// deliberately absent. `defineApi({ jobs, tasks })` is where a module is handed over and nothing
+// else registers (CLAUDE.md); it reaches them through core's registrar table, which the
+// side-effect import below fills. Exporting them would offer a second registration path that
+// bypasses `defineApi`'s own result — the ambiguity axiom 1 exists to refuse.
+import './register';
 
 /** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
@@ -54,6 +61,7 @@ export {
   JOB_ERROR_TITLES,
   JobDuplicateError,
   JobMaxAttemptsError,
+  JobNameTakenError,
   JobsNotImplementedError,
   JobTimeoutError,
   OutboxNoTxError,
@@ -77,7 +85,7 @@ export {
   retryFromStep,
 } from './inspect';
 export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job';
-export { describeJobs, getJob, job, nameJobs, registeredJobs, resetJobs } from './job';
+export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
 export type {
   Lease,
   LimitConfig,
@@ -110,6 +118,7 @@ export {
   SQL_OUTBOX_TABLE,
   setJobsFacade,
 } from './outbox';
+
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
 export type {
@@ -130,7 +139,7 @@ export {
   createMemorySchedulerState,
   createScheduler,
   getTask,
-  nameTasks,
+  isTaskHandle,
   registeredTasks,
   resetTasks,
   soleLeader,

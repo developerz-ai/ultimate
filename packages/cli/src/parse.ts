@@ -113,12 +113,16 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
   const passthrough = cut === -1 ? [] : tokens.splice(cut + 1);
   if (cut !== -1) tokens.pop();
 
-  if (tokens.length === 0) return blank('help', specs);
+  if (tokens.length === 0) return blank('help', specs, false);
   const first = tokens[0] ?? '';
-  if (VERSION_ALIASES.has(first)) return blank('version', specs);
+  // `help` and `version` short-circuit the flag loop below, so `--json` has to be read here or the
+  // two commands silently print prose to an agent that asked for JSON — and every `fix:` naming
+  // `x help --json` would be a command that does not do what it says.
+  const json = tokens.some((token) => token === '--json' || token === '-j');
+  if (VERSION_ALIASES.has(first)) return blank('version', specs, json);
   if (HELP_ALIASES.has(first)) {
     const rest = tokens.slice(1).filter((token) => !token.startsWith('-'));
-    return { ...blank('help', specs), positionals: rest };
+    return { ...blank('help', specs, json), positionals: rest };
   }
 
   const spec = resolveCommand(first, specs);
@@ -204,14 +208,17 @@ function readSubcommand(spec: CommandSpec, positionals: readonly string[]): stri
   );
 }
 
-function blank(command: string, specs: readonly CommandSpec[]): ParsedArgs {
+function blank(command: string, specs: readonly CommandSpec[], json: boolean): ParsedArgs {
   const spec = specs.find((entry) => entry.name === command);
+  const flags = spec === undefined ? new Map<string, FlagValue>() : defaults(spec);
+  // Set on both, because `flagBool(args, 'json')` and `args.json` are the same fact read two ways.
+  flags.set('json', json);
   return {
     command,
     subcommand: undefined,
     positionals: [],
-    flags: spec === undefined ? new Map<string, FlagValue>() : defaults(spec),
-    json: false,
+    flags,
+    json,
     help: false,
     passthrough: [],
   };
