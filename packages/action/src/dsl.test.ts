@@ -7,12 +7,15 @@
  * fails this test, not just a downstream consumer.
  */
 import { describe, expect, test } from 'bun:test';
+import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { toOpenApiOperation } from './http';
 import { toJobHandle } from './job-handle';
 import { toMcpTool } from './mcp-tool';
+import type { LocalRow, LocalTable, LocalTx } from './mutator';
+import { mutator } from './mutator';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -115,6 +118,100 @@ describe('the action DSL surface', () => {
     expect(twin.policy).toBe(target.policy);
     expect(twin.tool().policy).toBe(twin.policy);
     for (const member of [...BASE_MEMBERS, ...FACADE_MEMBERS]) {
+      expect(twin).toHaveProperty(member);
+    }
+  });
+});
+
+// A mutator IS an action (`mutator.ts` builds it on `action()`, not beside it), so it
+// carries the entire action façade above plus the three members it was authored with.
+// Kept in sync by hand on purpose, same as `FACADE_MEMBERS` — a silent drift here is
+// exactly the regression this file exists to catch.
+const MUTATOR_MEMBERS = ['isMutator', 'conflict', 'local', 'server', 'describeMutator'] as const;
+
+interface PostRow extends LocalRow {
+  readonly likes: number;
+}
+
+function fakeTx(rows: Map<string, PostRow>): LocalTx {
+  const table: LocalTable<PostRow> = {
+    insert: (row) => {
+      rows.set(row.id, row);
+    },
+    update: (id, patch) => {
+      const current = rows.get(id);
+      if (current === undefined) return;
+      rows.set(id, { ...current, ...(typeof patch === 'function' ? patch(current) : patch) });
+    },
+    delete: (id) => {
+      rows.delete(id);
+    },
+  };
+  return { table: () => table } as unknown as LocalTx;
+}
+
+const likerActor = { ...userActor({ id: 'u1' }), permissions: ['post:like'] };
+
+function defineMutatorTarget() {
+  return mutator({
+    input: Input,
+    output: Output,
+    policy: can('post:like'),
+    mcp: { expose: true, description: 'dsl pin' },
+    local: (tx, { postId }) =>
+      tx.table<PostRow>('posts').update(postId, (post) => ({ likes: post.likes + 1 })),
+    server: (_ctx, { postId }) => ({ id: postId, published: true }),
+    conflict: 'server-wins',
+  }).named('dslLikePost');
+}
+
+describe('the mutator DSL surface', () => {
+  test('a built mutator carries the whole action façade plus its own three members', () => {
+    const target = defineMutatorTarget();
+    expect(typeof target).toBe('function');
+    for (const member of [...BASE_MEMBERS, ...FACADE_MEMBERS, ...MUTATOR_MEMBERS]) {
+      expect(target).toHaveProperty(member);
+    }
+  });
+
+  test('.local() delegates to the declared local, verbatim — no wrapping in between', () => {
+    const target = defineMutatorTarget();
+    const rows = new Map<string, PostRow>([[POST_ID, { id: POST_ID, likes: 3 }]]);
+    target.local(fakeTx(rows), { postId: POST_ID });
+    expect(rows.get(POST_ID)?.likes).toBe(4);
+  });
+
+  test('.server() delegates through the action own callable — never the declared half directly', async () => {
+    const target = defineMutatorTarget();
+    const ctx = createContext({ actor: likerActor });
+    const viaServer = await target.server(ctx, { postId: POST_ID });
+    const viaCallable = await target({ postId: POST_ID }, { ctx });
+    expect(viaServer).toEqual(viaCallable);
+  });
+
+  test('.tool() delegates to toMcpTool() — same data, same policy reference', () => {
+    const target = defineMutatorTarget();
+    const direct = toMcpTool(target);
+    const viaFacade = target.tool();
+    expect(viaFacade.name).toBe(direct.name);
+    expect(viaFacade.policy).toBe(direct.policy);
+  });
+
+  // Same central claim as the action façade above, pinned again for the mutator
+  // instance specifically: wrapping (`mutator.ts`'s `wrap()`) must never fork the
+  // policy the action itself carries — `.tool()` and `.server()` decide from one object.
+  test('a.tool().policy === a.policy — one authz object across every surface', () => {
+    const target = defineMutatorTarget();
+    expect(target.tool().policy).toBe(target.policy);
+  });
+
+  test('a named twin carries the same façade — naming never rebuilds it', () => {
+    const target = defineMutatorTarget();
+    const twin = target.named('dslLikePostTwin');
+    expect(twin.policy).toBe(target.policy);
+    expect(twin.conflict).toBe(target.conflict);
+    expect(twin.tool().policy).toBe(twin.policy);
+    for (const member of [...BASE_MEMBERS, ...FACADE_MEMBERS, ...MUTATOR_MEMBERS]) {
       expect(twin).toHaveProperty(member);
     }
   });
