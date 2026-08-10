@@ -117,11 +117,22 @@ export function sitemapTooLarge(count: number, max: number): SeoError {
   });
 }
 
-export function notImplementedDriver(driver: string, capability: string): SeoError {
+/**
+ * The vocabulary a **user-supplied** `ImageTransformDriver` uses to report a capability it
+ * does not implement — a CDN driver with no blur endpoint, say. `builtinImageDriver` needs it
+ * for nothing; it implements both entry points. Exported so a partial driver fails with a code
+ * and a fix instead of returning an unoptimised original and calling that a transform.
+ *
+ * `at` is the driver's own module path — pass `import.meta.path`. It is required because
+ * `driver` is a display name, and a fix an agent cannot open is not a fix.
+ */
+export function notImplementedDriver(driver: string, capability: string, at: string): SeoError {
   return new SeoError({
     code: 'X_NOT_IMPLEMENTED',
     cause: `the ${driver} image driver does not implement ${capability} yet`,
-    fix: `pass a custom ImageTransformDriver to renderResponsiveImage(), or use the default driver`,
-    meta: { driver, capability },
+    fix:
+      `implement ${capability} in ${at}, or swap the driver for builtinImageDriver({ read }) ` +
+      '— png and jpeg, no dependencies — then run: x verify --json',
+    meta: { driver, capability, at },
   });
 }

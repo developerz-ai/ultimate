@@ -1,9 +1,12 @@
-// Single responsibility: the transport seam. One `MailDriver` interface, four implementations,
-// and a module-level ambient driver so `send()` never knows which one is installed. Swapping
-// SMTP for Resend is an `app.config.ts` line and zero template changes.
+// Single responsibility: the transport seam. One `MailDriver` interface, the two local
+// implementations (memory + log), and a module-level ambient driver so `send()` never knows
+// which one is installed. The two production transports live in `driver-smtp.ts` and
+// `driver-resend.ts`; swapping one for the other is an `app.config.ts` line and zero template
+// changes.
 
 import { nanoid, logger as rootLogger } from '@ultimat3/core';
-import { driverUnavailable, transportNotImplemented } from './errors';
+import { driverUnavailable } from './errors';
+import { mailIdempotencyKey } from './idempotency';
 
 /** The rendered envelope. Everything a transport needs; nothing it does not. */
 export interface MailMessage {
@@ -50,17 +53,24 @@ export function messageHeaders(message: MailMessage): Readonly<Record<string, st
   return headers;
 }
 
-function accepted(message: MailMessage): readonly string[] {
+/**
+ * Every address the envelope is delivered to. `Bcc` is one of them and never a header —
+ * an SMTP `RCPT TO` carries it, and putting it in the message would leak the blind list.
+ */
+export function envelopeRecipients(message: MailMessage): readonly string[] {
   return [...message.to, ...(message.cc ?? []), ...(message.bcc ?? [])];
 }
 
-function resultFor(driver: string, message: MailMessage, id: string): SendResult {
+/** The shared `SendResult` shape, so a transport reports acceptance identically to every other. */
+export function resultFor(driver: string, message: MailMessage, id: string): SendResult {
   return {
     id,
     driver,
-    accepted: accepted(message),
+    accepted: envelopeRecipients(message),
     queued: false,
-    idempotencyKey: message.idempotencyKey ?? id,
+    // The content-derived key, not the provider's id: it is the same across every attempt of the
+    // same send, which is what a caller deduping its own retries needs it to be.
+    idempotencyKey: mailIdempotencyKey(message),
   };
 }
 
@@ -121,56 +131,6 @@ export function createLogDriver(logger = rootLogger): MailDriver {
       return Promise.resolve(result);
     },
   };
-}
-
-export interface SmtpDriverOptions {
-  /** `smtps://user:pass@host:465`. Read from `SMTP_URL`, never hardcoded. */
-  readonly url: string;
-  readonly from: string;
-  readonly poolSize?: number | undefined;
-}
-
-/** Interface-complete; the wire protocol is not in this build. */
-export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
-  return {
-    name: 'smtp',
-    send(_message: MailMessage): Promise<SendResult> {
-      throw transportNotImplemented(
-        'smtp',
-        `set SMTP_URL (currently "${redactUrl(options.url)}") and run: x mail doctor --json`,
-      );
-    },
-  };
-}
-
-export interface ResendDriverOptions {
-  /** Read from `RESEND_API_KEY`. */
-  readonly apiKey: string;
-  readonly from: string;
-}
-
-/** Interface-complete; the HTTP call is not in this build. */
-export function createResendDriver(options: ResendDriverOptions): MailDriver {
-  return {
-    name: 'resend',
-    send(_message: MailMessage): Promise<SendResult> {
-      const state = options.apiKey === '' ? 'empty' : 'set';
-      throw transportNotImplemented(
-        'resend',
-        `set RESEND_API_KEY (currently ${state}), then run: x mail doctor --json`,
-      );
-    },
-  };
-}
-
-function redactUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.password = '';
-    return parsed.href;
-  } catch {
-    return 'not a URL';
-  }
 }
 
 let ambient: MailDriver | undefined;

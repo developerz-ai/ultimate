@@ -19,6 +19,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
+| decode → resize → encode, the one image pipeline | `image/` |
 | `assertNever`, `invariant` | `assert.ts` |
 
 ## Errors are instructions
@@ -76,6 +77,11 @@ for — importing the module that calls `defineService` is the registration, the
 `registerActions` uses. Passing `services: { posts: ... }` to `createContext` still works and
 wins over a registered factory of the same name, for a test that wants to hand in a mock.
 
+A factory runs again on **every** `createContext` / `withChildContext` call and is never cached,
+because it closes over the ctx (actor, clock, tz) it was built for. `withChildContext` drops a
+factory-managed name from what it carries forward on purpose: only an ad hoc service nobody
+registered survives an actor swap unrebuilt.
+
 ## Env fails once, completely
 
 ```ts
@@ -104,6 +110,8 @@ loosening.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
   deadline; `readyzPayload()` flips to 503 the moment draining starts, `healthzPayload()` stays
   200 until stopped.
+- Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
+  That is what tells the sealed test network a loopback request is this process, not egress.
 
 ## One cursor, everywhere
 
@@ -113,9 +121,12 @@ decodeCursor(cursor, scope);                                          // or X_CU
 ```
 
 Keyset pagination is the repo's, the read primitive's and the admin's — so the codec is here,
-signed once and verified once. `scope` binds a cursor to one read: the entity plus its filters
-and sort order for a repo page, `queryHash(name, input)` for a `query`, the resource for the
-admin. Replaying another read's cursor is `X_CURSOR_INVALID`, never a silently wrong page.
+signed once and verified once, and a second one anywhere is the regression `cursor.ts` exists to
+prevent. `scope` binds a cursor to one read: the entity plus its filters and sort order for a repo
+page, `queryHash(name, input)` for a `query`, the resource for the admin. It is a **required**
+argument to `decodeCursor` on purpose — an optional check is one a call site can forget, and a
+forgotten one pages a listing with another read's cursor. Replaying one is `X_CURSOR_INVALID`,
+never a silently wrong page.
 
 | | |
 |---|---|
@@ -123,3 +134,36 @@ admin. Replaying another read's cursor is `X_CURSOR_INVALID`, never a silently w
 | Secret | `ULTIMATE_CURSOR_SECRET`, or `configureCursorSigning()` at boot. Rotating it invalidates every open cursor |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
+
+## One image pipeline, everywhere
+
+```ts
+probeImage(bytes);                                     // { format, width, height, mimeType }
+transformImageBytes(bytes, { width: 640, format: 'jpeg', quality: 80 });
+blurDataUrl(bytes);                                    // 16px PNG data: URI, the LQIP
+```
+
+`storage` variants, `seo` `<picture>` sources and `pwa` icons are the same three steps —
+decode, resize, encode — with different numbers, so there is one implementation and no second
+scaler for an icon to grow a halo in. Zero dependencies: no `sharp`, no native module.
+
+| | |
+|---|---|
+| Decode / encode | PNG and JPEG. `canDecode()` / `canEncode()` publish the real list |
+| Probe only | WebP, AVIF, GIF, SVG — measured from the header so `width`/`height` still inline and CLS stays 0 |
+| Anything else | `X_IMAGE_UNSUPPORTED`, naming the format and pointing at an `ImageTransformDriver` |
+| Ceiling | `MAX_IMAGE_PIXELS` (64MP), checked from the header **before** a byte is allocated |
+| Determinism | same bytes + same spec → same output bytes. No clock, no randomness |
+
+Adding a format is a decoder plus an entry in `DECODABLE_FORMATS` / `ENCODABLE_FORMATS` — never a
+second dispatch. An unencodable `format` is refused from the spec alone, before the source is
+decoded, so a request nothing can write never expands 64 megapixels first.
+
+`image/` is the one place in core allowed past the 200-line target, and only there: a JPEG or PNG
+codec is a single algorithm that does not split into smaller responsibilities without inventing
+seams. Nothing else in it qualifies, which is why the segment headers (`jpeg-headers.ts`), the SVG
+text parse (`probe-svg.ts`) and the colour grammar (`color.ts`) are their own files. The 500-line
+hard ceiling applies to all of them.
+
+`image/fixtures.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only round
+trips against itself proves nothing. Never regenerate a fixture with our own encoder.

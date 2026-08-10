@@ -10,6 +10,8 @@ export const AUTH_ERROR_CODES = [
   'X_SESSION_EXPIRED',
   'X_MFA_REQUIRED',
   'X_OAUTH_STATE_INVALID',
+  'X_OAUTH_EXCHANGE_FAILED',
+  'X_OAUTH_TOKEN_INVALID',
   'X_PASSWORD_WEAK',
   'X_ACCOUNT_LOCKED',
   'X_API_KEY_INVALID',
@@ -23,6 +25,8 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthErrorCode, string>> = {
   X_SESSION_EXPIRED: 'session passed its idle or absolute expiry',
   X_MFA_REQUIRED: 'a second factor is required before this session is usable',
   X_OAUTH_STATE_INVALID: 'oauth state, nonce or pkce verifier did not match',
+  X_OAUTH_EXCHANGE_FAILED: 'the oauth provider refused the exchange or returned no usable identity',
+  X_OAUTH_TOKEN_INVALID: 'id token failed its issuer, audience or expiry check',
   X_PASSWORD_WEAK: 'password does not meet the configured policy',
   X_ACCOUNT_LOCKED: 'too many failed attempts; this key is locked out',
   X_API_KEY_INVALID: 'api key is unknown, revoked, expired or wrong',
@@ -49,12 +53,18 @@ export type AuthThrowCode = AuthErrorCode | keyof typeof AUTH_BORROWED_ERROR_TIT
 export class AuthError extends UltimateError {
   override readonly name = 'AuthError';
 
-  constructor(init: { code: AuthThrowCode; cause: string; fix: string }) {
+  constructor(init: {
+    code: AuthThrowCode;
+    cause: string;
+    fix: string;
+    meta?: Readonly<Record<string, unknown>> | undefined;
+  }) {
     super({
       code: init.code,
       cause: init.cause,
       fix: init.fix,
       docs: `https://ultimate.dev/errors/${init.code}`,
+      meta: init.meta,
     });
   }
 }
@@ -102,6 +112,74 @@ export const oauthStateInvalid = (provider: string, part: string): AuthError =>
     fix: `restart the flow at GET /auth/oauth/${provider} — a callback URL is single-use`,
   });
 
+export interface OAuthExchangeFailure {
+  readonly provider: string;
+  /** Which leg of the server-to-server conversation failed. */
+  readonly stage: 'token' | 'userinfo';
+  readonly detail: string;
+  readonly status?: number | undefined;
+  readonly fix: string;
+}
+
+/**
+ * Deliberately specific, unlike every credential error above it. This one describes a
+ * conversation between two servers — naming the stage, the provider and its own status
+ * discloses nothing about any user, and is the difference between a fixable misconfiguration
+ * and a shrug.
+ */
+export const oauthExchangeFailed = (failure: OAuthExchangeFailure): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_EXCHANGE_FAILED',
+    cause:
+      `${failure.provider} ${failure.stage} request failed` +
+      `${failure.status === undefined ? '' : ` with HTTP ${failure.status}`}: ${failure.detail}`,
+    fix: failure.fix,
+    meta: {
+      provider: failure.provider,
+      stage: failure.stage,
+      ...(failure.status === undefined ? {} : { status: failure.status }),
+    },
+  });
+
+/**
+ * The address is proven to the provider, and an account that never proved it already holds it.
+ * Naming that is not account enumeration — this caller just demonstrated they own the address —
+ * and staying silent would leave them with a login that fails forever and no way out.
+ *
+ * The address itself rides in `meta`, never in `cause`: a log pipeline can redact a field by
+ * key, and cannot redact an address that was already interpolated into a sentence.
+ */
+export const oauthAccountNotLinked = (provider: string, email: string): AuthError =>
+  new AuthError({
+    code: 'X_UNAUTHENTICATED',
+    cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
+    fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
+    meta: { provider, email },
+  });
+
+/**
+ * `CreateUserInput` carries no `emailVerifiedAt`, so a provider-verified address takes a second
+ * write. Falling back to the unstamped row would mint a session for a user every later login
+ * reads as unverified — the exact state `resolveUser` refuses to link a provider to — so the
+ * flow fails closed on an adapter that loses the stamp instead of half-succeeding.
+ */
+export const emailVerifiedNotStored = (provider: string, userId: string): AuthError =>
+  new AuthError({
+    code: 'X_NOT_IMPLEMENTED',
+    cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
+    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
+    meta: { provider, userId },
+  });
+
+/** The token arrived, and is not one this handshake can trust: wrong `iss`, `aud`, or expired. */
+export const oauthTokenInvalid = (provider: string, reason: string, fix: string): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_TOKEN_INVALID',
+    cause: `${provider} id token rejected: ${reason}`,
+    fix,
+    meta: { provider },
+  });
+
 export const passwordWeak = (reasons: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_PASSWORD_WEAK',
@@ -124,6 +202,7 @@ export const apiKeyInvalid = (): AuthError =>
     fix: 'x auth keys list --json   # then: x auth keys issue --scopes "<scope>"',
   });
 
+/** For a custom `AuthAdapter` that implements part of the seam. Nothing shipped throws it. */
 export const authNotImplemented = (feature: string, fix: string): AuthError =>
   new AuthError({
     code: 'X_NOT_IMPLEMENTED',

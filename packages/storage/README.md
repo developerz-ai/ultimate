@@ -70,11 +70,20 @@ allowlist → sniff → checksum.
 | `X_STORAGE_TOO_LARGE` | payload over the policy `maxBytes` |
 | `X_STORAGE_TYPE_REJECTED` | declared type off the allowlist, or contradicted by magic bytes |
 | `X_STORAGE_CHECKSUM_MISMATCH` | supplied base64 SHA-256 does not describe the bytes |
-| `X_NOT_IMPLEMENTED` | image encode (Bun pipeline unbound), S3 user metadata |
+| `X_NOT_IMPLEMENTED` | S3 user metadata |
+| `X_IMAGE_UNSUPPORTED` | core's: an `avif`/`webp` encode, or a source no built-in decoder reads |
+| `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |
 
 ## Images
 
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
-`srcset` from them without decoding a byte. `transformImage()` / `blurPlaceholder()` throw
-`X_NOT_IMPLEMENTED` with a fix line until Bun's image API is bound. `bun test` from
-`packages/storage`.
+`srcset` from them without decoding a byte.
+
+`transformImage()` and `blurPlaceholder()` are real, over `@ultimat3/core`'s zero-dependency
+pipeline. **It encodes `png` and `jpeg`, nothing else** — `avif`/`webp` remain key and `srcset`
+math, and asking for their bytes rejects with core's `X_IMAGE_UNSUPPORTED` naming the two that
+work; produce them through a CDN or a custom `ImageTransformDriver`. `png` is the only output
+that keeps alpha. The encoded size is always exactly `fitDimensions()`, so the `width`/`height`
+`@ultimat3/seo` already wrote into the tag match the bytes — `contain` fits inside the box, it
+does not letterbox to it. `blurPlaceholder()` returns a real 16px-wide PNG `data:` URI.
+`bun test` from `packages/storage`.

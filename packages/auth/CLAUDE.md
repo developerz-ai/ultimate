@@ -20,6 +20,12 @@ Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   parameter to it re-opens account enumeration.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent. `usesPkce: false` is not a valid provider config.
+- The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`
+  checks an echoed one when present and never requires it; `verifyIdToken` is the real gate.
+- A token endpoint's HTTP 200 is not success — GitHub reports a dead code that way. Read `error`.
+- Link by address only when the provider **and** the local account both verified it.
+- id token signatures are not checked: it is read only where it arrived over TLS straight from
+  the token endpoint (OIDC Core 3.1.3.7). Never parse one that reached the browser.
 - An api key's scopes are the agent actor's scopes. Never union them with the owner's roles.
 - Rotate the session id on any privilege change (`rotateSession`), never patch the row.
 
@@ -32,6 +38,12 @@ Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
 | `rate-limit.ts` | per-ip + per-account buckets, lockout, `loginFailed()` |
+| `oauth.ts` | provider data, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
+| `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
+| `id-token.ts` | id token → claims this handshake may believe |
+| `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
+| `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
+| `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
 
 ```bash
 bun test packages/auth

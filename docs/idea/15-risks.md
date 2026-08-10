@@ -43,7 +43,7 @@ The Bun bet buys `Bun.sql`, `Bun.redis`, `Bun.s3`, native WebSockets, the test r
 
 | Constraint | Impact | Mitigation |
 |---|---|---|
-| **Native addons (N-API) are blocked or unreliable** | no `sharp`, no `bcrypt` addon, no native ML bindings, some legacy DB drivers | Bun natives cover image, password hashing, Postgres, Redis, S3. Anything else: a subprocess or an HTTP service, never a hidden dependency |
+| **Native addons (N-API) are blocked or unreliable** | no `sharp`, no `bcrypt` addon, no native ML bindings, some legacy DB drivers | Bun natives cover password hashing, Postgres, Redis, S3; `@ultimat3/core` carries its own pure-TS PNG/JPEG pipeline. Anything else: a subprocess or an HTTP service, never a hidden dependency |
 | **Long-running-process maturity is less proven than Node's** | memory growth under sustained load and edge-case GC behaviour are less battle-tested, and `sync` nodes are *designed* to run for days holding many sockets | **budget explicit memory-profiling work**: soak tests at milestone 6 and 11 (24h+ at target socket count, RSS tracked), leak assertions in the live test type, and per-role memory ceilings with a graceful restart rather than an OOM kill |
 | Some npm packages assume Node internals | occasional breakage | prefer web-standard libraries; the small dependency count makes this rare by construction |
 | Single-runtime risk | a Bun regression is a framework outage | pin exact versions, keep an upgrade branch with the full `x verify` suite, and never depend on undocumented internals |

@@ -3,7 +3,7 @@
 // redirect, and "this provider does not need it" is how that becomes a real incident. Provider
 // configs are pure data: importing this file performs no network I/O and reads no env.
 
-import { authNotImplemented, oauthStateInvalid } from './errors';
+import { oauthStateInvalid } from './errors';
 import { base64Url, randomToken, sha256Bytes, timingSafeEqual } from './tokens';
 
 export interface OAuthProvider {
@@ -11,6 +11,13 @@ export interface OAuthProvider {
   readonly authorizeUrl: string;
   readonly tokenUrl: string;
   readonly userInfoUrl: string | null;
+  /** A second call, only where the primary address is not on the profile (GitHub). */
+  readonly userEmailsUrl: string | null;
+  /**
+   * Every `iss` this provider is allowed to claim. Empty for a provider that issues no id
+   * token. A list rather than one string because Google has issued both forms for years.
+   */
+  readonly issuers: readonly string[];
   readonly scopes: readonly string[];
   readonly usesPkce: boolean;
   /** OIDC providers echo `nonce` in the id token; it binds the token to this browser. */
@@ -25,6 +32,10 @@ export const OAUTH_PROVIDERS = {
     authorizeUrl: 'https://github.com/login/oauth/authorize',
     tokenUrl: 'https://github.com/login/oauth/access_token',
     userInfoUrl: 'https://api.github.com/user',
+    // GitHub omits a private address from the profile; the identity is still incomplete
+    // without it, so the flow asks for the verified list rather than guessing.
+    userEmailsUrl: 'https://api.github.com/user/emails',
+    issuers: [],
     scopes: ['read:user', 'user:email'],
     usesPkce: true,
     usesNonce: false,
@@ -35,7 +46,10 @@ export const OAUTH_PROVIDERS = {
     id: 'google',
     authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
     tokenUrl: 'https://oauth2.googleapis.com/token',
+    // Reached only when a narrowed `scopes` leaves the id token without an email claim.
     userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
+    userEmailsUrl: null,
+    issuers: ['https://accounts.google.com', 'accounts.google.com'],
     scopes: ['openid', 'email', 'profile'],
     usesPkce: true,
     usesNonce: true,
@@ -48,10 +62,14 @@ export const OAUTH_PROVIDERS = {
     tokenUrl: 'https://appleid.apple.com/auth/token',
     // Apple returns claims in the id token only; there is no userinfo endpoint to call.
     userInfoUrl: null,
+    userEmailsUrl: null,
+    issuers: ['https://appleid.apple.com'],
     scopes: ['name', 'email'],
     usesPkce: true,
     usesNonce: true,
     clientIdEnv: 'APPLE_CLIENT_ID',
+    // Apple alone does not accept a static secret: `APPLE_CLIENT_SECRET` must hold the ES256
+    // client-secret JWT signed with the .p8 key, which Apple expires every six months.
     clientSecretEnv: 'APPLE_CLIENT_SECRET',
   },
 } as const satisfies Readonly<Record<string, OAuthProvider>>;
@@ -123,7 +141,11 @@ export function beginOAuth(input: BeginOAuthInput): OAuthHandshake {
 export interface OAuthCallback {
   readonly state: string;
   readonly code: string;
-  /** Echoed by the provider in the id token. Required whenever `usesNonce`. */
+  /**
+   * Only a `form_post` response carries a nonce back on the redirect itself. In the plain code
+   * flow the nonce is a claim inside the id token, and `verifyIdToken` is what checks it — so
+   * this is verified when present and never required, or an OIDC login could not complete.
+   */
   readonly nonce?: string | undefined;
 }
 
@@ -140,34 +162,7 @@ export function assertOAuthCallback(handshake: OAuthHandshake, callback: OAuthCa
   if (provider.usesPkce && handshake.verifier.length < 43) {
     throw oauthStateInvalid(provider.id, 'no PKCE verifier was stored for this handshake');
   }
-  if (provider.usesNonce) {
-    const nonce = callback.nonce ?? '';
-    if (!timingSafeEqual(handshake.nonce, nonce)) {
-      throw oauthStateInvalid(provider.id, 'nonce did not match the stored handshake');
-    }
+  if (callback.nonce !== undefined && !timingSafeEqual(handshake.nonce, callback.nonce)) {
+    throw oauthStateInvalid(provider.id, 'nonce did not match the stored handshake');
   }
-}
-
-export interface OAuthTokens {
-  readonly accessToken: string;
-  readonly refreshToken: string | null;
-  readonly expiresAt: Date | null;
-  readonly idToken: string | null;
-}
-
-/**
- * Validates the callback, then stops: the exchange needs real client credentials, and a
- * framework that invents them silently is worse than one that says so. Bind Better Auth (or
- * your own fetch) through `AuthAdapter.linkAccount` once the env vars in `fix` are set.
- */
-export async function exchangeOAuthCode(
-  handshake: OAuthHandshake,
-  callback: OAuthCallback,
-): Promise<OAuthTokens> {
-  assertOAuthCallback(handshake, callback);
-  const provider = OAUTH_PROVIDERS[handshake.provider];
-  throw authNotImplemented(
-    `${provider.id} authorization-code exchange`,
-    `set ${provider.clientIdEnv} and ${provider.clientSecretEnv} in .env, then: x auth oauth enable ${provider.id}`,
-  );
 }

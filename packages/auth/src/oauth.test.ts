@@ -62,6 +62,37 @@ describe('oauth', () => {
     expect(() => assertOAuthCallback(stored, { state: stored.state, code: 'abc' })).not.toThrow();
   });
 
+  test('an echoed nonce is checked when present', () => {
+    const stored = handshake();
+    let thrown: unknown;
+    try {
+      assertOAuthCallback(stored, { state: stored.state, code: 'abc', nonce: 'someone-elses' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(codeOf(thrown)).toBe('X_OAUTH_STATE_INVALID');
+    expect(() =>
+      assertOAuthCallback(stored, { state: stored.state, code: 'abc', nonce: stored.nonce }),
+    ).not.toThrow();
+  });
+
+  test('an OIDC callback without an echoed nonce is not rejected here', () => {
+    // The plain code flow carries the nonce inside the id token, not on the redirect —
+    // requiring it here is what made a Google login impossible to finish.
+    const stored = beginOAuth({
+      provider: 'google',
+      clientId: 'client-id',
+      redirectUri: 'https://app.test/auth/callback',
+    });
+    expect(() => assertOAuthCallback(stored, { state: stored.state, code: 'abc' })).not.toThrow();
+  });
+
+  test('every shipped provider that issues an id token declares its issuers', () => {
+    for (const provider of Object.values(OAUTH_PROVIDERS)) {
+      expect(provider.issuers.length > 0).toBe(provider.usesNonce);
+    }
+  });
+
   test('every shipped provider requires PKCE and declares its env vars', () => {
     for (const provider of Object.values(OAUTH_PROVIDERS)) {
       expect(provider.usesPkce).toBe(true);

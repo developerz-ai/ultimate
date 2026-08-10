@@ -54,19 +54,45 @@ x db gen "auth tables"     # emits AUTH_TABLES into a migration
 | `__Host-` + `Path=/` + no `Domain` | a sibling subdomain overwriting it (session fixation) |
 | `Max-Age` | a client keeping it past the server's absolute ceiling |
 
-## OAuth providers
+## OAuth
 
-Pure data. Importing `oauth.ts` performs no network I/O and reads no env.
+Two calls: one to leave, one to come back. Provider configs are pure data — importing
+`oauth.ts` performs no network I/O and reads no env.
 
-| Provider | PKCE | Nonce | Env |
+```ts
+// GET /auth/oauth/:provider — store the handshake in a short-lived signed cookie
+const handshake = beginOAuth({ provider: 'github', clientId, redirectUri });
+
+// GET /auth/oauth/:provider/callback — exchange, identify, sign in
+const { actor, cookie } = await completeOAuthLogin(auth, {
+  handshake,
+  callback: { state: url.searchParams.get('state') ?? '', code },
+});
+```
+
+| Provider | PKCE | id token | Env |
 |---|---|---|---|
-| `github` | S256 | — | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` |
-| `google` | S256 | required | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` |
-| `apple` | S256 | required | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` |
+| `github` | S256 | — profile + verified-emails call | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` |
+| `google` | S256 | required, nonce-bound | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` |
+| `apple` | S256 | required, nonce-bound | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` |
 
-`exchangeOAuthCode()` validates the callback, then throws `X_NOT_IMPLEMENTED` naming those
-env vars. Mismatched `state`, a missing verifier and a bad `nonce` all throw
-`X_OAUTH_STATE_INVALID`.
+Apple alone rejects a static secret: `APPLE_CLIENT_SECRET` must hold the ES256 client-secret
+JWT signed with the `.p8` key, which Apple expires every six months.
+
+| Step | Does | Fails with |
+|---|---|---|
+| `exchangeOAuthCode` | POSTs the code + PKCE verifier, verifies the id token | `X_OAUTH_EXCHANGE_FAILED`, `X_OAUTH_TOKEN_INVALID` |
+| `oauthProfile` | id-token claims, else userinfo → one normalised identity | `X_OAUTH_EXCHANGE_FAILED` |
+| `signInWithOAuth` | links the account, applies MFA, mints the session | `X_UNAUTHENTICATED`, `X_MFA_REQUIRED` |
+
+- PKCE's verifier travels only in the exchange — it proves the code belongs to the browser
+  that started the flow.
+- `state` is checked before anything reaches the network; `nonce` is checked inside the id
+  token, because that is where the code flow actually carries it.
+- GitHub reports a bad, reused or expired code as **HTTP 200 with an `error` field**. Trusting
+  the status alone there mints a session from a failed exchange.
+- An address is only linked to an existing account when **both** sides verified it. Otherwise
+  whoever registered the address first inherits the login.
 
 ## API keys — how an agent authenticates
 
@@ -89,10 +115,13 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 | `X_SESSION_EXPIRED` | idle or absolute expiry, named in `cause` |
 | `X_MFA_REQUIRED` | password proven, second factor outstanding |
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match |
+| `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange, or returned no usable identity |
+| `X_OAUTH_TOKEN_INVALID` | the id token failed its issuer, audience or expiry check |
 | `X_PASSWORD_WEAK` | strength check rejected the password |
 | `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong |
-| `X_NOT_IMPLEMENTED` | OAuth token exchange without client credentials |
+| `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
+| `X_NOT_IMPLEMENTED` | an `AuthAdapter` refused a method (`authNotImplemented(feature, fix)`), or lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
 
 ```bash
 bun test packages/auth

@@ -50,7 +50,7 @@ export {
 } from './auth';
 
 export { BuiltinAdapter } from './builtin-adapter';
-export type { AuthErrorCode, AuthThrowCode } from './errors';
+export type { AuthErrorCode, AuthThrowCode, OAuthExchangeFailure } from './errors';
 export {
   AUTH_BORROWED_ERROR_TITLES,
   AUTH_ERROR_CODES,
@@ -59,9 +59,13 @@ export {
   accountLocked,
   apiKeyInvalid,
   authNotImplemented,
+  emailVerifiedNotStored,
   forbidden,
   mfaRequired,
+  oauthAccountNotLinked,
+  oauthExchangeFailed,
   oauthStateInvalid,
+  oauthTokenInvalid,
   passwordWeak,
   sessionExpired,
   sessionUnknown,
@@ -69,6 +73,13 @@ export {
 } from './errors';
 
 export { currentActor, requireActor, requireRole, requireScope } from './guards';
+export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
+export {
+  decodeIdToken,
+  ID_TOKEN_CLOCK_SKEW_MS,
+  idTokenEmailVerified,
+  verifyIdToken,
+} from './id-token';
 
 export { MemoryAdapter } from './memory-adapter';
 export type {
@@ -100,18 +111,27 @@ export type {
   OAuthHandshake,
   OAuthProvider,
   OAuthProviderId,
-  OAuthTokens,
   PkcePair,
 } from './oauth';
 export {
   assertOAuthCallback,
   beginOAuth,
   createPkce,
-  exchangeOAuthCode,
   OAUTH_PROVIDER_IDS,
   OAUTH_PROVIDERS,
   pkceChallenge,
 } from './oauth';
+export type {
+  OAuthClientCredentials,
+  OAuthExchangeOptions,
+  OAuthFetch,
+  OAuthTokens,
+} from './oauth-exchange';
+export { exchangeOAuthCode, oauthCredentials } from './oauth-exchange';
+export type { CompleteOAuthLoginInput, OAuthSignInInput } from './oauth-login';
+export { completeOAuthLogin, signInWithOAuth } from './oauth-login';
+export type { OAuthProfile, OAuthProfileOptions } from './oauth-profile';
+export { oauthProfile } from './oauth-profile';
 export type {
   PasswordParams,
   PasswordPolicy,

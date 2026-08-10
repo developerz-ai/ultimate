@@ -34,10 +34,15 @@ Each row is a dependency subtree that never enters the lockfile.
 | `bun test` | `vitest` / `jest`, `@types/jest`, coverage + mock + snapshot plugins | ~30 |
 | `Bun.build` | `esbuild`/`rollup`/`vite` + framework plugin + postcss chain | ~40 |
 | `Bun.Transpiler` / macros | `ts-node`, `tsx`, `swc`, babel presets | ~15 |
-| Bun image (`sharp`-free resize/encode) | `sharp` + libvips native binary + `imagemin` plugins | ~12 |
 | `Bun.password` | `bcrypt` / `argon2` native addons | ~4 |
 | `Bun.file` / `Bun.write` | `fs-extra`, `graceful-fs`, `globby` | ~6 |
 | `bun --hot` | `nodemon`, `concurrently`, HMR middleware | ~5 |
+
+One more subtree dies with no Bun native behind it — a pure-TypeScript framework pipeline, written because native addons are blocked ([`15-risks.md`](./15-risks.md)):
+
+| Framework primitive | Replaces | Deps killed (approx) |
+|---|---|---|
+| `@ultimat3/core` image (PNG/JPEG decode, resize, encode) | `sharp` + libvips native binary + `imagemin` plugins | ~12 |
 
 Order of magnitude: a conventional equivalent stack is ~1,200 transitive packages; Ultimate's target is **under 40 direct dependencies for the whole framework**. Fewer packages is not vanity — it is fewer install failures, fewer CVE pages, and a smaller surface for an agent to misread.
 

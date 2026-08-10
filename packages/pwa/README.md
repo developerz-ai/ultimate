@@ -84,6 +84,7 @@ capability ships zero bytes and asks for zero permissions.
 | `buildId`, `detectSkew`, `retentionPlan`, `updatePolicy`, `updateSignal` | version skew |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes |
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
+| `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |
 | `requireOfflineFallback` | the mandatory offline route |
 | `backgroundSyncSource`, `retryDelayMs` | the Background Sync trigger |
 | `renderPushPayload`, `pushSource`, `subscribeSource` | Web Push, per-locale bodies |
@@ -102,8 +103,11 @@ capability ships zero bytes and asks for zero permissions.
 - **Push bodies are rendered server-side per subscriber locale**, from the locale stored on
   the subscription. A notification in the wrong language is a real bug, and the sending
   server has no request context to infer one from.
-- **Icons come from one source image.** `X_PWA_ICON_MISSING` names the file to add; the
-  transform driver is an `ImagePipeline` interface with a labelled `X_NOT_IMPLEMENTED`
-  pending Bun's native image API — no `sharp`, no vendor image CDN.
+- **Icons come from one source image.** `X_PWA_ICON_MISSING` names the file to add;
+  `BuiltinImagePipeline` renders the whole matrix from it through `@ultimat3/core`'s image
+  pipeline — no `sharp`, no vendor image CDN, no native build step. Every output is a square
+  PNG, because `type: 'image/png'` is what the manifest declares. A maskable icon's artwork
+  lands exactly inside `maskableSafeZone(size)`; the ring around it is `background`, which is
+  hex or `transparent` (there are no named colours). Same bytes in, same bytes out.
 - **Route data arrives as data.** `@ultimat3/render` and `@ultimat3/pwa` are both tier 4, so
   `PwaRoute` is a structural view of `RouteDescriptor`, never an import.

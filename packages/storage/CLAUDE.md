@@ -23,7 +23,7 @@ Tier 2. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `path.ts` | key validation + `scopedKey`/`isWithinOrg` tenant boundary |
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
-| `image.ts` | deterministic variant keys; encode path throws `X_NOT_IMPLEMENTED` |
+| `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 
 ```bash
@@ -34,6 +34,14 @@ bun run typecheck
 Gotchas:
 - `X_NOT_IMPLEMENTED` is core's — keep the `hasErrorCode()` guard in the registration loop,
   or importing throws `X_ERROR_CODE_DUPLICATE`. Tests need `resetStorage()` in `beforeEach`.
+- `image.ts` owns no pixels: core's `transformImageBytes`/`blurDataUrl` are the only scaler.
+  Its image failures (`X_IMAGE_UNSUPPORTED`, `X_IMAGE_DECODE_FAILED`) surface unwrapped —
+  wrapping them in a `StorageError` would give one failure two codes.
+- `transformImage()` must encode at exactly `fitDimensions()`'s size, and passes `format`
+  explicitly (`?? 'webp'`, which then rejects): bytes that disagree with the `variantKey`
+  extension, or with the `width`/`height` `@ultimat3/seo` inlined, are the layout shift the
+  whole path exists to prevent. That is why it derives the box itself and asks core for
+  `fit: 'cover'` — core's `contain` letterboxes to the requested box, this API fits inside it.
 - Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse.
 - The signature check runs BEFORE the expiry check. Do not reorder.
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.

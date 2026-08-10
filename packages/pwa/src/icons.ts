@@ -4,7 +4,8 @@
  * icons end up with clipped logos.
  */
 
-import { NotImplementedError, PwaIconMissingError } from './errors';
+import { transformImageBytes } from '@ultimat3/core';
+import { PwaIconMissingError } from './errors';
 import type { ManifestIcon } from './manifest';
 
 export type IconPurpose = 'any' | 'maskable' | 'monochrome' | 'apple-touch';
@@ -71,25 +72,33 @@ export function maskableSafeZone(size: number, padding = MASKABLE_PADDING): Safe
 export interface ImageTransform {
   readonly size: number;
   readonly padding: number;
+  /** `'#rgb' | '#rgba' | '#rrggbb' | '#rrggbbaa' | 'transparent'`. There are no named colours. */
   readonly background?: string;
 }
 
-/** The transform driver. Bun's native image API is the intended backing. */
+/** The transform driver: source bytes in, one square PNG of `transform.size` out. */
 export interface ImagePipeline {
   resize(source: Uint8Array, transform: ImageTransform): Promise<Uint8Array>;
 }
 
 /**
- * Interface-complete, implementation pending: Bun's image API is the blessed backing and
- * we will not pull in `sharp` (axiom 7 — no native platform dependencies in the build).
+ * The one driver, backed by core's zero-dependency pipeline — no `sharp`, no image CDN.
+ * Always square PNG: `toManifestIcon` declares `type: 'image/png'`, so any other format
+ * would make the manifest lie about bytes the browser then refuses.
+ *
+ * `async` on purpose. A `Promise`-typed method that throws synchronously skips every
+ * `.catch()` a caller wrote; an undecodable source or a named colour must reject instead.
  */
-export class BunImagePipeline implements ImagePipeline {
-  resize(_source: Uint8Array, transform: ImageTransform): Promise<Uint8Array> {
-    throw new NotImplementedError(
-      `the icon transform driver is not wired yet (requested ${transform.size}px)`,
-      'x icons --driver=external to generate icons with your own tool, or pin bun >= 2.0 ' +
-        'once Bun.image ships',
-    );
+export class BuiltinImagePipeline implements ImagePipeline {
+  async resize(source: Uint8Array, transform: ImageTransform): Promise<Uint8Array> {
+    return transformImageBytes(source, {
+      width: transform.size,
+      height: transform.size,
+      fit: 'contain',
+      padding: transform.padding,
+      background: transform.background,
+      format: 'png',
+    });
   }
 }
 

@@ -1,8 +1,8 @@
-// The responsive image contract. Two non-negotiables: modern formats are offered
-// before the fallback, and the intrinsic width/height are always inlined so the
-// browser reserves the box before the bytes arrive — CLS stays at 0.
+// The responsive image contract: what the markup promises. Two non-negotiables — modern
+// formats are offered before the fallback, and the intrinsic width/height are always inlined
+// so the browser reserves the box before the bytes arrive, keeping CLS at 0. Producing those
+// bytes is `image-driver.ts`; nothing here decodes a pixel.
 
-import { notImplementedDriver } from './errors';
 import { attributes, escapeAttribute } from './xml';
 
 /** Ordered widest-first is wrong for `srcset`; browsers want ascending. */
@@ -156,45 +156,6 @@ export function renderPicture(image: ResponsiveImage): string {
     style: img.style,
   })}></picture>`;
 }
-
-// --- transform driver --------------------------------------------------------
-
-export interface TransformRequest {
-  src: string;
-  width: number;
-  format?: string;
-  quality?: number;
-}
-
-export interface TransformedImage {
-  bytes: Uint8Array;
-  contentType: string;
-  width: number;
-  height: number;
-}
-
-/** Swappable so a project can route transforms through a CDN instead. */
-export interface ImageTransformDriver {
-  readonly name: string;
-  transform(request: TransformRequest): Promise<TransformedImage>;
-  /** Tiny base64 data URI (typically a 16px-wide blur) for the placeholder. */
-  blurPlaceholder(src: string): Promise<string>;
-}
-
-/**
- * Bun's native image pipeline is the intended backing. Until it lands, every
- * entry point throws a labelled X_NOT_IMPLEMENTED that names the way forward,
- * rather than silently serving unoptimised originals.
- */
-export const bunImageDriver: ImageTransformDriver = {
-  name: 'bun',
-  async transform(): Promise<TransformedImage> {
-    throw notImplementedDriver('bun', 'transform()');
-  },
-  async blurPlaceholder(): Promise<string> {
-    throw notImplementedDriver('bun', 'blurPlaceholder()');
-  },
-};
 
 /** Escapes a data URI for inline `style`, for callers assembling their own tags. */
 export function inlineBlur(dataUrl: string): string {

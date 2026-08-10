@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { bunImageDriver, renderPicture, responsiveImage, usableWidths } from './images';
+import { renderPicture, responsiveImage, usableWidths } from './images';
 
 const INPUT = { src: '/img/hero.jpg', width: 1200, height: 630, alt: 'Ultimate dashboard' };
 
@@ -42,17 +42,5 @@ describe('responsiveImage', () => {
     expect(html).toContain('width="1200"');
     expect(html).toContain('height="630"');
     expect(html).toContain('alt="Ultimate dashboard"');
-  });
-});
-
-describe('bunImageDriver', () => {
-  test('is a labelled X_NOT_IMPLEMENTED, not a silent passthrough', async () => {
-    expect(bunImageDriver.name).toBe('bun');
-    await expect(bunImageDriver.transform({ src: '/a.jpg', width: 640 })).rejects.toMatchObject({
-      code: 'X_NOT_IMPLEMENTED',
-    });
-    await expect(bunImageDriver.blurPlaceholder('/a.jpg')).rejects.toMatchObject({
-      code: 'X_NOT_IMPLEMENTED',
-    });
   });
 });

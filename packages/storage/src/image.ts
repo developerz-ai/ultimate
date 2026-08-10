@@ -1,12 +1,17 @@
-// Single responsibility: the image transform contract over Bun's native image pipeline.
-// `@ultimat3/seo` builds `<img srcset>` from `srcsetDescriptors()`, so width lists, derived
-// variant keys and aspect-ratio fitting are deterministic pure functions here — SEO must emit
-// markup without decoding a byte or touching a disk. Only the encode path needs the pipeline.
+// Single responsibility: the image transform contract — deterministic variant keys and srcset
+// math, plus the byte path bound to `@ultimat3/core`'s pipeline. `@ultimat3/seo` builds
+// `<img srcset>` from `srcsetDescriptors()` without decoding a byte, and when it does need the
+// bytes, `transformImage()` returns exactly the size `fitDimensions()` already promised.
 
-import { storageNotImplemented } from './errors';
+import {
+  blurDataUrl,
+  BLUR_PLACEHOLDER_WIDTH as CORE_BLUR_PLACEHOLDER_WIDTH,
+  probeImage,
+  transformImageBytes,
+} from '@ultimat3/core';
 import { assertSafeKey, keyExtname } from './path';
 
-export const IMAGE_FORMATS = ['avif', 'webp', 'jpeg'] as const;
+export const IMAGE_FORMATS = ['avif', 'webp', 'jpeg', 'png'] as const;
 export type ImageFormat = (typeof IMAGE_FORMATS)[number];
 
 /** `cover` fills the box and crops the overflow; `contain` fits inside it, no crop. */
@@ -28,13 +33,14 @@ export interface ImageSize {
 
 export const DEFAULT_QUALITY = 80;
 export const DEFAULT_SRCSET_WIDTHS = [320, 640, 960, 1280, 1920] as const;
-/** Small enough to inline in HTML; big enough to blur convincingly. */
-export const BLUR_PLACEHOLDER_WIDTH = 16;
+/** Small enough to inline in HTML; big enough to blur convincingly. Core owns the number. */
+export const BLUR_PLACEHOLDER_WIDTH = CORE_BLUR_PLACEHOLDER_WIDTH;
 
 const FORMAT_EXTENSIONS: Readonly<Record<ImageFormat, string>> = {
   avif: 'avif',
   webp: 'webp',
   jpeg: 'jpg',
+  png: 'png',
 };
 
 /**
@@ -109,22 +115,34 @@ export function fitDimensions(source: ImageSize, transform: ImageTransform): Ima
   return { width: Math.round(source.width * scale), height: Math.round(source.height * scale) };
 }
 
-const ENCODE_FIX =
-  'x storage image --check   # reports the Bun image API binding; until it lands, ' +
-  'pre-generate variants at upload time or point routes at the original key';
-
-/** Encode path. Deterministic key/descriptor math above works without it. */
-export function transformImage(_bytes: Uint8Array, transform: ImageTransform): Promise<Uint8Array> {
-  throw storageNotImplemented(
-    `image encode to ${transform.format ?? 'webp'} (Bun's native image pipeline is not bound yet)`,
-    ENCODE_FIX,
-  );
+/**
+ * Decode, resize, encode — core's pipeline, which encodes **png and jpeg only**. `avif` and
+ * `webp` stay key/`srcset` math: asking for their bytes rejects with core's
+ * `X_IMAGE_UNSUPPORTED` (not re-wrapped — one failure, one code), and producing them means a
+ * CDN or a custom `ImageTransformDriver`. PNG is also the only output that keeps alpha.
+ *
+ * The output box is `fitDimensions()`, always: that is the size `@ultimat3/seo` has already
+ * written into the `<img>` tag, and bytes that disagreed with it would be the layout shift
+ * this whole path exists to prevent.
+ */
+export async function transformImage(
+  bytes: Uint8Array,
+  transform: ImageTransform,
+): Promise<Uint8Array> {
+  // Header read, not a decode — the source size is needed before the box can be chosen.
+  const size = fitDimensions(probeImage(bytes), transform);
+  return transformImageBytes(bytes, {
+    width: size.width,
+    height: size.height,
+    // The box already carries the fitted aspect ratio, so `cover` crops nothing real; it is
+    // what stops a rounded edge leaving a transparent (in JPEG: black) sliver inside it.
+    fit: 'cover',
+    format: transform.format ?? 'webp',
+    quality: transform.quality ?? DEFAULT_QUALITY,
+  });
 }
 
-/** A `data:` URI small enough to inline as the LQIP behind a real image. */
-export function blurPlaceholder(_bytes: Uint8Array): Promise<string> {
-  throw storageNotImplemented(
-    `blur placeholder encode at ${BLUR_PLACEHOLDER_WIDTH}px (needs the image pipeline)`,
-    ENCODE_FIX,
-  );
+/** A `data:` URI small enough to inline as the LQIP behind a real image. Always PNG. */
+export async function blurPlaceholder(bytes: Uint8Array): Promise<string> {
+  return blurDataUrl(bytes, BLUR_PLACEHOLDER_WIDTH);
 }

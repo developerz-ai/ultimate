@@ -9,7 +9,8 @@ import { parse, type StandardSchemaV1 } from '@ultimat3/schema';
 import type { MailTemplate } from './blocks';
 import { type MailMessage, mailDriver, type SendResult } from './driver';
 import { localeMissing, mailDuplicate, templateUnknown } from './errors';
-import { mailIdempotencyKey, sendMailJob } from './job';
+import { mailIdempotencyKey } from './idempotency';
+import { sendMailJob } from './job';
 import { BASE_LAYOUT } from './layout';
 import { type RenderableMail, renderMail } from './render';
 

@@ -116,6 +116,8 @@ Nothing here is a plugin. Deleting a route removes it from the sitemap in the sa
 
 ### Image pipeline
 
+The canonical image capability contract — the wiki references this table rather than restating it.
+
 ```tsx
 <Image src={post.cover} alt={post.title} sizes="(max-width: 700px) 100vw, 700px" priority />
 ```
@@ -128,7 +130,8 @@ Nothing here is a plugin. Deleting a route removes it from the sitemap in the sa
 | Placeholder | blur hash inlined as a data URI, swapped on decode |
 | Loading | `lazy` by default, `priority` → eager + `<link rel="preload">` for the LCP image |
 | Where | build-time for `site/`, on-demand + cached for user uploads (`Bun.s3` + the cache tiers) |
-| Runtime | Bun's native image APIs. No `sharp`, no vendor image CDN ([axiom 7](./00-thesis.md)) |
+| Runtime | `@ultimat3/core`'s own pipeline — PNG/JPEG decode, resize, encode, zero dependencies. No `sharp`, no vendor image CDN ([axiom 7](./00-thesis.md)) |
+| AVIF / WebP | measured from the header so dimensions still inline, never synthesised. A variant in those formats comes from an `ImageTransformDriver` |
 
 ### Budgets in `x verify`
 
