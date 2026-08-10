@@ -30,6 +30,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   checked first (`assertSubject`, `assertBucket`). A presence key or member id is user data, so it
   is base64url-encoded (`encodeToken`) rather than validated — no name is refused for its spelling.
 - `local(tx, input)` is pure: no I/O, no `Date.now()`, no `Math.random()`. Rebase replays it.
+- One registered `LiveClient` per app (`setLiveClient`), and every hook reads it through that seam —
+  no hook takes a client argument, and an unregistered one is `X_LIVE_CLIENT_MISSING`, never a
+  lazily-constructed default.
+- Anything a component reads is a **getter or an accessor**, never a value snapshotted at hook time:
+  a plain field cannot re-render. `MutatorLike.local` is declared with method syntax so an
+  `@ultimat3/action` `Mutator` assigns with no cast — a function-typed property would not.
+- `useLive`'s thunk input is read once, at subscribe time. There is no reactive runtime here to
+  re-run it, and pretending otherwise would be a silently stale subscription.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
@@ -49,6 +57,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
 | `client.ts` / `sync-node.ts` | the two halves |
+| `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
 | `policy-gate.ts` | the only authz seam |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
 

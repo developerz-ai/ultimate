@@ -1,48 +1,89 @@
-// The structural subset of the registries the admin reads, and the query IR it speaks.
+// The structural subset of a registered entity the admin reads, and the query IR it speaks.
 //
-// WHY these are declared here instead of imported as concrete types: the admin derives
-// itself from `describeEntities()` output, and it must keep deriving after an entity gains
-// a column kind the admin has never heard of. Declaring the read surface — name, columns,
-// keys — means one file changes when the registry grows, and `Entity` / `Repo` from
-// @ultimat3/entity satisfy it structurally with no adapter.
+// WHY a subset instead of importing `Entity` itself: the admin must keep deriving after an
+// entity gains a column kind it has never heard of, so the surface is named — `$columns`,
+// `$primaryKey`, `$describe()` — and one file changes when it grows. `RegisteredEntity` below
+// is the compile-time proof that a real `entity()` result satisfies it; it is checked by
+// `tsc`, not asserted in a comment, because the admin used to read fields no entity had.
 
 import type { Entity, Repo } from '@ultimat3/entity';
 
-/** One column as the admin needs to see it. An `@ultimat3/entity` column satisfies this. */
-export interface AdminColumn {
-  /** The SQL-ish type name: `text`, `varchar`, `timestamptz`, `numeric`, `jsonb`, … */
-  readonly type: string;
-  readonly nullable?: boolean;
-  readonly unique?: boolean;
-  readonly primaryKey?: boolean;
+/**
+ * What the author declared about one column — `@ultimat3/entity`'s `ColumnMeta`, narrowed to
+ * what the admin reads. `kind` stays `string`: a kind with no widget is a loud
+ * X_ADMIN_FIELD_UNSUPPORTED at derive time, never a type error in the app that declared it.
+ */
+export interface AdminColumnMeta {
+  /** `uuid` · `text` · `char` · `boolean` · `integer` · `bigint` · `timestamptz` · `jsonb` · `money`. */
+  readonly kind: string;
+  readonly notNull: boolean;
+  readonly primaryKey: boolean;
+  readonly unique: boolean;
   /** Indexed columns become the list filters — a filter with no index is a table scan. */
-  readonly index?: boolean;
-  /** Written by the DB or the framework (`id`, `createdAt`): read-only in every form. */
-  readonly generated?: boolean;
-  /** Present on enum columns; also forces the `select` widget on a text column. */
+  readonly index: boolean;
+  /** Declared max length. A bounded string is one line; an unbounded one is prose. */
+  readonly length?: number;
+  /** A closed set — `enumerated`, `locale`, `tz`. Forces the `select` widget. */
   readonly values?: readonly string[];
-  /** Present on money columns. ISO-4217. */
-  readonly currency?: string;
-  /** Present on FK columns; drives the searchable-reference widget. */
-  readonly references?: { readonly entity: string; readonly column?: string };
-  /** Redacted in the audit diff and never rendered. */
-  readonly sensitive?: boolean;
-  readonly multiline?: boolean;
+  /**
+   * `kind: 'generated'` means the DB or the framework writes it (`id`, `createdAt`), which is
+   * what makes a field read-only. A literal `.default('free')` is a starting value, not that.
+   */
+  readonly default?: { readonly kind: string };
+  readonly onUpdate?: { readonly kind: string };
+  /**
+   * A thunk, because schema modules import each other in a cycle. The admin never calls it —
+   * the column→entity binding that resolves it is private to @ultimat3/entity, so `$describe()`
+   * hands back the resolved target — but its presence is what makes the column a foreign key.
+   */
+  readonly references?: () => unknown;
+}
+
+/** One column of a registered entity. An `@ultimat3/entity` `Column` satisfies this. */
+export interface AdminColumn {
+  readonly $meta: AdminColumnMeta;
+}
+
+/** One column of `$describe()` output. Money is the one property that becomes two of these. */
+export interface AdminColumnDescription {
+  /** The property key on the row, which is what the admin renders and filters by. */
+  readonly property: string;
+  /** `"<entity>.<column>"` for a foreign key, else `null`. Already resolved. */
+  readonly references: string | null;
+}
+
+/** The plain-data projection of an entity. The admin reads it for FK targets only. */
+export interface AdminEntityDescription {
+  readonly columns: readonly AdminColumnDescription[];
 }
 
 export interface AdminEntity {
-  readonly name: string;
-  readonly table?: string;
-  readonly columns: Readonly<Record<string, AdminColumn>>;
+  readonly $name: string;
+  /** Property keys of the primary key. Composite for a join table; the admin addresses rows
+   * by the first, which is the only column a single-id URL and an `AdminRepo` can carry. */
+  readonly $primaryKey: readonly string[];
+  readonly $columns: Readonly<Record<string, AdminColumn>>;
   /** The Standard Schema the entity validates with; forms hand input straight to it. */
-  readonly schema?: unknown;
-  /** The column to show when this entity is referenced from elsewhere. */
-  readonly labelColumn?: string;
+  readonly $schema: unknown;
+  /** Resolves foreign-key targets. See `entity-columns.ts` for what the admin takes from it. */
+  $describe(): AdminEntityDescription;
 }
 
-/** Compile-time note: a registered `Entity` is meant to be usable as an `AdminEntity`. */
-export type RegisteredEntity = Entity<AdminRow>;
-/** Compile-time note: a registered `Repo` is meant to be usable as an `AdminRepo`. */
+/** `T` must satisfy `Surface` or this does not compile. The whole point of the two below. */
+type Satisfies<Surface, T extends Surface> = T;
+
+/**
+ * The claim, checked: a real `entity()` result IS an `AdminEntity`. The day `entity()` renames
+ * a member, `tsc` fails here — instead of `Object.keys(entity.columns)` failing in the first
+ * request the dashboard serves.
+ */
+export type RegisteredEntity = Satisfies<AdminEntity, Entity<AdminRow>>;
+
+/**
+ * A repo as `@ultimat3/entity` registers it — deliberately NOT claimed to be an `AdminRepo`:
+ * the verbs differ (`findMany`/`insert` vs `list`/`create`) and its cursor is an opaque signed
+ * string where the admin speaks a keyset bound, so the host binds an adapter over it.
+ */
 export type RegisteredRepo = Repo;
 
 export type FilterOp = 'eq' | 'neq' | 'contains' | 'gt' | 'lt' | 'in' | 'is-null';

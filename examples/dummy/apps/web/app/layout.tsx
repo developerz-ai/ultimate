@@ -8,11 +8,12 @@
 
 import { useT } from '@postly/i18n';
 import { OrgSwitcher } from '@postly/ui';
-import { useActor } from '@ultimat3/core';
-import { AppUpdateBanner, ThemeProvider } from '@ultimat3/ui';
+import { isTheme, type Theme, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
+import { useActor } from '../shared/actor';
 import { viewerOf } from '../shared/viewer';
 import styles from './layout.module.scss';
+import { UpdateBanner } from './update-banner';
 import { ViewerProvider } from './viewer-context';
 
 export function Layout(props: { readonly children: JSX.Element }): JSX.Element {
@@ -20,8 +21,13 @@ export function Layout(props: { readonly children: JSX.Element }): JSX.Element {
   const actor = useActor();
   const viewer = () => viewerOf(actor.member);
 
+  // `system` is a preference, not a theme: left unset, the inline head script and the OS decide,
+  // which is also the only branch that can follow a change made after this render.
+  const theme = (): Theme | undefined =>
+    isTheme(actor.member.theme) ? actor.member.theme : undefined;
+
   return (
-    <ThemeProvider preference={actor.member.theme}>
+    <UiProvider theme={theme()} locale={viewer().locale} timeZone={viewer().zone} t={t}>
       <ViewerProvider value={viewer()}>
         <div class={styles.shell}>
           <header class={styles.bar}>
@@ -37,12 +43,11 @@ export function Layout(props: { readonly children: JSX.Element }): JSX.Element {
             <OrgSwitcher orgs={actor.orgs} currentOrgId={actor.orgId} action="/_x/session/org" />
           </header>
 
-          {/* Version skew is a signal, not a 404: the user reloads when they choose to. */}
-          <AppUpdateBanner label={t('errors.updateAvailable')} action={t('errors.updateAction')} />
+          <UpdateBanner label={t('errors.updateAvailable')} action={t('errors.updateAction')} />
 
           <main class={styles.main}>{props.children}</main>
         </div>
       </ViewerProvider>
-    </ThemeProvider>
+    </UiProvider>
   );
 }

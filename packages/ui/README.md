@@ -52,6 +52,34 @@ setSolidRuntime(await import('solid-js'));   // once, in the app entry
 what is rendered. `UiProvider` sets `lang` + `dir` on `<html>`; nothing else is
 needed to make that form correct in Arabic.
 
+## `<Text>` and `<Image>`
+
+`<Text>` is the typography primitive. Unset `size` and `weight` inherit, so it is
+transparent inside a heading or a caption.
+
+| Prop | Values |
+|---|---|
+| `tone` | `default` `muted` `accent` `success` `warning` `danger` `info` — the `fg` / `fg-muted` / status roles |
+| `size` | keys of `fontSizeTokens`: `xs` … `3xl` |
+| `weight` | keys of `fontWeightTokens`: `normal` `medium` `semibold` `bold` |
+| `as` | `span` (default) `p` `div` `strong` `em` |
+
+`<Image>` is one `<img>` — no JS, no fetch, no client state. `alt` is a required
+prop, so a missing description is a type error rather than a review comment.
+
+| Prop | Emitted |
+|---|---|
+| `variants` | `srcset`, descriptors derived and ordered ascending (`srcsetFor`) |
+| `sizes` | `sizes`, verbatim |
+| `priority` | `loading="eager"` + `fetchpriority="high"`; otherwise `lazy` + `auto`, always `decoding="async"` |
+| `width` + `height` | inlined attributes — both or neither, so the ratio is always reservable |
+
+Shipped here: the element. Measuring intrinsic dimensions, encoding AVIF/WebP
+renditions and the data-URI blur placeholder are build-pipeline steps
+([`docs/idea/07-rendering-seo.md`](../../docs/idea/07-rendering-seo.md)), not part
+of this package. The component emits what it is handed and fabricates nothing —
+no variants it was not given, no dimensions it did not measure.
+
 ## Theme resolution
 
 `explicit choice in localStorage` → `OS preference`. `setTheme()` persists,
@@ -70,7 +98,7 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 | `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | reactive context or DOM APIs used where they do not exist |
-| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant |
+| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other |
 
 ## Commands
 

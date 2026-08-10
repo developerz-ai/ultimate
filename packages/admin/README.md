@@ -42,15 +42,17 @@ component tree into the process, and an admin view cannot reach a dev panel by a
 
 One call, a working CRUD admin: columns from the entity's columns, filters from indexed columns, validation from the entity's schema, labels from i18n keys.
 
+`entities` takes the entities themselves — the objects `entity()` returned, not their `describeEntities()` projection. The admin reads `$columns`, `$primaryKey`, `$schema` and `$describe()` off them; `RegisteredEntity` in `registry.ts` is the compile-time check that it may.
+
 ```ts
 import { defineAdmin, adminRoutes, policyAuthz, memoryAuditLog } from '@ultimat3/admin';
-import { describeEntities } from '@ultimat3/entity';
-import { describeActions } from '@ultimat3/action';
+import { posts, users } from '@app/db/schema';
 
 export const admin = defineAdmin({
-  entities: describeEntities(),
-  actions: describeActions(),
-  resources: { post: { repo: posts, listFields: ['title', 'status', 'publishedAt'] } },
+  entities: [posts, users],
+  // `AdminAction` is the admin's own shape: a `permission` (never optional) plus a handler.
+  actions: [{ name: 'post.publish', permission: 'post:publish', entity: 'posts', handle }],
+  resources: { posts: { repo: postsAdminRepo, listFields: ['title', 'status', 'publishedAt'] } },
   branding: { nameKey: 'admin.brand.name', accent: '--x-color-brand', mode: 'system' },
   auth: { actor: (request) => session(request), authz: policyAuthz({ policies }) },
   audit: memoryAuditLog({ sinks: [auditTable] }),
@@ -58,6 +60,19 @@ export const admin = defineAdmin({
 
 export const routes = adminRoutes(admin); // every page `spa`, `network-only`, noindex
 ```
+
+### Derived from the entity, and only from it
+
+| Admin decision | Read from |
+|---|---|
+| field type + widget | `$meta.kind`, refined by `values` (select) and `references` (reference) |
+| one line vs prose | `text({ max })` has a length; `text()` does not |
+| read-only | a **generated** default (`uuid()`, `defaultNow()`, `onUpdateNow()`) or a key column |
+| filters, sort | `$meta.index` / `unique` / `primaryKey` — never an unindexed column |
+| row address | `$primaryKey[0]`, composite keys included |
+| validation | `$schema`, the entity's own Standard Schema |
+
+`sensitive`, a fixed `currency` and `labelField` have no entity source and are never guessed: declare them in `resources: { <entity>: { … } }` or they are absent.
 
 ### Rules it enforces for you
 

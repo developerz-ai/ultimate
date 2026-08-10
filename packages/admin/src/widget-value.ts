@@ -61,6 +61,19 @@ const fail = (field: AdminField, cause: string, fix: string): never => {
 
 const CURRENCY = /^[A-Z]{3}$/;
 
+/**
+ * `money()` puts a `bigint` on the row — Postgres `bigint` minor units — where `Money` is a
+ * number. This is the one place that widening happens, and it refuses rather than round: a
+ * value past the safe integer range would render as a different amount than it is.
+ */
+const minorUnits = (value: unknown): number | null => {
+  if (typeof value === 'bigint') {
+    const widened = Number(value);
+    return Number.isSafeInteger(widened) ? widened : null;
+  }
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
+};
+
 /** `Money = { minor: number; currency: string }` or nothing. A float is a bug, not a value. */
 export function assertMoney(field: AdminField, value: unknown): Money | null {
   if (value === null || value === undefined) return null;
@@ -79,7 +92,8 @@ export function assertMoney(field: AdminField, value: unknown): Money | null {
     );
   }
   const bag = value as { minor?: unknown; currency?: unknown };
-  if (typeof bag.minor !== 'number' || !Number.isInteger(bag.minor)) {
+  const minor = minorUnits(bag.minor);
+  if (minor === null) {
     return fail(
       field,
       `money.minor is ${String(bag.minor)}; minor units are integers`,
@@ -91,10 +105,10 @@ export function assertMoney(field: AdminField, value: unknown): Money | null {
     return fail(
       field,
       `money has no ISO-4217 currency (got ${String(bag.currency)})`,
-      `declare currency on the column, or pass fields: { ${field.name}: { currency: 'EUR' } }`,
+      `declare the currency with fields: { ${field.name}: { currency: 'EUR' } }`,
     );
   }
-  return { minor: bag.minor, currency };
+  return { minor, currency };
 }
 
 /** No zone, no render. A timestamp shown in an implicit zone is a wrong timestamp. */

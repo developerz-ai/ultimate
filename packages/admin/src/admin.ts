@@ -120,8 +120,8 @@ export function defineAdmin(input: DefineAdminInput): AdminApp {
   const overrides = input.resources ?? {};
 
   const resources = input.entities.map((entity) => {
-    const own = actions.filter((action) => action.entity === entity.name);
-    const opts = overrides[entity.name];
+    const own = actions.filter((action) => action.entity === entity.$name);
+    const opts = overrides[entity.$name];
     return adminResource<AdminRow>(entity, {
       ...(opts ?? {}),
       actions: [...(opts?.actions ?? []), ...own],

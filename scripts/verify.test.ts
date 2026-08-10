@@ -80,6 +80,17 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(references).toContain('./site');
   });
 
+  // Bun's runtime reads the tsconfig at the CWD to transpile JSX, and at the repo root that is
+  // this file — a solution-style config that carries no compilerOptions of its own unless it is
+  // told to. Without these two keys every `.tsx` in the repo transpiles against the React
+  // automatic runtime, which is not installed, so `bun test` at the root cannot import a single
+  // component. One JSX flavour, declared where the runtime looks for it.
+  test('the root tsconfig tells the runtime which JSX runtime this repo uses', async () => {
+    const options = field(await readJson(join(repoRoot(), 'tsconfig.json')), 'compilerOptions');
+    expect(field(options, 'jsx')).toBe('preserve');
+    expect(field(options, 'jsxImportSource')).toBe('solid-js');
+  });
+
   test('site/ is its own bundle graph — no @ultimat3/* path resolves inside it', async () => {
     const config = await readJson(join(repoRoot(), 'site/tsconfig.json'));
     // Axiom 6: the static path never pays for the app path. Emptying the inherited `paths` makes

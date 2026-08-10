@@ -1,7 +1,7 @@
 {
   "name": "@postly/admin",
   "version": "0.0.1",
-  "description": "Postly's generated admin dashboard — 20 lines and an MCP surface",
+  "description": "Postly's generated admin dashboard \u2014 20 lines and an MCP surface",
   "license": "UNLICENSED",
   "private": true,
   "type": "module",
@@ -19,6 +19,10 @@
   "dependencies": {
     "@postly/db": "0.0.1",
     "@postly/web": "0.0.1",
-    "@ultimat3/admin": "1.0.0"
+    "@ultimat3/action": "1.0.0",
+    "@ultimat3/admin": "1.0.0",
+    "@ultimat3/core": "1.0.0",
+    "@ultimat3/policy": "1.0.0",
+    "@ultimat3/schema": "1.0.0"
   }
 }

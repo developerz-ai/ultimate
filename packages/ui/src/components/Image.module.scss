@@ -1,0 +1,14 @@
+@use '../tokens' as t;
+
+.image {
+  // The inlined width/height give the browser the ratio; `block-size: auto` keeps
+  // it as the box scales down, so a decode never moves what is under the image.
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+
+  // Painted only when the image fails to load: the browser renders the alt text
+  // inside this box, and it inherits the img's own colour and font-size.
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}

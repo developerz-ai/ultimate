@@ -25,15 +25,22 @@ const ORIGINAL_MEMBERS = [
   'X_NOT_IMPLEMENTED',
 ];
 
+/** Codes added since the refactor. A shipped code is forever, so this list only ever grows. */
+const ADDED_SINCE = ['X_LIVE_CLIENT_MISSING'];
+
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
 const EVERY_CODE: readonly string[] = REALTIME_ERROR_CODES;
 const OWNED_CODES: readonly string[] = REALTIME_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = REALTIME_BORROWED_ERROR_CODES;
 
 describe('REALTIME_ERROR_CODES', () => {
-  test('has exactly the 10 members RealtimeErrorCode declared as a bare union before', () => {
-    expect(REALTIME_ERROR_CODES.length).toBe(10);
-    expect([...EVERY_CODE].sort()).toEqual([...ORIGINAL_MEMBERS].sort());
+  test('still carries every member RealtimeErrorCode declared as a bare union before', () => {
+    for (const code of ORIGINAL_MEMBERS) expect(EVERY_CODE).toContain(code);
+  });
+
+  test('is exactly the original members plus the ones added since', () => {
+    expect(REALTIME_ERROR_CODES.length).toBe(ORIGINAL_MEMBERS.length + ADDED_SINCE.length);
+    expect([...EVERY_CODE].sort()).toEqual([...ORIGINAL_MEMBERS, ...ADDED_SINCE].sort());
   });
 
   test('owned and borrowed are disjoint and together are every code realtime throws', () => {

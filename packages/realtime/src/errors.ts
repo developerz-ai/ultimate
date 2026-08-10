@@ -14,6 +14,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_TRANSPORT_PROTOCOL',
   'X_REPLICATION_PROTOCOL',
   'X_REPLICATION_FAILED',
+  'X_LIVE_CLIENT_MISSING',
 ] as const;
 
 /**
@@ -42,6 +43,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_TRANSPORT_PROTOCOL: 'the bus does not speak the protocol this build speaks',
   X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
   X_REPLICATION_FAILED: 'the replication connection was refused',
+  X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -185,6 +187,20 @@ export class ReplicationFailedError extends RealtimeError {
       code: 'X_REPLICATION_FAILED',
       cause: `postgres replication ${args.stage} failed: ${args.detail}`,
       fix: args.fix,
+    });
+  }
+}
+
+/**
+ * A hook was called before the app entry registered its client. Never a transient fault: the
+ * registration is a single call in the entry, so the fix is the call itself rather than a retry.
+ */
+export class LiveClientMissingError extends RealtimeError {
+  constructor(args: { hook: string }) {
+    super({
+      code: 'X_LIVE_CLIENT_MISSING',
+      cause: `${args.hook}() ran before any LiveClient was registered`,
+      fix: 'setLiveClient(new LiveClient({ signal: createSignal, connect, buildId })) in the app entry, above the first render',
     });
   }
 }

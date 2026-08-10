@@ -177,6 +177,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_TRANSPORT_PROTOCOL` | the bus does not speak the protocol this build speaks | nats-server older than 2.11, JetStream not enabled, or something that is not NATS on the port | run `nats:2.11-alpine` or newer with `-js`; reconnecting cannot fix it, so this never retries |
 | `X_REPLICATION_FAILED` | the replication connection was refused | `wal_level` not `logical`, no publication, a slot another replicator holds, wrong credentials | the message names the object; the fix is the exact `ALTER SYSTEM` / `CREATE PUBLICATION` / `pg_drop_replication_slot` statement |
 | `X_REPLICATION_PROTOCOL` | the WAL stream cannot be decoded | a server or `pgoutput` version this build does not speak, or a proxy on the replication port | `x doctor db` — point the URL at postgres itself, on a server ≥ 14 |
+| `X_LIVE_CLIENT_MISSING` | a realtime hook ran with no `LiveClient` registered | `useLive` / `useConnection` / `useMutation` / `useMutationQueue` on a page whose entry never registered one | `setLiveClient(new LiveClient({ signal: createSignal, connect, buildId }))` in the app entry, above the first render |
 
 ## Cache
 

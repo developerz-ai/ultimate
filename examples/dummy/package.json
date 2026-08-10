@@ -2,7 +2,7 @@
   "name": "@postly/root",
   "version": "0.0.1",
   "private": true,
-  "description": "Postly — the Ultimate reference application",
+  "description": "Postly \u2014 the Ultimate reference application",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -24,8 +24,11 @@
     "manifest": "x manifest --json"
   },
   "devDependencies": {
-    "@ultimat3/cli": "0.0.1",
-    "@ultimat3/testing": "0.0.1",
+    "@ultimat3/cli": "1.0.0",
+    "@ultimat3/testing": "1.0.0",
     "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "@ultimat3/core": "1.0.0"
   }
 }

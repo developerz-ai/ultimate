@@ -9,12 +9,12 @@
 
 import { useT } from '@postly/i18n';
 import { PostCard } from '@postly/ui';
-import { useActor } from '@ultimat3/core';
 import { useConnection, useLive } from '@ultimat3/realtime';
 import { defineRoute } from '@ultimat3/render';
 import { Skeleton, Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { For, Show, Suspense } from 'solid-js';
+import { For, Show } from 'solid-js';
+import { useActor } from '../../shared/actor';
 import { postHref, toCardPost } from '../../shared/entities';
 import { Layout } from '../layout';
 import { liveFeed } from '../posts/live';
@@ -54,8 +54,15 @@ export function Page(): JSX.Element {
         <p class={styles.offline}>{t('app.feed.offlineNotice')}</p>
       </Show>
 
-      {/* One streamed hole. The header above is already on screen while this resolves. */}
-      <Suspense fallback={<Skeleton rows={4} label={t('app.feed.loading')} />}>
+      {/*
+        One streamed hole. The header above is already on screen while this resolves, and the
+        boundary is the live query's own `state()` rather than a Solid `<Suspense>`: the rows
+        arrive over the socket, not from a promise, so `loading` is a fact the handle carries.
+      */}
+      <Show
+        when={feed.state() !== 'loading'}
+        fallback={<Skeleton rows={4} label={t('app.feed.loading')} />}
+      >
         <Show when={feed().length > 0} fallback={<p class={styles.empty}>{t('app.feed.empty')}</p>}>
           <Stack gap="4" as="ul" class={styles.list}>
             <For each={feed()}>
@@ -72,7 +79,7 @@ export function Page(): JSX.Element {
             </For>
           </Stack>
         </Show>
-      </Suspense>
+      </Show>
     </Layout>
   );
 }

@@ -139,7 +139,7 @@ export async function adminCreate<Row extends AdminRow>(
   const decision = decideOperation(resource, 'create', ctx);
   if (!decision.allowed) return refuse(resource, 'create', ctx, decision, null);
 
-  const parsed = await validateInput(resource.entity.schema, input);
+  const parsed = await validateInput(resource.entity.$schema, input);
   if (!parsed.ok) return invalid(resource, 'create', ctx, null, parsed.issues, decision);
 
   const row = await repoOf(resource).create(parsed.value);
@@ -172,7 +172,7 @@ export async function adminUpdate<Row extends AdminRow>(
 
   const repo = repoOf(resource);
   const before = await repo.find(id);
-  const parsed = await validateInput(resource.entity.schema, { ...(before ?? {}), ...patch });
+  const parsed = await validateInput(resource.entity.$schema, { ...(before ?? {}), ...patch });
   if (!parsed.ok) return invalid(resource, 'update', ctx, id, parsed.issues, decision);
 
   const after = await repo.update(id, patch);

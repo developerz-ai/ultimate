@@ -13,13 +13,29 @@
         "typescript": "^7.0.2",
       },
     },
+    "examples/dummy": {
+      "name": "@postly/root",
+      "version": "0.0.1",
+      "dependencies": {
+        "@ultimat3/core": "1.0.0",
+      },
+      "devDependencies": {
+        "@ultimat3/cli": "1.0.0",
+        "@ultimat3/testing": "1.0.0",
+        "typescript": "5.9.2",
+      },
+    },
     "examples/dummy/apps/admin": {
       "name": "@postly/admin",
       "version": "0.0.1",
       "dependencies": {
         "@postly/db": "0.0.1",
         "@postly/web": "0.0.1",
+        "@ultimat3/action": "1.0.0",
         "@ultimat3/admin": "1.0.0",
+        "@ultimat3/core": "1.0.0",
+        "@ultimat3/policy": "1.0.0",
+        "@ultimat3/schema": "1.0.0",
       },
     },
     "examples/dummy/apps/web": {
@@ -92,7 +108,6 @@
         "@ultimat3/action": "1.0.0",
         "@ultimat3/core": "1.0.0",
         "@ultimat3/mcp": "1.0.0",
-        "@ultimat3/schema": "1.0.0",
         "@ultimat3/testing": "1.0.0",
       },
     },
@@ -421,6 +436,8 @@
 
     "@postly/mcp": ["@postly/mcp@workspace:examples/dummy/packages/mcp"],
 
+    "@postly/root": ["@postly/root@workspace:examples/dummy"],
+
     "@postly/ui": ["@postly/ui@workspace:examples/dummy/packages/ui"],
 
     "@postly/web": ["@postly/web@workspace:examples/dummy/apps/web"],
@@ -562,5 +579,7 @@
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
+
+    "@postly/root/typescript": ["typescript@5.9.2", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A=="],
   }
 }

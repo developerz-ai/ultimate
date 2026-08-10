@@ -84,31 +84,45 @@ export class LiveClient<T extends TableMap = TableMap> {
 
   readonly appUpdateAvailable: () => string | null;
   readonly reconnectAt: () => number | null;
+  /**
+   * The reactive primitive the app injected, re-exposed so anything built on this client derives
+   * its signals from the same runtime. One reactive runtime per app, never two.
+   */
+  readonly signal: SignalFactory;
+  /** The durable queue when tier 3 is configured, so a queue count is read off the queue itself. */
+  readonly queue: OfflineQueue | undefined;
 
   #socket: ClientSocket | null = null;
   #attempt = 0;
-  #connected = false;
+  /** A signal, not a field: `connected` is rendered, so a plain boolean would never re-render. */
+  readonly #connected: () => boolean;
+  readonly #setConnected: (next: boolean) => void;
 
   constructor(options: LiveClientOptions<T>) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
+    this.signal = options.signal;
+    this.queue = options.queue;
     const [update, setUpdate] = options.signal<string | null>(null);
     const [reconnectAt, setReconnectAt] = options.signal<number | null>(null);
+    const [connected, setConnected] = options.signal<boolean>(false);
     this.appUpdateAvailable = update;
     this.#setUpdate = setUpdate;
     this.reconnectAt = reconnectAt;
     this.#setReconnectAt = setReconnectAt;
+    this.#connected = connected;
+    this.#setConnected = setConnected;
   }
 
   get connected(): boolean {
-    return this.#connected;
+    return this.#connected();
   }
 
   connect(): void {
     const socket = this.#options.connect();
     this.#socket = socket;
     socket.onOpen(() => {
-      this.#connected = true;
+      this.#setConnected(true);
       this.#attempt = 0;
       this.#setReconnectAt(null);
       this.#send({
@@ -128,7 +142,7 @@ export class LiveClient<T extends TableMap = TableMap> {
       this.#onFrame(decode(data));
     });
     socket.onClose(() => {
-      this.#connected = false;
+      this.#setConnected(false);
       for (const registration of this.#registrations.values()) registration.setState('offline');
       this.#scheduleReconnect(null);
     });
@@ -151,7 +165,7 @@ export class LiveClient<T extends TableMap = TableMap> {
       cursor: null,
     };
     this.#registrations.set(sid, registration);
-    if (this.#connected) this.#sendSubscribe(registration);
+    if (this.#connected()) this.#sendSubscribe(registration);
     return {
       rows: rows as () => readonly R[],
       state,
@@ -252,7 +266,7 @@ export class LiveClient<T extends TableMap = TableMap> {
   /** Sends every pending mutation in sequence order. Stops at the first one the socket refuses. */
   async drain(): Promise<void> {
     const queue = this.#options.queue;
-    if (!queue || !this.#connected) return;
+    if (!queue || !this.#connected()) return;
     await queue.drain(async (mutation) => {
       this.#send(mutateFrame(mutation));
     });

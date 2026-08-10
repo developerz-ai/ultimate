@@ -1,25 +1,26 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { decodeAdminCursor, encodeAdminCursor, fetchPage, listQuery, pageFrom } from './pagination';
-import type { AdminEntity, AdminListQuery, AdminRow } from './registry';
+import type { AdminListQuery, AdminRow } from './registry';
 import { adminResource } from './resource';
 
-const post: AdminEntity = {
-  name: 'post',
+const post = entity('admin_page_post', {
   columns: {
-    id: { type: 'uuid', primaryKey: true },
-    title: { type: 'varchar', index: true },
-    createdAt: { type: 'timestamptz', generated: true },
+    id: uuid().primaryKey(),
+    title: text({ max: 120 }),
+    createdAt: timestamp().defaultNow(),
   },
-};
+});
 
-const user: AdminEntity = {
-  name: 'user',
+const user = entity('admin_page_user', {
   columns: {
-    id: { type: 'uuid', primaryKey: true },
-    email: { type: 'varchar', index: true },
-    createdAt: { type: 'timestamptz', generated: true },
+    id: uuid().primaryKey(),
+    email: text({ max: 120 }).unique(),
+    createdAt: timestamp().defaultNow(),
   },
-};
+});
+
+afterAll(clearRegistry);
 
 const rows: readonly AdminRow[] = [
   { id: 'p_1', title: 'One', createdAt: '2026-07-03T00:00:00.000Z' },

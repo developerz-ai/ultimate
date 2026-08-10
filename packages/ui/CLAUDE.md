@@ -16,7 +16,7 @@ Tier 5. Imports `@ultimat3/core`, `schema`, `i18n`, `money`, `time`. Never `http
 - **solid-js is a type-only import.** All reactive access goes through `src/theme/solid-adapter.ts`, registered once via `setSolidRuntime()`. Never `import { createSignal } from 'solid-js'`.
 - **No `{...rest}` prop spreading.** Splitting props reactively needs solid's `splitProps` (a value import), so components declare explicit props and read `props.x` inside JSX.
 - **No hardcoded strings.** Label props, or `useUi().t(UI_KEYS.x)`. New built-in strings go in `src/i18n-keys.ts`.
-- Formatting logic lives in a pure `*-view.ts` next to the component (`money-view.ts`, `date-time-view.ts`) so it is testable with no renderer.
+- Formatting logic lives in a pure `*-view.ts` next to the component (`money-view.ts`, `date-time-view.ts`) so it is testable with no renderer. Every other renderer-free core follows the same rule under its own name (`sort-state.ts`, `image-source.ts`) — the `.tsx` holds markup, never a rule.
 
 ## Files
 
@@ -26,7 +26,7 @@ Tier 5. Imports `@ultimat3/core`, `schema`, `i18n`, `money`, `time`. Never `http
 | `src/tokens/theme.scss` | the only stylesheet that emits global custom properties |
 | `src/theme/theme.ts` | resolution: stored choice → OS; all side effects via injected `ThemeEnv` |
 | `src/theme/inline-script.ts` | anti-flash `<head>` snippet + its CSP sha256 |
-| `src/components/` | 39 primitives, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
+| `src/components/` | 41 primitives, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
 
 ## Assumed peer contracts
 

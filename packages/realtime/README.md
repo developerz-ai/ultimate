@@ -57,6 +57,31 @@ frame handler is unchanged between rungs.
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
+| hooks | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue` |
+
+## The four hooks
+
+Register the client once, in the app entry. Every hook reads it from there — no hook takes a client
+argument, and one that runs before the registration is `X_LIVE_CLIENT_MISSING`, never a default.
+
+```ts
+setLiveClient(new LiveClient({ signal: createSignal, connect, buildId, store, queue }));
+
+const feed = useLive(liveFeed, () => ({ orgId: actor.orgId })); // feed(), feed.state(), feed.unsubscribe()
+const connection = useConnection();                             // .offline .online .reconnectAt .updateAvailable
+const like = useMutation(likePost);                             // await like(input); like.pending
+const queue = useMutationQueue();                               // .pending .failed .drain()
+```
+
+| Rule | Why |
+|---|---|
+| **No `solid-js` import.** Reactivity is the `SignalFactory` the client was built with | one reactive runtime per app, and a tier-3 package that installs and tests with none |
+| Every member is a **getter**, every result set an **accessor** | a value snapshotted at hook time never re-renders |
+| A thunk `input` is read **once**, at subscribe time | nothing here re-runs it; changing input is a new subscription |
+| The caller owns `unsubscribe` | this layer does not know what a mount is |
+| `pending` / `failed` are read off the queue, through an invalidation signal refreshed on each `mutate` and `drain` | the count is never a second copy of the queue, and `OfflineQueue` holds arrays, not signals |
+
+Tier 2 has no queue, so `pending` is `0` there — stated, not guessed.
 
 Authz goes through `@ultimat3/query`'s `guard`, which is the only contact with `@ultimat3/policy`.
 One authz system, never two: `policy` is evaluated **once per subscriber**, never once per query.
@@ -123,7 +148,8 @@ because refusing without one just moves the herd next door.
 
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
-`X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_NOT_IMPLEMENTED`
+`X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_LIVE_CLIENT_MISSING` ·
+`X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.

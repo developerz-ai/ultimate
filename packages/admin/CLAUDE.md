@@ -8,7 +8,9 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 
 - **One authz.** `AdminAuthz` (`authz.ts`) is the only decision path. `action-gate.ts` and `crud.ts` call `decideAll`; views render what the gate returned. Never add a second check in a view or an MCP handler.
 - **One bridge per foreign package.** `policy-bridge.ts` is the only file calling `evaluate`/`definePermissions`; `routes.ts` the only one calling `defineRoute`; `mcp.ts` the only one calling `defineAppMcp`; `dev/data.ts` the only one importing introspection (dynamically — `/_x` must stay out of the production graph).
-- **Structural registry types** (`registry.ts`) — the admin reads `name`/`columns`/repo methods, so a registry that grows a field changes one file.
+- **One entity surface** (`registry.ts`) — the admin reads what `entity()` actually exposes: `$name`, `$primaryKey`, `$columns[c].$meta`, `$schema`, `$describe()`. It is a structural subset so a new column kind still derives, and `RegisteredEntity` is the `tsc`-checked proof that a real `entity()` result satisfies it — never a comment claiming it does.
+- **One flattener.** `entity-columns.ts` is the only file that reads `$meta` or calls `$describe()`; everything downstream takes `AdminColumnFacts`. Money stays one property (the admin renders rows, not tables), a FK target comes back resolved from `$describe()`, and only a **generated** default (`uuid`, `now`) is read-only — `.default('free')` is a starting value.
+- **What an entity does not declare, the admin does not invent.** `sensitive`, a fixed `currency` and `labelField` come from `AdminResourceOptions` or they are absent.
 - Money through `assertMoney`, timestamps through `assertZone`, pagination through `pagination.ts`. No `offset`, ever.
 - **One cursor codec.** `pagination.ts` is the only file calling core's `encodeCursor`/`decodeCursor`; it wraps them as `encodeAdminCursor`/`decodeAdminCursor`, scoped `admin:<resource>`. An invalid cursor is page one here, not an error page — but the signature is checked first, so a forged one cannot seek.
 - Labels are i18n keys derived in `resource.ts` (`admin.<entity>.field.<name>`); only `.tsx` calls `t()`. MCP tool descriptions are literal English (protocol payload, not UI copy).
@@ -20,6 +22,7 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 | File | Owns |
 |---|---|
 | `admin.ts` | `defineAdmin` → resources, nav, route table, audit, authz |
+| `registry.ts` / `entity-columns.ts` | the entity surface the admin reads / one entity → column facts |
 | `resource.ts` / `fields.ts` / `widget-value.ts` | derivation, widget table, value guards |
 | `crud.ts` / `action-gate.ts` | policy → confirmation → validation → repo → audit |
 | `mcp-tools.ts` / `mcp.ts` | tool derivation (pure) / transport wiring |

@@ -24,6 +24,7 @@ import type {
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
+import type { SessionService } from './actor';
 
 export interface PostsService {
   byId(postId: PostId): Promise<PostView>;
@@ -69,6 +70,8 @@ declare module '@ultimat3/core' {
   interface CtxServices {
     readonly posts: PostsService;
     readonly orgs: OrgsService;
+    /** The app half of the actor — org, orgs, member row. See `shared/actor.ts`. */
+    readonly session: SessionService;
     channel(name: string): Channel;
   }
 }

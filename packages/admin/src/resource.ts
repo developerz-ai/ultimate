@@ -3,6 +3,7 @@
 // the default sort, i18n keys become labels. Every derived decision is overridable per
 // field, but the zero-config result is the one the generator emits and the one the docs show.
 
+import { type AdminColumnFacts, adminColumnsOf } from './entity-columns';
 import {
   AdminEntityUnknownError,
   AdminFieldUnsupportedError,
@@ -20,14 +21,7 @@ import {
   widgetFor,
 } from './fields';
 import { ADMIN_OPERATIONS, type AdminOperation } from './permissions';
-import type {
-  AdminAction,
-  AdminColumn,
-  AdminEntity,
-  AdminRepo,
-  AdminRow,
-  AdminSort,
-} from './registry';
+import type { AdminAction, AdminEntity, AdminRepo, AdminRow, AdminSort } from './registry';
 
 /** Six columns is what fits a laptop viewport without horizontal scroll. */
 const MAX_LIST_FIELDS = 6;
@@ -58,6 +52,12 @@ export interface AdminResourceOptions<Row extends AdminRow = AdminRow> {
   readonly path?: string;
   readonly titleKey?: string;
   readonly group?: string;
+  /**
+   * The field that names a row in a reference widget, a search hit, a breadcrumb. An entity
+   * declares no such thing, so this is the only way to say it out loud; omitted, it is derived
+   * from the conventional names below.
+   */
+  readonly labelField?: string;
   readonly fields?: Readonly<Record<string, AdminFieldOverride>>;
   /** Explicit list columns, in order. Omit to let the derivation pick. */
   readonly listFields?: readonly string[];
@@ -98,34 +98,32 @@ const pluralize = (name: string): string => {
 
 function deriveField(
   entity: AdminEntity,
-  name: string,
-  column: AdminColumn,
+  column: AdminColumnFacts,
   override: AdminFieldOverride | undefined,
 ): AdminField {
-  const type = override?.type ?? fieldTypeFromColumn(entity.name, name, column);
+  const name = column.name;
+  const type = override?.type ?? fieldTypeFromColumn(entity.$name, name, column);
   const widget = override?.widget ?? widgetFor(type);
-  const generated = column.generated === true || column.primaryKey === true;
-  const sensitive = override?.sensitive ?? column.sensitive === true;
-  const currency = override?.currency ?? column.currency;
+  const generated = column.generated || column.primaryKey;
+  // An entity has no notion of a secret column, and a currency belongs to the value rather
+  // than the column, so both are admin-side declarations or they are absent. Never guessed.
+  const sensitive = override?.sensitive ?? false;
+  const currency = override?.currency;
   const values = override?.values ?? column.values;
   const relation =
     override?.relation ??
+    // The FK's value IS the target column's value, so that column is the honest default label.
     (column.references === undefined
       ? undefined
-      : {
-          entity: column.references.entity,
-          ...(column.references.column === undefined
-            ? {}
-            : { labelField: column.references.column }),
-        });
+      : { entity: column.references.entity, labelField: column.references.column });
 
   return {
-    entity: entity.name,
+    entity: entity.$name,
     name,
     type,
     widget,
-    labelKey: override?.labelKey ?? `admin.${entity.name}.field.${name}`,
-    required: override?.required ?? (column.nullable !== true && !generated),
+    labelKey: override?.labelKey ?? `admin.${entity.$name}.field.${name}`,
+    required: override?.required ?? (!column.nullable && !generated),
     readOnly: override?.readOnly ?? generated,
     sensitive,
     inList: override?.inList ?? (listable(type) && !sensitive),
@@ -140,19 +138,40 @@ function deriveField(
   };
 }
 
-function idFieldOf(entity: AdminEntity, names: readonly string[]): string {
-  const declared = names.find((name) => entity.columns[name]?.primaryKey === true);
+/**
+ * The declared key wins, composite included: the admin addresses a row by the first member,
+ * which is the only column a single-id URL and an `AdminRepo` can carry.
+ */
+function idFieldOf(entity: AdminEntity, columns: readonly AdminColumnFacts[]): string {
+  const declared = entity.$primaryKey[0] ?? columns.find((column) => column.primaryKey)?.name;
   if (declared !== undefined) return declared;
-  if (names.includes('id')) return 'id';
+  if (columns.some((column) => column.name === 'id')) return 'id';
   throw new AdminEntityUnknownError({
-    entity: entity.name,
-    known: names,
-    cause: `entity "${entity.name}" has no primary key and no "id" column, so the admin cannot address a row`,
+    entity: entity.$name,
+    known: columns.map((column) => column.name),
+    cause: `entity "${entity.$name}" has no primary key and no "id" column, so the admin cannot address a row`,
   });
 }
 
-function labelFieldOf(entity: AdminEntity, fields: readonly AdminField[], idField: string): string {
-  if (entity.labelColumn !== undefined) return entity.labelColumn;
+function labelFieldOf(
+  entity: AdminEntity,
+  fields: readonly AdminField[],
+  idField: string,
+  declared: string | undefined,
+): string {
+  if (declared !== undefined) {
+    // A label nobody can read is a table of ids and a search that returns them: say so here,
+    // not by silently falling back to the id column three surfaces later.
+    if (!fields.some((field) => field.name === declared)) {
+      throw new AdminFieldUnsupportedError({
+        entity: entity.$name,
+        field: declared,
+        cause: 'named as labelField but not a visible field of this resource',
+        fix: `adminResource(${entity.$name}, { labelField: '${idField}' })   # a field that is not hidden`,
+      });
+    }
+    return declared;
+  }
   for (const candidate of LABEL_CANDIDATES) {
     if (fields.some((field) => field.name === candidate)) return candidate;
   }
@@ -211,41 +230,35 @@ export function adminResource<Row extends AdminRow = AdminRow>(
   entity: AdminEntity,
   opts: AdminResourceOptions<Row> = {},
 ): AdminResource<Row> {
-  const names = Object.keys(entity.columns);
-  if (names.length === 0) {
+  const columns = adminColumnsOf(entity);
+  if (columns.length === 0) {
     throw new AdminEntityUnknownError({
-      entity: entity.name,
+      entity: entity.$name,
       known: [],
-      cause: `entity "${entity.name}" declares no columns`,
+      cause: `entity "${entity.$name}" declares no columns`,
     });
   }
 
-  const idField = idFieldOf(entity, names);
+  const idField = idFieldOf(entity, columns);
   const overrides = opts.fields ?? {};
-  const fields = names
-    .filter((name) => overrides[name]?.hidden !== true)
-    .map((name) => {
-      const column = entity.columns[name];
-      if (column === undefined) {
-        throw new AdminEntityUnknownError({ entity: entity.name, known: names });
-      }
-      return deriveField(entity, name, column, overrides[name]);
-    });
+  const fields = columns
+    .filter((column) => overrides[column.name]?.hidden !== true)
+    .map((column) => deriveField(entity, column, overrides[column.name]));
 
-  const labelField = labelFieldOf(entity, fields, idField);
+  const labelField = labelFieldOf(entity, fields, idField, opts.labelField);
   const actions = opts.actions ?? [];
   assertActionsHavePolicies(actions);
 
   const resource: AdminResource<Row> = {
-    name: entity.name,
-    path: opts.path ?? `/${pluralize(entity.name)}`,
-    titleKey: opts.titleKey ?? `admin.${entity.name}.title`,
+    name: entity.$name,
+    path: opts.path ?? `/${pluralize(entity.$name)}`,
+    titleKey: opts.titleKey ?? `admin.${entity.$name}.title`,
     group: opts.group ?? 'admin.group.data',
     idField,
     labelField,
     entity,
     fields,
-    listFields: pickListFields(fields, labelField, opts.listFields, entity.name),
+    listFields: pickListFields(fields, labelField, opts.listFields, entity.$name),
     formFields: fields.filter((field) => !field.readOnly && !field.sensitive),
     filters: fields.filter((field) => field.filterable),
     searchFields: fields.filter((field) => field.searchable),
@@ -258,10 +271,10 @@ export function adminResource<Row extends AdminRow = AdminRow>(
       const field = fields.find((f) => f.name === name);
       if (field === undefined) {
         throw new AdminFieldUnsupportedError({
-          entity: entity.name,
+          entity: entity.$name,
           field: name,
           cause: 'not a field of this resource (hidden, or not a column)',
-          fix: `x manifest   # then check adminResource(${entity.name}).fields`,
+          fix: `x manifest   # then check adminResource(${entity.$name}).fields`,
         });
       }
       return field;
