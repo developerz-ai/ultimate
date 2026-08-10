@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { baseClient, isReservable, setDbClient } from './client';
 import {
   createPgliteClient,
   loadPgliteDriver,
@@ -8,7 +9,9 @@ import {
   type PgliteResult,
   pgliteDataDir,
 } from './pglite';
+import { readOnlyQuery } from './readonly-query';
 import { sql } from './sql';
+import { withTransaction } from './transaction';
 
 interface Recorded {
   readonly text: string;
@@ -212,6 +215,30 @@ describe('createPgliteClient', () => {
     void client.ping().catch(() => undefined);
     expect(await client.close().then(() => 'closed')).toBe('closed');
   });
+
+  test('is reservable, so withTransaction pins it instead of sharing it', () => {
+    expect(isReservable(createPgliteClient({ driver: fakeDriver({ rows: [] }) }))).toBe(true);
+  });
+
+  test('a reservation holds the one connection until it is released', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const reserved = await client.reserve();
+
+    await reserved.execute(sql`begin`);
+    const queued = client.execute(sql`insert into t values (1)`);
+    await Bun.sleep(5);
+    expect(driver.calls.map((call) => call.text)).toEqual(['begin']);
+
+    await reserved.execute(sql`commit`);
+    reserved.release();
+    await queued;
+    expect(driver.calls.map((call) => call.text)).toEqual([
+      'begin',
+      'commit',
+      'insert into t values (1)',
+    ]);
+  });
 });
 
 // The fakes above pin the adapter; this pins the binding. Without it "the driver is wired up" is
@@ -238,6 +265,91 @@ describe('the real embedded database', () => {
         ]);
         expect(await client.execute(sql`delete from posts`)).toBe(2);
       } finally {
+        await client.close();
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  // Embedded Postgres is one session. Before this client was reservable both units of work ran
+  // their BEGIN on the same connection, so B's COMMIT committed A's rows and A's ROLLBACK found
+  // no transaction left to undo — `x dev` losing a rollback under any two concurrent requests.
+  test(
+    'two concurrent transactions do not share one — a rollback still rolls back',
+    async () => {
+      const client = createPgliteClient();
+      setDbClient(client);
+      try {
+        await client.execute(sql`create table posts (id int primary key, title text)`);
+
+        const rolledBack = withTransaction(async (tx) => {
+          await tx.execute(sql`insert into posts values (${1}, ${'abandoned'})`);
+          await Bun.sleep(20);
+          throw new Error('this unit of work fails');
+        });
+        const committed = withTransaction(async (tx) => {
+          await Bun.sleep(5);
+          await tx.execute(sql`insert into posts values (${2}, ${'kept'})`);
+        });
+
+        await expect(rolledBack).rejects.toThrow('this unit of work fails');
+        await committed;
+        expect(await client.query(sql`select id, title from posts order by id`)).toEqual([
+          { id: 2, title: 'kept' },
+        ]);
+      } finally {
+        setDbClient(undefined);
+        await client.close();
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  // `handle.enqueue(input, { outbox: false })` inside `withTransaction` goes to the queue driver's
+  // own executor, which holds the plain client — and the plain client must not wait for the turn
+  // the surrounding transaction is holding, or the request hangs with no error to explain it.
+  test(
+    'a plain statement issued inside a transaction joins it instead of deadlocking',
+    async () => {
+      const client = createPgliteClient();
+      setDbClient(client);
+      try {
+        await client.execute(sql`create table posts (id int primary key)`);
+        const seen = await withTransaction(async (tx) => {
+          await tx.execute(sql`insert into posts values (${1})`);
+          await baseClient().execute(sql`insert into posts values (${2})`);
+          return (await baseClient().query(sql`select id from posts`)).length;
+        });
+        expect(seen).toBe(2);
+        expect(await client.query(sql`select id from posts order by id`)).toEqual([
+          { id: 1 },
+          { id: 2 },
+        ]);
+      } finally {
+        setDbClient(undefined);
+        await client.close();
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  // `db.query`'s BEGIN READ ONLY used to land on the shared connection, so an app write that
+  // happened to overlap an agent's read was executed inside a read-only transaction and refused.
+  test(
+    'an agent read-only query does not make a concurrent write fail',
+    async () => {
+      const client = createPgliteClient();
+      setDbClient(client);
+      try {
+        await client.execute(sql`create table posts (id int primary key)`);
+        const read = readOnlyQuery<{ n: number }>('select count(*)::int as n from posts');
+        const written = client.execute(sql`insert into posts values (${1})`);
+
+        expect((await read).guards).toContain('txn:read-only');
+        expect(await written).toBe(1);
+        expect(await client.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
+      } finally {
+        setDbClient(undefined);
         await client.close();
       }
     },

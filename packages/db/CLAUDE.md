@@ -22,9 +22,17 @@ packages — `entity`'s `postgresDriver()` compiles every statement out of `sql`
 and finds its connection through `db()`.
 
 Deliberate cycle (safe — nothing is referenced at module-evaluation time):
-`client.ts ⇄ transaction.ts`. `db()` consults `currentTx()`; `withTransaction` uses
-`baseClient()`, never `db()`, or it would re-enter itself. Keep both sides `function`
-declarations so hoisting covers the TDZ.
+`client.ts ⇄ transaction.ts`, and `pglite.ts → transaction.ts` for the same reason. `db()`
+consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`, or it would re-enter
+itself. Keep both sides `function` declarations so hoisting covers the TDZ.
+
+`pglite.ts` is a pool of exactly one: PGlite is a single session, so `reserve()` (backed by
+`pglite-turns.ts`) is what stops two concurrent `BEGIN`s becoming one transaction. Two rules hold
+it together and neither is optional — the plain path takes a turn, and a statement issued while
+`currentTx()` is set skips the queue because it is already inside the transaction holding it.
+Drop the first and a rollback is silently lost; drop the second and `enqueue(input, { outbox:
+false })` inside `withTransaction` hangs forever. Both are pinned by live tests in
+`pglite.test.ts`, and a fake driver cannot catch either.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
