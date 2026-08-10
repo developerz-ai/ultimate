@@ -43,7 +43,7 @@ test('publishPost denies a member of another org', async ({ seed, actorFor }) =>
 
   await expect(
     publishPost.as(actorFor(stranger), { postId: draft.id, orgId: draft.orgId }),
-  ).rejects.toBeUltimateError('X_POLICY_DENIED');
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
 });
 
 test('publishPost denies an author who does not own the post and is not an admin', async ({
@@ -60,7 +60,7 @@ test('publishPost denies an author who does not own the post and is not an admin
 
   await expect(
     publishPost.as(actorFor(author), { postId: post.id, orgId: post.orgId }),
-  ).rejects.toBeUltimateError('X_POLICY_DENIED');
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
 });
 
 test('a post in another org is invisible rather than publishable', async ({ seed, actorFor }) => {
@@ -75,7 +75,7 @@ test('a post in another org is invisible rather than publishable', async ({ seed
 
   await expect(
     publishPost.as(actorFor(author), { postId: foreign.id, orgId: acme.id }),
-  ).rejects.toBeUltimateError('X_POLICY_DENIED');
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
 });
 
 test('a cross-org post id is a miss, not a comment on someone else’s post', async ({

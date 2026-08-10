@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b37c681ade90",
+  "buildId": "8924bccb99cd",
   "tiers": {
     "0": [
       "core",
@@ -234,6 +234,10 @@
       "package": "action"
     },
     {
+      "code": "X_ADMIN_DENIED",
+      "package": "admin"
+    },
+    {
       "code": "X_ADMIN_ENTITY_UNKNOWN",
       "package": "admin"
     },
@@ -242,7 +246,15 @@
       "package": "admin"
     },
     {
+      "code": "X_ADMIN_INVALID",
+      "package": "admin"
+    },
+    {
       "code": "X_ADMIN_POLICY_MISSING",
+      "package": "admin"
+    },
+    {
+      "code": "X_ADMIN_TOOL_FORBIDDEN",
       "package": "admin"
     },
     {
@@ -298,12 +310,40 @@
       "package": "http"
     },
     {
+      "code": "X_BOUNDARY_APP_TO_API",
+      "package": "cli"
+    },
+    {
+      "code": "X_BOUNDARY_ROUTE_TO_DB",
+      "package": "cli"
+    },
+    {
+      "code": "X_BOUNDARY_SERVICE_TO_HTTP",
+      "package": "cli"
+    },
+    {
+      "code": "X_BOUNDARY_SHARED_LEAF",
+      "package": "cli"
+    },
+    {
+      "code": "X_BOUNDARY_SITE_TO_APP",
+      "package": "cli"
+    },
+    {
       "code": "X_BRANCH_EXISTS",
       "package": "db"
     },
     {
       "code": "X_BUDGET_EXCEEDED",
       "package": "render"
+    },
+    {
+      "code": "X_BUDGET_UNMEASURED",
+      "package": "cli"
+    },
+    {
+      "code": "X_BUILD_FAILED",
+      "package": "cli"
     },
     {
       "code": "X_BUILD_ID_MISSING",
@@ -342,6 +382,10 @@
       "package": "cli"
     },
     {
+      "code": "X_CLI_UNEXPECTED",
+      "package": "cli"
+    },
+    {
       "code": "X_CLI_UNKNOWN_COMMAND",
       "package": "cli"
     },
@@ -370,8 +414,24 @@
       "package": "realtime"
     },
     {
+      "code": "X_DB_BRANCH_FAILED",
+      "package": "cli"
+    },
+    {
       "code": "X_DB_DRIFT",
       "package": "db"
+    },
+    {
+      "code": "X_DB_GEN_FAILED",
+      "package": "cli"
+    },
+    {
+      "code": "X_DB_MIGRATE_FAILED",
+      "package": "cli"
+    },
+    {
+      "code": "X_DB_STUDIO_FAILED",
+      "package": "cli"
     },
     {
       "code": "X_DB_UNAVAILABLE",
@@ -379,6 +439,10 @@
     },
     {
       "code": "X_DECLARATION_UNKNOWN",
+      "package": "cli"
+    },
+    {
+      "code": "X_DEPLOY_FAILED",
       "package": "cli"
     },
     {
@@ -418,6 +482,10 @@
       "package": "cli"
     },
     {
+      "code": "X_ERROR_CODE_UNREGISTERED",
+      "package": "cli"
+    },
+    {
       "code": "X_ERROR_FIX_INVALID",
       "package": "cli"
     },
@@ -438,12 +506,20 @@
       "package": "ai"
     },
     {
+      "code": "X_FILE_TOO_LONG",
+      "package": "cli"
+    },
+    {
       "code": "X_FIX_TARGET_UNKNOWN",
       "package": "cli"
     },
     {
       "code": "X_FORBIDDEN",
       "package": "action"
+    },
+    {
+      "code": "X_GENERATE_CONFLICT",
+      "package": "cli"
     },
     {
       "code": "X_GENERATE_JSON_INVALID",
@@ -492,6 +568,10 @@
     {
       "code": "X_LD_INVALID",
       "package": "seo"
+    },
+    {
+      "code": "X_LINT_FAILED",
+      "package": "cli"
     },
     {
       "code": "X_LIVE_CLIENT_MISSING",
@@ -544,6 +624,10 @@
     {
       "code": "X_MANIFEST_DRIFT",
       "package": "manifest"
+    },
+    {
+      "code": "X_MANIFEST_STALE",
+      "package": "cli"
     },
     {
       "code": "X_MATCHER_UNSUPPORTED",
@@ -638,6 +722,10 @@
       "package": "action"
     },
     {
+      "code": "X_PACKAGE_SHAPE",
+      "package": "cli"
+    },
+    {
       "code": "X_PASSWORD_WEAK",
       "package": "auth"
     },
@@ -652,6 +740,10 @@
     {
       "code": "X_POLICY_MISSING",
       "package": "policy"
+    },
+    {
+      "code": "X_PORT_IN_USE",
+      "package": "cli"
     },
     {
       "code": "X_PRERENDER_FAILED",
@@ -704,6 +796,10 @@
     {
       "code": "X_REBASE_CONFLICT",
       "package": "realtime"
+    },
+    {
+      "code": "X_RELEASE_VERSION_SKEW",
+      "package": "cli"
     },
     {
       "code": "X_REPLICATION_FAILED",
@@ -846,6 +942,10 @@
       "package": "testing"
     },
     {
+      "code": "X_TEST_FAILED",
+      "package": "cli"
+    },
+    {
       "code": "X_TEST_FIXTURE_UNAVAILABLE",
       "package": "testing"
     },
@@ -896,6 +996,10 @@
     {
       "code": "X_TRANSPORT_UNAVAILABLE",
       "package": "realtime"
+    },
+    {
+      "code": "X_TYPECHECK_FAILED",
+      "package": "cli"
     },
     {
       "code": "X_UI_INVALID_VALUE",

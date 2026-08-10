@@ -62,7 +62,7 @@ Each type is a first-class runner with its own fixture shape — not a naming co
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_POLICY_DENIED');
+    .rejects.toBeUltimateError('X_FORBIDDEN');
 });
 ```
 

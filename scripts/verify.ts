@@ -6,13 +6,20 @@
 //
 //   bun run scripts/verify.ts [--json] [--verbose]
 
+// Bun ships no path-join primitive: `join` reaches a repo-relative source file on disk.
+import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {
   checkErrorCodeDocs,
+  checkErrorCodeRegistry,
+  eachSourceFile,
   exec,
   exitCodeFor,
+  isTest,
+  registeredErrorCodes,
   render,
   runVerify,
+  scanCodes,
   VERIFY_STEPS,
 } from '@ultimat3/cli';
 import {
@@ -87,7 +94,37 @@ export const frameworkManifest: HostCheck = async (root) => {
  */
 export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
 
-export const errorCodeDocs: HostCheck = (root) => checkErrorCodeDocs(root, ERROR_REFERENCE);
+/**
+ * The codes this repo's own gate emits. `scripts/` never ships, so no package may register
+ * `X_ROADMAP_STATUS_MISSING` or `X_BOUNDARY_VIOLATION` — but the reference documents them, and a
+ * rule that demanded a registration would push a contributor-only code into every generated app.
+ * Scanned rather than listed, so a new script code needs no second edit here; a *documented* code
+ * that neither a package nor a script declares is still the ghost row the registry check exists
+ * to catch.
+ */
+const hostOwnedCodes = async (root: string): Promise<readonly string[]> => {
+  const codes: string[] = [];
+  for await (const path of eachSourceFile(root)) {
+    if (!path.startsWith('scripts/') || isTest(path)) continue;
+    for (const site of scanCodes(await Bun.file(join(root, path)).text(), path)) {
+      codes.push(site.code);
+    }
+  }
+  return codes;
+};
+
+/**
+ * Both halves of the reference's contract, on one step. Every shipped code has a row here, and
+ * every row this page presents as live resolves through `x errors explain` — the second half is
+ * what stops the page documenting a code the registry never heard of.
+ */
+export const errorCodeDocs: HostCheck = async (root) => {
+  const known = new Set([...(await registeredErrorCodes()), ...(await hostOwnedCodes(root))]);
+  return [
+    ...(await checkErrorCodeDocs(root, ERROR_REFERENCE)),
+    ...(await checkErrorCodeRegistry(root, ERROR_REFERENCE, known)),
+  ];
+};
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   boundaries: tierBoundaries,

@@ -133,8 +133,7 @@ export const likePost = mutator({
 | `X_ACTION_POLICY_MISSING` | an action registered without `policy` | add `policy: can('<name>')` to the declaration |
 | `X_ACTION_DUPLICATE` | two actions share an export name | rename one — names are globally unique |
 | `X_INPUT_INVALID` | body fails the `input` schema | `x actions describe <name> --json` prints the expected schema |
-| `X_POLICY_DENIED` | the policy said no | grant the capability, or call as an actor who has it |
-| `X_FORBIDDEN` | the HTTP/MCP rendering of a denial (403) | same as above |
+| `X_FORBIDDEN` | the policy said no — one code for the direct call, the HTTP 403 and the MCP tool error | grant the capability, or call as an actor who has it |
 | `X_UNAUTHENTICATED` | no session; anonymous actor hit a policy needing one (401) | sign in, or send a valid token |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a different payload, or still in flight | send a fresh `Idempotency-Key`, or retry after the first settles |
 | `X_CONTRACT_DRIFT` | client build id ≠ server build id, or a breaking published-contract change | reload the client / bump the action version |
@@ -185,7 +184,7 @@ Emitted with the action, and green on the first run: it pins the invariant the a
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_POLICY_DENIED');
+    .rejects.toBeUltimateError('X_FORBIDDEN');
 });
 ```
 

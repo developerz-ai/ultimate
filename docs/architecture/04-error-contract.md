@@ -23,7 +23,7 @@ throw new UltimateError({
 | `docs` | derived | `https://ultimate.dev/errors/<code>` | generated from `code`; overridable, never hand-typed |
 | `title` | derived | the registry's one-line summary for the code | so every instance of a code reads the same |
 | `data` | no | structured detail: `{ route, field, chain, actual, limit }` | consumed by `--json` and by MCP tools |
-| `httpStatus` | no | default 500; `X_POLICY_DENIED` → 403, `X_INPUT_INVALID` → 422 | set in the registry, not at the throw site |
+| `httpStatus` | no | default 500; `X_FORBIDDEN` → 403, `X_INPUT_INVALID` → 422 | set in the registry, not at the throw site |
 | `retryable` | no | boolean | drives job retry and client backoff decisions |
 | `source` | auto | package + file + stage | filled from the ALS context |
 
@@ -160,7 +160,7 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_INTERNAL` | `core` | 500 | a non-`UltimateError` escaped | report with the trace id |
 | `X_INPUT_INVALID` | `schema` | 422 | `input` parse failed; `data.path` names the field | fix the caller's field |
 | `X_OUTPUT_INVALID` | `action` | 500 | handler returned a value the `output` schema rejects | fix the handler or the schema |
-| `X_POLICY_DENIED` | `policy` | 403 | authz refused; `data.reason` is the denial reason | grant the permission or change the actor |
+| `X_FORBIDDEN` | `policy` | 403 | authz refused; `data.reason` is the denial reason | grant the permission or change the actor |
 | `X_TENANT_MISMATCH` | `entity` | 403 | a row's tenant differs from the request tenant | scope the query to `ctx.tenantId` |
 | `X_DB_DRIFT` | `entity` | 500 | schema differs from migrations | `x db gen "<name>"` |
 | `X_BOUNDARY_VIOLATION` | `cli` | build | an import rule broke; `data.chain` is the path | `x fix boundary <file>` |

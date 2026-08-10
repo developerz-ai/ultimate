@@ -22,7 +22,7 @@ describe('unit · x doctor', () => {
 
   test('a missing offline fallback is reported with the generator that creates it', async () => {
     const findings = await runDoctor(probe({ exists: (path) => path !== OFFLINE_FALLBACK }));
-    const fallback = findings.find((finding) => finding.code === 'X_PWA_NO_FALLBACK');
+    const fallback = findings.find((finding) => finding.code === 'X_PWA_NO_OFFLINE_FALLBACK');
     expect(fallback?.cause).toContain(OFFLINE_FALLBACK);
     expect(fallback?.fix).toBe('x g route offline --surface app');
     expect(fallback?.at).toBe(OFFLINE_FALLBACK);
@@ -30,7 +30,7 @@ describe('unit · x doctor', () => {
 
   test('a missing source icon is reported separately from the fallback', async () => {
     expect(await codes(probe({ exists: (path) => path !== ICON_SOURCE }))).toEqual([
-      'X_PWA_NO_ICON_SOURCE',
+      'X_PWA_ICON_MISSING',
     ]);
   });
 

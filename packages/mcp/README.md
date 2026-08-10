@@ -58,7 +58,7 @@ authorization code to review, because there is none.
 |---|---|---|---|
 | role | `visibleTo` | omitted from `tools/list`, **ToolNotFound** on call, no `data` | `-32601` |
 | scope | `scope` | **Forbidden**, naming the missing scope + a runnable fix | `-32600`, `X_MCP_SCOPE_DENIED` |
-| policy | the primitive's own `policy` | `isError` result carrying code/cause/fix | `X_POLICY_DENIED` |
+| policy | the primitive's own `policy` | `isError` result carrying code/cause/fix | `X_FORBIDDEN` |
 
 Forbidden confirms a tool exists, which turns an authz boundary into a catalog an agent can
 enumerate by probing. So a role-hidden tool is indistinguishable from an absent one — even

@@ -9,6 +9,13 @@ export const ADMIN_OWNED_ERROR_CODES = [
   'X_ADMIN_FIELD_UNSUPPORTED',
   'X_ADMIN_POLICY_MISSING',
   'X_DEV_DASHBOARD_IN_PROD',
+  // `mcp.ts` returns these three on `AdminToolResult.error` instead of throwing — a refusal an
+  // agent reads, not a stack an operator reads. They stayed unregistered because of that, so
+  // `x errors explain X_ADMIN_DENIED` refused a code the admin had just answered with. A code
+  // an agent can be handed is a code the package owns, whichever way it travels.
+  'X_ADMIN_DENIED',
+  'X_ADMIN_TOOL_FORBIDDEN',
+  'X_ADMIN_INVALID',
 ] as const;
 
 /**
@@ -31,6 +38,9 @@ export const ADMIN_ERROR_TITLES: Readonly<Record<AdminOwnedErrorCode, string>> =
   X_ADMIN_FIELD_UNSUPPORTED: 'a column type the admin cannot render',
   X_ADMIN_POLICY_MISSING: 'an admin-exposed subject has no policy',
   X_DEV_DASHBOARD_IN_PROD: '/_x was mounted outside dev',
+  X_ADMIN_DENIED: 'the actor may not use this admin surface',
+  X_ADMIN_TOOL_FORBIDDEN: 'an admin MCP tool was called without permission',
+  X_ADMIN_INVALID: "an admin tool's arguments failed the resource schema",
 };
 
 // One unconditional call, so a second package claiming one of admin's codes throws

@@ -89,7 +89,7 @@ describe('audit levels', () => {
 
 describe('outcomeForCode', () => {
   test('authz codes are outcome 3, wherever in the stack they were decided', () => {
-    expect(outcomeForCode('X_POLICY_DENIED')).toBe('policy-denied');
+    expect(outcomeForCode('X_FORBIDDEN')).toBe('policy-denied');
     expect(outcomeForCode('X_FORBIDDEN')).toBe('policy-denied');
     expect(outcomeForCode('X_UNAUTHENTICATED')).toBe('policy-denied');
   });

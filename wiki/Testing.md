@@ -97,7 +97,7 @@ reviewable diff instead of an edited threshold.
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_POLICY_DENIED');
+    .rejects.toBeUltimateError('X_FORBIDDEN');
 });
 ```
 
@@ -206,7 +206,7 @@ $ x verify
 | Code | Cause | Fix |
 |---|---|---|
 | `X_TEST_NETWORK_EGRESS` | a test reached the network without a mock | `x test mock <url>` |
-| `X_POLICY_DENIED` | the actor's policy refused — the assertion target of every denial test | grant the permission, or assert the denial |
+| `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | grant the permission, or assert the denial |
 | `X_INVARIANT` | a domain invariant was violated inside a test fixture | fix the seed or the invariant |
 | `X_CONFIG_INVALID` | test config names an unknown worker count, driver, or test type | `x test --help` |
 

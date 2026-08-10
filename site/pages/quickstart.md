@@ -109,7 +109,7 @@ dev tools, routes and schema and policies and tests, never an app action.
 An unauthorised caller gets the same answer in all three, with the same code:
 
 ```text
-X_POLICY_DENIED: policy denied this actor
+X_FORBIDDEN: policy denied this actor
   cause: post:publish denied — actor 8c2f… does not own post 1b9d…
   fix:   x policy explain post:publish --json
 ```

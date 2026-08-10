@@ -164,7 +164,7 @@ describe('dispatch', () => {
 
 describe('a framework error reaches the model in the shape the terminal prints', () => {
   const denial = new UltimateError({
-    code: 'X_POLICY_DENIED',
+    code: 'X_FORBIDDEN',
     cause: 'refundOrder denied: actor lacks order:refund',
     fix: 'x policy explain refundOrder --json',
   });
@@ -204,7 +204,7 @@ describe('a framework error reaches the model in the shape the terminal prints',
     // alone would keep passing after the canonical rendering moved, which is the drift this
     // test exists to catch.
     expect(await textOf('orders.refund')).toBe(denial.format());
-    expect(denial.format().split('\n')[0]).toBe(`X_POLICY_DENIED: ${denial.title}`);
+    expect(denial.format().split('\n')[0]).toBe(`X_FORBIDDEN: ${denial.title}`);
   });
 
   test('a thrown object with no title falls back to the bare code, still three lines', async () => {

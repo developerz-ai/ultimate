@@ -3,7 +3,7 @@
 // commands actually need — so without this, `x errors explain X_UNAUTHENTICATED` answered "not a
 // registered error code" for a code the framework throws on every unauthenticated request.
 
-import { registerErrorCodes } from '@ultimat3/core';
+import { listErrorCodes, registerErrorCodes } from '@ultimat3/core';
 import { SCHEMA_ERROR_CODES } from '@ultimat3/schema';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -143,4 +143,14 @@ export function loadErrorCatalog(): Promise<ErrorCatalog> {
 /** Test seam — the counterpart to every other reset in this package. */
 export function resetErrorCatalog(): void {
   cached = undefined;
+}
+
+/**
+ * Every code `x errors explain` can answer for, as a set. The `errors` step checks the reference
+ * page against exactly this: a documented code missing from here is one an agent can read but not
+ * look up. Loads the catalog first, so the answer does not depend on which commands ran before it.
+ */
+export async function registeredErrorCodes(): Promise<ReadonlySet<string>> {
+  await loadErrorCatalog();
+  return new Set(listErrorCodes().map((entry) => entry.code));
 }

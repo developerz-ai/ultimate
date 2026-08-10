@@ -89,6 +89,51 @@ const undocumentedFinding = (code: string, at: string, line: number, page: strin
 });
 
 /**
+ * The heading below which the reference stops making live claims. What follows is a code that is
+ * reserved (documented, nothing throws it yet) or a superseded name kept so an old log line still
+ * resolves. Both earn their rows; neither is a code an agent can be handed today, which is the
+ * only thing the registry rule below is about.
+ */
+export const RESERVED_HEADING = '## Reserved codes';
+
+/** The codes the reference presents as live: every one named above the reserved section. */
+export function liveCodes(markdown: string): ReadonlySet<string> {
+  const cut = markdown.indexOf(RESERVED_HEADING);
+  return documentedCodes(cut === -1 ? markdown : markdown.slice(0, cut));
+}
+
+const unregisteredFinding = (code: string, page: string): Finding => ({
+  code: 'X_ERROR_CODE_UNREGISTERED',
+  cause: `${page} documents ${code} as a live code and nothing registers it, so "x errors explain ${code}" refuses a code this page promises`,
+  fix: `register ${code} through registerErrorCodes() in its package's src/errors.ts, or move its row under "${RESERVED_HEADING}" in ${page}`,
+  docs: docsFor('X_ERROR_CODE_UNREGISTERED'),
+  at: page,
+});
+
+/**
+ * The other direction of the same contract, and the half nothing enforced: a code the reference
+ * documents that no package registers. `X_ERROR_CODE_UNDOCUMENTED` stops a shipped code losing its
+ * page; this stops a page inventing a code — a row an agent reads, acts on, and then cannot look
+ * up, because `x errors explain` answers from the registry and the registry never heard of it.
+ *
+ * `known` is what the host can answer for: the process-wide registry, plus whatever codes the host
+ * repo's own gate scripts declare (`X_ROADMAP_*` and friends never ship, so no package may own
+ * them). A missing page is `checkErrorCodeDocs`'s finding to report, not a second copy here.
+ */
+export async function checkErrorCodeRegistry(
+  root: string,
+  page: string,
+  known: ReadonlySet<string>,
+): Promise<readonly Finding[]> {
+  const reference = Bun.file(join(root, page));
+  if (!(await reference.exists())) return [];
+  return [...liveCodes(await reference.text())]
+    .filter((code) => !known.has(code))
+    .sort()
+    .map((code) => unregisteredFinding(code, page));
+}
+
+/**
  * Every `X_*` code shipped source declares must appear on the repo's error reference. The page is
  * the host repo's to name — a framework monorepo publishes one, a generated app does not — which
  * is why this arrives through the same host-check seam the tier table uses on `boundaries`.

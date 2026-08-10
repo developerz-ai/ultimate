@@ -21,6 +21,36 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_FIX_TARGET_UNKNOWN',
   'X_ERROR_FIX_INVALID',
   'X_ERROR_CODE_UNDOCUMENTED',
+  'X_ERROR_CODE_UNREGISTERED',
+  // Reported as `Finding`s rather than thrown, and unregistered until now because of it — so
+  // `x errors explain X_TYPECHECK_FAILED` refused a code `x verify` had just printed. A finding
+  // carries an `X_*` code to the same reader a throw does; the registry is what makes that code
+  // explainable, unique and documented-or-fail, so a code the CLI emits is a code the CLI owns.
+  'X_CLI_UNEXPECTED',
+  'X_TYPECHECK_FAILED',
+  'X_LINT_FAILED',
+  'X_TEST_FAILED',
+  'X_FILE_TOO_LONG',
+  'X_PACKAGE_SHAPE',
+  'X_RELEASE_VERSION_SKEW',
+  'X_MANIFEST_STALE',
+  'X_BUDGET_UNMEASURED',
+  'X_BUILD_FAILED',
+  'X_DEPLOY_FAILED',
+  'X_GENERATE_CONFLICT',
+  'X_PORT_IN_USE',
+  'X_DB_GEN_FAILED',
+  'X_DB_MIGRATE_FAILED',
+  'X_DB_BRANCH_FAILED',
+  'X_DB_STUDIO_FAILED',
+  // The five app-surface boundary codes. `@ultimat3/render` owns the *rule* (`checkSurfaceBoundary`)
+  // and the CLI owns the diagnostic, because `x verify` and `x fix boundary` are the two commands
+  // that report it — see `app-boundaries.ts`, which holds the one rule-to-code table.
+  'X_BOUNDARY_SITE_TO_APP',
+  'X_BOUNDARY_SHARED_LEAF',
+  'X_BOUNDARY_APP_TO_API',
+  'X_BOUNDARY_ROUTE_TO_DB',
+  'X_BOUNDARY_SERVICE_TO_HTTP',
 ] as const;
 
 /**
@@ -59,6 +89,29 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_FIX_TARGET_UNKNOWN: 'the named file is not one of the app source files',
   X_ERROR_FIX_INVALID: "an error's fix line is not a runnable instruction",
   X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
+  X_ERROR_CODE_UNREGISTERED: 'the error reference documents a code no package registers',
+  X_CLI_UNEXPECTED: 'the CLI itself failed',
+  X_TYPECHECK_FAILED: 'tsc failed',
+  X_LINT_FAILED: 'Biome failed',
+  X_TEST_FAILED: 'a test type failed',
+  X_FILE_TOO_LONG: 'a source file is over 500 lines',
+  X_PACKAGE_SHAPE: 'a workspace package is missing a contract file',
+  X_RELEASE_VERSION_SKEW: 'a workspace is not at the lockstep version',
+  X_MANIFEST_STALE: 'openapi.json is stale',
+  X_BUDGET_UNMEASURED: 'a route declares a budget the build never measured',
+  X_BUILD_FAILED: 'x build failed',
+  X_DEPLOY_FAILED: 'a deploy step failed',
+  X_GENERATE_CONFLICT: 'a generator would overwrite a file',
+  X_PORT_IN_USE: 'the dev port is taken',
+  X_DB_GEN_FAILED: 'x db gen failed',
+  X_DB_MIGRATE_FAILED: 'x db apply failed',
+  X_DB_BRANCH_FAILED: 'an x db branch step failed',
+  X_DB_STUDIO_FAILED: 'x db studio failed',
+  X_BOUNDARY_SITE_TO_APP: 'site/ imported app/',
+  X_BOUNDARY_SHARED_LEAF: 'shared/ imported a surface',
+  X_BOUNDARY_APP_TO_API: 'app/ imported api/ at runtime',
+  X_BOUNDARY_ROUTE_TO_DB: 'a route touched the database',
+  X_BOUNDARY_SERVICE_TO_HTTP: 'a service imported HTTP',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

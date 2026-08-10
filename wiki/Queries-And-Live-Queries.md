@@ -76,7 +76,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | `orderBy` on a total order | the matcher decides *enters / leaves / moves within* the result from the changed row alone | `x verify` error naming the query |
 | `limit` | an unbounded result set has no bounded change buffer and no bounded reconnect snapshot | `x verify` error naming the query |
 | No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
-| No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_POLICY_DENIED` at subscribe |
+| No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
 
 A non-live query has none of these constraints — it is just a read.
 
@@ -86,7 +86,7 @@ Policy is not a subscribe-time gate that then trusts the stream.
 
 | Moment | Check |
 |---|---|
-| Subscribe | `policy` evaluated against `{ input, actor }`. Denied → `X_POLICY_DENIED`, no subscription created |
+| Subscribe | `policy` evaluated against `{ input, actor }`. Denied → `X_FORBIDDEN`, no subscription created |
 | Initial snapshot | every row filtered through the same policy |
 | Each incremental patch | re-checked per row. A row that fails is **dropped, never sent** |
 | Actor change (role revoked, org left) | the subscription re-evaluates; rows that no longer pass are delivered as `delete` ops |

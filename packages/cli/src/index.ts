@@ -73,13 +73,24 @@ export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
 export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+export type { ErrorCatalog } from './error-catalog';
+export {
+  buildErrorCatalog,
+  CATALOG_PACKAGES,
+  loadErrorCatalog,
+  registeredErrorCodes,
+  resetErrorCatalog,
+} from './error-catalog';
 export {
   BANNED_PHRASES,
   COMMAND_TOKENS,
   checkErrorCodeDocs,
+  checkErrorCodeRegistry,
   checkErrorFixes,
   documentedCodes,
   fixProblem,
+  liveCodes,
+  RESERVED_HEADING,
   staticFix,
 } from './error-contract';
 export type { CliErrorCode } from './errors';

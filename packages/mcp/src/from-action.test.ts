@@ -36,7 +36,7 @@ function makeAction() {
       decisions.push({ actorKind: kind, allowed });
       if (!allowed)
         throw Object.assign(new Error('denied'), {
-          code: 'X_POLICY_DENIED',
+          code: 'X_FORBIDDEN',
           cause: `actor kind "${kind}" may not publish`,
           fix: 'grant post:publish to agents in policy.ts',
         });

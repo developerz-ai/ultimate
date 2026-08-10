@@ -19,9 +19,10 @@ X_DB_DRIFT: schema differs from migrations
 | Stability | codes never change meaning. A renamed concept gets a new code and the old one stays documented |
 | `fix` | always runnable or editable as written. If a fix reads "do the right thing", that is a bug — [file it](https://github.com/developerz-ai/ultimate/issues) |
 | Bare `Error` | never thrown by the framework. Anything caught is normalised through `toUltimateError()` |
-| Enforcement | the `errors` step of `x verify` fails on an empty or advice-only `fix` (`X_ERROR_FIX_INVALID`) and on a declared code with no row on this page (`X_ERROR_CODE_UNDOCUMENTED`) |
+| Registration | a code exists when its owning package calls `registerErrorCodes()`. That one call is what makes it explainable, unique and documented-or-fail — a code emitted as a `Finding` rather than thrown is registered the same way |
+| Enforcement | the `errors` step of `x verify` fails on an empty or advice-only `fix` (`X_ERROR_FIX_INVALID`), on a declared code with no row on this page (`X_ERROR_CODE_UNDOCUMENTED`), and on a row this page presents as live that no package registers (`X_ERROR_CODE_UNREGISTERED`) |
 
-`As of 2026-08` this table tracks the codes registered in `packages/*/src/errors.ts`, plus the ones the repo's own scripts emit. See [Troubleshooting](Troubleshooting) for symptom-first triage and [CLI reference](CLI-Reference) for the commands named in the fixes.
+`As of 2026-08` every code above [Reserved codes](#reserved-codes) resolves through `x errors explain`, with one exception the gate knows about: this repository's own gate scripts (`X_BOUNDARY_VIOLATION`, `X_ROADMAP_*`, `X_REFERENCE_APP_*`, `X_SETUP_INSTALL_FAILED`, `X_ADMIN_FLATTENER_VIOLATION`) never ship, so no package may own them. See [Troubleshooting](Troubleshooting) for symptom-first triage and [CLI reference](CLI-Reference) for the commands named in the fixes.
 
 ## Core and runtime
 
@@ -85,13 +86,13 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_BUILD_SKEW` | client build id does not match the server build id | a tab open across an incompatible deploy | reload; the SW fetches the new build manifest. See [PWA and offline](PWA-And-Offline) |
 | `X_SERVER_NOT_STARTED` | server handle used before `start()` | reading `url()` too early in a test | `await createServer({ … }).start()` first |
 | `X_PIPELINE_NO_RESPONSE` | a pipeline stage produced no response | a middleware returned `undefined` | return a `Response` from the stage or from the handler |
-| `X_TIMEOUT` | the operation exceeded its deadline | a slow upstream inside a request | raise the route's timeout, or move the work into a `job` |
 
 ## Policy and authz
 
+A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surface adapter throws it, so there is one code for "the policy said no" wherever it was decided.
+
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_POLICY_DENIED` | policy denied this actor | the internal denial, surfaced as `X_FORBIDDEN` at the HTTP edge | `x policy explain <permission> --json` |
 | `X_POLICY_MISSING` | an action was declared without a policy | a new action shipped with no `policy:` | add `policy: can('<resource>:<verb>')`, or `allow('public')` to say so explicitly |
 | `X_PERMISSION_UNKNOWN` | permission string is not in the permission set | typo, or a permission never declared | add it to `definePermissions([…])` |
 | `X_TENANCY_UNSCOPED` | a tenant-scoped query has no org predicate | a repo call that forgot the tenant | pass `{ orgId }`, or wrap the plan with `orgScoped(entity, orgId, plan)` |
@@ -120,7 +121,6 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ENTITY_DUPLICATE` | two entities claim the same name | copy-pasted `entity({ name })` | rename one; `x entities list --json` |
 | `X_INVARIANT_VIOLATED` | a domain invariant rejected this row | a CHECK or a declared invariant failed | `x entity explain <entity> --json` to see the invariant and its SQL |
 | `X_NOT_FOUND` | no row for that id | stale id, wrong tenant, or already deleted | confirm with `x db query "select id from <table> limit 5" --json` |
-| `X_MIGRATE_CONCURRENT` | another version's migration is in flight | two deploys overlapped | wait for the running `ROLE=migrate` to exit, then redeploy |
 | `X_DB_UNAVAILABLE` | cannot reach the database | nothing listening on `DATABASE_URL`, a statement the embedded driver refused, or `@electric-sql/pglite` not installed for a `pglite://` url | set `DATABASE_URL` to a reachable Postgres, or `x dev` for the embedded PGlite — `bun add @electric-sql/pglite` when the url is `pglite://` |
 | `X_MIGRATION_CONFLICT` | the migration ledger disagrees with this build | a ledger row from an app version this build does not ship, or an applied migration whose file was edited so its checksum moved | `x db status --json` — then deploy the version `cause` names, or `x db gen "fix <migration>"`. Never edit an applied migration |
 | `X_MIGRATION_IRREVERSIBLE` | this migration cannot be reversed without data loss | a generated plan that drops a column or a table | `x db gen "<name>" --allow-destructive`, or keep the column and deprecate it |
@@ -150,7 +150,6 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_QUERY_FOREIGN` | a value that is not a query was projected as one | a hand-rolled object with `kind: 'query'`, or a query from a duplicated copy of `@ultimat3/query` | declare it as `export const name = query({ input, policy, sql })` |
 | `X_QUERY_UNREGISTERED` | a query was projected before it was registered | `.tool()` / `.client()` / `.live()` on a read `registerQueries()` never named | `registerQueries(await import('./live'))` at boot, before serving reads |
 | `X_MATCHER_UNSUPPORTED` | the live matcher cannot evaluate this SQL incrementally | a join, aggregate or unbounded predicate under `live: true` | simplify the `sql`, add `orderBy` + `limit`, or drop `live` |
-| `X_CACHE_UNTAGGED_QUERY` | a cached query carries no tag | a query whose tables no tag covers | declare the tag on the entity; `x cache graph --json` |
 
 ## Jobs
 
@@ -239,10 +238,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_PWA_ICON_MISSING` | no source icon to generate from | the configured icon path does not exist | add an SVG or >=1024px PNG and point `pwa.icon` at it |
 | `X_PWA_MANIFEST_INVALID` | the generated web manifest failed validation | a bad `start_url` or `scope` | fix the `pwa` block; `cause` names the field |
 | `X_SW_SCOPE_INVALID` | the service-worker scope cannot serve the routes it precaches | a scope narrower than the app | serve `sw.js` from the app root |
-| `X_SW_HAND_EDITED` | `sw.js` does not match its build checksum | someone edited a build artifact | `x build`; change the route's `offline` field instead |
-| `X_SW_UNCACHEABLE` | offline strategy contradicts the render mode | `precache` on `ssr` | pick `network-only`, or change the render mode |
 | `X_BUILD_ID_MISSING` | no immutable build ID | a build produced outside `x build` | build with `x build`; never use a timestamp or `latest` |
-| `X_PWA_NO_ICON_SOURCE` | the CLI found no icon to generate the set from | same as `X_PWA_ICON_MISSING`, at build time | add the source icon, then `x build` |
 
 ## i18n, money, time
 
@@ -313,6 +309,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ADMIN_FIELD_UNSUPPORTED` | a column type the admin cannot render | an exotic Postgres type | supply a custom field renderer, or hide the column |
 | `X_ADMIN_DENIED` | the actor may not use this admin surface | missing `admin:*` permission | grant the permission through the normal policy layer |
 | `X_ADMIN_TOOL_FORBIDDEN` | an admin MCP tool was called without permission | agent acting beyond its user | nothing to fix — the policy is correct |
+| `X_ADMIN_INVALID` | an admin tool's arguments failed the resource schema | the agent built a row from a stale tool schema | `x manifest`, then re-read the tool's JSON Schema from `tools/list` |
 | `X_DEV_DASHBOARD_IN_PROD` | `/_x` was mounted outside dev | the dev dashboard shipped in the image | delete the `/_x` mount from the production entrypoint |
 | `X_MANIFEST_DRIFT` | a committed manifest differs from the code | a primitive changed without regenerating, or the file was hand-edited so its `buildId` no longer hashes its own contents | `x manifest` — `bun run manifest` for this repo's own `framework.manifest.json` |
 | `X_MANIFEST_STALE` | `openapi.json` is stale | the committed spec does not match the actions the code registers | `x manifest`, then commit |
@@ -357,6 +354,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_PACKAGE_SHAPE` | a workspace package is missing a contract file | a package added by hand | `bun run scripts/new-package.ts <pkg> --only <file>` |
 | `X_ERROR_FIX_INVALID` | an error's fix line is not a runnable instruction | the `errors` step read a `fix:` that is empty, or one that advises (`check`, `make sure`, `try`, `see the docs`) with no command, call or file path in it | the `fix` names the offending `<file>:<line>` — rewrite that `fix:` as a runnable command, a call, or an edit naming a file |
 | `X_ERROR_CODE_UNDOCUMENTED` | a shipped error code has no row in the error reference | a package declared an `X_*` code and the same pull request never added its row | add a row for the code to `wiki/Error-Codes.md` — this page |
+| `X_ERROR_CODE_UNREGISTERED` | the error reference documents a code no package registers | a row written for a code that was renamed, never built, or emitted as a `Finding` without a `registerErrorCodes()` call | register it in the owning package's `src/errors.ts`, or move its row under [Reserved codes](#reserved-codes) |
 | `X_APP_PACKAGE_INVALID` | the app's `package.json` has no usable `name`/`version` — the manifest never fabricates `app@0.0.0`, because its version is the compatibility gate | a malformed or hand-trimmed `package.json` | `bun pm pkg set name=<app> version=0.1.0` |
 | `X_BUILD_FAILED` | `x build` failed | a static check or the bundler | read `cause`; the failing step is named |
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |
@@ -377,9 +375,25 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_REFERENCE_APP_PIN_STALE` | a step pinned as failing in `EXPECTED_RED` now passes | the app was repaired and the pin was not lowered — the ratchet only shrinks | delete the named entries from `EXPECTED_RED` in `scripts/reference-app-gate.ts` |
 | `X_REFERENCE_APP_UNREFERENCED` | `examples/dummy` typechecks but the root `tsconfig.json` does not reference it | the app came off the `typecheck` pin without joining the root `tsc -b` solution, so the packages' emitted `.d.ts` are never proved consumable | add `{ "path": "./examples/dummy" }` to the `references` array in `tsconfig.json` |
 
-## Names used in the design docs
+## Reserved codes
 
-Some design docs predate the implementation. `As of 2026-07` these are the mappings; the right-hand column is what the framework actually throws.
+Everything above this heading is live: `x errors explain <CODE>` answers for it today, and the `errors` step fails the build if it does not (`X_ERROR_CODE_UNREGISTERED`). Everything below is documented for a different reason and is deliberately outside that rule.
+
+### Not thrown yet
+
+Reserved, not registered. The name is spoken for — the design docs use it and no future code may reuse it — but nothing raises it in this build, so `x errors explain` refuses it. The right-hand column is what actually happens today.
+
+| Reserved code | What happens today |
+|---|---|
+| `X_TIMEOUT` | no deadline is enforced per request. A cancelled request is `X_ABORTED`; a job past its deadline is `X_JOB_TIMEOUT`. `@ultimat3/http` already maps the code to 504 for the build that raises it |
+| `X_MIGRATE_CONCURRENT` | `ROLE=migrate` takes no advisory lock, so two overlapping deploys both migrate. Serialise them in the deploy pipeline until this ships — roadmap milestone 11 |
+| `X_SW_HAND_EDITED` | `sw.js` carries no checksum, so a hand edit survives `x build` and is silently overwritten on the next one |
+| `X_SW_UNCACHEABLE` | an `offline` strategy contradicting the route's `render` mode is accepted; `X_SW_SCOPE_INVALID` covers only the scope half |
+| `X_CACHE_UNTAGGED_QUERY` | a query no tag covers is cached and never invalidated. `X_CACHE_TAG_UNKNOWN` catches the opposite mistake — a tag no entity declared |
+
+### Names used in the design docs
+
+Some design docs predate the implementation. `As of 2026-08` these are the mappings; the right-hand column is what the framework actually throws. The old name stays here because a code never changes meaning — a renamed concept gets a new code and the old one keeps its row.
 
 | Design doc name | Implemented code |
 |---|---|
@@ -388,10 +402,11 @@ Some design docs predate the implementation. `As of 2026-07` these are the mappi
 | `X_JOB_STEP_FAILED` | `X_JOB_MAX_ATTEMPTS` (retries exhausted) or `X_JOB_TIMEOUT` |
 | `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` | `X_SEO_META_MISSING` |
 | `X_BUDGET_EXCEEDED` thrown by `@ultimat3/seo` | `X_SEO_BUDGET_EXCEEDED` — `X_BUDGET_EXCEEDED` is `@ultimat3/render`'s, and one code is owned by exactly one package |
-| `X_BOUNDARY_VIOLATION` | `X_BOUNDARY_SITE_TO_APP` and the other `X_BOUNDARY_*` codes |
+| `X_POLICY_DENIED` | `X_FORBIDDEN`, wherever in the stack the policy decided |
+| `X_PWA_NO_ICON_SOURCE` / `X_PWA_NO_FALLBACK` | `X_PWA_ICON_MISSING` / `X_PWA_NO_OFFLINE_FALLBACK` — `x doctor` reports the package's own codes, never a CLI twin of them |
+| `X_BOUNDARY_VIOLATION` | `X_BOUNDARY_SITE_TO_APP` and the other `X_BOUNDARY_*` codes. The bare name is still this repo's own tier-table finding, above |
 | `X_TEST_NETWORK_EGRESS` | `X_TEST_NETWORK_SEALED` |
 | `X_LIVE_QUERY_LIMIT` | `X_SUBSCRIPTION_LIMIT` |
 | `X_ENV_INVALID` | `X_ENV_MISSING` |
-| `X_CACHE_UNTAGGED_QUERY` | reported by `x verify` as part of the cache-graph check |
 
 New codes are added in the owning package's `src/errors.ts` and registered through `registerErrorCodes()`; add the row here in the same pull request, or the `errors` step of `x verify` fails the build with `X_ERROR_CODE_UNDOCUMENTED` — see [Contributing](Contributing).

@@ -30,9 +30,9 @@ Policies live in `<feature>/policy.ts` and are referenced by name from `actions.
 |---|---|---|
 | HTTP call | before `handle`, after input parse | `X_FORBIDDEN` (403), or `X_UNAUTHENTICATED` (401) if the actor is anonymous |
 | Typed client call | server-side, on the same route | same as HTTP; the client sees the JSON body |
-| Direct server call | in-process invocation | throws `X_POLICY_DENIED` |
-| Job execution | per attempt, per step boundary — an actor's rights can be revoked mid-workflow | throws `X_POLICY_DENIED`; the job fails, it does not silently skip |
-| MCP tool call | before the tool body, same evaluation | tool error carrying `X_POLICY_DENIED` + `fix` |
+| Direct server call | in-process invocation | throws `X_FORBIDDEN` |
+| Job execution | per attempt, per step boundary — an actor's rights can be revoked mid-workflow | throws `X_FORBIDDEN`; the job fails, it does not silently skip |
+| MCP tool call | before the tool body, same evaluation | tool error carrying `X_FORBIDDEN` + `fix` |
 | Live query **subscribe** | at subscribe time | subscription rejected with `X_FORBIDDEN` |
 | Live query **per delivered row** | on every patch, for every row, for the lifetime of the subscription | the row is not delivered; no partial object, no id leak |
 | Admin visibility | screen and field level | the screen does not render, and its MCP tool is not listed |
@@ -50,22 +50,21 @@ The decision is surface-blind. The surface selects only how a denial is *rendere
 Same code, three encodings.
 
 ```
-X_POLICY_DENIED: policy denied the request
+X_FORBIDDEN: policy denied the request
   cause: actor user_2 (roles: editor) lacks post:publish on post_9
   fix:   grant post:publish to the actor's role, or call as the post owner
 ```
 
 ```json
-{ "code": "X_POLICY_DENIED",
+{ "code": "X_FORBIDDEN",
   "cause": "actor user_2 (roles: editor) lacks post:publish on post_9",
   "fix": "grant post:publish to the actor's role, or call as the post owner",
-  "docs": "https://ultimate.dev/errors/X_POLICY_DENIED" }
+  "docs": "https://ultimate.dev/errors/X_FORBIDDEN" }
 ```
 
 | Code | Where | Status |
 |---|---|---|
-| `X_POLICY_DENIED` | internal, jobs, direct calls, MCP tool errors | — |
-| `X_FORBIDDEN` | HTTP edge, authenticated actor without the capability | 403 |
+| `X_FORBIDDEN` | everywhere a denial is decided: internal, jobs, direct calls, MCP tool errors, and the HTTP edge for an authenticated actor without the capability | 403 at the HTTP edge, no status elsewhere |
 | `X_UNAUTHENTICATED` | HTTP edge, anonymous actor hitting a policy that needs a session | 401 |
 
 `--json` and the MCP response carry the identical code and `fix` string as the terminal and the dev overlay. A denial reason never includes data the actor could not otherwise read.
@@ -93,7 +92,7 @@ $ x policy explain publishPost --json
 {"action":"publishPost","capability":"post:publish","predicate":"ownsPost(actor, input.postId)",
  "surfaces":["http","client","job","mcp"],
  "branches":[{"outcome":"allow","when":"actor owns post"},
-             {"outcome":"deny","code":"X_POLICY_DENIED","when":"actor does not own post"},
+             {"outcome":"deny","code":"X_FORBIDDEN","when":"actor does not own post"},
              {"outcome":"deny","code":"X_UNAUTHENTICATED","when":"actor.kind == anonymous"}],
  "tests":["apps/web/app/posts/actions.test.ts:publishPost denies a non-owner"]}
 ```
@@ -133,7 +132,7 @@ Generated with the primitive, fails until filled in:
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
-    .rejects.toBeUltimateError('X_POLICY_DENIED');
+    .rejects.toBeUltimateError('X_FORBIDDEN');
 });
 ```
 

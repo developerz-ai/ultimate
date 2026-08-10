@@ -192,7 +192,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_JOB_STEP_FAILED` | a step exhausted its retries | `x jobs show <id> --json`, then `x jobs retry <id>` |
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
-| `X_POLICY_DENIED` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
+| `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
 | `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — both are v2 | set `jobs.driver: 'postgres'` in `app.config.ts` (it is already the default) |
 
 Full index: [Error codes](Error-Codes). Verbatim error shapes live in each package's `src/errors.ts`.

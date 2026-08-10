@@ -26,7 +26,7 @@ function caller(role: string | undefined, scopes: readonly string[]): McpCaller 
 class PolicyDeniedError extends UltimateError {
   constructor() {
     super({
-      code: 'X_POLICY_DENIED',
+      code: 'X_FORBIDDEN',
       cause: 'refundOrder denied: actor lacks order:refund',
       fix: 'x policy explain refundOrder --json',
     });
@@ -250,7 +250,7 @@ describe('outcome 2 — scope: named out loud, and decided before the policy', (
   });
 });
 
-describe('outcome 3 — policy: X_POLICY_DENIED, exactly as HTTP answers it', () => {
+describe('outcome 3 — policy: X_FORBIDDEN, exactly as HTTP answers it', () => {
   const guarded: AnyMcpTool = {
     name: 'orders.void',
     description: 'void an order',
@@ -267,7 +267,7 @@ describe('outcome 3 — policy: X_POLICY_DENIED, exactly as HTTP answers it', ()
     const result = toolResult(response);
     expect(result.isError).toBe(true);
     const text = result.content?.[0]?.text ?? '';
-    expect(text).toContain('X_POLICY_DENIED');
+    expect(text).toContain('X_FORBIDDEN');
     expect(text).toContain('cause:');
     expect(text).toContain('fix:   x policy explain refundOrder --json');
   });

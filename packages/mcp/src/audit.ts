@@ -30,12 +30,13 @@ export type McpOutcome =
    */
   | 'failed';
 
-/** Codes that mean authz said no, wherever in the stack it decided. */
-const DENIAL_CODES: ReadonlySet<string> = new Set([
-  'X_POLICY_DENIED',
-  'X_FORBIDDEN',
-  'X_UNAUTHENTICATED',
-]);
+/**
+ * Codes that mean authz said no, wherever in the stack it decided. `X_POLICY_DENIED` used to sit
+ * here and matched nothing: `@ultimat3/policy` owns the denial and throws `X_FORBIDDEN`, so the
+ * entry classified a code no build can produce — and every real denial that reached it still had
+ * to be recognised by one of the other two.
+ */
+const DENIAL_CODES: ReadonlySet<string> = new Set(['X_FORBIDDEN', 'X_UNAUTHENTICATED']);
 
 /** Classify a code a tool threw. Denials are outcome 3; everything else wants a human. */
 export function outcomeForCode(code: string): McpOutcome {

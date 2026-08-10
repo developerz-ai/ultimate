@@ -72,7 +72,7 @@ Three distinct outcomes, deliberately different:
 |---|---|---|
 | Actor's **role** can never invoke this tool | the tool is **absent from `tools/list`**, and a direct call answers `ToolNotFound` | a `Forbidden` answer confirms the tool exists |
 | Actor's role could invoke it, but the **connection's scope** does not include it | explicit refusal: `X_MCP_SCOPE_DENIED`, naming the missing scope + `fix: reconnect with scope <name>` | the caller can legitimately fix this; hiding it would strand a well-behaved client |
-| Tool invoked, but the **policy denies this input** | `X_POLICY_DENIED` with the denial reason | identical to the HTTP answer for the same call |
+| Tool invoked, but the **policy denies this input** | `X_FORBIDDEN` with the denial reason | identical to the HTTP answer for the same call |
 
 **Hide, then answer ToolNotFound — never Forbidden.** A `Forbidden` on a hidden tool is an enumeration oracle: an agent (or an attacker driving one) walks a name list and reads the org's feature set, entity names, and internal operations off the difference between "not found" and "forbidden". The visibility decision is computed from the caller, never from the arguments, so it is stable per connection and cannot be probed by varying them.
 

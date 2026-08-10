@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import {
   BANNED_PHRASES,
   checkErrorCodeDocs,
+  checkErrorCodeRegistry,
   checkErrorFixes,
   documentedCodes,
   fixProblem,
+  liveCodes,
+  RESERVED_HEADING,
   staticFix,
 } from './error-contract';
 
@@ -159,6 +162,59 @@ describe('the checks, over a repo', () => {
     await write('packages/db/src/thing.ts', "throw new E({ code: 'X_A', fix: 'x help' });\n");
     await write('wiki/Error-Codes.md', 'no codes here\n');
     expect(await checkErrorCodeDocs(root, 'wiki/Error-Codes.md')).toHaveLength(1);
+  });
+
+  const page = (body: string): Promise<void> => write('wiki/Error-Codes.md', body);
+
+  test('checkErrorCodeRegistry reports a live row no package registers', async () => {
+    await page('| `X_A` | means | cause | fix |\n| `X_GHOST` | means | cause | fix |\n');
+    const [finding, ...rest] = await checkErrorCodeRegistry(
+      root,
+      'wiki/Error-Codes.md',
+      new Set(['X_A']),
+    );
+    expect(rest).toEqual([]);
+    expect(finding?.code).toBe('X_ERROR_CODE_UNREGISTERED');
+    expect(finding?.cause).toContain('X_GHOST');
+    expect(finding?.fix).toContain('src/errors.ts');
+    expect(finding?.fix).toContain(RESERVED_HEADING);
+    expect(finding?.at).toBe('wiki/Error-Codes.md');
+  });
+
+  // The whole point of the partition: a reserved name is documented on purpose, and a rule that
+  // demanded a registration for it would delete the row instead of the ambiguity.
+  test('checkErrorCodeRegistry exempts everything below the reserved heading', async () => {
+    await page(`| \`X_A\` | means | cause | fix |\n\n${RESERVED_HEADING}\n\n| \`X_GHOST\` | x |\n`);
+    expect(await checkErrorCodeRegistry(root, 'wiki/Error-Codes.md', new Set(['X_A']))).toEqual([]);
+  });
+
+  // `checkErrorCodeDocs` already reports the missing page, with the fix for creating it. A second
+  // finding for the same file would double every count and name no new work.
+  test('checkErrorCodeRegistry leaves the missing-page finding to the docs half', async () => {
+    expect(await checkErrorCodeRegistry(root, 'wiki/Error-Codes.md', new Set())).toEqual([]);
+  });
+
+  test('checkErrorCodeRegistry reports each ghost once, sorted', async () => {
+    await page('`X_Z` `X_A` `X_Z`\n');
+    expect(
+      (await checkErrorCodeRegistry(root, 'wiki/Error-Codes.md', new Set())).map((f) => f.cause),
+    ).toEqual([
+      expect.stringContaining('X_A') as unknown as string,
+      expect.stringContaining('X_Z') as unknown as string,
+    ]);
+  });
+});
+
+describe('liveCodes', () => {
+  test('reads every code above the reserved heading and none below it', () => {
+    const markdown = `\`X_LIVE\`\n\n${RESERVED_HEADING}\n\n\`X_RESERVED\`\n`;
+    expect([...liveCodes(markdown)]).toEqual(['X_LIVE']);
+    expect([...documentedCodes(markdown)]).toEqual(['X_LIVE', 'X_RESERVED']);
+  });
+
+  // A page with no reserved section is all live — the absent heading must not silently exempt it.
+  test('treats a page without the heading as entirely live', () => {
+    expect([...liveCodes('`X_ONE` `X_TWO`')]).toEqual(['X_ONE', 'X_TWO']);
   });
 });
 
