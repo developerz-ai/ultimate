@@ -21,8 +21,10 @@ import { testCommand } from './cmd-test';
 import { verifyCommand } from './cmd-verify';
 import type { CliCommand } from './command';
 import type { CommandSpec } from './parse';
+import { loadVersion } from './version-loader';
 
-export const CLI_VERSION = '0.0.1';
+/** Single source of truth for the framework version — loaded from root package.json. */
+export const CLI_VERSION = loadVersion();
 
 const CORE: readonly CliCommand[] = [
   newCommand,

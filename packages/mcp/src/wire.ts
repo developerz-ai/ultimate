@@ -5,11 +5,13 @@
 //
 // Reference: https://modelcontextprotocol.io/specification (2025-06-18).
 
+import { FRAMEWORK_VERSION } from '@ultimat3/core';
+
 /** MCP protocol version advertised on `initialize`. */
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
 
 /** Identity advertised on `initialize` unless the host overrides it. */
-export const DEFAULT_SERVER_INFO = { name: 'ultimate', version: '0.0.1' } as const;
+export const DEFAULT_SERVER_INFO = { name: 'ultimate', version: FRAMEWORK_VERSION } as const;
 
 export interface ServerInfo {
   readonly name: string;

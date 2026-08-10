@@ -12,6 +12,7 @@ import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
 import type { GeneratedFile } from './templates';
 import { appFiles, EXECUTABLE_FILES, names, repoFiles, resourceFiles } from './templates';
+import { loadVersion } from './version-loader';
 
 export interface NewAppOptions {
   readonly name: string;
@@ -22,7 +23,7 @@ export interface NewAppOptions {
 /** Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. */
 export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   const app = names(options.name);
-  const files: GeneratedFile[] = [...repoFiles(app), ...appFiles(app)];
+  const files: GeneratedFile[] = [...repoFiles(app, loadVersion()), ...appFiles(app)];
   if (options.example) {
     files.push(...resourceFiles('post', { surfaceDir: 'apps/web/app', feature: 'post' }));
   }

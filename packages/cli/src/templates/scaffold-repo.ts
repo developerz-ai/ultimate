@@ -5,7 +5,7 @@
 import type { GeneratedFile, NameSet } from './naming';
 import { docsFiles } from './scaffold-docs';
 
-const rootPackage = (app: NameSet): string => `{
+const rootPackage = (app: NameSet, version: string): string => `{
   "name": "${app.kebab}",
   "private": true,
   "type": "module",
@@ -28,24 +28,24 @@ const rootPackage = (app: NameSet): string => `{
     "@biomejs/biome": "^2.4.15",
     "@electric-sql/pglite": "^0.5.4",
     "@types/bun": "^1.3.14",
-    "@ultimat3/testing": "^0.0.1",
+    "@ultimat3/testing": "^${version}",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@ultimat3/action": "^0.0.1",
-    "@ultimat3/cache": "^0.0.1",
-    "@ultimat3/cli": "^0.0.1",
-    "@ultimat3/core": "^0.0.1",
-    "@ultimat3/db": "^0.0.1",
-    "@ultimat3/entity": "^0.0.1",
-    "@ultimat3/i18n": "^0.0.1",
-    "@ultimat3/jobs": "^0.0.1",
-    "@ultimat3/mcp": "^0.0.1",
-    "@ultimat3/policy": "^0.0.1",
-    "@ultimat3/pwa": "^0.0.1",
-    "@ultimat3/query": "^0.0.1",
-    "@ultimat3/render": "^0.0.1",
-    "@ultimat3/ui": "^0.0.1",
+    "@ultimat3/action": "^${version}",
+    "@ultimat3/cache": "^${version}",
+    "@ultimat3/cli": "^${version}",
+    "@ultimat3/core": "^${version}",
+    "@ultimat3/db": "^${version}",
+    "@ultimat3/entity": "^${version}",
+    "@ultimat3/i18n": "^${version}",
+    "@ultimat3/jobs": "^${version}",
+    "@ultimat3/mcp": "^${version}",
+    "@ultimat3/policy": "^${version}",
+    "@ultimat3/pwa": "^${version}",
+    "@ultimat3/query": "^${version}",
+    "@ultimat3/render": "^${version}",
+    "@ultimat3/ui": "^${version}",
     "solid-js": "^2.0.0"
   },
   "engines": {
@@ -385,10 +385,10 @@ unitTest('the app exposes its actions as MCP tools', () => {
 });
 `;
 
-export function repoFiles(app: NameSet): readonly GeneratedFile[] {
+export function repoFiles(app: NameSet, version: string): readonly GeneratedFile[] {
   return [
     ...docsFiles(app),
-    { path: 'package.json', contents: rootPackage(app) },
+    { path: 'package.json', contents: rootPackage(app, version) },
     { path: 'tsconfig.json', contents: rootTsconfig(app) },
     { path: 'biome.json', contents: biome() },
     { path: 'bunfig.toml', contents: bunfig() },
