@@ -22,7 +22,7 @@ A tag is a typed handle derived from an `entity`. There is no string-keyed inval
 ```ts
 export const tag = tags({
   post: entityTag(posts),                       // tag.post, tag.post.id(x)
-  feed: derivedTag('feed', [tags.post]),        // invalidating post cascades to feed
+  feed: derivedTag('feed', [tag.post]),          // invalidating post cascades to feed
 });
 ```
 

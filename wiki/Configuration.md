@@ -5,19 +5,19 @@ One file: `app.config.ts` at the repo root. There is no per-environment config d
 Pre-v1. Field names may change until v1; `x upgrade` codemods them ([Upgrading](Upgrading)).
 
 ```ts
-import { defineConfig, env } from '@ultimat3/core';
-import { t } from '@ultimat3/schema';
+import { defineConfig, defineEnv } from '@ultimat3/core';
+
+const env = defineEnv({
+  APP_URL: { type: 'url' },
+  DATABASE_URL: { type: 'url' },
+  SESSION_SECRET: { type: 'string', secret: true },
+});
 
 export const config = defineConfig({
   name: 'postly',
   url: env.APP_URL,
   db: { url: env.DATABASE_URL },
   pwa: { offline: { fallback: '/offline' } },
-  env: t.object({
-    APP_URL: t.string.url,
-    DATABASE_URL: t.string.url,
-    SESSION_SECRET: t.string.atLeastLength(32),
-  }),
 });
 ```
 
@@ -33,7 +33,6 @@ Everything derivable from code is **not** in this file — routes, actions, poli
 | `defaultLocale` | `string` | `'en'` | must appear in `locales` |
 | `timeZone` | IANA zone | `'UTC'` | display default only; a user's own `tz` column always wins |
 | `currency` | ISO 4217 | `'USD'` | default for `Money` formatting. Never a conversion rate |
-| `env` | schema | required | typed env schema, see [Env vars](#env-vars) |
 
 ## `db`
 
@@ -186,7 +185,7 @@ Per surface, overridable per route via `budget` on `defineRoute`.
 
 ## Env vars
 
-One typed schema, in `app.config.ts`, validated at boot. A missing key fails in **~40ms** with `X_ENV_MISSING` — never a 500 an hour later.
+One typed schema, declared with `defineEnv` alongside `app.config.ts`, validated at boot. A missing or malformed key fails in **~40ms** with `X_ENV_MISSING` — never a 500 an hour later.
 
 | var | roles | required | notes |
 |---|---|---|---|
@@ -207,7 +206,7 @@ Rules:
 | Rule | Detail |
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
-| `env.X` in `app.config.ts` reads through the schema | an unschema'd key is a `X_CONFIG_INVALID` at load |
+| `env.X` reads through `defineEnv`'s schema | an unschema'd key is a `X_CONFIG_INVALID` at load |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |
 

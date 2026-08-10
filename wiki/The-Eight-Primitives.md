@@ -1,6 +1,6 @@
 # The eight primitives
 
-Everything in the framework is one of these. `x gen feature <name>` scaffolds one of each, wired end-to-end, with failing test scaffolds.
+Everything in the framework is one of these. `x g resource <name>` scaffolds one of each, wired end-to-end, with failing test scaffolds.
 
 ```
 entity    — a table + its domain type + invariants
@@ -15,14 +15,14 @@ task      — a scheduled trigger (cron) that enqueues jobs
 
 | Primitive | Declared in | Generator | Deep page |
 |---|---|---|---|
-| `entity` | `<feature>/entity.ts` | `x gen entity <name>` | [Entities and migrations](Entities-And-Migrations) |
-| `policy` | `<feature>/policy.ts` | — (written inline with `can`) | [Policies and authz](Policies-And-Authz) |
-| `action` | `api/` or `<feature>/actions.ts` | `x gen action <name>` | [Actions](Actions) |
-| `mutator` | `<feature>/actions.ts` | `x gen mutator <name>` | [Realtime](Realtime) |
-| `query` | `<feature>/live.ts` | `x gen query <name>` | [Queries and live queries](Queries-And-Live-Queries) |
-| `job` | `<feature>/jobs.ts` | `x gen job <name>` | [Jobs and workflows](Jobs-And-Workflows) |
-| `route` | a route folder's `config` export | `x gen route <path>` | [Routes and render modes](Routes-And-Render-Modes) |
-| `task` | `<feature>/jobs.ts` | `x gen task <name>` | [Scheduled tasks](Scheduled-Tasks) |
+| `entity` | `<feature>/entity.ts` | `x g entity <name>` | [Entities and migrations](Entities-And-Migrations) |
+| `policy` | `<feature>/policy.ts` | `x g policy <name>` | [Policies and authz](Policies-And-Authz) |
+| `action` | `api/` or `<feature>/actions.ts` | `x g action <name>` | [Actions](Actions) |
+| `mutator` | `<feature>/actions.ts` | `x g mutator <name>` | [Realtime](Realtime) |
+| `query` | `<feature>/live.ts` | `x g query <name>` | [Queries and live queries](Queries-And-Live-Queries) |
+| `job` | `<feature>/jobs.ts` | `x g job <name>` | [Jobs and workflows](Jobs-And-Workflows) |
+| `route` | a route folder's `config` export | `x g route <path>` | [Routes and render modes](Routes-And-Render-Modes) |
+| `task` | `<feature>/jobs.ts` | `x g task <name>` | [Scheduled tasks](Scheduled-Tasks) |
 
 ## `entity`
 

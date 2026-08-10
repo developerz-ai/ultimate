@@ -54,14 +54,16 @@ What `x new` writes, and who owns it afterwards:
 ## Typed env, validated at boot
 
 ```ts
-// app.config.ts
-env: t.object({
-  DATABASE_URL: t.string.url,
-  NATS_URL:     t.string.url.optional(),
-  S3_BUCKET:    t.string,
-  VAPID:        t.string.optional(),
-  STRIPE_KEY:   t.string.matching(/^sk_/),
-}),
+// env.ts
+import { defineEnv } from '@ultimat3/core';
+
+export const env = defineEnv({
+  DATABASE_URL: { type: 'url' },
+  NATS_URL:     { type: 'url', required: false },
+  S3_BUCKET:    { type: 'string' },
+  VAPID:        { type: 'string', required: false },
+  STRIPE_KEY:   { type: 'string', pattern: /^sk_/, secret: true },
+});
 ```
 
 Boot parses this before any listener binds. Failure costs ~40ms and exit 1 — not a 3am `undefined` in a payment handler.

@@ -133,25 +133,32 @@ Be honest about the seams. Each one is an explicit, greppable parse — never a 
 ## Typed env, validated at boot
 
 ```ts
-// app.config.ts
-export const env = envSchema({
-  DATABASE_URL: t.string.url,
-  REDIS_URL: t.string.url.optional(),
-  ROLE: t('"web"|"sync"|"worker"|"scheduler"|"migrate"|"replicator"'),
-  DRAIN_TIMEOUT_MS: t.number.integer.default(30_000),
-  DEFAULT_LOCALE: t.string.default('en-US'),
-  DEFAULT_TZ: t.string.default('UTC'),
-  VAPID_PUBLIC: t.string.optional(),
+// env.ts
+import { defineEnv } from '@ultimat3/core';
+
+export const env = defineEnv({
+  DATABASE_URL: { type: 'url' },
+  REDIS_URL: { type: 'url', required: false },
+  ROLE: { type: 'enum', values: ['web', 'sync', 'worker', 'scheduler', 'migrate', 'replicator'] },
+  DRAIN_TIMEOUT_MS: { type: 'integer', default: 30_000 },
+  DEFAULT_LOCALE: { type: 'string', default: 'en-US' },
+  DEFAULT_TZ: { type: 'string', default: 'UTC' },
+  VAPID_PUBLIC: { type: 'string', required: false },
 });
 ```
 
 | Property | Behavior |
 |---|---|
 | When | at boot, before the first listener binds — a bad env fails in ~40ms, not on the first request |
-| Failure | `X_CONFIG_INVALID`, listing **every** missing/invalid key at once, with the expected type per key |
-| Access | `env.DATABASE_URL` is `string`; reading `process.env` directly outside `app.config.ts` is a boundary violation |
+| Failure | `X_ENV_MISSING`, listing **every** missing/invalid key at once, with the expected type per key |
+| Access | `env.DATABASE_URL` is `string`; reading `process.env` directly outside the `defineEnv` module is a boundary violation |
 | Defaults | in the schema, so there is one place to look — not scattered `?? 30000` |
 | Roles | `ROLE` is a union, so a role switch is exhaustively checked in `cli` ([`13-topology-runtime.md`](./13-topology-runtime.md)) |
 | Secrets | never logged; the boot report prints key names and `set`/`unset`, never values |
 
-Same schema library as actions and entities, so the whole system has one parse mechanism and one failure shape.
+`defineEnv` is a purpose-built declarative record, not the `@ultimat3/schema` `t` used by actions and
+entities — env vars are always strings on the wire and need coercion (`number`/`port`/`boolean`/`enum`),
+a `role` gate, and `secret` redaction a generic object schema has no vocabulary for. `X_ENV_MISSING` is
+the one code for this gate; `X_CONFIG_INVALID` is the unrelated failure of `app.config.ts` itself
+failing its own schema (bad `defaultLocale`, `db.pool < 1`, a non-IANA `timeZone`) — see
+[Configuration](../../wiki/Configuration.md).

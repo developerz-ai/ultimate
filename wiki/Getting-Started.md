@@ -41,7 +41,7 @@ Nothing to install first. No Docker daemon, no `.env` scavenger hunt, no service
 ## 1. Write your first action
 
 ```
-x gen action publish-post
+x g action publish-post
 ```
 
 ```ts

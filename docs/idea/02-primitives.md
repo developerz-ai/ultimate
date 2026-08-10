@@ -76,7 +76,28 @@ Plus cache invalidation: `cache.invalidates` propagates to every tier in one hop
 
 ## `entity`
 
-A table + its domain type + invariants. The single source of the DB schema, the TS type, and the parse boundary.
+A table + its domain type + invariants. The single source of the DB schema, the TS type, and the parse boundary. The row type is **derived** from the columns — there is no second declaration of the same shape to keep in sync.
+
+```ts
+export const posts = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }).tenant(),
+    title: text({ max: TITLE_MAX }),
+    status: enumerated(POST_STATUSES).default('draft'),
+    likeCount: integer().default(0),
+    deletedAt: timestamp().nullable(),   // presence alone makes the entity soft-deletable
+    createdAt: timestamp().defaultNow(),
+    updatedAt: timestamp().defaultNow().onUpdateNow(),
+  },
+  tenant: 'orgId',      // said out loud; inferred from `.tenant()` or an `orgId` column if omitted
+  invariant: (c) => [
+    c.title.trimmed(),
+    c.likeCount.gte(0),
+  ],
+  indexes: [{ on: ['orgId', 'status'] }],
+});
+```
 
 | Aspect | Rule |
 |---|---|
