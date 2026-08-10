@@ -322,6 +322,36 @@ describe('header injection', () => {
     ).toBe('X_MAIL_HEADER_INVALID');
   });
 
+  // `replyTo` and `unsubscribeUrl` reach `header()` through the `messageHeaders()` loop, not
+  // through a named call — the loop a future edit is most likely to hoist above the CR/LF gate
+  // because computed-by-the-framework data looks trustworthy. It is not: both values are the
+  // caller's, and `Reply-To` / `List-Unsubscribe` inject headers exactly like `Subject` does.
+  test('a CR or LF in replyTo is refused, even though it arrives as a computed header', () => {
+    expect(
+      codeOf(
+        thrown(() =>
+          buildMimeMessage(
+            baseMessage({ replyTo: 'support@postly.test\r\nBcc: x@evil.test' }),
+            baseOptions(),
+          ),
+        ),
+      ),
+    ).toBe('X_MAIL_HEADER_INVALID');
+  });
+
+  test('a CR or LF in unsubscribeUrl is refused too', () => {
+    const message = baseMessage({
+      unsubscribeUrl: 'https://postly.test/u/abc\r\nBcc: x@evil.test',
+    });
+
+    // It reaches two headers (`List-Unsubscribe` and `List-Unsubscribe-Post`); the first one to
+    // see it refuses, and the name in the error is whichever that is.
+    expect(Object.keys(messageHeaders(message))).toContain('List-Unsubscribe');
+    expect(codeOf(thrown(() => buildMimeMessage(message, baseOptions())))).toBe(
+      'X_MAIL_HEADER_INVALID',
+    );
+  });
+
   test('a break in the body is fine — only headers can be injected', () => {
     const message = baseMessage({ text: 'line one\r\nline two', html: '<p>a</p>\n<p>b</p>' });
 

@@ -1,7 +1,8 @@
 // Single responsibility: the geometry and the pixels of a resize — output box, drawn size,
-// colour parsing, resampling and the source-over composite. Every format shares this one
-// scaler on purpose: a second one is a second place for a PWA icon to grow a grey halo.
+// resampling and the source-over composite. Every format shares this one scaler on purpose: a
+// second one is a second place for a PWA icon to grow a grey halo.
 
+import { parseColor } from './color';
 import { imageUnsupported } from './errors';
 import { assertPixelBudget, createRaster, type ImageSize, type Raster, rasterFrom } from './raster';
 
@@ -17,10 +18,6 @@ export interface ResizeSpec {
   /** '#rgb' | '#rgba' | '#rrggbb' | '#rrggbbaa' | 'transparent'. Default transparent. */
   readonly background?: string | undefined;
 }
-
-const COLOR_FIX =
-  "pass '#rgb', '#rgba', '#rrggbb', '#rrggbbaa' or 'transparent' — hex or transparent, " +
-  'there are no named colours';
 
 function assertDimension(value: number, field: string): void {
   if (!Number.isInteger(value) || value < 1) {
@@ -61,30 +58,6 @@ export function scaledToFit(source: ImageSize, box: ImageSize, fit: ImageFit): I
     width: Math.max(1, Math.round(source.width * scale)),
     height: Math.max(1, Math.round(source.height * scale)),
   };
-}
-
-const HEX = /^#[0-9a-f]+$/;
-/** '#rgb', '#rgba', '#rrggbb', '#rrggbbaa' — the whole grammar, hash included. */
-const HEX_LENGTHS: readonly number[] = [4, 5, 7, 9];
-
-/** Hex or `transparent`, nothing else — one way to write a colour is one thing to get wrong. */
-export function parseColor(value: string): readonly [number, number, number, number] {
-  const text = value.toLowerCase();
-  if (text === 'transparent') return [0, 0, 0, 0];
-  if (!HEX.test(text) || !HEX_LENGTHS.includes(text.length)) {
-    throw imageUnsupported(`'${value}' is not a colour this pipeline understands`, COLOR_FIX, {
-      value,
-    });
-  }
-  const hex = text.slice(1);
-  const short = hex.length < 6;
-  const size = short ? 1 : 2;
-  const channel = (index: number): number => {
-    const part = hex.slice(index * size, index * size + size);
-    return Number.parseInt(short ? part + part : part, 16);
-  };
-  const opaque = hex.length === 3 || hex.length === 6;
-  return [channel(0), channel(1), channel(2), opaque ? 255 : channel(3)];
 }
 
 interface InnerBox {
@@ -168,21 +141,6 @@ function planAxis(source: number, target: number): AxisPlan {
   return { starts, weights, taps };
 }
 
-/** Averaging non-premultiplied RGBA bleeds a transparent pixel's colour into the visible edge. */
-function premultiply(raster: Raster): Float32Array {
-  const { pixels } = raster;
-  const out = new Float32Array(pixels.length);
-  for (let i = 0; i < pixels.length; i += 4) {
-    const a = pixels[i + 3] ?? 0;
-    const f = a / 255;
-    out[i] = (pixels[i] ?? 0) * f;
-    out[i + 1] = (pixels[i + 1] ?? 0) * f;
-    out[i + 2] = (pixels[i + 2] ?? 0) * f;
-    out[i + 3] = a;
-  }
-  return out;
-}
-
 function unpremultiply(src: Float32Array, width: number, height: number): Raster {
   const pixels = new Uint8ClampedArray(width * height * 4);
   for (let i = 0; i < pixels.length; i += 4) {
@@ -197,18 +155,28 @@ function unpremultiply(src: Float32Array, width: number, height: number): Raster
   return rasterFrom(width, height, pixels);
 }
 
+/** Either plane a pass can read: the 8-bit source itself, or a previous pass's float output. */
+type Plane = Float32Array | Uint8ClampedArray;
+
 /**
- * The one weighted 4-channel sum both passes share. `base` + `step` are the only thing that
- * differs between horizontal and vertical, so there is a single accumulation to get right.
+ * The one weighted 4-channel sum every pass shares. `base` + `step` are the only thing that differs
+ * between horizontal and vertical, so there is a single accumulation to get right.
+ *
+ * Averaging non-premultiplied RGBA bleeds a transparent pixel's colour into the visible edge, so
+ * every tap is premultiplied — and when the plane is the 8-bit source (`eightBit`) that happens
+ * HERE, on read, instead of in a float copy of the whole image. `Math.fround` is what a
+ * `Float32Array` store did in that copy, so the fused read produces identical bytes; on a float
+ * plane the value is already float32 and it is a no-op.
  */
 function tapSum(
-  src: Float32Array,
+  src: Plane,
   out: Float32Array,
   q: number,
   base: number,
   step: number,
   plan: AxisPlan,
   i: number,
+  eightBit: boolean,
 ): void {
   const { starts, weights, taps } = plan;
   const from = base + (starts[i] ?? 0) * step;
@@ -222,10 +190,12 @@ function tapSum(
     // read inside the buffer at the trailing edge.
     if (w === 0) continue;
     const p = from + k * step;
-    r += (src[p] ?? 0) * w;
-    g += (src[p + 1] ?? 0) * w;
-    b += (src[p + 2] ?? 0) * w;
-    a += (src[p + 3] ?? 0) * w;
+    const alpha = src[p + 3] ?? 0;
+    const f = eightBit ? alpha / 255 : 1;
+    r += Math.fround((src[p] ?? 0) * f) * w;
+    g += Math.fround((src[p + 1] ?? 0) * f) * w;
+    b += Math.fround((src[p + 2] ?? 0) * f) * w;
+    a += alpha * w;
   }
   out[q] = r;
   out[q + 1] = g;
@@ -233,40 +203,48 @@ function tapSum(
   out[q + 3] = a;
 }
 
-function scaleX(src: Float32Array, sw: number, rows: number, dw: number, plan: AxisPlan) {
+function scaleX(src: Plane, sw: number, rows: number, dw: number, plan: AxisPlan, first: boolean) {
   const out = new Float32Array(dw * rows * 4);
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < dw; x += 1) {
-      tapSum(src, out, (y * dw + x) * 4, y * sw * 4, 4, plan, x);
+      tapSum(src, out, (y * dw + x) * 4, y * sw * 4, 4, plan, x, first);
     }
   }
   return out;
 }
 
-function scaleY(src: Float32Array, cols: number, dh: number, plan: AxisPlan) {
+function scaleY(src: Plane, cols: number, dh: number, plan: AxisPlan, first: boolean) {
   const out = new Float32Array(cols * dh * 4);
   for (let y = 0; y < dh; y += 1) {
     for (let x = 0; x < cols; x += 1) {
-      tapSum(src, out, (y * cols + x) * 4, x * 4, cols * 4, plan, y);
+      tapSum(src, out, (y * cols + x) * 4, x * 4, cols * 4, plan, y, first);
     }
   }
   return out;
 }
 
-/** Separable: horizontal into scratch, then vertical. O(w·h·taps), never O(w·h·taps²). */
+/**
+ * Separable: one axis into scratch, then the other. O(w·h·taps), never O(w·h·taps²).
+ *
+ * The FIRST pass reads `raster.pixels` directly, whichever axis it scales, so the only float buffer
+ * ever allocated is a pass OUTPUT. A standalone premultiplied copy of the source would be
+ * `Float32Array(w * h * 4)` — a gigabyte for a legal 64MP upload, before the scaler even starts,
+ * on a path `storage`, `seo` and `pwa` all feed user bytes into.
+ */
 function resample(raster: Raster, size: ImageSize): Raster {
   if (raster.width === size.width && raster.height === size.height) return raster;
   assertPixelBudget(size.width, size.height, 'resize');
-  const premul = premultiply(raster);
-  const wide =
-    size.width === raster.width
-      ? premul
-      : scaleX(premul, raster.width, raster.height, size.width, planAxis(raster.width, size.width));
-  const tall =
-    size.height === raster.height
-      ? wide
-      : scaleY(wide, size.width, size.height, planAxis(raster.height, size.height));
-  return unpremultiply(tall, size.width, size.height);
+  const { pixels, width, height } = raster;
+  // The early return above means at least one axis scales, so `first` always reads the 8-bit source.
+  const scalesX = size.width !== width;
+  const first = scalesX
+    ? scaleX(pixels, width, height, size.width, planAxis(width, size.width), true)
+    : scaleY(pixels, width, size.height, planAxis(height, size.height), true);
+  const both = scalesX && size.height !== height;
+  const scaled = both
+    ? scaleY(first, size.width, size.height, planAxis(height, size.height), false)
+    : first;
+  return unpremultiply(scaled, size.width, size.height);
 }
 
 function fill(canvas: Raster, color: readonly [number, number, number, number]): void {

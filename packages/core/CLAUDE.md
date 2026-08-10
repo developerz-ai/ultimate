@@ -11,7 +11,7 @@ is a change to every package.
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | Exports | add to `src/index.ts` explicitly; no `export *` |
-| Files | < 200 LOC, one responsibility, `kebab-case.ts`, test beside source |
+| Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 
 Deliberate cycles (safe — nothing is referenced at module-evaluation time):
 `errors.ts ⇄ error-codes.ts`. Keep it that way: no top-level `UltimateError` use in
@@ -36,21 +36,4 @@ Gotchas:
   `afterAll` — a reset that is not handed back strips the titles of every package imported before
   that file, and their errors render the humanised fallback (`X_DB_DRIFT: db drift`) for the rest
   of the run. That is a load-order flake: green locally, red on whichever CI ordering hits it.
-- Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
-  That is what tells the sealed test network a loopback request is this process, not egress.
-- `defineService(name, factory)` factories run again on every `createContext`/`withChildContext`
-  call — never cached — because a factory closes over the `ctx` (actor, clock, tz) it is built
-  for. `withChildContext` drops a factory-managed name from what it carries forward on purpose;
-  only an ad hoc service nobody registered survives an actor swap unrebuilt.
-- `cursor.ts` is the framework's ONE keyset-cursor codec — `entity`, `query` and `admin` all sign
-  and verify here. `decodeCursor(cursor, scope)` takes the scope as a required argument on
-  purpose: an optional check is one a call site can forget, and a forgotten one pages a listing
-  with another read's cursor. A second codec anywhere is the regression this file exists to
-  prevent. Tests that call `configureCursorSigning()` must restore the previous secret.
-- `image/` is the framework's ONE image pipeline — `storage`, `seo` and `pwa` all call
-  `transformImageBytes`/`blurDataUrl` and none of them owns a second scaler. It is the one place
-  in core allowed to exceed the 200-line target: the JPEG and PNG codecs are single algorithms
-  that do not split into smaller responsibilities without inventing seams. Adding a format means
-  a decoder plus an entry in `DECODABLE_FORMATS`/`ENCODABLE_FORMATS` — never a second dispatch.
-  `image/fixtures.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only
-  round-trips against itself proves nothing. Never regenerate a fixture with our own encoder.
+- Tests that call `configureCursorSigning()` must restore the previous secret.

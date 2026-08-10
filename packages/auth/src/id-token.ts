@@ -69,9 +69,11 @@ export function decodeIdToken(provider: OAuthProviderId, idToken: string): IdTok
   if (typeof exp !== 'number') {
     throw oauthTokenInvalid(provider, 'the payload has no numeric exp claim', fix);
   }
+  // The filter can empty a non-empty array (`aud: [1, 2]`), and an empty audience addresses
+  // nobody — `verifyIdToken` would then check the client id against nothing and pass.
   const audience = Array.isArray(aud) ? aud.filter((one) => typeof one === 'string') : aud;
-  if (typeof audience !== 'string' && !Array.isArray(audience)) {
-    throw oauthTokenInvalid(provider, 'the payload has no aud claim', fix);
+  if (typeof audience !== 'string' && !(Array.isArray(audience) && audience.length > 0)) {
+    throw oauthTokenInvalid(provider, 'the payload has no aud claim naming a string audience', fix);
   }
   // `exactOptionalPropertyTypes`: an absent claim must be absent, not present-and-undefined.
   const iat = payload['iat'];
@@ -94,9 +96,15 @@ export function decodeIdToken(provider: OAuthProviderId, idToken: string): IdTok
   };
 }
 
-/** `"true"` and `true` both count; anything else — absent, `"false"`, a number — does not. */
+/**
+ * `"true"` and `true` both count; anything else — absent, `"false"`, a number — does not. Lives
+ * here rather than at each call site because userinfo spells the same flag the same two ways, and
+ * two copies of the rule is two places for one of them to start rounding a login up to verified.
+ */
+export const isVerifiedFlag = (value: unknown): boolean => value === true || value === 'true';
+
 export function idTokenEmailVerified(claims: IdTokenClaims): boolean {
-  return claims.email_verified === true || claims.email_verified === 'true';
+  return isVerifiedFlag(claims.email_verified);
 }
 
 export interface VerifyIdTokenInput {

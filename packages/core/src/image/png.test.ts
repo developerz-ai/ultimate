@@ -101,12 +101,16 @@ function concat(parts: readonly Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** Strips the zlib envelope and inflates. Copies because Bun's zlib rejects a shared-backed view. */
+/**
+ * Strips the zlib envelope and inflates the payload as RAW deflate, `windowBits: -15` named the
+ * same way the codec names it. Copies because Bun's zlib rejects a shared-backed view.
+ */
 const unwrapZlib = (stream: Uint8Array): Uint8Array =>
-  Bun.inflateSync(new Uint8Array(stream.subarray(2, stream.length - 4)));
+  Bun.inflateSync(new Uint8Array(stream.subarray(2, stream.length - 4)), { windowBits: -15 });
 
+/** The envelope written by hand, so a test's IDAT is a real zlib stream, not today's default. */
 function zlibWrap(raw: Uint8Array): Uint8Array {
-  const deflated = Bun.deflateSync(new Uint8Array(raw));
+  const deflated = Bun.deflateSync(new Uint8Array(raw), { windowBits: -15 });
   const out = new Uint8Array(deflated.length + 6);
   out[0] = 0x78;
   out[1] = 0x01;
@@ -235,6 +239,18 @@ describe('decodePng', () => {
       ['tRNS', Uint8Array.of(0, 0)],
     ]);
     expect(Array.from(decodePng(png).pixels)).toEqual([0, 0, 0, 0, 255, 255, 255, 255]);
+  });
+
+  test('reads an IDAT whose zlib envelope was written by hand, header and Adler-32 included', () => {
+    // The codec writes that envelope itself and inflates the payload as raw deflate. A file built
+    // any other way would keep passing while the two halves quietly disagreed about the mode.
+    const rows = Uint8Array.of(0, 9, 9, 9, 255, 0, 200, 200, 200, 255);
+    const png = syntheticPng([1, 2], 8, 6, rows);
+    const idat = chunksOf(png).find((piece) => piece.type === 'IDAT')?.data ?? new Uint8Array(0);
+    expect(idat[0]).toBe(0x78);
+    expect((((idat[0] ?? 0) << 8) | (idat[1] ?? 0)) % 31).toBe(0);
+    expect(readU32(idat, idat.length - 4)).toBe(adler32(rows));
+    expect(Array.from(decodePng(png).pixels)).toEqual([9, 9, 9, 255, 200, 200, 200, 255]);
   });
 
   test('refuses a palette index that runs past the end of PLTE', () => {

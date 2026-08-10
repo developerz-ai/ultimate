@@ -26,7 +26,7 @@ export type { MailFetch, ResendDriverOptions } from './driver-resend';
 export { createResendDriver, RESEND_BASE_URL } from './driver-resend';
 export type { SmtpDriverOptions } from './driver-smtp';
 export { createSmtpDriver } from './driver-smtp';
-export type { MailErrorCode, MailErrorInit, SendFailure } from './errors';
+export type { MailErrorCode, MailErrorInit, SendFailure, SendStage } from './errors';
 export {
   driverUnavailable,
   layoutUnknown,

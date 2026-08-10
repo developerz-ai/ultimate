@@ -234,11 +234,20 @@ describe('transformImageBytes', () => {
     expect([...raster.pixels.slice(0, 4)]).toEqual([255, 0, 0, 255]);
   });
 
-  test('a format the pipeline cannot write fails before any work is wasted', () => {
+  test('a format the pipeline cannot write fails before the source is even decoded', () => {
     const failure = thrown(() =>
       transformImageBytes(fixtureBytes(PNG_RGB_3X2), { width: 2, format: 'webp' }),
     );
     expect(failure.code).toBe('X_IMAGE_UNSUPPORTED');
+    expect(failure.cause).toContain('webp');
+    // Bytes that cannot decode at all are what makes the early exit observable: reaching the
+    // format refusal instead of X_IMAGE_DECODE_FAILED proves the spec was answered first, before
+    // 64 megapixels were expanded and resampled for an encoder that was never going to run.
+    const undecodable = thrown(() =>
+      transformImageBytes(fixtureBytes(PNG_GRADIENT_32X24).subarray(0, 30), { format: 'avif' }),
+    );
+    expect(undecodable.code).toBe('X_IMAGE_UNSUPPORTED');
+    expect(undecodable.cause).toContain('encoding avif');
   });
 
   test('is deterministic — the same bytes and spec produce the same output', () => {

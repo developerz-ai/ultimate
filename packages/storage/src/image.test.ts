@@ -1,4 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+// Why: `@ultimat3/seo` inlines the width/height this module promises, so a variant whose bytes
+// disagree with `variantKey()` or `fitDimensions()` is the layout shift the whole path exists to
+// prevent — and an unsupported format must surface core's own code, never a second one.
+
+import { beforeEach, describe, expect, test } from 'bun:test';
 import { createRaster, decodeImage, encodeImage, hasAlpha, probeImage } from '@ultimat3/core';
 import {
   BLUR_PLACEHOLDER_WIDTH,
@@ -12,6 +16,7 @@ import {
   transformImage,
   variantKey,
 } from './image';
+import { resetStorage } from './storage';
 
 /** 40x20 and opaque: wide enough that `cover` and `contain` disagree about the box. */
 function opaquePng(): Uint8Array {
@@ -48,6 +53,11 @@ const alphaAt = (bytes: Uint8Array, x: number, y: number): number => {
   const raster = decodeImage(bytes);
   return raster.pixels[(y * raster.width + x) * 4 + 3] ?? -1;
 };
+
+// Registered disks are module-level state; a leaked one would make these cases order-dependent.
+beforeEach(() => {
+  resetStorage();
+});
 
 describe('variantKey', () => {
   test('derives the key from the source key and the transform, webp by default', () => {

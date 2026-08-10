@@ -3,7 +3,7 @@
 // network. Every refusal becomes `X_MAIL_SEND_FAILED` naming the stage and the server's own reply.
 
 import { base64Utf8 } from './base64';
-import { type MailError, sendFailed } from './errors';
+import { type MailError, type SendStage, sendFailed } from './errors';
 import {
   authPlain,
   createReplyParser,
@@ -59,17 +59,23 @@ export interface SmtpSessionOptions {
 /** The goodbye is not worth the read deadline the rest of the conversation gets. */
 const QUIT_TIMEOUT_MS = 5_000;
 
-const FIXES: Readonly<Record<string, string>> = {
+// Keyed by `SendStage`, so a stage that is added to the union and forgotten here is a lookup that
+// falls back rather than a silent typo. `Partial` because `connect` and `request` never reach a
+// server reply: one belongs to the socket and the other to the HTTPS transport.
+const FIXES: Readonly<Partial<Record<SendStage, string>>> = {
   greeting: 'check host and port in SMTP_URL — the server did not open with 220',
   ehlo: 'point SMTP_URL at an ESMTP server (submission on 587, implicit TLS on 465)',
+  reply: 'point SMTP_URL at the SMTP port itself — a proxy or an HTTP port answers like this',
+  tls: 'fix the certificate on the implicit-TLS port, or use smtp://host:587 and STARTTLS',
   starttls: 'use smtps://host:465, or pass allowInsecure: true to send over a cleartext channel',
   auth: 'check the user:password in SMTP_URL — the server rejected the credentials',
   from: 'set mail.from in app.config.ts to an address this server is willing to relay for',
   recipient: 'the reply above names the address the server refused — correct or drop it',
   data: 'the reply above says why the body was refused (size, content or policy)',
+  quit: 'nothing to fix: the message was already accepted before the goodbye failed',
 };
 
-const refused = (stage: string, reply: SmtpReply): MailError =>
+const refused = (stage: SendStage, reply: SmtpReply): MailError =>
   sendFailed({
     driver: 'smtp',
     stage,
@@ -90,12 +96,12 @@ class Conversation {
   ) {}
 
   /** Sends one command line and reads the reply it expects. The line is never logged. */
-  async say(stage: string, line: string, wanted: (code: number) => boolean): Promise<SmtpReply> {
+  async say(stage: SendStage, line: string, wanted: (code: number) => boolean): Promise<SmtpReply> {
     await this.stream.write(`${line}\r\n`);
     return this.expect(stage, wanted);
   }
 
-  async expect(stage: string, wanted: (code: number) => boolean): Promise<SmtpReply> {
+  async expect(stage: SendStage, wanted: (code: number) => boolean): Promise<SmtpReply> {
     const reply = await this.next(stage);
     if (!wanted(reply.code)) throw refused(stage, reply);
     return reply;
@@ -111,7 +117,7 @@ class Conversation {
     await this.next('quit', Math.min(this.timeoutMs, QUIT_TIMEOUT_MS)).catch(() => undefined);
   }
 
-  private async next(stage: string, timeoutMs = this.timeoutMs): Promise<SmtpReply> {
+  private async next(stage: SendStage, timeoutMs = this.timeoutMs): Promise<SmtpReply> {
     for (;;) {
       const ready = this.pending.shift();
       if (ready !== undefined) return ready;
@@ -119,7 +125,7 @@ class Conversation {
     }
   }
 
-  private async chunk(stage: string, timeoutMs: number): Promise<string> {
+  private async chunk(stage: SendStage, timeoutMs: number): Promise<string> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {

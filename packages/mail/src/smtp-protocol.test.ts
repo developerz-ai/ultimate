@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import { base64Utf8 } from './base64';
 import {
   authPlain,
@@ -22,6 +23,23 @@ const replyFrom = (lines: readonly string[]): SmtpReply => ({
   lines,
   text: lines.join(' '),
 });
+
+const thrown = (fn: () => unknown): unknown => {
+  try {
+    fn();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+};
+
+const codeOf = (value: unknown): string =>
+  isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
+
+const metaOf = (value: unknown): Readonly<Record<string, unknown>> =>
+  isUltimateError(value) ? (value.meta ?? {}) : {};
+
+const fixOf = (value: unknown): string => (isUltimateError(value) ? value.fix : '');
 
 describe('createReplyParser', () => {
   test('a multi-line 250 reply parses to one SmtpReply', () => {
@@ -112,6 +130,39 @@ describe('createReplyParser', () => {
     expect(() => parser.push('not an smtp line\r\nneither is this\r\n')).not.toThrow();
     expect(parser.push('still nothing\r\n')).toEqual([]);
   });
+
+  test('a peer that streams bytes with no line ending is cut off, not buffered forever', () => {
+    const parser = createReplyParser();
+    // The read deadline only measures the gap between chunks, so this stream never times out: it
+    // is the cap, and nothing else, that stops the buffer from growing until the worker dies.
+    const error = thrown(() => {
+      for (let pushes = 0; pushes < 200; pushes += 1) parser.push('2'.repeat(1024));
+    });
+
+    expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+    expect(metaOf(error)['stage']).toBe('reply');
+    expect(metaOf(error)['retryable']).toBe(true);
+    expect(fixOf(error)).toContain('SMTP_URL');
+  });
+
+  test('endless continuation lines with no final line hit the same cap', () => {
+    const parser = createReplyParser();
+    // `250-…` never completes a reply, so the held lines grow exactly like a partial line would.
+    const error = thrown(() => {
+      for (let pushes = 0; pushes < 200; pushes += 1) parser.push(`250-${'x'.repeat(1020)}\r\n`);
+    });
+
+    expect(metaOf(error)['stage']).toBe('reply');
+  });
+
+  test('a legitimate reply far larger than any line stays under the cap', () => {
+    const parser = createReplyParser();
+    // 200KB of complete replies: each one drains the buffer, so total volume is never the trigger.
+    for (let pushes = 0; pushes < 200; pushes += 1) {
+      expect(parser.push(`250 ${'x'.repeat(1020)}\r\n`)).toHaveLength(1);
+    }
+    expect(parser.hasPending()).toBe(false);
+  });
 });
 
 describe('parseCapabilities', () => {
@@ -170,7 +221,6 @@ describe('parseCapabilities', () => {
     const capabilities = parseCapabilities(replyFrom(['greeting', 'SIZE']));
 
     expect(capabilities.maxSizeBytes).toBeUndefined();
-    expect(Number.isNaN(capabilities.maxSizeBytes)).toBe(false);
   });
 
   test('SIZE with a non-numeric value also returns no maxSizeBytes', () => {

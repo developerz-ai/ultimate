@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
+import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
 import type { IdTokenClaims } from './id-token';
+import { unsignedJwt } from './id-token-fixture';
 import { MemoryAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import type { OAuthFetch, OAuthTokens } from './oauth-exchange';
@@ -46,6 +48,17 @@ const codeOf = async (call: Promise<unknown>): Promise<string> => {
   return 'did-not-throw';
 };
 
+/**
+ * Accepts the new row and loses every patch — the shape of an `AuthAdapter` whose `updateUser`
+ * does not return what it wrote. `emailVerifiedAt` is not in `CreateUserInput`, so this is the
+ * one path where a lost patch would leave a signed-in user that no later login can link.
+ */
+class StampLosingAdapter extends MemoryAdapter {
+  override async updateUser(): Promise<AuthUser | null> {
+    return null;
+  }
+}
+
 describe('signInWithOAuth', () => {
   test('a first-time identity becomes a user, an account and a session', async () => {
     const result = await signInWithOAuth(auth, { profile: profile(), tokens: tokens() });
@@ -62,6 +75,24 @@ describe('signInWithOAuth', () => {
     const account = await adapter.findAccount('github', '583231');
     expect(account?.userId).toBe(user?.id ?? '');
     expect(account?.accessToken).toBe('gho_first');
+  });
+
+  test('a verified stamp the adapter loses fails closed, with no session and no link', async () => {
+    const losing = new StampLosingAdapter();
+    const failing = defineAuth({
+      adapter: losing,
+      clock: frozenClock(NOW),
+      providers: ['github', 'google'],
+    });
+
+    expect(await codeOf(signInWithOAuth(failing, { profile: profile(), tokens: tokens() }))).toBe(
+      'X_NOT_IMPLEMENTED',
+    );
+    const created = await losing.findUserByEmail('ada@example.com');
+    // The row exists and is unverified — which is exactly why signing it in was the bug.
+    expect(created?.emailVerifiedAt).toBeNull();
+    expect(await losing.findAccount('github', '583231')).toBeNull();
+    expect(await losing.listSessions(created?.id ?? '')).toEqual([]);
   });
 
   test('the second login reuses the linked user and refreshes the stored tokens', async () => {
@@ -114,6 +145,14 @@ describe('signInWithOAuth', () => {
     expect(await codeOf(denied)).toBe('X_UNAUTHENTICATED');
     await expect(denied).rejects.toThrow(/never verified it/);
     expect(await adapter.findAccount('github', '583231')).toBeNull();
+
+    // The address is a `meta` field a log pipeline can redact by key, never part of the sentence.
+    const error = await denied.catch((thrown: unknown) => thrown);
+    expect(isUltimateError(error) && error.cause).not.toContain('ada@example.com');
+    expect(isUltimateError(error) && error.meta).toEqual({
+      provider: 'github',
+      email: 'ada@example.com',
+    });
   });
 
   test('an unverified provider address never attaches to an existing account', async () => {
@@ -136,7 +175,7 @@ describe('signInWithOAuth', () => {
     await expect(denied).rejects.toThrow(/did not match an account/);
   });
 
-  test('a disabled user cannot come back in through the provider', async () => {
+  test('a disabled user cannot come back in through an already-linked account', async () => {
     const user = await adapter.createUser({
       id: 'user-1',
       email: 'ada@example.com',
@@ -146,9 +185,41 @@ describe('signInWithOAuth', () => {
       createdAt: NOW,
     });
     await adapter.updateUser(user.id, { emailVerifiedAt: NOW, disabledAt: NOW });
+    // Links the account first, so the second sign-in resolves through `userForAccount`.
+    await adapter.linkAccount({
+      id: 'account-1',
+      userId: 'user-1',
+      provider: 'github',
+      providerAccountId: '583231',
+      accessToken: 'gho_old',
+      refreshToken: null,
+      expiresAt: null,
+      createdAt: NOW,
+    });
     expect(await codeOf(signInWithOAuth(auth, { profile: profile(), tokens: tokens() }))).toBe(
       'X_UNAUTHENTICATED',
     );
+  });
+
+  // The other half of the same rule: disabled is checked twice, once per path to a user, and
+  // only the linked path was pinned. A regression in this branch re-admits a disabled account
+  // through any provider it never linked.
+  test('a disabled user cannot come back in through an unlinked provider either', async () => {
+    const user = await adapter.createUser({
+      id: 'user-1',
+      email: 'ada@example.com',
+      passwordHash: null,
+      orgId: null,
+      roles: [],
+      createdAt: NOW,
+    });
+    await adapter.updateUser(user.id, { emailVerifiedAt: NOW, disabledAt: NOW });
+    expect(await adapter.findAccount('github', '583231')).toBeNull();
+
+    expect(await codeOf(signInWithOAuth(auth, { profile: profile(), tokens: tokens() }))).toBe(
+      'X_UNAUTHENTICATED',
+    );
+    expect(await adapter.findAccount('github', '583231')).toBeNull();
   });
 
   test('an enrolled second factor still applies, and the account is linked first', async () => {
@@ -203,13 +274,6 @@ describe('signInWithOAuth', () => {
   });
 });
 
-const base64Url = (value: string): string => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-
 const googleIdToken = (handshake: OAuthHandshake): string => {
   const claims: IdTokenClaims = {
     iss: 'https://accounts.google.com',
@@ -221,7 +285,7 @@ const googleIdToken = (handshake: OAuthHandshake): string => {
     email_verified: true,
     name: 'Ada Lovelace',
   };
-  return `${base64Url('{"alg":"RS256"}')}.${base64Url(JSON.stringify(claims))}.signature`;
+  return unsignedJwt(claims);
 };
 
 const json = (body: unknown): Response =>
@@ -234,12 +298,19 @@ describe('completeOAuthLogin', () => {
       clientId: 'client-id',
       redirectUri: 'https://app.test/auth/callback',
     });
+    // Every endpoint answered by name: a catch-all `return` handed a plausible email list to any
+    // url the flow asked for, so a call to a fourth endpoint would have passed unnoticed.
+    const urls: string[] = [];
     const fetch: OAuthFetch = async (url) => {
+      urls.push(url);
       if (url === 'https://github.com/login/oauth/access_token') {
         return json({ access_token: 'gho_token', token_type: 'bearer' });
       }
       if (url === 'https://api.github.com/user') return json({ id: 583231, login: 'octocat' });
-      return json([{ email: 'ada@example.com', primary: true, verified: true }]);
+      if (url === 'https://api.github.com/user/emails') {
+        return json([{ email: 'ada@example.com', primary: true, verified: true }]);
+      }
+      return expect.unreachable(`unexpected endpoint: ${url}`);
     };
 
     const result = await completeOAuthLogin(auth, {
@@ -249,6 +320,11 @@ describe('completeOAuthLogin', () => {
       fetch,
     });
 
+    expect(urls).toEqual([
+      'https://github.com/login/oauth/access_token',
+      'https://api.github.com/user',
+      'https://api.github.com/user/emails',
+    ]);
     expect(result.actor.kind).toBe('user');
     expect((await adapter.findUserByEmail('ada@example.com'))?.id).toBe(result.actor.id);
     expect((await adapter.findAccount('github', '583231'))?.accessToken).toBe('gho_token');

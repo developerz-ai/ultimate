@@ -86,6 +86,24 @@ function parseSmtpUrl(raw: string): SmtpUrl {
   };
 }
 
+/**
+ * `poolSize: 0` is the one config mistake this driver could not report: the limiter would park
+ * every send on a slot that is never handed out, with no deadline on the wait, so the job would
+ * neither fail nor retry and the worker slot would be gone until the process restarted. A silent
+ * deadlock is worse than any error, so this fails at construction like every other bad value.
+ */
+function resolvePoolSize(poolSize: number | undefined): number {
+  if (poolSize === undefined) return DEFAULT_POOL_SIZE;
+  if (!Number.isInteger(poolSize) || poolSize < 1) {
+    throw new ConfigInvalidError({
+      cause: `the smtp driver was configured with poolSize: ${poolSize}, which opens no connection`,
+      fix: `set poolSize to a whole number >= 1 in app.config.ts, or drop it for ${DEFAULT_POOL_SIZE}`,
+      meta: { poolSize },
+    });
+  }
+  return poolSize;
+}
+
 /** At most `size` conversations at a time — the honest meaning of `poolSize` for one-shot sends. */
 function createLimiter(size: number): (run: () => Promise<SendResult>) => Promise<SendResult> {
   const waiting: (() => void)[] = [];
@@ -120,7 +138,7 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
   const clock = options.clock ?? systemClock;
   const connect = options.connect ?? bunSmtpStream;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const limit = createLimiter(options.poolSize ?? DEFAULT_POOL_SIZE);
+  const limit = createLimiter(resolvePoolSize(options.poolSize));
   const session: SmtpSessionOptions = {
     clientName: options.clientName ?? addressDomain(options.from),
     secure: target.tls,

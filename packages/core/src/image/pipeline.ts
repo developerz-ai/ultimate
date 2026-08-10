@@ -80,9 +80,15 @@ export const defaultFormatFor = (raster: Raster): EncodableFormat =>
 
 /** The whole pipeline in one call: decode, resize, encode. */
 export function transformImageBytes(bytes: Uint8Array, spec: ImageTransformSpec = {}): Uint8Array {
+  const { format } = spec;
+  // The spec alone answers "can this be written?", so answer it here — decoding and resampling
+  // 64 megapixels first, only to refuse at the encoder, is work nobody can use.
+  if (format !== undefined && !canEncode(format)) {
+    throw imageUnsupported(`encoding ${format} is not built in`, encodeFix, { format });
+  }
   const source = decodeImage(bytes);
   const resized = resizeRaster(source, spec);
-  return encodeImage(resized, spec.format ?? defaultFormatFor(resized), spec.quality);
+  return encodeImage(resized, format ?? defaultFormatFor(resized), spec.quality);
 }
 
 /** Chunked because spreading a whole image into `String.fromCharCode` overflows the stack. */

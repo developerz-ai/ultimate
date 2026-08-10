@@ -102,8 +102,10 @@ function readHeader(bytes: Uint8Array, at: number, length: number): PngHeader {
 }
 
 /**
- * PNG wraps its deflate stream in zlib, and Bun's `inflateSync` only speaks RAW deflate — so the
- * 2-byte header and 4-byte Adler-32 trailer are validated and stripped here rather than handed on.
+ * PNG wraps its deflate stream in zlib, so the 2-byte header and 4-byte Adler-32 trailer are
+ * validated and stripped here and the payload is inflated as RAW deflate. `windowBits: -15` states
+ * that: Bun's documented default is 15, meaning zlib-wrapped, and a version that starts honouring
+ * it would otherwise reject every PNG we read.
  */
 function inflateIdat(stream: Uint8Array): Uint8Array {
   const cmf = stream[0] ?? 0;
@@ -122,7 +124,7 @@ function inflateIdat(stream: Uint8Array): Uint8Array {
     );
   }
   try {
-    return Bun.inflateSync(unshared(stream.subarray(2, stream.length - 4)));
+    return Bun.inflateSync(unshared(stream.subarray(2, stream.length - 4)), { windowBits: -15 });
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw imageDecodeFailed(`the PNG IDAT stream could not be inflated: ${why}`, {
@@ -409,8 +411,10 @@ export function encodePng(raster: Raster): Uint8Array {
     }
   }
 
-  // `Bun.deflateSync` emits RAW deflate, so the zlib envelope PNG requires is written by hand.
-  const deflated = Bun.deflateSync(filtered);
+  // `windowBits: -15` asks for RAW deflate explicitly, because the zlib envelope PNG requires is
+  // written by hand below — leaving it to the default would double-wrap the stream the day Bun's
+  // documented default (15, zlib-wrapped) is the one that actually applies.
+  const deflated = Bun.deflateSync(filtered, { windowBits: -15 });
   const idat = new Uint8Array(deflated.length + 6);
   idat.set([0x78, 0x01]);
   idat.set(deflated, 2);

@@ -15,6 +15,12 @@ const claims = (overrides: Partial<IdTokenClaims> = {}): IdTokenClaims => ({
   ...overrides,
 });
 
+/** The narrowed-scope case: a subject the exchange verified, and no address anywhere in it. */
+const claimsWithoutEmail = (): IdTokenClaims => {
+  const { email: _email, ...rest } = claims();
+  return rest;
+};
+
 const tokensWith = (idClaims: IdTokenClaims | null): OAuthTokens => ({
   accessToken: 'the-access-token',
   refreshToken: null,
@@ -41,6 +47,16 @@ const routed = (
   };
 };
 
+/**
+ * The rejected value itself. A `throw new Error('unreachable')` inside a try/catch lands in its
+ * own catch, so a call that wrongly *resolved* used to be reported as a mismatched boolean.
+ */
+const rejection = async (call: Promise<unknown>): Promise<unknown> =>
+  await call.then(
+    (value) => expect.unreachable(`expected a rejection, resolved with ${String(value)}`),
+    (error: unknown) => error,
+  );
+
 const GITHUB_USER = 'https://api.github.com/user';
 const GITHUB_EMAILS = 'https://api.github.com/user/emails';
 const GOOGLE_USERINFO = 'https://openidconnect.googleapis.com/v1/userinfo';
@@ -64,17 +80,29 @@ describe('oauthProfile', () => {
     expect(profile.emailVerified).toBe(false);
   });
 
-  test('a narrowed scope set falls back to userinfo but keeps the verified subject', async () => {
-    const withoutEmail = claims();
-    const { email: _email, ...rest } = withoutEmail;
+  test('a narrowed scope set falls back to userinfo for the address the token omitted', async () => {
     const { fetch, urls } = routed({
-      [GOOGLE_USERINFO]: () => json({ sub: 'someone-else', email: 'ada@example.com' }),
+      [GOOGLE_USERINFO]: () => json({ sub: 'google-sub', email: 'ada@example.com' }),
     });
-    const profile = await oauthProfile('google', tokensWith(rest as IdTokenClaims), { fetch });
+    const profile = await oauthProfile('google', tokensWith(claimsWithoutEmail()), { fetch });
     expect(urls).toEqual([GOOGLE_USERINFO]);
-    // The subject the token was verified for wins over anything the second call reports.
     expect(profile.providerAccountId).toBe('google-sub');
     expect(profile.email).toBe('ada@example.com');
+  });
+
+  test('a userinfo subject that disagrees with the verified id token ends the handshake', async () => {
+    const { fetch } = routed({
+      // Overwriting the subject and keeping this address would link the account on an address
+      // the verified token never vouched for — whoever `someone-else` is.
+      [GOOGLE_USERINFO]: () => json({ sub: 'someone-else', email: 'attacker@example.com' }),
+    });
+    const error = await rejection(
+      oauthProfile('google', tokensWith(claimsWithoutEmail()), { fetch }),
+    );
+    expect(isUltimateError(error)).toBe(true);
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.meta).toEqual({ provider: 'google', stage: 'userinfo' });
+    expect(isUltimateError(error) && error.cause).toContain('not the subject of the verified');
   });
 
   test("GitHub's numeric id becomes the account id, and the verified primary wins", async () => {
@@ -119,37 +147,28 @@ describe('oauthProfile', () => {
 
   test('a refused profile call is X_OAUTH_EXCHANGE_FAILED at the userinfo stage', async () => {
     const { fetch } = routed({ [GITHUB_USER]: () => json({ message: 'Bad credentials' }, 401) });
-    try {
-      await oauthProfile('github', tokensWith(null), { fetch });
-      throw new Error('unreachable');
-    } catch (error) {
-      expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-      expect(isUltimateError(error) && error.meta).toEqual({
-        provider: 'github',
-        stage: 'userinfo',
-        status: 401,
-      });
-    }
+    const error = await rejection(oauthProfile('github', tokensWith(null), { fetch }));
+    expect(isUltimateError(error)).toBe(true);
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.meta).toEqual({
+      provider: 'github',
+      stage: 'userinfo',
+      status: 401,
+    });
   });
 
   test('a profile with no stable id is refused rather than keyed on an email', async () => {
     const { fetch } = routed({ [GITHUB_USER]: () => json({ email: 'ada@example.com' }) });
-    try {
-      await oauthProfile('github', tokensWith(null), { fetch });
-      throw new Error('unreachable');
-    } catch (error) {
-      expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-      expect(isUltimateError(error) && error.cause).toContain('stable account id');
-    }
+    const error = await rejection(oauthProfile('github', tokensWith(null), { fetch }));
+    expect(isUltimateError(error)).toBe(true);
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.cause).toContain('stable account id');
   });
 
   test('a provider with neither claims nor a userinfo endpoint says so', async () => {
-    try {
-      await oauthProfile('apple', tokensWith(null));
-      throw new Error('unreachable');
-    } catch (error) {
-      expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-      expect(isUltimateError(error) && error.cause).toContain('no userinfo endpoint');
-    }
+    const error = await rejection(oauthProfile('apple', tokensWith(null)));
+    expect(isUltimateError(error)).toBe(true);
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.cause).toContain('no userinfo endpoint');
   });
 });

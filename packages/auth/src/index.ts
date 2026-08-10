@@ -59,6 +59,7 @@ export {
   accountLocked,
   apiKeyInvalid,
   authNotImplemented,
+  emailVerifiedNotStored,
   forbidden,
   mfaRequired,
   oauthAccountNotLinked,

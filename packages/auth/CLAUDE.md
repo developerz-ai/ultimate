@@ -41,6 +41,7 @@ Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth.ts` | provider data, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
+| `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
 

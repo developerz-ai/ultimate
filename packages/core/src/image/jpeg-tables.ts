@@ -9,6 +9,15 @@ export const ZIGZAG: readonly number[] = Object.freeze([
   45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
 ]);
 
+/**
+ * cos(k*PI/16) * sqrt(2) — the scaling an AAN butterfly leaves in its output. The encoder folds it
+ * into the quantiser and the decoder into the dequantiser, so both halves read the same 8 numbers:
+ * a decoder scaled by anything else than the encoder assumed reads every coefficient wrong.
+ */
+export const AAN_SCALE: readonly number[] = Object.freeze([
+  1, 1.387039845, 1.306562965, 1.175875602, 1, 0.785694958, 0.5411961, 0.275899379,
+]);
+
 /** ITU T.81 Annex K.1, luminance, in NATURAL order. */
 export const STD_LUMINANCE_QUANT: readonly number[] = Object.freeze([
   16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56,

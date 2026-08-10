@@ -2,7 +2,7 @@
 // row-major, non-premultiplied. A single representation is why a decoder and an encoder
 // never negotiate, and why resize/composite has exactly one code path to be correct in.
 
-import { imageTooLarge } from './errors';
+import { imageDecodeFailed, imageTooLarge } from './errors';
 
 export interface Raster {
   readonly width: number;
@@ -46,11 +46,14 @@ export function createRaster(width: number, height: number, source = 'raster'): 
   return { width, height, pixels: new Uint8ClampedArray(width * height * 4) };
 }
 
-/** Wraps an existing buffer, refusing a length that disagrees with the declared size. */
+/**
+ * Wraps an existing buffer, refusing a length that disagrees with the declared size. A mismatch is
+ * a decode or a scaler bug — inconsistent bytes, not too many of them — so it is classified as one.
+ */
 export function rasterFrom(width: number, height: number, pixels: Uint8ClampedArray): Raster {
   assertPixelBudget(width, height, 'raster');
   if (pixels.length !== width * height * 4) {
-    throw imageTooLarge(
+    throw imageDecodeFailed(
       `raster buffer is ${pixels.length} bytes but ${width}x${height} needs ${width * height * 4}`,
       { width, height, length: pixels.length },
     );

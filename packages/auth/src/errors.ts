@@ -145,13 +145,30 @@ export const oauthExchangeFailed = (failure: OAuthExchangeFailure): AuthError =>
  * The address is proven to the provider, and an account that never proved it already holds it.
  * Naming that is not account enumeration — this caller just demonstrated they own the address —
  * and staying silent would leave them with a login that fails forever and no way out.
+ *
+ * The address itself rides in `meta`, never in `cause`: a log pipeline can redact a field by
+ * key, and cannot redact an address that was already interpolated into a sentence.
  */
 export const oauthAccountNotLinked = (provider: string, email: string): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
-    cause: `an account holds ${email} but never verified it, so ${provider} may not claim it`,
+    cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
     fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
-    meta: { provider },
+    meta: { provider, email },
+  });
+
+/**
+ * `CreateUserInput` carries no `emailVerifiedAt`, so a provider-verified address takes a second
+ * write. Falling back to the unstamped row would mint a session for a user every later login
+ * reads as unverified — the exact state `resolveUser` refuses to link a provider to — so the
+ * flow fails closed on an adapter that loses the stamp instead of half-succeeding.
+ */
+export const emailVerifiedNotStored = (provider: string, userId: string): AuthError =>
+  new AuthError({
+    code: 'X_NOT_IMPLEMENTED',
+    cause: `the adapter returned no row for new user ${userId}, so the ${provider}-verified address was never stamped verified`,
+    fix: 'return the updated row from AuthAdapter.updateUser — MemoryAdapter.updateUser is the reference implementation',
+    meta: { provider, userId },
   });
 
 /** The token arrived, and is not one this handshake can trust: wrong `iss`, `aud`, or expired. */

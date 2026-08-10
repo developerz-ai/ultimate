@@ -3,6 +3,7 @@
 // drives the connection and calls into these functions with raw chunks, getting typed values back.
 
 import { base64Utf8 } from './base64';
+import { sendFailed } from './errors';
 
 /** One complete server reply. `text` is every continuation line joined by a space. */
 export interface SmtpReply {
@@ -33,6 +34,13 @@ export interface ReplyParser {
 // line and must be skipped, never crashed on or folded into a neighbouring reply.
 const REPLY_LINE = /^(\d{3})(?:([- ])(.*))?$/;
 
+// RFC 5321 caps a reply line at 512 octets and a full reply is a handful of them, so nothing
+// legitimate comes near this. The cap exists because the read deadline in `smtp-client.ts`
+// measures the gap between chunks: a peer that dribbles bytes with no line ending resets that
+// deadline on every read while this buffer grows, which is an unbounded allocation no timeout
+// ever interrupts. Coded failure > OOM.
+const MAX_REPLY_BYTES = 64 * 1024;
+
 /**
  * Buffers socket chunks into complete `SmtpReply` values. A chunk can split anywhere — mid-line,
  * mid-CRLF, or carry several replies at once — so the dangling partial line and any continuation
@@ -42,6 +50,20 @@ const REPLY_LINE = /^(\d{3})(?:([- ])(.*))?$/;
 export function createReplyParser(): ReplyParser {
   let buffer = '';
   let pendingLines: string[] | null = null;
+  // Continuation lines held for a reply whose final line never arrives are the same unbounded
+  // growth as an endless partial line, so both count against the one cap.
+  let pendingBytes = 0;
+
+  const guard = (): void => {
+    if (buffer.length + pendingBytes <= MAX_REPLY_BYTES) return;
+    throw sendFailed({
+      driver: 'smtp',
+      stage: 'reply',
+      detail: `the server sent more than ${MAX_REPLY_BYTES} bytes without completing one reply`,
+      retryable: true,
+      fix: 'point SMTP_URL at the SMTP port itself — a proxy or an HTTP port answers like this',
+    });
+  };
 
   return {
     push(chunk: string): readonly SmtpReply[] {
@@ -62,6 +84,7 @@ export function createReplyParser(): ReplyParser {
 
         pendingLines ??= [];
         pendingLines.push(match[3] ?? '');
+        pendingBytes += line.length;
 
         if (match[2] !== '-') {
           replies.push({
@@ -70,9 +93,13 @@ export function createReplyParser(): ReplyParser {
             text: pendingLines.join(' '),
           });
           pendingLines = null;
+          pendingBytes = 0;
         }
       }
 
+      // Checked after the loop so only what is still unresolved counts: every reply this chunk
+      // completed has already drained both counters, and a well-behaved server never accumulates.
+      guard();
       return replies;
     },
     hasPending(): boolean {

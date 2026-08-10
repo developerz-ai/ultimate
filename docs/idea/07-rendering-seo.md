@@ -116,6 +116,8 @@ Nothing here is a plugin. Deleting a route removes it from the sitemap in the sa
 
 ### Image pipeline
 
+The canonical image capability contract — the wiki references this table rather than restating it.
+
 ```tsx
 <Image src={post.cover} alt={post.title} sizes="(max-width: 700px) 100vw, 700px" priority />
 ```

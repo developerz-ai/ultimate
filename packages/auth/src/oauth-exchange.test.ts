@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { unsignedJwt } from './id-token-fixture';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import { exchangeOAuthCode, type OAuthFetch, oauthCredentials } from './oauth-exchange';
 
@@ -7,25 +8,16 @@ const NOW = new Date('2026-08-09T12:00:00.000Z');
 const clock = frozenClock(NOW);
 const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
 
-const base64Url = (value: string): string => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-
 const idTokenFor = (handshake: OAuthHandshake): string =>
-  `${base64Url('{"alg":"RS256"}')}.${base64Url(
-    JSON.stringify({
-      iss: 'https://accounts.google.com',
-      aud: 'client-id',
-      sub: 'google-sub',
-      exp: Math.floor(NOW.getTime() / 1000) + 3600,
-      nonce: handshake.nonce,
-      email: 'ada@example.com',
-      email_verified: true,
-    }),
-  )}.signature`;
+  unsignedJwt({
+    iss: 'https://accounts.google.com',
+    aud: 'client-id',
+    sub: 'google-sub',
+    exp: Math.floor(NOW.getTime() / 1000) + 3600,
+    nonce: handshake.nonce,
+    email: 'ada@example.com',
+    email_verified: true,
+  });
 
 const handshakeFor = (provider: 'github' | 'google'): OAuthHandshake =>
   beginOAuth({ provider, clientId: 'client-id', redirectUri: 'https://app.test/auth/callback' });
@@ -60,6 +52,26 @@ const codeOf = async (call: Promise<unknown>): Promise<string> => {
   return 'did-not-throw';
 };
 
+/**
+ * The thrown value itself, for the assertions `codeOf` cannot make — `meta`, `fix`. Never a bare
+ * `Error` sentinel inside a try/catch: that throw lands in the catch below it, so the one failure
+ * worth naming ("it did not throw") arrives as a mismatched boolean instead.
+ */
+const thrownBy = (call: () => unknown): unknown => {
+  try {
+    call();
+  } catch (error) {
+    return error;
+  }
+  return expect.unreachable('expected a throw');
+};
+
+const rejection = async (call: Promise<unknown>): Promise<unknown> =>
+  await call.then(
+    (value) => expect.unreachable(`expected a rejection, resolved with ${String(value)}`),
+    (error: unknown) => error,
+  );
+
 describe('oauthCredentials', () => {
   test('reads the two env vars the provider table names', () => {
     const found = oauthCredentials('github', {
@@ -70,14 +82,16 @@ describe('oauthCredentials', () => {
   });
 
   test('a missing secret is X_ENV_MISSING naming both variables, not a silent empty string', () => {
-    try {
-      oauthCredentials('google', { GOOGLE_CLIENT_ID: 'id' });
-      throw new Error('unreachable');
-    } catch (error) {
-      expect(isUltimateError(error) && error.code).toBe('X_ENV_MISSING');
-      expect(isUltimateError(error) && error.cause).toContain('GOOGLE_CLIENT_SECRET');
-      expect(isUltimateError(error) && error.fix).toContain('.env');
-    }
+    const call = (): unknown => oauthCredentials('google', { GOOGLE_CLIENT_ID: 'id' });
+    expect(call).toThrow(/GOOGLE_CLIENT_SECRET/);
+
+    const error = thrownBy(call);
+    expect(isUltimateError(error)).toBe(true);
+    expect(isUltimateError(error) && error.code).toBe('X_ENV_MISSING');
+    expect(isUltimateError(error) && error.cause).toContain('GOOGLE_CLIENT_SECRET');
+    // Axiom 4: the fix is a command the reader can run, not advice to restart something.
+    expect(isUltimateError(error) && error.fix).toContain('.env');
+    expect(isUltimateError(error) && error.fix).toContain('x doctor --json');
   });
 });
 
@@ -143,27 +157,28 @@ describe('exchangeOAuthCode', () => {
   test('a non-2xx carries the provider status into the error meta', async () => {
     const handshake = handshakeFor('google');
     const { fetch } = recorder(() => json({ error_description: 'Unauthorized' }, 401));
-    try {
-      await exchangeOAuthCode(
+    const error = await rejection(
+      exchangeOAuthCode(
         handshake,
         { state: handshake.state, code: 'the-code' },
         { credentials, clock, fetch },
-      );
-      throw new Error('unreachable');
-    } catch (error) {
-      expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-      expect(isUltimateError(error) && error.meta).toEqual({
-        provider: 'google',
-        stage: 'token',
-        status: 401,
-      });
-      expect(isUltimateError(error) && error.fix).toContain('GOOGLE_CLIENT_SECRET');
-    }
+      ),
+    );
+    expect(isUltimateError(error)).toBe(true);
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.meta).toEqual({
+      provider: 'google',
+      stage: 'token',
+      status: 401,
+    });
+    expect(isUltimateError(error) && error.fix).toContain('GOOGLE_CLIENT_SECRET');
   });
 
   test('a transport failure before any response is still X_OAUTH_EXCHANGE_FAILED', async () => {
     const handshake = handshakeFor('github');
-    const fetch: OAuthFetch = () => Promise.reject(new Error('ECONNREFUSED'));
+    // `TypeError` because that is the shape `fetch` itself rejects with, and the shape the
+    // `instanceof Error` branch in `postForm` reads a message off. Not a sentinel: it is the input.
+    const fetch: OAuthFetch = () => Promise.reject(new TypeError('ECONNREFUSED'));
     expect(
       await codeOf(
         exchangeOAuthCode(

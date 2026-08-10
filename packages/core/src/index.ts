@@ -123,6 +123,7 @@ export {
   uuid,
   uuidTimestamp,
 } from './ids';
+export { parseColor } from './image/color';
 export {
   ImageDecodeFailedError,
   ImageTooLargeError,
@@ -164,7 +165,7 @@ export {
   rasterFrom,
 } from './image/raster';
 export type { ImageFit, ResizeSpec } from './image/resize';
-export { fitBox, parseColor, resizeRaster, scaledToFit } from './image/resize';
+export { fitBox, resizeRaster, scaledToFit } from './image/resize';
 export type {
   HealthPayload,
   HealthReport,

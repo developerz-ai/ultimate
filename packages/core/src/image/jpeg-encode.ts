@@ -4,6 +4,7 @@
 // that back. Reads `jpeg-tables.ts` so the encoder and the decoder cannot drift apart.
 
 import {
+  AAN_SCALE,
   DEFAULT_JPEG_QUALITY,
   rgbToYcbcr,
   STD_AC_CHROMINANCE_BITS,
@@ -71,11 +72,6 @@ const DC_LUMA = buildEncoder(STD_DC_LUMINANCE_BITS, STD_DC_LUMINANCE_VALUES);
 const AC_LUMA = buildEncoder(STD_AC_LUMINANCE_BITS, STD_AC_LUMINANCE_VALUES);
 const DC_CHROMA = buildEncoder(STD_DC_CHROMINANCE_BITS, STD_DC_CHROMINANCE_VALUES);
 const AC_CHROMA = buildEncoder(STD_AC_CHROMINANCE_BITS, STD_AC_CHROMINANCE_VALUES);
-
-/** cos(k*PI/16) * sqrt(2) — the scaling the AAN butterflies leave in their output. */
-const AAN_SCALE: readonly number[] = [
-  1, 1.387039845, 1.306562965, 1.175875602, 1, 0.785694958, 0.5411961, 0.275899379,
-];
 
 const C4 = Math.SQRT1_2;
 const C6 = 0.382683433;

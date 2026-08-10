@@ -34,7 +34,9 @@
 - Never format a date without `options.tz`. The `Date:` header is UTC, stated as `+0000`.
 - New block kind: `MailBlock` + `blocks` + `htmlOf` + `textOf`, same commit.
 - A transport failure is `sendFailed({ stage, status, retryable, fix })` — never a bare throw, and
-  never a `retryable` guess: 4xx SMTP and 429/5xx HTTP are the transient set.
+  never a `retryable` guess. `stage` is the `SendStage` union in `errors.ts`; a new step goes there
+  first. The transient set is 4xx over SMTP, and 408/409/425/429 + 5xx over HTTP — that HTTP set
+  lives in `RETRYABLE_STATUSES` (`driver-resend.ts`) and is edited there, never restated.
 - `Bcc` is an envelope field. It reaches `RCPT TO` and Resend's body, never a header.
 - Recipient addresses stay out of logs and out of error text we write ourselves; the server's own
   reply is passed through verbatim, and that is where the refused address comes from.

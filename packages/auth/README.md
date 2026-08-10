@@ -121,7 +121,7 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 | `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
-| `X_NOT_IMPLEMENTED` | a custom `AuthAdapter` refused a method — `authNotImplemented(feature, fix)` |
+| `X_NOT_IMPLEMENTED` | an `AuthAdapter` refused a method (`authNotImplemented(feature, fix)`), or lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
 
 ```bash
 bun test packages/auth

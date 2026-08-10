@@ -2,9 +2,10 @@
 // resampling guarantees a PWA icon and an srcset variant both depend on (no drift, no halo).
 
 import { describe, expect, test } from 'bun:test';
+import { parseColor } from './color';
 import { ImageUnsupportedError } from './errors';
 import { createRaster, type Raster, rasterFrom } from './raster';
-import { fitBox, parseColor, resizeRaster, scaledToFit } from './resize';
+import { fitBox, resizeRaster, scaledToFit } from './resize';
 
 type Rgba = readonly [number, number, number, number];
 
@@ -14,15 +15,6 @@ const codeOf = (run: () => unknown): string => {
     return 'no-throw';
   } catch (error) {
     return error instanceof ImageUnsupportedError ? error.code : `unexpected: ${String(error)}`;
-  }
-};
-
-const fixOf = (run: () => unknown): string => {
-  try {
-    run();
-    return 'no-throw';
-  } catch (error) {
-    return error instanceof ImageUnsupportedError ? error.fix : `unexpected: ${String(error)}`;
   }
 };
 
@@ -128,43 +120,6 @@ describe('scaledToFit', () => {
   });
 });
 
-describe('parseColor', () => {
-  test('transparent is the only name', () => {
-    expect(parseColor('transparent')).toEqual([0, 0, 0, 0]);
-    expect(codeOf(() => parseColor('red'))).toBe('X_IMAGE_UNSUPPORTED');
-  });
-
-  test('doubles the nibbles of the short forms', () => {
-    expect(parseColor('#abc')).toEqual([0xaa, 0xbb, 0xcc, 255]);
-    expect(parseColor('#abcd')).toEqual([0xaa, 0xbb, 0xcc, 0xdd]);
-  });
-
-  test('reads the long forms, defaulting alpha to opaque', () => {
-    expect(parseColor('#aabbcc')).toEqual([0xaa, 0xbb, 0xcc, 255]);
-    expect(parseColor('#aabbccdd')).toEqual([0xaa, 0xbb, 0xcc, 0xdd]);
-  });
-
-  test('is case insensitive', () => {
-    expect(parseColor('#AABBCC')).toEqual(parseColor('#aabbcc'));
-    expect(parseColor('#ABCD')).toEqual(parseColor('#abcd'));
-    expect(parseColor('TRANSPARENT')).toEqual([0, 0, 0, 0]);
-  });
-
-  test('rejects a hex string of the wrong length', () => {
-    expect(codeOf(() => parseColor('#12'))).toBe('X_IMAGE_UNSUPPORTED');
-    expect(codeOf(() => parseColor('#1234567'))).toBe('X_IMAGE_UNSUPPORTED');
-    expect(codeOf(() => parseColor('#gghhii'))).toBe('X_IMAGE_UNSUPPORTED');
-    expect(codeOf(() => parseColor(''))).toBe('X_IMAGE_UNSUPPORTED');
-  });
-
-  test('names every accepted form in the fix', () => {
-    const fix = fixOf(() => parseColor('rebeccapurple'));
-    for (const form of ['#rgb', '#rgba', '#rrggbb', '#rrggbbaa', 'transparent']) {
-      expect(fix).toContain(form);
-    }
-  });
-});
-
 describe('resampling quality', () => {
   test('a solid image survives a downscale exactly — the area average must not drift', () => {
     const out = resizeRaster(solid(4, 4, RED), { width: 2, height: 2 });
@@ -208,6 +163,32 @@ describe('resampling quality', () => {
     expect(r).toBeGreaterThan(b + 200);
     expect(a).toBeGreaterThanOrEqual(127);
     expect(a).toBeLessThanOrEqual(128);
+  });
+});
+
+describe('the separable passes', () => {
+  /** Each spec reaches a different first pass, and the first pass is the one reading 8-bit bytes. */
+  test.each([
+    ['width only', { width: 100, height: 2 }, { width: 90, height: 2 }],
+    ['height only', { width: 2, height: 100 }, { width: 2, height: 90 }],
+    ['both axes', { width: 8, height: 4 }, { width: 4, height: 2 }],
+  ])('scales %s and keeps a solid colour exact', (_label, source, box) => {
+    const out = resizeRaster(solid(source.width, source.height, RED), box);
+    expect([out.width, out.height]).toEqual([box.width, box.height]);
+    for (let y = 0; y < out.height; y += 1) {
+      for (let x = 0; x < out.width; x += 1) expect(at(out, x, y)).toEqual(RED);
+    }
+  });
+
+  test('a large but legal resize completes without a float copy of the whole source', () => {
+    // 16 megapixels is a quarter of the ceiling, and premultiplying it into a standalone buffer
+    // first cost 268MB of Float32 before the scaler read a single tap. The first pass reads the
+    // 8-bit source itself now, so only pass OUTPUT is allocated — and a solid image still survives.
+    const out = resizeRaster(solid(4096, 4096, RED), { width: 512, height: 512 });
+    expect([out.width, out.height]).toEqual([512, 512]);
+    expect(at(out, 0, 0)).toEqual(RED);
+    expect(at(out, 256, 256)).toEqual(RED);
+    expect(at(out, 511, 511)).toEqual(RED);
   });
 });
 

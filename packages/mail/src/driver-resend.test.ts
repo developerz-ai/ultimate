@@ -63,7 +63,11 @@ interface Seen {
   body: Record<string, unknown>;
 }
 
-/** Answers the driver's one request with `response` and records what it sent. */
+/**
+ * Answers every request with `response` and records what it sent. Each call gets a `clone()`: a
+ * body is single-use, so handing the same instance to a second send would have the driver read an
+ * already-consumed body and fall back to a local id — passing the test for the wrong reason.
+ */
 function fetchStub(response: Response): { fetch: typeof globalThis.fetch; seen: Seen } {
   const seen: Seen = { url: '', method: '', headers: new Headers(), body: {} };
   const impl: typeof globalThis.fetch = async (input, init) => {
@@ -71,7 +75,7 @@ function fetchStub(response: Response): { fetch: typeof globalThis.fetch; seen: 
     seen.method = init?.method ?? '';
     seen.headers = new Headers(init?.headers);
     seen.body = init?.body === undefined ? {} : JSON.parse(String(init.body));
-    return response;
+    return response.clone();
   };
   return { fetch: impl, seen };
 }
@@ -124,13 +128,17 @@ test('Idempotency-Key is content-derived when the message names none', async () 
   const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch });
   const message = messageFixture();
 
-  await driver.send(message);
+  const first = await driver.send(message);
   // The job hands the same envelope to a retry, so the header must be identical across attempts
   // — that is the whole reason a retried send is not a second email.
-  await driver.send(message);
+  const second = await driver.send(message);
 
   expect(seen.headers.get('idempotency-key')).toBe(mailIdempotencyKey(message));
   expect(seen.headers.get('idempotency-key')).toStartWith('mail:mail_welcome:ada@example.test:');
+  // Both attempts read the provider's id out of a live body: a stub that handed the same Response
+  // to the second call would leave it consumed, and the id would silently become a local one.
+  expect(first.id).toBe('em_idem_2');
+  expect(second.id).toBe('em_idem_2');
 });
 
 test('includes cc, bcc and reply_to in the body only when the message sets them', async () => {

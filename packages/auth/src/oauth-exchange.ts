@@ -65,7 +65,7 @@ export function oauthCredentials(
   if (missing.length > 0) {
     throw new EnvMissingError({
       cause: `${provider} oauth is enabled but ${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not set`,
-      fix: `set ${missing.join(' and ')} in .env from the ${provider} app's credentials, then restart`,
+      fix: `add ${missing.join(' and ')} to .env from the ${provider} app's credentials, then run: x doctor --json`,
       meta: { provider, missing },
     });
   }

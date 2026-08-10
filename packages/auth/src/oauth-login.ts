@@ -6,7 +6,12 @@
 import { ConfigInvalidError, uuid } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
-import { mfaRequired, oauthAccountNotLinked, oauthExchangeFailed } from './errors';
+import {
+  emailVerifiedNotStored,
+  mfaRequired,
+  oauthAccountNotLinked,
+  oauthExchangeFailed,
+} from './errors';
 import type { OAuthCallback, OAuthHandshake } from './oauth';
 import {
   exchangeOAuthCode,
@@ -59,9 +64,12 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
     createdAt: auth.clock.now(),
   });
   if (!input.profile.emailVerified) return created;
-  return (
-    (await auth.adapter.updateUser(created.id, { emailVerifiedAt: auth.clock.now() })) ?? created
-  );
+  // `CreateUserInput` has no `emailVerifiedAt`, so the stamp is a required second write. Returning
+  // `created` when it does not land would sign in a user whose row says unverified — and the next
+  // login through this same provider would then refuse to link it at all.
+  const stamped = await auth.adapter.updateUser(created.id, { emailVerifiedAt: auth.clock.now() });
+  if (stamped === null) throw emailVerifiedNotStored(input.profile.provider, created.id);
+  return stamped;
 }
 
 /**

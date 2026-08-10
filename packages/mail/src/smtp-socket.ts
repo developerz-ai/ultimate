@@ -2,11 +2,11 @@
 // handlers while the conversation pulls replies, so a queue sits between them; `startTls` swaps in
 // the upgraded socket for STARTTLS. Nothing here knows an SMTP verb — that is `smtp-client.ts`.
 
-import { sendFailed } from './errors';
+import { type MailError, sendFailed } from './errors';
 import type { SmtpStream, SmtpTarget } from './smtp-client';
 
 /** Structural view of Bun's socket — declared here so the contract does not depend on bun-types. */
-interface SocketLike {
+export interface SocketLike {
   write(data: Uint8Array): number;
   end(): void;
   upgradeTLS(options: {
@@ -15,7 +15,7 @@ interface SocketLike {
   }): readonly SocketLike[];
 }
 
-interface SocketHandlers {
+export interface SocketHandlers {
   data(socket: SocketLike, data: Uint8Array): void;
   close(): void;
   end(): void;
@@ -23,7 +23,7 @@ interface SocketHandlers {
   error(socket: SocketLike, error: Error): void;
 }
 
-interface BunConnect {
+export interface BunConnect {
   connect(options: {
     readonly hostname: string;
     readonly port: number;
@@ -83,26 +83,103 @@ class ChunkQueue {
   }
 }
 
+/** A write parked for backpressure: released by `drain`, failed by whatever ends the socket. */
+interface DrainWaiter {
+  readonly resolve: () => void;
+  readonly reject: (error: MailError) => void;
+}
+
+/**
+ * Which TLS negotiation is in flight, and therefore how a failure now has to be reported: `tls` is
+ * the implicit handshake an `smtps://` connection opens with, `starttls` the in-band upgrade. Both
+ * windows close on the first byte back — encrypted bytes only flow once the handshake completed,
+ * so that first chunk is the proof it did. `undefined` is a channel with no handshake pending.
+ */
+type Handshake = 'tls' | 'starttls' | undefined;
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export function bunSmtpStream(target: SmtpTarget): Promise<SmtpStream> {
-  const queue = new ChunkQueue();
-  let drained: (() => void) | undefined;
+  return smtpStreamOver(Bun as unknown as BunConnect, target);
+}
 
-  const handlers: SocketHandlers = {
-    data: (_socket, data) => queue.push(decoder.decode(data)),
-    close: () => queue.end(),
-    end: () => queue.end(),
-    drain: () => {
-      const waiter = drained;
-      drained = undefined;
-      waiter?.();
-    },
-    error: (_socket, error) => queue.fail(error),
+/**
+ * `bunSmtpStream` with the runtime handed in. A `write` that returns `-1`, an `error` during the
+ * TLS handoff and a `drain` that never comes are all unreachable over a real socket, and each one
+ * used to cost a full deadline or a wrong stage — so they are driven by hand in the tests.
+ */
+export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise<SmtpStream> {
+  const queue = new ChunkQueue();
+  let draining: DrainWaiter | undefined;
+  // `smtps://` hands the socket to TLS before a single SMTP byte is exchanged, so the window is
+  // already open when the connection is made; a plaintext one opens it at `startTls()` or never.
+  let handshake: Handshake = target.tls ? 'tls' : undefined;
+
+  /**
+   * A failed handshake is a refused certificate or a protocol mismatch, and the same attempt fails
+   * identically forever — reporting it as retryable requeues a job against a wall. The two windows
+   * differ only in the command that reproduces them, so they are two stages, not one.
+   */
+  const handshakeFailure = (kind: 'tls' | 'starttls', detail: string): MailError =>
+    sendFailed({
+      driver: 'smtp',
+      stage: kind,
+      detail: `the TLS handshake with ${target.host} failed: ${detail}`,
+      retryable: false,
+      fix:
+        `check the certificate and protocol the host offers: openssl s_client ` +
+        `${kind === 'starttls' ? '-starttls smtp ' : ''}-connect ${target.host}:${target.port}`,
+    });
+
+  /** Outside a handshake, a dead socket really is transient — a reset, a rate limit, a restart. */
+  const socketFailure = (detail: string): MailError =>
+    handshake === undefined
+      ? sendFailed({
+          driver: 'smtp',
+          stage: 'data',
+          detail,
+          retryable: true,
+          fix: 'check the SMTP host logs — the job will retry automatically',
+        })
+      : handshakeFailure(handshake, detail);
+
+  const failDrain = (error: MailError): void => {
+    const waiter = draining;
+    draining = undefined;
+    waiter?.reject(error);
   };
 
-  const opening = (Bun as unknown as BunConnect).connect({
+  /** What an ended socket means, in one place: `close` and `end` differ only in their wording. */
+  const died = (detail: string): void => {
+    // A write parked for `drain` can never get one from a socket that is gone; failing it here is
+    // the difference between an immediate error and burning the whole deadline first.
+    if (draining !== undefined) failDrain(socketFailure(detail));
+    // EOF inside a handshake window is a refused handshake, not the clean end of a conversation.
+    if (handshake !== undefined) queue.fail(socketFailure(detail));
+    else queue.end();
+  };
+
+  const handlers: SocketHandlers = {
+    data: (_socket, data) => {
+      handshake = undefined;
+      queue.push(decoder.decode(data));
+    },
+    close: () => died('the socket closed'),
+    end: () => died('the server half-closed the socket'),
+    drain: () => {
+      const waiter = draining;
+      draining = undefined;
+      waiter?.resolve();
+    },
+    error: (_socket, error) => {
+      const failure = socketFailure(error.message);
+      failDrain(failure);
+      queue.fail(failure);
+    },
+  };
+
+  const opening = runtime.connect({
     hostname: target.host,
     port: target.port,
     tls: target.tls,
@@ -115,7 +192,7 @@ export function bunSmtpStream(target: SmtpTarget): Promise<SmtpStream> {
     const waitForDrain = (): Promise<void> =>
       new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          drained = undefined;
+          draining = undefined;
           reject(
             sendFailed({
               driver: 'smtp',
@@ -126,9 +203,15 @@ export function bunSmtpStream(target: SmtpTarget): Promise<SmtpStream> {
             }),
           );
         }, target.timeoutMs);
-        drained = (): void => {
-          clearTimeout(timer);
-          resolve();
+        draining = {
+          resolve: () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          reject: (error) => {
+            clearTimeout(timer);
+            reject(error);
+          },
         };
       });
 
@@ -137,6 +220,10 @@ export function bunSmtpStream(target: SmtpTarget): Promise<SmtpStream> {
       while (rest.length > 0) {
         const written = socket.write(rest);
         if (written >= rest.length) return;
+        // A negative count is a refusal, not backpressure: no `drain` follows a socket that cannot
+        // emit one, so waiting for it would park this write until the deadline and call a closed
+        // connection a slow one.
+        if (written < 0) throw socketFailure(`the socket refused a ${rest.length}-byte write`);
         // Backpressure: a 200KB message does not fit one buffer. Wait for `drain`, bounded by the
         // same deadline as a read so a stalled socket cannot hold a worker slot forever.
         if (written > 0) rest = rest.subarray(written);
@@ -166,6 +253,9 @@ export function bunSmtpStream(target: SmtpTarget): Promise<SmtpStream> {
           );
         }
         socket = upgraded;
+        // Writes made now are buffered by the runtime until the handshake completes, so the client
+        // may send EHLO straight away — what changes is how a failure from here is reported.
+        handshake = 'starttls';
         return Promise.resolve();
       },
       close: () => {

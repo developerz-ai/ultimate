@@ -5,7 +5,7 @@
 
 import { logger } from '@ultimat3/core';
 import { oauthExchangeFailed } from './errors';
-import { idTokenEmailVerified } from './id-token';
+import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { OAUTH_PROVIDERS, type OAuthProviderId } from './oauth';
 import {
   OAUTH_USER_AGENT,
@@ -150,7 +150,7 @@ async function fromUserInfo(
   }
 
   let email = stringOrNull(body['email']);
-  let emailVerified = body['email_verified'] === true || body['email_verified'] === 'true';
+  let emailVerified = isVerifiedFlag(body['email_verified']);
 
   if (config.userEmailsUrl !== null) {
     const primary = await githubPrimaryEmail(config.userEmailsUrl, tokens.accessToken, options);
@@ -183,10 +183,21 @@ export async function oauthProfile(
   if (claims === null) return await fromUserInfo(provider, tokens, options);
 
   const email = stringOrNull(claims.email);
-  if (email === null && OAUTH_PROVIDERS[provider].userInfoUrl !== null) {
+  const userInfoUrl = OAUTH_PROVIDERS[provider].userInfoUrl;
+  if (email === null && userInfoUrl !== null) {
     const profile = await fromUserInfo(provider, tokens, options);
-    // The subject in the verified token wins over anything the second call reports.
-    return { ...profile, providerAccountId: claims.sub };
+    // Two surfaces, one identity — or this is not that identity. Overwriting the subject and
+    // keeping the address would link the account on an address belonging to whoever the second
+    // call described, so a disagreement ends the handshake instead of being reconciled.
+    if (profile.providerAccountId !== claims.sub) {
+      throw oauthExchangeFailed({
+        provider,
+        stage: 'userinfo',
+        detail: 'the userinfo subject is not the subject of the verified id token',
+        fix: `confirm ${userInfoUrl} is ${provider}'s own userinfo endpoint and not a proxy that rewrites sub`,
+      });
+    }
+    return profile;
   }
 
   return {

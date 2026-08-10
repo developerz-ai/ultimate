@@ -121,14 +121,36 @@ export const headerInvalid = (name: string, mailId: string): MailError =>
   });
 
 /**
+ * Every step a send can die at. A closed union rather than a `string`: the stage is keyed on by
+ * the transports' `fix` tables and asserted on in tests, so a typo has to be a compile error
+ * instead of an unmapped fix line nobody notices until it reaches an operator.
+ */
+export type SendStage =
+  // The SMTP conversation, in the order it happens. `tls` is the implicit handshake `smtps://`
+  // opens with, before any SMTP byte; `starttls` is the in-band upgrade of a plaintext connection.
+  | 'connect'
+  | 'tls'
+  | 'greeting'
+  | 'ehlo'
+  | 'starttls'
+  | 'auth'
+  | 'from'
+  | 'recipient'
+  | 'data'
+  | 'quit'
+  // Reply framing, which can break at any of the steps above: bytes that never complete a reply.
+  | 'reply'
+  // The HTTPS transports: one request, so one stage.
+  | 'request';
+
+/**
  * What a transport reports when the remote end did not take the message. `stage` names the
  * exact step of the conversation, and `status` is the provider's own number — an SMTP reply
  * code or an HTTP status — because "mail failed" without either is not a diagnosis.
  */
 export interface SendFailure {
-  readonly driver: string;
-  /** `connect` | `greeting` | `ehlo` | `starttls` | `auth` | `from` | `recipient` | `data` | `request`. */
-  readonly stage: string;
+  readonly driver: 'smtp' | 'resend';
+  readonly stage: SendStage;
   readonly detail: string;
   /** SMTP reply code (4xx/5xx) or HTTP status. Absent when the socket never answered. */
   readonly status?: number | undefined;

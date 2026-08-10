@@ -306,6 +306,22 @@ test('smtps defaults to 465 and smtp to 587, and credentials are percent-decoded
   expect(auth).toHaveLength(1);
 });
 
+test('a poolSize that opens no connection is refused at construction, never a silent deadlock', () => {
+  const build = (poolSize: number): unknown =>
+    thrown(() => createSmtpDriver({ url: 'smtp://mail.example.test:587', from: FROM, poolSize }));
+
+  // 0 used to park every send on a slot that was never handed out: no error, no retry, and the
+  // worker slot gone until a restart. Each of these is that same "no connection" value.
+  for (const poolSize of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(codeOf(build(poolSize))).toBe('X_CONFIG_INVALID');
+    expect(metaOf(build(poolSize))['poolSize']).toBe(poolSize);
+  }
+  // The valid boundary still builds — the check refuses `< 1`, not "small".
+  expect(
+    thrown(() => createSmtpDriver({ url: 'smtp://mail.example.test', from: FROM, poolSize: 1 })),
+  ).toBeUndefined();
+});
+
 test('a url that is not SMTP is a config error at construction, not at the first send', () => {
   expect(
     codeOf(thrown(() => createSmtpDriver({ url: 'https://mail.example.test', from: FROM }))),

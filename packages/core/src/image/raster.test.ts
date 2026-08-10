@@ -3,7 +3,7 @@
 // size it claims, and `hasAlpha` is what every "PNG or JPEG?" decision downstream rests on.
 
 import { describe, expect, test } from 'bun:test';
-import { ImageTooLargeError } from './errors';
+import { ImageDecodeFailedError, ImageTooLargeError } from './errors';
 import {
   assertPixelBudget,
   createRaster,
@@ -18,7 +18,7 @@ const thrown = (run: () => unknown): { code: string; cause: string; meta: unknow
     run();
     return { code: 'no-throw', cause: 'no-throw', meta: undefined };
   } catch (error) {
-    if (error instanceof ImageTooLargeError) {
+    if (error instanceof ImageTooLargeError || error instanceof ImageDecodeFailedError) {
       return { code: error.code, cause: error.cause, meta: error.meta };
     }
     return { code: `unexpected: ${String(error)}`, cause: '', meta: undefined };
@@ -96,9 +96,14 @@ describe('rasterFrom', () => {
     expect(raster.pixels).toBe(pixels);
   });
 
-  test('a buffer that disagrees with the declared size is refused, both ways', () => {
+  // A short buffer and a long one are both inconsistent bytes, not a bomb: the pixel count already
+  // passed the ceiling one line earlier, so the only thing left to report is a failed decode.
+  test('a buffer that disagrees with the declared size is a decode failure, both ways', () => {
     expect(thrown(() => rasterFrom(2, 2, new Uint8ClampedArray(15))).code).toBe(
-      'X_IMAGE_TOO_LARGE',
+      'X_IMAGE_DECODE_FAILED',
+    );
+    expect(thrown(() => rasterFrom(2, 2, new Uint8ClampedArray(17))).code).toBe(
+      'X_IMAGE_DECODE_FAILED',
     );
     expect(thrown(() => rasterFrom(2, 2, new Uint8ClampedArray(17))).cause).toContain('needs 16');
   });

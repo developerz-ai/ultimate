@@ -47,9 +47,9 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_IMAGE_UNSUPPORTED` | the built-in image pipeline cannot read or write this format | a WebP/AVIF source, a request for an AVIF variant, or a colour that is not hex or `transparent` | request `png` or `jpeg`, or pass an `ImageTransformDriver` that can produce the format |
+| `X_IMAGE_UNSUPPORTED` | the built-in image pipeline cannot read or write this format | a WebP/AVIF source, a request for an AVIF variant, or a colour that is not hex or `transparent` | `transformImageBytes(bytes, { format: 'png' })` (or `'jpeg'`), or pass an `ImageTransformDriver` that produces the format — `meta.format` names the one refused |
 | `X_IMAGE_DECODE_FAILED` | image bytes are malformed, truncated or internally inconsistent | a partial upload, a corrupted file, or a header that disagrees with the data that follows | `file <path>` to confirm the type, then re-export the image and retry |
-| `X_IMAGE_TOO_LARGE` | image exceeds the pipeline pixel ceiling | a header declaring more than 64 megapixels — usually a decompression bomb, occasionally a real scan | downscale the source before it reaches the pipeline, or raise `MAX_IMAGE_PIXELS` deliberately |
+| `X_IMAGE_TOO_LARGE` | image exceeds the pipeline pixel ceiling | a header declaring more than 64 megapixels — usually a decompression bomb, occasionally a real scan | `transformImageBytes(bytes, { width: 4000 })` before it reaches the pipeline, or raise `MAX_IMAGE_PIXELS` deliberately |
 
 ## Config and environment
 
@@ -99,13 +99,13 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_SESSION_EXPIRED` | session passed its idle or absolute expiry | `cause` names which of the two clocks ran out | sign in again, or raise `session.absoluteTtlMs` / `session.idleTtlMs` in `defineAuth` |
+| `X_SESSION_EXPIRED` | session passed its idle or absolute expiry | `cause` names which of the two clocks ran out | `POST /auth/sign-in { email, password }` for a fresh session, or raise `session.absoluteTtlMs` / `session.idleTtlMs` in `defineAuth` |
 | `X_MFA_REQUIRED` | password proven, second factor outstanding | the user has TOTP enrolled | `POST /auth/mfa/verify { code }` with the 6-digit code, then retry |
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match | a replayed callback URL, a handshake that expired, or a token minted for another browser | restart the flow at `GET /auth/oauth/<provider>` — a callback URL is single-use |
-| `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange or returned no usable identity | wrong client secret, an unregistered `redirect_uri`, a spent code, or a missing scope | `cause` names the stage and the provider's own status; `meta.stage` is `token` or `userinfo` |
+| `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange or returned no usable identity | wrong client secret, an unregistered `redirect_uri`, a spent code, or a missing scope | `meta.stage` is `token` or `userinfo`: for `token`, match `<PROVIDER>_CLIENT_SECRET` and the registered `redirect_uri`, then `x doctor --json`; for `userinfo`, restart at `GET /auth/oauth/<provider>` |
 | `X_OAUTH_TOKEN_INVALID` | the id token failed its issuer, audience or expiry check | the client id in `.env` is not the one the authorize URL was built with, or this host's clock is skewed | match `<PROVIDER>_CLIENT_ID` to the id `beginOAuth()` used, then restart the flow |
 | `X_PASSWORD_WEAK` | strength check rejected the password | too short, or a known-common password | choose a longer, uncommon password — or relax `defineAuth({ password: { minLength } })` |
-| `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout | repeated failed attempts | wait out the seconds named in `cause`, or raise `defineAuth({ rateLimit })` |
+| `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout | repeated failed attempts | `x auth unlock <key>` — `cause` names the key and the remaining seconds — or raise `defineAuth({ rateLimit })` |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong | one shape for all four — a precise message is an enumeration oracle | `x auth keys list --json`, then issue a fresh key |
 
 ## Entity and database
@@ -242,8 +242,8 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_MAIL_DUPLICATE` | two mails claim the same id | a copy-pasted `defineMail` | rename one of the two declarations |
 | `X_MAIL_TEXT_MISSING` | the rendered mail has no plain-text part | a template of images and buttons only | add a text-bearing block: `blocks.paragraph('mail.<id>.body')` |
 | `X_MAIL_DRIVER_UNAVAILABLE` | no mail driver is configured | `setMailDriver` was never called | `setMailDriver(createMemoryDriver())` in dev, `createSmtpDriver({ url: env.SMTP_URL })` live |
-| `X_MAIL_HEADER_INVALID` | a header value carries a line break | interpolated data with a CR/LF reached `Subject` — header injection | strip line breaks from the value before it reaches the header |
-| `X_MAIL_SEND_FAILED` | the mail transport refused the message | a rejected recipient, bad credentials, a throttle, a dead socket | the `cause` names the stage, the provider's own status and whether a retry can help |
+| `X_MAIL_HEADER_INVALID` | a header value carries a line break | interpolated data with a CR/LF reached `Subject` — header injection | reject the value at its own boundary — `t.string().pattern(/^[^\r\n]*$/)` on the field that feeds the header — then re-send. Never strip the break: a silently rewritten header hides the injection attempt |
+| `X_MAIL_SEND_FAILED` | the mail transport refused the message | a rejected recipient, bad credentials, a throttle, a dead socket, or a peer that never completes a reply | `meta.retryable === true` → requeue with `sendMailJob`; `false` → fix what `meta.stage` names, then `x doctor --json`. `meta.stage` is the `SendStage` union in `packages/mail/src/errors.ts`: `auth` → `SMTP_URL` credentials, `tls` → `openssl s_client -connect <host>:465` for the implicit-TLS certificate, `starttls` → `openssl s_client -starttls smtp -connect <host>:587`, `recipient` → the address, `reply` → point `SMTP_URL` at the SMTP port itself, since a proxy or an HTTP port answers like this |
 
 ## MCP and AI
 

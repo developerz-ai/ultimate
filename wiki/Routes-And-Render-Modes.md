@@ -180,16 +180,7 @@ See [I18n](I18n), [Timezones and dates](Timezones-And-Dates), [Money](Money).
 <Image src={post.cover} alt={post.title} sizes="(max-width: 700px) 100vw, 700px" priority />
 ```
 
-| Step | Output |
-|---|---|
-| Variants | AVIF + WebP + original fallback, at the widths implied by `sizes` |
-| `srcset` / `sizes` | generated; a raw `<img>` in `site/` is a build error |
-| Dimensions | read at build time and **inlined** as width/height → **CLS 0** |
-| Placeholder | blur hash inlined as a data URI, swapped on decode |
-| Loading | `lazy` by default, `priority` → eager + `<link rel="preload">` for the LCP image |
-| Where | build-time for `site/`, on-demand + cached for user uploads (`Bun.s3` + the cache tiers) |
-| Runtime | `@ultimat3/core`'s own pipeline — PNG/JPEG decode, resize, encode, zero dependencies. No `sharp`, no vendor image CDN |
-| AVIF / WebP | measured from the header so dimensions still inline, never synthesised. A variant in those formats comes from an `ImageTransformDriver` |
+One `<Image>` shape, one capability contract, stated once — in [`docs/idea/07-rendering-seo.md` → Image pipeline](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/07-rendering-seo.md#image-pipeline): variants, `srcset`, inlined dimensions, the blur placeholder, the `@ultimat3/core` runtime, and the `ImageTransformDriver` seam AVIF/WebP variants come from. Restating it here would let the two copies drift.
 
 ## Rules
 

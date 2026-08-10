@@ -219,6 +219,20 @@ describe('decodeJpeg', () => {
   });
 
   test.each([
+    ['a spectral band narrower than the whole 0-63', [1, 1, 0x00, 1, 5, 0x00], /coefficients 1-5/],
+    ['a successive-approximation refinement', [1, 1, 0x00, 0, 63, 0x21], /approximation 2\/1/],
+  ])('refuses a sequential frame whose scan declares %s', (_name, sos, pattern) => {
+    // SOF0 promises sequential coding, so the scan must code every coefficient at full precision.
+    // A progressive scan's shape behind a baseline frame header would have `decodeBlock` read
+    // partial coefficients as whole ones — a plausible, wrong image instead of a named refusal.
+    const bytes = jpegOf(DQT_FLAT, frame(0xc0, 8, 8), segment(0xda, sos), [0x00, 0x00]);
+    const error = failure(() => decodeJpeg(bytes));
+    expect(error?.code).toBe('X_IMAGE_UNSUPPORTED');
+    expect(error?.message).toMatch(pattern);
+    expect(error?.fix).toContain('convert in.jpg -interlace none baseline.jpg');
+  });
+
+  test.each([
     ['SOF9 arithmetic', jpegOf(frame(0xc9, 16, 16)), /SOF9/],
     ['SOF3 lossless', jpegOf(frame(0xc3, 16, 16)), /SOF3/],
     ['SOF11 arithmetic lossless', jpegOf(frame(0xcb, 16, 16)), /SOF11/],

@@ -13,7 +13,10 @@ export function mailIdempotencyKey(message: MailMessage): string {
   const explicit = message.idempotencyKey;
   if (explicit !== undefined && explicit !== '') return `mail:${explicit}`;
   const recipients = [...message.to].map((address) => address.toLowerCase()).sort();
-  const digest = fnv1a32(
+  // Every field that reaches the wire is hashed, `replyTo` included: it travels as `Reply-To` and
+  // as Resend's `reply_to`, so two mails that differ only there are two mails, and a shared key
+  // would have the provider drop the second one as a duplicate.
+  const digest = contentDigest(
     stableStringify({
       subject: message.subject,
       html: message.html,
@@ -22,6 +25,7 @@ export function mailIdempotencyKey(message: MailMessage): string {
       bcc: message.bcc ?? [],
       locale: message.locale,
       tz: message.tz,
+      replyTo: message.replyTo ?? '',
       unsubscribeUrl: message.unsubscribeUrl ?? '',
     }),
   );
@@ -42,12 +46,16 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** FNV-1a, 32-bit. Not a security hash — a short, dependency-free, stable content id. */
-function fnv1a32(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
+/** 128 bits of hex: no collision at any volume a mailer reaches, and short enough for a header. */
+const DIGEST_HEX_CHARS = 32;
+
+/**
+ * SHA-256, truncated. Two properties matter and only a specified algorithm has both. Width: a
+ * 32-bit digest reaches a 1% chance of collision at ~9,300 payloads for one mailId and recipient
+ * set, and a collision here is an email the provider dedupes away — 128 bits does not get there.
+ * Stability: SHA-256's output is fixed by its specification, so a key minted by one Bun version
+ * still matches the one minted by the next — `Bun.hash`'s families promise no such thing.
+ */
+function contentDigest(input: string): string {
+  return new Bun.CryptoHasher('sha256').update(input).digest('hex').slice(0, DIGEST_HEX_CHARS);
 }
