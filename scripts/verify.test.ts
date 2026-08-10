@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyStepNames } from '@ultimat3/cli';
 import { repoRoot } from './lib/run';
+// Only the integration assertion below lives here — `checkRoadmap`'s own cases are in
+// `scripts/roadmap.test.ts`, next to their source.
+import { checkRoadmap } from './roadmap';
 import {
   ERROR_REFERENCE,
   errorCodeDocs,
@@ -16,7 +19,7 @@ describe('unit · the repo gate is the CLI gate', () => {
   test('the repo adds rules to steps, never steps of its own', () => {
     const names: readonly string[] = verifyStepNames();
     for (const step of Object.keys(HOST_CHECKS)) expect(names).toContain(step);
-    expect(Object.keys(HOST_CHECKS)).toEqual(['boundaries', 'errors', 'manifest']);
+    expect(Object.keys(HOST_CHECKS)).toEqual(['boundaries', 'errors', 'manifest', 'roadmap']);
   });
 
   test('the error reference is enforced through the errors step', async () => {
@@ -57,5 +60,6 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(await tierBoundaries(root)).toEqual([]);
     expect(await frameworkManifest(root)).toEqual([]);
     expect(await errorCodeDocs(root)).toEqual([]);
+    expect(await checkRoadmap(root)).toEqual([]);
   });
 });

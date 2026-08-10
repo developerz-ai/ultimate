@@ -2,7 +2,14 @@
 
 ## Supported versions
 
-Pre-alpha. No version is supported for production use yet, and no security backports exist. Track [the roadmap](docs/idea/14-roadmap.md).
+Framework packages move in lockstep, so "supported version" is one number covering all 28 — the 27 `@ultimat3/*` packages and the unscoped `create-ultimate`.
+
+| Version | Supported |
+|---|---|
+| `1.0.x` | ✅ security fixes |
+| `< 1.0.0` | ❌ pre-release, never supported — upgrade |
+
+A fix ships as a patch to every package in one release, on the [same lockstep rule as any other release](PUBLISHING.md). There are no per-package security branches and no backports below 1.0.0. Report against the latest `1.0.x`.
 
 ## Reporting a vulnerability
 
@@ -26,8 +33,10 @@ Design decisions that carry security weight, so you know what to audit:
 | **CSP** | Locked defaults. The theme inline script ships with its sha256 hash so no `unsafe-inline` is needed. |
 | **Egress in tests** | Sealed by default. Any unmocked outbound request fails the test. |
 
-## Known gaps (pre-alpha)
+## Known gaps
 
-- Better Auth integration is wrapped but not yet hardened or audited.
-- Rate limiting ships an in-memory default; the distributed store is interface-only.
-- The sync protocol has not had an adversarial review. Do not expose tier-3 local-first sync to untrusted clients yet.
+Open at 1.0.0, `As of 2026-08`. None of these is closed by the release; audit accordingly.
+
+- **No third-party security audit.** The auth stack has had no external review. Better Auth binds through `AuthAdapter` rather than being a dependency, so the seam is narrow and swappable — but neither the built-in adapter nor a Better Auth binding has been audited by anyone outside this repo.
+- **Rate limiting is per-replica.** `RateLimitStore` is an interface with one shipped implementation, `memoryRateLimitStore()`; the Redis/Postgres store is still interface-only. N replicas therefore enforce N × the configured bucket. Terminate rate limiting at a shared proxy if the limit has to hold across the fleet. The credential-path throttle in `@ultimat3/auth` (per-IP and per-account lockout) has the same per-process scope.
+- **The sync protocol has had no adversarial review.** Tiers 1–2 ship; tier 3 local-first (`persist: true`) is deferred to v2, and its OPFS store throws until the browser entry ships — so the untrusted-client exposure is closed by absence, not by review. When tier 3 arrives, the protocol still needs that review first.

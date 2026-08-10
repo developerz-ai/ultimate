@@ -1,6 +1,6 @@
 # Contributing
 
-Bun-only monorepo. One gate: `x verify`. Pre-v1 — internals move, so read the tier table before adding an import.
+Bun-only monorepo. One gate: `x verify`. v1.0.0 `As of 2026-08` — semver covers the documented surface, so read the tier table before adding an import and assume a rename is a major ([Upgrading](Upgrading)).
 
 ```
 bun install
@@ -28,7 +28,7 @@ Root also holds `scripts/` (verify, boundaries, manifest, setup), `docs/idea/` (
 ```json
 {
   "name": "@ultimat3/<name>",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "<one line>",
   "license": "MIT",
   "type": "module",
@@ -71,11 +71,13 @@ A package may import from **strictly lower** tiers only — never sideways withi
 | Tier | Packages | May import |
 |---|---|---|
 | 0 | `core`, `schema` | nothing internal |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo` | tier 0 |
-| 2 | `entity`, `policy`, `http` | tier 0–1 |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage` | tier 0 |
+| 2 | `entity`, `policy`, `http`, `auth` | tier 0–1 |
 | 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest` | tier 0–3 |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` | tier 0–3 |
 | 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
+
+[`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of that table — change it there first. Four sideways edges are declared and no others: `admin → ui`, `realtime → query`, `cli → admin`, `create-ultimate → cli`.
 
 Enforced by [`scripts/boundaries.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/boundaries.ts): `bun run boundaries`. A violation is `X_BOUNDARY_VIOLATION` with the **transitive chain**, not just the offending line. It runs on pre-push and inside `x verify` — a lint warning would not count as enforcement.
 
@@ -170,7 +172,7 @@ Everything in `wiki/`, `docs/`, and every `README.md` / `CLAUDE.md` uses compres
 | Tables for any >=3-row structured data | |
 | Code, paths, and commands verbatim | compress the prose around them, never the command |
 | No meta-framing, no rhetoric, no trailing summary | "This section covers…" is deleted in review |
-| Date load-bearing claims | `As of 2026-07` |
+| Date load-bearing claims | `As of 2026-08` |
 | No fabricated numbers | no benchmarks that were not run, no adoption counts, no invented dates |
 | `CLAUDE.md` per package | <40 lines: boundary, deps, commands |
 
@@ -180,12 +182,14 @@ Never generate prose documentation at runtime. Facts come from code (`x.manifest
 
 | Expectation | Detail |
 |---|---|
-| Green `x verify` | typecheck, lint, boundaries, all six test types, migration drift, contract diff, budgets, SEO + i18n, manifest freshness |
+| Green `x verify` | all 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
 | No new dependency without justification in the PR body | target is **under 40 direct dependencies for the whole framework**. A Bun native beats a package |
 | No new alternative for something already locked | a second CSS system, a second ORM, a second validator, a second runtime is a closed PR ([Home](Home)) |
 | Feature fits one of the eight primitives | if it doesn't fit, it doesn't ship ([The eight primitives](The-Eight-Primitives)) |
 | New failure modes have `X_*` codes with `fix:` lines | |
 | Deep infra may ship interface-only | an in-memory or PGlite-shaped default driver plus a clearly-labelled `X_NOT_IMPLEMENTED` throw carrying a `fix:`. Never a bare `// TODO` |
 | Milestone discipline | each of the 12 milestones ends in a working demo app plus green `x verify`. A package that only compiles is not a milestone |
+
+The step list has one source of truth: `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts). Adding, removing or reordering a step means editing that constant first; the wiki is plain markdown with no build step, so the copies on this page, [Getting started](Getting-Started), [Testing](Testing) and [FAQ](FAQ) are hand-synced in the same PR.
 
 Security issues go through [`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md), never a public issue.

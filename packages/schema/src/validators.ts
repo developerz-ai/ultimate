@@ -1,5 +1,5 @@
 // Single responsibility: the builtin, dependency-free validators behind `t`. Small on purpose —
-// ArkType or Zod replace them wholesale via `configureSchemaProvider()`; the IR and the
+// ArkType or Zod replace them wholesale via `configureSchemaProvider()` — neither ships; the IR and the
 // Standard Schema surface are what the rest of the framework actually depends on.
 
 import {

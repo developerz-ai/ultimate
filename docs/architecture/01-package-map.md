@@ -44,7 +44,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | Package | Tier | Responsibility (one line) | Owns | Must never |
 |---|---|---|---|---|
 | `core` | 0 | `UltimateError`, ALS request context, ids, build ID, typed env, the image pipeline | the error base + code registry, `ctx` shape, cross-tier interface types, the logger, the one decode/resize/encode path | import any `@ultimat3/*`; do I/O beyond `process.env` and stdout |
-| `schema` | 0 | Standard Schema façade; ArkType exposed as `t`; JSON Schema emit | `t`, `parse`, `toJsonSchema`, the env schema helper | know about HTTP, DB, or locales |
+| `schema` | 0 | Standard Schema façade; the dependency-free builtin provider exposed as `t`; JSON Schema emit | `t`, `parse`, `toJsonSchema`, `configureSchemaProvider()` — the swap point a third-party adapter plugs into | know about HTTP, DB, or locales; ship an adapter for ArkType, Zod or Valibot |
 | `i18n` | 1 | translator, catalog flattening, locale negotiation, loud misses | `t()`, catalog format, `⟦key⟧` rendering, plural selection via CLDR | read a request object; format money |
 | `money` | 1 | integer minor units with an attached currency | `Money`, arithmetic, `allocate`, ISO exponent table, `Intl` formatting | floats; cross-currency arithmetic; a bare number as a total |
 | `time` | 1 | UTC instants, zone math, cron, durations | `Instant`, `ZonedFormat`, cron parse/next, duration parse (`'3d'`) | format without an explicit IANA `timeZone` |
@@ -70,6 +70,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `admin` | 5 | generated admin dashboard, itself an Ultimate app with MCP on | admin screens derived from entities, its MCP surface | bypass `policy`; ship in the app bundle graph |
 | `testing` | 5 | the six test runners, template DB, frozen clock, sealed network | fixture shapes, DB cloning, seeded RNG, egress trap | appear in a production bundle |
 | `cli` | 5 | the `x` binary: generators, dev server, `verify` orchestration | command surface, `--json` output, generator templates, composition wiring | contain framework logic — it delegates |
+| `create-ultimate` | unlisted (6) | the published `bunx create-ultimate` shim | the `create-ultimate` bin, argument forwarding into `x new` | reimplement a template `cli` already owns |
 
 ## Dependency graph
 
@@ -77,6 +78,7 @@ Arrow = imports. Only representative edges are drawn; the tier rule is the compl
 
 ```mermaid
 graph TD
+  create-ultimate["create-ultimate (unlisted)"]
   subgraph T5["tier 5"]
     cli; testing; admin; ui
   end
@@ -95,6 +97,8 @@ graph TD
   subgraph T0["tier 0"]
     core; schema
   end
+
+  create-ultimate --> cli
 
   cli --> manifest
   cli --> render

@@ -2,7 +2,7 @@
 
 `sw.js` is a build artifact, generated from the route table. Hand-editing it is a build error (`X_SW_HAND_EDITED`, checksum mismatch).
 
-Pre-v1. Not production-ready.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## Why generated
 

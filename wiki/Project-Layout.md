@@ -15,12 +15,13 @@ myapp/
     desktop/              # placeholder + README (Tauri/Electron later)
   packages/
     domain/               # pure types + constants, no I/O
-    db/                   # Drizzle schema + migrations, no business logic
+    db/                   # entity() declarations + plain-SQL migrations, no business logic
     i18n/                 # app catalogs (en, es, ...)
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
   bin/                    # setup, dev, check — thin wrappers over `x`
-  docker/                 # compose (dev) + per-role compose (prod) + Dockerfile
+  docker/                 # Dockerfile + docker-compose.dev.yml; the prod compose and the
+                          #   Helm chart are copied from the framework repo's docker/
   app.config.ts           # the one config file
   x.manifest.json         # GENERATED: routes, entities, actions, jobs, policies
   AGENTS.md               # short, human-authored
@@ -105,7 +106,7 @@ A feature imports another feature only through that feature's `service.ts` or it
 | Package | Rule |
 |---|---|
 | `packages/domain` | pure types + constants, **no I/O** |
-| `packages/db` | Drizzle schema + migrations, **no business logic** ([Entities and migrations](Entities-And-Migrations)) |
+| `packages/db` | `entity()` declarations + plain-SQL migrations, **no business logic**; no ORM in the request path ([Entities and migrations](Entities-And-Migrations)) |
 | `packages/i18n` | flat catalogs; a missing key renders `⟦key⟧` and fails `x verify` ([I18n](I18n)) |
 | `packages/ui` | app components on `@ultimat3/ui`; same byte budgets as `shared/` ([Theming](Theming)) |
 | `packages/mcp` | the app's own MCP tools ([MCP and AI](MCP-And-AI)) |
@@ -116,12 +117,14 @@ Inside the framework repo, a package may import from **strictly lower** tiers on
 
 | Tier | Packages | May import |
 |---|---|---|
-| 0 | `core`, `schema` | nothing |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo` | tier 0 |
-| 2 | `entity`, `policy`, `http` | tier 0–1 |
+| 0 | `core`, `schema` | nothing internal |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage` | tier 0 |
+| 2 | `entity`, `policy`, `http`, `auth` | tier 0–1 |
 | 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest` | tier 0–3 |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` | tier 0–3 |
 | 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
+
+Four sideways edges are declared and no others: `admin → ui`, `realtime → query`, `cli → admin`, `create-ultimate → cli`. [`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of both tables.
 
 Per-package layout is fixed: `package.json`, `tsconfig.json`, `README.md`, `CLAUDE.md`, `src/index.ts` (explicit exports, no `export *` outside pure-type modules), `src/errors.ts` (this package's `X_*` codes), one `src/<concern>.ts` per responsibility with `<concern>.test.ts` beside it. Target < 200 LOC per file, hard ceiling ~500. See [Contributing](Contributing).
 

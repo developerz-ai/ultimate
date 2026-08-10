@@ -4,7 +4,7 @@ menu: true
 nav: Jobs
 description: A Postgres queue with a transactional outbox, durable steps, and an idempotency key that the type system refuses to let you forget.
 lede: Postgres queue by default. Durable steps. `idempotencyKey` required by the type. Drivers swap without touching job code.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ## Transactional outbox by default
@@ -99,7 +99,7 @@ export const syncCrm = job({
 | `concurrency.limit` | max simultaneous runs sharing a key | advisory lock / lease count in the driver |
 | `rateLimit` | max starts per window per key | token bucket row, checked at claim time |
 | `queue` | named pool; the `worker` role runs one pool per config | `WORKER_QUEUES=default,integrations` |
-| `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, jittered | driver scheduler |
+| `retry.attempts` / `backoff` | `'exponential'`, `'linear'` or `'fixed'`, jittered | driver scheduler |
 | terminal failure | after `attempts`, moves to dead-letter with the full step trace | `x jobs retry <id>` replays from the failed step |
 
 A rate-limited or concurrency-blocked job is deferred, never dropped — it stays queued with a
@@ -107,11 +107,17 @@ later `runAt`.
 
 ## One driver interface
 
-| Driver | When | Trade-off |
-|---|---|---|
-| `pg` (default) | always, up to the throughput a single Postgres sustains | outbox is free (same DB, same tx); `SELECT … FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
-| `redis` | high-throughput, short jobs | needs the outbox relay; loses "queue state in one backup" |
-| `nats` | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
+| Driver | Status | When | Trade-off |
+|---|---|---|---|
+| `pg` (default) | shipped | always, up to the throughput a single Postgres sustains | outbox is free (same DB, same tx); `SELECT … FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
+| `memory` | shipped | `x dev` and tests | the same claim/ack/nack path as `pg` — visibility timeout, idempotency dedupe, dead-letter — with zero infrastructure |
+| `redis` | v2 | high-throughput, short jobs | needs the outbox relay; loses "queue state in one backup" |
+| `nats` | v2 | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
+
+`redis` and `nats` are **interface-complete and not implemented** in 1.0.0. Every method raises
+`X_NOT_IMPLEMENTED` — an app can be written and typechecked against the interface, and nothing is
+ever dropped silently. Getting off a stub is one command: `x jobs drain --to memory --json`. Which
+driver the app runs on afterwards is a config line, not the drain — see below.
 
 ```ts
 export interface JobDriver {
@@ -126,9 +132,13 @@ export interface JobDriver {
 }
 ```
 
-Switching drivers is a config line plus a migration of in-flight rows
-(`x jobs drain --to redis`). Because `saveStep` / `loadSteps` are driver methods, step
-persistence works identically on all three. **Job code never changes.**
+Switching drivers is a config line — `jobs: { driver: 'postgres' }` in `app.config.ts` — plus a
+migration of in-flight rows (`x jobs drain --to memory|redis|nats`, `--dry-run` for the plan).
+Because `saveStep` / `loadSteps` are driver methods, step persistence works identically on every
+driver. **Job code never changes.** Draining *to* `redis` or `nats` moves nothing until those
+drivers land in v2: the stub's `enqueue` raises `X_NOT_IMPLEMENTED` per record, `x jobs drain`
+reports each one in `findings` and exits non-zero, and every leased job goes back to the source
+without burning an attempt.
 
 ## Scheduling
 

@@ -112,7 +112,7 @@ myapp/
 | Package | Rule |
 |---|---|
 | `packages/domain` | pure types + constants, **no I/O** |
-| `packages/db` | Drizzle schema + migrations, **no business logic** |
+| `packages/db` | `entity()` declarations + plain-SQL migrations, **no business logic** |
 | `packages/i18n` | flat catalogs; a missing key renders `⟦key⟧` and fails `x verify` |
 | `packages/ui` | app components on `@ultimat3/ui`; subject to the same byte budgets as `shared/` |
 | `packages/mcp` | the app's own MCP tools ([`09-ai-first.md`](./09-ai-first.md)) |

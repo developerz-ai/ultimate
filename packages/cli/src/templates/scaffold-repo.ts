@@ -404,7 +404,7 @@ export function repoFiles(app: NameSet, version: string): readonly GeneratedFile
     { path: 'packages/domain/src/index.test.ts', contents: domainTest() },
     {
       path: 'packages/db/package.json',
-      contents: domainPackage(app, 'db', 'Drizzle schema and migrations, no business logic'),
+      contents: domainPackage(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
     },
     { path: 'packages/db/src/index.ts', contents: dbIndex() },
     { path: 'packages/db/src/schema.ts', contents: dbSchema(app) },

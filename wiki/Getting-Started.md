@@ -34,14 +34,14 @@ Nothing to install first. No Docker daemon, no `.env` scavenger hunt, no service
 | Landing page | `apps/web/site/` | `static`, **0kb JS**, real meta + JSON-LD |
 | Dashboard | `apps/web/app/` | `stream`, auth'd |
 | Admin app | `apps/admin/` | already exposes MCP over your actions |
-| Green gate | `x verify` | typecheck, lint, boundaries, six test types, drift, contracts, budgets, SEO, manifest |
+| Green gate | `x verify` | 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
 
 `x dev` runs **every role in one process** with isolation simulated, not skipped: separate ALS contexts, a real Postgres queue, real logical replication, a real SIGTERM drain on `x dev restart`. Nothing in the framework branches on `if (dev)` — only the drivers differ.
 
 ## 1. Write your first action
 
 ```
-x gen action publish-post
+x g action publish-post
 ```
 
 ```ts
@@ -123,10 +123,11 @@ Introspection an agent should use instead of grepping:
 
 One command. Green means shippable.
 
-```
+```text
 $ x verify
-  ✓ typecheck  ✓ lint  ✓ boundaries  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e
-  ✗ migration drift
+  ✓ typecheck  ✓ lint  ✓ boundaries  ✓ filesize  ✓ package-shape  ✓ errors
+  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e  ✓ eval
+  ✗ drift
       X_DB_DRIFT: schema differs from migrations
         cause: table "posts" has column "publish_at" not present in any migration
         fix:   x db gen "add publish_at"
@@ -154,4 +155,4 @@ $ x verify
 
 ## Status
 
-`As of 2026-07`: pre-v1, not production-ready. Twelve milestones, each ending in a working demo app plus green `x verify`; milestones 0–5 ship before realtime. Realtime tiers 1–2 are v1, tier 3 (local-first) is v2. Milestone 6 is a 50k-socket forced-reconnect benchmark — realtime topology is not frozen until that number exists. See [FAQ](FAQ).
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish at 1.0.0 in lockstep. Milestones 0–10 are ✅; milestone 11 is 🚧, open on its two-platform deploy proof. Realtime tiers 1–2 are v1, tier 3 (local-first) is v2. No realtime benchmark is published — the **50k-socket forced-restart number is still unmeasured**, so topology is not frozen. Status markers come from [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md). See [FAQ](FAQ).

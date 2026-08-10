@@ -26,6 +26,7 @@ import {
 import { flagBool, parseScriptArgs } from './lib/args';
 import { repoRoot } from './lib/run';
 import { buildManifest, DEFAULT_OUT } from './manifest';
+import { checkRoadmap } from './roadmap';
 
 /**
  * Two rules on one step. The tier table: a package may import only from a strictly lower tier.
@@ -72,6 +73,7 @@ export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   boundaries: tierBoundaries,
   errors: errorCodeDocs,
   manifest: frameworkManifest,
+  roadmap: checkRoadmap,
 };
 
 if (import.meta.main) {

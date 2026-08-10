@@ -4,20 +4,30 @@ menu: true
 nav: FAQ
 description: Straight answers about Bun-only, no GraphQL, no Tailwind, no serverless, production readiness, and how Ultimate differs from Rails, Next and Meteor.
 lede: Short answers, including the unflattering ones.
-updated: 2026-07-26
+updated: 2026-08-10
 ---
 
 ## Status
 
-**Is it production-ready?** No. `As of 2026-07` Ultimate is pre-v1: milestones 0–5 come first,
-nothing is published to npm, and no API is stable. Treat it as a design under construction.
+**Is it production-ready?** `As of 2026-08` Ultimate is 1.0.0, which means a stable API under
+semver — not a promise about your infrastructure. Breaking a documented API needs a major from
+here; the `X_*` codes, the eight primitive shapes, the `x` CLI surface and the tier table are all
+covered. Two things are not proven and are named as such: there is no published realtime
+benchmark, and the two-platform deploy proof — the demo app on Compose **and** Kubernetes from
+one image, rolling restart invisible — has not been demonstrated.
 
-**Are the benchmarks on this page real?** There are none. The reconnect benchmark is milestone
-6 and has not been run; no throughput, latency or adoption number appears anywhere on this site
-until it exists.
+**Are the benchmarks on this page real?** There are none. The 50k-socket forced-restart benchmark
+has still not been run; no throughput, latency or adoption number appears anywhere on this site
+until it exists. Capacity figures elsewhere in these docs are targets, not results.
 
-**Can I use it today?** You can read it, clone it, and argue with it. Building a business on it
-is premature.
+**Can I use it today?** Yes — `bunx create-ultimate myapp`. 27 `@ultimat3/*` packages plus
+`create-ultimate` publish at 1.0.0 in lockstep, one version and one tag, to npm via OIDC trusted
+publishing. Versions are pinned exactly and move together; never mix them.
+
+**What is deferred to v2?** Tier 3 local-first (`persist: true`), a plugin API, multi-region
+replication, and the `redis` / `nats` job drivers. All four sit behind the interfaces they will
+land on; the job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending
+to work.
 
 ## Stack choices
 
@@ -42,8 +52,10 @@ component dialect and no hydration pass over the shell.
 **Why your own router?** The router must own render mode, hydration timing and offline strategy
 to make those route-level properties enforceable. That cannot be a third-party dependency.
 
-**Why Drizzle and not Prisma?** Its generated SQL is legible, so an agent can read the statement
-it produced and self-correct. That is the whole selection criterion.
+**Why no ORM?** Two query builders would mean two migration stories and two sets of generated
+SQL for an agent to learn — so there is not even one. `entity()` is the single table declaration,
+and `@ultimat3/entity`'s hand-written `postgresDriver()` compiles it to parameterised SQL an
+agent can read back and self-correct against. That legibility is the whole selection criterion.
 
 ## Design rules
 
@@ -69,7 +81,9 @@ transitively, at build time.
 directory for S3. Docker is for parity checks and for building the production image.
 
 **Do I need Redis or NATS?** No. Postgres covers the queue and pubsub; both are optional in
-small deployments. They exist as drivers behind one interface, not as prerequisites.
+small deployments, and they sit behind one interface rather than being prerequisites. The
+`redis` and `nats` **job** drivers are the v2 exception — interface-complete stubs that throw
+`X_NOT_IMPLEMENTED` rather than dropping work silently.
 
 **Can I deploy to the edge or to serverless functions?** No, by design. Deploy target means
 "runs containers, plus Postgres". Vendor edge/KV/cron primitives would each need a second
@@ -91,8 +105,9 @@ diverges.
 
 ## Extending it
 
-**Where do plugins fit?** Nowhere before v1. Plugins freeze internals; extension points earn
-their existence from real forks. Fork the blessed path in the meantime.
+**Where do plugins fit?** Nowhere in 1.0.0 — a plugin API is deferred to v2. Plugins freeze
+internals; extension points earn their existence from real forks. Fork the blessed path in the
+meantime.
 
 **Can I use tier 2 realtime but not tier 3?** Yes — that is the expected shape. Tier 3 is a
 per-query `persist: true`, planned for v2.

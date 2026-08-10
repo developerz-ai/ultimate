@@ -17,7 +17,7 @@ myapp/
     desktop/              # placeholder + README (Tauri/Electron later)
   packages/
     domain/               # pure types + constants, no I/O
-    db/                   # Drizzle schema + migrations, no business logic
+    db/                   # entity re-exports + plain-SQL migrations, no business logic
     i18n/                 # app catalogs (en, es, ...)
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
@@ -57,7 +57,7 @@ The rule that keeps a growing app scalable: **a package is defined by what it ma
 | Package | Owns | Must never | Importable by |
 |---|---|---|---|
 | `domain` | types, constants, enums, pure predicates, branded ids | any I/O, any framework import beyond `@ultimat3/schema` | everything, including a future native client |
-| `db` | Drizzle schema, migrations, entity declarations | business logic, HTTP, policy | `core`, jobs, admin |
+| `db` | the schema registry, plain-SQL migrations, entity re-exports | business logic, HTTP, policy | `core`, jobs, admin |
 | `core` | business services composed from repos | HTTP, rendering, direct SQL outside a repo | actions, jobs, admin, MCP tools |
 | `ui` | Solid components + app tokens | fetching, business logic, its own authz | `apps/*` surfaces |
 | `mcp` | the app's MCP tool declarations | a second authz path | the MCP role |
@@ -136,7 +136,7 @@ x g resource post --admin --locales en,es
 ```
 
 The entity is the one declaration — `entity()` from `@ultimat3/entity` owns the table, the tenant
-column and the invariants together, so there is no second Drizzle table definition to keep in sync
+column and the invariants together, so there is no ORM table definition to keep in sync
 with it. MCP exposure is the same story: an action that sets `mcp: { expose: true }` already reaches
 the app's MCP server through `defineAppMcp({ include: 'exposed' })`, so the generator does not write
 a second, parallel tool declaration — that would be the two-authz-paths mistake the framework

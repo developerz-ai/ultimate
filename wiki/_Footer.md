@@ -1,4 +1,4 @@
-**Ultimate** — pre-v1, not production-ready `As of 2026-07`. MIT licensed.
+**Ultimate** — v1.0.0 `As of 2026-08`. Stable API, semver from here. MIT licensed.
 
 [Site](https://ultimate.developerz.ai/) · [Repository](https://github.com/developerz-ai/ultimate) · [Issues](https://github.com/developerz-ai/ultimate/issues) · [Changelog](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) · [llms.txt](https://github.com/developerz-ai/ultimate/blob/main/llms.txt)
 

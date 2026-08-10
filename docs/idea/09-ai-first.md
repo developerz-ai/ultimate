@@ -46,7 +46,7 @@ That line is the entire integration. From the existing declaration:
 | MCP requirement | Source |
 |---|---|
 | tool name | action name |
-| JSON Schema for input | the ArkType `input` (Standard Schema → JSON Schema) |
+| JSON Schema for input | the action's `input` (Standard Schema → JSON Schema) |
 | output schema | `output` |
 | description | `mcp.description` |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |

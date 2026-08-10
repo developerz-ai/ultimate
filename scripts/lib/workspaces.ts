@@ -45,5 +45,25 @@ export async function listWorkspaces(root: string): Promise<readonly Workspace[]
 export const publishOrder = (workspaces: readonly Workspace[]): readonly Workspace[] =>
   workspaces.filter((workspace) => !workspace.private);
 
+/**
+ * Every workspace manifest the root package.json claims, `packages/*` and the reference app alike.
+ * A release rewrites `@ultimat3/*` pins in all of them: the example workspaces are private and
+ * never publish, but they resolve those pins out of the same lockfile, so one left at the old
+ * version makes `bun install --frozen-lockfile` reach npm for a version that is not there.
+ */
+export async function workspaceManifests(root: string): Promise<readonly string[]> {
+  const manifest = (await Bun.file(join(root, 'package.json')).json()) as {
+    readonly workspaces?: readonly string[];
+  };
+  const paths: string[] = [];
+  for (const pattern of manifest.workspaces ?? []) {
+    const glob = new Bun.Glob(`${pattern}/package.json`);
+    for await (const relative of glob.scan({ cwd: root, absolute: false })) {
+      paths.push(join(root, relative));
+    }
+  }
+  return paths.sort();
+}
+
 export const hasFile = (workspace: Workspace, file: string): boolean =>
   existsSync(join(workspace.path, file));

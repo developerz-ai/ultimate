@@ -1,5 +1,5 @@
 // Validation reaches the app through Standard Schema rather than a vendor API, so this seam
-// has to behave the same for a hand-written validator as for ArkType, and has to say
+// has to behave the same for a hand-written validator as for the shipped `t`, and has to say
 // something an agent can act on when an async schema is used on the sync path. Neither is
 // visible in the type, so both are asserted here.
 import { describe, expect, test } from 'bun:test';
@@ -77,7 +77,7 @@ describe('validateSync', () => {
     });
   });
 
-  test('validates a real ArkType-backed schema synchronously', () => {
+  test('validates a real `t`-backed schema synchronously', () => {
     const schema = t.object({ name: t.string });
     const ok = validateSync(schema, { name: 'ada' });
     expect(ok).toEqual({ ok: true, value: { name: 'ada' } });
@@ -113,7 +113,7 @@ describe('validate', () => {
     expect(result).toEqual({ ok: true, value: 7 });
   });
 
-  test('validates a real ArkType-backed schema across valid and invalid values', async () => {
+  test('validates a real `t`-backed schema across valid and invalid values', async () => {
     const schema = t.object({ name: t.string });
 
     const ok = await validate(schema, { name: 'grace' });

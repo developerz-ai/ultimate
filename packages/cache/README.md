@@ -104,8 +104,11 @@ throw `X_NOT_IMPLEMENTED` with the fix line.
 
 For LLM calls, where "list my orders" and "show me my orders" must hit the same entry.
 `createMemorySemanticCache()` does cosine similarity at a 0.92 threshold (tight on
-purpose — a false hit answers the wrong question, which is worse than a miss). Production
-backing is pgvector over `x_semantic_cache.embedding`.
+purpose — a false hit answers the wrong question, which is worse than a miss) and is the
+only backing this package ships — it is O(n) and in-process. The interface (`SemanticCache`)
+is a driver seam for that reason; a Postgres/pgvector-backed implementation does not exist
+yet here (`@ultimat3/ai`'s `PgVectorStore` is a separate store, for RAG retrieval, not this
+cache).
 
 ## Errors
 

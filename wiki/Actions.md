@@ -23,7 +23,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `input` | Standard Schema (ArkType as `t`) | yes | parsed before anything else runs; drives the TS type, JSON Schema, OpenAPI request body, MCP tool schema |
+| `input` | Standard Schema (`t` from `@ultimat3/schema`) | yes | parsed before anything else runs; drives the TS type, JSON Schema, OpenAPI request body, MCP tool schema. `t` is the shipped dependency-free builtin provider; ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider` and ship no adapter |
 | `output` | Standard Schema | yes | the response contract; drives the typed client return type and the OpenAPI response |
 | `policy` | `Policy` from `can(...)` | yes | the one authz decision, evaluated on every surface. Omitting it is a build error |
 | `cache.invalidates` | `readonly CacheTag[]` | no | tags dropped from every cache tier after `handle` settles; unknown tag = compile error |
@@ -56,7 +56,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | 3 | **Typed client function** | `input` + `output` | `await api.publishPost({ postId })` in `app/` — no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | one tool per exposed action, JSON Schema from `input`, authz unchanged |
-| 6 | **Test scaffold** | `input` + `policy` | schema round-trip plus a denial test per policy branch |
+| 6 | **Test** | `input` + `policy` | schema round-trip plus a denial test per policy branch — generated green, not as a `TODO` |
 
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).
 
@@ -151,14 +151,14 @@ $ x actions describe publishPost --json
  "rateLimit":null}
 ```
 
-`invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. The same data is the MCP `actions.list` tool and the `/_x` **Routes** panel.
+`invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. The same data is the MCP `actions.describe` tool (actions and queries in one call) and the `/_x` **Routes** panel.
 
 ## Generated contract test
 
-Emitted with the action; fails until filled in.
+Emitted with the action, and green on the first run: it pins the invariant the action owns — a non-owner is denied — rather than a `TODO` someone has to notice.
 
 ```ts
-// contract test — generated as a scaffold with the action
+// contract test — generated with the action
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
   const { post, stranger } = await seed('two-orgs');
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))

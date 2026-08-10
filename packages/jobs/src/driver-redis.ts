@@ -18,7 +18,10 @@ import type {
 import { JobsNotImplementedError } from './errors';
 import type { StepRecord, StepStore } from './steps';
 
-const FIX = 'use driver: "pg" (default) or "memory" — see docs/jobs/drivers.md#redis';
+// Names the config edit that actually removes the stub, plus the runnable command for whatever
+// is already queued. The redis driver lands in v2; there is no flag that turns this one on.
+const FIX =
+  "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs drain --to memory --json";
 
 const unavailable = (method: string): never => {
   throw new JobsNotImplementedError({ feature: `redis jobs driver (${method})`, fix: FIX });

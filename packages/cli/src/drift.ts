@@ -1,4 +1,4 @@
-// Migration drift detection. `x db gen` records the hash of the Drizzle schema next to the
+// Migration drift detection. `x db gen` records the hash of the app's entity schema next to the
 // migration it produced; drift is "the schema hashes to something no migration recorded". The
 // hash file is committed beside the migration, so a fresh clone can detect drift with no local
 // state and CI needs no database to answer the question.

@@ -15,7 +15,7 @@ import {
   setJobsFacade,
 } from './outbox';
 
-/** Minimal Standard Schema so these tests do not depend on ArkType's surface. */
+/** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
     '~standard': {

@@ -2,7 +2,7 @@
 
 Three tiers, one ladder. Same mutator shape at every rung — climbing is a config change, never a rewrite.
 
-Tiers 1–2 ship in v1. Tier 3 (local-first) ships in v2. Pre-v1, not production-ready.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship in v1. Tier 3 (local-first) ships in v2.
 
 ## The ladder
 
@@ -108,14 +108,14 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 
 | # | Mitigation | Detail |
 |---|---|---|
-| 1 | **Prototype before locking topology** | milestone 6 is a reconnect benchmark: 50k sockets, forced `sync` restart, measure time-to-consistent and DB load. **That number does not exist yet.** Topology is not frozen until it does |
+| 1 | **Prototype before locking topology** | the reconnect benchmark: 50k sockets, forced `sync` restart, measure time-to-consistent and DB load. **That number does not exist yet** — the roadmap lists it under *Open at 1.0.0*, pinned to no milestone, because tiers 1–2 shipped in milestone 6 without it. Topology is not frozen until it does |
 | 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
 | 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding |
 | 5 | **Per-tenant subscription caps** | a registered-query explosion is a load-shedding decision, made with a limit and a typed `X_LIVE_QUERY_LIMIT`, not by falling over |
 | 6 | **Consider wrapping an existing protocol** | if the benchmark says our matcher is the bottleneck, adopting Zero's protocol beats inventing one |
 
-No throughput or latency figure is published for the realtime path. `As of 2026-07` there is no measured reconnect number, and per-node socket capacity is a plausible target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
+No throughput or latency figure is published for the realtime path. `As of 2026-08` there is no measured reconnect number, and per-node socket capacity is a plausible target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
 
 ## `sync` drain
 

@@ -79,7 +79,7 @@ function requireIntrospection(driver: JobDriver): NonNullable<JobDriver['introsp
   if (driver.introspect === undefined) {
     throw new JobsNotImplementedError({
       feature: `introspection for the "${driver.name}" jobs driver`,
-      fix: 'use driver: "pg" (default) or "memory" — see docs/jobs/drivers.md',
+      fix: "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs ls --json",
     });
   }
   return driver.introspect;

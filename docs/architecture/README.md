@@ -5,7 +5,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | Doc | Hook |
 |---|---|
 | [`00-conventions.md`](./00-conventions.md) | File layout, naming, export surface, LOC ceilings — the rules Biome and `x verify` enforce. |
-| [`01-package-map.md`](./01-package-map.md) | 22 packages, 6 tiers, one reason to change each. What every package owns and must never do. |
+| [`01-package-map.md`](./01-package-map.md) | 28 packages, 6 tiers, one reason to change each. What every package owns and must never do. |
 | [`02-boundaries.md`](./02-boundaries.md) | Tier violations are build errors. `scripts/boundaries.ts` resolves the transitive chain and prints it. |
 | [`03-request-lifecycle.md`](./03-request-lifecycle.md) | 17 ordered stages and why each sits where it does. ALS context, so no layer threads `actor`. |
 | [`04-error-contract.md`](./04-error-contract.md) | `UltimateError`: one object, three renderings. Every error carries an executable `fix:`. |

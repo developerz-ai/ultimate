@@ -8,7 +8,7 @@
 
 import type { Entity, Repo } from '@ultimat3/entity';
 
-/** One column as the admin needs to see it. A Drizzle column descriptor satisfies this. */
+/** One column as the admin needs to see it. An `@ultimat3/entity` column satisfies this. */
 export interface AdminColumn {
   /** The SQL-ish type name: `text`, `varchar`, `timestamptz`, `numeric`, `jsonb`, … */
   readonly type: string;

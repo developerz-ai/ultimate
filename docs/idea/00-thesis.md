@@ -53,7 +53,7 @@ Each one is a permanent no, not a "later".
 |---|---|
 | **GraphQL** | a second schema language, a second authz surface, and a resolver-shaped N+1 factory. Typed actions + live queries cover the need. |
 | **Multi-runtime** (Node, Deno, workerd) | portability costs a lowest-common-denominator API. Bun-only buys `Bun.sql`, `Bun.redis`, `Bun.s3`, the bundler, and the test runner as *language features*. |
-| **Multi-ORM** | two query builders means two migration stories and two sets of generated SQL for an agent to learn. Drizzle, because its SQL is legible enough to self-correct against. |
+| **Multi-ORM** | two query builders means two migration stories and two sets of generated SQL for an agent to learn. No ORM at all, in fact: `entity()` is the one table declaration and `postgresDriver()` emits hand-written parameterised SQL, legible enough to self-correct against. |
 | **Multiple CSS solutions** | Tailwind + modules + CSS-in-JS in one repo is three token systems. SCSS modules + design tokens, one way to theme. |
 | **React Server Components** | wrong runtime, and the mental model taxes the exact audience we optimize for. Solid streaming with `<Suspense>` gets the same payoff with no new component dialect. |
 | **A plugin API before v1** | plugins freeze internals. Ship the blessed path first; extension points earn their existence from real forks. |

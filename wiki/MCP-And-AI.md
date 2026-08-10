@@ -2,33 +2,36 @@
 
 The differentiator. Not a chat widget, not an "AI SDK integration" — the framework is built so an agent can read it, drive it, and verify its own work, and so the apps it generates have the same property.
 
-Pre-v1, not production-ready. `As of 2026-07`: the MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built; the `llm()` gateway, prompt versioning, vector search, and eval runner are contracted and partially implemented.
+v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). The MCP registry, wire protocol, dev-tool catalog, read-only SQL guard, and action projection are built, and so are the four that used to be contracted: `llm()` is an action factory ([`packages/ai/src/llm.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/llm.ts)), prompts are versioned, `PgVectorStore` fuses pgvector cosine with Postgres FTS via RRF, and evals gate on a committed baseline inside `x verify`'s `eval` step.
 
 ## Built-in MCP dev server
 
 `x dev` starts an MCP server on the dev socket. Point Claude Code (or any MCP client) at it and the agent stops guessing.
 
+Thirteen tools `As of 2026-08` — the whole catalog, spelled exactly as they must be called. No aliases; renaming one is a major.
+
 | Tool | Introspects / does | Replaces the agent's usual guess |
 |---|---|---|
-| `routes.list` | route table: path, render mode, hydrate, offline, budget, meta status | grepping a router directory |
-| `schema.describe` | tables, columns, types, indexes, FKs, invariants | reading migration files in order |
-| `policies.list` | every `policy`, which actions/queries use it, its denial reason | "is this endpoint protected?" |
-| `actions.list` | inputs, outputs, tags, MCP exposure | reading `api/` by hand |
-| `manifest.get` | the whole `x.manifest.json` | ten separate reads |
-| `tests.run` | run a test type or a single file, structured results | parsing terminal output |
-| `logs.tail` | structured logs + OTel spans, filterable | scrollback archaeology |
+| `routes.list` | route table: url, render mode, hydrate, offline, budget | grepping a router directory |
+| `schema.describe` | entities with columns, types and invariants | reading migration files in order |
+| `policies.list` | every `policy`: permission, subject, where it is enforced | "is this endpoint protected?" |
+| `actions.describe` | every action **and query**: input/output schema, policy, cache tags, MCP exposure | reading `api/` by hand |
+| `jobs.inspect` | job definitions, retry policy and steps; omit `name` for all | reading `jobs.ts` and guessing the retry |
+| `queue.depth` | pending, running and failed counts per queue | tailing a worker to see if it keeps up |
+| `manifest.read` | the whole `x.manifest.json`, as text | ten separate reads |
+| `errors.explain` | `X_*` code → cause, exact fix command, docs URL | web search |
 | `db.query` | **read-only** SQL, 100-row default and 1000-row maximum, `EXPLAIN` on request | inventing a query and hoping |
-| `db.migrate` | generate + apply migrations **in a branch DB only** | mutating the dev database |
-| `errors.explain` | `X_*` code → cause, fix command, docs URL | web search |
-| `budgets.report` | per-route bytes/LCP with the import chain that caused a regression | bisecting bundles |
-
-Implemented names `as of 2026-07` differ slightly from the design table: `actions.describe` (actions + queries in one call), `manifest.read`, `jobs.inspect`, `queue.depth`, `verify.run`. Aliases land before v1.
+| `db.migrate` | apply pending migrations **in a branch DB only** | mutating the dev database |
+| `tests.run` | run the suite or a substring filter, structured results | parsing terminal output |
+| `verify.run` | the whole gate; `fix: true` applies safe autofixes | guessing whether the work is shippable |
+| `logs.tail` | last N structured log lines, filterable by runtime role | scrollback archaeology |
 
 | Class | Tools | Exposure |
 |---|---|---|
-| read | `routes.list`, `schema.describe`, `policies.list`, `actions.list`, `manifest.get`, `errors.explain` | unrestricted in dev |
-| gated read | `db.query`, `logs.tail`, `budgets.report` | scope `db:read` / `dev:logs` |
-| write | `db.migrate`, `tests.run` | scope `db:migrate` / `dev:test`, **branch environments only** |
+| read | `routes.list`, `schema.describe`, `policies.list`, `actions.describe`, `jobs.inspect`, `queue.depth`, `manifest.read`, `errors.explain` | scope `dev:read`, unrestricted in dev |
+| gated read | `db.query`, `logs.tail` | scope `db:read` / `dev:logs` |
+| executes code | `tests.run`, `verify.run` | scope `dev:test`; both declare `destructive: true`, so neither is metered as read chatter |
+| write | `db.migrate` | scope `db:migrate`, **branch environments only** |
 
 None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and functions that reach outside the database (`pg_read_file`, `pg_sleep`, `dblink`, `lo_import`, …) are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
 
@@ -43,7 +46,7 @@ That line is the entire integration. From the existing declaration:
 | MCP requirement | Source |
 |---|---|
 | tool name | action name |
-| JSON Schema for input | the ArkType `input` (Standard Schema → JSON Schema) |
+| JSON Schema for input | the `input` schema (Standard Schema → JSON Schema, via `introspect()`) |
 | output schema | `output` |
 | description | `mcp.description` |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |
@@ -88,7 +91,7 @@ Rationale for each: [`docs/architecture/11-ai-surface.md`](https://github.com/de
 | `x.manifest.json` | **generated**, every build | routes, entities, actions, mutators, queries, jobs, tasks, policies, cache tags, MCP tools, budgets, build ID | never hand-edited; drift is a `x verify` failure |
 | `openapi.json` | **generated** | HTTP surface from action/query declarations | contract diff in `x verify` |
 | `AGENTS.md` | **human-authored**, short | project-specific conventions an agent cannot infer | never generated, never auto-appended |
-| `CLAUDE.md` | **human-authored**, short | same, compressed-config style, <600 lines |
+| `CLAUDE.md` | **human-authored**, short | same, compressed-config style, <600 lines | never generated, never auto-appended |
 
 LLM-generated context files measurably reduce task success. A model writing "here is what this codebase does" produces confident, plausible, partly-wrong prose, and the next agent treats it as ground truth — errors compound and cannot be distinguished from facts. So: facts come from code (structured, verifiable, regenerated every build), conventions come from a human (short, opinionated, stable). Ultimate never generates prose documentation at runtime, and `x new` scaffolds `AGENTS.md` as a terse human-editable stub, not an essay.
 

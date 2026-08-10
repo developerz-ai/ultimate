@@ -9,9 +9,12 @@ import { join } from 'node:path';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
-import { listWorkspaces, publishOrder } from './lib/workspaces';
+import { listWorkspaces, publishOrder, workspaceManifests } from './lib/workspaces';
 
 export type Bump = 'patch' | 'minor' | 'major';
+
+/** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
+const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
 
 export function nextVersion(current: string, bump: Bump): string {
   const [major = 0, minor = 0, patch = 0] =
@@ -22,6 +25,38 @@ export function nextVersion(current: string, bump: Bump): string {
   if (bump === 'major') return `${major + 1}.0.0`;
   if (bump === 'minor') return `${major}.${minor + 1}.0`;
   return `${major}.${minor}.${patch + 1}`;
+}
+
+/**
+ * The manifest's own `"version"`, which is the second key in every package.json here and so the
+ * first match. Rewriting text rather than re-serialising JSON keeps key order, comments-by-blank-
+ * line and the trailing newline exactly as committed — a release diff should be one line per file.
+ */
+export const setOwnVersion = (raw: string, version: string): string =>
+  raw.replace(/"version":\s*"[^"]+"/, `"version": "${version}"`);
+
+/**
+ * Every `@ultimat3/*` dependency pin, exact ones only. Lockstep means a published package names
+ * the sibling version it was tested against; leaving these behind is how `@ultimat3/jobs@1.0.0`
+ * ships depending on `@ultimat3/core@0.0.1`, which is not on the registry and never will be.
+ */
+export const repinFrameworkDeps = (raw: string, version: string): string =>
+  // `[a-z0-9-]`, not `[a-z-]`: `@ultimat3/i18n` carries digits in its name, and a class that
+  // missed it left four manifests pinning i18n at the previous version straight through a release.
+  raw.replace(/"(@ultimat3\/[a-z0-9-]+)":\s*"([^"]+)"/g, (match, name: string, range: string) =>
+    EXACT_PIN.test(range) ? `"${name}": "${version}"` : match,
+  );
+
+/**
+ * Keep a Changelog is newest-first. Appending put the second release below the first and every
+ * release below that, so the file read oldest-first from its third entry on. The new section goes
+ * directly under the `## [Unreleased]` block — above every previous version, below the preamble.
+ */
+export function insertRelease(changelog: string, entry: string): string {
+  const lines = changelog.split('\n');
+  const at = lines.findIndex((line) => /^## /.test(line) && !line.includes('[Unreleased]'));
+  if (at === -1) return `${changelog.trimEnd()}\n\n${entry}`;
+  return [...lines.slice(0, at), ...`${entry}\n`.split('\n'), ...lines.slice(at)].join('\n');
 }
 
 /** Conventional-commit subjects since the last tag, grouped. Bodies are left to the git log. */
@@ -68,17 +103,22 @@ if (import.meta.main) {
   const log = await run(['git', 'log', '--pretty=format:%s', `v${current}..HEAD`], { cwd: root });
   const subjects = log.ok ? log.output.split('\n').filter((line) => line.trim().length > 0) : [];
 
+  // Own version for the packages that publish; `@ultimat3/*` pins in every workspace, the private
+  // reference app included, because they all resolve out of one lockfile.
+  const published = new Set(publishable.map((workspace) => join(workspace.path, 'package.json')));
+  const manifests = await workspaceManifests(root);
+
   if (!dryRun) {
-    for (const workspace of publishable) {
-      const path = join(workspace.path, 'package.json');
+    for (const path of manifests) {
       const raw = await Bun.file(path).text();
-      await Bun.write(path, raw.replace(/"version":\s*"[^"]+"/, `"version": "${version}"`));
+      const own = published.has(path) ? setOwnVersion(raw, version) : raw;
+      await Bun.write(path, repinFrameworkDeps(own, version));
     }
     const changelogPath = join(root, 'CHANGELOG.md');
     const existing = await Bun.file(changelogPath)
       .text()
       .catch(() => '# Changelog\n\n');
-    await Bun.write(changelogPath, `${existing.trimEnd()}\n\n${changelogEntry(version, subjects)}`);
+    await Bun.write(changelogPath, insertRelease(existing, changelogEntry(version, subjects)));
   }
 
   report(
@@ -91,19 +131,21 @@ if (import.meta.main) {
       findings: mismatched.map((workspace) => ({
         code: 'X_RELEASE_VERSION_SKEW',
         cause: `${workspace.name} was at ${workspace.version}, not ${current}`,
-        fix: 'lockstep versioning: this release realigns it — review the diff before committing',
+        fix: `git diff packages/${workspace.dir}/package.json — this release realigns it to ${version}`,
         at: `packages/${workspace.dir}/package.json`,
       })),
       lines: [
         `  version   ${current} -> ${version}`,
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,
+        `  manifests ${manifests.length} rewritten (${published.size} published, the rest repinned)`,
         `  commits   ${subjects.length}`,
-        `  next      commit, tag v${version}, then publish a GitHub Release`,
+        `  next      bun install, commit, tag v${version}, then publish a GitHub Release`,
       ],
       data: {
         version,
         previous: current,
         packages: publishable.map((workspace) => workspace.name),
+        manifests: manifests.length,
         commits: subjects.length,
         dryRun,
       },

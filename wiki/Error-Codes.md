@@ -67,7 +67,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_VALIDATION_FAILED` | value did not match its schema | a parse boundary rejected input | read `cause` for the failing path; correct the value or widen the schema deliberately |
-| `X_SCHEMA_UNSUPPORTED` | the active schema provider cannot do this | a Standard Schema implementation without JSON Schema export | use ArkType (`t`), the blessed default |
+| `X_SCHEMA_UNSUPPORTED` | the active schema provider cannot do this | a Standard Schema implementation without JSON Schema export | drop the `configureSchemaProvider()` call and use `t`, the shipped dependency-free builtin provider |
 
 ## HTTP
 
@@ -361,6 +361,9 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_DECLARATION_UNKNOWN` | no declaration with this name is registered | a typo, or a module that never imported | `x actions list --json` (or `queries` / `entities`); the nearest real name is in `fix` |
 | `X_JOB_UNKNOWN` | the queue holds no job with this id | a stale id, or a job already reaped | `x jobs ls --json` |
 | `X_FIX_TARGET_UNKNOWN` | the named file is not one of the app's source files | a path outside `apps/*/{site,app,api,shared}`, or a typo | `x fix boundary <nearest real path>` — `fix` carries it |
+| `X_ROADMAP_FILE_MISSING` | `docs/idea/14-roadmap.md` does not exist, so no status or artifact can be checked | the roadmap was deleted or moved — every other roadmap rule would otherwise pass silently | `git checkout -- docs/idea/14-roadmap.md` |
+| `X_ROADMAP_STATUS_MISSING` | a milestone has no row, or its row's status cell holds neither ✅ nor 🚧 | `docs/idea/14-roadmap.md` edited without keeping the marker | put ✅ or 🚧 in the second cell of the row `fix` names, then `bun run scripts/roadmap.ts --json` |
+| `X_ROADMAP_MILESTONE_UNVERIFIED` | a milestone the table marks ✅ is missing a package or file its own **Ships** column names | the artifact was deleted or renamed after the milestone was marked shipped | `git checkout -- <the paths in `fix`>`, or put 🚧 in that row's status cell |
 
 ## Names used in the design docs
 

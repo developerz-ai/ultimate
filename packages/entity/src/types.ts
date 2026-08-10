@@ -1,6 +1,7 @@
-// The structural vocabulary of a column. Drizzle is the production backing for the physical
-// layer (see README); declaring the shape we consume instead of depending on an ORM keeps the
-// emitted SQL readable and keeps this package free of a dependency an agent must learn to read.
+// The structural vocabulary of a column. The physical layer is this package's own hand-written
+// `postgresDriver()` (`pg-driver.ts` / `pg-sql.ts`), not an ORM; declaring the narrow shape we
+// consume keeps the emitted SQL readable and keeps this package free of a dependency an agent
+// must learn to read.
 //
 // A column carries its TypeScript type in `$parse`, which is what lets the row type be derived
 // from the column set instead of being written a second time as a hand-maintained schema.
