@@ -158,6 +158,9 @@ export class NatsConnection {
   ): Promise<void> {
     this.#assertOpen();
     assertSubject(subject, SUBJECT, 'publish');
+    // The reply subject rides in the same control line as the subject, so a CRLF in it injects a
+    // second command just as readily — one guard on `subject` alone is half a boundary.
+    if (options.replyTo !== undefined) assertSubject(options.replyTo, SUBJECT, 'publish');
     if (payload.length > this.#info.maxPayload) {
       throw new TransportProtocolError({
         transport: 'nats',
@@ -178,8 +181,10 @@ export class NatsConnection {
     assertSubject(subject, SUBSCRIBE_SUBJECT, 'subscribe');
     this.#sid += 1;
     const sid = String(this.#sid);
-    this.#handlers.set(sid, handler);
     await this.#stream.write(subMessage(subject, sid, queue));
+    // Registered only once the SUB is on the wire: a handler behind a rejected write is one no
+    // server ever feeds, and `subscriptionCount` would hand it to the reconnect path as live.
+    this.#handlers.set(sid, handler);
     return {
       sid,
       subject,
@@ -250,19 +255,50 @@ export class NatsConnection {
         },
       });
     });
-    await this.publish(subject, payload, {
-      replyTo: `${this.#inbox}.${token}`,
-      ...(options.headers === undefined ? {} : { headers: options.headers }),
-    });
+    try {
+      await this.publish(subject, payload, {
+        replyTo: `${this.#inbox}.${token}`,
+        ...(options.headers === undefined ? {} : { headers: options.headers }),
+      });
+    } catch (error) {
+      // `answer` already carries a live timer and nobody downstream will await it now, so it is
+      // settled and swallowed here — otherwise the timer rejects into an unhandled rejection one
+      // whole timeout later, long after the caller saw the real cause.
+      this.#pending.get(token)?.settle(error);
+      this.#pending.delete(token);
+      await answer.catch(() => undefined);
+      throw error;
+    }
     return await answer;
   }
 
   /** PING/PONG round trip: the server has processed everything written before it. */
   async flush(): Promise<void> {
     this.#assertOpen();
-    const flushed = new Promise<void>((resolve) => this.#pongs.push(resolve));
+    // The PING goes first: a resolver parked behind a rejected write would be handed the next PONG
+    // to arrive and report as flushed bytes the server never saw.
     await this.#stream.write(PING_MESSAGE);
-    await flushed;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const flushed = new Promise<void>((resolve, reject) => {
+      const parked = (): void => resolve();
+      this.#pongs.push(parked);
+      timer = setTimeout(() => {
+        // Dropped from the queue first, or a late PONG resolves whoever now sits at its head.
+        const index = this.#pongs.indexOf(parked);
+        if (index >= 0) this.#pongs.splice(index, 1);
+        reject(
+          new TransportUnavailableError({
+            transport: 'nats',
+            reason: `the server did not answer PING within ${this.#requestTimeoutMs}ms`,
+          }),
+        );
+      }, this.#requestTimeoutMs);
+    });
+    try {
+      await flushed;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async close(): Promise<void> {
@@ -363,8 +399,11 @@ export class NatsConnection {
 
   async #ensureInbox(): Promise<void> {
     if (this.#inboxReady) return;
-    this.#inboxReady = true;
     await this.#stream.write(subMessage(`${this.#inbox}.*`, '0'));
+    // Latched only after the write lands, so a refused SUB is retried by the next request rather
+    // than leaving every one of them to report "did not answer" against an inbox nobody serves.
+    // Two first requests racing here write the SUB twice, which the server ignores as a duplicate.
+    this.#inboxReady = true;
   }
 
   #assertOpen(): void {

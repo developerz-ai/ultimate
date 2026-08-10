@@ -3,7 +3,6 @@
 // expire on the server's own clock; nothing has to be cleaned up by whoever notices the loss.
 
 import type { Clock } from '@ultimat3/core';
-import { TransportProtocolError } from './errors';
 import type { TransportSet, TransportSetEntry } from './fanout';
 import type { NatsConnection } from './nats-connection';
 import { kvGet, kvLast, kvWrite } from './nats-jetstream';
@@ -133,19 +132,18 @@ export class NatsKvSet implements TransportSet {
     return `${encodeToken(key)}.${encodeToken(member)}`;
   }
 
-  /** The last token is the member; a key the bucket holds for something else is skipped, not read. */
+  /**
+   * Token `[1]` is the member — `#key` writes exactly two, because `encodeToken` emits no dot.
+   * A key this class did not write is skipped rather than read: the bucket may hold anything, and
+   * one foreign key must not take the whole presence listing down with it.
+   */
   #member(kvKey: string): string | undefined {
     const token = kvKey.split('.')[1];
     if (token === undefined) return undefined;
     try {
       return decodeToken(token);
     } catch {
-      throw new TransportProtocolError({
-        transport: 'nats',
-        stage: 'presence',
-        detail: `KV key "${kvKey}" is not one this bucket wrote`,
-        fix: 'give the app its own bucket in app.config.ts — realtime.transport.bucket',
-      });
+      return undefined;
     }
   }
 

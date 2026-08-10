@@ -40,7 +40,6 @@ const admin = async (): Promise<PgConnection> => {
 
 /** `wal_level` is a restart-only GUC, so a server without it can only be skipped, never fixed. */
 const logicalWal = async (): Promise<boolean> => {
-  if (url === undefined || url === '') return false;
   try {
     const connection = await admin();
     const [row] = await connection.query('SHOW wal_level');
@@ -51,7 +50,25 @@ const logicalWal = async (): Promise<boolean> => {
   }
 };
 
-const ready = await logicalWal();
+/**
+ * The probe runs at module load, before the suite is collected, so a stale `DATABASE_URL` pointing
+ * at an unreachable host would otherwise cost a full TCP timeout on every `bun test` run. Unset is
+ * free — no connection at all — and unreachable costs this bound, then reads as "skip".
+ */
+const PROBE_TIMEOUT_MS = 2_000;
+
+const bounded = async (probe: Promise<boolean>): Promise<boolean> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), PROBE_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  const answer = await Promise.race([probe, expiry]);
+  clearTimeout(timer);
+  return answer;
+};
+
+const ready = url !== undefined && url !== '' && (await bounded(logicalWal()));
 
 describe.skipIf(!ready)('live · postgres logical replication', () => {
   let sql: PgConnection;
@@ -137,13 +154,13 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     expect(second?.orgId).toBe('org-2');
     // One transaction, two rows: the pair must not collapse onto one lsn.
     expect(first?.txid).toBe(second?.txid ?? '');
-    expect(second?.lsn > (first?.lsn ?? '')).toBe(true);
+    expect((second?.lsn ?? '') > (first?.lsn ?? '')).toBe(true);
 
     expect(updated?.op).toBe('update');
     expect(updated?.before?.['title']).toBe('First');
     expect(updated?.after?.['title']).toBe('Renamed');
     expect(updated?.after?.['viewCount']).toBe(4);
-    expect(updated?.lsn > (second?.lsn ?? '')).toBe(true);
+    expect((updated?.lsn ?? '') > (second?.lsn ?? '')).toBe(true);
 
     expect(deleted?.op).toBe('delete');
     expect(deleted?.before?.['id']).toBe('p2');

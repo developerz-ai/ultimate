@@ -5,93 +5,19 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { NatsConnection } from './nats-connection';
+import {
+  caught,
+  codeOf,
+  INFO,
+  openFake,
+  openScripted,
+  ScriptedStream,
+  TARGET,
+} from './nats-connection-fixture';
 import { FakeNatsServer } from './nats-fake';
-import type { NatsStream, NatsTarget } from './nats-socket';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-const TARGET: NatsTarget = {
-  host: 'bus.test',
-  port: 4222,
-  tls: false,
-  user: undefined,
-  pass: undefined,
-  token: undefined,
-};
-
-const codeOf = (value: unknown): string =>
-  isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
-
-const caught = (promise: Promise<unknown>): Promise<unknown> =>
-  promise.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
-
-/** A stream whose server side is a script: the test pushes bytes and reads what the client wrote. */
-class ScriptedStream implements NatsStream {
-  readonly writes: string[] = [];
-  upgrades = 0;
-  closed = false;
-  readonly #queue: (Uint8Array | undefined)[] = [];
-  #waiting: ((chunk: Uint8Array | undefined) => void) | undefined;
-
-  constructor(...script: string[]) {
-    for (const text of script) this.push(text);
-  }
-
-  push(text: string): void {
-    const chunk = encoder.encode(text);
-    const waiter = this.#waiting;
-    this.#waiting = undefined;
-    if (waiter) waiter(chunk);
-    else this.#queue.push(chunk);
-  }
-
-  eof(): void {
-    const waiter = this.#waiting;
-    this.#waiting = undefined;
-    if (waiter) waiter(undefined);
-    else this.#queue.push(undefined);
-  }
-
-  read(): Promise<Uint8Array | undefined> {
-    if (this.#queue.length > 0) return Promise.resolve(this.#queue.shift());
-    return new Promise((resolve) => {
-      this.#waiting = resolve;
-    });
-  }
-
-  async write(bytes: Uint8Array): Promise<void> {
-    this.writes.push(decoder.decode(bytes));
-  }
-
-  upgradeTls(): void {
-    this.upgrades += 1;
-  }
-
-  close(): void {
-    this.closed = true;
-    this.eof();
-  }
-}
-
-const INFO = 'INFO {"server_id":"S","version":"2.11.0","max_payload":1048576,"headers":true}\r\n';
-
-const openScripted = async (
-  stream: ScriptedStream,
-  target: NatsTarget = TARGET,
-): Promise<NatsConnection> =>
-  await NatsConnection.open({ stream, target, rng: () => 0.5, requestTimeoutMs: 50 });
-
-const openFake = async (server: FakeNatsServer): Promise<NatsConnection> =>
-  await NatsConnection.open({
-    stream: server.connect(),
-    target: TARGET,
-    rng: () => 0.5,
-    requestTimeoutMs: 200,
-  });
 
 describe('NatsConnection.open', () => {
   test('sends CONNECT and PING, and returns once the server answers PONG', async () => {
@@ -186,6 +112,69 @@ describe('the read loop', () => {
     await connection.close();
   });
 
+  test('a flush the server never answers rejects on the deadline instead of hanging', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+
+    const error = await caught(connection.flush());
+
+    expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+    expect(isUltimateError(error) ? error.cause : '').toContain('PING');
+    await connection.close();
+  });
+
+  test('a PONG that arrives after a flush timed out cannot resolve the next flush', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+
+    await caught(connection.flush());
+    stream.push('PONG\r\n'); // the late answer to the PING that already gave up
+    await Bun.sleep(1);
+
+    const second = connection.flush();
+    const parked = await Promise.race([
+      second.then(() => 'flushed'),
+      Bun.sleep(20).then(() => 'waiting'),
+    ]);
+    stream.push('PONG\r\n');
+    await second;
+
+    expect(parked).toBe('waiting');
+    await connection.close();
+  });
+
+  test('closing releases a flush parked on a PONG that will never come', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+
+    const flushed = connection.flush();
+    await Bun.sleep(1);
+    await connection.close();
+
+    // Resolves rather than waiting out — and then rejecting on — the deadline it was given.
+    await flushed;
+  });
+
+  test('a PING the socket refuses parks no resolver for the next PONG to consume', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+    stream.refuse = (frame) => frame === 'PING\r\n';
+
+    expect(codeOf(await caught(connection.flush()))).toBe('X_TRANSPORT_UNAVAILABLE');
+
+    stream.refuse = () => false;
+    const second = connection.flush();
+    await Bun.sleep(1);
+    stream.push('PONG\r\n');
+    const settled = await Promise.race([
+      second.then(() => 'flushed'),
+      Bun.sleep(20).then(() => 'waiting'),
+    ]);
+
+    expect(settled).toBe('flushed');
+    await connection.close();
+  });
+
   test('a permissions violation is reported but does not close the connection', async () => {
     const stream = new ScriptedStream(INFO, 'PONG\r\n');
     const seen: unknown[] = [];
@@ -239,6 +228,38 @@ describe('publish and subscribe', () => {
     expect(
       codeOf(await caught(connection.publish('x change\r\nPUB evil', new Uint8Array(0)))),
     ).toBe('X_TRANSPORT_PROTOCOL');
+    await connection.close();
+  });
+
+  test('a CRLF in the reply-to subject is refused before it reaches the wire', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+    const written = stream.writes.length;
+
+    const error = await caught(
+      connection.publish('x.change', new Uint8Array(0), { replyTo: 'inbox\r\nSUB secret 99' }),
+    );
+
+    expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
+    expect(stream.writes).toHaveLength(written);
+    await connection.close();
+  });
+
+  test('a SUB the socket refuses leaves no handler and no live subscription', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+    const seen: string[] = [];
+    stream.refuse = (frame) => frame.startsWith('SUB ');
+
+    const error = await caught(
+      connection.subscribe('x.change.>', (message) => seen.push(message.subject)),
+    );
+    stream.push('MSG x.change.posts 1 2\r\nhi\r\n');
+    await Bun.sleep(1);
+
+    expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+    expect(connection.subscriptionCount).toBe(0);
+    expect(seen).toEqual([]);
     await connection.close();
   });
 
@@ -336,6 +357,53 @@ describe('request/reply', () => {
     expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
     expect(isUltimateError(error) ? error.cause : '').toContain('nobody.here');
     await connection.close();
+  });
+
+  test('an inbox SUB the socket refuses is retried by the next request, not latched', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await openScripted(stream);
+    stream.refuse = (frame) => frame.startsWith('SUB _INBOX.');
+
+    expect(codeOf(await caught(connection.request('a.b', new Uint8Array(0))))).toBe(
+      'X_TRANSPORT_UNAVAILABLE',
+    );
+
+    stream.refuse = () => false;
+    const second = await caught(connection.request('a.b', new Uint8Array(0), { timeoutMs: 10 }));
+
+    // Two attempts: the refused SUB left nothing claiming the inbox was already established, so
+    // the second request reports a subject that did not answer rather than a lie about the inbox.
+    expect(stream.writes.filter((frame) => frame.startsWith('SUB _INBOX.'))).toHaveLength(2);
+    expect(isUltimateError(second) ? second.cause : '').toContain('did not answer');
+    await connection.close();
+  });
+
+  test('a publish that fails inside a request settles its answer instead of leaking it', async () => {
+    const stream = new ScriptedStream(INFO, 'PONG\r\n');
+    const connection = await NatsConnection.open({
+      stream,
+      target: TARGET,
+      rng: () => 0.5,
+      requestTimeoutMs: 20,
+    });
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', record);
+    try {
+      stream.refuse = (frame) => frame.startsWith('PUB ');
+
+      const error = await caught(connection.request('a.b', new Uint8Array(0)));
+      // Past the deadline: an answer nobody awaited would reject here, into nothing at all.
+      await Bun.sleep(60);
+
+      expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', record);
+      await connection.close();
+    }
   });
 
   test('requestMany collects every reply up to the terminator', async () => {

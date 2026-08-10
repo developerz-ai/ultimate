@@ -24,6 +24,10 @@ services:
 
   db:
     image: postgres:17-alpine
+    # wal_level=logical is what the replicator decodes; a server started on the default `replica`
+    # answers ROLE=replicator with X_REPLICATION_FAILED at preflight, not at the first change.
+    command: >
+      postgres -c wal_level=logical -c max_replication_slots=8 -c max_wal_senders=8
     environment:
       POSTGRES_USER: ultimate
       POSTGRES_PASSWORD: ultimate

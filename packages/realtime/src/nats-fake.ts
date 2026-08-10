@@ -67,22 +67,38 @@ const msgFrame = (
   return encoder.encode(`${control}${block}${payload}\r\n`);
 };
 
-/** Chunks the client wrote, turned into whole commands. The mirror of `NatsProtocolParser`. */
+const CR = 0x0d;
+const LF = 0x0a;
+
+const concat = (left: Uint8Array, right: Uint8Array): Uint8Array => {
+  const merged = new Uint8Array(left.length + right.length);
+  merged.set(left);
+  merged.set(right, left.length);
+  return merged;
+};
+
+/**
+ * Chunks the client wrote, turned into whole commands. The mirror of `NatsProtocolParser`, and
+ * buffered in bytes for the same reason it is: a control line counts bytes, a string counts UTF-16
+ * code units, and any multi-byte character makes the two disagree — the payload is then sliced
+ * short and every command behind it is misread. Decoding per chunk is the same bug twice over,
+ * because a character split across two writes decodes to U+FFFD.
+ */
 class ClientCommandReader {
-  #text = '';
+  #buffer: Uint8Array = new Uint8Array(0);
 
   push(chunk: Uint8Array): void {
-    this.#text += decoder.decode(chunk);
+    this.#buffer = this.#buffer.length === 0 ? chunk : concat(this.#buffer, chunk);
   }
 
   next(): ClientCommand | undefined {
-    const lineEnd = this.#text.indexOf('\r\n');
+    const lineEnd = this.#lineEnd();
     if (lineEnd < 0) return undefined;
-    const line = this.#text.slice(0, lineEnd);
+    const line = decoder.decode(this.#buffer.subarray(0, lineEnd));
     const args = line.split(/[ \t]+/).filter((part) => part.length > 0);
     const verb = (args[0] ?? '').toUpperCase();
     if (verb === 'PUB' || verb === 'HPUB') return this.#takePub(lineEnd, args, verb === 'HPUB');
-    this.#text = this.#text.slice(lineEnd + 2);
+    this.#buffer = this.#buffer.subarray(lineEnd + 2);
     switch (verb) {
       case 'CONNECT':
         return { kind: 'connect' };
@@ -100,24 +116,32 @@ class ClientCommandReader {
     }
   }
 
+  /** Only the head of the buffer is ever a control line: a payload is consumed whole with it. */
+  #lineEnd(): number {
+    for (let index = 0; index + 1 < this.#buffer.length; index += 1) {
+      if (this.#buffer[index] === CR && this.#buffer[index + 1] === LF) return index;
+    }
+    return -1;
+  }
+
   #takePub(lineEnd: number, args: readonly string[], headered: boolean): ClientCommand | undefined {
     const counts = headered ? 2 : 1;
     const hasReply = args.length === 2 + counts + 1;
     const total = Number(args[args.length - 1] ?? '0');
     const headerBytes = headered ? Number(args[args.length - 2] ?? '0') : 0;
     const start = lineEnd + 2;
-    if (this.#text.length < start + total + 2) return undefined;
-    const body = this.#text.slice(start, start + total);
-    this.#text = this.#text.slice(start + total + 2);
+    if (this.#buffer.length < start + total + 2) return undefined;
+    const body = this.#buffer.subarray(start, start + total);
+    this.#buffer = this.#buffer.subarray(start + total + 2);
     const parsed = headered
-      ? parseHeaders(encoder.encode(body.slice(0, headerBytes)))
+      ? parseHeaders(body.subarray(0, headerBytes))
       : { headers: new Map<string, string>() };
     return {
       kind: 'pub',
       subject: args[1] ?? '',
       replyTo: hasReply ? args[2] : undefined,
       headers: parsed.headers,
-      payload: body.slice(headerBytes),
+      payload: decoder.decode(body.subarray(headerBytes)),
     };
   }
 }
@@ -139,6 +163,7 @@ export class FakeNatsServer {
   readonly #options: FakeNatsOptions;
   readonly #clock: Clock;
   #seq = 0;
+  #creates = 0;
 
   constructor(options: FakeNatsOptions = {}) {
     this.#options = options;
@@ -147,6 +172,19 @@ export class FakeNatsServer {
 
   get connections(): number {
     return [...this.#clients].filter((client) => client.open).length;
+  }
+
+  /**
+   * STREAM.CREATE calls answered. A bucket that already exists must be left alone, and nothing
+   * else the client can observe distinguishes "created again" from "found and kept".
+   */
+  get streamCreates(): number {
+    return this.#creates;
+  }
+
+  /** The config a stream was created with, so a bucket test asserts it rather than infers it. */
+  streamConfig(stream: string): Readonly<Record<string, unknown>> | undefined {
+    return this.#streams.get(stream);
   }
 
   /** Every current KV value, tombstones excluded — the assertion surface for a presence test. */
@@ -332,6 +370,7 @@ export class FakeNatsServer {
     if (subject.startsWith('$JS.API.STREAM.CREATE.')) {
       const name = subject.slice('$JS.API.STREAM.CREATE.'.length);
       const config: unknown = JSON.parse(command.payload || '{}');
+      this.#creates += 1;
       this.#streams.set(name, config as Record<string, unknown>);
       this.#reply(command, { config });
       return;

@@ -41,14 +41,34 @@ describe('entityRow', () => {
     });
   });
 
-  test('keeps an out-of-safe-range minor as a string inside the money object', () => {
+  test('minor is a number whatever the column type decoded to — one shape per column', () => {
+    // `pgoutput` hands an int8 back as a number and a numeric as text; both are the same money.
+    const small = entityRow({ price_minor: 1990, price_currency: 'USD' });
+    const text = entityRow({ price_minor: '1990', price_currency: 'USD' });
+    expect(small).toEqual({ price: { minor: 1990, currency: 'USD' } });
+    expect(text).toEqual({ price: { minor: 1990, currency: 'USD' } });
+    const asMoney = small['price'] as { minor: unknown };
+    const asMoneyFromText = text['price'] as { minor: unknown };
+    expect(typeof asMoney.minor).toBe('number');
+    expect(typeof asMoneyFromText.minor).toBe(typeof asMoney.minor);
+  });
+
+  test('a minor no JS number holds exactly is X_REPLICATION_PROTOCOL, not a silent string', () => {
     const physical: Record<string, JsonValue> = {
       price_minor: '9223372036854775807',
       price_currency: 'USD',
     };
-    expect(entityRow(physical)).toEqual({
-      price: { minor: '9223372036854775807', currency: 'USD' },
-    });
+    expect(() => entityRow(physical)).toThrow(/X_REPLICATION_PROTOCOL/);
+    expect(() => entityRow(physical)).toThrow(/price_minor/);
+  });
+
+  test('a fractional minor is refused — money is never a float', () => {
+    expect(() => entityRow({ price_minor: '19.90', price_currency: 'USD' })).toThrow(
+      /X_REPLICATION_PROTOCOL/,
+    );
+    expect(() => entityRow({ price_minor: 19.9, price_currency: 'USD' })).toThrow(
+      /X_REPLICATION_PROTOCOL/,
+    );
   });
 
   test('a lone minor column with no currency partner stays an ordinary column', () => {
@@ -86,10 +106,21 @@ describe('entityRow', () => {
     expect(entityRow(physical)).toEqual({ id: '1', price: { minor: 500, currency: 'USD' } });
   });
 
-  test('edge-shaped column names do not produce "undefined" keys or throw', () => {
+  test('edge-shaped column names produce exactly these keys', () => {
     const physical: Record<string, JsonValue> = { _x: 1, x_: 2, a__b: 3 };
-    expect(() => entityRow(physical)).not.toThrow();
-    const row = entityRow(physical);
-    expect(Object.keys(row).some((key) => key.includes('undefined'))).toBe(false);
+    expect(Object.keys(entityRow(physical))).toEqual(['X', 'x', 'aB']);
+  });
+
+  test('two columns that camelCase to one property are a named error, not a silent overwrite', () => {
+    // `camel()` is not injective, and assignment would have kept only the second value.
+    expect(() => entityRow({ a_b: 1, a__b: 2 })).toThrow(/X_REPLICATION_PROTOCOL/);
+    expect(() => entityRow({ a_b: 1, a__b: 2 })).toThrow(/"a_b" and "a__b".*"aB"/);
+    expect(() => entityRow({ x: 1, x_: 2 })).toThrow(/X_REPLICATION_PROTOCOL/);
+  });
+
+  test('a folded money property colliding with a plain column is named too', () => {
+    expect(() => entityRow({ price: 1, price_minor: 500, price_currency: 'USD' })).toThrow(
+      /both map to the entity property "price"/,
+    );
   });
 });

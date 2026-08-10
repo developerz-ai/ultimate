@@ -64,7 +64,7 @@ class ScramSha256Session implements ScramSession {
       throw new ReplicationProtocolError({
         stage: 'auth',
         detail: `server nonce "${serverNonce}" does not extend client nonce "${this.#clientNonce}"`,
-        fix: 'abort this connection — a server that cannot echo the client nonce is not provably the real server',
+        fix: 'x doctor db — the server did not echo the client nonce; check for a proxy on the replication URL',
       });
     }
 
@@ -129,11 +129,21 @@ export function scramSession(args: { password: string; nonce: string }): ScramSe
   return new ScramSha256Session(args);
 }
 
-/** 18 random bytes, base64 — the client nonce. Takes an Rng so a test can pin it. */
-export function scramNonce(rng: Rng): string {
+/**
+ * 18 random bytes, base64 — the client nonce. RFC 5802 §5.1 requires a fresh nonce per exchange
+ * and points at RFC 4086 for what "random" has to mean there, so the default source is the
+ * CSPRNG: a predictable nonce lets an attacker who has recorded one exchange replay a proof
+ * against a client whose next nonce it can guess. `Rng` is the deterministic *test* seam and
+ * nothing else — production passes no argument.
+ */
+export function scramNonce(rng?: Rng): string {
   const bytes = new Uint8Array(18);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Math.floor(rng() * 256) & 0xff;
+  if (rng === undefined) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(rng() * 256) & 0xff;
+    }
   }
   // Base64's alphabet never includes `,`, so the nonce can never collide with the attribute
   // separator it will be embedded next to on the wire — nothing further to escape.
@@ -166,6 +176,15 @@ export function chooseMechanism(offered: readonly string[]): string {
   });
 }
 
+/**
+ * The iteration count is the server's to choose, and `pbkdf2()` runs it before this client has
+ * proved anything about the peer — so an unbounded `i=` is a peer spending our CPU at will, on
+ * the connect path, where nothing above imposes a deadline. RFC 7677 §4 sets the floor at 4096
+ * and a real postgres sends exactly that, so two orders of magnitude of headroom refuses the
+ * attack without ever refusing a server.
+ */
+const MAX_SCRAM_ITERATIONS = 1_000_000;
+
 interface ServerFirst {
   readonly nonce: string;
   readonly salt: Uint8Array;
@@ -189,8 +208,16 @@ function parseServerFirst(text: string): ServerFirst {
       detail: `server-first-message iteration count "${iterationsText}" is not a positive integer`,
     });
   }
+  const iterations = Number.parseInt(iterationsText, 10);
+  if (iterations > MAX_SCRAM_ITERATIONS) {
+    throw new ReplicationProtocolError({
+      stage: 'auth',
+      detail: `server-first-message asked for ${iterationsText} PBKDF2 iterations, above the ${MAX_SCRAM_ITERATIONS} ceiling`,
+      fix: 'x doctor db — point the replication URL at postgres itself; a real server asks for 4096',
+    });
+  }
   const salt = decodeBase64('salt', saltB64);
-  return { nonce, salt, iterations: Number.parseInt(iterationsText, 10) };
+  return { nonce, salt, iterations };
 }
 
 /** `k=v` pairs split on `,`. Unrecognised keys are ignored — RFC 5802 reserves them for extensions. */

@@ -1,211 +1,52 @@
 // Drives `PgConnection` against a fake `PgStream` that scripts a Postgres server by hand: startup,
 // every auth method, simple query, and the CopyBoth switch. No socket, no real server, no timers.
+// The server script itself lives in `pg-connection-fixture.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import { md5Password, SCRAM_SHA_256, scramNonce, scramSession } from './pg-auth';
-import { ByteReader, ByteWriter } from './pg-bytes';
-import { PgConnection, type PgConnectionOptions } from './pg-connection';
-import { frame, type PgStream, PROTOCOL_3_0 } from './pg-wire';
+import { ByteReader } from './pg-bytes';
+import { PgConnection } from './pg-connection';
+import {
+  authCleartext,
+  authGssapi,
+  authMd5,
+  authOk,
+  authSasl,
+  authSaslContinue,
+  authSaslFinal,
+  backendKeyData,
+  commandComplete,
+  copyBothResponse,
+  copyData,
+  copyDoneFrame,
+  dataRow,
+  decodeFrame,
+  decodeStartup,
+  errorResponse,
+  FakeStream,
+  noticeResponse,
+  openInCopyBoth,
+  openTrusted,
+  opts,
+  parameterStatus,
+  readyForQuery,
+  rowDescriptionStub,
+  START_REPLICATION_SQL,
+  toBase64,
+} from './pg-connection-fixture';
+import { PROTOCOL_3_0 } from './pg-wire';
 import type { Rng } from './thundering-herd';
 
+/** `stream.writes[index]`, narrowed — `noUncheckedIndexedAccess` makes every index optional. */
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/**
- * A scriptable fake `PgStream`. `push()` queues chunks for `read()`; once the queue is empty and
- * the stream has not `end()`-ed, `read()` parks until the next `push()`/`end()` — the shape a test
- * needs to script a real request/response handshake. `write()` records every byte the client sent.
- */
-class FakeStream implements PgStream {
-  readonly writes: Uint8Array[] = [];
-  readonly #queue: Uint8Array[] = [];
-  #ended = false;
-  #parked: ((chunk: Uint8Array | undefined) => void) | undefined;
-  #closed = false;
-  #nextWriteError: Error | undefined;
-
-  push(...chunks: readonly Uint8Array[]): void {
-    for (const chunk of chunks) {
-      const parked = this.#parked;
-      if (parked !== undefined) {
-        this.#parked = undefined;
-        parked(chunk);
-      } else {
-        this.#queue.push(chunk);
-      }
-    }
-  }
-
-  /** Clean EOF: releases a parked `read()` with `undefined`, and every one after it. */
-  end(): void {
-    this.#ended = true;
-    const parked = this.#parked;
-    if (parked !== undefined) {
-      this.#parked = undefined;
-      parked(undefined);
-    }
-  }
-
-  throwOnNextWrite(error: Error): void {
-    this.#nextWriteError = error;
-  }
-
-  get closed(): boolean {
-    return this.#closed;
-  }
-
-  read(): Promise<Uint8Array | undefined> {
-    const next = this.#queue.shift();
-    if (next !== undefined) return Promise.resolve(next);
-    if (this.#ended) return Promise.resolve(undefined);
-    return new Promise((resolve) => {
-      this.#parked = resolve;
-    });
-  }
-
-  write(bytes: Uint8Array): Promise<void> {
-    this.writes.push(bytes);
-    const error = this.#nextWriteError;
-    if (error !== undefined) {
-      this.#nextWriteError = undefined;
-      return Promise.reject(error);
-    }
-    return Promise.resolve();
-  }
-
-  close(): void {
-    this.#closed = true;
-  }
-}
-
-// --- Backend message builders: one per row of the wire table, `frame()` owns tag + length -------
-
-const AUTH_OK = 0;
-const AUTH_CLEARTEXT = 3;
-const AUTH_MD5 = 5;
-const AUTH_SASL = 10;
-const AUTH_SASL_CONTINUE = 11;
-const AUTH_SASL_FINAL = 12;
-const AUTH_GSSAPI = 7;
-
-const authMethod = (method: number, extra: Uint8Array = new Uint8Array(0)): Uint8Array =>
-  frame('R', new ByteWriter().int32(method).raw(extra).finish());
-const authOk = (): Uint8Array => authMethod(AUTH_OK);
-const authCleartext = (): Uint8Array => authMethod(AUTH_CLEARTEXT);
-const authMd5 = (salt: Uint8Array): Uint8Array => authMethod(AUTH_MD5, salt);
-const authGssapi = (): Uint8Array => authMethod(AUTH_GSSAPI);
-const authSaslContinue = (payload: Uint8Array): Uint8Array =>
-  authMethod(AUTH_SASL_CONTINUE, payload);
-const authSaslFinal = (payload: Uint8Array): Uint8Array => authMethod(AUTH_SASL_FINAL, payload);
-const authSasl = (...mechanisms: readonly string[]): Uint8Array => {
-  const writer = new ByteWriter().int32(AUTH_SASL);
-  for (const mechanism of mechanisms) writer.cstring(mechanism);
-  return frame('R', writer.uint8(0).finish());
-};
-
-const parameterStatus = (name: string, value: string): Uint8Array =>
-  frame('S', new ByteWriter().cstring(name).cstring(value).finish());
-
-const backendKeyData = (pid: number, secret: number): Uint8Array =>
-  frame('K', new ByteWriter().int32(pid).int32(secret).finish());
-
-const READY_IDLE = 'I'.charCodeAt(0);
-const readyForQuery = (): Uint8Array => frame('Z', new ByteWriter().uint8(READY_IDLE).finish());
-
-const rowDescriptionStub = (): Uint8Array => frame('T', new Uint8Array(0));
-
-const dataRow = (...values: readonly (string | null)[]): Uint8Array => {
-  const writer = new ByteWriter().int16(values.length);
-  for (const value of values) {
-    if (value === null) {
-      writer.int32(-1);
-    } else {
-      const bytes = encoder.encode(value);
-      writer.int32(bytes.length).raw(bytes);
-    }
-  }
-  return frame('D', writer.finish());
-};
-
-const commandComplete = (tag: string): Uint8Array =>
-  frame('C', new ByteWriter().cstring(tag).finish());
-
-const fieldedMessage = (tag: 'E' | 'N', fields: Readonly<Record<string, string>>): Uint8Array => {
-  const writer = new ByteWriter();
-  for (const [code, value] of Object.entries(fields)) {
-    writer.uint8(code.charCodeAt(0)).cstring(value);
-  }
-  return frame(tag, writer.uint8(0).finish());
-};
-const errorResponse = (fields: Readonly<Record<string, string>>): Uint8Array =>
-  fieldedMessage('E', fields);
-const noticeResponse = (fields: Readonly<Record<string, string>>): Uint8Array =>
-  fieldedMessage('N', fields);
-
-const copyBothResponse = (): Uint8Array => frame('W', new ByteWriter().uint8(0).int16(0).finish());
-const copyData = (payload: Uint8Array): Uint8Array => frame('d', payload);
-const copyDoneFrame = (): Uint8Array => frame('c', new Uint8Array(0));
-
-// --- Decoding the client's writes -----------------------------------------------------------
-
-/** `stream.writes[index]`, narrowed — `noUncheckedIndexedAccess` makes every index optional. */
 const writeAt = (stream: FakeStream, index: number): Uint8Array => {
   const bytes = stream.writes[index];
-  if (bytes === undefined) throw new Error(`expected a client write at index ${index}`);
+  if (bytes === undefined) expect.unreachable(`expected a client write at index ${index}`);
   return bytes;
 };
-
-/** One frontend `tag` + Int32 length + body frame — the shape `frame()` builds. */
-const decodeFrame = (bytes: Uint8Array): { tag: string; body: Uint8Array } => {
-  const reader = new ByteReader(bytes);
-  const tag = reader.tag();
-  const length = reader.int32();
-  return { tag, body: reader.take(length - 4) };
-};
-
-/** The tagless startup packet: Int32 length, Int32 version, then key/value cstrings to `\0`. */
-const decodeStartup = (bytes: Uint8Array): { version: number; params: Record<string, string> } => {
-  const reader = new ByteReader(bytes);
-  reader.int32(); // total length — implied by `bytes.length`, not needed to check the shape
-  const version = reader.int32();
-  const params: Record<string, string> = {};
-  for (;;) {
-    const key = reader.cstring();
-    if (key === '') break;
-    params[key] = reader.cstring();
-  }
-  return { version, params };
-};
-
-const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
-
-// --- Fixtures --------------------------------------------------------------------------------
-
-const opts = (stream: PgStream, extra?: Partial<PgConnectionOptions>): PgConnectionOptions => ({
-  stream,
-  user: 'repluser',
-  database: 'app',
-  ...extra,
-});
-
-/** A connection past the handshake, via the cheapest auth method — trust. */
-async function openTrusted(
-  stream: FakeStream,
-  extra?: Partial<PgConnectionOptions>,
-): Promise<PgConnection> {
-  stream.push(authOk(), readyForQuery());
-  return PgConnection.open(opts(stream, extra));
-}
-
-const START_REPLICATION_SQL = 'START_REPLICATION SLOT s LOGICAL 0/0';
-
-async function openInCopyBoth(stream: FakeStream): Promise<PgConnection> {
-  const connection = await openTrusted(stream);
-  stream.push(copyBothResponse());
-  await connection.startCopyBoth(START_REPLICATION_SQL);
-  return connection;
-}
 
 // --- Tests -------------------------------------------------------------------------------------
 
@@ -337,6 +178,93 @@ describe('open — authentication', () => {
     expect(error).toBeInstanceOf(ReplicationFailedError);
     expect((error as { code?: string }).code).toBe('X_REPLICATION_FAILED');
     expect((error as Error).message).toContain('closed the connection');
+  });
+
+  test('SASLContinue before any SASL offer is X_REPLICATION_PROTOCOL, fix names a pooler', async () => {
+    const stream = new FakeStream();
+    stream.push(authSaslContinue(encoder.encode('r=nope,s=AAAAAAAA,i=4096')));
+    const error = await PgConnection.open(opts(stream, { password: 'hunter2' })).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ReplicationProtocolError);
+    expect((error as { fix?: string }).fix).toBe(
+      'x doctor db — the SASL exchange arrived out of order; ' +
+        'check for a pooler or proxy between this client and postgres',
+    );
+  });
+});
+
+/**
+ * A failed handshake hands the caller an exception, never an object — so nothing is left holding
+ * the socket unless `open` releases it. A supervisor that retries on a schedule turns a leak here
+ * into one file descriptor per attempt, which is why every rejecting path is enumerated.
+ */
+describe('open — a failed handshake never leaks the stream', () => {
+  const scripts: readonly (readonly [
+    string,
+    (stream: FakeStream) => void,
+    Partial<PgConnectionOptions>,
+  ])[] = [
+    ['cleartext auth with no password', (stream) => stream.push(authCleartext()), {}],
+    ['md5 auth with no password', (stream) => stream.push(authMd5(new Uint8Array(4))), {}],
+    ['SASL auth with no password', (stream) => stream.push(authSasl(SCRAM_SHA_256)), {}],
+    ['an auth method this client does not speak', (stream) => stream.push(authGssapi()), {}],
+    [
+      'a SASL offer with only the -PLUS mechanism',
+      (stream) => stream.push(authSasl('SCRAM-SHA-256-PLUS')),
+      { password: 'hunter2' },
+    ],
+    [
+      'an ErrorResponse during authentication',
+      (stream) => stream.push(errorResponse({ C: '28P01', M: 'password authentication failed' })),
+      {},
+    ],
+    [
+      'an ErrorResponse between AuthenticationOk and ReadyForQuery',
+      (stream) => stream.push(authOk(), errorResponse({ C: '0A000', M: 'wal_level is replica' })),
+      {},
+    ],
+    ['an EOF before the first message', (stream) => stream.end(), {}],
+    [
+      'an EOF after AuthenticationOk but before ReadyForQuery',
+      (stream) => {
+        stream.push(authOk());
+        stream.end();
+      },
+      {},
+    ],
+  ];
+
+  test.each(scripts)('%s closes the stream', async (_label, script, extra) => {
+    const stream = new FakeStream();
+    script(stream);
+    const error = await PgConnection.open(opts(stream, extra)).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(stream.closed).toBe(true);
+  });
+
+  test('a startup write that throws closes the stream and rethrows that failure', async () => {
+    const stream = new FakeStream();
+    const boom = new Error('socket refused the startup packet');
+    stream.throwOnNextWrite(boom);
+    const error = await PgConnection.open(opts(stream)).catch((caught: unknown) => caught);
+    expect(error).toBe(boom);
+    expect(stream.closed).toBe(true);
+  });
+
+  test('a close() that itself throws does not mask the handshake failure', async () => {
+    const stream = new FakeStream();
+    stream.throwOnClose(new Error('close failed too'));
+    stream.push(authGssapi());
+    const error = await PgConnection.open(opts(stream)).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ReplicationProtocolError);
+    expect((error as { code?: string }).code).toBe('X_REPLICATION_PROTOCOL');
+  });
+
+  test('a handshake that succeeds leaves the stream open — the close is on failure only', async () => {
+    const stream = new FakeStream();
+    await openTrusted(stream);
+    expect(stream.closed).toBe(false);
   });
 });
 

@@ -1,245 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
-import type { ChangeEvent } from './changefeed';
 import { PgLogicalReplicationFeed } from './changefeed';
-import { ByteReader, ByteWriter, pgTimestampToEpochMs } from './pg-bytes';
+import { pgTimestampToEpochMs } from './pg-bytes';
 import { changeLsn, commitPositionOf } from './pg-replication';
-import type { PgStream } from './pg-wire';
-import { frame } from './pg-wire';
-
-// ---- pgoutput fixtures ------------------------------------------------------------------------
-
-const POSTS_OID = 16_384;
-const OTHER_OID = 16_385;
-const TEXT = 25;
-
-interface FixtureColumn {
-  readonly name: string;
-  readonly key?: boolean;
-}
-
-const relation = (oid: number, name: string, columns: readonly FixtureColumn[]): Uint8Array => {
-  const writer = new ByteWriter()
-    .uint8(0x52)
-    .int32(oid)
-    .cstring('public')
-    .cstring(name)
-    .uint8(0x66)
-    .int16(columns.length);
-  for (const column of columns) {
-    writer
-      .uint8(column.key === true ? 1 : 0)
-      .cstring(column.name)
-      .int32(TEXT)
-      .int32(-1);
-  }
-  return writer.finish();
-};
-
-const tuple = (writer: ByteWriter, values: readonly (string | null)[]): ByteWriter => {
-  writer.int16(values.length);
-  for (const value of values) {
-    if (value === null) writer.uint8(0x6e);
-    else writer.uint8(0x74).int32(value.length).utf8(value);
-  }
-  return writer;
-};
-
-const begin = (commitLsn: bigint, at: bigint, xid: number): Uint8Array =>
-  new ByteWriter().uint8(0x42).int64(commitLsn).int64(at).int32(xid).finish();
-
-const commit = (commitLsn: bigint, endLsn: bigint, at: bigint): Uint8Array =>
-  new ByteWriter().uint8(0x43).uint8(0).int64(commitLsn).int64(endLsn).int64(at).finish();
-
-const insert = (oid: number, values: readonly (string | null)[]): Uint8Array =>
-  tuple(new ByteWriter().uint8(0x49).int32(oid).uint8(0x4e), values).finish();
-
-const update = (
-  oid: number,
-  before: readonly (string | null)[] | null,
-  after: readonly (string | null)[],
-): Uint8Array => {
-  const writer = new ByteWriter().uint8(0x55).int32(oid);
-  if (before !== null) tuple(writer.uint8(0x4f), before);
-  return tuple(writer.uint8(0x4e), after).finish();
-};
-
-const remove = (oid: number, before: readonly (string | null)[]): Uint8Array =>
-  tuple(new ByteWriter().uint8(0x44).int32(oid).uint8(0x4f), before).finish();
-
-/** `w` XLogData, wrapped as the `d` CopyData message the walsender sends it in. */
-const xlog = (payload: Uint8Array, walEnd = 0n): Uint8Array =>
-  frame(
-    'd',
-    new ByteWriter().uint8(0x77).int64(walEnd).int64(walEnd).int64(0n).raw(payload).finish(),
-  );
-
-const keepalive = (walEnd: bigint, replyRequested: number): Uint8Array =>
-  frame('d', new ByteWriter().uint8(0x6b).int64(walEnd).int64(0n).uint8(replyRequested).finish());
-
-// ---- a scripted walsender ---------------------------------------------------------------------
-
-const dataRow = (values: readonly (string | null)[]): Uint8Array => {
-  const writer = new ByteWriter().int16(values.length);
-  for (const value of values) {
-    if (value === null) writer.int32(-1);
-    else writer.int32(value.length).utf8(value);
-  }
-  return frame('D', writer.finish());
-};
-
-const ready = (): Uint8Array => frame('Z', new Uint8Array([0x49]));
-const complete = (): Uint8Array => frame('C', new ByteWriter().cstring('SELECT 1').finish());
-
-const joined = (...parts: readonly Uint8Array[]): Uint8Array => {
-  const total = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.length;
-  }
-  return out;
-};
-
-export interface ServerScript {
-  readonly walLevel?: string;
-  readonly publicationExists?: boolean;
-  /** `null` = no slot yet, so the feed has to create one. */
-  readonly slotPlugin?: string | null;
-}
-
-/**
- * Answers the exact command sequence the feed issues, and records what it sent back — enough to
- * drive the whole preflight and then inject WAL by hand.
- */
-class FakeWalsender implements PgStream {
-  readonly queries: string[] = [];
-  readonly standby: { position: bigint; at: number }[] = [];
-  closed = false;
-  readonly #chunks: Uint8Array[] = [];
-  readonly #script: ServerScript;
-  #waiting: ((chunk: Uint8Array | undefined) => void) | null = null;
-
-  constructor(script: ServerScript = {}) {
-    this.#script = script;
-  }
-
-  push(chunk: Uint8Array): void {
-    const waiter = this.#waiting;
-    this.#waiting = null;
-    if (waiter === null) this.#chunks.push(chunk);
-    else waiter(chunk);
-  }
-
-  read(): Promise<Uint8Array | undefined> {
-    const next = this.#chunks.shift();
-    if (next !== undefined) return Promise.resolve(next);
-    return new Promise((resolve) => {
-      this.#waiting = resolve;
-    });
-  }
-
-  write(bytes: Uint8Array): Promise<void> {
-    // The startup packet is untagged, so a leading protocol version is how it is recognised.
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    if (bytes.length >= 8 && view.getInt32(4, false) === 196_608) {
-      this.push(joined(frame('R', new ByteWriter().int32(0).finish()), ready()));
-      return Promise.resolve();
-    }
-    const reader = new ByteReader(bytes, 'client');
-    const tag = reader.tag();
-    reader.int32();
-    if (tag === 'Q') this.#answer(reader.cstring());
-    if (tag === 'd') this.#recordStandby(reader.rest());
-    return Promise.resolve();
-  }
-
-  close(): void {
-    this.closed = true;
-    this.push(undefined as unknown as Uint8Array);
-  }
-
-  #recordStandby(payload: Uint8Array): void {
-    const reader = new ByteReader(payload, 'standby');
-    if (reader.tag() !== 'r') return;
-    const position = reader.int64();
-    reader.int64();
-    reader.int64();
-    this.standby.push({ position, at: pgTimestampToEpochMs(reader.int64()) });
-  }
-
-  #answer(sql: string): void {
-    this.queries.push(sql);
-    if (sql.startsWith('START_REPLICATION')) {
-      this.push(frame('W', new ByteWriter().uint8(0).int16(0).finish()));
-      return;
-    }
-    if (sql === 'SHOW wal_level') {
-      this.push(joined(dataRow([this.#script.walLevel ?? 'logical']), complete(), ready()));
-      return;
-    }
-    if (sql.includes('pg_publication')) {
-      const rows = this.#script.publicationExists === false ? [] : [dataRow(['1'])];
-      this.push(joined(...rows, complete(), ready()));
-      return;
-    }
-    if (sql.includes('pg_replication_slots')) {
-      const plugin = this.#script.slotPlugin === undefined ? 'pgoutput' : this.#script.slotPlugin;
-      const rows = plugin === null ? [] : [dataRow([plugin])];
-      this.push(joined(...rows, complete(), ready()));
-      return;
-    }
-    this.push(joined(dataRow(['ok']), complete(), ready()));
-  }
-}
-
-const POST_COLUMNS: readonly FixtureColumn[] = [
-  { name: 'id', key: true },
-  { name: 'title' },
-  { name: 'org_id' },
-  { name: 'price_minor' },
-  { name: 'price_currency' },
-];
-
-interface Started {
-  readonly feed: PgLogicalReplicationFeed;
-  readonly server: FakeWalsender;
-  readonly events: ChangeEvent[];
-  /** Resolves once `count` events have been delivered. */
-  settled(count: number): Promise<void>;
-}
-
-const start = async (
-  options: { script?: ServerScript; from?: string; entities?: readonly string[] } = {},
-): Promise<Started> => {
-  const server = new FakeWalsender(options.script);
-  const events: ChangeEvent[] = [];
-  const feed = new PgLogicalReplicationFeed({
-    url: 'postgres://replicator:secret@db.test:5432/app',
-    slot: 'ultimate_slot',
-    publication: 'ultimate_pub',
-    entities: options.entities ?? ['posts'],
-    clock: frozenClock('2026-08-09T12:00:00.000Z'),
-    stream: () => Promise.resolve(server),
-  });
-  await feed.start(
-    options.from === undefined
-      ? { onChange: (event) => void events.push(event) }
-      : { from: options.from, onChange: (event) => void events.push(event) },
-  );
-  return {
-    feed,
-    server,
-    events,
-    // Nothing here is real I/O, so draining the microtask queue is a deterministic "let the pump
-    // finish" — including the commit that follows the last row.
-    settled: async (count) => {
-      for (let tick = 0; tick < 200 && events.length < count; tick += 1) await Promise.resolve();
-      for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
-    },
-  };
-};
+import {
+  begin,
+  commit,
+  type FixtureColumn,
+  INT8,
+  insert,
+  keepalive,
+  OTHER_OID,
+  POST_COLUMNS,
+  POSTS_OID,
+  relation,
+  remove,
+  start,
+  update,
+  xlog,
+} from './pg-replication-fixture';
 
 // ---- the ordering contract --------------------------------------------------------------------
 
@@ -342,7 +120,7 @@ describe('decoded changes', () => {
         id: 'p1',
         title: 'Hello',
         orgId: 'org-1',
-        price: { minor: '1990', currency: 'USD' },
+        price: { minor: 1990, currency: 'USD' },
       },
       lsn: changeLsn(0x1000n, 1),
       txid: '42',
@@ -452,8 +230,46 @@ describe('decoded changes', () => {
     server.push(xlog(begin(0x7000n, 0n, 14)));
     server.push(xlog(insert(OTHER_OID, ['1'])));
     for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
-    // The pump reports and ends rather than delivering a row the pipeline cannot address.
+
+    // The recorded failure is the assertion: a delivered count of 0 is also what a fixture that
+    // never decoded, or a pump that never started, would produce.
+    expect(feed.stats().failure).toContain('X_REPLICATION_PROTOCOL');
+    expect(feed.stats().failure).toContain('audit_log');
+    expect(feed.stats().failure).toContain('no text id column');
     expect(feed.stats().delivered).toBe(0);
+    await feed.stop();
+  });
+
+  test('a bigint id is delivered as text, in range and out of it alike', async () => {
+    const columns: readonly FixtureColumn[] = [
+      { name: 'id', key: true, type: INT8 },
+      { name: 'title' },
+    ];
+    const { server, events, settled, feed } = await start();
+    server.push(xlog(relation(POSTS_OID, 'posts', columns)));
+    server.push(xlog(begin(0xb000n, 0n, 21)));
+    server.push(xlog(insert(POSTS_OID, ['42', 'small'])));
+    server.push(xlog(insert(POSTS_OID, ['9223372036854775807', 'large'])));
+    server.push(xlog(commit(0xb000n, 0xb100n, 0n)));
+    await settled(2);
+
+    // A safe int8 decodes as a number and a large one as text; `Row.id` is text either way, or the
+    // same table would identify small rows by number and large rows by string.
+    expect(events.map((event) => event.after?.['id'])).toEqual(['42', '9223372036854775807']);
+    await feed.stop();
+  });
+
+  test('the confirm timer stops with the pump it confirms for', async () => {
+    const { server, feed } = await start({ entities: ['audit_log'], statusIntervalMs: 5 });
+    server.push(xlog(relation(OTHER_OID, 'audit_log', [{ name: 'seq', key: true }])));
+    server.push(xlog(begin(0x7100n, 0n, 22)));
+    server.push(xlog(insert(OTHER_OID, ['1'])));
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+    const confirmations = server.standby.length;
+    await Bun.sleep(30);
+
+    // A dead loop must stop telling the walsender it is keeping up.
+    expect(server.standby.length).toBe(confirmations);
     await feed.stop();
   });
 });

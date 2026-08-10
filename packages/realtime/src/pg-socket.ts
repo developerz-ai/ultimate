@@ -121,6 +121,17 @@ class ChunkQueue {
     if (next !== undefined) return Promise.resolve(next);
     if (this.#failure !== undefined) return Promise.reject(this.#failure);
     if (this.#ended) return Promise.resolve(undefined);
+    // One slot, one waiter: overwriting it would abandon the first promise unsettled forever, so
+    // the single-consumer rule is refused here rather than written down and hoped for.
+    if (this.#waiting !== undefined) {
+      return Promise.reject(
+        new ReplicationProtocolError({
+          stage: 'read',
+          detail: 'a second read() arrived while one was already parked on this stream',
+          fix: 'read this stream from one place only — PgConnection owns it for the whole session',
+        }),
+      );
+    }
     return new Promise((resolve, reject) => {
       this.#waiting = { resolve, reject };
     });
@@ -158,7 +169,9 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
   };
 
   const handlers: SocketHandlers = {
-    data: (_socket, data) => queue.push(data),
+    // Copied, not retained: Bun promises nothing about the chunk's contents — or that it is even
+    // the same buffer — once the handler returns, and this one outlives it in the queue.
+    data: (_socket, data) => queue.push(data.slice()),
     close: died,
     end: died,
     drain: () => {

@@ -86,6 +86,17 @@ describe('parseNatsUrl', () => {
     expect(error).toBeInstanceOf(TransportUnavailableError);
     expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
   });
+
+  test('a password with no user is refused rather than connecting anonymously', () => {
+    const error = thrown(() => parseNatsUrl('nats://:s3cret@bus.example.test'));
+
+    expect(error).toBeInstanceOf(TransportUnavailableError);
+    expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+    // Both legal forms are named, and the secret itself never reaches a log line.
+    expect(isUltimateError(error) ? error.fix : '').toContain('nats://<user>:<pass>@');
+    expect(isUltimateError(error) ? error.fix : '').toContain('nats://<token>@');
+    expect(causeOf(error)).not.toContain('s3cret');
+  });
 });
 
 type UpgradeOptions = {
@@ -96,8 +107,8 @@ type UpgradeOptions = {
 /**
  * A `SocketLike` driven by hand: `onWrite` fires synchronously inside `write`, before `write`
  * returns, so a test can script a server reaction that is already sitting in the queue by the
- * time the caller awaits it — no microtask-counting, no race. `onUpgrade` defaults to throwing so
- * a test that never expects an upgrade fails loudly if the source calls one anyway.
+ * time the caller awaits it — no microtask-counting, no race. `onUpgrade` defaults to
+ * `expect.unreachable` so a test that never expects an upgrade fails loudly if one happens anyway.
  */
 class FakeSocket implements SocketLike {
   readonly writes: number[] = [];
@@ -105,9 +116,8 @@ class FakeSocket implements SocketLike {
   onWrite: (data: Uint8Array) => void = () => {};
   ended = false;
   upgradeCalls = 0;
-  onUpgrade: (options: UpgradeOptions) => readonly SocketLike[] = () => {
-    throw new Error('this fake socket does not expect upgradeTLS to be called');
-  };
+  onUpgrade: (options: UpgradeOptions) => readonly SocketLike[] = () =>
+    expect.unreachable('this fake socket does not expect upgradeTLS to be called');
 
   write(data: Uint8Array): number {
     this.writes.push(data.length);
@@ -140,7 +150,7 @@ class FakeRuntime implements BunConnect {
 
   /** The handlers Bun itself would call — registered once, by `connect`. */
   events(): SocketHandlers {
-    if (this.#handlers === undefined) throw new Error('connect() has not run yet');
+    if (this.#handlers === undefined) return expect.unreachable('connect() has not run yet');
     return this.#handlers;
   }
 }
@@ -182,6 +192,43 @@ describe('natsStreamOver', () => {
     runtime.events().data(runtime.socket, new Uint8Array([9]));
 
     expect(Array.from((await pending) ?? [])).toEqual([9]);
+  });
+
+  test('a queued chunk survives the runtime reusing that buffer after the handler returns', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await natsStreamOver(runtime, natsTarget());
+    const reused = new Uint8Array([1, 2, 3]);
+
+    runtime.events().data(runtime.socket, reused);
+    reused.fill(9); // Bun refilling its read buffer for the next chunk
+
+    expect(Array.from((await stream.read()) ?? [])).toEqual([1, 2, 3]);
+  });
+
+  test('a chunk handed straight to a parked read() is copied too', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await natsStreamOver(runtime, natsTarget());
+    const reused = new Uint8Array([4, 5]);
+
+    const pending = stream.read();
+    runtime.events().data(runtime.socket, reused);
+    reused.fill(0);
+
+    expect(Array.from((await pending) ?? [])).toEqual([4, 5]);
+  });
+
+  test('a second read() while one is parked is refused rather than stranding the first', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await natsStreamOver(runtime, natsTarget());
+
+    const first = stream.read();
+    const error = await caught(stream.read());
+    runtime.events().data(runtime.socket, new Uint8Array([6]));
+
+    expect(error).toBeInstanceOf(TransportUnavailableError);
+    expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+    // The first reader is still the one the chunk belongs to.
+    expect(Array.from((await first) ?? [])).toEqual([6]);
   });
 
   test('a closed socket yields undefined from read() (EOF)', async () => {

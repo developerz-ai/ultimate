@@ -3,14 +3,43 @@
 // disappears mid-flight — after it returns, a publish must still reach a subscriber that never
 // re-subscribed itself. Sleeps are injected so the backoff costs no wall-clock time.
 
-import { describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { describe, expect, spyOn, test } from 'bun:test';
+import { frozenClock, isUltimateError, logger } from '@ultimat3/core';
+import { TransportUnavailableError } from './errors';
 import { FakeNatsServer } from './nats-fake';
 import type { NatsStream } from './nats-socket';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
 
+const decoder = new TextDecoder();
+
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
+
+/** A socket that refuses one control line — a dial failing after the connection is already up. */
+const refusing = (stream: NatsStream, needle: string): NatsStream => ({
+  ...stream,
+  write: async (bytes) => {
+    if (decoder.decode(bytes).includes(needle)) {
+      throw new TransportUnavailableError({
+        transport: 'nats',
+        reason: `the socket refused "${needle}"`,
+      });
+    }
+    await stream.write(bytes);
+  },
+});
+
+/** A socket the server tears down as one control line goes out: a connection lost mid-dial. */
+const droppingOn = (stream: NatsStream, needle: string): NatsStream => ({
+  ...stream,
+  write: async (bytes) => {
+    if (decoder.decode(bytes).includes(needle)) {
+      stream.close();
+      return;
+    }
+    await stream.write(bytes);
+  },
+});
 
 const caught = (promise: Promise<unknown>): Promise<unknown> =>
   promise.then(
@@ -24,6 +53,8 @@ const settle = async (): Promise<void> => {
 
 interface Bus {
   readonly server: FakeNatsServer;
+  /** Whatever the transport reported in the background. Collected so it never reaches the log. */
+  readonly reported: readonly unknown[];
   readonly transport: (overrides?: Partial<NatsTransportOptions>) => NatsTransport;
   readonly dials: () => number;
 }
@@ -31,9 +62,11 @@ interface Bus {
 function bus(): Bus {
   const clock = frozenClock(1_700_000_000_000);
   const server = new FakeNatsServer({ clock });
+  const reported: unknown[] = [];
   let dials = 0;
   return {
     server,
+    reported,
     dials: () => dials,
     transport: (overrides = {}) =>
       new NatsTransport({
@@ -42,6 +75,7 @@ function bus(): Bus {
         clock,
         rng: () => 0.5,
         sleep: async () => undefined,
+        onError: (error) => reported.push(error),
         open: (): Promise<NatsStream> => {
           dials += 1;
           return Promise.resolve(server.connect());
@@ -121,7 +155,7 @@ describe('NatsTransport', () => {
     const seen: string[] = [];
 
     await transport.subscribe('x.change.>', () => {
-      throw new Error('subscriber blew up');
+      throw new TransportUnavailableError({ transport: 'test', reason: 'the subscriber blew up' });
     });
     await transport.subscribe('x.change.>', (payload) => seen.push(payload));
     await transport.publish('x.change.posts', 'one');
@@ -216,7 +250,167 @@ describe('NatsTransport', () => {
 
     expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
     expect([dials, sleeps]).toEqual([1, 0]);
+    // The dial got as far as a live socket before the bucket check refused the server: a rejected
+    // connect() that still holds one open is a leak, and `connected` would be answering for it.
+    expect(server.connections).toBe(0);
+    expect(transport.connected).toBe(false);
     await transport.close();
+  });
+
+  test('a dial that fails after the socket is up closes it, rather than leaking one per retry', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const server = new FakeNatsServer({ clock });
+    let dials = 0;
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      clock,
+      rng: () => 0.5,
+      sleep: async () => undefined,
+      onError: () => undefined,
+      open: () => {
+        dials += 1;
+        const stream = server.connect();
+        return Promise.resolve(dials <= 2 ? refusing(stream, '$JS.API.STREAM.INFO') : stream);
+      },
+    });
+
+    await transport.connect();
+
+    expect(dials).toBe(3);
+    expect(server.connections).toBe(1);
+    await transport.close();
+    expect(server.connections).toBe(0);
+  });
+
+  test('a dial that fails mid-rebind leaves no second subscription delivering the same change', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const server = new FakeNatsServer({ clock });
+    const seen: string[] = [];
+    let dials = 0;
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      clock,
+      rng: () => 0.5,
+      sleep: async () => undefined,
+      onError: () => undefined,
+      // The dial after the restart binds `alpha` and is then refused `beta`: a half-done rebind.
+      open: () => {
+        dials += 1;
+        const stream = server.connect();
+        return Promise.resolve(dials === 2 ? refusing(stream, 'SUB x.change.beta') : stream);
+      },
+    });
+    await transport.subscribe('x.change.alpha', (payload) => seen.push(payload));
+    await transport.subscribe('x.change.beta', () => undefined);
+
+    server.dropAll();
+    await settle();
+    await settle();
+    await transport.publish('x.change.alpha', 'once');
+    await settle();
+
+    expect(seen).toEqual(['once']);
+    expect(dials).toBe(3);
+    expect(server.connections).toBe(1);
+    await transport.close();
+  });
+
+  test('a connection lost mid-dial is not reported as the live one going down', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const server = new FakeNatsServer({ clock });
+    const reported: unknown[] = [];
+    const seen: string[] = [];
+    let dials = 0;
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      clock,
+      rng: () => 0.5,
+      sleep: async () => undefined,
+      onError: (error) => reported.push(error),
+      // The retry's socket dies while the bucket check is in flight. That connection was never
+      // published, so the dial owns its failure — reporting it again is a loss that never was.
+      open: () => {
+        dials += 1;
+        const stream = server.connect();
+        return Promise.resolve(dials === 2 ? droppingOn(stream, '$JS.API.STREAM.INFO') : stream);
+      },
+    });
+    await transport.subscribe('x.change.>', (payload) => seen.push(payload));
+
+    server.dropAll();
+    await settle();
+    await settle();
+    await transport.publish('x.change.posts', 'after');
+    await settle();
+
+    expect(reported).toHaveLength(1);
+    expect(seen).toEqual(['after']);
+    expect(transport.connected).toBe(true);
+    expect(server.connections).toBe(1);
+    await transport.close();
+  });
+
+  test('a dial that lands after close() closes its connection instead of publishing it', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const server = new FakeNatsServer({ clock });
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = () => resolve();
+    });
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      clock,
+      rng: () => 0.5,
+      sleep: async () => undefined,
+      onError: () => undefined,
+      open: async () => {
+        await gate;
+        return server.connect();
+      },
+    });
+
+    const dialing = caught(transport.connect());
+    await transport.close();
+    release();
+
+    expect(codeOf(await dialing)).toBe('X_TRANSPORT_UNAVAILABLE');
+    expect(transport.connected).toBe(false);
+    expect(server.connections).toBe(0);
+  });
+
+  test('a background failure with no onError reaches the log rather than silence', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const server = new FakeNatsServer({ clock });
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      clock,
+      rng: () => 0.5,
+      sleep: async () => undefined,
+      open: () => Promise.resolve(server.connect()),
+    });
+    const logged = spyOn(logger, 'error').mockImplementation(() => undefined);
+
+    try {
+      await transport.subscribe('x.change.>', () => {
+        throw new TransportUnavailableError({
+          transport: 'test',
+          reason: 'the subscriber blew up',
+        });
+      });
+      await transport.publish('x.change.posts', 'one');
+      await settle();
+
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged.mock.calls[0]?.[0]).toBe('nats transport error');
+    } finally {
+      logged.mockRestore();
+      await transport.close();
+    }
   });
 
   test('publish and subscribe on a closed transport are X_TRANSPORT_UNAVAILABLE', async () => {

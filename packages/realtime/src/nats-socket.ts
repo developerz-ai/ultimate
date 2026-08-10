@@ -43,6 +43,16 @@ export function parseNatsUrl(url: string): NatsTarget {
   }
   const hasUser = parsed.username !== '';
   const hasPass = parsed.password !== '';
+  // A password with no user matches neither credential form, and dropping it silently connects
+  // anonymously — the failure then surfaces as the server's own 'Authorization Violation', which
+  // names nothing about the URL. The URL itself is never echoed back: it holds the secret.
+  if (!hasUser && hasPass) {
+    throw new TransportUnavailableError({
+      transport: 'nats',
+      reason: `the connection URL for ${parsed.hostname} carries a password with no user`,
+      fix: 'set the URL to nats://<user>:<pass>@host:4222, or the bare-token form nats://<token>@host:4222',
+    });
+  }
   const user = hasUser ? decodeURIComponent(parsed.username) : undefined;
   const pass = hasPass ? decodeURIComponent(parsed.password) : undefined;
   return {
@@ -104,6 +114,18 @@ class ChunkQueue {
     if (next !== undefined) return Promise.resolve(next);
     if (this.#failure !== undefined) return Promise.reject(this.#failure);
     if (this.#ended) return Promise.resolve(undefined);
+    if (this.#waiting !== undefined) {
+      // One reader drives this queue — the handshake, then the session's single read loop.
+      // Overwriting the parked waiter would strand it: nothing left would ever settle its promise,
+      // so the caller hangs with no error and no deadline. Refusing the second reader names it.
+      return Promise.reject(
+        new TransportUnavailableError({
+          transport: 'nats',
+          reason: 'a second read() started while one was already parked on this stream',
+          fix: 'read a NatsStream from one place only: one stream feeds exactly one read loop',
+        }),
+      );
+    }
     return new Promise((resolve, reject) => {
       this.#waiting = { resolve, reject };
     });
@@ -138,7 +160,9 @@ export async function natsStreamOver(runtime: BunConnect, target: NatsTarget): P
   };
 
   const handlers: SocketHandlers = {
-    data: (_socket, data) => queue.push(data),
+    // Copied before it is queued or handed on: Bun owns that buffer and gives no guarantee its
+    // contents survive the handler returning, while a queued chunk is read a whole tick later.
+    data: (_socket, data) => queue.push(data.slice()),
     close: died,
     end: died,
     drain: () => {

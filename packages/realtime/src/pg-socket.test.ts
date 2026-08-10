@@ -100,9 +100,8 @@ class FakeSocket implements SocketLike {
   onWrite: (data: Uint8Array) => void = () => {};
   ended = false;
   upgradeCalls = 0;
-  onUpgrade: (options: UpgradeOptions) => readonly SocketLike[] = () => {
-    throw new Error('this fake socket does not expect upgradeTLS to be called');
-  };
+  onUpgrade: (options: UpgradeOptions) => readonly SocketLike[] = () =>
+    expect.unreachable('this fake socket does not expect upgradeTLS to be called');
 
   write(data: Uint8Array): number {
     this.writes.push(data.length);
@@ -135,7 +134,7 @@ class FakeRuntime implements BunConnect {
 
   /** The handlers Bun itself would call — registered once, by `connect`. */
   events(): SocketHandlers {
-    if (this.#handlers === undefined) throw new Error('connect() has not run yet');
+    if (this.#handlers === undefined) expect.unreachable('connect() has not run yet');
     return this.#handlers;
   }
 }
@@ -264,6 +263,58 @@ describe('pgStreamOver', () => {
     await pending;
 
     expect(runtime.socket.writes).toEqual([10, 6]);
+  });
+
+  test('a second read() while one is parked is refused, and the parked one still gets its chunk', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    const parked = stream.read();
+    const error = await caught(stream.read());
+
+    expect(error).toBeInstanceOf(ReplicationProtocolError);
+    expect(codeOf(error)).toBe('X_REPLICATION_PROTOCOL');
+
+    // The first reader was never overwritten: it is still the one the next chunk goes to.
+    runtime.events().data(runtime.socket, new Uint8Array([4, 2]));
+    expect(Array.from((await parked) ?? [])).toEqual([4, 2]);
+  });
+
+  test('a read() after a parked one has been served is fine — the refusal is concurrency only', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    const first = stream.read();
+    runtime.events().data(runtime.socket, new Uint8Array([1]));
+    expect(Array.from((await first) ?? [])).toEqual([1]);
+
+    const second = stream.read();
+    runtime.events().data(runtime.socket, new Uint8Array([2]));
+    expect(Array.from((await second) ?? [])).toEqual([2]);
+  });
+
+  test('a queued chunk is a copy: mutating the buffer after the callback cannot corrupt it', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    const bunBuffer = new Uint8Array([1, 2, 3]);
+    runtime.events().data(runtime.socket, bunBuffer);
+    // Bun makes no promise that the chunk survives the callback — this is that reuse, staged.
+    bunBuffer.set([9, 9, 9]);
+
+    expect(Array.from((await stream.read()) ?? [])).toEqual([1, 2, 3]);
+  });
+
+  test('a chunk handed to a parked read() is a copy too, not the buffer Bun passed in', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    const parked = stream.read();
+    const bunBuffer = new Uint8Array([7, 7]);
+    runtime.events().data(runtime.socket, bunBuffer);
+    bunBuffer.set([0, 0]);
+
+    expect(Array.from((await parked) ?? [])).toEqual([7, 7]);
   });
 
   test('a write the socket refuses (-1) fails at once rather than waiting for a drain', async () => {

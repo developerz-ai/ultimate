@@ -3,6 +3,8 @@
 // point — a matched pair of bugs in an encoder and its own decoder would cancel out.
 
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
+import { TransportProtocolError } from './errors';
 import {
   connectMessage,
   PING_MESSAGE,
@@ -15,6 +17,18 @@ import type { NatsHeaders } from './nats-protocol';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+const thrown = (fn: () => unknown): unknown => {
+  try {
+    fn();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+};
+
+const codeOf = (value: unknown): string =>
+  isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
 
 describe('connectMessage', () => {
   const parseConnect = (bytes: Uint8Array): Record<string, unknown> => {
@@ -105,6 +119,38 @@ describe('pubMessage', () => {
   test('an empty headers map behaves like no headers at all (PUB, not HPUB)', () => {
     const bytes = pubMessage({ subject: 'a', payload: encoder.encode('x'), headers: new Map() });
     expect(decoder.decode(bytes)).toBe('PUB a 1\r\nx\r\n');
+  });
+
+  test('a CR or LF in a header value is refused rather than encoded', () => {
+    for (const injection of ['abc\r\nPUB evil 0\r\n\r\n', 'abc\nevil', 'abc\revil']) {
+      const headers: NatsHeaders = new Map([['Nats-Msg-Id', injection]]);
+      const error = thrown(() => pubMessage({ subject: 'a', headers }));
+
+      expect(error).toBeInstanceOf(TransportProtocolError);
+      expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
+      expect(isUltimateError(error) ? error.fix : '').toContain('replace');
+    }
+  });
+
+  test('a CR or LF in a header key is refused, and the message quotes it rather than breaking', () => {
+    const headers: NatsHeaders = new Map([['Bad\r\nPUB evil 0', 'v']]);
+    const error = thrown(() => pubMessage({ subject: 'a', headers }));
+
+    expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
+    const cause = isUltimateError(error) ? error.cause : '';
+    expect(cause).toContain('\\r\\n');
+    expect(cause).not.toContain('\r');
+  });
+
+  test('every header is checked, not only the first', () => {
+    const headers: NatsHeaders = new Map([
+      ['Fine', 'ok'],
+      ['Nats-Msg-Id', 'x\r\nSUB secret 99'],
+    ]);
+
+    expect(codeOf(thrown(() => pubMessage({ subject: 'a', headers })))).toBe(
+      'X_TRANSPORT_PROTOCOL',
+    );
   });
 });
 

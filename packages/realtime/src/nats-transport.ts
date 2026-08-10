@@ -3,7 +3,7 @@
 // connection is re-established and re-subscribed underneath the caller: that is what makes a `sync`
 // node stateless and lets any client resubscribe to any node.
 
-import { type Clock, isUltimateError, systemClock } from '@ultimat3/core';
+import { type Clock, isUltimateError, logger, systemClock } from '@ultimat3/core';
 import { TransportUnavailableError } from './errors';
 import type { Transport, TransportHandler, TransportSet, TransportSubscription } from './fanout';
 import { NatsConnection, type NatsSubscription } from './nats-connection';
@@ -145,17 +145,7 @@ export class NatsTransport implements Transport {
   async #dial(): Promise<NatsConnection> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        const connection = await this.#open();
-        this.#connection = connection;
-        this.#losses = 0;
-        await ensureKvBucket(
-          connection,
-          this.#options.bucket,
-          this.#options.presenceTtlMs ?? 30_000,
-        );
-        for (const wanted of this.#wanted.values())
-          wanted.live = await this.#bind(connection, wanted);
-        return connection;
+        return await this.#establish();
       } catch (error) {
         // A protocol mismatch answers the same on every attempt — a server too old for per-message
         // TTL stays too old — so retrying only delays the one report that names the fix.
@@ -173,23 +163,63 @@ export class NatsTransport implements Transport {
     }
   }
 
+  /**
+   * One attempt, published only once it is whole. A connection parked in `#connection` before its
+   * bucket and its subscriptions are up answers `connected` for a dial that rejected, keeps its
+   * `onClose` — which then clears the connection that replaced it — and leaves half a rebind
+   * behind, so the next dial binds the same subject a second time and every change arrives twice.
+   * A failed attempt therefore takes its own socket down with it rather than leaking one per retry.
+   */
+  async #establish(): Promise<NatsConnection> {
+    const connection = await this.#open();
+    try {
+      await ensureKvBucket(connection, this.#options.bucket, this.#options.presenceTtlMs ?? 30_000);
+      for (const wanted of this.#wanted.values())
+        wanted.live = await this.#bind(connection, wanted);
+      // `close()` can land while an attempt is in flight, and it only closes what it can see:
+      // publishing now would leave a socket open that nothing will ever close again.
+      if (this.#closed) {
+        throw new TransportUnavailableError({
+          transport: this.name,
+          reason: 'transport is closed',
+        });
+      }
+    } catch (error) {
+      for (const wanted of this.#wanted.values()) wanted.live = undefined;
+      await connection.close();
+      throw error;
+    }
+    this.#connection = connection;
+    this.#losses = 0;
+    return connection;
+  }
+
   async #open(): Promise<NatsConnection> {
     const stream = await (this.#options.open ?? bunNatsStream)(this.#target);
-    return await NatsConnection.open({
+    // The connection names itself in its own `onClose` so a drop can be matched against the live
+    // one. It goes through a holder rather than a `const`, because a buffered `-ERR` closes the
+    // session from inside `open()`, while a `const` binding would still be in its dead zone.
+    const held: { connection: NatsConnection | undefined } = { connection: undefined };
+    held.connection = await NatsConnection.open({
       stream,
       target: this.#target,
       name: 'ultimate',
       rng: this.#options.rng,
-      onClose: (error) => this.#lost(error),
+      onClose: (error) => this.#lost(error, held.connection),
       onError: (error) => this.#report(error, this.name),
     });
+    return held.connection;
   }
 
   /**
    * A lost connection re-dials on its own rather than waiting for the next publish: a `sync` node
    * whose subscriptions are down is silently delivering nothing, which is worse than an error.
    */
-  #lost(error: unknown): void {
+  #lost(error: unknown, connection: NatsConnection | undefined): void {
+    // Only the live connection may declare a loss. One abandoned mid-dial drops on its own clock,
+    // and without this it would clear the subscriptions — and the reconnect budget — of whichever
+    // connection replaced it, then report a failure the transport had already recovered from.
+    if (connection === undefined || this.#connection !== connection) return;
     this.#connection = undefined;
     for (const wanted of this.#wanted.values()) wanted.live = undefined;
     this.#report(error, this.name);
@@ -206,7 +236,22 @@ export class NatsTransport implements Transport {
     await this.#ensure().catch((error: unknown) => this.#report(error, this.name));
   }
 
+  /**
+   * Every background failure lands here — a lost connection, a throwing subscriber, an exhausted
+   * reconnect. Dropping it when the caller passed no handler is what turns "no changes arrive"
+   * into a debugging session with nothing to read, so the default emits rather than swallows.
+   */
   #report(error: unknown, subject: string): void {
-    this.#options.onError?.(error, subject);
+    const handler = this.#options.onError;
+    if (handler !== undefined) {
+      handler(error, subject);
+      return;
+    }
+    logger.error('nats transport error', {
+      transport: this.name,
+      subject,
+      code: isUltimateError(error) ? error.code : undefined,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }

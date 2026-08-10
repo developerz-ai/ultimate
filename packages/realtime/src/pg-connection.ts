@@ -83,9 +83,18 @@ export class PgConnection {
     };
     // A walsender rejects most GUCs, so only the two it accepts are sent.
     if (options.replication !== undefined) parameters['replication'] = options.replication;
-    await options.stream.write(startupMessage(parameters));
-    await connection.#authenticate(options);
-    await connection.#awaitReady();
+    // A handshake fails on ordinary conditions — no password, an ErrorResponse, an EOF — and on
+    // every one of them the caller gets an exception instead of an object, so nothing is left
+    // holding the socket. Closing it here is what stops a retrying supervisor from accumulating
+    // one file descriptor per failed attempt.
+    try {
+      await options.stream.write(startupMessage(parameters));
+      await connection.#authenticate(options);
+      await connection.#awaitReady();
+    } catch (failure) {
+      closeQuietly(options.stream);
+      throw failure;
+    }
     return connection;
   }
 
@@ -215,7 +224,9 @@ export class PgConnection {
           const password = options.password ?? '';
           if (password === '') throw needPassword('a SCRAM password');
           const mechanism = chooseMechanism(mechanisms(reader));
-          scram = scramSession({ password, nonce: scramNonce(options.rng ?? Math.random) });
+          // No `?? Math.random`: an absent `rng` must reach `scramNonce`'s CSPRNG default, which
+          // is the only source RFC 5802 allows for a client nonce.
+          scram = scramSession({ password, nonce: scramNonce(options.rng) });
           await this.#stream.write(saslInitialResponse(mechanism, scram.clientFirst()));
           break;
         }
@@ -289,8 +300,17 @@ const outOfOrder = (what: string): ReplicationProtocolError =>
   new ReplicationProtocolError({
     stage: 'auth',
     detail: `the server sent ${what} before it offered a SASL mechanism`,
-    fix: 'upgrade postgres — the SASL exchange arrived out of order',
+    fix: 'x doctor db — the SASL exchange arrived out of order; check for a pooler or proxy between this client and postgres',
   });
+
+/** A `close()` that throws must not replace the handshake failure that is worth reporting. */
+const closeQuietly = (stream: PgStream): void => {
+  try {
+    stream.close();
+  } catch {
+    // the original failure is the one the caller needs
+  }
+};
 
 /** The mechanism list is cstrings until an empty one. */
 const mechanisms = (reader: ByteReader): readonly string[] => {

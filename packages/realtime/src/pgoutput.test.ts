@@ -134,7 +134,8 @@ describe('Relation + Insert', () => {
     const relationMessage = decoder.decode(
       relationPayload({ oid: 100, schema: 'public', name: 'widgets', columns }),
     );
-    if (relationMessage.kind !== 'relation') throw new Error('expected a relation message');
+    expect(relationMessage.kind).toBe('relation');
+    if (relationMessage.kind !== 'relation') return;
     expect(relationMessage.relation.schema).toBe('public');
     expect(relationMessage.relation.name).toBe('widgets');
     expect(relationMessage.relation.columns.map((c) => c.name)).toEqual([
@@ -163,7 +164,8 @@ describe('Relation + Insert', () => {
         { kind: 'n' },
       ]),
     );
-    if (insertMessage.kind !== 'insert') throw new Error('expected an insert message');
+    expect(insertMessage.kind).toBe('insert');
+    if (insertMessage.kind !== 'insert') return;
     expect(insertMessage.relation.name).toBe('widgets');
     expect(insertMessage.after).toEqual({
       id: 42,
@@ -208,7 +210,8 @@ describe('Update', () => {
         },
       ),
     );
-    if (message.kind !== 'update') throw new Error('expected an update message');
+    expect(message.kind).toBe('update');
+    if (message.kind !== 'update') return;
     expect(message.before).toEqual({ id: 1, name: 'old-name' });
     expect(message.after).toEqual({ id: 1, name: 'new-name' });
   });
@@ -221,7 +224,8 @@ describe('Update', () => {
         { kind: 't', text: 'new-name' },
       ]),
     );
-    if (message.kind !== 'update') throw new Error('expected an update message');
+    expect(message.kind).toBe('update');
+    if (message.kind !== 'update') return;
     expect(message.before).toBeNull();
     expect(message.after).toEqual({ id: 1, name: 'new-name' });
   });
@@ -238,7 +242,8 @@ describe('Update', () => {
         { marker: 'K', columns: [{ kind: 't', text: '1' }, { kind: 'u' }] },
       ),
     );
-    if (message.kind !== 'update') throw new Error('expected an update message');
+    expect(message.kind).toBe('update');
+    if (message.kind !== 'update') return;
     expect(message.before).toEqual({ id: 1 });
     expect(message.before !== null && 'name' in message.before).toBe(false);
   });
@@ -260,7 +265,8 @@ test('a Delete yields before', () => {
   const message = decoder.decode(
     deletePayload(300, 'K', [{ kind: 't', text: '9' }, { kind: 'u' }]),
   );
-  if (message.kind !== 'delete') throw new Error('expected a delete message');
+  expect(message.kind).toBe('delete');
+  if (message.kind !== 'delete') return;
   expect(message.before).toEqual({ id: 9 });
   expect('name' in message.before).toBe(false);
 });
@@ -282,7 +288,8 @@ test('an unchanged-TOAST column is absent, distinguishable from an explicit null
   const message = decoder.decode(
     insertPayload(400, [{ kind: 't', text: '1' }, { kind: 'u' }, { kind: 'n' }]),
   );
-  if (message.kind !== 'insert') throw new Error('expected an insert message');
+  expect(message.kind).toBe('insert');
+  if (message.kind !== 'insert') return;
   expect('body' in message.after).toBe(false);
   expect('summary' in message.after).toBe(true);
   expect(message.after['summary']).toBeNull();
@@ -319,7 +326,8 @@ test('a re-sent Relation with the same oid replaces the cache', () => {
       { kind: 't', text: 'hi' },
     ]),
   );
-  if (message.kind !== 'insert') throw new Error('expected an insert message');
+  expect(message.kind).toBe('insert');
+  if (message.kind !== 'insert') return;
   expect(message.after).toEqual({ id: 1, new_col: 'hi' });
   expect('old_col' in message.after).toBe(false);
   expect(decoder.relation(500)?.columns.map((c) => c.name)).toEqual(['id', 'new_col']);
@@ -362,13 +370,15 @@ test('Begin and Commit carry lsn and an epoch-ms timestamp', () => {
   const micros = epochMsToPgTimestamp(at);
 
   const begin = decoder.decode(beginPayload(0x16b3748n, micros, 42));
-  if (begin.kind !== 'begin') throw new Error('expected a begin message');
+  expect(begin.kind).toBe('begin');
+  if (begin.kind !== 'begin') return;
   expect(begin.commitLsn).toBe(0x16b3748n);
   expect(begin.commitAt).toBe(at);
   expect(begin.xid).toBe(42);
 
   const commit = decoder.decode(commitPayload(0x16b3748n, 0x16b3800n, micros));
-  if (commit.kind !== 'commit') throw new Error('expected a commit message');
+  expect(commit.kind).toBe('commit');
+  if (commit.kind !== 'commit') return;
   expect(commit.commitLsn).toBe(0x16b3748n);
   expect(commit.endLsn).toBe(0x16b3800n);
   expect(commit.commitAt).toBe(at);
@@ -396,7 +406,8 @@ test('Truncate resolves cached oids and skips unknown ones', () => {
     }),
   );
   const message = decoder.decode(truncatePayload([700, 999]));
-  if (message.kind !== 'truncate') throw new Error('expected a truncate message');
+  expect(message.kind).toBe('truncate');
+  if (message.kind !== 'truncate') return;
   expect(message.relations).toHaveLength(1);
   expect(message.relations[0]?.oid).toBe(700);
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import { chooseMechanism, md5Password, SCRAM_SHA_256, scramNonce, scramSession } from './pg-auth';
 import type { Rng } from './thundering-herd';
@@ -62,8 +62,14 @@ describe('scramSession — hard failures', () => {
   test('a server nonce that does not extend the client nonce is refused — the MITM check', async () => {
     const session = scramSession({ password: 'pencil', nonce: clientNonce });
     const spoofed = 'r=totallyDifferentNonce,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096';
-    await expect(session.clientFinal(encoder.encode(spoofed))).rejects.toThrow(
-      ReplicationProtocolError,
+    const error = await session
+      .clientFinal(encoder.encode(spoofed))
+      .then(() => undefined)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ReplicationProtocolError);
+    // The fix has to open with a command an operator can run, not with a description of the state.
+    expect((error as { fix?: string }).fix).toBe(
+      'x doctor db — the server did not echo the client nonce; check for a proxy on the replication URL',
     );
   });
 
@@ -116,9 +122,54 @@ describe('scramSession — hard failures', () => {
       ReplicationProtocolError,
     );
   });
+
+  // The refusal has to land *before* `pbkdf2()` runs, so this test also stands in for "the
+  // connect path never burns two billion iterations of CPU on a server's say-so": with the
+  // ceiling removed it does not fail fast, it hangs until the test timeout.
+  test('an i= above the iteration ceiling is refused before any key derivation runs', async () => {
+    const session = scramSession({ password: 'pencil', nonce: clientNonce });
+    const hostile = `r=${clientNonce}xyz,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=2000000000`;
+    const error = await session
+      .clientFinal(encoder.encode(hostile))
+      .then(() => undefined)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ReplicationProtocolError);
+    expect((error as { code?: string }).code).toBe('X_REPLICATION_PROTOCOL');
+    expect((error as Error).message).toContain('2000000000');
+    expect((error as Error).message).toContain('1000000');
+  });
+
+  test('a plausible i= just under the ceiling is still parsed, not refused as hostile', async () => {
+    // 4096 is what a real server sends; proving the check is a ceiling and not a blanket refusal
+    // needs a value the parser accepts, which is every count at or below 1_000_000.
+    const session = scramSession({ password: 'pencil', nonce: clientNonce });
+    const plausible = `r=${clientNonce}xyz,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096`;
+    const final = decoder.decode(await session.clientFinal(encoder.encode(plausible)));
+    expect(final.startsWith(`c=biws,r=${clientNonce}xyz,p=`)).toBe(true);
+  });
 });
 
 describe('scramNonce', () => {
+  test('with no rng it draws from the CSPRNG, never from Math.random', () => {
+    const csprng = spyOn(crypto, 'getRandomValues');
+    const notRandomEnough = spyOn(Math, 'random');
+    try {
+      const nonce = scramNonce();
+      expect(csprng).toHaveBeenCalledTimes(1);
+      expect(notRandomEnough).not.toHaveBeenCalled();
+      expect(atob(nonce).length).toBe(18);
+    } finally {
+      csprng.mockRestore();
+      notRandomEnough.mockRestore();
+    }
+  });
+
+  test('with no rng every call produces a different nonce — one per exchange, per RFC 5802', () => {
+    const seen = new Set<string>();
+    for (let call = 0; call < 64; call += 1) seen.add(scramNonce());
+    expect(seen.size).toBe(64);
+  });
+
   test('is deterministic under a seeded rng and differs across seeds', () => {
     const a1 = scramNonce(seededRng(1));
     const a2 = scramNonce(seededRng(1));

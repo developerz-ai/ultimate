@@ -77,7 +77,7 @@ registry: Map<tableName, QueryShape[]>
 QueryShape = { queryId, predicate(row, params), orderBy, limit, tables, paramsHash }
 ```
 
-For each `ChangeRecord`:
+For each `ChangeEvent`:
 
 | # | Step | Result |
 |---|---|---|

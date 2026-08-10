@@ -27,6 +27,11 @@ export interface ReplicationStreamStats {
   readonly skipped: number;
   /** Rows replayed from before the resume position, dropped so `onChange` sees each one once. */
   readonly replayed: number;
+  /**
+   * Why the pump stopped, or `null` while it is live. The read loop cannot throw into a caller —
+   * nothing awaits it — so this is the one place `/readyz` and a test can see that it died at all.
+   */
+  readonly failure: string | null;
 }
 
 interface Transaction {
@@ -87,6 +92,7 @@ export class PgReplicationStream {
   #delivered = 0;
   #skipped = 0;
   #replayed = 0;
+  #failure: string | null = null;
 
   constructor(options: PgLogicalReplicationOptions) {
     this.#options = options;
@@ -99,7 +105,12 @@ export class PgReplicationStream {
   }
 
   stats(): ReplicationStreamStats {
-    return { delivered: this.#delivered, skipped: this.#skipped, replayed: this.#replayed };
+    return {
+      delivered: this.#delivered,
+      skipped: this.#skipped,
+      replayed: this.#replayed,
+      failure: this.#failure,
+    };
   }
 
   /** Resolves once the stream is live. Delivery continues on the pump until `stop()`. */
@@ -191,11 +202,17 @@ export class PgReplicationStream {
     } catch (failure) {
       if (!this.#running) return;
       this.#running = false;
-      // The supervisor reads /readyz, so the loop reports and ends rather than throwing into a
-      // timer callback nothing awaits.
+      // The supervisor reads /readyz, so the loop records, reports and ends rather than throwing
+      // into a timer callback nothing awaits — and the confirm timer stops with the loop it
+      // confirms for, or it keeps telling the walsender a dead stream is still keeping up.
+      this.#failure = failure instanceof Error ? failure.message : String(failure);
+      if (this.#timer !== null) {
+        clearInterval(this.#timer);
+        this.#timer = null;
+      }
       logger.error('replication stream ended', {
         slot: this.#options.slot,
-        error: failure instanceof Error ? failure.message : String(failure),
+        error: this.#failure,
       });
     }
   }
@@ -299,12 +316,19 @@ export class PgReplicationStream {
   }
 }
 
-/** The three misconfigurations that produce an unreadable server message if left to the server. */
+/**
+ * The three misconfigurations that produce an unreadable server message if left to the server.
+ * `slot` and `publication` are interpolated into simple queries, so the `IDENTIFIER` charset is the
+ * injection boundary; re-asserted here rather than trusted, so the guarantee travels with the
+ * function instead of living only in `start()`.
+ */
 async function preflight(
   connection: PgConnection,
   slot: string,
   publication: string,
 ): Promise<void> {
+  assertIdentifier('slot', slot);
+  assertIdentifier('publication', publication);
   const [walLevel] = await connection.query('SHOW wal_level');
   if (walLevel?.[0] !== 'logical') {
     throw new ReplicationFailedError({
@@ -345,6 +369,11 @@ async function preflight(
 function toRow(relation: PgRelation, physical: JsonObject | null): Row | null {
   if (physical === null) return null;
   const row = entityRow(physical);
+  // A bigserial id decodes as a number inside `Number.isSafeInteger` range and as text outside it,
+  // so the same table would otherwise identify small rows by number and large ones by string.
+  // `Row.id`, `RowPatch.id` and every cursor are text: the identity is normalised once, here.
+  const id = row['id'];
+  if (typeof id === 'number' && Number.isSafeInteger(id)) row['id'] = String(id);
   if (isRow(row)) return row;
   throw new ReplicationProtocolError({
     stage: 'stream',

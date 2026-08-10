@@ -19,6 +19,8 @@ import { decodeToken, encodeToken, NatsKvSet } from './nats-kv';
 import type { NatsTarget } from './nats-socket';
 import { PresenceRegistry } from './presence';
 
+const encoder = new TextEncoder();
+
 const TARGET: NatsTarget = {
   host: 'bus.test',
   port: 4222,
@@ -101,21 +103,33 @@ describe('guards', () => {
 
 describe('the bucket', () => {
   test('a missing bucket is created with history 1, direct reads and per-message TTL', async () => {
-    const { connection, server } = await harness();
+    const { server } = await harness();
 
-    const created = await kvGet(connection, 'x-test', 'nothing');
+    const config = server.streamConfig('KV_x-test');
 
-    expect(created).toBeUndefined();
-    expect(server.connections).toBe(1);
+    expect(server.streamCreates).toBe(1);
+    expect(config?.['subjects']).toEqual(['$KV.x-test.>']);
+    expect(config?.['max_msgs_per_subject']).toBe(1);
+    expect(config?.['discard']).toBe('new');
+    expect(config?.['deny_delete']).toBe(true);
+    expect(config?.['allow_direct']).toBe(true);
+    expect(config?.['allow_msg_ttl']).toBe(true);
   });
 
   test('an existing bucket is left alone: create runs once, not on every connect', async () => {
-    const { connection } = await harness();
+    const { connection, server } = await harness();
     await kvWrite(connection, 'x-test', 'a.b', 'kept', new Map());
 
     await ensureKvBucket(connection, 'x-test', 30_000);
 
+    expect(server.streamCreates).toBe(1);
     expect((await kvGet(connection, 'x-test', 'a.b'))?.value).toBe('kept');
+  });
+
+  test('kvGet on a key nobody wrote is undefined, never a throw', async () => {
+    const { connection } = await harness();
+
+    expect(await kvGet(connection, 'x-test', 'nothing')).toBeUndefined();
   });
 
   test('kvLast answers with every current value under the filter, and nothing else', async () => {
@@ -211,6 +225,23 @@ describe('NatsKvSet', () => {
     expect((await set.entries('presence.b')).map((entry) => entry.member)).toEqual(['m2']);
   });
 
+  test('a key this bucket did not write is skipped, not a throw that hides every member', async () => {
+    const { set, connection } = await harness();
+    await set.put('presence.room', 'm1', 'a', 30_000);
+    // Something else's key under the same prefix: the member token is not base64url at all.
+    await kvWrite(
+      connection,
+      'x-test',
+      `${encodeToken('presence.room')}.not-a-token!`,
+      JSON.stringify({ v: 'b', t: 30_000 }),
+      new Map(),
+    );
+
+    const entries = await set.entries('presence.room');
+
+    expect(entries.map((entry) => entry.member)).toEqual(['m1']);
+  });
+
   test('a member id carrying a dot stays one member, not two', async () => {
     const { set } = await harness();
     await set.put('presence.room', 'socket.7', 'a', 30_000);
@@ -218,6 +249,28 @@ describe('NatsKvSet', () => {
     const entries = await set.entries('presence.room');
 
     expect(entries.map((entry) => entry.member)).toEqual(['socket.7']);
+  });
+});
+
+describe('the in-memory server', () => {
+  test('a payload split mid-character still frames the command behind it', async () => {
+    const server = new FakeNatsServer();
+    const stream = server.connect();
+    const first = JSON.stringify({ v: 'ünïcøde ☃', t: 30_000 });
+    const second = JSON.stringify({ v: 'plain', t: 1 });
+    const frame = encoder.encode(
+      `PUB $KV.x-test.a.b ${encoder.encode(first).length}\r\n${first}\r\n` +
+        `PUB $KV.x-test.c.d ${encoder.encode(second).length}\r\n${second}\r\n`,
+    );
+    // The cut lands inside the first multi-byte character: decoding per chunk turns it into
+    // U+FFFD, and counting it as one unit rather than two bytes slices every later command short.
+    const split = frame.findIndex((byte) => byte >= 0x80) + 1;
+
+    await stream.write(frame.subarray(0, split));
+    await stream.write(frame.subarray(split));
+
+    expect(server.stored.get('$KV.x-test.a.b')).toBe(first);
+    expect(server.stored.get('$KV.x-test.c.d')).toBe(second);
   });
 });
 
@@ -230,9 +283,10 @@ describe('presence over the bus', () => {
         NatsConnection.open({ stream: server.connect(), target: TARGET, requestTimeoutMs: 200 }),
       ),
     );
-    const first = nodes[0];
-    const second = nodes[1];
-    if (first === undefined || second === undefined) throw new Error('two nodes are required');
+    const [first, second] = nodes;
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    if (first === undefined || second === undefined) return;
     await ensureKvBucket(first, 'x-test', 30_000);
     const registries = [first, second].map(
       (connection) =>
@@ -253,7 +307,9 @@ describe('presence over the bus', () => {
         }),
     );
     const [joiner, observer] = registries;
-    if (joiner === undefined || observer === undefined) throw new Error('two nodes are required');
+    expect(joiner).toBeDefined();
+    expect(observer).toBeDefined();
+    if (joiner === undefined || observer === undefined) return;
     const room = topic('org', 'o1', 'cursors');
 
     await joiner.join(room, { id: 'm1', actorId: 'alice', meta: { x: 1 } });

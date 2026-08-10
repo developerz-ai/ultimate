@@ -2,6 +2,7 @@
 // Split from the parser on purpose: encoding is pure string building with no state at all, while
 // decoding has to carry a buffer across chunk boundaries, and mixing the two hides both.
 
+import { TransportProtocolError } from './errors';
 import { concatBytes, type NatsHeaders } from './nats-protocol';
 
 const encoder = new TextEncoder();
@@ -39,9 +40,26 @@ export function connectMessage(options: NatsConnectOptions = {}): Uint8Array {
   return encoder.encode(`CONNECT ${JSON.stringify(payload)}${CRLF}`);
 }
 
+/**
+ * A header line ends at the first CRLF, so a break inside a key or value closes the line early and
+ * everything after it is read as a fresh command. A security boundary, not a style rule.
+ */
+const HEADER_BREAK = /[\r\n]/;
+
 const encodeHeaderBlock = (headers: NatsHeaders): Uint8Array => {
   let block = `NATS/1.0${CRLF}`;
-  for (const [key, value] of headers) block += `${key}: ${value}${CRLF}`;
+  for (const [key, value] of headers) {
+    if (HEADER_BREAK.test(key) || HEADER_BREAK.test(value)) {
+      throw new TransportProtocolError({
+        transport: 'nats',
+        stage: 'headers',
+        // Quoted through JSON so the break that caused this cannot break the message reporting it.
+        detail: `header ${JSON.stringify(key)} carries a CR or LF, which would inject a command`,
+        fix: "strip the breaks first: headers.set(name, value.replace(/[\\r\\n]+/g, ' '))",
+      });
+    }
+    block += `${key}: ${value}${CRLF}`;
+  }
   return encoder.encode(`${block}${CRLF}`);
 };
 
