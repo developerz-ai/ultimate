@@ -3,7 +3,12 @@
  * admin, and the digest email in the worker — resolves strings through this module.
  */
 
-import { defineCatalogs, type Translator, useI18n } from '@ultimat3/i18n';
+import {
+  defineCatalogs,
+  type TranslationKey as KeyOf,
+  type Translator,
+  useI18n,
+} from '@ultimat3/i18n';
 import en from '../catalogs/en.json';
 import es from '../catalogs/es.json';
 
@@ -15,7 +20,8 @@ export const catalogs = defineCatalogs({
 /** English is the source of truth for the key space; `es` must match it or `x verify` fails. */
 export type AppCatalog = typeof en;
 
-export type TranslationKey = keyof Translator<AppCatalog>['keys'];
+/** Every key this app's catalogs define — dot-paths, plus the stem of each plural family. */
+export type TranslationKey = KeyOf<AppCatalog>;
 
 /**
  * Use this, never `useI18n()` directly — the type parameter is what makes an unknown key a

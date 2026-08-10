@@ -61,16 +61,34 @@ export const publishPost = action({
 
 That one declaration emits six artifacts — HTTP route, OpenAPI operation, typed client function, job handle, MCP tool, test scaffold. See [Actions](Actions).
 
+Register it, with every other primitive, in one call. Importing `api/index.ts` IS the boot.
+
+```ts
+// apps/web/api/index.ts
+import { defineApi } from '@ultimat3/action';
+import * as postActions from '../app/posts/actions';
+import * as postMutators from '../app/posts/mutator';
+import * as postQueries from '../app/posts/live';
+
+export const api = defineApi({
+  actions: [postActions],
+  mutators: [postMutators],
+  queries: [postQueries],
+});
+
+export type Api = typeof api;
+```
+
 ## 2. Call it from `app/`
 
 `app/` may import `api/` **types only**. The typed client is derived from those types; there is no codegen step to remember and no `fetch`.
 
 ```ts
 // apps/web/shared/client.ts
-import { createClient } from '@ultimat3/action';
-import type * as actions from '../api/posts/actions';
+import { rpc } from '@ultimat3/action';
+import type { Api } from '../api';
 
-export const api = createClient<typeof actions>({ baseUrl: '/' });
+export const api = rpc<Api['actions']>({ baseUrl: '/' });
 ```
 
 ```tsx

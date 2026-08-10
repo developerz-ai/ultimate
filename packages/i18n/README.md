@@ -7,6 +7,7 @@ strings: format those with `Intl` via [@ultimat3/money](../money) and [@ultimat3
 
 | Concern | Owner | Rule |
 |---|---|---|
+| Registration | `define-catalogs.ts` | `defineCatalogs()` — one call, at boot, per app |
 | Lookup + interpolation | `translator.ts` | `t(key, vars?)`, miss → `⟦key⟧` |
 | Catalog shape | `catalog.ts` | nested authoring → flat dot-keys |
 | Placeholders + plurals | `interpolate.ts` | `{var}`, CLDR categories via `Intl.PluralRules` |
@@ -14,12 +15,38 @@ strings: format those with `Intl` via [@ultimat3/money](../money) and [@ultimat3
 | Request locale | `context.ts` | resolved once, read from ALS — never passed by hand |
 | Enforcement | `extract.ts` | `x verify` fails on a missing key in a shipped locale |
 
-## Use
+## Declare the catalogs, once
+
+`defineCatalogs` is the only way an app registers strings. Never call `registerCatalog` by hand.
 
 ```ts
-import { createTranslator, flattenCatalog, negotiateLocale, t } from '@ultimat3/i18n';
+// packages/i18n/src/index.ts — the app's whole i18n module
+import { defineCatalogs, type TranslationKey, type Translator, useI18n } from '@ultimat3/i18n';
+import en from '../catalogs/en.json';
+import es from '../catalogs/es.json';
 
-// per-request: the HTTP layer does this once
+export const catalogs = defineCatalogs({ default: 'en', locales: { en, es } });
+
+export type AppCatalog = typeof en;
+export type AppKey = TranslationKey<AppCatalog>; // 'nav.home' | 'posts.likes' | …
+export const useT = (): Translator<AppCatalog> => useI18n<AppCatalog>();
+```
+
+| One call | Because |
+|---|---|
+| validates + flattens every locale before registering any | a malformed catalog fails the boot whole, never half |
+| registers the framework catalog first, the app's second | later wins, so app strings override framework strings |
+| `configureLocales({ supported, fallback })` | the locale set is declared once, not twice |
+| returns `{ default, locales, catalogs, keys() }` | the app's key space, for tests and tooling |
+
+A `default` outside `locales` is `X_LOCALE_UNSUPPORTED` — and a compile error before that.
+
+## Read a string
+
+```ts
+import { negotiateLocale, t } from '@ultimat3/i18n';
+
+// per-request: the HTTP layer resolves the locale once
 const locale = negotiateLocale(request.headers.get('accept-language')); // 'de'
 
 // anywhere downstream — no locale argument, ever
@@ -28,6 +55,16 @@ t('pagination.result', { count: 1 });   // "1 result"
 t('pagination.result', { count: 9 });   // "9 results"
 t('nav.settings');                      // "⟦nav.settings⟧" — fix it or ship it broken, visibly
 ```
+
+| Call | Returns | Use for |
+|---|---|---|
+| `t(key, vars?)` | `string` | one string, framework or app, untyped keys |
+| `useI18n<AppCatalog>()` | `Translator<AppCatalog>` | a component rendering several — unknown key is a build error |
+| `translatorFor(locale)` | `Translator` | an explicit locale: mail, a worker tick, a preview |
+
+`Translator` with no type argument keeps taking any `string`, which is what `@ultimat3/ui` and
+`@ultimat3/mail` are built against. `has()` and `raw()` stay permissive on purpose — a probe for
+a key that may not exist is what they are for.
 
 ## Plurals are CLDR, not `n === 1`
 
@@ -41,11 +78,14 @@ Author two forms with `key` / `key_plural`, or all forms a locale needs with
 `t('files.n', { count: 3 })` → `3 pliki`, `{ count: 5 }` → `5 plików`. Selection runs
 through `Intl.PluralRules`, so Polish, Russian and Arabic work without a special case.
 
+Suffixes are underscores on the leaf, never a nested `{ one, other }` branch: the runtime probes
+`files.n_few`, and `TranslationKey` admits the stem `files.n` for exactly the same reason.
+
 ## Catalogs
 
-Author nested and feature-namespaced; the loader flattens to dot-keys and rejects a
-non-string leaf with `X_CATALOG_INVALID`. `mergeCatalogs(framework, app)` — later wins,
-which is how an app overrides `errors.notFound.title` without forking the framework.
+Author nested and feature-namespaced; `defineCatalogs` flattens to dot-keys and rejects a
+non-string leaf with `X_CATALOG_INVALID`. Registration order is framework then app — later
+wins, which is how an app overrides `errors.notFound.title` without forking the framework.
 
 `src/catalogs/en.json` ships the framework's own strings: `errors.*`, `auth.*`,
 `pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.cron.*`.
@@ -66,7 +106,7 @@ X_CATALOG_MISSING_KEYS: catalog is incomplete
 
 | Code | When |
 |---|---|
-| `X_LOCALE_UNSUPPORTED` | a tag outside the supported set was asserted |
+| `X_LOCALE_UNSUPPORTED` | a tag outside the supported set was asserted, or a `defineCatalogs` default that is not one of its locales |
 | `X_CATALOG_MISSING_KEYS` | a shipped locale lacks a key the source uses |
 | `X_CATALOG_INVALID` | non-string leaf, bad key segment, or a dotted/nested collision |
 

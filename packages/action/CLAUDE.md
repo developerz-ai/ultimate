@@ -17,6 +17,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `facade.ts` | the fluent surface — binds each projection to the action, re-implements none |
 | `mutator.ts` | action + optimistic `.local` twin + authoritative `.server` + `.conflict` |
 | `registry.ts` | export-name registration, collisions, `describeActions()` |
+| `define-api.ts` | `defineApi({ actions, mutators, queries, llm })` — the app's one boot call |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `client.ts` | typed RPC client (browser-safe: no server imports) |
@@ -57,6 +58,11 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so an action file imports
   one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
   access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
+- `defineApi` is the app's registration call; `registerActions` is what it composes. It reaches
+  `@ultimat3/query`'s registry through core's registrar table (`primitiveRegistrar('query')`),
+  never a sideways import — and throws `X_REGISTRAR_MISSING` rather than skipping a kind whose
+  registrar is absent, because a silent skip drops every read of that kind.
+- `rpc` is the only name for the map-wide typed client. There is no `createClient` alias.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - `serializeOpenApi` output must be byte-stable: sorted keys, sorted registry, no clock.
 - `client.ts` stays free of server imports — it is bundled into the browser.

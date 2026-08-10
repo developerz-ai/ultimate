@@ -49,7 +49,11 @@ export interface ClientOptions {
   readonly headers?: Readonly<Record<string, string>>;
 }
 
-export function createClient<TActions extends ActionMap>(options: ClientOptions): Client<TActions> {
+/**
+ * The typed client for a whole action map: `rpc<Api['actions']>({ baseUrl })`. One blessed
+ * name — there is no `createClient` twin to choose between.
+ */
+export function rpc<TActions extends ActionMap>(options: ClientOptions): Client<TActions> {
   const proxy = new Proxy(
     {},
     {
@@ -64,9 +68,9 @@ export function createClient<TActions extends ActionMap>(options: ClientOptions)
 }
 
 /**
- * One action's method — what `createClient` proxies to and what `action.client()`
- * returns. Both spellings are the same call, so a per-action client can never
- * drift from the map-wide one.
+ * One action's method — what `rpc` proxies to and what `action.client()` returns.
+ * Both spellings are the same call, so a per-action client can never drift from the
+ * map-wide one.
  */
 export function clientMethodFor<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   name: string,

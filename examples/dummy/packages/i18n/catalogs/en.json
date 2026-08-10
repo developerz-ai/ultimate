@@ -39,7 +39,8 @@
       "subheading": "Pick a currency at signup. We never guess an exchange rate on your behalf.",
       "currencyLabel": "Currency",
       "perMonth": "per month",
-      "seats": { "one": "{count} seat", "other": "{count} seats" },
+      "seats_one": "{count} seat",
+      "seats_other": "{count} seats",
       "cta": "Choose {plan}",
       "included": "Included on every plan",
       "includedList": "Live feeds, offline likes, nightly digest, two languages, MCP access"
@@ -59,10 +60,8 @@
       "metaDescription": "You are offline. Postly keeps your feed readable and queues anything you write until the connection returns.",
       "heading": "You are offline",
       "body": "The feed you already loaded is still readable. Anything you write is queued and sent when the connection returns.",
-      "queued": {
-        "one": "{count} change waiting to send",
-        "other": "{count} changes waiting to send"
-      },
+      "queued_one": "{count} change waiting to send",
+      "queued_other": "{count} changes waiting to send",
       "queuedNone": "Nothing is waiting to send."
     }
   },
@@ -84,7 +83,8 @@
       "publishing": "Publishing",
       "like": "Like",
       "unlike": "Remove like",
-      "likes": { "one": "{count} like", "other": "{count} likes" },
+      "likes_one": "{count} like",
+      "likes_other": "{count} likes",
       "commentsHeading": "Comments",
       "commentsEmpty": "No comments yet.",
       "commentPlaceholder": "Say something useful",
@@ -169,7 +169,8 @@
   "digest": {
     "subject": "Postly digest for {date}",
     "greeting": "Good morning, {name}.",
-    "intro": { "one": "{count} new post in {org}.", "other": "{count} new posts in {org}." },
+    "intro_one": "{count} new post in {org}.",
+    "intro_other": "{count} new posts in {org}.",
     "readAction": "Read it on Postly",
     "footer": "Sent at 09:00 in {zone}. Change this in your settings.",
     "unsubscribe": "Turn off the digest"

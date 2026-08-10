@@ -1,12 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { fromIso, toIso } from './instant';
-import { addDaysInZone, fromZoned, fromZonedDetailed, startOfDay, toZoned } from './zoned';
-import { offsetAt } from './zones';
+import {
+  addDaysInZone,
+  daysBetween,
+  fromZoned,
+  fromZonedDetailed,
+  startOfDay,
+  toZoned,
+} from './zoned';
+import { offsetAt, UTC } from './zones';
 
 const BERLIN = 'Europe/Berlin';
 const NEW_YORK = 'America/New_York';
 const KATHMANDU = 'Asia/Kathmandu';
 const ADELAIDE = 'Australia/Adelaide';
+const TOKYO = 'Asia/Tokyo';
 
 describe('toZoned', () => {
   test('renders the same instant differently per zone', () => {
@@ -115,6 +123,58 @@ describe('calendar arithmetic in a zone', () => {
     const at = fromIso('2026-03-14T08:00:00Z');
     expect(toIso(startOfDay(at, BERLIN))).toBe('2026-03-13T23:00:00.000Z');
     expect(toZoned(startOfDay(at, BERLIN), BERLIN)).toMatchObject({ day: 14, hour: 0 });
+  });
+});
+
+describe('daysBetween', () => {
+  test('counts local calendar days, signed, never fractional', () => {
+    const noon = fromIso('2026-03-14T12:00:00Z');
+    expect(daysBetween(noon, fromIso('2026-03-14T23:59:59.999Z'), UTC)).toBe(0);
+    expect(daysBetween(noon, fromIso('2026-03-15T00:00:00Z'), UTC)).toBe(1);
+    expect(daysBetween(fromIso('2026-03-15T00:00:00Z'), noon, UTC)).toBe(-1);
+  });
+
+  test('a 23-hour spring-forward day still counts as one day', () => {
+    const before = fromZoned({ year: 2026, month: 3, day: 7, hour: 12, minute: 0 }, NEW_YORK);
+    const after = addDaysInZone(before, 1, NEW_YORK);
+    expect(after.getTime() - before.getTime()).toBe(23 * 3_600_000);
+    expect(daysBetween(before, after, NEW_YORK)).toBe(1);
+  });
+
+  test('a 25-hour fall-back day still counts as one day', () => {
+    const before = fromZoned({ year: 2026, month: 10, day: 31, hour: 12, minute: 0 }, NEW_YORK);
+    const after = addDaysInZone(before, 1, NEW_YORK);
+    expect(after.getTime() - before.getTime()).toBe(25 * 3_600_000);
+    expect(daysBetween(before, after, NEW_YORK)).toBe(1);
+  });
+
+  test('24 real hours inside one 25-hour local day is zero days', () => {
+    // 00:30 EDT and 23:30 EST are both 2026-11-01 in New York, and exactly 24h apart.
+    const from = fromIso('2026-11-01T04:30:00Z');
+    const to = fromIso('2026-11-02T04:30:00Z');
+    expect(to.getTime() - from.getTime()).toBe(86_400_000);
+    expect(daysBetween(from, to, NEW_YORK)).toBe(0);
+  });
+
+  test('the zone decides: 90 minutes across local midnight in Tokyo, none in UTC', () => {
+    const from = fromIso('2026-03-14T14:30:00Z'); // 23:30 Tokyo, 14 March
+    const to = fromIso('2026-03-14T16:00:00Z'); // 01:00 Tokyo, 15 March
+    expect(daysBetween(from, to, TOKYO)).toBe(1);
+    expect(daysBetween(from, to, UTC)).toBe(0);
+  });
+
+  test('a whole year is 365 days, and 366 in a leap year', () => {
+    expect(daysBetween(fromIso('2026-01-01T00:00:00Z'), fromIso('2027-01-01T00:00:00Z'), UTC)).toBe(
+      365,
+    );
+    expect(daysBetween(fromIso('2024-01-01T00:00:00Z'), fromIso('2025-01-01T00:00:00Z'), UTC)).toBe(
+      366,
+    );
+  });
+
+  test('an unknown zone raises X_TIMEZONE_INVALID', () => {
+    const at = fromIso('2026-03-14T08:00:00Z');
+    expect(codeOf(() => daysBetween(at, at, 'Mars/Olympus'))).toBe('X_TIMEZONE_INVALID');
   });
 });
 

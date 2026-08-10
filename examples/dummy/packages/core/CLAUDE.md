@@ -15,7 +15,7 @@ Needs data? Take it as an argument. The caller's `repo.ts` does the loading.
 
 | File | Owns |
 |---|---|
-| `src/billing.ts` | plan upgrade quotes + seat limits, minor-unit arithmetic |
+| `src/billing.ts` | plan upgrade quotes + seat limits, minor-unit arithmetic, the billing period |
 | `src/digest-schedule.ts` | next 09:00 local per zone, DST-correct; local calendar date |
 | `src/membership.ts` | the authz predicates policies wrap |
 | `src/errors.ts` | `X_BILLING_SEATS_EXCEEDED`, `X_BILLING_NOT_AN_UPGRADE` |

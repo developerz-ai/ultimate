@@ -13,8 +13,37 @@ export interface TranslateVars extends InterpolationVars {
   count?: number;
 }
 
-export interface Translator {
-  (key: string, vars?: TranslateVars): string;
+/** Suffixes `selectPluralKey` probes: the CLDR categories plus the two-form shortcut. */
+type PluralSuffix = 'zero' | 'one' | 'two' | 'few' | 'many' | 'other' | 'plural';
+
+/** `items_one` → `items`. A leaf with no plural suffix contributes nothing. */
+type PluralStem<TKey extends string> = TKey extends `${infer TStem}_${PluralSuffix}`
+  ? TStem
+  : never;
+
+/** Recursion budget — an unresolved generic catalog would otherwise never bottom out. */
+type Depth = [never, 0, 1, 2, 3, 4, 5, 6, 7];
+
+/** Depth-first dot-paths of an authoring object — the type-level twin of `flattenCatalog`. */
+type CatalogPaths<TCatalog, TDepth extends number = 8> = [Depth[TDepth]] extends [never]
+  ? never
+  : {
+      [TKey in keyof TCatalog & string]: TCatalog[TKey] extends string
+        ? TKey | PluralStem<TKey>
+        : `${TKey}.${CatalogPaths<TCatalog[TKey], Depth[TDepth]> & string}`;
+    }[keyof TCatalog & string];
+
+/**
+ * Dot-path keys of a nested catalog, plus the stem of every plural family — `items_one`
+ * also admits `items`, because `t('items', { count })` is how plural selection is called.
+ * An index-signature catalog (the untyped default) degrades to `string`.
+ */
+export type TranslationKey<TCatalog> = string extends keyof TCatalog
+  ? string
+  : CatalogPaths<TCatalog>;
+
+export interface Translator<TCatalog = Catalog> {
+  (key: TranslationKey<TCatalog>, vars?: TranslateVars): string;
   /** Whether the key (or any of its plural variants) can be rendered. */
   has(key: string): boolean;
   /** The raw template, for tooling that needs the placeholders. */

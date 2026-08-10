@@ -4,11 +4,11 @@
  * tool call.
  */
 
-import { assertSeatsAvailable, quoteUpgrade } from '@postly/core';
+import { assertSeatsAvailable, endOfBillingPeriod, quoteUpgrade } from '@postly/core';
 import type { AppLocale, AppTheme, AppZone } from '@postly/domain';
 import { type MemberId, type OrgId, type PlanCode, seatLimit } from '@postly/domain';
 import { type Ctx, defineService } from '@ultimat3/core';
-import { daysBetween, endOfBillingPeriod } from '@ultimat3/time';
+import { daysBetween, instant } from '@ultimat3/time';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from './entity';
 import { OrgNotFound } from './errors';
 import {
@@ -49,17 +49,21 @@ export const orgsService = defineService('orgs', (ctx: Ctx) => ({
   /**
    * Prorated in integer minor units, in the org's own currency. Nothing is formatted here — the
    * receipt travels as `{ minor, currency }` and `<Money>` renders it once, at the edge.
+   *
+   * The period is a calendar month in `ctx.tz`, read once: three separate `ctx.now()` calls could
+   * straddle local midnight and quote a cycle the org was never on.
    */
   async upgrade(plan: PlanCode): Promise<UpgradeReceipt> {
     const org = await this.byId(ctx.actor.orgId);
-    const periodEnd = endOfBillingPeriod(ctx.now());
+    const at = instant(ctx.now());
+    const periodEnd = endOfBillingPeriod(at, ctx.tz);
 
     const quote = quoteUpgrade({
       from: org.planCode,
       to: plan,
       currency: org.billingCurrency,
-      daysRemaining: daysBetween(ctx.now(), periodEnd),
-      daysInCycle: daysBetween(endOfBillingPeriod(ctx.now(), -1), periodEnd),
+      daysRemaining: daysBetween(at, periodEnd, ctx.tz),
+      daysInCycle: daysBetween(endOfBillingPeriod(at, ctx.tz, -1), periodEnd, ctx.tz),
     });
 
     await ctx.billing.charge(quote.charge, { orgId: org.id, reason: `upgrade:${plan}` });

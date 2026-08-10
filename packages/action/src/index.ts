@@ -34,9 +34,11 @@ export type {
   ClientOptions,
   FetchLike,
 } from './client';
-export { createClient } from './client';
+export { rpc } from './client';
 export type { ContractTest, ContractTestOptions } from './contract-test';
 export { anonymousCtx, contractTestsFor, policyTestStubFor } from './contract-test';
+export type { Api, ApiDef, ApiModule, ApiModules } from './define-api';
+export { defineApi } from './define-api';
 export type { IdempotencyConflictReason } from './errors';
 export {
   ActionDeniedError,

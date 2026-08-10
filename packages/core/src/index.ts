@@ -210,6 +210,13 @@ export {
   redactKeys,
   setLoggerContextFields,
 } from './logger';
+export type { ModuleRegistrar, PrimitiveKind } from './registrar';
+export {
+  hasPrimitiveRegistrar,
+  primitiveRegistrar,
+  registerPrimitiveRegistrar,
+  resetPrimitiveRegistrars,
+} from './registrar';
 export type { Err, Ok, Result } from './result';
 export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';

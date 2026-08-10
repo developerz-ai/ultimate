@@ -48,6 +48,22 @@ means gap. `fromZonedDetailed()` returns which case it was — log it when sched
 Half-hour and 45-minute zones (`Asia/Kolkata`, `Asia/Kathmandu`, `Australia/Adelaide`,
 `Pacific/Chatham`) are ordinary cases here, not special ones.
 
+## Calendar days
+
+**Never cross a day boundary with `86_400_000`.** A local day is 23, 24 or 25 hours long. Every
+one of these takes the zone explicitly, and none of them has a default.
+
+| Function | Answers |
+|---|---|
+| `startOfDay(at, zone)` / `endOfDay(at, zone)` | local midnight; the last millisecond of the day |
+| `addDaysInZone(at, days, zone)` | the same wall-clock time, `days` calendar days away |
+| `daysBetween(from, to, zone)` | local day boundaries crossed — signed, always integral |
+| `isoDateInZone(at, zone)` | `2026-03-14` |
+| `isSameLocalDay(left, right, zone)` | whether two instants share a local date |
+
+`daysBetween` counts boundaries, not milliseconds: 23 real hours across spring forward is `1`,
+and 24 real hours inside a 25-hour fall-back day is `0`.
+
 ## Cron
 
 `parseCron` handles 5 or 6 fields, `*/n`, ranges, lists, named months and days, `@daily`

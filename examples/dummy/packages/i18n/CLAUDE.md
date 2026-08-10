@@ -28,7 +28,9 @@
 ## Conventions
 
 - Namespace by feature: `site.*`, `app.*`, `posts.*`, `orgs.*`, `plans.*`, `digest.*`, `errors.*`.
-- Plurals are `{ one, other }` objects; call sites pass `{ count }` and never branch themselves.
+- Plurals are underscore suffixes on the leaf — `likes_one`, `likes_other` — never a nested
+  `{ one, other }` branch, which the runtime never probes. Call sites pass `t('app.post.likes',
+  { count })` and never branch themselves.
 - Interpolation slots are `{name}` and are typed — a missing slot fails typecheck.
 
 ## Gotchas

@@ -6,7 +6,7 @@ One declaration → six artifacts.
 |---|---|---|---|
 | 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(action)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
 | 2 | OpenAPI 3.1 operation + document | `action.openapi()` / `buildOpenApi()` | byte-stable output, diffed by `x verify` |
-| 3 | Typed RPC client | `action.client({ baseUrl })` / `createClient<typeof actions>()` | server typo = compile error in Solid |
+| 3 | Typed RPC client | `action.client({ baseUrl })` / `rpc<Api['actions']>()` | server typo = compile error in Solid |
 | 4 | MCP tool | `action.tool()` | *identical* policy evaluation to the route |
 | 5 | Job handle | `action.job()` | enqueue durable work, no rewrite |
 | 6 | Contract tests | `action.contract()` | garbage rejected, anonymous denied, spec present |
@@ -56,11 +56,53 @@ export const publishPost = action({
 });
 ```
 
-Then, once, at boot: `registerActions(await import('./actions'))`. Names come from
-**export names** — that is what makes the path, the tool name and the OpenAPI
-`operationId` derivable everywhere without a second declaration. Registration stamps
-the name onto the action the module exported, so the binding you imported is the one
-that projects; a projection attempted before boot is `X_ACTION_UNREGISTERED`.
+## Register — one call, at boot
+
+`apps/web/api/index.ts` is the whole API surface. Importing it IS the boot.
+
+```ts
+import { defineApi } from '@ultimat3/action';
+import * as postActions from '../app/posts/actions';
+import * as postMutators from '../app/posts/mutator';
+import * as postQueries from '../app/posts/live';
+
+export const api = defineApi({
+  actions: [postActions],
+  mutators: [postMutators],
+  queries: [postQueries],
+});
+
+export type Api = typeof api;
+```
+
+| Key | Goes to | Why |
+|---|---|---|
+| `actions` | the action registry | the primitive |
+| `mutators` | the action registry | a mutator IS an action, on the same authz path |
+| `llm` | the action registry | `llm()` returns an action, not a ninth primitive |
+| `queries` | `@ultimat3/query`'s registry, via core's registrar table | `query` is on this tier, so importing it here would be a build error |
+
+Names come from **export names** — that is what makes the path, the tool name and the
+OpenAPI `operationId` derivable everywhere without a second declaration. Registration
+stamps the name onto the action the module exported, so the binding you imported is the
+one that projects; a projection attempted before boot is `X_ACTION_UNREGISTERED`. Two
+features exporting one name collide with `X_ACTION_DUPLICATE` rather than merging.
+
+`registerActions` / `registerQueries` are what `defineApi` composes. An app calling them
+directly is a second path.
+
+## Call it — `rpc`
+
+```ts
+import { rpc } from '@ultimat3/action';
+import type { Api } from '../api';
+
+export const client = rpc<Api['actions']>({ baseUrl: '/' });
+```
+
+`Api['actions']` is the merged module type, so `client.publishPost` is typed from the
+declaration with no codegen step. `Api` is imported as a **type only**, which is what keeps
+a page's module graph free of any edge to a feature's implementation.
 
 ## Path derivation
 

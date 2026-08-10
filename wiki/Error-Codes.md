@@ -41,6 +41,8 @@ X_DB_DRIFT: schema differs from migrations
 | `X_ID_INVALID` | value is not a valid id | a hand-built string passed where a typed id is required | generate ids with `uuid()` / `typedId<'post'>()` from `@ultimat3/core` |
 | `X_CURSOR_INVALID` | pagination cursor is malformed, tampered with or from another query | signature mismatch — an edited cursor, or `ULTIMATE_CURSOR_SECRET` rotated — or a cursor built for a different query, filter or sort order | drop the cursor and request the first page (`after: null`) |
 | `X_ERROR_CODE_DUPLICATE` | error code registered twice | two packages declared the same code | rename the colliding code in the registering package's `src/errors.ts` |
+| `X_REGISTRAR_MISSING` | no registrar is loaded for a primitive kind | `defineApi({ queries })` ran without `@ultimat3/query` in the graph | `bun add @ultimat3/query` |
+| `X_REGISTRAR_CONFLICT` | two different registrars are loaded for one primitive kind | two copies of one `@ultimat3/*` package in the dependency tree, each with its own registry | `bun pm ls \| grep @ultimat3/query` — then dedupe it to one version in `package.json` |
 
 ## Images
 

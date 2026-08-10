@@ -197,6 +197,22 @@ export function isSameLocalDay(left: Instant, right: Instant, zone: TimeZone): b
   return isoDateInZone(left, zone) === isoDateInZone(right, zone);
 }
 
+/**
+ * Whole calendar days from `from` to `to`, counted as local day boundaries crossed in `zone`.
+ * Signed, and always integral. Not `differenceMs / 86_400_000`: a 23- or 25-hour DST day is
+ * still one day, and 24 real hours inside a 25-hour local day is still zero.
+ */
+export function daysBetween(from: Instant, to: Instant, zone: TimeZone): number {
+  // Both dates are reduced to a UTC midnight, so the subtraction carries no offset at all.
+  return (localDayEpoch(to, zone) - localDayEpoch(from, zone)) / 86_400_000;
+}
+
+/** The instant's local calendar date, expressed as the UTC midnight of that date. */
+function localDayEpoch(at: Instant, zone: TimeZone): number {
+  const zoned = toZoned(at, zone);
+  return Date.UTC(zoned.year, zoned.month - 1, zoned.day);
+}
+
 function finish(
   epochMs: number,
   millisecond: number,

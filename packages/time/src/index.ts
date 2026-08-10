@@ -107,6 +107,7 @@ export {
 } from './schedule';
 export {
   addDaysInZone,
+  daysBetween,
   endOfDay,
   type FromZonedOptions,
   type FromZonedResult,
