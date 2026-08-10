@@ -1,7 +1,7 @@
 # create-ultimate — boundary
 
-Tier 5, sideways import of `@ultimat3/cli` only (the single exception in the tier table, declared
-in `scripts/lib/tiers.ts`).
+Unlisted — sits above tier 5, may import anything below it. Its only real import is
+`@ultimat3/cli` (the sideways edge declared in `scripts/lib/tiers.ts`).
 
 | Rule | Detail |
 |---|---|

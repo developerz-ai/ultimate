@@ -70,6 +70,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `admin` | 5 | generated admin dashboard, itself an Ultimate app with MCP on | admin screens derived from entities, its MCP surface | bypass `policy`; ship in the app bundle graph |
 | `testing` | 5 | the six test runners, template DB, frozen clock, sealed network | fixture shapes, DB cloning, seeded RNG, egress trap | appear in a production bundle |
 | `cli` | 5 | the `x` binary: generators, dev server, `verify` orchestration | command surface, `--json` output, generator templates, composition wiring | contain framework logic — it delegates |
+| `create-ultimate` | unlisted (6) | the published `bunx create-ultimate` shim | the `create-ultimate` bin, argument forwarding into `x new` | reimplement a template `cli` already owns |
 
 ## Dependency graph
 
@@ -77,6 +78,7 @@ Arrow = imports. Only representative edges are drawn; the tier rule is the compl
 
 ```mermaid
 graph TD
+  create-ultimate["create-ultimate (unlisted)"]
   subgraph T5["tier 5"]
     cli; testing; admin; ui
   end
@@ -95,6 +97,8 @@ graph TD
   subgraph T0["tier 0"]
     core; schema
   end
+
+  create-ultimate --> cli
 
   cli --> manifest
   cli --> render
