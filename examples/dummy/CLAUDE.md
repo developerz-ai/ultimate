@@ -4,8 +4,10 @@ Multi-tenant team blog on Ultimate. Orgs own members; members write posts; posts
 and likes; each org sits on a billing plan; a nightly digest mails every member at 09:00 in
 their own timezone.
 
-This app is the framework's reference application — Ultimate's CI runs `x verify` here.
-Keep it small, keep it idiomatic. A clever file in Postly is a bug.
+This app is the framework's reference application — Ultimate's CI runs `x verify` here and
+**blocks** on the result, through the ratchet in `scripts/reference-app-gate.ts`: a step passing
+today must keep passing, and the steps still being repaired are pinned by name in its
+`EXPECTED_RED` table. Keep it small, keep it idiomatic. A clever file in Postly is a bug.
 
 ## Commands
 

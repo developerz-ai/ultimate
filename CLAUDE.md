@@ -42,6 +42,7 @@ from one image with an invisible rolling restart is not yet demonstrated). See
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
+| **the reference-app gate** | `bun run scripts/reference-app-gate.ts` — the app's own 17 steps, blocking on a ratchet: a step passing today must keep passing, a step pinned in `EXPECTED_RED` must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |

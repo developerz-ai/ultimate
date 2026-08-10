@@ -371,6 +371,9 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ROADMAP_FILE_MISSING` | `docs/idea/14-roadmap.md` does not exist, so no status or artifact can be checked | the roadmap was deleted or moved — every other roadmap rule would otherwise pass silently | `git checkout -- docs/idea/14-roadmap.md` |
 | `X_ROADMAP_STATUS_MISSING` | a milestone has no row, or its row's status cell holds neither ✅ nor 🚧 | `docs/idea/14-roadmap.md` edited without keeping the marker | put ✅ or 🚧 in the second cell of the row `fix` names, then `bun run scripts/roadmap.ts --json` |
 | `X_ROADMAP_MILESTONE_UNVERIFIED` | a milestone the table marks ✅ is missing a package or file its own **Ships** column names | the artifact was deleted or renamed after the milestone was marked shipped | `git checkout -- <the paths in `fix`>`, or put 🚧 in that row's status cell |
+| `X_REFERENCE_APP_REGRESSED` | a step of `examples/dummy`'s own gate that was passing now fails — or the gate produced no step table at all | a framework change broke the reference app, and the step is not one of the pinned entries in `EXPECTED_RED` | `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
+| `X_REFERENCE_APP_PIN_STALE` | a step pinned as failing in `EXPECTED_RED` now passes | the app was repaired and the pin was not lowered — the ratchet only shrinks | delete the named entries from `EXPECTED_RED` in `scripts/reference-app-gate.ts` |
+| `X_REFERENCE_APP_UNREFERENCED` | `examples/dummy` typechecks but the root `tsconfig.json` does not reference it | the app came off the `typecheck` pin without joining the root `tsc -b` solution, so the packages' emitted `.d.ts` are never proved consumable | add `{ "path": "./examples/dummy" }` to the `references` array in `tsconfig.json` |
 
 ## Names used in the design docs
 

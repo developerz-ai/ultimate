@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@ultimat3/cli": "1.0.0",
+    "@ultimat3/entity": "1.0.0",
     "@ultimat3/testing": "1.0.0",
     "typescript": "5.9.2"
   },
