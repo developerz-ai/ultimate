@@ -1,3 +1,7 @@
+// adminResource() derives a full CRUD surface from a real entity() with zero config, and every
+// override or unsupported shape — a hidden label field, an exotic column kind, a composite
+// primary key — fails loudly with the fix line instead of guessing or silently narrowing.
+
 import { afterAll, describe, expect, test } from 'bun:test';
 import {
   boolean,
@@ -31,6 +35,17 @@ const post = entity('admin_res_post', {
     secret: text({ max: 64 }).nullable(),
     createdAt: timestamp().defaultNow(),
   },
+});
+
+/** Composite: neither column says `.primaryKey()`; the entity names both, mirroring the
+ * `plans` fixture in `entity-columns.test.ts` under this package's own entity names. */
+const plans = entity('admin_res_plan', {
+  columns: {
+    code: enumerated(['free', 'pro']),
+    currency: enumerated(['EUR', 'USD']),
+    monthly: money(),
+  },
+  primaryKey: ['code', 'currency'],
 });
 
 afterAll(clearRegistry);
@@ -153,6 +168,17 @@ describe('adminResource overrides and failures', () => {
       const thrown = error as { code: string; fix: string };
       expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
       expect(thrown.fix).toContain('adminResource');
+    }
+  });
+
+  test('a composite primary key is refused, not silently reduced to its first member', () => {
+    expect(() => adminResource(plans)).toThrow(AdminFieldUnsupportedError);
+    try {
+      adminResource(plans);
+    } catch (error) {
+      const thrown = error as { code: string; fix: string };
+      expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
+      expect(thrown.fix).toContain('composite-key support');
     }
   });
 

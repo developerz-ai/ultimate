@@ -1,3 +1,7 @@
+// A cursor is untrusted input handed back by the client: corrupt, tampered, spliced from
+// another cursor, or minted for a different resource must all fail closed to page one — never
+// decode into a fabricated position. Also pins the no-offset keyset contract itself.
+
 import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { decodeAdminCursor, encodeAdminCursor, fetchPage, listQuery, pageFrom } from './pagination';

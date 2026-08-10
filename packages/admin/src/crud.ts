@@ -175,7 +175,15 @@ export async function adminUpdate<Row extends AdminRow>(
   const parsed = await validateInput(resource.entity.$schema, { ...(before ?? {}), ...patch });
   if (!parsed.ok) return invalid(resource, 'update', ctx, id, parsed.issues, decision);
 
-  const after = await repo.update(id, patch);
+  // Write what the schema validated, not the caller's raw patch — a field the schema would
+  // strip (undeclared, or normalized to a different value) must never reach the repo. Scoped
+  // to the keys actually submitted, so a partial update stays partial rather than rewriting
+  // every field of `before` too.
+  const submittedKeys = Object.keys(patch);
+  const validatedPatch: Readonly<Record<string, unknown>> = Object.fromEntries(
+    submittedKeys.filter((key) => key in parsed.value).map((key) => [key, parsed.value[key]]),
+  );
+  const after = await repo.update(id, validatedPatch);
   return {
     ok: true,
     row: after,

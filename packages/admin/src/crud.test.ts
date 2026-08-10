@@ -1,3 +1,8 @@
+// Proves the five CRUD operations from the outside: a denial is refused AND logged, a
+// destructive delete refuses to run without its own confirmation token echoed back, and both
+// the audit diff and the row actually persisted reflect only what validation approved — never
+// the caller's raw, unvalidated input.
+
 import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, newId, text, timestamp, uuid } from '@ultimat3/entity';
 import { memoryAuditLog } from './audit';
@@ -74,6 +79,26 @@ describe('admin mutations are audited with a before/after diff', () => {
       { field: 'secret', before: '[redacted]', after: '[redacted]' },
       { field: 'title', before: 'Draft', after: 'Published' },
     ]);
+  });
+
+  test('an undeclared field in the patch is validated away, never persisted', async () => {
+    const store = new Map<string, AdminRow>([
+      [POST_ID, { id: POST_ID, title: 'Draft', createdAt: '2026-07-01T00:00:00.000Z' }],
+    ]);
+    const ctx = ctxWith(['admin:write', 'admin_crud_post:write']);
+    const result = await adminUpdate(bound(store), ctx, POST_ID, {
+      title: 'Published',
+      // Not a column of `post` — the entity's own schema drops it; the repo write must too.
+      isAdmin: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(store.get(POST_ID)).toEqual({
+      id: POST_ID,
+      title: 'Published',
+      createdAt: '2026-07-01T00:00:00.000Z',
+    });
+    expect(store.get(POST_ID)?.['isAdmin']).toBeUndefined();
   });
 
   test('a denied update writes nothing and still leaves a record', async () => {

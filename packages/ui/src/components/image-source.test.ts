@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { UI_ERROR_CODES } from '../errors';
-import { boxFor, loadingHints, srcsetFor } from './image-source';
+import { UI_ERROR_CODES, UiError } from '../errors';
+import { assertNonEmptySrc, boxFor, loadingHints, srcsetFor } from './image-source';
 
-/** Returns the thrown UiError, or fails loudly when the call did not throw. */
-function rejected(run: () => unknown): { code?: string; cause?: string } {
+/**
+ * The thrown UiError itself, so a test can assert on `code` and `cause` together. Anything else
+ * — no throw, or a throw that is not a UiError — is a real, unconditional test failure via
+ * `expect.unreachable` rather than a bare `Error` or a fabricated `{ code, cause }` shape that
+ * would let a broken implementation pass by accident.
+ */
+function rejected(run: () => unknown): UiError {
   try {
     run();
   } catch (error) {
-    return error as { code?: string; cause?: string };
+    if (error instanceof UiError) return error;
   }
-  throw new Error('expected X_UI_INVALID_VALUE');
+  return expect.unreachable('expected a UiError');
 }
 
 describe('srcsetFor', () => {
@@ -135,5 +140,23 @@ describe('boxFor', () => {
   test('a fractional or non-positive dimension is rejected', () => {
     expect(rejected(() => boxFor(1240.5, 720)).code).toBe(UI_ERROR_CODES.invalidValue);
     expect(rejected(() => boxFor(1240, -720)).code).toBe(UI_ERROR_CODES.invalidValue);
+  });
+});
+
+describe('assertNonEmptySrc', () => {
+  test('a src with content is trimmed and returned', () => {
+    expect(assertNonEmptySrc('Image', '  /a.webp  ', '  /a.webp  ')).toBe('/a.webp');
+  });
+
+  test('an empty src is rejected — it would emit a broken <img src="">', () => {
+    const error = rejected(() => assertNonEmptySrc('Image', '', ''));
+    expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
+    expect(String(error.cause)).toContain('non-empty src');
+  });
+
+  test('a whitespace-only src is rejected — trimming it would leave nothing', () => {
+    expect(rejected(() => assertNonEmptySrc('Image', '   ', '   ')).code).toBe(
+      UI_ERROR_CODES.invalidValue,
+    );
   });
 });

@@ -1,3 +1,7 @@
+// The MCP surface derives from the same authz decisions the UI renders from — a tool exists
+// exactly when the equivalent button would, so an agent's tool list is never a wider door than
+// a human's nav, and a destructive tool always demands the same confirmation a human would.
+
 import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { type AdminApp, defineAdmin } from './admin';

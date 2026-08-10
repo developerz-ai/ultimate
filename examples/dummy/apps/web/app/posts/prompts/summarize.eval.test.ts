@@ -70,7 +70,7 @@ test('summarize holds its recorded scores across the fixture set', async () => {
   expect(run.passed).toBe(true);
   expect(run.regressions).toEqual([]);
   // A score is not a measurement without the prompt that produced it.
-  expect(run.promptRef).toBe('posts.summarize@3');
+  expect(run.promptRef).toBe('posts.summarize@4');
   expect(run.promptHash).toBe(summarizePrompt.hash);
 });
 

@@ -25,6 +25,48 @@ const thrownBy = (run: () => unknown): UltimateError => {
   return expect.unreachable('expected an UltimateError');
 };
 
+/**
+ * A minimal POSIX word-split — single-quoted spans and the `\'` escape `shellQuote` uses for an
+ * embedded quote, nothing else, because that is the entire grammar `assertRouteFilename`'s `fix:`
+ * ever emits. Reconstructing the argument list this way proves the security property directly: a
+ * shell fed this string sees the dynamic operand as exactly one argument, byte-for-byte the
+ * original path, whatever metacharacters it held — rather than trusting a second copy of the
+ * quoting logic to agree with the first.
+ */
+function shellWords(command: string): readonly string[] {
+  const words: string[] = [];
+  let current = '';
+  let inWord = false;
+  let i = 0;
+  while (i < command.length) {
+    const ch = command[i] as string;
+    if (/\s/.test(ch)) {
+      if (inWord) words.push(current);
+      current = '';
+      inWord = false;
+      i += 1;
+      continue;
+    }
+    inWord = true;
+    if (ch === "'") {
+      const close = command.indexOf("'", i + 1);
+      if (close === -1) throw new Error(`unterminated quote in: ${command}`);
+      current += command.slice(i + 1, close);
+      i = close + 1;
+      continue;
+    }
+    if (ch === '\\' && command[i + 1] !== undefined) {
+      current += command[i + 1];
+      i += 2;
+      continue;
+    }
+    current += ch;
+    i += 1;
+  }
+  if (inWord) words.push(current);
+  return words;
+}
+
 const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
 
 const staticConfig = defineRoute({
@@ -64,9 +106,8 @@ describe('one route filename per surface', () => {
     expect(failure).toBeInstanceOf(RouteFileInvalidError);
     expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
     expect(failure.cause).toContain(file);
-    expect(failure.fix).toBe(
-      `mkdir -p ${target.slice(0, target.lastIndexOf('/'))} && git mv ${file} ${target}`,
-    );
+    const stem = target.slice(0, target.lastIndexOf('/'));
+    expect(failure.fix).toBe(`mkdir -p -- '${stem}' && git mv -- '${file}' '${target}'`);
   });
 
   test.each([
@@ -79,7 +120,7 @@ describe('one route filename per surface', () => {
   ])('%s already meant its directory, so the fix renames in place', (file, target) => {
     const failure = thrownBy(() => routePathFromFile(file));
     expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
-    expect(failure.fix).toBe(`git mv ${file} ${target}`);
+    expect(failure.fix).toBe(`git mv -- '${file}' '${target}'`);
   });
 
   test('shared/ is a leaf: no filename makes a route there', () => {
@@ -101,6 +142,66 @@ describe('one route filename per surface', () => {
     expect(() =>
       registerRoute({ file: 'apps/web/site/pricing.tsx', config: staticConfig, path: '/tarifs' }),
     ).toThrow(RouteFileInvalidError);
+  });
+
+  // The `fix:` is copied into a shell verbatim (axiom 4). The file path is filesystem-derived,
+  // not attacker input in the traditional sense, but a space, an apostrophe or a shell
+  // metacharacter must still not change what command actually runs when it is pasted.
+  describe('the fix command quotes every filesystem-derived operand', () => {
+    test('a space in the filename does not split the fix into extra arguments', () => {
+      const file = 'apps/web/site/my page.tsx';
+      const target = 'apps/web/site/my page/page.tsx';
+      const failure = thrownBy(() => routePathFromFile(file));
+      expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
+      expect(shellWords(failure.fix)).toEqual([
+        'mkdir',
+        '-p',
+        '--',
+        'apps/web/site/my page',
+        '&&',
+        'git',
+        'mv',
+        '--',
+        file,
+        target,
+      ]);
+    });
+
+    test('an apostrophe in the filename cannot close the quote early', () => {
+      const file = "apps/web/site/o'brien.tsx";
+      const target = "apps/web/site/o'brien/page.tsx";
+      const failure = thrownBy(() => routePathFromFile(file));
+      expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
+      // Reconstructed through independent quote-removal, not a copy of `shellQuote` — a naive
+      // `'${value}'` wrap with no escaping would let the embedded `'` close the quote early and
+      // either throw here (unterminated quote) or silently drop the apostrophe.
+      expect(shellWords(failure.fix)).toEqual([
+        'mkdir',
+        '-p',
+        '--',
+        "apps/web/site/o'brien",
+        '&&',
+        'git',
+        'mv',
+        '--',
+        file,
+        target,
+      ]);
+    });
+
+    test('a command-substitution-shaped segment stays inert inside single quotes', () => {
+      const file = 'apps/web/app/`whoami`/index.tsx';
+      const target = 'apps/web/app/`whoami`/page.tsx';
+      const failure = thrownBy(() => routePathFromFile(file));
+      expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
+      // Word-splitting alone would not catch a missing quote here — `` `whoami` `` carries no
+      // whitespace, so an unquoted operand still reads as one argument either way. What makes it
+      // inert is sitting inside a single-quoted span, where POSIX gives backticks and `$()` no
+      // meaning at all; asserting the exact quoted substring is what actually proves that.
+      expect(failure.fix).toContain(`'${file}'`);
+      expect(failure.fix).toContain(`'${target}'`);
+      expect(shellWords(failure.fix)).toEqual(['git', 'mv', '--', file, target]);
+    });
   });
 });
 

@@ -97,6 +97,13 @@ export class LiveClient<T extends TableMap = TableMap> {
   /** A signal, not a field: `connected` is rendered, so a plain boolean would never re-render. */
   readonly #connected: () => boolean;
   readonly #setConnected: (next: boolean) => void;
+  /**
+   * Subscribers notified after every offline-queue mutation: a manual drain, the automatic drain
+   * `connect()` runs on every reconnect, or an async ack/fail frame. `hooks.ts` wires its
+   * invalidation signal through `onQueueChange` rather than each call site remembering to bump it
+   * itself — see there for why that matters.
+   */
+  readonly #queueListeners = new Set<() => void>();
 
   constructor(options: LiveClientOptions<T>) {
     this.#options = options;
@@ -270,6 +277,22 @@ export class LiveClient<T extends TableMap = TableMap> {
     await queue.drain(async (mutation) => {
       this.#send(mutateFrame(mutation));
     });
+    this.#notifyQueueChange();
+  }
+
+  /**
+   * Fires whenever the offline queue changes for any reason: a direct `mutate`/`drain` call, the
+   * automatic drain `connect()` runs on every reconnect, or an async ack/fail frame arriving over
+   * the socket. `hooks.ts` is the only subscriber today — it bumps its invalidation signal here at
+   * `setLiveClient` time, so a component reading `useMutationQueue()` stays live across every
+   * transition, not just the ones a hook happens to await directly. Returns an unsubscribe
+   * function.
+   */
+  onQueueChange(listener: () => void): () => void {
+    this.#queueListeners.add(listener);
+    return () => {
+      this.#queueListeners.delete(listener);
+    };
   }
 
   #sendSubscribe(registration: Registration): void {
@@ -317,8 +340,12 @@ export class LiveClient<T extends TableMap = TableMap> {
         return;
       }
       case 'ack': {
-        if (frame.error) void this.#options.queue?.fail(frame.ref, frame.error);
-        else void this.#options.queue?.ack(frame.ref);
+        const queue = this.#options.queue;
+        // `ack`/`fail` mutate the queue synchronously and persist asynchronously; chaining rather
+        // than notifying right after the call keeps this correct even if that ordering ever
+        // changes, and it still fires exactly once the persisted write actually lands.
+        const settled = frame.error ? queue?.fail(frame.ref, frame.error) : queue?.ack(frame.ref);
+        void settled?.then(() => this.#notifyQueueChange());
         return;
       }
       case 'rebase': {
@@ -373,6 +400,10 @@ export class LiveClient<T extends TableMap = TableMap> {
 
   #send(frame: Frame): void {
     this.#socket?.send(encode(frame));
+  }
+
+  #notifyQueueChange(): void {
+    for (const listener of this.#queueListeners) listener();
   }
 }
 

@@ -214,6 +214,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_BOUNDARY_ROUTE_TO_DB` | a route touched the database | SQL in a page file | move it into `repo.ts` and call a query |
 | `X_BOUNDARY_SERVICE_TO_HTTP` | a service imported HTTP | request awareness inside business logic | take the values as arguments so a job can reuse the service |
 | `X_BOUNDARY_SHARED_LEAF` | `shared/` imported a surface | `shared/` is a leaf | invert the dependency |
+| `X_ADMIN_FLATTENER_VIOLATION` | a production `@ultimat3/admin` file read `$meta` or called `$describe()` directly | a new admin module reached past `entity-columns.ts` for column facts | take `AdminColumnFacts` from `entity-columns.ts` instead |
 | `X_BUDGET_EXCEEDED` | a route blew its JS or LCP budget | a heavy transitive import | `x routes --json` for the chain; move it behind `hydrate: 'interaction'` or raise the budget deliberately |
 | `X_BUDGET_UNMEASURED` | a route declares a JS or LCP budget the build never measured | the route is absent from `.x/build-stats.json` | `x build`, then `x verify` |
 | `X_PRERENDER_FAILED` | a prerendered path threw during build | `prerender()` returned an id that no longer resolves | fix the data source, or narrow `prerender()` |
@@ -362,6 +363,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_SETUP_INSTALL_FAILED` | `bun install` failed during `bin/setup` | a conflicted lockfile, or a half-written `node_modules` | `rm -rf node_modules bun.lock && bun install` |
 | `X_RELEASE_VERSION_SKEW` | a workspace is not at the lockstep version | a package bumped on its own, or a release that stopped half-way | `bun run scripts/release.ts --bump patch --dry-run --json` to see the realignment, then run it without `--dry-run` and review the `package.json` diff |
 | `X_GENERATE_CONFLICT` | a generator would overwrite a file | the name is taken | `x g … --force`, or choose another name |
+| `X_GENERATE_JSON_INVALID` | a generator's own `merge: 'json'` output does not parse as a JSON object | a bug in the template that produced it — never a file already on disk, which `X_GENERATE_CONFLICT` covers | fix the template that emits it, then `bun test packages/cli/src/cmd-generate.test.ts` |
 | `X_SCAFFOLD_PATH_ESCAPE` | a generated path resolves outside the scaffold sandbox | a `..` segment or an absolute path in a template's `GeneratedFile.path` | make the path relative to the app root with no `..`, then `bun test packages/cli/src/scaffold-typecheck.contract.test.ts` |
 | `X_NOT_IMPLEMENTED` | a planned command, or a driver whose remote half is unwritten | one of the commands in [CLI reference](CLI-Reference)'s planned table | the `fix` names the closest shipped command — never "not a command", which would send you looking for a typo |
 | `X_ERROR_CODE_UNKNOWN` | no package registered this error code | a typo, or a code from a package this process could not import | `x errors list --json` — the nearest real code is in `fix`, and `data.unavailable` names any package that would not load |

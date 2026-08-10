@@ -13,6 +13,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_TEST_NO_FILES',
   'X_TEST_SHARD_FAILED',
   'X_SCAFFOLD_PATH_ESCAPE',
+  'X_GENERATE_JSON_INVALID',
   'X_APP_PACKAGE_INVALID',
   'X_ERROR_CODE_UNKNOWN',
   'X_DECLARATION_UNKNOWN',
@@ -50,6 +51,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_TEST_NO_FILES: 'the test selection matched no files',
   X_TEST_SHARD_FAILED: 'a test shard exited non-zero',
   X_SCAFFOLD_PATH_ESCAPE: 'a generated path resolves outside the directory it is written into',
+  X_GENERATE_JSON_INVALID: "a generator's own merge: 'json' output does not parse as a JSON object",
   X_APP_PACKAGE_INVALID: "the app's package.json supplies no name and version",
   X_ERROR_CODE_UNKNOWN: 'no package registered this error code',
   X_DECLARATION_UNKNOWN: 'no declaration with this name is registered',
@@ -167,6 +169,23 @@ export class ScaffoldPathEscapeError extends UltimateError {
         input.fix ??
         `make the path relative to the app root with no ".." segment, then re-run: bun test packages/cli/src/scaffold-typecheck.contract.test.ts`,
       docs: docsFor('X_SCAFFOLD_PATH_ESCAPE'),
+    });
+  }
+}
+
+/**
+ * A `merge: 'json'` `GeneratedFile` whose own `contents` do not parse as a JSON object — a bug in
+ * the template that produced it, not a recoverable end-user situation. `dedupe()` (`cmd-generate.ts`)
+ * throws this before the bad contributor can be silently treated as `{}` and merged into (or
+ * written as) a catalog with attribution to nobody.
+ */
+export class GenerateJsonInvalidError extends UltimateError {
+  constructor(input: { path: string }) {
+    super({
+      code: 'X_GENERATE_JSON_INVALID',
+      cause: `${input.path} is declared merge: 'json' but the generator's own contents for it do not parse as a JSON object`,
+      fix: `fix the template that emits ${input.path}, then re-run: bun test packages/cli/src/cmd-generate.test.ts`,
+      docs: docsFor('X_GENERATE_JSON_INVALID'),
     });
   }
 }

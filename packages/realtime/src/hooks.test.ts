@@ -112,6 +112,38 @@ function querySid(socket: FakeSocket, op: 'add' | 'drop'): string {
   return '';
 }
 
+/** The idempotency key of the mutation the client sent — so a test can ack/fail it by ref. */
+function sentMutateKey(socket: FakeSocket): string {
+  for (const frame of socket.frames()) {
+    if (frame.type === 'mutate') return frame.key;
+  }
+  return '';
+}
+
+/** Lets a fire-and-forget chain inside `client.ts` (a reconnect drain, an async ack) settle before
+ * the test reads the state it produced. */
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * `useMutationQueue().pending`/`.failed` recompute from the queue on every read, so calling them
+ * before and after a change proves nothing about whether the invalidation signal actually bumped —
+ * the queue's own array is already correct either way, wired or not. Wrapping `onQueueChange` to
+ * count firings directly is the only way to prove the automatic paths (a reconnect drain, an async
+ * ack/fail frame) reach `hooks.ts` with no direct call driving them.
+ */
+function countNotifications(client: LiveClient<Tables>): () => number {
+  let count = 0;
+  const register = client.onQueueChange.bind(client);
+  client.onQueueChange = (listener: () => void) =>
+    register(() => {
+      count += 1;
+      listener();
+    });
+  return () => count;
+}
+
 /** Asserting on the code, not the message: the code is the part that is stable forever. */
 function codeOf(run: () => unknown): string {
   try {
@@ -331,5 +363,62 @@ describe('useMutationQueue', () => {
     await queue.fail(first?.key ?? '', { code: 'X_FORBIDDEN', cause: 'denied', fix: 'x doctor' });
     expect(view.failed).toBe(1);
     expect(view.pending).toBe(1);
+  });
+
+  // The gap this closes: `connect()`'s `onOpen` handler drains automatically on every reconnect,
+  // entirely inside `client.ts` — no hook awaits that call, so nothing bumped the invalidation
+  // signal for it before `LiveClient.onQueueChange` existed.
+  test('an automatic reconnect drain notifies the queue view with no direct hook call', async () => {
+    const { client, socket, queue } = await harness();
+    const notifications = countNotifications(client);
+    setLiveClient(client);
+
+    client.connect();
+    socket.open(); // first connect: queue is empty, the automatic drain is a no-op
+    await flush();
+    socket.close(); // drop the connection
+
+    const like = useMutation(likePost);
+    await like({ postId: 'p1' }); // queued while offline; mutate()'s own drain() no-ops offline
+    expect(queue.pending()).toHaveLength(1);
+    const beforeReconnect = notifications();
+
+    client.connect(); // the reconnect: a real driver would call this again after `reconnectAt`
+    socket.open();
+    await flush();
+
+    expect(queue.pending()).toHaveLength(0); // the reconnect actually drained the queue
+    expect(notifications()).toBeGreaterThan(beforeReconnect); // ...and the listener fired for it
+    expect(useMutationQueue().pending).toBe(0); // the hook's own getter agrees
+  });
+
+  // The gap this closes: a server ack/nack arrives asynchronously on `#onFrame`, entirely inside
+  // `client.ts` — no hook awaits that frame either, so a delayed failure went unnoticed the same
+  // way a reconnect drain did.
+  test('a socket-delivered failed ack notifies the queue view with no direct hook call', async () => {
+    const { client, socket, queue } = await harness();
+    const notifications = countNotifications(client);
+    setLiveClient(client);
+    client.connect();
+    socket.open();
+
+    const like = useMutation(likePost);
+    await like({ postId: 'p1' }); // connected: mutate()'s own drain() sends it immediately
+    const key = sentMutateKey(socket);
+    expect(key).not.toBe('');
+    const beforeAck = notifications();
+
+    socket.deliver({
+      type: 'ack',
+      v: PROTOCOL_VERSION,
+      ref: key,
+      lsn: null,
+      error: { code: 'X_FORBIDDEN', cause: 'denied by policy', fix: 'x doctor' },
+    });
+    await flush();
+
+    expect(notifications()).toBeGreaterThan(beforeAck);
+    expect(useMutationQueue().failed).toBe(1);
+    expect(queue.all().find((mutation) => mutation.key === key)?.status).toBe('failed');
   });
 });

@@ -10,7 +10,7 @@
 // equivalent, and both must be absolute so the subprocess's cwd cannot change what runs.
 import { join } from 'node:path';
 import type { Runner, VerifyStepName } from '@ultimat3/cli';
-import { exec } from '@ultimat3/cli';
+import { exec, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { renderFinding, report } from './lib/log';
@@ -98,7 +98,13 @@ export const parseSteps = (stdout: string): readonly GateStep[] | undefined => {
   } catch {
     return undefined;
   }
-  const steps = (payload as { readonly steps?: unknown }).steps;
+  // Guarded the same way `asStep`/`asFinding` guard their own input: `payload` is `unknown` from
+  // here on, so a shape this parser cannot use — `null`, an array, a bare number — reads as "no
+  // table" rather than a thrown TypeError reading `.steps` off it.
+  const steps =
+    typeof payload === 'object' && payload !== null
+      ? (payload as { readonly steps?: unknown }).steps
+      : undefined;
   if (!Array.isArray(steps)) return undefined;
   const parsed = steps.map(asStep);
   return parsed.every((step) => step !== undefined) ? parsed : undefined;
@@ -107,15 +113,47 @@ export const parseSteps = (stdout: string): readonly GateStep[] | undefined => {
 export const redSteps = (steps: readonly GateStep[]): readonly string[] =>
   steps.filter((step) => !(step.ok || step.skipped)).map((step) => step.name);
 
+/**
+ * The red/stale-pin checks below only ever look at the steps the table actually contains — a step
+ * `verify --json` silently dropped (a crash mid-run, a future step wired into the CLI but never
+ * into its own JSON output) is invisible to both, and a passing gate would not mean "17 steps
+ * checked", it would mean "however many the process happened to print". Comparing the received
+ * names against the full declared set is what makes a missing step a finding instead of a step
+ * nobody was checking.
+ */
+export const declaredStepIssues = (
+  steps: readonly GateStep[],
+  declaredSteps: readonly string[],
+): readonly string[] => {
+  const names = steps.map((step) => step.name);
+  const missing = declaredSteps.filter((name) => !names.includes(name));
+  const unknown = [...new Set(names.filter((name) => !declaredSteps.includes(name)))];
+  const seen = new Set<string>();
+  const duplicate = new Set<string>();
+  for (const name of names) {
+    if (seen.has(name)) duplicate.add(name);
+    seen.add(name);
+  }
+  return [
+    ...missing.map((name) => `${name} is declared but missing from the step table`),
+    ...unknown.map((name) => `${name} is in the step table but not a declared step`),
+    ...[...duplicate].map((name) => `${name} appears more than once in the step table`),
+  ];
+};
+
 export interface GateInput {
   readonly steps: readonly GateStep[] | undefined;
   readonly expectedRed: Readonly<Record<string, string>>;
   readonly referenced: boolean;
+  /** The complete step set a real run reports against — `VERIFY_STEP_NAMES` at the real call
+   * site. A parameter, not a hardcoded import, so a test can pin a small closed world instead of
+   * asserting against every step this repo happens to declare today. */
+  readonly declaredSteps: readonly string[];
 }
 
 /** The whole decision, separated from running anything so it can be tested both ways round. */
 export const gateFindings = (input: GateInput): readonly Finding[] => {
-  const { steps, expectedRed, referenced } = input;
+  const { steps, expectedRed, referenced, declaredSteps } = input;
   if (steps === undefined || steps.length === 0) {
     return [
       {
@@ -126,8 +164,22 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
       },
     ];
   }
-  const red = redSteps(steps);
   const findings: Finding[] = [];
+
+  // Before red/stale-pin even get a say: a step missing from the table entirely is neither red
+  // nor a stale pin, it is a step nobody checked — and a duplicate or unknown name means the table
+  // itself cannot be trusted to answer either question correctly.
+  const shapeIssues = declaredStepIssues(steps, declaredSteps);
+  if (shapeIssues.length > 0) {
+    findings.push({
+      code: 'X_REFERENCE_APP_REGRESSED',
+      cause: `${REFERENCE_APP}'s step table does not match the declared steps: ${shapeIssues.join('; ')}`,
+      fix: REPRODUCE,
+      at: REFERENCE_APP,
+    });
+  }
+
+  const red = redSteps(steps);
 
   const regressed = red.filter((name) => !(name in expectedRed));
   if (regressed.length > 0) {
@@ -170,8 +222,13 @@ export const referencesApp = async (root: string): Promise<boolean> => {
     .catch(() => undefined);
   const references = (parsed as { readonly references?: unknown } | undefined)?.references;
   if (!Array.isArray(references)) return false;
+  // A malformed entry (`null`, a bare string, a number) is a non-reference, not a crash: reading
+  // `.path` off it without this guard throws before the real entries ever get a chance to match.
   return references.some(
-    (entry) => (entry as { readonly path?: unknown }).path === REFERENCE_ENTRY,
+    (entry) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      (entry as { readonly path?: unknown }).path === REFERENCE_ENTRY,
   );
 };
 
@@ -206,7 +263,12 @@ if (import.meta.main) {
   const root = repoRoot();
   const steps = await runReferenceAppGate(root, exec);
   const referenced = await referencesApp(root);
-  const findings = gateFindings({ steps, expectedRed: EXPECTED_RED, referenced });
+  const findings = gateFindings({
+    steps,
+    expectedRed: EXPECTED_RED,
+    referenced,
+    declaredSteps: VERIFY_STEP_NAMES,
+  });
   const red = steps === undefined ? [] : redSteps(steps);
   const total = steps?.length ?? 0;
   report(

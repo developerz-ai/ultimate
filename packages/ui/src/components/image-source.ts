@@ -103,11 +103,21 @@ export function boxFor(
   return { width, height };
 }
 
-function toCandidate(variant: ImageVariant): Candidate {
-  const src = variant.src.trim();
-  if (src === '') {
-    throw invalidValueError('Image', variant, 'a variant with a non-empty src');
+/**
+ * A `src` with real content once whitespace is trimmed. Shared by the primary `src` prop and
+ * every variant `src`: an empty or blank one emits a broken `<img>` or a srcset entry the
+ * browser silently drops, so both paths reject it the same way instead of one staying permissive.
+ */
+export function assertNonEmptySrc(kind: string, value: unknown, src: string): string {
+  const trimmed = src.trim();
+  if (trimmed === '') {
+    throw invalidValueError(kind, value, 'a non-empty src');
   }
+  return trimmed;
+}
+
+function toCandidate(variant: ImageVariant): Candidate {
+  const src = assertNonEmptySrc('Image', variant, variant.src);
 
   const width = variant.width;
   const density = variant.density;

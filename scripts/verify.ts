@@ -16,8 +16,11 @@ import {
   VERIFY_STEPS,
 } from '@ultimat3/cli';
 import {
+  adminFlattenerFindingFor,
+  checkAdminFlattener,
   checkBoundaries,
   checkSharedLeaf,
+  collectAdminFiles,
   collectSharedFiles,
   collectSourceFiles,
   findingFor,
@@ -29,14 +32,17 @@ import { buildManifest, DEFAULT_OUT } from './manifest';
 import { checkRoadmap } from './roadmap';
 
 /**
- * Two rules on one step. The tier table: a package may import only from a strictly lower tier.
+ * Three rules on one step. The tier table: a package may import only from a strictly lower tier.
  * The `shared/` leaf: an example app's `shared/` may hold types from `app/` but never a runtime
  * edge into it — `x verify` inside the app already checks that, and this repo's own gate must
- * too, because the reference-app job is advisory and this one blocks.
+ * too, because the reference-app job is advisory and this one blocks. `@ultimat3/admin`'s one
+ * flattener: `packages/admin/CLAUDE.md` names `entity-columns.ts` as the only file that may read
+ * `$meta` or call `$describe()` — stated there since it shipped, and unenforced until this line.
  */
 export const tierBoundaries: HostCheck = async (root) => [
   ...checkBoundaries(await collectSourceFiles(root)).map(findingFor),
   ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
+  ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
 ];
 
 /** The framework's own manifest is generated from the packages; it must still generate. */

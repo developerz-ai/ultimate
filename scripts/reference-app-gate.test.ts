@@ -3,14 +3,19 @@
 // rule that fires the moment the app compiles.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ExecResult } from '@ultimat3/cli';
 import { repoRoot } from './lib/run';
 import type { GateStep } from './reference-app-gate';
 import {
+  declaredStepIssues,
   EXPECTED_RED,
   gateFindings,
   parseSteps,
   REFERENCE_ENTRY,
+  ROOT_TSCONFIG,
   redSteps,
   referencesApp,
   runReferenceAppGate,
@@ -26,15 +31,26 @@ const step = (name: string, ok: boolean, skipped = false): GateStep => ({
 
 const pin = { typecheck: 'owned elsewhere', drift: 'owned elsewhere' } as const;
 
+// Each test's `steps` array IS its declared world — deriving `declaredSteps` from it rather than
+// hand-listing a second copy means it can never drift from what the test actually constructs.
+const namesOf = (steps: readonly GateStep[]): readonly string[] => steps.map((s) => s.name);
+
 describe('gateFindings', () => {
   test('passes when the red steps are exactly the pinned ones', () => {
     const steps = [step('typecheck', false), step('drift', false), step('lint', true)];
-    expect(gateFindings({ steps, expectedRed: pin, referenced: false })).toEqual([]);
+    expect(
+      gateFindings({ steps, expectedRed: pin, referenced: false, declaredSteps: namesOf(steps) }),
+    ).toEqual([]);
   });
 
   test('a step that was passing and now fails is a regression', () => {
     const steps = [step('typecheck', false), step('drift', false), step('lint', false)];
-    const findings = gateFindings({ steps, expectedRed: pin, referenced: false });
+    const findings = gateFindings({
+      steps,
+      expectedRed: pin,
+      referenced: false,
+      declaredSteps: namesOf(steps),
+    });
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe('X_REFERENCE_APP_REGRESSED');
     expect(findings[0]?.cause).toContain('lint');
@@ -43,7 +59,12 @@ describe('gateFindings', () => {
 
   test('a pinned step that starts passing is a stale pin, so the pin can only shrink', () => {
     const steps = [step('typecheck', false), step('drift', true), step('lint', true)];
-    const findings = gateFindings({ steps, expectedRed: pin, referenced: false });
+    const findings = gateFindings({
+      steps,
+      expectedRed: pin,
+      referenced: false,
+      declaredSteps: namesOf(steps),
+    });
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe('X_REFERENCE_APP_PIN_STALE');
     expect(findings[0]?.fix).toContain('EXPECTED_RED');
@@ -52,19 +73,33 @@ describe('gateFindings', () => {
 
   test('a skipped step counts as not-red, not as a regression', () => {
     const steps = [step('typecheck', false), step('drift', false), step('roadmap', true, true)];
-    expect(gateFindings({ steps, expectedRed: pin, referenced: false })).toEqual([]);
+    expect(
+      gateFindings({ steps, expectedRed: pin, referenced: false, declaredSteps: namesOf(steps) }),
+    ).toEqual([]);
   });
 
   test('no step table at all is the worst outcome, never a silent pass', () => {
-    const findings = gateFindings({ steps: undefined, expectedRed: pin, referenced: true });
+    const findings = gateFindings({
+      steps: undefined,
+      expectedRed: pin,
+      referenced: true,
+      declaredSteps: [],
+    });
     expect(findings).toHaveLength(1);
     expect(findings[0]?.code).toBe('X_REFERENCE_APP_REGRESSED');
-    expect(gateFindings({ steps: [], expectedRed: pin, referenced: true })).toHaveLength(1);
+    expect(
+      gateFindings({ steps: [], expectedRed: pin, referenced: true, declaredSteps: [] }),
+    ).toHaveLength(1);
   });
 
   test('an app that typechecks must be in the root build graph', () => {
     const steps = [step('typecheck', true), step('drift', false)];
-    const codes = gateFindings({ steps, expectedRed: pin, referenced: false }).map((f) => f.code);
+    const codes = gateFindings({
+      steps,
+      expectedRed: pin,
+      referenced: false,
+      declaredSteps: namesOf(steps),
+    }).map((f) => f.code);
     expect(codes).toContain('X_REFERENCE_APP_UNREFERENCED');
     // Both are true at once and each needs its own edit: lower the pin AND add the reference.
     expect(codes).toContain('X_REFERENCE_APP_PIN_STALE');
@@ -76,14 +111,58 @@ describe('gateFindings', () => {
       steps,
       expectedRed: { drift: 'owned elsewhere' },
       referenced: true,
+      declaredSteps: namesOf(steps),
     }).map((f) => f.code);
     expect(codes).toEqual([]);
   });
 
   test('an empty pin means the app must be 100% green', () => {
     const steps = [step('typecheck', true), step('lint', false)];
-    const codes = gateFindings({ steps, expectedRed: {}, referenced: true }).map((f) => f.code);
+    const codes = gateFindings({
+      steps,
+      expectedRed: {},
+      referenced: true,
+      declaredSteps: namesOf(steps),
+    }).map((f) => f.code);
     expect(codes).toEqual(['X_REFERENCE_APP_REGRESSED']);
+  });
+
+  test('a declared step missing from the table is a regression, even with an empty pin and nothing red', () => {
+    const steps = [step('typecheck', true), step('lint', true)];
+    // 'roadmap' is declared but never printed — a crash mid-run, or a step the CLI forgot to
+    // serialize, must not read as "nothing to report" just because everything present is green.
+    const findings = gateFindings({
+      steps,
+      expectedRed: {},
+      referenced: true,
+      declaredSteps: [...namesOf(steps), 'roadmap'],
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe('X_REFERENCE_APP_REGRESSED');
+    expect(findings[0]?.cause).toContain('roadmap');
+    expect(findings[0]?.cause).toContain('missing from the step table');
+  });
+
+  test('an unknown or duplicated step name is reported too, not silently trusted', () => {
+    const steps = [step('typecheck', true), step('typecheck', true), step('mystery', true)];
+    const findings = gateFindings({
+      steps,
+      expectedRed: {},
+      referenced: true,
+      declaredSteps: ['typecheck'],
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('mystery');
+    expect(findings[0]?.cause).toContain('not a declared step');
+    expect(findings[0]?.cause).toContain('typecheck');
+    expect(findings[0]?.cause).toContain('more than once');
+  });
+});
+
+describe('declaredStepIssues', () => {
+  test('nothing to say when the table is exactly the declared set, in any order', () => {
+    const steps = [step('drift', false), step('typecheck', true)];
+    expect(declaredStepIssues(steps, ['typecheck', 'drift'])).toEqual([]);
   });
 });
 
@@ -122,6 +201,11 @@ describe('parseSteps', () => {
     expect(parseSteps('{ not json')).toBeUndefined();
     expect(parseSteps('{"ok":true}')).toBeUndefined();
     expect(parseSteps('{"steps":[{"name":"lint"}]}')).toBeUndefined();
+    // Valid JSON that is not an object at all — no line here even starts with `{`, so this never
+    // reaches the `payload.steps` read, but the contract is "no usable table", not a thrown error.
+    expect(parseSteps('null')).toBeUndefined();
+    expect(parseSteps('[]')).toBeUndefined();
+    expect(parseSteps('true')).toBeUndefined();
   });
 });
 
@@ -129,6 +213,25 @@ describe('wiring', () => {
   test('the root tsconfig is read for a real reference entry, not a substring', async () => {
     expect(await referencesApp(repoRoot())).toBe(false);
     expect(REFERENCE_ENTRY).toBe('./examples/dummy');
+  });
+
+  test('a references entry with no path (null, or anything not an object) is a non-match, not a crash', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'reference-app-gate-'));
+    try {
+      await Bun.write(
+        join(dir, ROOT_TSCONFIG),
+        JSON.stringify({ references: [null, 'not-an-object', 42, { path: './other' }] }),
+      );
+      expect(await referencesApp(dir)).toBe(false);
+
+      await Bun.write(
+        join(dir, ROOT_TSCONFIG),
+        JSON.stringify({ references: [null, { path: REFERENCE_ENTRY }] }),
+      );
+      expect(await referencesApp(dir)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test('every pinned step name is one the gate can actually report', async () => {

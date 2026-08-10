@@ -139,10 +139,20 @@ function deriveField(
 }
 
 /**
- * The declared key wins, composite included: the admin addresses a row by the first member,
- * which is the only column a single-id URL and an `AdminRepo` can carry.
+ * The declared key wins — but a composite one is refused outright, never silently reduced to
+ * its first member: a route id and an `AdminRepo` id both carry exactly one string, so two rows
+ * sharing only that first member would become indistinguishable for read, update and delete.
  */
 function idFieldOf(entity: AdminEntity, columns: readonly AdminColumnFacts[]): string {
+  if (entity.$primaryKey.length > 1) {
+    throw new AdminFieldUnsupportedError({
+      entity: entity.$name,
+      field: entity.$primaryKey.join(','),
+      cause:
+        'has a composite primary key; the admin addresses a row by a single id and cannot yet carry every key part',
+      fix: 'give the entity a single-column id, or wait for composite-key support in AdminRepo',
+    });
+  }
   const declared = entity.$primaryKey[0] ?? columns.find((column) => column.primaryKey)?.name;
   if (declared !== undefined) return declared;
   if (columns.some((column) => column.name === 'id')) return 'id';

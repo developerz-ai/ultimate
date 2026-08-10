@@ -23,7 +23,7 @@ export const mcp = defineAppMcp({
   /** Every `mcp: { expose: true }` declaration in the app, with its policy unchanged. */
   include: 'exposed',
   /** Exposes the versioned prompt artifact so an agent can read what the model was told. */
-  prompts: ['apps/web/app/posts/prompts/summarize.v3.md'],
+  prompts: ['apps/web/app/posts/prompts/summarize.v4.md'],
 
   tools: {
     /** Read-only. Answers "what will I get tonight, and when?" without waiting until tonight. */

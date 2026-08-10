@@ -19,4 +19,5 @@ export type { RouteOptions, Surface } from './route';
 export { routeFiles } from './route';
 export { appFiles } from './scaffold-app';
 export { docsFiles, EXECUTABLE_FILES } from './scaffold-docs';
+export { i18nIndex } from './scaffold-i18n';
 export { repoFiles } from './scaffold-repo';

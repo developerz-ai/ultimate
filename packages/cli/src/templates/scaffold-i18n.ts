@@ -3,6 +3,7 @@
 // of scaffold-repo.ts to stay under the file-size ceiling.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { camel } from './naming';
 import { packageShapeFiles } from './scaffold-package-shape';
 
 /** The only `packages/*` manifest that names a dependency: every other one only re-exports a
@@ -25,8 +26,43 @@ const i18nPackage = (app: NameSet, version: string): string => `{
 }
 `;
 
-const i18nIndex =
-  (): string => `// The app's catalog, registered once and typed against English. Every surface resolves strings
+/**
+ * `en` first, then every other locale alphabetically — a stable order so a diff shows only the
+ * locale a run actually added, never a reshuffle. `en` is always included: `default: 'en'` below
+ * requires it to be a registered locale, and every real catalog set already has one from `x new`
+ * scaffold time.
+ */
+const orderedLocales = (locales: readonly string[]): readonly string[] => {
+  const rest = new Set(locales);
+  rest.delete('en');
+  return ['en', ...[...rest].sort()];
+};
+
+/** A locale tag is not always a valid JS binding (`zh-hant`) — `camel()` is the one identifier
+ * derivation every generated file already uses for names, so the import agrees with the rest of
+ * the app's own naming instead of inventing a second casing rule. */
+const localeImport = (locale: string): string =>
+  `import ${camel(locale)} from '../catalogs/${locale}.json';`;
+
+/** The object-literal entry for one locale: shorthand when the binding IS the tag (`en`, `es`, …),
+ * `'tag': binding` when `camel()` had to reshape it (`zh-hant` → `zhHant`) — `defineCatalogs` reads
+ * the locale from the key, never the identifier, so the quoted form is what keeps it addressable. */
+const localeEntry = (locale: string): string => {
+  const binding = camel(locale);
+  return binding === locale ? binding : `'${locale}': ${binding}`;
+};
+
+/**
+ * The app's one catalog-registration module — regenerated, never hand-edited, to the full current
+ * locale set every time `x g ... --locales` lands a new catalog file (`syncI18nIndex` in
+ * `cmd-generate.ts`). `i18nFiles` below calls this with `['en']` for the shape `x new` has always
+ * scaffolded; a later run passes whatever `packages/i18n/catalogs/` actually holds.
+ */
+export function i18nIndex(locales: readonly string[]): string {
+  const ordered = orderedLocales(locales);
+  const imports = ordered.map(localeImport).join('\n');
+  const entries = ordered.map(localeEntry).join(', ');
+  return `// The app's catalog, registered once and typed against English. Every surface resolves strings
 // through this module, and an unknown key is a compile error via useT() — never a runtime miss
 // nobody notices until production.
 
@@ -36,9 +72,9 @@ import {
   type Translator,
   useI18n,
 } from '@ultimat3/i18n';
-import en from '../catalogs/en.json';
+${imports}
 
-export const catalogs = defineCatalogs({ default: 'en', locales: { en } });
+export const catalogs = defineCatalogs({ default: 'en', locales: { ${entries} } });
 
 /**
  * English is the source of truth for the key space — a second locale must match it exactly, or
@@ -55,6 +91,7 @@ export type TranslationKey = KeyOf<AppCatalog>;
  */
 export const useT = (): Translator<AppCatalog> => useI18n<AppCatalog>();
 `;
+}
 
 // `app.post.*` is not listed here: under `--example`, `x g resource post` merges its own keys
 // into this same flat file (`merge: 'json'`, resolved by `dedupe()`); under `--no-example` that
@@ -104,7 +141,7 @@ export function i18nFiles(app: NameSet, version: string): readonly GeneratedFile
       '**/*.ts',
       'catalogs/**/*',
     ]),
-    { path: 'packages/i18n/src/index.ts', contents: i18nIndex() },
+    { path: 'packages/i18n/src/index.ts', contents: i18nIndex(['en']) },
     { path: 'packages/i18n/src/index.test.ts', contents: i18nTest() },
     { path: 'packages/i18n/catalogs/en.json', contents: i18nCatalog(app), merge: 'json' },
   ];

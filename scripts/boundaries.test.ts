@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { SourceFile } from './boundaries';
 import {
+  adminFlattenerFindingFor,
+  checkAdminFlattener,
   checkBoundaries,
   checkSharedLeaf,
+  collectAdminFiles,
   collectSharedFiles,
   findingFor,
   packageOf,
@@ -211,5 +214,62 @@ describe('unit · shared/ is a leaf', () => {
     const files = await collectSharedFiles(repoRoot());
     expect(files.map((entry) => entry.path)).toContain(LEAF);
     expect(checkSharedLeaf(files)).toEqual([]);
+  });
+});
+
+const FLATTENER = 'packages/admin/src/entity-columns.ts';
+const REGISTRY = 'packages/admin/src/registry.ts';
+
+describe('unit · @ultimat3/admin has one flattener', () => {
+  test('a production file reading $meta or calling $describe() outside entity-columns.ts is a violation', () => {
+    const violations = checkAdminFlattener([
+      file('packages/admin/src/crud.ts', 'export const x = column.$meta.primaryKey;'),
+      file('packages/admin/src/resource.ts', 'export const y = entity.$describe().columns;'),
+    ]);
+    expect(violations).toEqual([
+      { file: 'packages/admin/src/crud.ts' },
+      { file: 'packages/admin/src/resource.ts' },
+    ]);
+  });
+
+  test('the one flattener itself is exempt', () => {
+    expect(
+      checkAdminFlattener([file(FLATTENER, 'export const x = column.$meta.primaryKey;')]),
+    ).toEqual([]);
+  });
+
+  test('registry.ts only declares the members — that is not a read', () => {
+    expect(
+      checkAdminFlattener([
+        file(REGISTRY, 'export interface AdminColumnMeta { readonly $meta: Foo; }'),
+        file(REGISTRY, '  $describe(): AdminEntityDescription;'),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('a test file is exempt', () => {
+    expect(
+      checkAdminFlattener([
+        file('packages/admin/src/crud.test.ts', 'expect(column.$meta.primaryKey).toBe(true);'),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('the violation renders as a finding with a code, a cause and a fix', () => {
+    const finding = adminFlattenerFindingFor({ file: 'packages/admin/src/fields.ts' });
+    expect(finding.code).toBe('X_ADMIN_FLATTENER_VIOLATION');
+    expect(finding.cause).toContain('packages/admin/src/fields.ts');
+    expect(finding.cause).toContain(FLATTENER);
+    expect(finding.fix).toContain('entity-columns.ts');
+    expect(finding.at).toBe('packages/admin/src/fields.ts');
+  });
+
+  // Same discipline as the shared/-leaf collector above: pinned against the real package rather
+  // than trusted, so the rule cannot pass by pointing at an empty file list.
+  test('the collector actually finds the real admin package, and it is clean today', async () => {
+    const files = await collectAdminFiles(repoRoot());
+    expect(files.map((entry) => entry.path)).toContain(FLATTENER);
+    expect(files.map((entry) => entry.path)).toContain(REGISTRY);
+    expect(checkAdminFlattener(files)).toEqual([]);
   });
 });

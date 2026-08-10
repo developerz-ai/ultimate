@@ -1,7 +1,7 @@
 /**
- * The org feed. `stream` because an authed page needs both halves: the shell in the first flush,
- * the rows when the query resolves. Solid patches the streamed HTML in place, so the shell costs
- * no hydration and each `<Suspense>` island wakes on its own schedule.
+ * The org feed. `ssr`, not `stream`: the rows arrive over `useLive`'s socket subscription, not a
+ * resolving promise, so there is no promise boundary for `<Suspense>` to wait on — the loading gate
+ * below is the live query's own `state()`, a plain reactive read, not a streamed hole.
  *
  * `useLive` returns a signal backed by the persisted local store, which is why this page is
  * readable in a tunnel and why a like taken offline is still here when the tunnel ends.
@@ -23,7 +23,7 @@ import { useViewer } from '../viewer-context';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
-  render: 'stream',
+  render: 'ssr',
   /**
    * Network-first for the document, cache-first for the content-hashed chunks. The feed's *rows*
    * are not cached by the service worker at all — they come from the persisted live query.
@@ -55,9 +55,9 @@ export function Page(): JSX.Element {
       </Show>
 
       {/*
-        One streamed hole. The header above is already on screen while this resolves, and the
-        boundary is the live query's own `state()` rather than a Solid `<Suspense>`: the rows
-        arrive over the socket, not from a promise, so `loading` is a fact the handle carries.
+        The live-query loading gate, not a streamed hole: `feed.state()` is a plain reactive read
+        off the query handle, not a promise `<Suspense>` could wait on — the rows arrive over the
+        socket, so `loading` is a fact the handle carries, not a hole the server fills in later.
       */}
       <Show
         when={feed.state() !== 'loading'}

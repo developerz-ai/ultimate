@@ -116,6 +116,13 @@ export function routePathFromFile(file: string): { surface: Surface; path: strin
 }
 
 /**
+ * POSIX single-quotes a filesystem-derived operand for a `fix:` command: close the quote, escape
+ * an embedded quote as `'\''`, reopen it. A `fix:` is copied and run verbatim (axiom 4), so a route
+ * filename carrying a space, an apostrophe or a shell metacharacter must not change what runs.
+ */
+const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+
+/**
  * Enforced rather than documented (axiom 3): a convention that is not a build error is not a
  * convention. The fix is the move that makes the file a route, spelled out — the directory the
  * author already meant, plus the one filename that surface accepts.
@@ -141,7 +148,9 @@ function assertRouteFilename(file: string, surface: Surface, basename: string | 
   throw new RouteFileInvalidError(
     `${file} is a route on the ${surface} surface, so it must be named ${expected}: the URL is the ` +
       'directory path and the filename names the kind of file',
-    inPlace ? `git mv ${file} ${target}` : `mkdir -p ${stem} && git mv ${file} ${target}`,
+    inPlace
+      ? `git mv -- ${shellQuote(file)} ${shellQuote(target)}`
+      : `mkdir -p -- ${shellQuote(stem)} && git mv -- ${shellQuote(file)} ${shellQuote(target)}`,
   );
 }
 

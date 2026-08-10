@@ -351,9 +351,9 @@
     {
       "name": "summarize",
       "file": "apps/web/app/posts/actions.ts",
-      "model": "claude-sonnet-4-5",
-      "prompt": "apps/web/app/posts/prompts/summarize.v3.md",
-      "promptVersion": 3,
+      "model": "claude-sonnet-5",
+      "prompt": "apps/web/app/posts/prompts/summarize.v4.md",
+      "promptVersion": 4,
       "policy": "post:read",
       "evals": "apps/web/app/posts/prompts/summarize.eval.test.ts",
       "budget": {

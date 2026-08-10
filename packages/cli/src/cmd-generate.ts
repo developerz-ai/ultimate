@@ -13,6 +13,7 @@ import type { CliCommand, CommandContext } from './command';
 import {
   BadFlagError,
   CliNotImplementedError,
+  GenerateJsonInvalidError,
   ScaffoldPathEscapeError,
   UnknownCommandError,
 } from './errors';
@@ -22,7 +23,9 @@ import { flagBool, flagList, flagString } from './parse';
 import type { GeneratedFile, Surface } from './templates';
 import {
   actionFiles,
+  CATALOG_ROOT,
   entityFiles,
+  i18nIndex,
   jobFiles,
   policyFiles,
   queryFiles,
@@ -92,14 +95,26 @@ function prettyJson(value: Record<string, unknown>): string {
  * lacks; the first occurrence wins a clash, the same rule `writeFiles` applies against the copy
  * already on disk. Exported so `x new` (`cmd-new.ts`) and the scaffold fixture resolve a shared
  * catalog the identical way — one merge rule, not three hand-copied ones.
+ *
+ * A `merge: 'json'` file's `contents` are the generator's own output, not user data — one that
+ * fails to parse as a JSON object is a bug in the template that produced it, so it throws here
+ * rather than being silently treated as `{}` and merged into (or written as) a catalog with
+ * attribution to nobody. `writeFiles`/`mergeJsonFile` never see a malformed *generated* payload in
+ * practice: every production caller (`generate()` below, `cmd-new.ts`'s `planNewApp()`, the
+ * scaffold fixture) runs its file list through this function first.
  */
 export function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   const seen = new Map<string, GeneratedFile>();
   for (const file of files) {
+    if (file.merge === 'json' && parseJsonObject(file.contents) === undefined) {
+      throw new GenerateJsonInvalidError({ path: file.path });
+    }
     const prior = seen.get(file.path);
     if (prior === undefined) {
       seen.set(file.path, file);
     } else if (prior.merge === 'json' && file.merge === 'json') {
+      // Both sides already proved parseable above — the fallback only guards a future change to
+      // that invariant, it never fires today.
       const later = parseJsonObject(file.contents) ?? {};
       const earlier = parseJsonObject(prior.contents) ?? {};
       seen.set(file.path, { ...prior, contents: prettyJson({ ...later, ...earlier }) });
@@ -272,6 +287,32 @@ export async function writeFiles(
   return { written, conflicts };
 }
 
+const I18N_INDEX_PATH = 'packages/i18n/src/index.ts';
+
+/**
+ * `packages/i18n/src/index.ts` is the one module the app imports catalogs through, and it is
+ * written once, at `x new` time, importing whichever locales existed then. A later `x g
+ * ... --locales=es` lands `packages/i18n/catalogs/es.json` on disk, but nothing would otherwise
+ * teach the index about it — the catalog file would exist with real keys in it and the app could
+ * still never select that locale. Every run that wrote at least one file re-derives the FULL
+ * locale set from `packages/i18n/catalogs/` — not just the locales this invocation asked for —
+ * and rewrites the index to match. Bypasses `writeFiles` on purpose: this file is a projection of
+ * the catalog directory, never app-authored content a conflict check should protect. An app with
+ * no i18n package (deleted, or never scaffolded) is left alone.
+ */
+async function syncI18nIndex(root: string): Promise<void> {
+  const indexAbsolute = containedPath(root, I18N_INDEX_PATH);
+  if (!existsSync(indexAbsolute)) return;
+  const catalogDir = containedPath(root, CATALOG_ROOT);
+  const locales: string[] = [];
+  if (existsSync(catalogDir)) {
+    for await (const entry of new Bun.Glob('*.json').scan({ cwd: catalogDir, absolute: false })) {
+      locales.push(entry.replace(/\.json$/, ''));
+    }
+  }
+  await Bun.write(indexAbsolute, i18nIndex(locales));
+}
+
 function readKind(raw: string | undefined): Generator {
   const kinds: readonly string[] = GENERATORS;
   if (raw !== undefined && kinds.includes(raw)) return raw as Generator;
@@ -346,6 +387,10 @@ export const generateCommand: CliCommand = {
       };
     }
     const report = await writeFiles(root, files, flagBool(ctx.args, 'force'));
+    // A locale's catalog existing on disk and the app being able to select it are two different
+    // facts — see `syncI18nIndex`. Runs before the manifest load below so a route or resource
+    // this same invocation just wrote never gets projected against a stale catalog registration.
+    if (report.written.length > 0) await syncI18nIndex(root);
     // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.

@@ -22,13 +22,15 @@ let registered: Registered | null = null;
 /** Register once, in the app entry, before the first render. One app, one socket, one client. */
 export function setLiveClient(client: LiveClient): void {
   const [version, setVersion] = client.signal<number>(0);
-  registered = {
-    client,
-    version,
-    bump: () => {
-      setVersion(version() + 1);
-    },
+  const bump = (): void => {
+    setVersion(version() + 1);
   };
+  registered = { client, version, bump };
+  // Closes the gap a direct call can't: a reconnect drains automatically inside `connect()`, and
+  // an ack/fail frame arrives asynchronously inside `#onFrame` — neither is awaited by any hook, so
+  // this is the only path that reaches them. The direct `bump()` calls below stay too: they fire at
+  // the earliest possible moment for the call that made them, and a redundant bump is harmless.
+  client.onQueueChange(bump);
 }
 
 /** For tests: drop the registration so cases stay independent. */

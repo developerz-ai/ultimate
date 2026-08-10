@@ -9,6 +9,7 @@ import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import styles from './Image.module.scss';
 import {
+  assertNonEmptySrc,
   boxFor,
   type ImageBox,
   type ImageLoadingHints,
@@ -37,13 +38,14 @@ export interface ImageProps {
 }
 
 export function Image(props: ImageProps): JSX.Element {
+  const src = (): string => assertNonEmptySrc('Image', props.src, props.src);
   const hints = (): ImageLoadingHints => loadingHints(props.priority);
   const box = (): ImageBox | undefined => boxFor(props.width, props.height);
 
   return (
     <img
       class={cx(styles['image'], props.class)}
-      src={props.src}
+      src={src()}
       alt={props.alt}
       srcset={srcsetFor(props.variants)}
       sizes={props.sizes}
