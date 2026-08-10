@@ -53,7 +53,9 @@ export function describeValue(value: unknown): string {
   if (typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) return `array(${value.length})`;
-  if (value instanceof Date) return `Date(${value.toISOString()})`;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? 'Date(Invalid Date)' : `Date(${value.toISOString()})`;
+  }
   return typeof value;
 }
 
