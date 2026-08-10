@@ -8,6 +8,7 @@ import {
   sealNetwork,
   unsealNetwork,
 } from './sealed-network';
+import { testName } from './test-types';
 
 // The gate is process-global and bun shares one process across files: a test that leaves the
 // process offline takes every later file's fetch down with it.
@@ -18,7 +19,7 @@ afterEach(() => {
 
 const URL_UNDER_TEST = 'https://api.stripe.test/v1/charges';
 
-describe('unit · the network fixture', () => {
+describe(testName('unit', 'the network fixture'), () => {
   bunTest('offline fails the request the app’s offline path is written for', async () => {
     sealNetwork();
     const network = createTestNetwork();
@@ -98,6 +99,23 @@ describe('unit · the network fixture', () => {
     network.drop();
     network[Symbol.dispose]();
 
+    expect(networkState()).toBe('online');
+  });
+
+  // Restore, not reset: an outer fixture that is already offline is the state this one found, and
+  // forcing 'online' on the way out would let an inner fixture's disposal reconnect the outer test.
+  bunTest('disposal restores the state it found, not online', () => {
+    sealNetwork();
+    const outer = createTestNetwork();
+    outer.drop();
+
+    const inner = createTestNetwork();
+    inner.online();
+    inner[Symbol.dispose]();
+
+    expect(networkState()).toBe('dropped');
+
+    outer[Symbol.dispose]();
     expect(networkState()).toBe('online');
   });
 });

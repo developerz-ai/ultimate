@@ -1,16 +1,9 @@
 // The fixtures the framework DECLARES but cannot build in this process: a browser for `page`,
 // `budget`, `signIn` and `deploy`; a replicator feeding a live-query registry for `subscribe`.
-//
-// Declared here rather than left out, because the name is the contract. An app that registered its
-// own `page` would be deciding for itself what a page is, and two apps would then disagree — the
-// same reason `clock` is not an app fixture. And an unregistered name fails as
-// X_TEST_FIXTURE_UNKNOWN, whose fix ("register it") is the wrong instruction: what is missing is a
-// driver, not a registration. So the name resolves, and asking for it without a driver says so.
-//
-// A driver overrides these the ordinary way — `defineFixtures` merges, last registration wins.
+// Each is a type a driver implements, plus a factory that says what is missing until one does.
 
 import { fixtureUnavailable } from './errors';
-import type { FixtureFactory } from './fixtures';
+import type { FixtureFactory, Fixtures } from './fixtures';
 
 /** Per-route byte budgets, measured off the built output rather than declared. */
 export interface TestBudget {
@@ -73,17 +66,29 @@ export const DRIVER_FIXTURE_NEEDS: Readonly<Record<DriverFixtureName, string>> =
 };
 
 /**
+ * Declared rather than left out, because the name is the contract. An app that registered its own
+ * `page` would be deciding for itself what a page is, and two apps would then disagree — the same
+ * reason `clock` is not an app fixture. And an unregistered name fails as X_TEST_FIXTURE_UNKNOWN,
+ * whose fix ("register it") is the wrong instruction: what is missing is a driver, not a
+ * registration. So the name resolves, and asking for it without a driver says so.
+ *
  * Throws when built, not when used. Building is where the test is still on its own first line, so
  * the failure names the fixture instead of surfacing three awaits later as a missing method.
  */
 export const unavailableFixture =
-  (name: DriverFixtureName): FixtureFactory =>
+  <K extends DriverFixtureName>(name: K): FixtureFactory<Fixtures[K]> =>
   () => {
     throw fixtureUnavailable(name, DRIVER_FIXTURE_NEEDS[name]);
   };
 
-/** The declared bag, as `defineFixtures` takes it. */
-export const driverFixtures = (): Readonly<Record<DriverFixtureName, FixtureFactory>> => ({
+/** Each declaration carries the type its driver must satisfy — `defineFixtures` holds it to that. */
+export type DriverFixtures = { readonly [K in DriverFixtureName]: FixtureFactory<Fixtures[K]> };
+
+/**
+ * The declared bag, as `defineFixtures` takes it. A driver overrides these the ordinary way —
+ * `defineFixtures` merges, last registration wins.
+ */
+export const driverFixtures = (): DriverFixtures => ({
   budget: unavailableFixture('budget'),
   deploy: unavailableFixture('deploy'),
   page: unavailableFixture('page'),

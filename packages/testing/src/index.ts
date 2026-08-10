@@ -1,4 +1,10 @@
-export type { FixtureBody, FixtureFactory, FixtureMap, Fixtures } from './fixtures';
+export type {
+  FixtureBody,
+  FixtureFactory,
+  FixtureMap,
+  FixtureRegistration,
+  Fixtures,
+} from './fixtures';
 export {
   clearFixtures,
   defineFixtures,
@@ -48,6 +54,7 @@ export type { TestClock, TestDuration } from './fixture-clock';
 export { createTestClock } from './fixture-clock';
 export type {
   DriverFixtureName,
+  DriverFixtures,
   LiveFeed,
   LiveFeedPatch,
   LiveTarget,
@@ -75,6 +82,9 @@ export { describeApp, testApp } from './harness';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
 export type { MockRoute, NetworkState } from './sealed-network';
+// `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
+// called it directly would bypass the `network` fixture's disposal and leave the whole process
+// offline for every file after it. The fixture is the way to go offline — there is no second one.
 export {
   allowHost,
   isNetworkSealed,
@@ -84,7 +94,6 @@ export {
   requestedUrls,
   resetNetwork,
   sealNetwork,
-  setNetworkState,
   unsealNetwork,
 } from './sealed-network';
 export type { SqlRunner, TemplateDbConfig, WorkerDatabase } from './template-db';

@@ -84,7 +84,9 @@ describe('unit · parseArgs', () => {
   });
 
   test('a string flag with no value is an error, not a silent empty string', () => {
-    expect(() => parseArgs(['db', 'branch', '--name'], SPECS)).toThrow();
+    const failure = thrownBy(() => parseArgs(['db', 'branch', '--name'], SPECS));
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(String(failure.cause)).toContain('expects a value');
   });
 
   test('bare argv and --help both route to the help command', () => {

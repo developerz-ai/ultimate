@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyStepNames } from '@ultimat3/cli';
-import { repoRoot } from './lib/run';
+import { repoRoot, run } from './lib/run';
 // Only the integration assertion below lives here — `checkRoadmap`'s own cases are in
 // `scripts/roadmap.test.ts`, next to their source.
 import { checkRoadmap } from './roadmap';
@@ -87,6 +87,45 @@ describe('unit · the repo gate is the CLI gate', () => {
     // resolve.
     expect(field(field(config, 'compilerOptions'), 'paths')).toEqual({});
   });
+
+  // Both tests exist because either alone lies. The one above pins the mechanism — `paths` is the
+  // knob, and an edit that refills it should be caught by name. This one pins the effect: emptying
+  // `paths` does not by itself make `@ultimat3/core` unresolvable, since node resolution would
+  // still walk up to a linked workspace package in `node_modules`. Only a real compile answers.
+  test('site/ is its own bundle graph — a real tsc cannot resolve @ultimat3/core inside it', async () => {
+    // The probe sits under `site/` so resolution walks the same ancestor directories a real site
+    // source does. The `.` prefix keeps it out of site/tsconfig.json's own `**/*.ts` include
+    // while it exists — TypeScript's wildcards skip dot-directories.
+    const dir = await mkdtemp(join(repoRoot(), 'site', '.probe-'));
+    try {
+      await Bun.write(join(dir, 'probe.ts'), "import '@ultimat3/core';\n");
+      await Bun.write(
+        join(dir, 'tsconfig.json'),
+        `${JSON.stringify(
+          {
+            extends: '../tsconfig.json',
+            compilerOptions: { noEmit: true },
+            files: ['./probe.ts'],
+            include: [],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const config = join(dir, 'tsconfig.json');
+      const result = await run(['bunx', 'tsc', '-p', config, '--pretty', 'false'], {
+        cwd: repoRoot(),
+      });
+      expect(result.ok).toBe(false);
+      // Asserted in two fragments rather than one sentence: tsc words a side-effect import's
+      // failure (TS2882) differently from a named one (TS2307), and which sentence this tsc
+      // build prints is not what the test is about — that the specifier does not resolve is.
+      expect(result.output).toContain('Cannot find module');
+      expect(result.output).toContain("'@ultimat3/core'");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   test('this repo has no tier violations and its manifest still generates', async () => {
     const root = repoRoot();

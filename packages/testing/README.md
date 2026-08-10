@@ -62,7 +62,11 @@ with no driver fails as `X_TEST_FIXTURE_UNAVAILABLE`, naming the driver rather t
 register a fixture that is not yours to define. A driver arrives through the same registry —
 `defineFixtures` merges, last registration wins — so there is no second seam to learn.
 
-`mail`, `network` and `runJobs` install a process-global driver for the length of one test and hand the previous one back afterwards. A fixture that takes over a global does the same: implement `Symbol.dispose` or `Symbol.asyncDispose` on what the factory returns, and `fixtureTest` calls it in reverse build order — including when the test body throws.
+The declaration is also the driver's type: `defineFixtures` holds every name `Fixtures` declares to
+the type it was declared with, so a half-built `page` is a compile error at the registration rather
+than a missing method three awaits into a later test.
+
+`mail`, `network` and `runJobs` install a process-global driver for the length of one test and hand the previous one back afterwards — the state they *found*, not a fixed default, so an outer fixture already offline stays offline when an inner one disposes. A fixture that takes over a global does the same: implement `Symbol.dispose` or `Symbol.asyncDispose` on what the factory returns, and `fixtureTest` calls it in reverse build order — including when the test body throws. Going offline is the `network` fixture's job and only its job; the gate's writer is not exported, because a test that set it directly would skip that disposal and take every later file down with it.
 
 An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
 

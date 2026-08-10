@@ -65,10 +65,11 @@ tsconfig.json             # this directory is a TS project, referenced by the ro
 CNAME                     # ultimate.developerz.ai
 ```
 
-`site/` is a project the root `tsconfig.json` references, so `bun run verify`'s `typecheck` step
-covers it: a type error here is a red gate, exactly as it is in `packages/`. Its `paths` are empty
-on purpose — the site is its own bundle graph (axiom 6), so no `@ultimat3/*` import can resolve
-inside it. The build itself stays dependency-free and runs straight off the TypeScript sources.
+As of 2026-08, `site/` is a project the root `tsconfig.json` references, so `bun run verify`'s
+`typecheck` step covers it: a type error here is a red gate, exactly as it is in `packages/`. Its
+`paths` are empty on purpose — the site is its own bundle graph (axiom 6), so no `@ultimat3/*`
+import can resolve inside it. The build itself stays dependency-free and runs straight off the
+TypeScript sources.
 
 ## Authoring
 

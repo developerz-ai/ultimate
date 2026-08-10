@@ -1,10 +1,6 @@
-// The `network` fixture: pull the cable, put it back. What an offline test needs is not a mock
-// that answers differently — it is a request that fails the way a real one fails, so the app's own
-// offline path runs instead of a branch written for the test.
-//
-// `drop()` exists next to `offline()` because the two are different bugs. A clean offline is what a
-// service worker answers; a dropped connection is what a live subscription must resume from. A
-// fixture with only one of them cannot tell a resubscribe apart from a resume.
+// The `network` fixture: pull the cable, put back exactly what was there. What an offline test
+// needs is not a mock that answers differently — it is a request that fails the way a real one
+// fails, so the app's own offline path runs instead of a branch written for the test.
 
 import {
   isNetworkSealed,
@@ -15,11 +11,15 @@ import {
   unsealNetwork,
 } from './sealed-network';
 
-/** `Disposable`: the gate is process-global, so the fixture puts the process back online after. */
+/** `Disposable`: the gate is process-global, so the fixture puts back the state it found. */
 export interface TestNetwork extends Disposable {
   /** Every request fails as it would with no route to the host. */
   offline(): void;
-  /** Offline, and the connection was cut rather than closed — a subscriber must reconnect. */
+  /**
+   * Offline, and the connection was cut rather than closed — a subscriber must reconnect.
+   * Next to `offline()` because the two are different bugs: a clean offline is what a service
+   * worker answers, and a fixture with only one of them cannot tell a resume from a resubscribe.
+   */
   drop(): void;
   online(): void;
   state(): NetworkState;
@@ -34,6 +34,9 @@ export function createTestNetwork(): TestNetwork {
   // A process that unsealed on purpose (ULTIMATE_TEST_ALLOW_NET=1) still gets a working
   // `offline()`, and gets its unsealed fetch back on disposal rather than keeping ours.
   const sealedBefore = isNetworkSealed();
+  // Both halves of what was here, because disposal restores rather than assumes. An outer fixture
+  // already offline must not come back online because an inner one finished.
+  const stateBefore = networkState();
   let sealedByUs = false;
 
   const goto = (next: NetworkState): void => {
@@ -50,7 +53,7 @@ export function createTestNetwork(): TestNetwork {
     online: () => goto('online'),
     state: networkState,
     [Symbol.dispose]: (): void => {
-      setNetworkState('online');
+      setNetworkState(stateBefore);
       if (sealedByUs && !sealedBefore) unsealNetwork();
       sealedByUs = false;
     },

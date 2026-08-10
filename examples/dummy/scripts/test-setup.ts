@@ -1,8 +1,8 @@
-// Postly's test preload: the fixtures the APP owns, which is two of them. Everything else in the
-// bag — `clock`, `mail`, `network`, `runJobs`, and the driver-backed `page`, `budget`, `signIn`,
-// `deploy`, `subscribe` — arrives with the framework's own preload, imported below. An app
-// registers only what the framework cannot know, which here is the seed graph and how a member
-// becomes an actor. Registering `page` here would be Postly deciding for itself what a page is.
+// Postly's test preload: the fixtures the APP owns, which is two of them — the seed graph, and
+// how a member becomes an actor. Everything else in the bag arrives with the framework's own
+// preload, imported below, so an app registers only what the framework cannot know.
+
+// The suite's one preload, named in `bunfig.toml`:
 //
 //   [test]
 //   preload = ["./scripts/test-setup.ts"]
@@ -12,16 +12,14 @@
 // depend on workspace symlinks. A generated app writes `@ultimat3/testing` here. For the same
 // reason `scripts/` is not in tsconfig's `include` — a composite project cannot reach across
 // into another one's sources. Both go away when the app joins the workspace.
-//
-// Booting `apps/web/api` is the other job, and it belongs HERE rather than in a test file. It is
-// the registration pass: it stamps each export name onto its declaration, which is what gives a
-// projection a stable name to project under. A test in `app/` that imported it would be `app/`
-// reaching into `api/` at runtime — the boundary `x verify` rejects with `X_BOUNDARY_VIOLATION`,
-// because it is the edge along which a page could call a handler instead of the typed client.
-// The preload is outside both, runs once for the whole suite, and is already where the app says
-// what its tests need. Same relative-path convention, same reason.
-
 import '../../../packages/testing/src/preload';
+// The registration pass, and it belongs HERE rather than in a test file: importing the API stamps
+// each export name onto its declaration, which is what gives a projection a stable name to project
+// under. A test in `app/` that imported it would be `app/` reaching into `api/` at runtime — the
+// boundary `x verify` rejects with `X_BOUNDARY_VIOLATION`, because it is the edge along which a
+// page could call a handler instead of the typed client. The preload is outside both, runs once
+// for the whole suite, and is already where the app says what its tests need. Same relative-path
+// convention, same reason.
 import '../apps/web/api';
 import { assert, userActor } from '../../../packages/core/src/index';
 import type { Driver, EntityCore, Repo, Seed } from '../../../packages/entity/src/index';
@@ -115,6 +113,12 @@ const actorFor = (member: SeedRow) =>
     roles: [String(member['role'])],
   });
 
+/**
+ * Two names, and deliberately no more. `clock`, `mail`, `network`, `runJobs` and the driver-backed
+ * `page`, `budget`, `signIn`, `deploy` and `subscribe` all arrive with the framework's preload:
+ * registering `page` here would be Postly deciding for itself what a page is, and two apps would
+ * then disagree about it.
+ */
 defineFixtures({
   seed: createSeed,
   actorFor: () => actorFor,
