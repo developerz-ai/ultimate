@@ -10,6 +10,9 @@ export type RealtimeErrorCode =
   | 'X_CURSOR_STALE'
   | 'X_REBASE_CONFLICT'
   | 'X_TRANSPORT_UNAVAILABLE'
+  | 'X_TRANSPORT_PROTOCOL'
+  | 'X_REPLICATION_PROTOCOL'
+  | 'X_REPLICATION_FAILED'
   | 'X_NOT_IMPLEMENTED';
 
 const DOCS_BASE = 'https://ultimate.dev/errors/';
@@ -88,11 +91,63 @@ export class RebaseConflictError extends RealtimeError {
 
 /** The fanout bus is down. `sync` nodes are stateless, so this is always recoverable. */
 export class TransportUnavailableError extends RealtimeError {
-  constructor(args: { transport: string; reason: string }) {
+  constructor(args: { transport: string; reason: string; fix?: string }) {
     super({
       code: 'X_TRANSPORT_UNAVAILABLE',
       cause: `transport "${args.transport}" is unavailable: ${args.reason}`,
-      fix: 'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+      fix:
+        args.fix ??
+        'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+    });
+  }
+}
+
+/**
+ * The bytes on the bus socket are not the protocol we speak: an unknown NATS verb, a header block
+ * that is not `NATS/1.0`, a JetStream reply in a shape the API never produces. Always a version or
+ * configuration mismatch rather than a transient fault, so reconnecting to the same server cannot
+ * help — which is exactly why it is a different code from `X_TRANSPORT_UNAVAILABLE`.
+ */
+export class TransportProtocolError extends RealtimeError {
+  constructor(args: { transport: string; stage: string; detail: string; fix?: string }) {
+    super({
+      code: 'X_TRANSPORT_PROTOCOL',
+      cause: `transport "${args.transport}" ${args.stage}: ${args.detail}`,
+      fix:
+        args.fix ??
+        'x doctor transport — the bus must be nats-server >= 2.11 with JetStream enabled (`nats-server -js`)',
+    });
+  }
+}
+
+/**
+ * The bytes on the replication socket are not the bytes the protocol allows: a truncated message,
+ * an unknown pgoutput tag, an auth method we do not speak. Always a version or configuration
+ * mismatch rather than a transient fault, so retrying the same connection cannot help.
+ */
+export class ReplicationProtocolError extends RealtimeError {
+  constructor(args: { stage: string; detail: string; fix?: string }) {
+    super({
+      code: 'X_REPLICATION_PROTOCOL',
+      cause: `postgres replication ${args.stage}: ${args.detail}`,
+      fix:
+        args.fix ??
+        'x doctor db — the server must be postgres >= 14 with a pgoutput publication and wal_level=logical',
+    });
+  }
+}
+
+/**
+ * The replication connection itself failed — refused credentials, a slot another process holds,
+ * an `ErrorResponse` from the server. The server's own message is passed through verbatim
+ * because it names the object that has to change.
+ */
+export class ReplicationFailedError extends RealtimeError {
+  constructor(args: { stage: string; detail: string; fix: string }) {
+    super({
+      code: 'X_REPLICATION_FAILED',
+      cause: `postgres replication ${args.stage} failed: ${args.detail}`,
+      fix: args.fix,
     });
   }
 }
