@@ -21,6 +21,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   test that passes against memory says something about Postgres. A guard, an operator or a sort
   rule added to one and not the other is the bug this split exists to prevent — `pg-driver.test.ts`
   pins the parity.
+- **The Postgres driver is proved against a real Postgres, not only against a recording client.**
+  `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
+  `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
+  `TEST_DATABASE_URL` is set. Asserting statement *text* cannot catch a statement Postgres refuses:
+  that is how a `unique()` column shipped a migration failing on `42P07` and money's currency
+  shipped as `char(1)`. A new operator, column kind or write path is not done until it round-trips
+  there.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is

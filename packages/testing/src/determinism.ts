@@ -46,6 +46,18 @@ class FrozenDate extends RealDate {
   static override now(): number {
     return frozenAt;
   }
+
+  /**
+   * While the harness is installed `globalThis.Date` is this subclass, so `value instanceof Date`
+   * asks "is it a FrozenDate" — and a Date the runtime built for itself is not one: a timestamptz
+   * off a Postgres socket, a `structuredClone`, anything from another realm. Every
+   * `value instanceof Date` guard in the framework would then reject a real Date under test and
+   * nowhere else, which is the worst place a difference can be. Freezing the clock must not change
+   * what a Date *is*, so answer for the real constructor.
+   */
+  static override [Symbol.hasInstance](value: unknown): boolean {
+    return value instanceof RealDate;
+  }
 }
 
 export interface DeterminismOptions {

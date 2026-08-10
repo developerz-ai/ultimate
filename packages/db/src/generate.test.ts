@@ -52,8 +52,75 @@ describe('generateMigration', () => {
     expect(migration.up).toContain('"id" uuid default gen_random_uuid() not null');
     expect(migration.up).toContain('"slug" text not null unique');
     expect(migration.up).toContain('primary key ("id")');
-    expect(migration.up).toContain('create unique index "posts_slug_key" on "posts" ("slug")');
+    // The `unique` clause above already creates `posts_slug_key`; naming it again is `42P07`.
+    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
     expect(migration.down).toContain('drop table "posts";');
+  });
+
+  test('an index a column clause does not imply still gets its own statement', () => {
+    const migration = generateMigration({
+      entities: [
+        {
+          ...posts([
+            column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+            column('slug', { notNull: true, unique: true }),
+            column('org_id', { kind: 'uuid', notNull: true }),
+          ]),
+          indexes: ['posts_slug_key', 'posts_org_id_idx'],
+        },
+      ],
+      name: 'create posts',
+      now: at,
+    });
+
+    // Only the one Postgres makes for free is skipped — a plain index is nobody else's job.
+    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
+    expect(migration.up).toContain('create index "posts_org_id_idx" on "posts" ("org_id")');
+  });
+
+  test('a unique column added later does not also emit its implied index', () => {
+    const before = snapshotOf([posts([column('id', { kind: 'uuid', primaryKey: true })])]);
+    const migration = generateMigration({
+      entities: [
+        posts([
+          column('id', { kind: 'uuid', primaryKey: true }),
+          column('slug', { notNull: true, unique: true }),
+        ]),
+      ],
+      current: before,
+      name: 'add slug',
+      now: at,
+    });
+
+    // ALTER TABLE ADD COLUMN carries the same `unique` clause, so it creates the same index.
+    expect(migration.up).toContain('add column "slug" text unique');
+    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
+  });
+
+  test("money's currency carries its length, so the CHECK beside it can be satisfied", () => {
+    // Bare `char` is `char(1)` in Postgres and no three-letter code fits it — the generated
+    // table would reject every money row the framework can write.
+    const migration = generateMigration({
+      entities: [
+        {
+          ...posts([
+            column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+            column('price_minor', { kind: 'bigint', notNull: true }),
+            column('price_currency', {
+              kind: 'char',
+              notNull: true,
+              check: "price_currency ~ '^[A-Z]{3}$'",
+            }),
+          ]),
+          indexes: [],
+        },
+      ],
+      name: 'create posts',
+      now: at,
+    });
+
+    expect(migration.up).toContain('"price_currency" char(3) not null');
+    expect(migration.up).not.toContain('"price_currency" char not null');
   });
 
   test('a new column becomes ALTER TABLE ADD COLUMN with a DROP COLUMN down', () => {

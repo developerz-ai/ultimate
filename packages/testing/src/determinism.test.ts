@@ -41,6 +41,20 @@ describe('unit · determinism', () => {
     expect(new Date(0).getTime()).toBe(0);
   });
 
+  test('a Date the runtime built for itself is still a Date', () => {
+    // The frozen clock replaces `globalThis.Date` with a subclass, so a plain `instanceof Date`
+    // would ask "is it a FrozenDate" — and a value that never went through the patched
+    // constructor is not one. That is every `timestamptz` Bun's Postgres driver decodes, which
+    // made `@ultimat3/entity`'s column parser reject real rows under test and nowhere else.
+    const native = structuredClone(new Date('2020-05-05T00:00:00.000Z'));
+    expect(native instanceof Date).toBe(true);
+    expect(new Date() instanceof Date).toBe(true);
+    expect(frozenNow() instanceof Date).toBe(true);
+    // Still a real predicate: it must not wave through something that is not a date at all.
+    expect(({} as unknown) instanceof Date).toBe(false);
+    expect('2020-05-05' instanceof (Date as unknown as new () => object)).toBe(false);
+  });
+
   test('the seeded RNG produces the same sequence for the same seed', () => {
     const a = seededRandom(42);
     const b = seededRandom(42);
