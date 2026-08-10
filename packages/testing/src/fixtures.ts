@@ -11,17 +11,21 @@
 import { test as bunTest } from 'bun:test';
 import { fixtureUnknown } from './errors';
 import type { TestClock } from './fixture-clock';
+import type { SignIn, Subscribe, TestBudget, TestDeploy } from './fixture-drivers';
 import type { RunJobs } from './fixture-jobs';
 import type { TestMail } from './fixture-mail';
+import type { TestNetwork } from './fixture-network';
+import type { PageLike } from './test-types';
 
 /** Built once per test, on first use. */
 export type FixtureFactory<T = unknown> = () => T | Promise<T>;
 
+/** The registry's own shape, where the built type is erased — what `fixtureSnapshot()` hands back. */
 export type FixtureMap = Readonly<Record<string, FixtureFactory>>;
 
 /**
- * What a test body receives. The three the framework owns are declared here and registered by
- * the preload; apps widen it by augmenting `Fixtures`:
+ * What a test body receives. Everything the framework owns is declared here and registered by the
+ * preload; apps widen it by augmenting `Fixtures`:
  *
  * ```ts
  * declare module '@ultimat3/testing' {
@@ -30,17 +34,41 @@ export type FixtureMap = Readonly<Record<string, FixtureFactory>>;
  *   }
  * }
  * ```
+ *
+ * The last five are declared but driver-backed: destructuring one in a process with no driver
+ * fails as `X_TEST_FIXTURE_UNAVAILABLE`, naming what is missing. Typed here anyway, because the
+ * type is the contract a driver implements — see `fixture-drivers.ts`.
  */
 export interface Fixtures {
   readonly clock: TestClock;
   readonly mail: TestMail;
+  readonly network: TestNetwork;
   readonly runJobs: RunJobs;
+  readonly budget: TestBudget;
+  readonly deploy: TestDeploy;
+  readonly page: PageLike;
+  readonly signIn: SignIn;
+  readonly subscribe: Subscribe;
 }
+
+/**
+ * A registration bag, with every name the framework declares held to the type it was declared
+ * with. A driver that registers a half-built `page` is a compile error at the registration, rather
+ * than a missing method three awaits into some later test — the same reason the name is declared
+ * at all. A key `Fixtures` does not name is the app's, and takes any factory: the framework has
+ * nothing to check it against until the app augments `Fixtures`.
+ *
+ * Written over the argument's own keys rather than as an intersection, so a value typed only as
+ * `FixtureMap` — a snapshot on its way back into the registry — still satisfies it.
+ */
+export type FixtureRegistration<M> = {
+  readonly [K in keyof M]: K extends keyof Fixtures ? FixtureFactory<Fixtures[K]> : FixtureFactory;
+};
 
 const registry = new Map<string, FixtureFactory>();
 
-export function defineFixtures(map: FixtureMap): void {
-  for (const [name, factory] of Object.entries(map)) registry.set(name, factory);
+export function defineFixtures<M extends FixtureRegistration<M>>(map: M): void {
+  for (const [name, factory] of Object.entries(map as FixtureMap)) registry.set(name, factory);
 }
 
 export function clearFixtures(): void {

@@ -84,6 +84,9 @@
     },
     {
       "path": "./packages/ui"
+    },
+    {
+      "path": "./site"
     }
   ]
 }

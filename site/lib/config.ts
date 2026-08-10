@@ -69,10 +69,34 @@ export const PAGE_ORDER = [
   'changelog',
 ] as const;
 
+/**
+ * The frontmatter vocabulary every page draws from. Declared instead of left to a bare
+ * `Record<string, string>` so a key the build reads is a name the compiler knows: `meta.nav` is
+ * checked, `meta.navv` is not a property. A key outside the list still parses — it just has to be
+ * read by bracket, which is the compiler saying it is not part of the contract.
+ */
+export interface PageMeta {
+  /** `<h1>`, `<title>` and the JSON-LD headline. `lib/seo.ts` fails the build without it. */
+  readonly title?: string;
+  /** `<meta name="description">` and the JSON-LD description. 50–160 characters, enforced. */
+  readonly description?: string;
+  /** Home only: the hero heading, when it should differ from `title`. */
+  readonly headline?: string;
+  /** The standfirst under the heading, when it should differ from `description`. */
+  readonly lede?: string;
+  /** The short label the breadcrumb, the header and the pager use. */
+  readonly nav?: string;
+  /** `'true'` opts the page into the header menu; every page is reachable regardless. */
+  readonly menu?: string;
+  /** `YYYY-MM-DD`, published as `sitemap.xml`'s `lastmod` and JSON-LD's `dateModified`. */
+  readonly updated?: string;
+  readonly [key: string]: string | undefined;
+}
+
 export interface Page {
   readonly slug: string;
   readonly url: string;
   readonly file: string;
-  readonly meta: Record<string, string>;
+  readonly meta: PageMeta;
   readonly body: string;
 }

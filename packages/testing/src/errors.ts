@@ -4,18 +4,22 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const TESTING_ERROR_CODES = [
   'X_TEST_NETWORK_SEALED',
+  'X_TEST_NETWORK_OFFLINE',
   'X_TEST_DB_UNAVAILABLE',
   'X_TEST_NONDETERMINISTIC',
   'X_TEST_FIXTURE_UNKNOWN',
+  'X_TEST_FIXTURE_UNAVAILABLE',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
 
 export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = {
   X_TEST_NETWORK_SEALED: 'a test tried to reach the network',
+  X_TEST_NETWORK_OFFLINE: 'the test network is offline',
   X_TEST_DB_UNAVAILABLE: 'no Postgres for the test template',
   X_TEST_NONDETERMINISTIC: 'a test read wall-clock time or unseeded randomness',
   X_TEST_FIXTURE_UNKNOWN: 'a test requested a fixture nobody registered',
+  X_TEST_FIXTURE_UNAVAILABLE: 'a declared fixture has no driver in this process',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -96,3 +100,40 @@ export class FixtureUnknownError extends UltimateError {
 
 export const fixtureUnknown = (name: string, registered: readonly string[]): UltimateError =>
   new FixtureUnknownError({ name, registered });
+
+/**
+ * Different failure from `X_TEST_FIXTURE_UNKNOWN`, and the distinction is the whole point: the
+ * name IS registered, so "register it" is the wrong instruction. What is missing is the driver
+ * underneath — a browser, a replicator — which the framework declares but deliberately does not
+ * bundle. Naming what it needs turns "undefined is not an object" into a decision the reader can
+ * make: install the driver, or stop asking for the fixture.
+ */
+export class FixtureUnavailableError extends UltimateError {
+  constructor(input: { name: string; needs: string }) {
+    super({
+      code: 'X_TEST_FIXTURE_UNAVAILABLE',
+      cause: `fixture "${input.name}" is declared but nothing in this process drives it — it needs ${input.needs}`,
+      fix: `install one in the test preload: defineFixtures({ ${input.name}: () => yourDriver() })`,
+      docs: docsFor('X_TEST_FIXTURE_UNAVAILABLE'),
+    });
+  }
+}
+
+export const fixtureUnavailable = (name: string, needs: string): UltimateError =>
+  new FixtureUnavailableError({ name, needs });
+
+/**
+ * A request made while `network.offline()` (or `network.drop()`) is in force. Coded rather than a
+ * bare `TypeError` because a test that lands here uncaught needs to know which of the two it was:
+ * the app's offline path not running, or a fixture left offline by the test before it.
+ */
+export class NetworkOfflineError extends UltimateError {
+  constructor(input: { url: string; method: string; mode: 'offline' | 'dropped' }) {
+    super({
+      code: 'X_TEST_NETWORK_OFFLINE',
+      cause: `${input.method} ${input.url} while the test network is ${input.mode}`,
+      fix: 'network.online() before the call — or assert the offline path instead of the request',
+      docs: docsFor('X_TEST_NETWORK_OFFLINE'),
+    });
+  }
+}

@@ -6,8 +6,12 @@ import { mailDriver, resetMailDriver, tryMailDriver } from '@ultimat3/mail';
 import { frozenNow, setFrozenClock } from './determinism';
 import { createRunJobs } from './fixture-jobs';
 import { createTestMail } from './fixture-mail';
-import { fixtureTest } from './fixtures';
-import { FRAMEWORK_FIXTURE_NAMES, registerFrameworkFixtures } from './framework-fixtures';
+import { fixtureTest, registeredFixtures } from './fixtures';
+import {
+  ALL_FIXTURE_NAMES,
+  FRAMEWORK_FIXTURE_NAMES,
+  registerFrameworkFixtures,
+} from './framework-fixtures';
 import { testName } from './test-types';
 
 // Every global these fixtures touch is process-wide and bun shares one process across files.
@@ -42,9 +46,16 @@ const message = (mailId: string) => ({
 });
 
 describe(testName('unit', 'the framework fixture bag'), () => {
-  bunTest('owns exactly clock, mail and runJobs', () => {
+  bunTest('builds exactly clock, mail, network and runJobs in-process', () => {
     registerFrameworkFixtures();
-    expect([...FRAMEWORK_FIXTURE_NAMES]).toEqual(['clock', 'mail', 'runJobs']);
+    expect([...FRAMEWORK_FIXTURE_NAMES]).toEqual(['clock', 'mail', 'network', 'runJobs']);
+  });
+
+  // The bag is the contract: a name the reference app destructures and the framework never
+  // registers fails as X_TEST_FIXTURE_UNKNOWN, whose fix tells the app to invent its own `page`.
+  bunTest('registers every name it declares, driver-backed ones included', () => {
+    registerFrameworkFixtures();
+    expect(registeredFixtures()).toEqual(expect.arrayContaining([...ALL_FIXTURE_NAMES]));
   });
 
   // The regression the registration exists for: before it, every body destructuring `clock`

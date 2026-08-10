@@ -116,6 +116,34 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) =>
 
 The `job` example is the one that matters: it asserts the durability guarantee, not that mail was sent. See [Jobs and workflows](Jobs-And-Workflows) and [Policies and authz](Policies-And-Authz).
 
+## The fixture bag
+
+`test` passes a bag as the first argument and builds only what the body destructures — a test that never names `runJobs` never starts a queue. The framework owns the whole bag; an app registers only what the framework cannot know.
+
+| Fixture | Is | Built by |
+|---|---|---|
+| `clock` | `now()` · `advance('3d')` · `set(instant)` | the preload |
+| `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` | the preload |
+| `network` | `offline()` · `drop()` · `online()` · `state()` | the preload |
+| `runJobs` | enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| `page` | `goto` · `gotoStreamed` · `getByRole` · `evaluate` · `waitForServiceWorker` | a browser driver |
+| `budget` | `jsBytes(route)` off the built output | a browser driver |
+| `signIn` | put the browser session in a member's shoes | a browser driver |
+| `deploy` | `newBuild()` — same app, new build id, page still open | a browser driver |
+| `subscribe` | one subscriber's `rows()` `patches()` `settled()` `lsn()` | a replicator |
+| `seed`, and anything else | the app's own graph | the app's `scripts/test-setup.ts` |
+
+The last five are **declared, not built**. The framework does not bundle a browser, so the name resolves and asking for it without a driver fails as `X_TEST_FIXTURE_UNAVAILABLE` naming what is missing — different from `X_TEST_FIXTURE_UNKNOWN`, whose fix ("register it") would have the app inventing its own idea of what a page is. A driver installs through the same registry:
+
+```ts
+// scripts/test-setup.ts
+defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
+```
+
+`defineFixtures` merges and the last registration wins, so a driver replaces the declaration it was waiting on. There is no second seam.
+
+`network.offline()` fails every request ahead of the mocks, so the app's own offline path runs instead of a branch written for the test; `drop()` is the same for a request but tells a subscriber its connection was cut rather than closed, which is what separates a resume from a resubscribe.
+
 ## Generated scaffolds
 
 Every primitive emits a test scaffold that fails until filled in — an untested action is a red build, not a backlog item.

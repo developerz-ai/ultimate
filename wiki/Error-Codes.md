@@ -319,7 +319,9 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_TEST_DB_UNAVAILABLE` | no Postgres for the test template | nothing listening | run `x dev` (embedded Postgres), or set `TEST_DATABASE_URL` |
+| `X_TEST_FIXTURE_UNAVAILABLE` | a declared fixture has no driver in this process | destructuring `page`, `budget`, `signIn`, `deploy` or `subscribe` with no browser or replicator installed | `defineFixtures({ <name>: () => yourDriver() })` in the test preload — `cause` names what the fixture needs |
 | `X_TEST_FIXTURE_UNKNOWN` | a test requested a fixture nobody registered | a destructured fixture name no `defineFixtures` call declares | `defineFixtures({ <name>: () => buildIt() })` at test setup — `cause` lists the registered names |
+| `X_TEST_NETWORK_OFFLINE` | the test network is offline | a request made after `network.offline()` or `network.drop()` | `network.online()` before the call — or assert the offline path instead of the request |
 | `X_TEST_NETWORK_SEALED` | a test tried to reach the network | an unmocked external call | `mockFetch('<url>', …)`, or `allowHost('<host>')` if it must be real |
 | `X_TEST_NONDETERMINISTIC` | a test read wall-clock time or unseeded randomness | `Date.now()` in the code under test | wrap in `frozenClock()` / `seededRandom()`, or remove the read |
 

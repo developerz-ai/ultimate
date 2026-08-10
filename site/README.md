@@ -61,8 +61,15 @@ scripts/theme.js          # the only JS: before-paint theme apply + delegated to
 pages/*.md                # content, with frontmatter
 assets/logo.svg           # mark + favicon, theme-aware via its own internal stylesheet
 assets/og.svg             # 1200x630 social card
+tsconfig.json             # the site's own TypeScript project — the note below the tree owns why
 CNAME                     # ultimate.developerz.ai
 ```
+
+As of 2026-08, `site/` is a project the root `tsconfig.json` references, so `bun run verify`'s
+`typecheck` step covers it: a type error here is a red gate, exactly as it is in `packages/`. Its
+`paths` are empty on purpose — the site is its own bundle graph (axiom 6), so no `@ultimat3/*`
+import can resolve inside it. The build itself stays dependency-free and runs straight off the
+TypeScript sources.
 
 ## Authoring
 

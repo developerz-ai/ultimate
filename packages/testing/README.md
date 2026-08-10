@@ -15,7 +15,9 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `test-types.ts` | the six test types and their helpers |
 | `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` |
 | `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
-| `fixture-{clock,mail,jobs}.ts` | the three fixtures the framework owns |
+| `fixture-{clock,mail,jobs,network}.ts` | the four fixtures the framework builds in-process |
+| `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
+| `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -42,14 +44,29 @@ test('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
 });
 ```
 
-| Fixture | Is | Registered by |
+| Fixture | Is | Built by |
 |---|---|---|
 | `clock` | `now()` · `advance('3d')` · `set(instant)` on the frozen clock | the preload |
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` over an in-memory transport | the preload |
+| `network` | `offline()` · `drop()` · `online()` · `state()` over the sealed network | the preload |
 | `runJobs` | a worker: call it to enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| `page` | the browser: `goto` `gotoStreamed` `getByRole` `evaluate` `waitForServiceWorker` | a browser driver |
+| `budget` | `jsBytes(route)` measured off the built output | a browser driver |
+| `signIn` | put the browser session in a member's shoes | a browser driver |
+| `deploy` | `newBuild()` — same app, new build id, page still open | a browser driver |
+| `subscribe` | one subscriber's `rows()` `patches()` `settled()` `lsn()` | a replicator |
 | anything else | whatever the app registers | the app's `scripts/test-setup.ts` |
 
-`mail` and `runJobs` install a process-global driver for the length of one test and hand the previous one back afterwards. A fixture that takes over a global does the same: implement `Symbol.dispose` or `Symbol.asyncDispose` on what the factory returns, and `fixtureTest` calls it in reverse build order — including when the test body throws.
+The last five are **declared but not built**: the name resolves, and destructuring one in a process
+with no driver fails as `X_TEST_FIXTURE_UNAVAILABLE`, naming the driver rather than telling you to
+register a fixture that is not yours to define. A driver arrives through the same registry —
+`defineFixtures` merges, last registration wins — so there is no second seam to learn.
+
+The declaration is also the driver's type: `defineFixtures` holds every name `Fixtures` declares to
+the type it was declared with, so a half-built `page` is a compile error at the registration rather
+than a missing method three awaits into a later test.
+
+`mail`, `network` and `runJobs` install a process-global driver for the length of one test and hand the previous one back afterwards — the state they *found*, not a fixed default, so an outer fixture already offline stays offline when an inner one disposes. A fixture that takes over a global does the same: implement `Symbol.dispose` or `Symbol.asyncDispose` on what the factory returns, and `fixtureTest` calls it in reverse build order — including when the test body throws. Going offline is the `network` fixture's job and only its job; the gate's writer is not exported, because a test that set it directly would skip that disposal and take every later file down with it.
 
 An app adds its own with `defineFixtures` and widens the type by augmenting `Fixtures`:
 
@@ -64,7 +81,9 @@ declare module '@ultimat3/testing' {
 ```
 
 Destructuring a name nobody registered fails with `X_TEST_FIXTURE_UNKNOWN`, which names the set
-that *is* registered — never `undefined is not an object` from inside the body.
+that *is* registered — never `undefined is not an object` from inside the body. A name that is
+registered but has no driver fails with `X_TEST_FIXTURE_UNAVAILABLE` instead; the two are different
+instructions, so they are different codes.
 
 ## The six test types
 
