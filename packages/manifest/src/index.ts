@@ -26,6 +26,7 @@ export {
   AgentsMdMissingError,
   AgentsMdTooLargeError,
   MANIFEST_ERROR_CODES,
+  MANIFEST_ERROR_TITLES,
   ManifestBreakingError,
   ManifestDriftError,
 } from './errors';

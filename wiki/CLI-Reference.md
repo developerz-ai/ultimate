@@ -27,7 +27,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, studio, branch | shipped |
-| `x verify` | the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets, manifest | shipped |
+| `x verify` | the gate: typecheck, lint, boundaries, errors, all tests, drift, contract, budgets, manifest | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -35,19 +35,19 @@ x version              # CLI version
 | `x mcp serve` | serve the framework MCP tools over stdio or HTTP | shipped |
 | `x doctor` | environment, versions, drift, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
-| `x actions` / `x queries` / `x entities` | introspect the declaration registries | planned |
+| `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
+| `x jobs` | list, show, retry, drain the queue | shipped |
+| `x test <type>` | run one of the six test types, or the whole suite | shipped |
+| `x errors explain <CODE>` | code → cause, fix, docs | shipped |
+| `x fix boundary <file>` | the minimal cut for an import that crossed a surface boundary | shipped |
 | `x policy explain` | why a policy allowed or denied | planned |
-| `x jobs` | list, show, retry, drain the queue | planned |
 | `x tasks` | list cron tasks and their next run | planned |
 | `x cache` | tag graph, bust, clear, stats | planned |
-| `x test <type>` | run one of the six test types | planned |
 | `x i18n` | add, sync, check catalogs | planned |
 | `x branch` | copy-on-write branch environments | planned |
 | `x status` | connected-client build-ID distribution, role health | planned |
 | `x upgrade` | move every `@ultimat3/*` in lockstep, with codemods | planned |
-| `x errors explain <CODE>` | code → cause, fix, docs | planned |
 | `x env check` | validate the typed env, `--fix` writes the missing keys | planned |
-| `x fix boundary <file>` | rewrite the import that crossed a surface boundary | planned |
 | `x logs tail` | structured logs + OTel spans | planned |
 | `x token` | create and grant MCP scopes | planned |
 | `x ai` | eval, cache stats, reindex | planned |
@@ -185,6 +185,7 @@ reports as skipped (`-`), never as passed.
 | `boundaries` | surface and layer imports, resolved transitively; package tiers in a monorepo |
 | `filesize` | a source file over 500 lines |
 | `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` |
+| `errors` | every `X_*` code has a runnable fix and a docs page |
 | `unit` | pure logic — services, money, policy predicates, matchers |
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
@@ -208,7 +209,7 @@ reviewable diff.
 
 ```bash
 $ x verify --json
-{"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[
+{"ok":false,"command":"verify","summary":"1 of 16 steps failed","steps":[
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
      "fix":"x fix boundary site/pricing/page.tsx",
@@ -332,36 +333,114 @@ $ x doctor --json
   "fix":"x db gen \"add publish_at\""}]}
 ```
 
+## x actions · x queries · x entities
+
+```bash
+x actions  [list|describe <name>] [--json]
+x queries  [list|describe <name>] [--json]
+x entities [list|describe <name>] [--json]
+```
+
+The declaration registries, projected. `list` is the default subcommand. Same rows the manifest and the MCP `actions.describe` tool are built from — the CLI keeps no second table.
+
+```bash
+$ x actions list
+  name          verb     resource  path                  capability    mcp
+  createPost    create   posts     /api/posts/create     post:create   yes
+  publishPost   publish  posts     /api/posts/publish    post:publish  yes
+
+$ x entities describe posts --json
+{"ok":true,"command":"entities","summary":"entity posts","data":{"name":"posts","table":"posts",
+  "primaryKey":["id"],"columns":[…],"invariants":[…],"softDelete":true,"orgScoped":true}}
+```
+
+A name nothing registered is `X_DECLARATION_UNKNOWN`, whose `fix` names the nearest real one. A module that would not import is reported as a finding — the listing describes what loaded, and never pretends the rest is absent.
+
+## x jobs
+
+```bash
+x jobs [ls|show <id>|retry <id>|drain --to <driver>] [--queue q] [--state s] [--limit n]
+       [--name n] [--from-step name] [--dry-run] [--json]
+```
+
+| Subcommand | Does |
+|---|---|
+| `ls` | queue depth, the matching rows, and the dead-letter list — a dead job is never filtered out of view |
+| `show <id>` | state, attempt, every step's result, and the remaining retry delays |
+| `retry <id>` | re-queue; `--from-step <name>` drops that step so it re-executes while everything before it replays from storage |
+| `drain --to memory\|redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another driver; `--dry-run` reports the plan and moves nothing |
+
+Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it.
+
+Errors: `X_JOB_UNKNOWN`, `X_CLI_BAD_FLAG`, and `X_NOT_IMPLEMENTED` from a driver with no introspection.
+
+## x test
+
+```bash
+x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
+       [--workers N] [--worker I] [--json]
+```
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| *(positional)* | test type | every type | one of the six; a test's type is its filename suffix |
+| `--filter` | string | — | only files whose path contains this substring |
+| `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
+| `--workers` | string | CPUs | process count; each worker gets its own template-cloned database |
+| `--worker` | string | — | rerun only shard I of the same split, reproducing a CI worker failure locally |
+
+The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES`; an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
+
+## x errors
+
+```bash
+x errors [explain <CODE>|list] [--json]
+```
+
+The [Error codes](Error-Codes) table, programmatically. Runs outside an app: triaging a code must not need an app root.
+
+```bash
+$ x errors explain X_CURSOR_INVALID --json
+{"ok":true,"command":"errors","summary":"X_CURSOR_INVALID — pagination cursor is malformed…",
+ "data":{"code":"X_CURSOR_INVALID","cause":"pagination cursor is malformed, tampered with or from
+ another query","fix":"x verify --json","docs":"https://ultimate.dev/errors/X_CURSOR_INVALID"}}
+```
+
+`list` enumerates every registered code, and names under `data.unavailable` any package this process could not import — a list silently missing codes is worse than one that says which. An unregistered code is `X_ERROR_CODE_UNKNOWN` with the nearest real code as its fix; the command never invents an explanation.
+
+## x fix
+
+```bash
+x fix boundary <file> [--json]
+```
+
+The minimal cut for an import that crossed a surface boundary — the command every `X_SURFACE_BOUNDARY` finding names in its `fix:` line. It prints a plan and **writes nothing**; there is no `--write`.
+
+For each violation involving the file it reports the offending edge, the full chain that makes it one, and the edit to make. For the `shared/` fattening case it generates the split: when exactly one surface reaches the module **and the module lands on the same surface as the file it imports**, the plan carries the `git mv` plus every import specifier that move invalidates — the move alone is not a repair, it just relocates the break. When two surfaces reach it, or when relocating would leave the forbidden edge exactly where it was, the module has to be cut by hand and the plan says so rather than guessing.
+
+`<file>` is app-root-relative, or any suffix that matches exactly one source file — the short form a `fix:` line emits. Errors: `X_FIX_TARGET_UNKNOWN` (with the nearest real path as its fix), `X_CLI_BAD_FLAG` on an ambiguous suffix.
+
 ## Planned commands
 
-Specified in the design docs, not yet implemented. Shapes are fixed so scripts written against them keep working.
+Specified in the design docs, not yet implemented. Every one is in the command registry: calling it exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts and only one of them is true.
 
-| Command | Purpose |
-|---|---|
-| `x actions list --json` / `x actions describe <name> --json` | every action, its input/output schema, policy, tags and MCP exposure |
-| `x queries list --json` / `x queries describe <name> --json` | the same for reads, including `live` and `persist` |
-| `x entities list --json` / `x entity explain <name> --json` | entities, columns, invariants and their SQL CHECKs |
-| `x policy list --json` / `x policy explain <permission> --json` | which clause decided, and why |
-| `x jobs ls --json` | queue depth, in-flight, failed |
-| `x jobs show <id> --json` | state, step results, next retry, full trace |
-| `x jobs retry <id>` | replay from the failed step |
-| `x jobs drain --to redis` | migrate in-flight rows to another driver |
-| `x tasks list --json` / `x tasks show <name>` | cron expression, tz, next run |
-| `x cache graph --json` | what a write will evict, before you run it |
-| `x cache bust <tag>` / `x cache clear` | targeted eviction; `clear` is dev-only |
-| `x test unit\|contract\|live\|job\|e2e\|eval [--json]` | one test type; `--sample N` for the fast eval loop |
-| `x i18n add <locale>` / `x i18n sync <locale>` / `x i18n check --json` | catalogs, missing keys, malformed entries |
-| `x branch <name>` / `x branch rm <name>` | copy-on-write database + preview URL + scoped MCP socket |
-| `x status --json` | role health and the build-ID distribution of connected clients |
-| `x upgrade [--dry-run --json]` | move every `@ultimat3/*` in lockstep, run codemods, regenerate, then `x verify` |
-| `x errors explain <CODE> [--json]` | the row from [Error codes](Error-Codes), programmatically |
-| `x env check [--fix]` | validate the typed env; `--fix` writes the missing keys with placeholders |
-| `x fix boundary <file>` | rewrite the import that crossed a surface boundary |
-| `x logs tail --json` | structured logs and spans, filterable |
-| `x token create --scopes <s>` / `x token grant <scope>` | MCP tokens and scopes |
-| `x ai eval <name> [--verbose]` / `x ai cache --json` / `x ai reindex` | eval scores, cache hit rate and tokens saved, vector reindex |
-| `x money add-currency <ISO> --exponent <n>` | extend the currency table |
-| `x config show --json` | the resolved configuration, defaults included |
+The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command.
+
+| Command | Purpose | `fix:` today |
+|---|---|---|
+| `x policy [list\|explain <permission>]` | which clause decided, and why | `x manifest --json` |
+| `x tasks [list\|show <name>]` | cron expression, tz, next run | `x manifest --json` |
+| `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` → the `/_x` cache panel |
+| `x i18n [check\|add <locale>\|sync <locale>]` | catalogs, missing keys, malformed entries | `x g resource <name>` |
+| `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch <name>` |
+| `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
+| `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
+| `x env check [--fix]` | validate the typed env; `--fix` writes the missing keys | `x doctor --json` |
+| `x logs tail` | structured logs and spans, filterable | `x dev` → the `/_x` timeline panel |
+| `x token [create --scopes <s>\|grant <scope>]` | MCP tokens and scopes | `x mcp serve --help` |
+| `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
+| `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x manifest --json` |
+| `x config show` | the resolved configuration, defaults included | `x manifest --json` |
 
 ## Names that moved
 

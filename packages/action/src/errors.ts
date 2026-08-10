@@ -2,13 +2,18 @@
  * Every failure @ultimat3/action can produce, one subclass per stable code so
  * callers `instanceof` a specific failure instead of string-matching a message.
  */
-import { assertNever, hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
 const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
 
-/** Titles for the framework-wide code table. Guarded: `X_INPUT_INVALID` is shared. */
-const TITLES: Readonly<Record<string, string>> = {
+/**
+ * Titles for the framework-wide code table — every one of them owned by this package.
+ * `X_INPUT_INVALID` and `X_RPC_FAILED` are action's: an action is where an input schema is
+ * enforced and where the typed client speaks, and `@ultimat3/query` only throws them.
+ * Authz codes are absent on purpose — `ActionDeniedError` re-uses the policy decision's code.
+ */
+const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_DUPLICATE: 'two actions are registered under one name',
   X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
   X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
@@ -20,9 +25,11 @@ const TITLES: Readonly<Record<string, string>> = {
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
 };
 
-for (const [code, title] of Object.entries(TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// One unconditional call: a presence guard would turn "another package claims one of these codes"
+// from an X_ERROR_CODE_DUPLICATE at import into whichever module loaded first deciding the title.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(OWNED_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 /** Thrown when a projection needs a name the action does not have yet. */
 export class ActionUnregisteredError extends UltimateError {

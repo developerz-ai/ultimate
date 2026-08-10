@@ -3,7 +3,7 @@
  * A money bug that throws is a bug you can fix; one that rounds is a bug you ship.
  */
 
-import { UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MONEY_ERROR_CODES = [
   'X_MONEY_NOT_INTEGER',
@@ -14,6 +14,21 @@ export const MONEY_ERROR_CODES = [
 ] as const;
 
 export type MoneyErrorCode = (typeof MONEY_ERROR_CODES)[number];
+
+export const MONEY_ERROR_TITLES: Readonly<Record<MoneyErrorCode, string>> = {
+  X_MONEY_NOT_INTEGER: 'a Money.minor value that is not an integer',
+  X_CURRENCY_UNKNOWN: 'currency code not in the currency table',
+  X_CURRENCY_MISMATCH: 'two Money values in different currencies',
+  X_ALLOCATION_INVALID: 'split ratios or part count are unusable',
+  X_RATE_MISSING: 'no FX rate for the pair',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Every code above is
+// owned here and none is borrowed, so the call is unconditional: a second package claiming one has
+// to fail as X_ERROR_CODE_DUPLICATE, not quietly keep whichever title was registered first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(MONEY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 export class MoneyError extends UltimateError {
   constructor(init: { code: MoneyErrorCode; cause: string; fix: string }) {

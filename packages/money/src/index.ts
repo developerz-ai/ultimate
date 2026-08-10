@@ -51,6 +51,7 @@ export {
   decimalNotNumeric,
   decimalTooPrecise,
   MONEY_ERROR_CODES,
+  MONEY_ERROR_TITLES,
   MoneyError,
   type MoneyErrorCode,
   moneyNotInteger,

@@ -25,6 +25,7 @@ export {
   BuildIdMissingError,
   NotImplementedError,
   PWA_ERROR_CODES,
+  PWA_ERROR_TITLES,
   PwaIconMissingError,
   PwaManifestInvalidError,
   PwaNoOfflineFallbackError,

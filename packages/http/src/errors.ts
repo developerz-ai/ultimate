@@ -3,12 +3,11 @@
 // terminal, the dev overlay and `--json` all render the same three strings.
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const HTTP_ERROR_CODES = [
+/** Codes this package declares and owns. */
+export const HTTP_OWNED_ERROR_CODES = [
   'X_ROUTE_NOT_FOUND',
   'X_METHOD_NOT_ALLOWED',
   'X_BODY_INVALID',
-  'X_UNAUTHENTICATED',
-  'X_FORBIDDEN',
   'X_RATE_LIMITED',
   'X_BUILD_SKEW',
   'X_ROUTE_CONFLICT',
@@ -16,15 +15,25 @@ export const HTTP_ERROR_CODES = [
   'X_PIPELINE_NO_RESPONSE',
 ] as const;
 
+/**
+ * Codes this package throws but does NOT own. `X_FORBIDDEN` belongs to `@ultimat3/policy` and
+ * `X_UNAUTHENTICATED` to `@ultimat3/auth`; registering either here would throw
+ * `X_ERROR_CODE_DUPLICATE` at import. No titles for them either — the owner writes the one title
+ * every surface renders, and a copy kept here is a copy that goes stale without anything failing.
+ */
+export const HTTP_BORROWED_ERROR_CODES = ['X_UNAUTHENTICATED', 'X_FORBIDDEN'] as const;
+
+/** Every code http can throw: the ones it owns plus the two it borrows. */
+export const HTTP_ERROR_CODES = [...HTTP_OWNED_ERROR_CODES, ...HTTP_BORROWED_ERROR_CODES] as const;
+
+export type HttpOwnedErrorCode = (typeof HTTP_OWNED_ERROR_CODES)[number];
 export type HttpErrorCode = (typeof HTTP_ERROR_CODES)[number];
 
-/** Human title per code. Kept next to the codes so one edit updates every surface. */
-export const HTTP_ERROR_TITLES: Readonly<Record<HttpErrorCode, string>> = {
+/** Human title per owned code. Kept next to the codes so one edit updates every surface. */
+export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_ROUTE_NOT_FOUND: 'no route matches this request',
   X_METHOD_NOT_ALLOWED: 'route exists but not for this method',
   X_BODY_INVALID: 'request body failed its schema',
-  X_UNAUTHENTICATED: 'route requires an authenticated actor',
-  X_FORBIDDEN: 'policy denied this actor',
   X_RATE_LIMITED: 'rate limit exhausted for this key',
   X_BUILD_SKEW: 'client build id does not match the server build id',
   X_ROUTE_CONFLICT: 'two routes claim the same path',
@@ -32,22 +41,11 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpErrorCode, string>> = {
   X_PIPELINE_NO_RESPONSE: 'a pipeline stage produced no response',
 };
 
-/**
- * Codes this package throws but does NOT own. `X_FORBIDDEN` belongs to
- * `@ultimat3/policy` and `X_UNAUTHENTICATED` to `@ultimat3/auth`; registering them
- * here would throw `X_ERROR_CODE_DUPLICATE` at import. Reuse a code, never redefine it.
- */
-export const HTTP_BORROWED_CODES: readonly HttpErrorCode[] = ['X_UNAUTHENTICATED', 'X_FORBIDDEN'];
-
-// Registered at module load so core's registry renders OUR title everywhere. Without
-// this the registry humanises the code (`X_BUILD_SKEW` → "build skew") and the terminal,
-// the overlay and `--json` all show a title this package never wrote.
+// Registered at module load, unconditionally, in one call, so core's registry renders OUR title
+// everywhere. Without this the registry humanises the code (`X_BUILD_SKEW` → "build skew"); with a
+// presence guard, a package that claimed one of these first would silently keep its own title.
 registerErrorCodes(
-  Object.fromEntries(
-    Object.entries(HTTP_ERROR_TITLES)
-      .filter(([code]) => !HTTP_BORROWED_CODES.includes(code as HttpErrorCode))
-      .map(([code, title]) => [code, { title }]),
-  ),
+  Object.fromEntries(Object.entries(HTTP_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
 const docsFor = (code: HttpErrorCode): string => `https://ultimate.dev/errors/${code}`;

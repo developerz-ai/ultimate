@@ -124,7 +124,7 @@ x verify --json > verify.json
 |---|---|
 | Prod is already rolling | redeploy the previous image tag. Assets from the previous build are inside the retention window, so sessions survive |
 | A codemod produced broken code | keep the diff. It is the most useful part of the bug report |
-| `x verify` fails on one check | run that check alone (`x test contract`, `x db drift`, `x budgets report --json`) for a narrower cause |
+| `x verify` fails on one check | read that step's findings from `x verify --json`, then reproduce it with the command its `fix` names |
 | Cause is unclear | `x errors explain <CODE> --json` |
 
 File an issue with `verify.json` attached, your previous and target versions, and the codemod output. The JSON is the report — do not paraphrase the terminal.

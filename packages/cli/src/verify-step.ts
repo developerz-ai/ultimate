@@ -17,6 +17,7 @@ export const VERIFY_STEP_NAMES = [
   'boundaries',
   'filesize',
   'package-shape',
+  'errors',
   'unit',
   'contract',
   'live',

@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/mcp. Each carries the exact next command, because the
 // caller reading it is usually an agent with no human to ask.
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MCP_ERROR_CODES = [
   'X_MCP_TOOL_UNKNOWN',
@@ -29,11 +29,12 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_TOOL_DUPLICATE: 'two primitives project to one MCP tool name',
 };
 
-// Titles must be registered for `format()` to render the contract's first line. Guarded
-// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
-for (const [code, title] of Object.entries(MCP_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// Titles must be registered for `format()` to render the contract's first line. Every code above is
+// owned here and none is borrowed, so the call is unconditional: a second package claiming one has
+// to fail as X_ERROR_CODE_DUPLICATE, not quietly keep whichever title was registered first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(MCP_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: McpErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

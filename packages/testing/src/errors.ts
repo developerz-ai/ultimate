@@ -1,6 +1,6 @@
 // The X_* codes owned by @ultimat3/testing. A test failure has to be as actionable as a runtime
 // failure — the fix line here is the mock to add, the service to start, or the seed to freeze.
-import { UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const TESTING_ERROR_CODES = [
   'X_TEST_NETWORK_SEALED',
@@ -10,6 +10,22 @@ export const TESTING_ERROR_CODES = [
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
+
+export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = {
+  X_TEST_NETWORK_SEALED: 'a test tried to reach the network',
+  X_TEST_DB_UNAVAILABLE: 'no Postgres for the test template',
+  X_TEST_NONDETERMINISTIC: 'a test read wall-clock time or unseeded randomness',
+  X_TEST_FIXTURE_UNKNOWN: 'a test requested a fixture nobody registered',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Every code above is
+// owned here and none is borrowed, so the call is unconditional: a second package claiming one has
+// to fail as X_ERROR_CODE_DUPLICATE, not quietly keep whichever title was registered first.
+registerErrorCodes(
+  Object.fromEntries(
+    Object.entries(TESTING_ERROR_TITLES).map(([code, title]) => [code, { title }]),
+  ),
+);
 
 const docsFor = (code: TestingErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

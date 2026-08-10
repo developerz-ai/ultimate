@@ -124,11 +124,14 @@ async function postForm(
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (error) {
+    const reason = error instanceof Error ? error.message : 'the request failed before a response';
     throw oauthExchangeFailed({
       provider,
       stage: 'token',
-      detail: error instanceof Error ? error.message : 'the request failed before a response',
-      fix: `check egress to ${new URL(url).host} from this host, then restart the flow`,
+      detail:
+        `${reason} — nothing left this host for ${url} (egress, DNS or TLS); restart the ` +
+        'flow once it does, since the code is already spent',
+      fix: `curl -sS -m 5 -o /dev/null ${url}`,
     });
   }
 

@@ -11,7 +11,7 @@ SEO is **enforced, not documented**. These are build errors, not lint warnings.
 | `X_SEO_META_TOO_LONG` | title > 60 chars, description > 160 | the tail is truncated in results — the words are paid for and never read |
 | `X_SEO_CANONICAL_MISMATCH` | `meta.canonical` does not resolve to the route's own URL | a wrong canonical de-indexes the page in favour of another |
 | `X_LD_INVALID` | a JSON-LD node missing a required schema.org field | invalid structured data drops the rich result silently |
-| `X_BUDGET_EXCEEDED` | a route over its `js` / `css` / `lcp` / `cls` / `inp` budget | performance is a ranking factor and regressions are invisible without a gate |
+| `X_SEO_BUDGET_EXCEEDED` | a route over its `js` / `css` / `lcp` / `cls` / `inp` budget | performance is a ranking factor and regressions are invisible without a gate |
 | `X_SITEMAP_TOO_LARGE` | the sitemap index exceeds 50,000 files | past the protocol limit the whole sitemap is discarded |
 
 Every error names the exact route **file** and the exact edit:

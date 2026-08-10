@@ -13,7 +13,7 @@
 // Bun ships no `Bun.*` path API: `joinPath` reaches a file on disk with the host's separator.
 import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
-import { dirname, join, normalize } from 'node:path/posix';
+import { dirname, join, normalize, relative } from 'node:path/posix';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph } from '@ultimat3/render';
 import type { Finding } from './output';
@@ -39,6 +39,13 @@ const CODE_OF: Readonly<Record<BoundaryRule, BoundaryCode>> = {
   'shared-is-a-leaf': 'X_BOUNDARY_SHARED_LEAF',
   'app-imports-api-at-runtime': 'X_BOUNDARY_APP_TO_API',
 };
+
+/**
+ * The one rule → diagnostic-code mapping. `x verify` reports a surface violation as a finding and
+ * `x fix boundary` re-reports the same violation as a cut; a second copy of this table is the two
+ * commands drifting onto different codes for one edge.
+ */
+export const boundaryCodeOf = (rule: BoundaryRule): BoundaryCode => CODE_OF[rule];
 
 const docs = (code: BoundaryCode): string => `https://ultimate.dev/errors/${code}`;
 
@@ -82,6 +89,16 @@ export function resolveSpecifier(
   return base;
 }
 
+/**
+ * The specifier `fromFile` must write to reach `target` — `resolveSpecifier` run backwards, and
+ * what every import of a file has to become once that file moves. Extensionless, because that is
+ * the form `CANDIDATE_SUFFIXES` resolves and the form every app source already writes.
+ */
+export function relativeSpecifier(fromFile: string, target: string): string {
+  const path = relative(dirname(fromFile), target).replace(/\.[cm]?tsx?$/, '');
+  return path.startsWith('.') ? path : `./${path}`;
+}
+
 interface ScannedFile {
   readonly path: string;
   readonly imports: readonly string[];
@@ -105,7 +122,7 @@ function graphOf(scanned: readonly ScannedFile[]): ImportGraph {
 
 const surfaceFindings = (graph: ImportGraph): readonly Finding[] =>
   checkSurfaceBoundary(graph).map((violation) => {
-    const code = CODE_OF[violation.rule];
+    const code = boundaryCodeOf(violation.rule);
     return {
       code,
       cause: violation.cause,
@@ -160,8 +177,12 @@ export function checkImportRules(files: readonly SourceFile[]): readonly Finding
 
 const APP_GLOBS = ['apps/*/{site,app,api,shared}/**/*.{ts,tsx}'];
 
-/** Read an app's sources and check them. The only I/O in this module. */
-export async function checkAppBoundaries(root: string): Promise<readonly Finding[]> {
+/**
+ * Read every source file under an app's site, app, api and shared surfaces (`APP_GLOBS`). The
+ * only I/O in this module, and the one definition of "which files are the app's sources" —
+ * `checkAppBoundaries` reads through this, and so does `x fix boundary`, never a second glob.
+ */
+export async function readAppSources(root: string): Promise<readonly SourceFile[]> {
   const files: SourceFile[] = [];
   for (const pattern of APP_GLOBS) {
     const glob = new Bun.Glob(pattern);
@@ -171,5 +192,15 @@ export async function checkAppBoundaries(root: string): Promise<readonly Finding
       files.push({ path: posix, source: await Bun.file(joinPath(root, posix)).text() });
     }
   }
-  return checkImportRules(files);
+  return files;
+}
+
+/** The resolved import graph over a file set — what `checkSurfaceBoundary` walks. */
+export function appImportGraph(files: readonly SourceFile[]): ImportGraph {
+  return graphOf(scan(files));
+}
+
+/** Read an app's sources and check them. */
+export async function checkAppBoundaries(root: string): Promise<readonly Finding[]> {
+  return checkImportRules(await readAppSources(root));
 }

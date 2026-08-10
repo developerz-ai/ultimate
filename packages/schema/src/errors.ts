@@ -22,10 +22,15 @@ export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclarat
     X_SCHEMA_UNSUPPORTED: { title: 'the active schema provider cannot do this' },
   });
 
-const TITLES: Readonly<Record<string, string>> = Object.freeze({
-  X_VALIDATION_FAILED: 'value did not match its schema',
-  X_SCHEMA_UNSUPPORTED: 'the active schema provider cannot do this',
-});
+/**
+ * Derived, never re-typed: the declarations above are the single source, so a title edited there
+ * cannot fall out of step with what `SchemaError` renders locally.
+ */
+const TITLES: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(SCHEMA_ERROR_CODES).map(([code, declaration]) => [code, declaration.title]),
+  ),
+);
 
 /** `X_SCHEMA_UNSUPPORTED` -> `schema unsupported`, same fallback as the core registry. */
 function humanize(code: string): string {

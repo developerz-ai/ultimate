@@ -1,19 +1,56 @@
 // Realtime's X_* codes. Every throw in this package goes through one of these classes so
 // the same string renders in the terminal, the browser overlay, and `--json`.
 
-import { UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export type RealtimeErrorCode =
-  | 'X_TOPIC_FORBIDDEN'
-  | 'X_SUBSCRIPTION_LIMIT'
-  | 'X_PROTOCOL_VERSION'
-  | 'X_CURSOR_STALE'
-  | 'X_REBASE_CONFLICT'
-  | 'X_TRANSPORT_UNAVAILABLE'
-  | 'X_TRANSPORT_PROTOCOL'
-  | 'X_REPLICATION_PROTOCOL'
-  | 'X_REPLICATION_FAILED'
-  | 'X_NOT_IMPLEMENTED';
+/** Codes this package declares and owns. */
+export const REALTIME_OWNED_ERROR_CODES = [
+  'X_TOPIC_FORBIDDEN',
+  'X_SUBSCRIPTION_LIMIT',
+  'X_PROTOCOL_VERSION',
+  'X_CURSOR_STALE',
+  'X_REBASE_CONFLICT',
+  'X_TRANSPORT_UNAVAILABLE',
+  'X_TRANSPORT_PROTOCOL',
+  'X_REPLICATION_PROTOCOL',
+  'X_REPLICATION_FAILED',
+] as const;
+
+/**
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s, and `X_FORBIDDEN` — thrown by the surface denials this
+ * package renders — is `@ultimat3/policy`'s. Neither is titled here: the owner writes the one title
+ * every surface renders, and a copy kept alongside it is a copy that goes stale unnoticed.
+ */
+export const REALTIME_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code realtime can throw through `RealtimeError`: the ones it owns plus the borrowed one. */
+export const REALTIME_ERROR_CODES = [
+  ...REALTIME_OWNED_ERROR_CODES,
+  ...REALTIME_BORROWED_ERROR_CODES,
+] as const;
+
+export type RealtimeOwnedErrorCode = (typeof REALTIME_OWNED_ERROR_CODES)[number];
+export type RealtimeErrorCode = (typeof REALTIME_ERROR_CODES)[number];
+
+export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, string>> = {
+  X_TOPIC_FORBIDDEN: 'the actor may not subscribe to this topic',
+  X_SUBSCRIPTION_LIMIT: 'socket or tenant hit its subscription cap',
+  X_PROTOCOL_VERSION: 'client and sync node disagree on the wire protocol',
+  X_CURSOR_STALE: 'the resume LSN is outside the change buffer',
+  X_REBASE_CONFLICT: 'a local mutation could not be rebased',
+  X_TRANSPORT_UNAVAILABLE: 'the fanout bus is unreachable',
+  X_TRANSPORT_PROTOCOL: 'the bus does not speak the protocol this build speaks',
+  X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
+  X_REPLICATION_FAILED: 'the replication connection was refused',
+};
+
+// One unconditional call, so a second package claiming one of realtime's codes throws
+// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
+registerErrorCodes(
+  Object.fromEntries(
+    Object.entries(REALTIME_ERROR_TITLES).map(([code, title]) => [code, { title }]),
+  ),
+);
 
 const DOCS_BASE = 'https://ultimate.dev/errors/';
 

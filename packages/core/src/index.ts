@@ -245,3 +245,4 @@ export {
   withSpan,
   withSpanContext,
 } from './telemetry';
+export { FRAMEWORK_VERSION, readPackageVersion, VERSION_MANIFEST } from './version';

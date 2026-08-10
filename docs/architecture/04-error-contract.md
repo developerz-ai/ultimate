@@ -98,8 +98,9 @@ Over HTTP the same object is the problem+json body, with `httpStatus` as the sta
 | 2 | Add the code + `title` + `httpStatus` + `retryable` to your package registry | `packages/<pkg>/src/errors.ts` |
 | 3 | Write the `fix` as a command you have actually run | same |
 | 4 | Add a test that asserts the code **and** that `fix` is non-empty | `packages/<pkg>/src/errors.test.ts` |
-| 5 | If cross-cutting, add a row to the table below | `docs/architecture/04-error-contract.md` |
-| 6 | Verify uniqueness + docs coverage | `x verify` |
+| 5 | Add the code's row to the error reference — the `errors` step requires it | `wiki/Error-Codes.md` |
+| 6 | If cross-cutting, add a row to the table below | `docs/architecture/04-error-contract.md` |
+| 7 | Verify: uniqueness at registration, `fix` shape and docs coverage in the `errors` step | `x verify` |
 
 ```ts
 // packages/entity/src/errors.ts — one file per package, no codes declared inline
@@ -123,7 +124,19 @@ export const ENTITY_ERRORS = {
 | `this is not supported` | `set jobs.driver = 'pg' in app.config.ts` |
 | `retry later` | `x jobs retry 8f2a1c --from nudge` |
 
-Enforced: `x verify` fails on an error declaration whose `fix` is empty, or whose `fix` matches the banned-phrase list (`check`, `make sure`, `try`, `see the docs`) without a command token. A code with no docs page also fails.
+Enforced by the **`errors` step** of `x verify`. It reads every `fix:` string literal in shipped source — test files and `.d.ts` excluded — and treats a `${…}` interpolation as unknown, so nothing inside one counts as a command.
+
+| Fails on | Code |
+|---|---|
+| an empty `fix` | `X_ERROR_FIX_INVALID` |
+| a `fix` carrying `check`, `make sure`, `try` or `see the docs` with no command token | `X_ERROR_FIX_INVALID` |
+| a declared `X_*` code with no row in `wiki/Error-Codes.md` | `X_ERROR_CODE_UNDOCUMENTED` |
+
+A **command token** is the `x` CLI, a known tool (`bun`, `bunx`, `git`, `docker`, `psql`, `curl`, …), a literal call expression (`name(`), or a file path (`app.config.ts`, `apps/web/api/index.ts`). "check `x doctor --json`" passes; "check your database connection" does not.
+
+The docs half is a **host check** the framework repo contributes to the `errors` step — the same seam the tier table uses on `boundaries`.
+
+Out of reach: a `fix` computed at runtime. `fix: input.fix` has no literal to read, so the step cannot judge it — the value's own author does.
 
 For deliberately unimplemented paths, the throw is still typed and still actionable:
 
@@ -137,7 +150,7 @@ throw new UltimateError({
 
 ## Cross-cutting codes
 
-Thrown by more than one package; every package may reference them.
+Thrown by more than one package, or by the gate about any of them; every package may reference them.
 
 | Code | Owner | Status | Meaning | Typical `fix` |
 |---|---|---|---|---|
@@ -151,6 +164,8 @@ Thrown by more than one package; every package may reference them.
 | `X_TENANT_MISMATCH` | `entity` | 403 | a row's tenant differs from the request tenant | scope the query to `ctx.tenantId` |
 | `X_DB_DRIFT` | `entity` | 500 | schema differs from migrations | `x db gen "<name>"` |
 | `X_BOUNDARY_VIOLATION` | `cli` | build | an import rule broke; `data.chain` is the path | `x fix boundary <file>` |
+| `X_ERROR_FIX_INVALID` | `cli` | build | a `fix:` literal is empty, or advice with no command token | `rewrite the fix at <file>:<line> as a runnable command` |
+| `X_ERROR_CODE_UNDOCUMENTED` | `cli` | build | a declared `X_*` code has no row in the error reference | `add a row for <CODE> to wiki/Error-Codes.md` |
 | `X_MANIFEST_STALE` | `manifest` | build | `x.manifest.json` / `openapi.json` differ from the code | `x manifest write` |
 | `X_BUDGET_EXCEEDED` | `render` | build | route bytes / LCP over budget; `data.cause` names the import | `x fix boundary <file>` |
 | `X_BUILD_SKEW` | `http` | 409 | client build ID incompatible with the server contract | `reload` (client-side signal) |

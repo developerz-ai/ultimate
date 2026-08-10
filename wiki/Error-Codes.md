@@ -19,8 +19,9 @@ X_DB_DRIFT: schema differs from migrations
 | Stability | codes never change meaning. A renamed concept gets a new code and the old one stays documented |
 | `fix` | always runnable or editable as written. If a fix reads "do the right thing", that is a bug — [file it](https://github.com/developerz-ai/ultimate/issues) |
 | Bare `Error` | never thrown by the framework. Anything caught is normalised through `toUltimateError()` |
+| Enforcement | the `errors` step of `x verify` fails on an empty or advice-only `fix` (`X_ERROR_FIX_INVALID`) and on a declared code with no row on this page (`X_ERROR_CODE_UNDOCUMENTED`) |
 
-`As of 2026-07` this table tracks the codes registered in `packages/*/src/errors.ts`. See [Troubleshooting](Troubleshooting) for symptom-first triage and [CLI reference](CLI-Reference) for the commands named in the fixes.
+`As of 2026-08` this table tracks the codes registered in `packages/*/src/errors.ts`, plus the ones the repo's own scripts emit. See [Troubleshooting](Troubleshooting) for symptom-first triage and [CLI reference](CLI-Reference) for the commands named in the fixes.
 
 ## Core and runtime
 
@@ -118,6 +119,12 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_INVARIANT_VIOLATED` | a domain invariant rejected this row | a CHECK or a declared invariant failed | `x entity explain <entity> --json` to see the invariant and its SQL |
 | `X_NOT_FOUND` | no row for that id | stale id, wrong tenant, or already deleted | confirm with `x db query "select id from <table> limit 5" --json` |
 | `X_MIGRATE_CONCURRENT` | another version's migration is in flight | two deploys overlapped | wait for the running `ROLE=migrate` to exit, then redeploy |
+| `X_DB_UNAVAILABLE` | cannot reach the database | nothing listening on `DATABASE_URL`, a statement the embedded driver refused, or `@electric-sql/pglite` not installed for a `pglite://` url | set `DATABASE_URL` to a reachable Postgres, or `x dev` for the embedded PGlite — `bun add @electric-sql/pglite` when the url is `pglite://` |
+| `X_MIGRATION_CONFLICT` | the migration ledger disagrees with this build | a ledger row from an app version this build does not ship, or an applied migration whose file was edited so its checksum moved | `x db status --json` — then deploy the version `cause` names, or `x db gen "fix <migration>"`. Never edit an applied migration |
+| `X_MIGRATION_IRREVERSIBLE` | this migration cannot be reversed without data loss | a generated plan that drops a column or a table | `x db gen "<name>" --allow-destructive`, or keep the column and deprecate it |
+| `X_BRANCH_EXISTS` | that branch database already exists | `x db branch create <name>` twice — or a drop aimed at the database this session is connected to | `x db branch drop <name>`, then re-create, or pick another name. To drop the connected one, reconnect elsewhere first: `DATABASE_URL=.../postgres` |
+| `X_SQL_UNSAFE` | SQL was built by string interpolation | a non-scalar interpolated into a `sql` template, or an identifier or branch name that is not `[a-z0-9_-]+` | pass a scalar (it becomes `$n`), a nested `sql` fragment, or wrap audited SQL in `raw()` — `cause` numbers the interpolation |
+| `X_READONLY_VIOLATION` | a mutating statement reached a read-only client | an INSERT/UPDATE/DELETE sent through `readOnly(db())` | use `db()` instead of `readOnly(db())`, or rewrite the statement as a SELECT |
 | `X_DB_GEN_FAILED` / `X_DB_MIGRATE_FAILED` / `X_DB_BRANCH_FAILED` / `X_DB_STUDIO_FAILED` | the underlying `x db` step failed | Postgres rejected the statement, or the DB is unreachable | read `cause` — it carries the SQL error verbatim |
 
 ## Actions
@@ -128,6 +135,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_INPUT_INVALID` | input failed the action's schema | wrong shape from a client or an agent | `x actions describe <name> --json` |
 | `X_OUTPUT_INVALID` | the handler returned a value its `output` schema rejects | the handler drifted from the declared output | `x actions describe <name> --json`, then fix the handler or the schema |
 | `X_ACTION_FOREIGN` | a value that is not an action was projected as one | a hand-rolled object with `kind: 'action'`, or an action from a duplicated copy of `@ultimat3/action` | declare it as `export const name = action({ input, output, policy, handle })` |
+| `X_ACTION_UNREGISTERED` | an action was projected before it was registered, so it has no name | `.tool()` / `.client()` / `.job()` / `.openapi()` on an action `registerActions()` never named | `registerActions(await import('./actions'))` at boot, before mounting routes |
 | `X_IDEMPOTENCY_CONFLICT` | idempotency key reused with a different payload, or still in flight | a retried request mutated its body | send a fresh `Idempotency-Key` for a different payload; otherwise retry after the first settles |
 | `X_CONTRACT_DRIFT` | the published contract changed | input/output shape moved without a version bump | give new inputs a `.default()`, or bump the package version |
 | `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, or a non-JSON response | check the gateway, then `x actions describe <name> --json` (`x queries describe` for a read) |
@@ -176,6 +184,17 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_CACHE_TOO_LARGE` | one entry exceeds the tier's byte budget | caching a whole row set | raise `cache.<tier>.maxBytes`, or cache a projection |
 | `X_CACHE_DRIVER_UNAVAILABLE` | a tier's backing store is missing | no Redis binding, no CDN token | provision the tier, or drop it from `app.config.ts` |
 
+## Storage
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_STORAGE_CHECKSUM_MISMATCH` | bytes do not match the declared checksum | a truncated upload, or a sha256 computed over different bytes than the ones sent | recompute the checksum over the exact bytes you send, or omit it and let the driver hash |
+| `X_STORAGE_DISK_UNKNOWN` | no disk with that name is configured | `disk('<name>')` for a disk `storage.disks` never declared | add `"<name>"` to `storage.disks` in `app.config.ts`, or call one of the names `cause` lists |
+| `X_STORAGE_NOT_FOUND` | no object at that key | a stale key, the wrong disk, or an object already deleted | list the prefix and compare: `await disk('<disk>').list({ prefix: '<dir>' })` |
+| `X_STORAGE_PATH_UNSAFE` | object key escapes its prefix | an absolute key, a `..` segment, or a backslash | build the key with `scopedKey(orgId, ...parts)` — relative, forward slashes, no `..` |
+| `X_STORAGE_TOO_LARGE` | payload exceeds the upload size limit | a file over the policy's `maxBytes`; `cause` carries both numbers | `uploadPolicy({ maxBytes: <bytes> })` for a higher limit, or compress the file first |
+| `X_STORAGE_TYPE_REJECTED` | content type is not allowed for this upload | a type absent from `allowedContentTypes`, or magic bytes that disagree with the declared `Content-Type` — the bytes win | add the declared type to `allowedContentTypes` in the upload policy, or re-upload with the `Content-Type` `cause` sniffed |
+
 ## Routes, render and budgets
 
 | Code | Means | Typical cause | Fix |
@@ -203,6 +222,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_SEO_DUPLICATE_META` | two routes share a title or description | copied metadata | make each page's meta unique |
 | `X_SEO_CANONICAL_MISMATCH` | canonical URL does not match the route path | a hand-written canonical | delete it — canonicals come from the route table |
 | `X_LD_INVALID` | JSON-LD node is missing a required schema.org field | an `ld.*` helper called with a partial object | supply the field named in `cause` |
+| `X_SEO_BUDGET_EXCEEDED` | route exceeded its performance budget | a `js`/`css`/`lcp`/`cls`/`inp` budget broken in the SEO report | `x routes --json` for the route's budget, then cut the regression `cause` names |
 | `X_SITEMAP_TOO_LARGE` | sitemap exceeds the 50,000-entry limit | too many prerendered URLs in one file | enable sitemap index splitting in `app.config.ts` |
 
 ## PWA and build skew
@@ -234,6 +254,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_INSTANT_INVALID` | not a parseable instant | a date string with no offset | pass ISO-8601 with `Z` or an offset |
 | `X_DURATION_INVALID` | not a parseable duration | `'3 days'` | use `'3d'`, `'2h30m'`, `'250ms'`, or ISO-8601 `PT2H30M` |
 | `X_CRON_INVALID` | not a parseable cron expression | wrong field count | 5 fields (`m h dom mon dow`) or 6 with seconds |
+| `X_SCHEDULE_INVALID` | a wall-clock field is out of range | `hour: 24` or `minute: -1` in a schedule spec — `cause` names the field and its range | pass an integer inside the range `cause` prints; wall-clock fields are never wrapped or clamped, because a silently shifted schedule is worse than a failed one |
 | `X_DST_AMBIGUOUS` | the local time occurs twice | a fall-back overlap | pass `{ overlap: 'first' }` or `{ overlap: 'second' }` |
 | `X_DST_NONEXISTENT` | the local time does not exist | a spring-forward gap | pass `{ gap: 'next' }` or `{ gap: 'previous' }` |
 | `X_LOCALE_INVALID` | not a well-formed BCP 47 tag | `en_US`, `''`, or a raw `Accept-Language` value reaching `describeCron` | pass `en`, `en-GB`, `de-DE` — screen header input with `Intl.DateTimeFormat.supportedLocalesOf([tag])` |
@@ -298,6 +319,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_TEST_DB_UNAVAILABLE` | no Postgres for the test template | nothing listening | run `x dev` (embedded Postgres), or set `TEST_DATABASE_URL` |
+| `X_TEST_FIXTURE_UNKNOWN` | a test requested a fixture nobody registered | a destructured fixture name no `defineFixtures` call declares | `defineFixtures({ <name>: () => buildIt() })` at test setup — `cause` lists the registered names |
 | `X_TEST_NETWORK_SEALED` | a test tried to reach the network | an unmocked external call | `mockFetch('<url>', …)`, or `allowHost('<host>')` if it must be real |
 | `X_TEST_NONDETERMINISTIC` | a test read wall-clock time or unseeded randomness | `Date.now()` in the code under test | wrap in `frozenClock()` / `seededRandom()`, or remove the read |
 
@@ -321,13 +343,24 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_TYPECHECK_FAILED` | `tsc` failed | a type error anywhere in the workspace | `bunx tsc -b --pretty false` |
 | `X_LINT_FAILED` | Biome failed | `any`, a default export, a bare `Error`, a raw hex colour | `bunx biome check --write .` |
 | `X_TEST_FAILED` | a test type failed | a red test | the `fix` is the exact `bun test …` invocation the step ran |
+| `X_TEST_NO_FILES` | the test selection matched no files | a type or `--filter` that matches nothing, or `x test` run outside the app | drop the filter (`x test`), or point it at the right root: `x test --cwd <repo root>`. A green run over zero files is the most expensive false pass |
+| `X_TEST_SHARD_FAILED` | a test shard exited non-zero | a red test inside one worker of a sharded run | the `fix` replays that shard alone, carrying the whole selection that produced it: `x test <type> [--filter <text>] [--sample <n>] --workers <n> --worker <i>`. Dropping `--sample` would reshard a different corpus, so the fix keeps it |
 | `X_FILE_TOO_LONG` | a source file is over 500 lines | one file doing several jobs | split it; the `fix` names the file |
 | `X_PACKAGE_SHAPE` | a workspace package is missing a contract file | a package added by hand | `bun run scripts/new-package.ts <pkg> --only <file>` |
+| `X_ERROR_FIX_INVALID` | an error's fix line is not a runnable instruction | the `errors` step read a `fix:` that is empty, or one that advises (`check`, `make sure`, `try`, `see the docs`) with no command, call or file path in it | the `fix` names the offending `<file>:<line>` — rewrite that `fix:` as a runnable command, a call, or an edit naming a file |
+| `X_ERROR_CODE_UNDOCUMENTED` | a shipped error code has no row in the error reference | a package declared an `X_*` code and the same pull request never added its row | add a row for the code to `wiki/Error-Codes.md` — this page |
 | `X_APP_PACKAGE_INVALID` | the app's `package.json` has no usable `name`/`version` — the manifest never fabricates `app@0.0.0`, because its version is the compatibility gate | a malformed or hand-trimmed `package.json` | `bun pm pkg set name=<app> version=0.1.0` |
 | `X_BUILD_FAILED` | `x build` failed | a static check or the bundler | read `cause`; the failing step is named |
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |
+| `X_SETUP_INSTALL_FAILED` | `bun install` failed during `bin/setup` | a conflicted lockfile, or a half-written `node_modules` | `rm -rf node_modules bun.lock && bun install` |
+| `X_RELEASE_VERSION_SKEW` | a workspace is not at the lockstep version | a package bumped on its own, or a release that stopped half-way | `bun run scripts/release.ts --bump patch --dry-run --json` to see the realignment, then run it without `--dry-run` and review the `package.json` diff |
 | `X_GENERATE_CONFLICT` | a generator would overwrite a file | the name is taken | `x g … --force`, or choose another name |
 | `X_SCAFFOLD_PATH_ESCAPE` | a generated path resolves outside the scaffold sandbox | a `..` segment or an absolute path in a template's `GeneratedFile.path` | make the path relative to the app root with no `..`, then `bun test packages/cli/src/scaffold-typecheck.contract.test.ts` |
+| `X_NOT_IMPLEMENTED` | a planned command, or a driver whose remote half is unwritten | one of the commands in [CLI reference](CLI-Reference)'s planned table | the `fix` names the closest shipped command — never "not a command", which would send you looking for a typo |
+| `X_ERROR_CODE_UNKNOWN` | no package registered this error code | a typo, or a code from a package this process could not import | `x errors list --json` — the nearest real code is in `fix`, and `data.unavailable` names any package that would not load |
+| `X_DECLARATION_UNKNOWN` | no declaration with this name is registered | a typo, or a module that never imported | `x actions list --json` (or `queries` / `entities`); the nearest real name is in `fix` |
+| `X_JOB_UNKNOWN` | the queue holds no job with this id | a stale id, or a job already reaped | `x jobs ls --json` |
+| `X_FIX_TARGET_UNKNOWN` | the named file is not one of the app's source files | a path outside `apps/*/{site,app,api,shared}`, or a typo | `x fix boundary <nearest real path>` — `fix` carries it |
 
 ## Names used in the design docs
 
@@ -339,10 +372,11 @@ Some design docs predate the implementation. `As of 2026-07` these are the mappi
 | `X_JOB_DUPLICATE_STEP` | `X_STEP_DUPLICATE` |
 | `X_JOB_STEP_FAILED` | `X_JOB_MAX_ATTEMPTS` (retries exhausted) or `X_JOB_TIMEOUT` |
 | `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` | `X_SEO_META_MISSING` |
+| `X_BUDGET_EXCEEDED` thrown by `@ultimat3/seo` | `X_SEO_BUDGET_EXCEEDED` — `X_BUDGET_EXCEEDED` is `@ultimat3/render`'s, and one code is owned by exactly one package |
 | `X_BOUNDARY_VIOLATION` | `X_BOUNDARY_SITE_TO_APP` and the other `X_BOUNDARY_*` codes |
 | `X_TEST_NETWORK_EGRESS` | `X_TEST_NETWORK_SEALED` |
 | `X_LIVE_QUERY_LIMIT` | `X_SUBSCRIPTION_LIMIT` |
 | `X_ENV_INVALID` | `X_ENV_MISSING` |
 | `X_CACHE_UNTAGGED_QUERY` | reported by `x verify` as part of the cache-graph check |
 
-New codes are added in the owning package's `src/errors.ts` and registered through `registerErrorCodes()`; add the row here in the same pull request — see [Contributing](Contributing).
+New codes are added in the owning package's `src/errors.ts` and registered through `registerErrorCodes()`; add the row here in the same pull request, or the `errors` step of `x verify` fails the build with `X_ERROR_CODE_UNDOCUMENTED` — see [Contributing](Contributing).

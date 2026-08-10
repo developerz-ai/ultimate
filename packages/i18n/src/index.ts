@@ -36,6 +36,7 @@ export {
   catalogInvalid,
   catalogMissingKeys,
   I18N_ERROR_CODES,
+  I18N_ERROR_TITLES,
   I18nError,
   type I18nErrorCode,
   localeUnsupported,

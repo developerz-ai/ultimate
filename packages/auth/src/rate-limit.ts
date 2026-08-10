@@ -96,7 +96,9 @@ export function createAuthLimiter(
 export function loginFailed(): AuthError {
   return new AuthError({
     code: 'X_UNAUTHENTICATED',
-    cause: 'the email and password combination did not match an account',
-    fix: 'check the address and password, or reset it at POST /auth/password/reset',
+    cause:
+      'the email and password combination did not match an account — re-enter them before ' +
+      'issuing the reset below, which mails a single-use token',
+    fix: "issueVerification(runtime, { purpose: 'password-reset', identifier: email, locale })",
   });
 }

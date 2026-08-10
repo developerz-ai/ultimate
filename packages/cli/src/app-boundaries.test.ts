@@ -1,6 +1,17 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { SourceFile } from './app-boundaries';
-import { checkImportRules, resolveSpecifier } from './app-boundaries';
+import {
+  appImportGraph,
+  BOUNDARY_CODES,
+  boundaryCodeOf,
+  checkAppBoundaries,
+  checkImportRules,
+  readAppSources,
+  relativeSpecifier,
+  resolveSpecifier,
+} from './app-boundaries';
 
 const file = (path: string, source: string): SourceFile => ({ path, source });
 
@@ -75,6 +86,23 @@ describe('unit · app boundaries', () => {
     expect(chained?.at).toBe('apps/web/shared/price.ts');
   });
 
+  test('every surface rule maps to a declared boundary code, and the findings use that map', () => {
+    expect(boundaryCodeOf('site-imports-app')).toBe('X_BOUNDARY_SITE_TO_APP');
+    expect(boundaryCodeOf('shared-is-a-leaf')).toBe('X_BOUNDARY_SHARED_LEAF');
+    expect(boundaryCodeOf('app-imports-api-at-runtime')).toBe('X_BOUNDARY_APP_TO_API');
+    for (const rule of [
+      'site-imports-app',
+      'shared-is-a-leaf',
+      'app-imports-api-at-runtime',
+    ] as const) {
+      expect(BOUNDARY_CODES).toContain(boundaryCodeOf(rule));
+    }
+    const findings = checkImportRules([
+      file('apps/web/site/pricing/page.tsx', "import { Chart } from '../../app/charts';"),
+    ]);
+    expect(findings[0]?.code).toBe(boundaryCodeOf('site-imports-app'));
+  });
+
   test('a specifier resolves onto the graph key it names, extension and all', () => {
     const keys = new Set(['apps/web/shared/price.ts', 'apps/web/shared/ui/index.tsx']);
     expect(resolveSpecifier('apps/web/site/page.tsx', '../shared/price', keys)).toBe(
@@ -86,5 +114,82 @@ describe('unit · app boundaries', () => {
     expect(resolveSpecifier('apps/web/site/page.tsx', '@ultimat3/http', keys)).toBe(
       '@ultimat3/http',
     );
+  });
+
+  test('relativeSpecifier writes the specifier that reaches a target from the file itself', () => {
+    expect(relativeSpecifier('apps/web/app/dashboard.tsx', 'apps/web/app/panel.tsx')).toBe(
+      './panel',
+    );
+    expect(relativeSpecifier('apps/web/app/deep/report.tsx', 'apps/web/app/panel.tsx')).toBe(
+      '../panel',
+    );
+    expect(relativeSpecifier('apps/web/shared/outer.ts', 'apps/web/app/inner.ts')).toBe(
+      '../app/inner',
+    );
+  });
+
+  test('relativeSpecifier round-trips through resolveSpecifier — it is the same map, backwards', () => {
+    const keys = new Set([
+      'apps/web/app/panel.tsx',
+      'apps/web/shared/ui/index.tsx',
+      'apps/web/site/page.tsx',
+    ]);
+    for (const from of keys) {
+      for (const target of keys) {
+        if (from === target) continue;
+        expect(resolveSpecifier(from, relativeSpecifier(from, target), keys)).toBe(target);
+      }
+    }
+  });
+});
+
+describe('unit · readAppSources / appImportGraph', () => {
+  const root = join(import.meta.dir, '..', '.app-boundaries-fixture');
+
+  beforeAll(async () => {
+    await rm(root, { recursive: true, force: true });
+    await Bun.write(
+      join(root, 'apps/web/site/page.tsx'),
+      "import { Button } from '../shared/ui/button';\n",
+    );
+    await Bun.write(
+      join(root, 'apps/web/shared/ui/button.tsx'),
+      'export const Button = () => null;\n',
+    );
+    await Bun.write(join(root, 'apps/web/app/orders/repo.ts'), "import { db } from '@acme/db';\n");
+    // A test file living under a surface must never be treated as app source.
+    await Bun.write(
+      join(root, 'apps/web/app/orders/repo.test.ts'),
+      "import { repo } from './repo';\n",
+    );
+  });
+
+  afterAll(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test('readAppSources reads every surface file and skips *.test.ts', async () => {
+    const files = await readAppSources(root);
+    const paths = files.map((entry) => entry.path).sort();
+    expect(paths).toEqual([
+      'apps/web/app/orders/repo.ts',
+      'apps/web/shared/ui/button.tsx',
+      'apps/web/site/page.tsx',
+    ]);
+    const page = files.find((entry) => entry.path === 'apps/web/site/page.tsx');
+    expect(page?.source).toContain('shared/ui/button');
+  });
+
+  test('appImportGraph resolves specifiers onto the files readAppSources returned', async () => {
+    const graph = appImportGraph(await readAppSources(root));
+    expect(graph.get('apps/web/site/page.tsx')?.map((ref) => ref.file)).toEqual([
+      'apps/web/shared/ui/button.tsx',
+    ]);
+    expect(graph.get('apps/web/app/orders/repo.ts')?.map((ref) => ref.file)).toEqual(['@acme/db']);
+  });
+
+  test('checkAppBoundaries is readAppSources + checkImportRules, not a second file walk', async () => {
+    const files = await readAppSources(root);
+    expect(checkImportRules(files)).toEqual(await checkAppBoundaries(root));
   });
 });

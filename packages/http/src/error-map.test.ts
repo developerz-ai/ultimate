@@ -41,6 +41,19 @@ describe('factsOf', () => {
     expect(facts.docs).toBe('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
   });
 
+  test('titles a borrowed code from its owning package, without repeating the code', () => {
+    // `X_FORBIDDEN` is policy's and `X_UNAUTHENTICATED` is auth's, so http holds no title for
+    // either. Reading `message` instead once produced `X_FORBIDDEN: policy denied this actor — …`
+    // as the *title*, which `renderErrorLines` then printed with the code a second time.
+    const facts = factsOf(forbidden('/x', 'not an owner'));
+    expect(facts.code).toBe('X_FORBIDDEN');
+    expect(facts.title).not.toContain('X_FORBIDDEN');
+    expect(facts.title).not.toContain('not an owner');
+    expect(renderErrorLines(forbidden('/x', 'not an owner')).split('\n')[0]).toBe(
+      `X_FORBIDDEN: ${facts.title}`,
+    );
+  });
+
   test('gives a foreign throwable a code and a fix too', () => {
     const facts = factsOf(new TypeError('x is not a function'));
     expect(facts.code).toBe('X_INTERNAL');

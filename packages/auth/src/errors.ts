@@ -3,9 +3,10 @@
 // factories here are deliberately coarse — `rate-limit.ts` owns the single login failure
 // every credential path must throw, and nothing else describes *why* a credential failed.
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const AUTH_ERROR_CODES = [
+/** Codes this package declares and owns. `X_UNAUTHENTICATED` is auth's; http only borrows it. */
+export const AUTH_OWNED_ERROR_CODES = [
   'X_UNAUTHENTICATED',
   'X_SESSION_EXPIRED',
   'X_MFA_REQUIRED',
@@ -16,12 +17,22 @@ export const AUTH_ERROR_CODES = [
   'X_ACCOUNT_LOCKED',
   'X_API_KEY_INVALID',
   'X_AUTH_WRITE_FAILED',
-  'X_NOT_IMPLEMENTED',
 ] as const;
 
+/**
+ * Codes another package owns that auth only throws: `X_FORBIDDEN` is `@ultimat3/policy`'s and
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. No titles here on purpose — a second copy of a title
+ * is a title that drifts, and registering one of these would be `X_ERROR_CODE_DUPLICATE`.
+ */
+export const AUTH_BORROWED_ERROR_CODES = ['X_FORBIDDEN', 'X_NOT_IMPLEMENTED'] as const;
+
+/** Every code auth can throw: the ones it owns plus the ones it borrows. */
+export const AUTH_ERROR_CODES = [...AUTH_OWNED_ERROR_CODES, ...AUTH_BORROWED_ERROR_CODES] as const;
+
+export type AuthOwnedErrorCode = (typeof AUTH_OWNED_ERROR_CODES)[number];
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
 
-export const AUTH_ERROR_TITLES: Readonly<Record<AuthErrorCode, string>> = {
+export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_UNAUTHENTICATED: 'no authenticated actor for this request',
   X_SESSION_EXPIRED: 'session passed its idle or absolute expiry',
   X_MFA_REQUIRED: 'a second factor is required before this session is usable',
@@ -32,25 +43,17 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthErrorCode, string>> = {
   X_ACCOUNT_LOCKED: 'too many failed attempts; this key is locked out',
   X_API_KEY_INVALID: 'api key is unknown, revoked, expired or wrong',
   X_AUTH_WRITE_FAILED: 'an adapter write returned no row, so it cannot be confirmed',
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
-/** `X_FORBIDDEN` is owned by `@ultimat3/policy`. Guards reuse the code, never redefine it. */
-export const AUTH_BORROWED_ERROR_TITLES: Readonly<Record<'X_FORBIDDEN', string>> = {
-  X_FORBIDDEN: 'policy denied this actor',
-};
+// Registered unconditionally, in one call: a second package claiming a code auth owns has to fail
+// loudly as X_ERROR_CODE_DUPLICATE at import. A presence guard would turn that collision into
+// whichever package loaded first deciding what the code means.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(AUTH_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
-// Titles must be registered for `format()` to render the contract's first line, but
-// `X_NOT_IMPLEMENTED` belongs to core and `X_UNAUTHENTICATED`/`X_FORBIDDEN` may already be
-// registered by http or policy — registering a code twice throws X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries({
-  ...AUTH_ERROR_TITLES,
-  ...AUTH_BORROWED_ERROR_TITLES,
-})) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
-
-export type AuthThrowCode = AuthErrorCode | keyof typeof AUTH_BORROWED_ERROR_TITLES;
+/** Every code an `AuthError` may carry — the owned ones and the two borrowed ones alike. */
+export type AuthThrowCode = AuthErrorCode;
 
 export class AuthError extends UltimateError {
   override readonly name = 'AuthError';

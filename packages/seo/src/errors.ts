@@ -9,19 +9,26 @@ export const SEO_ERROR_CODES = {
   metaTooLong: 'X_SEO_META_TOO_LONG',
   canonicalMismatch: 'X_SEO_CANONICAL_MISMATCH',
   ldInvalid: 'X_LD_INVALID',
-  budgetExceeded: 'X_BUDGET_EXCEEDED',
+  budgetExceeded: 'X_SEO_BUDGET_EXCEEDED',
   sitemapTooLarge: 'X_SITEMAP_TOO_LARGE',
 } as const;
 
 export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES];
 
+/**
+ * Every code here is seo's own, so the registration is unconditional and atomic — a collision must
+ * surface as X_ERROR_CODE_DUPLICATE, never as a first-writer-wins title. `X_SEO_BUDGET_EXCEEDED` is
+ * namespaced for exactly that reason: `X_BUDGET_EXCEEDED` is `@ultimat3/render`'s, seo is tier 1
+ * and cannot import render, so sharing the code left the meaning up to import order.
+ * `X_NOT_IMPLEMENTED` and `X_IMAGE_UNSUPPORTED` are core's; `SeoError` throws them, untitled here.
+ */
 registerErrorCodes({
   X_SEO_META_MISSING: { title: 'a site/ route is missing required metadata' },
   X_SEO_DUPLICATE_META: { title: 'two routes share a title or description' },
   X_SEO_META_TOO_LONG: { title: 'title or description exceeds what search results render' },
   X_SEO_CANONICAL_MISMATCH: { title: 'canonical URL does not match the route path' },
   X_LD_INVALID: { title: 'JSON-LD node is missing a required schema.org field' },
-  X_BUDGET_EXCEEDED: { title: 'route exceeded its performance budget' },
+  X_SEO_BUDGET_EXCEEDED: { title: 'route exceeded its performance budget' },
   X_SITEMAP_TOO_LARGE: { title: 'sitemap exceeds the 50,000-entry protocol limit' },
 });
 

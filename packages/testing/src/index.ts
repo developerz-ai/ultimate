@@ -37,6 +37,7 @@ export {
   NetworkSealedError,
   NondeterministicError,
   TESTING_ERROR_CODES,
+  TESTING_ERROR_TITLES,
   TestDatabaseUnavailableError,
 } from './errors';
 export type { EntityLike, EntityRegistry, Factory, FactoryOptions } from './factories';

@@ -17,8 +17,10 @@ export const POLICY_ERROR_TITLES: Readonly<Record<PolicyErrorCode, string>> = {
   X_PERMISSION_UNKNOWN: 'permission string is not in the permission set',
 };
 
-// This package OWNS X_FORBIDDEN — http, auth and every surface adapter borrow it. One
-// authz code, registered once, so every surface renders the identical title.
+// This package OWNS X_FORBIDDEN — http, auth, ai, realtime and every other surface adapter throw
+// it and none of them declare a title for it. One authz code, one title, so every surface renders
+// the same string. Registered unconditionally: a second package claiming one of these codes is a
+// bug the registry must surface as X_ERROR_CODE_DUPLICATE, not absorb into a silent first-wins.
 registerErrorCodes(
   Object.fromEntries(Object.entries(POLICY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );

@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/ai. Budget and threshold failures name the exact knob to
 // change, because the caller is often a CI job with no human attached.
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const AI_ERROR_CODES = [
   'X_AI_PROVIDER_UNAVAILABLE',
@@ -37,11 +37,13 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
 };
 
-// Titles must be registered for `format()` to render the contract's first line. Guarded
-// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
-for (const [code, title] of Object.entries(AI_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// Titles must be registered for `format()` to render the contract's first line. Unconditional and
+// in one call: every code above is owned here, so a second package claiming one is a real conflict
+// that has to surface as X_ERROR_CODE_DUPLICATE rather than resolve to whoever imported first.
+// `X_FORBIDDEN` (policy's) and `X_CURRENCY_MISMATCH` (money's) are thrown here but never titled.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(AI_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: AiErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

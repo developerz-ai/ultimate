@@ -144,7 +144,9 @@
         "@ultimat3/action": "0.0.1",
         "@ultimat3/cache": "0.0.1",
         "@ultimat3/core": "0.0.1",
+        "@ultimat3/db": "0.0.1",
         "@ultimat3/money": "0.0.1",
+        "@ultimat3/policy": "0.0.1",
         "@ultimat3/schema": "0.0.1",
         "@ultimat3/time": "0.0.1",
       },
@@ -174,6 +176,7 @@
       "dependencies": {
         "@ultimat3/action": "0.0.1",
         "@ultimat3/admin": "0.0.1",
+        "@ultimat3/ai": "0.0.1",
         "@ultimat3/core": "0.0.1",
         "@ultimat3/db": "0.0.1",
         "@ultimat3/entity": "0.0.1",

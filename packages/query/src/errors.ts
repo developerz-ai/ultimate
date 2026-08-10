@@ -1,5 +1,5 @@
 /** Every failure @ultimat3/query can produce, one subclass per stable code. */
-import { assertNever, hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
 const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
@@ -7,20 +7,27 @@ const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
 /** One class, one code: core owns the cursor codec, so core owns `X_CURSOR_INVALID`. */
 export { CursorInvalidError } from '@ultimat3/core';
 
-/** Titles for the framework-wide code table. Guarded: `X_INPUT_INVALID` is shared. */
-const TITLES: Readonly<Record<string, string>> = {
-  X_INPUT_INVALID: 'input failed schema validation',
+/** Titles for the framework-wide code table — every one of them owned by this package. */
+const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
   X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
   X_QUERY_POLICY_MISSING: 'a query was registered without a policy',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
-  X_RPC_FAILED: 'an RPC call failed without a problem+json body',
 };
 
-for (const [code, title] of Object.entries(TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+/**
+ * Codes `@ultimat3/action` owns that this package only throws. Both describe an action's job —
+ * enforcing an input schema, and speaking the typed RPC wire — so action declares the title and
+ * query never re-declares it: two copies of a title are two titles, one of which is stale.
+ */
+export const QUERY_BORROWED_ERROR_CODES = ['X_INPUT_INVALID', 'X_RPC_FAILED'] as const;
+
+// One unconditional call: a presence guard would turn "another package claims one of these codes"
+// from an X_ERROR_CODE_DUPLICATE at import into whichever module loaded first deciding the title.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(OWNED_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 function denialCode(denial: SurfaceDenial): string {
   switch (denial.surface) {

@@ -2,7 +2,7 @@
 // Mail fails in production, not in tests — a wrong locale, an empty text part or an
 // unconfigured driver must name the exact call site edit that repairs it.
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MAIL_ERROR_CODES = [
   'X_MAIL_LOCALE_MISSING',
@@ -26,11 +26,12 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_SEND_FAILED: 'the mail transport refused the message',
 };
 
-// Titles must be registered for `format()` to render the contract's first line. The guard keeps
-// the module import-order independent: registering the same code twice is X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries(MAIL_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// Titles must be registered for `format()` to render the contract's first line. Every code above is
+// owned here and none is borrowed, so the call is unconditional: a second package claiming one has
+// to fail as X_ERROR_CODE_DUPLICATE, not quietly keep whichever title was registered first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(MAIL_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 export interface MailErrorInit {
   readonly code: MailErrorCode;

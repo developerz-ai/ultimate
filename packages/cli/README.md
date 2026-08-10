@@ -4,18 +4,29 @@ The `x` binary. One char during dev, one command per job, `--json` on every one 
 
 ## What it owns
 
+Commands and the `x verify` step count, `As of 2026-08`:
+
 | Command | Does | Notes |
 |---|---|---|
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
-| `x verify` | **the gate** | 15 named steps, each with pass/fail + duration |
+| `x verify` | **the gate** | 16 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|studio\|branch` | everything DB | `branch` = copy-on-write clone + preview URL |
 | `x mcp serve` | `@ultimat3/mcp`'s 13 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x doctor` | environment, ports, drift, PWA prerequisites | every finding carries a fix command |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
+| `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `describe <name>`, straight off the registries |
+| `x jobs ls\|show\|retry\|drain` | the queue | depth, dead letters, step traces, `retry --from-step`, `drain --to` |
+| `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
+| `x errors explain <CODE>` | the error table, programmatically | refuses an unregistered code instead of inventing one |
+| `x fix boundary <file>` | the minimal cut for a crossed surface boundary | prints the plan and the `git mv`; never rewrites a file |
+
+Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is also in the registry
+and exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command — "not built yet"
+and "not a command" are different facts.
 
 ## The output contract
 
@@ -30,12 +41,12 @@ X_DB_DRIFT: schema differs from migrations
 
 ```sh
 x verify --json
-# {"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[...]}
+# {"ok":false,"command":"verify","summary":"1 of 16 steps failed","steps":[...]}
 ```
 
 ## `x verify` steps
 
-`typecheck lint boundaries filesize package-shape unit contract live job e2e eval drift
+`typecheck lint boundaries filesize package-shape errors unit contract live job e2e eval drift
 contract-diff budgets manifest`
 
 One list, in cost order, defined once in `cmd-verify.ts` — the framework repo's own gate

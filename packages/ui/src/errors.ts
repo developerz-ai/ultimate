@@ -12,6 +12,9 @@ export const UI_ERROR_CODES = {
 
 export type UiErrorCode = (typeof UI_ERROR_CODES)[keyof typeof UI_ERROR_CODES];
 
+// Unconditional like every other package: all four codes are ui's own, and a second package
+// claiming one has to throw X_ERROR_CODE_DUPLICATE at import. Taking the process down there is the
+// point — the alternative is two packages shipping two meanings for one code, decided by load order.
 registerErrorCodes({
   X_TOKEN_UNKNOWN: { title: 'design token role does not exist' },
   X_THEME_INVALID: { title: 'theme is not "light" or "dark"' },

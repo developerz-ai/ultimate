@@ -5,6 +5,7 @@ export {
   BudgetExceededError,
   PrerenderFailedError,
   RENDER_ERROR_CODES,
+  RENDER_ERROR_TITLES,
   RouteDuplicateError,
   RouteMetaMissingError,
   RouteModeInvalidError,

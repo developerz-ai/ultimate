@@ -4,9 +4,11 @@
 
 export type { BoundaryCode, SourceFile } from './app-boundaries';
 export {
+  appImportGraph,
   BOUNDARY_CODES,
   checkAppBoundaries,
   checkImportRules,
+  readAppSources,
   resolveSpecifier,
   scanRuntimeImports,
 } from './app-boundaries';
@@ -17,6 +19,8 @@ export { appManifest, policyFacts, readAppManifest, writeAppManifest } from './a
 export { OPENAPI_FILE, openApiJson } from './app-openapi';
 export type { AppRoot } from './app-root';
 export { findAppRoot, requireAppRoot, requireBunVersion, versionAtLeast } from './app-root';
+export type { BoundaryCut, BoundarySplit } from './boundary-cuts';
+export { planBoundaryCuts } from './boundary-cuts';
 export type { BuildStats, RouteStats } from './budgets';
 export { BUILD_STATS_FILE, checkBudgets, readBuildStats } from './budgets';
 export type { BuildTarget } from './cmd-build';
@@ -34,48 +38,61 @@ export {
   probeFor,
   runDoctor,
 } from './cmd-doctor';
+export { ERRORS_SUBCOMMANDS, errorsCommand } from './cmd-errors';
+export { FIX_SUBCOMMANDS, fixCommand } from './cmd-fix';
 export type { GenerateOptions, Generator } from './cmd-generate';
 export { GENERATORS, generate, generateCommand, writeFiles } from './cmd-generate';
 export { createHelpCommand, createVersionCommand, renderHelp } from './cmd-help';
+export { buildDrainTarget, JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
 export { manifestCommand } from './cmd-manifest';
 export type { McpHttpServer } from './cmd-mcp';
 export { mcpCommand, startMcpHttp } from './cmd-mcp';
 export type { NewAppOptions, WrittenApp } from './cmd-new';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
+export type { PlannedCommand } from './cmd-planned';
+export { PLANNED_COMMANDS, plannedCommands } from './cmd-planned';
+export { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 export { renderRouteTable, routesCommand } from './cmd-routes';
-export type { RunShardsOptions, Shard, TestFile } from './cmd-test';
-export {
-  availableCpus,
-  discoverTests,
-  planShards,
-  reproduceFor,
-  runShards,
-  shardArgs,
-  testCommand,
-} from './cmd-test';
+export { availableCpus, testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
 export type { DevDashboardInput, DevStatus } from './dev-dashboard';
 export { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 export { devHooks } from './dev-hooks';
+export type { DevDbClient, RunningQueue } from './dev-queue';
+export { startQueue } from './dev-queue';
 export type { DevRenderOptions, DevRouteData } from './dev-render';
 export { appRoutes } from './dev-render';
 export type { RunningRoles, StartRolesOptions } from './dev-roles';
 export { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
-export type { DevDbClient, RunningServices } from './dev-runtime';
+export type { RunningServices } from './dev-runtime';
 export { startServices } from './dev-runtime';
 export type { DevServices, ServiceBinding } from './dev-services';
 export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
 export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+export {
+  BANNED_PHRASES,
+  COMMAND_TOKENS,
+  checkErrorCodeDocs,
+  checkErrorFixes,
+  documentedCodes,
+  fixProblem,
+  staticFix,
+} from './error-contract';
 export type { CliErrorCode } from './errors';
 export {
   BadFlagError,
   BunVersionError,
   CLI_ERROR_CODES,
+  CLI_ERROR_TITLES,
   CliNotImplementedError,
+  DeclarationUnknownError,
+  ErrorCodeUnknownError,
+  FixTargetUnknownError,
+  JobUnknownError,
   NoTestFilesError,
   NotInAppError,
   UnknownCommandError,
@@ -83,6 +100,11 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
+export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
+export { drainJobs } from './jobs-drain';
+export type { JobsListFilter, JobsListResult } from './jobs-report';
+export { JOB_STATES, listJobs, retryJob, showJob } from './jobs-report';
+export { renderJobTable } from './jobs-table';
 export type { CliMcpServer, DevHostInput } from './mcp-host';
 export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
@@ -100,6 +122,19 @@ export {
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
 export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from './parse';
 export { CLI_VERSION, COMMANDS, commandFor, SPECS } from './registry';
+export {
+  eachSourceFile,
+  isGenerated,
+  isTest,
+  isVendored,
+  SOURCE_GLOBS,
+} from './source-files';
+export type { TestFile } from './test-select';
+export { belongsToType, discoverTests, sampleFiles } from './test-select';
+export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
+export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
+export type { CodeSite, FixSite, SourceSite } from './ts-scan';
+export { isCodeRegistry, maskLiterals, scanCodes, scanFixes, stripComments } from './ts-scan';
 export type {
   HostCheck,
   StepOutcome,
@@ -109,7 +144,7 @@ export type {
 } from './verify-step';
 export { VERIFY_STEP_NAMES } from './verify-step';
 export type { TestType } from './verify-tests';
-export { TEST_STEPS, TEST_TYPES, testStepCommand } from './verify-tests';
+export { TEST_STEPS, TEST_TYPES, testStepCommand, typeFilterOf } from './verify-tests';
 export {
   checkFileSizes,
   checkPackageShape,

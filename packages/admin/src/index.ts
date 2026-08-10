@@ -81,6 +81,7 @@ export { AdminDetail, type AdminDetailProps } from './detail';
 // host that only mounts the dev panels never loads a production admin component.
 export {
   ADMIN_ERROR_CODES,
+  ADMIN_ERROR_TITLES,
   AdminEntityUnknownError,
   type AdminErrorCode,
   type AdminErrorParts,

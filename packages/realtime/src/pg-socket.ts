@@ -184,7 +184,7 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
         new ReplicationFailedError({
           stage: 'connect',
           detail: error.message,
-          fix: `check the route to ${target.host}:${target.port} — the socket failed`,
+          fix: `open the route to ${target.host}:${target.port}, then: x doctor db`,
         }),
       ),
   };
@@ -206,7 +206,7 @@ export async function pgStreamOver(runtime: BunConnect, target: PgTarget): Promi
         throw new ReplicationFailedError({
           stage: 'write',
           detail: `the socket refused a ${rest.length}-byte write`,
-          fix: 'the replicator will reconnect — check the postgres host is still reachable',
+          fix: 'the replicator reconnects on its own; confirm the host is up with: x doctor db',
         });
       }
       if (written > 0) rest = rest.subarray(written);

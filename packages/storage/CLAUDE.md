@@ -32,8 +32,10 @@ bun run typecheck
 ```
 
 Gotchas:
-- `X_NOT_IMPLEMENTED` is core's — keep the `hasErrorCode()` guard in the registration loop,
-  or importing throws `X_ERROR_CODE_DUPLICATE`. Tests need `resetStorage()` in `beforeEach`.
+- `X_NOT_IMPLEMENTED` is core's — it belongs in `STORAGE_BORROWED_ERROR_CODES` (codes, no title)
+  and never in the registration call. A `hasErrorCode()` guard there would suppress the
+  `X_ERROR_CODE_DUPLICATE` two owners of one code are supposed to get. Tests need `resetStorage()`
+  in `beforeEach`.
 - `image.ts` owns no pixels: core's `transformImageBytes`/`blurDataUrl` are the only scaler.
   Its image failures (`X_IMAGE_UNSUPPORTED`, `X_IMAGE_DECODE_FAILED`) surface unwrapped —
   wrapping them in a `StorageError` would give one failure two codes.

@@ -11,6 +11,7 @@ export {
 export type { CacheErrorCode } from './errors';
 export {
   CACHE_ERROR_CODES,
+  CACHE_ERROR_TITLES,
   CacheDriverUnavailableError,
   CacheNotImplementedError,
   CacheTagUnknownError,

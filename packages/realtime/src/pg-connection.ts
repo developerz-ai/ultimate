@@ -272,8 +272,10 @@ export class PgConnection {
     if (message !== undefined) return message;
     throw new ReplicationFailedError({
       stage,
-      detail: 'the server closed the connection without answering',
-      fix: 'check the postgres log and pg_hba.conf — a rejected host is closed exactly like this',
+      detail:
+        'the server closed the connection without answering — pg_hba.conf needs a ' +
+        '"host replication <user> <cidr> scram-sha-256" line before it will hold one open',
+      fix: 'psql "$DATABASE_URL" -c "SELECT pg_reload_conf()" -c "TABLE pg_hba_file_rules"',
     });
   }
 

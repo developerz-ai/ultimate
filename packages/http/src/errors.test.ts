@@ -7,9 +7,10 @@ import {
   bodyInvalid,
   buildSkew,
   forbidden,
-  HTTP_BORROWED_CODES,
+  HTTP_BORROWED_ERROR_CODES,
   HTTP_ERROR_CODES,
   HTTP_ERROR_TITLES,
+  HTTP_OWNED_ERROR_CODES,
   HttpError,
   methodNotAllowed,
   pipelineNoResponse,
@@ -167,40 +168,55 @@ describe('HttpError', () => {
   });
 });
 
+/** Widened once: these lists are compared against plain strings, not against the literal union. */
+const EVERY_CODE: readonly string[] = HTTP_ERROR_CODES;
+const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
+const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
+
 describe('HTTP_ERROR_CODES', () => {
   test('contains exactly the 10 documented codes', () => {
     expect(HTTP_ERROR_CODES.length).toBe(10);
-    expect(HTTP_ERROR_CODES.includes('X_ROUTE_NOT_FOUND')).toBe(true);
-    expect(HTTP_ERROR_CODES.includes('X_BUILD_SKEW')).toBe(true);
-    expect(HTTP_ERROR_CODES.includes('X_METHOD_NOT_ALLOWED')).toBe(true);
-    expect(HTTP_ERROR_CODES.includes('X_ROUTE_CONFLICT')).toBe(true);
-    expect(HTTP_ERROR_CODES).toEqual([
-      'X_ROUTE_NOT_FOUND',
-      'X_METHOD_NOT_ALLOWED',
-      'X_BODY_INVALID',
-      'X_UNAUTHENTICATED',
-      'X_FORBIDDEN',
-      'X_RATE_LIMITED',
-      'X_BUILD_SKEW',
-      'X_ROUTE_CONFLICT',
-      'X_SERVER_NOT_STARTED',
-      'X_PIPELINE_NO_RESPONSE',
-    ]);
+    expect([...EVERY_CODE].sort()).toEqual(
+      [
+        'X_ROUTE_NOT_FOUND',
+        'X_METHOD_NOT_ALLOWED',
+        'X_BODY_INVALID',
+        'X_UNAUTHENTICATED',
+        'X_FORBIDDEN',
+        'X_RATE_LIMITED',
+        'X_BUILD_SKEW',
+        'X_ROUTE_CONFLICT',
+        'X_SERVER_NOT_STARTED',
+        'X_PIPELINE_NO_RESPONSE',
+      ].sort(),
+    );
   });
 });
 
-describe('HTTP_BORROWED_CODES', () => {
+describe('HTTP_BORROWED_ERROR_CODES', () => {
   test('is exactly the two codes owned by other packages', () => {
-    expect(HTTP_BORROWED_CODES).toEqual(['X_UNAUTHENTICATED', 'X_FORBIDDEN']);
+    expect([...BORROWED_CODES]).toEqual(['X_UNAUTHENTICATED', 'X_FORBIDDEN']);
+  });
+
+  test('owned and borrowed are disjoint and together are every code http throws', () => {
+    const owned = new Set(OWNED_CODES);
+    for (const code of BORROWED_CODES) expect(owned.has(code)).toBe(false);
+    expect([...EVERY_CODE].sort()).toEqual([...OWNED_CODES, ...BORROWED_CODES].sort());
   });
 });
 
 describe('HTTP_ERROR_TITLES', () => {
-  test('every documented code has a non-empty title', () => {
-    for (const code of HTTP_ERROR_CODES) {
+  test('every OWNED code has a non-empty title', () => {
+    for (const code of HTTP_OWNED_ERROR_CODES) {
       const title = HTTP_ERROR_TITLES[code];
       expect(typeof title).toBe('string');
       expect(title.length).toBeGreaterThan(0);
     }
+  });
+
+  // `X_UNAUTHENTICATED` is auth's and `X_FORBIDDEN` is policy's. A copy of their titles here is a
+  // copy that goes stale the day the owner edits theirs, with nothing to fail — so there is none.
+  test('carries no title for a borrowed code; the owner registers the only one', () => {
+    expect(Object.keys(HTTP_ERROR_TITLES).sort()).toEqual([...OWNED_CODES].sort());
   });
 });

@@ -4,6 +4,7 @@
 // primitive registries.
 
 import { describeActions } from '@ultimat3/action';
+import { FRAMEWORK_VERSION } from '@ultimat3/core';
 import { describeEntities } from '@ultimat3/entity';
 import { describeJobs, inspectJob, jobDriver } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
@@ -48,7 +49,7 @@ export function createDevServer(input: CreateDevServerInput): McpServer {
   return createMcpServer({
     tools: devTools(input.host),
     resources: frameworkResources(input.resources ?? {}),
-    serverInfo: { name: 'ultimate-dev', version: '0.0.1' },
+    serverInfo: { name: 'ultimate-dev', version: FRAMEWORK_VERSION },
   });
 }
 

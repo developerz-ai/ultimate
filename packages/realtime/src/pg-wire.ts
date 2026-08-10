@@ -58,7 +58,7 @@ export class MessageReader {
         throw new ReplicationProtocolError({
           stage: 'read',
           detail: `the connection closed with ${this.#buffer.length} bytes of a partial message`,
-          fix: 'check the postgres server log — the backend was terminated mid-message',
+          fix: 'x doctor db — the backend was terminated mid-message; the server log names the reason',
         });
       }
       this.#append(chunk);
@@ -172,7 +172,7 @@ export const describeFields = (fields: Readonly<Record<string, string>>): string
 
 /** SQLSTATEs worth their own fix line, because the operator's next command differs for each. */
 const FIXES: Readonly<Record<string, string>> = {
-  '28P01': 'check the password in the replication URL — the server refused the credentials',
+  '28P01': 'correct the password in the replication URL — the server refused the credentials',
   '28000': 'add a `host replication <user> <cidr> scram-sha-256` line to pg_hba.conf and reload',
   '42501': 'grant the role REPLICATION: ALTER ROLE <user> WITH REPLICATION',
   '55006': 'another replicator holds the slot — exactly one replicator per database, by design',
