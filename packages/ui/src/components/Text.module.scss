@@ -1,0 +1,37 @@
+@use '../tokens' as t;
+
+.text {
+  // Unset size and weight inherit, so <Text> is transparent inside a heading,
+  // a caption, or a control that already set the scale.
+  font-size: var(--text-scale, inherit);
+  font-weight: var(--text-strength, inherit);
+  line-height: t.leading(normal);
+}
+
+.tone-default {
+  color: t.role('fg');
+}
+
+.tone-muted {
+  color: t.role('fg-muted');
+}
+
+.tone-accent {
+  color: t.role('accent');
+}
+
+.tone-success {
+  color: t.role('success');
+}
+
+.tone-warning {
+  color: t.role('warning');
+}
+
+.tone-danger {
+  color: t.role('danger');
+}
+
+.tone-info {
+  color: t.role('info');
+}

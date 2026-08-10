@@ -14,10 +14,10 @@ import { ld } from '@ultimat3/seo';
 import { DateTime } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import { client } from '../../shared/client';
-import { blogHref, toCardPost } from '../../shared/entities';
-import { anonymousViewer } from '../../shared/viewer';
-import styles from './post.module.scss';
+import { client } from '../../../shared/client';
+import { blogHref, toCardPost } from '../../../shared/entities';
+import { anonymousViewer } from '../../../shared/viewer';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'isr',

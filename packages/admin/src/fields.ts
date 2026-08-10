@@ -2,8 +2,8 @@
 // there is never a second opinion about how money or a timestamp is rendered — and an
 // unmapped column is a loud X_ADMIN_FIELD_UNSUPPORTED at derive time, not a blank cell.
 
+import type { AdminColumnFacts } from './entity-columns';
 import { AdminFieldUnsupportedError } from './errors';
-import type { AdminColumn } from './registry';
 
 export type AdminFieldType =
   | 'text'
@@ -80,73 +80,46 @@ export function widgetFor(type: AdminFieldType): AdminWidget {
   return WIDGET_BY_FIELD_TYPE[type];
 }
 
-/** Column types that map straight through, keyed by the SQL type name lowercased. */
-const FIELD_TYPE_BY_SQL_TYPE: Readonly<Record<string, AdminFieldType>> = {
-  text: 'textarea',
-  varchar: 'text',
-  'character varying': 'text',
-  char: 'text',
-  citext: 'text',
+/**
+ * Every kind `@ultimat3/entity` can put on a column, and nothing else: a name that no column
+ * builder emits would be a widget nobody can reach. `text` is the entry the length rule below
+ * then refines.
+ */
+const FIELD_TYPE_BY_COLUMN_KIND: Readonly<Record<string, AdminFieldType>> = {
   uuid: 'text',
-  slug: 'text',
-  email: 'text',
-  url: 'text',
-  int: 'number',
-  int2: 'number',
-  int4: 'number',
-  int8: 'number',
-  integer: 'number',
-  smallint: 'number',
-  bigint: 'number',
-  serial: 'number',
-  numeric: 'number',
-  decimal: 'number',
-  real: 'number',
-  'double precision': 'number',
-  money: 'money',
-  bool: 'boolean',
+  text: 'textarea',
+  char: 'text',
   boolean: 'boolean',
-  enum: 'enum',
-  date: 'date',
+  integer: 'number',
+  bigint: 'number',
   timestamptz: 'timestamptz',
-  'timestamp with time zone': 'timestamptz',
-  timestamp: 'timestamptz',
-  json: 'json',
   jsonb: 'json',
-  timezone: 'timezone',
-  locale: 'locale',
-  file: 'file',
-  upload: 'file',
-  bytea: 'file',
+  money: 'money',
 };
 
 /**
- * Derivation order matters: a FK is a relation whatever its SQL type, a column carrying a
- * currency is money whatever its SQL type, and declared `values` mean a select. Only then
- * does the SQL type name get a vote.
+ * Derivation order matters: a FK is a relation whatever its kind, and declared `values` mean
+ * a select whatever its kind. Only then does the column kind get a vote — and a text column
+ * with a declared max is one line, where an unbounded `text()` is prose.
  */
 export function fieldTypeFromColumn(
   entity: string,
   field: string,
-  column: AdminColumn,
+  column: AdminColumnFacts,
 ): AdminFieldType {
   if (column.references !== undefined) return 'relation';
-  if (column.currency !== undefined) return 'money';
   if (column.values !== undefined && column.values.length > 0) return 'enum';
 
-  const sqlType = column.type.toLowerCase();
-  const mapped = FIELD_TYPE_BY_SQL_TYPE[sqlType];
+  const mapped = FIELD_TYPE_BY_COLUMN_KIND[column.kind];
   if (mapped === undefined) {
     throw new AdminFieldUnsupportedError({
       entity,
       field,
-      cause: `column type "${column.type}" has no admin widget`,
+      cause: `column kind "${column.kind}" has no admin widget`,
       fix: `adminResource(${entity}, { fields: { ${field}: { widget: 'json-editor' } } })  # or { hidden: true }`,
     });
   }
-  if (mapped === 'textarea' && column.multiline === false) return 'text';
-  if (mapped === 'text' && column.multiline === true) return 'textarea';
-  return mapped;
+  return mapped === 'textarea' && column.length !== undefined ? 'text' : mapped;
 }
 
 /** `false` for kinds whose value is never worth a list column (blobs, big JSON, prose). */
@@ -155,8 +128,8 @@ export function listable(type: AdminFieldType): boolean {
 }
 
 /** Only indexed, unique, enum, boolean, and FK columns are offered as filters. */
-export function filterable(type: AdminFieldType, column: AdminColumn): boolean {
-  if (column.index === true || column.unique === true || column.primaryKey === true) return true;
+export function filterable(type: AdminFieldType, column: AdminColumnFacts): boolean {
+  if (column.index || column.unique || column.primaryKey) return true;
   return type === 'enum' || type === 'boolean' || type === 'relation';
 }
 
@@ -165,12 +138,12 @@ export function filterable(type: AdminFieldType, column: AdminColumn): boolean {
  * scalar, or a text column with an index behind it. Sorting on an unindexed column would
  * turn every page of the admin into a sort of the whole table.
  */
-export function sortable(type: AdminFieldType, column: AdminColumn): boolean {
+export function sortable(type: AdminFieldType, column: AdminColumnFacts): boolean {
   if (type === 'number' || type === 'money' || type === 'date' || type === 'timestamptz') {
     return true;
   }
   if (type !== 'text') return false;
-  return column.index === true || column.unique === true || column.primaryKey === true;
+  return column.index || column.unique || column.primaryKey;
 }
 
 export function searchable(type: AdminFieldType): boolean {

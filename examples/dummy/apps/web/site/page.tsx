@@ -9,7 +9,7 @@ import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import { Image, Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import styles from './index.module.scss';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'static',

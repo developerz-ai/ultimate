@@ -280,13 +280,18 @@ A scheduled trigger. Enqueues jobs; never does work itself.
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
-  enqueue: () => [[sendDigest, { runDate: localDateIn(systemClock.now(), 'UTC') }]],
+  enqueue: (occurrenceMs) => [[sendDigest, { runDate: localDateIn(new Date(occurrenceMs), 'UTC') }]],
 });
 ```
 
 The payload is not empty, and that is the point: a job's `idempotencyKey` derives from `input`
 alone, so `{}` would make every night's run collide with the first one and the digest would send
 exactly once, ever.
+
+`enqueue` is handed the instant of the **occurrence** it is firing for, and never reads the clock,
+because catch-up exists: a tick dispatched late — or replayed for a missed occurrence — has a wall
+clock that no longer matches the occurrence. `systemClock.now()` there dates the 03:00 digest to the
+following day, which becomes a wrong idempotency key that nothing downstream catches.
 
 | Aspect | Rule |
 |---|---|

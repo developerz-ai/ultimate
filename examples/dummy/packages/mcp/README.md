@@ -47,7 +47,7 @@ takes money being the only way to find out.
 ## Prompts and evals
 
 The summarisation prompt lives with its feature
-(`apps/web/app/posts/prompts/summarize.v3.md`) and is exposed here as an MCP prompt resource.
+(`apps/web/app/posts/prompts/summarize.v4.md`) and is exposed here as an MCP prompt resource.
 Editing it requires a version bump, and a prompt without an evals file fails `x verify`.
 
 ## Rules

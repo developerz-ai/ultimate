@@ -84,31 +84,52 @@ export class LiveClient<T extends TableMap = TableMap> {
 
   readonly appUpdateAvailable: () => string | null;
   readonly reconnectAt: () => number | null;
+  /**
+   * The reactive primitive the app injected, re-exposed so anything built on this client derives
+   * its signals from the same runtime. One reactive runtime per app, never two.
+   */
+  readonly signal: SignalFactory;
+  /** The durable queue when tier 3 is configured, so a queue count is read off the queue itself. */
+  readonly queue: OfflineQueue | undefined;
 
   #socket: ClientSocket | null = null;
   #attempt = 0;
-  #connected = false;
+  /** A signal, not a field: `connected` is rendered, so a plain boolean would never re-render. */
+  readonly #connected: () => boolean;
+  readonly #setConnected: (next: boolean) => void;
+  /**
+   * Subscribers notified after every offline-queue mutation: a manual drain, the automatic drain
+   * `connect()` runs on every reconnect, or an async ack/fail frame. `hooks.ts` wires its
+   * invalidation signal through `onQueueChange` rather than each call site remembering to bump it
+   * itself — see there for why that matters.
+   */
+  readonly #queueListeners = new Set<() => void>();
 
   constructor(options: LiveClientOptions<T>) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
+    this.signal = options.signal;
+    this.queue = options.queue;
     const [update, setUpdate] = options.signal<string | null>(null);
     const [reconnectAt, setReconnectAt] = options.signal<number | null>(null);
+    const [connected, setConnected] = options.signal<boolean>(false);
     this.appUpdateAvailable = update;
     this.#setUpdate = setUpdate;
     this.reconnectAt = reconnectAt;
     this.#setReconnectAt = setReconnectAt;
+    this.#connected = connected;
+    this.#setConnected = setConnected;
   }
 
   get connected(): boolean {
-    return this.#connected;
+    return this.#connected();
   }
 
   connect(): void {
     const socket = this.#options.connect();
     this.#socket = socket;
     socket.onOpen(() => {
-      this.#connected = true;
+      this.#setConnected(true);
       this.#attempt = 0;
       this.#setReconnectAt(null);
       this.#send({
@@ -128,7 +149,7 @@ export class LiveClient<T extends TableMap = TableMap> {
       this.#onFrame(decode(data));
     });
     socket.onClose(() => {
-      this.#connected = false;
+      this.#setConnected(false);
       for (const registration of this.#registrations.values()) registration.setState('offline');
       this.#scheduleReconnect(null);
     });
@@ -151,7 +172,7 @@ export class LiveClient<T extends TableMap = TableMap> {
       cursor: null,
     };
     this.#registrations.set(sid, registration);
-    if (this.#connected) this.#sendSubscribe(registration);
+    if (this.#connected()) this.#sendSubscribe(registration);
     return {
       rows: rows as () => readonly R[],
       state,
@@ -252,10 +273,26 @@ export class LiveClient<T extends TableMap = TableMap> {
   /** Sends every pending mutation in sequence order. Stops at the first one the socket refuses. */
   async drain(): Promise<void> {
     const queue = this.#options.queue;
-    if (!queue || !this.#connected) return;
+    if (!queue || !this.#connected()) return;
     await queue.drain(async (mutation) => {
       this.#send(mutateFrame(mutation));
     });
+    this.#notifyQueueChange();
+  }
+
+  /**
+   * Fires whenever the offline queue changes for any reason: a direct `mutate`/`drain` call, the
+   * automatic drain `connect()` runs on every reconnect, or an async ack/fail frame arriving over
+   * the socket. `hooks.ts` is the only subscriber today — it bumps its invalidation signal here at
+   * `setLiveClient` time, so a component reading `useMutationQueue()` stays live across every
+   * transition, not just the ones a hook happens to await directly. Returns an unsubscribe
+   * function.
+   */
+  onQueueChange(listener: () => void): () => void {
+    this.#queueListeners.add(listener);
+    return () => {
+      this.#queueListeners.delete(listener);
+    };
   }
 
   #sendSubscribe(registration: Registration): void {
@@ -303,8 +340,12 @@ export class LiveClient<T extends TableMap = TableMap> {
         return;
       }
       case 'ack': {
-        if (frame.error) void this.#options.queue?.fail(frame.ref, frame.error);
-        else void this.#options.queue?.ack(frame.ref);
+        const queue = this.#options.queue;
+        // `ack`/`fail` mutate the queue synchronously and persist asynchronously; chaining rather
+        // than notifying right after the call keeps this correct even if that ordering ever
+        // changes, and it still fires exactly once the persisted write actually lands.
+        const settled = frame.error ? queue?.fail(frame.ref, frame.error) : queue?.ack(frame.ref);
+        void settled?.then(() => this.#notifyQueueChange());
         return;
       }
       case 'rebase': {
@@ -359,6 +400,10 @@ export class LiveClient<T extends TableMap = TableMap> {
 
   #send(frame: Frame): void {
     this.#socket?.send(encode(frame));
+  }
+
+  #notifyQueueChange(): void {
+    for (const listener of this.#queueListeners) listener();
   }
 }
 

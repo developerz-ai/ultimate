@@ -12,7 +12,11 @@
     "back": "Back"
   },
   "site": {
-    "nav": { "features": "Features", "pricing": "Pricing", "blog": "Blog" },
+    "nav": {
+      "features": "Features",
+      "pricing": "Pricing",
+      "blog": "Blog"
+    },
     "hero": {
       "metaTitle": "Postly — a team blog that behaves itself",
       "metaDescription": "Multi-tenant team blogging with offline likes, live feeds, per-member timezones and prices that are integers. Built on Ultimate.",
@@ -66,7 +70,11 @@
     }
   },
   "app": {
-    "nav": { "feed": "Feed", "settings": "Settings", "org": "Organisation" },
+    "nav": {
+      "feed": "Feed",
+      "settings": "Settings",
+      "org": "Organisation"
+    },
     "feed": {
       "metaTitle": "Feed",
       "heading": "{org} feed",
@@ -107,7 +115,11 @@
     }
   },
   "posts": {
-    "status": { "draft": "Draft", "scheduled": "Scheduled", "published": "Published" },
+    "status": {
+      "draft": "Draft",
+      "scheduled": "Scheduled",
+      "published": "Published"
+    },
     "titleLabel": "Title",
     "bodyLabel": "Post",
     "create": "Create draft",
@@ -129,10 +141,18 @@
       "creditNote": "{credit} credited for the rest of this period",
       "done": "Now on {plan}"
     },
-    "roles": { "owner": "Owner", "admin": "Admin", "author": "Author", "reader": "Reader" }
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "author": "Author",
+      "reader": "Reader"
+    }
   },
   "plans": {
-    "free": { "name": "Free", "description": "One small team, all the primitives." },
+    "free": {
+      "name": "Free",
+      "description": "One small team, all the primitives."
+    },
     "team": {
       "name": "Team",
       "description": "Drafts, reviews and a digest for a real editorial team."
@@ -181,5 +201,8 @@
     "offlineQueued": "You are offline — this will be sent when you reconnect.",
     "updateAvailable": "A new version is ready.",
     "updateAction": "Reload"
+  },
+  "admin": {
+    "title": "Postly admin"
   }
 }

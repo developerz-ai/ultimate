@@ -129,6 +129,26 @@ A feature imports another feature only through its `service.ts` or its published
 
 Why feature slices beat layer directories here: a change request is almost always feature-shaped ("posts need scheduling"), so a feature-sliced tree makes the change a single directory read. A layer-sliced tree makes it eight directory reads and one forgotten file.
 
+## Route files
+
+The directory is the URL; the filename names the kind of file, never a URL segment:
+
+| File | URL |
+|---|---|
+| `apps/web/site/page.tsx` | `/` |
+| `apps/web/site/pricing/page.tsx` | `/pricing` |
+| `apps/web/site/(marketing)/about/page.tsx` | `/about` |
+| `apps/web/site/blog/[slug]/page.tsx` | `/blog/:slug` |
+| `apps/web/site/docs/[...path]/page.tsx` | `/docs/*path` |
+| `apps/web/app/dashboard/page.tsx` | `/dashboard` |
+| `apps/web/api/posts/route.ts` | `/api/posts` |
+
+`page.tsx` on `site/` and `app/`, `route.ts` on `api/`. `index.tsx` is not a page filename and
+`<name>.tsx` is not a route — `registerRoute()` refuses any other filename, enforced with
+`X_ROUTE_FILE_INVALID`. One directory per route is what lets `page.tsx`, `page.module.scss` and
+`page.test.ts` co-locate, gives a dynamic segment (`blog/[slug]/`) its own directory for its own
+stylesheet, and makes "is this file a route?" mechanically decidable from the filename alone.
+
 ## What `x g resource` generates
 
 ```
@@ -154,7 +174,7 @@ refuses to allow.
 | 8 | `apps/web/app/post/jobs/reindex-post.ts` | one job with the `idempotencyKey` the type requires |
 | 9 | `apps/web/app/post/ui.tsx` + `ui.module.scss` + `ui/post-{card,form}.tsx` | components, tokens only, `t()` only |
 | 10 | `apps/web/app/posts/page.tsx` + `page.module.scss` | `defineRoute`: `render`, `hydrate`, `offline`, `budget`, `meta` |
-| 11 | `packages/i18n/catalogs/<locale>/{post,posts}.json` (`--locales`, default `en`) | every key the components and the route use — so the build is green |
+| 11 | `packages/i18n/catalogs/<locale>.json` (`--locales`, default `en`), merged into the existing file | every key the components and the route use — so the build is green |
 | 12 | `apps/web/app/post/admin/resource.ts` (`--admin`) | the `AdminResourceOptions` override — title key, list columns, page size |
 | 13 | `*.test.ts` beside each declaration — entity, policy, both actions, the query, the job, the service, the route, the admin override | unit, contract, live and job tests that pass on the first run |
 | 14 | `x.manifest.json` | rescanned and rewritten after any `x g` run that wrote a file |

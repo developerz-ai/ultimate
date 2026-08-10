@@ -2,24 +2,21 @@
 // how a member becomes an actor. Everything else in the bag arrives with the framework's own
 // preload, imported below, so an app registers only what the framework cannot know.
 
-// The framework is imported by relative path rather than by `@ultimat3/*`: this directory is not
-// a workspace member yet (issue #9), and a preload runs before anything else, so it must not
-// depend on workspace symlinks. A generated app writes `@ultimat3/testing` here. For the same
-// reason `scripts/` is not in tsconfig's `include` — a composite project cannot reach across
-// into another one's sources. Both go away when the app joins the workspace.
-import '../../../packages/testing/src/preload';
+// Imported by package name, exactly as a generated app writes it: Postly is a workspace member,
+// so `@ultimat3/testing` resolves here through the same symlink `x new` produces — no relative
+// reach into the framework's sources, and nothing in this file that a real app would not write.
+import '@ultimat3/testing/preload';
 // The registration pass, and it belongs HERE rather than in a test file: importing the API stamps
 // each export name onto its declaration, which is what gives a projection a stable name to project
 // under. A test in `app/` that imported it would be `app/` reaching into `api/` at runtime — the
 // boundary `x verify` rejects with `X_BOUNDARY_VIOLATION`, because it is the edge along which a
 // page could call a handler instead of the typed client. The preload is outside both, runs once
-// for the whole suite, and is already where the app says what its tests need. Same relative-path
-// convention, same reason.
+// for the whole suite, and is already where the app says what its tests need.
 import '../apps/web/api';
-import { assert, userActor } from '../../../packages/core/src/index';
-import type { Driver, EntityCore, Repo, Seed } from '../../../packages/entity/src/index';
-import { memoryDriver, seedId } from '../../../packages/entity/src/index';
-import { defineFixtures } from '../../../packages/testing/src/index';
+import { assert, userActor } from '@ultimat3/core';
+import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
+import { memoryDriver, seedId } from '@ultimat3/entity';
+import { defineFixtures } from '@ultimat3/testing';
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
 export interface SeedRow {

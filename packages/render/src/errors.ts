@@ -11,6 +11,7 @@ export const RENDER_ERROR_CODES = [
   'X_ROUTE_META_MISSING',
   'X_ROUTE_UNNORMALIZED',
   'X_ROUTE_DUPLICATE',
+  'X_ROUTE_FILE_INVALID',
   'X_SURFACE_BOUNDARY',
   'X_BUDGET_EXCEEDED',
   'X_PRERENDER_FAILED',
@@ -24,6 +25,7 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ROUTE_META_MISSING: 'required metadata missing',
   X_ROUTE_UNNORMALIZED: 'a route was registered without defineRoute',
   X_ROUTE_DUPLICATE: 'two route files resolve to one URL',
+  X_ROUTE_FILE_INVALID: 'a route file is not named for its surface',
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
   X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
@@ -103,6 +105,24 @@ export class RouteDuplicateError extends UltimateError {
       cause,
       fix,
       docs: docsFor(RouteDuplicateError.code),
+    });
+  }
+}
+
+/**
+ * A route file is not named for its surface. One spelling per surface — `page.tsx` under `site/`
+ * and `app/`, `route.ts` under `api/` — because the URL is the *directory* path, and a second
+ * spelling makes "is this file a route?" undecidable for every reader that has to answer it:
+ * the module scan, the boundary walk, `sw.js`, and the author looking at the folder.
+ */
+export class RouteFileInvalidError extends UltimateError {
+  static readonly code = 'X_ROUTE_FILE_INVALID' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: RouteFileInvalidError.code,
+      cause,
+      fix,
+      docs: docsFor(RouteFileInvalidError.code),
     });
   }
 }

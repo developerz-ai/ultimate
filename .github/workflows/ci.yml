@@ -207,19 +207,20 @@ jobs:
       - name: x verify
         run: bun run scripts/verify.ts --json
 
-  # The reference app runs the same 15-step gate a generated app would. Not in `verify`'s
-  # `needs`: the framework gate and the app gate are two different contracts, checked
-  # independently — a red app doesn't hide a green framework or vice versa. That is also why
-  # the app is absent from the `typecheck` and `test` jobs above: its typecheck and its suites
-  # are steps 1 and 6-11 of the gate below, so running them twice only decides which job's
-  # redness you notice first.
+  # The reference app runs the same 17-step gate a generated app would, and this job BLOCKS on it.
+  # Not in `verify`'s `needs`: the framework gate and the app gate are two different contracts,
+  # checked independently — a red app doesn't hide a green framework or vice versa. That is also
+  # why the app is absent from the `typecheck` and `test` jobs above: its typecheck and its suites
+  # are steps 1 and 7-12 of the gate below, so running them twice only decides which job's redness
+  # you notice first.
   #
-  # Advisory, not blocking. As of 2026-08 Postly is written against the finished API — the fluent
-  # `action` surface, `defineMail`/`defineService`, the `page`/`subscribe`/`evaluate` fixtures —
-  # and the framework has not shipped it yet, so every failure here is drift the roadmap already
-  # owns rather than a regression this PR introduced. Blocking on it would make red the resting
-  # state, which is how a gate stops being read. `continue-on-error` comes off at milestone 9 in
-  # docs/idea/14-roadmap.md — the last of those surfaces to land — when app and framework agree.
+  # Postly is not green yet, so blocking on a bare `x verify` would make red the resting state,
+  # which is how a gate stops being read. `scripts/reference-app-gate.ts` blocks on the ratchet
+  # instead: every step passing today must keep passing, every step pinned in its `EXPECTED_RED`
+  # table must still be failing, and the moment `typecheck` comes off the pin the app has to join
+  # the root `tsc -b` solution. The pin can only ever shrink, and when it empties the job is
+  # asserting a plain 17 of 17. Human render, not `--json`: the whole step table, every failing
+  # step and every fix line belong in the log for the person reading a red run.
   reference-app-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -236,16 +237,8 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
-      - name: x verify (examples/dummy)
-        # `continue-on-error` on the STEP, not the job: on the job it leaves the check itself red
-        # for as long as the drift above lasts, and a check that is always red is a check nobody
-        # reads — the exact failure mode this PR exists to remove. On the step the run is marked
-        # with a warning, and the whole 15-step table, every failing step and every fix line stay
-        # in the log. Human render, not `--json`: the reader of an advisory result is a person or
-        # an agent scanning for which step went red, not a parser.
-        continue-on-error: true
-        working-directory: examples/dummy
-        run: bun run ../../packages/cli/src/bin.ts verify
+      - name: x verify (examples/dummy), against the ratchet
+        run: bun run scripts/reference-app-gate.ts
 
   # The end-to-end promise, proved for real: a stranger with nothing but `bun` runs `x new`,
   # `bun install`, `x verify` and gets a green gate. Distinct from scaffold-typecheck.ts (which
@@ -292,11 +285,12 @@ jobs:
         run: bun install --linker=hoisted || bun install --linker=hoisted
       - name: x verify (demoapp)
         working-directory: ${{ runner.temp }}/demoapp
-        # Advisory, same reasoning as reference-app-verify above: `x new --example`'s entity.ts
-        # carries the same pinned TS18048 gap scaffold-typecheck.ts's KNOWN_GAPS documents —
-        # `invariant()`'s generic key type falling back to `string` — which needs a breaking
-        # change to a shipped primitive to close, so a major version, not a fix this job can wait
-        # on. Everything else in the 17-step table is real signal: a new red step here is not that
-        # gap and should be read as a regression.
+        # Advisory: `x new --example`'s entity.ts carries the same pinned TS18048 gap
+        # scaffold-typecheck.ts's KNOWN_GAPS documents — `invariant()`'s generic key type falling
+        # back to `string` — which needs a breaking change to a shipped primitive to close, so a
+        # major version, not a fix this job can wait on. Everything else in the 17-step table is
+        # real signal: a new red step here is not that gap and should be read as a regression.
+        # (reference-app-verify above blocks on a per-step ratchet instead; a scaffolded app has
+        # nowhere to keep one, since it is built fresh in a temp dir on every run.)
         continue-on-error: true
         run: bun run verify

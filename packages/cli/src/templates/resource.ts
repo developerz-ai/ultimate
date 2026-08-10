@@ -186,8 +186,9 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
     { path: `${dir}/ui/${feature.kebab}-card.tsx`, contents: cardSource(feature) },
     { path: `${dir}/ui/${feature.kebab}-form.tsx`, contents: formSource(feature) },
     ...locales.map((locale) => ({
-      path: catalogPath(locale, feature.kebab),
+      path: catalogPath(locale),
       contents: catalogSource(feature),
+      merge: 'json' as const,
     })),
     // Always an app route: a slice ships a live query, a form and actions, and `generate()`
     // refuses `--surface site` for a resource rather than emit them behind a 0kb budget.

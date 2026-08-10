@@ -237,12 +237,14 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         const entity = bagOf(raw);
         return {
           name: str(entity['table'], str(entity['name'])),
-          columns: Object.entries(bagOf(entity['columns'])).map(([name, rawColumn]) => {
+          // `EntityDescription.columns` is a LIST of physical columns — money is already two
+          // of them here. Reading it as a record produced a table whose columns were "0", "1".
+          columns: listOf(entity['columns']).map((rawColumn) => {
             const column = bagOf(rawColumn);
             return {
-              name,
-              type: str(column['type'], 'unknown'),
-              nullable: column['nullable'] === true,
+              name: str(column['column'], str(column['property'], 'unknown')),
+              type: str(column['kind'], 'unknown'),
+              nullable: column['notNull'] !== true,
             };
           }),
         };

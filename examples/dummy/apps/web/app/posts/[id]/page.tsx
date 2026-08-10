@@ -5,16 +5,16 @@
  */
 
 import { useT } from '@postly/i18n';
-import { usePolicy } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
-import { client } from '../../shared/client';
-import { Layout } from '../layout';
-import { useViewer } from '../viewer-context';
-import styles from './post.module.scss';
-import { LikeButton } from './ui/like-button';
+import { useCan } from '../../../shared/actor';
+import { client } from '../../../shared/client';
+import { Layout } from '../../layout';
+import { useViewer } from '../../viewer-context';
+import { LikeButton } from '../ui/like-button';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'ssr',
@@ -36,11 +36,12 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
   const viewer = useViewer();
 
   /**
-   * The same `post:publish` rule the action enforces, evaluated for rendering. One definition,
-   * so the button cannot appear for someone the server would deny — or hide from someone it
-   * would allow.
+   * The permission half of the same `post:publish` rule the action enforces, so the button is
+   * absent for anyone who holds nothing. The rule's OTHER half is authorship, which is decided
+   * against the post row the browser does not have — `publishPost` re-decides with it on every
+   * call, and that decision, not this one, is the authoritative answer.
    */
-  const canPublish = usePolicy('post:publish', () => ({ postId: props.data.id }));
+  const canPublish = useCan('post:publish');
 
   return (
     <Layout>
@@ -67,7 +68,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
               orgId={props.data.orgId}
               likeCount={props.data.likeCount}
             />
-            <Show when={props.data.status === 'draft' && canPublish()}>
+            <Show when={props.data.status === 'draft' && canPublish}>
               <Button
                 onClick={() =>
                   client.publishPost({ postId: props.data.id, orgId: props.data.orgId })

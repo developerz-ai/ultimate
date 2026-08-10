@@ -13,7 +13,7 @@ import { defineRoute } from '@ultimat3/render';
 import { Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import styles from './offline.module.scss';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'static',

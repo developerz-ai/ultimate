@@ -17,7 +17,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | 8 | Query (live?) | edit | `apps/web/app/posts/live.ts` |
 | 9 | Job | edit | `apps/web/app/posts/jobs.ts` |
 | 10 | Route + meta + offline | edit | `apps/web/app/posts/page.tsx` |
-| 11 | i18n keys | `x i18n add post.publish` | `packages/i18n/{en,es}/posts.json` |
+| 11 | i18n keys | `x i18n add post.publish` | `packages/i18n/catalogs/{en,es}.json` (merged in) |
 | 12 | Tests | fill the scaffolds | `*.test.ts` next to each source |
 | 13 | Manifest | `x manifest write` | `x.manifest.json`, `openapi.json` |
 | 14 | Gate | `x verify` | exit 0 = shippable |

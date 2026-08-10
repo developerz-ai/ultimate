@@ -1,7 +1,7 @@
 /**
- * The org feed. `stream` because an authed page needs both halves: the shell in the first flush,
- * the rows when the query resolves. Solid patches the streamed HTML in place, so the shell costs
- * no hydration and each `<Suspense>` island wakes on its own schedule.
+ * The org feed. `ssr`, not `stream`: the rows arrive over `useLive`'s socket subscription, not a
+ * resolving promise, so there is no promise boundary for `<Suspense>` to wait on — the loading gate
+ * below is the live query's own `state()`, a plain reactive read, not a streamed hole.
  *
  * `useLive` returns a signal backed by the persisted local store, which is why this page is
  * readable in a tunnel and why a like taken offline is still here when the tunnel ends.
@@ -9,21 +9,21 @@
 
 import { useT } from '@postly/i18n';
 import { PostCard } from '@postly/ui';
-import { useActor } from '@ultimat3/core';
 import { useConnection, useLive } from '@ultimat3/realtime';
 import { defineRoute } from '@ultimat3/render';
 import { Skeleton, Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { For, Show, Suspense } from 'solid-js';
-import { postHref, toCardPost } from '../shared/entities';
-import styles from './feed.module.scss';
-import { Layout } from './layout';
-import { liveFeed } from './posts/live';
-import { LikeButton } from './posts/ui/like-button';
-import { useViewer } from './viewer-context';
+import { For, Show } from 'solid-js';
+import { useActor } from '../../shared/actor';
+import { postHref, toCardPost } from '../../shared/entities';
+import { Layout } from '../layout';
+import { liveFeed } from '../posts/live';
+import { LikeButton } from '../posts/ui/like-button';
+import { useViewer } from '../viewer-context';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
-  render: 'stream',
+  render: 'ssr',
   /**
    * Network-first for the document, cache-first for the content-hashed chunks. The feed's *rows*
    * are not cached by the service worker at all — they come from the persisted live query.
@@ -54,8 +54,15 @@ export function Page(): JSX.Element {
         <p class={styles.offline}>{t('app.feed.offlineNotice')}</p>
       </Show>
 
-      {/* One streamed hole. The header above is already on screen while this resolves. */}
-      <Suspense fallback={<Skeleton rows={4} label={t('app.feed.loading')} />}>
+      {/*
+        The live-query loading gate, not a streamed hole: `feed.state()` is a plain reactive read
+        off the query handle, not a promise `<Suspense>` could wait on — the rows arrive over the
+        socket, so `loading` is a fact the handle carries, not a hole the server fills in later.
+      */}
+      <Show
+        when={feed.state() !== 'loading'}
+        fallback={<Skeleton rows={4} label={t('app.feed.loading')} />}
+      >
         <Show when={feed().length > 0} fallback={<p class={styles.empty}>{t('app.feed.empty')}</p>}>
           <Stack gap="4" as="ul" class={styles.list}>
             <For each={feed()}>
@@ -72,7 +79,7 @@ export function Page(): JSX.Element {
             </For>
           </Stack>
         </Show>
-      </Suspense>
+      </Show>
     </Layout>
   );
 }

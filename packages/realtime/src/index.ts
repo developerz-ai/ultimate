@@ -61,6 +61,7 @@ export {
 // ---- errors ----------------------------------------------------------------------------------
 export {
   CursorStaleError,
+  LiveClientMissingError,
   NotImplementedError,
   ProtocolVersionError,
   REALTIME_ERROR_CODES,
@@ -85,6 +86,23 @@ export {
   type TransportSetEntry,
   type TransportSubscription,
 } from './fanout';
+// ---- the client hooks --------------------------------------------------------------------------
+export {
+  type ConflictLike,
+  type Connection,
+  clearLiveClient,
+  hasLiveClient,
+  type LiveInput,
+  type LiveRows,
+  type Mutate,
+  type MutationQueue,
+  type MutatorLike,
+  setLiveClient,
+  useConnection,
+  useLive,
+  useMutation,
+  useMutationQueue,
+} from './hooks';
 // ---- shared value domain ---------------------------------------------------------------------
 export {
   canonicalJson,

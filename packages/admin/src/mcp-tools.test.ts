@@ -1,24 +1,30 @@
-import { describe, expect, test } from 'bun:test';
+// The MCP surface derives from the same authz decisions the UI renders from — a tool exists
+// exactly when the equivalent button would, so an agent's tool list is never a wider door than
+// a human's nav, and a destructive tool always demands the same confirmation a human would.
+
+import { afterAll, describe, expect, test } from 'bun:test';
+import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { type AdminApp, defineAdmin } from './admin';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, type AdminAuthz, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import { adminMcpTools } from './mcp-tools';
-import type { AdminAction, AdminEntity } from './registry';
+import type { AdminAction } from './registry';
 
-const post: AdminEntity = {
-  name: 'post',
+const post = entity('admin_tool_post', {
   columns: {
-    id: { type: 'uuid', primaryKey: true },
-    title: { type: 'varchar', index: true },
-    createdAt: { type: 'timestamptz', generated: true },
+    id: uuid().primaryKey(),
+    title: text({ max: 120 }),
+    createdAt: timestamp().defaultNow(),
   },
-};
+});
+
+afterAll(clearRegistry);
 
 const publish: AdminAction = {
   name: 'post.publish',
-  permission: 'post:publish',
-  entity: 'post',
+  permission: 'admin_tool_post:publish',
+  entity: 'admin_tool_post',
   mcp: { expose: true, description: 'Publish a draft post' },
   async handle(): Promise<null> {
     return null;
@@ -43,30 +49,44 @@ const ctxWith = (authz: AdminAuthz): CrudCtx => ({
 
 describe('the MCP surface is the UI surface', () => {
   test('a read-only actor gets read tools and nothing that writes', () => {
-    const authz = staticAuthz(['admin:read', 'post:read']);
+    const authz = staticAuthz(['admin:read', 'admin_tool_post:read']);
     const tools = adminMcpTools(appWith(authz), ctxWith(authz)).map((tool) => tool.name);
 
-    expect(tools).toEqual(['admin.post.list', 'admin.post.read', 'admin.search']);
-    expect(tools).not.toContain('admin.post.create');
-    expect(tools).not.toContain('admin.post.delete');
+    expect(tools).toEqual([
+      'admin.admin_tool_post.list',
+      'admin.admin_tool_post.read',
+      'admin.search',
+    ]);
+    expect(tools).not.toContain('admin.admin_tool_post.create');
+    expect(tools).not.toContain('admin.admin_tool_post.delete');
     expect(tools).not.toContain('admin.action.post.publish');
   });
 
   test('the action appears exactly when its policy allows it', () => {
-    const withAction = staticAuthz(['admin:write', 'post:read', 'post:write', 'post:publish']);
+    const withAction = staticAuthz([
+      'admin:write',
+      'admin_tool_post:read',
+      'admin_tool_post:write',
+      'admin_tool_post:publish',
+    ]);
     const tools = adminMcpTools(appWith(withAction), ctxWith(withAction)).map((tool) => tool.name);
 
     expect(tools).toContain('admin.action.post.publish');
-    expect(tools).toContain('admin.post.create');
-    expect(tools).toContain('admin.post.update');
-    // admin:write implies admin:read, but nothing implies post:delete.
-    expect(tools).not.toContain('admin.post.delete');
+    expect(tools).toContain('admin.admin_tool_post.create');
+    expect(tools).toContain('admin.admin_tool_post.update');
+    // admin:write implies admin:read, but nothing implies admin_tool_post:delete.
+    expect(tools).not.toContain('admin.admin_tool_post.delete');
   });
 
   test('destructive tools are flagged and demand a confirmation input', () => {
-    const authz = staticAuthz(['admin:destroy', 'post:read', 'post:write', 'post:delete']);
+    const authz = staticAuthz([
+      'admin:destroy',
+      'admin_tool_post:read',
+      'admin_tool_post:write',
+      'admin_tool_post:delete',
+    ]);
     const del = adminMcpTools(appWith(authz), ctxWith(authz)).find(
-      (tool) => tool.name === 'admin.post.delete',
+      (tool) => tool.name === 'admin.admin_tool_post.delete',
     );
 
     expect(del?.destructive).toBe(true);
@@ -79,9 +99,9 @@ describe('the MCP surface is the UI surface', () => {
   });
 
   test('tool input schemas come from the derived form fields', () => {
-    const authz = staticAuthz(['admin:write', 'post:read', 'post:write']);
+    const authz = staticAuthz(['admin:write', 'admin_tool_post:read', 'admin_tool_post:write']);
     const create = adminMcpTools(appWith(authz), ctxWith(authz)).find(
-      (tool) => tool.name === 'admin.post.create',
+      (tool) => tool.name === 'admin.admin_tool_post.create',
     );
 
     expect(create?.input.map((field) => field.name)).toEqual(['title']);

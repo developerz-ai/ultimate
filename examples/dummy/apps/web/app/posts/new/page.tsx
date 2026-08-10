@@ -9,11 +9,11 @@ import { useT } from '@postly/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { Button, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { Layout } from '../layout';
-import styles from './new.module.scss';
+import { Layout } from '../../layout';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
-  render: 'stream',
+  render: 'ssr',
   offline: 'runtime',
   /** The only interactive part is the submit button, which the browser owns. */
   hydrate: 'never',

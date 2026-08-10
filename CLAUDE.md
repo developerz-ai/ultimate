@@ -42,6 +42,7 @@ from one image with an invisible rolling restart is not yet demonstrated). See
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
+| **the reference-app gate** | `bun run scripts/reference-app-gate.ts` — the app's own 17 steps, blocking on a ratchet: a step passing today must keep passing, a step pinned in `EXPECTED_RED` must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |
@@ -115,6 +116,8 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 - A 1–4 line header comment per file stating its single responsibility.
 - Comments explain **why**, never what.
 - Every package carries `README.md` (public API) + `CLAUDE.md` (boundary, deps, commands).
+- Route files: `page.tsx` on `site/`/`app/`, `route.ts` on `api/` — the directory is the URL, never the filename. `index.tsx` is not a page and `<name>.tsx` is not a route; `registerRoute()` enforces it (`X_ROUTE_FILE_INVALID`).
+- i18n catalogs: one flat file per locale, `packages/i18n/catalogs/<locale>.json` — never a directory per locale or a file per feature. `x g route` / `x g resource` merge keys into it.
 - Docs style: lead with the rule, fragments over sentences, tables for any ≥3-row structure, no meta-framing, no trailing summary. Date load-bearing claims `As of 2026-07`.
 
 ## Where things live

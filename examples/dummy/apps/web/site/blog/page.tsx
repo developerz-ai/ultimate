@@ -14,7 +14,7 @@ import { For } from 'solid-js';
 import { client } from '../../shared/client';
 import { blogHref, toCardPost } from '../../shared/entities';
 import { anonymousViewer } from '../../shared/viewer';
-import styles from './list.module.scss';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'isr',

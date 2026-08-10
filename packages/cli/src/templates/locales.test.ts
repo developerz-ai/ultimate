@@ -46,6 +46,6 @@ describe('unit · the generated-catalog locale resolver', () => {
   });
 
   test('the catalog layout is written down once', () => {
-    expect(catalogPath('en', 'invoice')).toBe('packages/i18n/catalogs/en/invoice.json');
+    expect(catalogPath('en')).toBe('packages/i18n/catalogs/en.json');
   });
 });

@@ -195,6 +195,54 @@ export async function collectSharedFiles(root: string): Promise<readonly SourceF
   return files.filter((file) => !file.path.includes('.test.'));
 }
 
+// ---------------------------------------------------------------------------
+// Rule 3: `@ultimat3/admin`'s one-flattener rule (`packages/admin/CLAUDE.md`) — `entity-columns.ts`
+// is the only file that may read `$meta` or call `$describe()`; every other admin module takes the
+// already-flattened `AdminColumnFacts` instead, so a new column kind derives in one place. Stated
+// in the package's CLAUDE.md since it shipped; enforced here because axiom 3 (a convention that is
+// not a build error does not exist) applies to a package's own internal seams too, not just tiers.
+// ---------------------------------------------------------------------------
+
+const ADMIN_FLATTENER_FILE = 'packages/admin/src/entity-columns.ts';
+
+/** `registry.ts` only *declares* `$meta`/`$describe` as interface members — it never reads them;
+ * excluded by name so a future reformatting of that declaration can't accidentally read as a
+ * violation of a rule it is not subject to. */
+const ADMIN_FLATTENER_EXEMPT = new Set([ADMIN_FLATTENER_FILE, 'packages/admin/src/registry.ts']);
+
+/** A leading `.` is what makes this a read (`column.$meta`, `entity.$describe()`) rather than an
+ * interface member declaration (`readonly $meta: …`, `$describe(): …`), which has none. */
+const ADMIN_FLATTENER_PATTERN = /\.\$meta\b|\.\$describe\s*\(/;
+
+export interface AdminFlattenerViolation {
+  readonly file: string;
+}
+
+/** Pure, like the checks above. */
+export function checkAdminFlattener(
+  files: readonly SourceFile[],
+): readonly AdminFlattenerViolation[] {
+  return files
+    .filter((file) => !ADMIN_FLATTENER_EXEMPT.has(file.path) && !file.path.includes('.test.'))
+    .filter((file) => ADMIN_FLATTENER_PATTERN.test(file.source))
+    .map((file) => ({ file: file.path }));
+}
+
+export function adminFlattenerFindingFor(violation: AdminFlattenerViolation): Finding {
+  return {
+    code: 'X_ADMIN_FLATTENER_VIOLATION',
+    cause:
+      `${violation.file} reads $meta or calls $describe() directly — ${ADMIN_FLATTENER_FILE} is ` +
+      'the one file @ultimat3/admin lets flatten an entity onto AdminColumnFacts',
+    fix: `take AdminColumnFacts from entity-columns.ts instead of reading $meta/$describe() in ${violation.file}`,
+    at: violation.file,
+  };
+}
+
+export async function collectAdminFiles(root: string): Promise<readonly SourceFile[]> {
+  return readFiles(root, 'packages/admin/src/**/*.ts');
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
@@ -203,11 +251,18 @@ if (import.meta.main) {
     (file) => typeof only !== 'string' || packageOf(file.path) === only,
   );
   const violations = checkBoundaries(files);
-  // `--package` narrows to one framework package; the leaf rule is about an app, not a package.
+  // `--package` narrows to one framework package; the leaf and flattener rules are each about one
+  // fixed location (an app's `shared/`, `@ultimat3/admin`), not "whichever package was asked for".
   const sharedFiles = typeof only === 'string' ? [] : await collectSharedFiles(root);
   const leaks = checkSharedLeaf(sharedFiles);
-  const findings = [...violations.map(findingFor), ...leaks.map(sharedLeafFindingFor)];
-  const scanned = files.length + sharedFiles.length;
+  const adminFiles = typeof only === 'string' ? [] : await collectAdminFiles(root);
+  const adminLeaks = checkAdminFlattener(adminFiles);
+  const findings = [
+    ...violations.map(findingFor),
+    ...leaks.map(sharedLeafFindingFor),
+    ...adminLeaks.map(adminFlattenerFindingFor),
+  ];
+  const scanned = files.length + sharedFiles.length + adminFiles.length;
   report(
     {
       ok: findings.length === 0,
@@ -217,7 +272,7 @@ if (import.meta.main) {
           ? `${scanned} files, no boundary violations`
           : `${findings.length} boundary violation(s) across ${scanned} files`,
       findings,
-      data: { files: scanned, violations, leaks },
+      data: { files: scanned, violations, leaks, adminLeaks },
     },
     args.json,
   );

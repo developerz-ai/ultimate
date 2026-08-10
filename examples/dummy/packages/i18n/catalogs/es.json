@@ -12,7 +12,11 @@
     "back": "Volver"
   },
   "site": {
-    "nav": { "features": "Funciones", "pricing": "Precios", "blog": "Blog" },
+    "nav": {
+      "features": "Funciones",
+      "pricing": "Precios",
+      "blog": "Blog"
+    },
     "hero": {
       "metaTitle": "Postly — un blog de equipo que se porta bien",
       "metaDescription": "Blogs de equipo multiinquilino con «me gusta» sin conexión, feeds en vivo, zona horaria por persona y precios enteros. Hecho con Ultimate.",
@@ -66,7 +70,11 @@
     }
   },
   "app": {
-    "nav": { "feed": "Feed", "settings": "Ajustes", "org": "Organización" },
+    "nav": {
+      "feed": "Feed",
+      "settings": "Ajustes",
+      "org": "Organización"
+    },
     "feed": {
       "metaTitle": "Feed",
       "heading": "Feed de {org}",
@@ -107,7 +115,11 @@
     }
   },
   "posts": {
-    "status": { "draft": "Borrador", "scheduled": "Programado", "published": "Publicado" },
+    "status": {
+      "draft": "Borrador",
+      "scheduled": "Programado",
+      "published": "Publicado"
+    },
     "titleLabel": "Título",
     "bodyLabel": "Artículo",
     "create": "Crear borrador",
@@ -137,7 +149,10 @@
     }
   },
   "plans": {
-    "free": { "name": "Free", "description": "Un equipo pequeño con todas las primitivas." },
+    "free": {
+      "name": "Free",
+      "description": "Un equipo pequeño con todas las primitivas."
+    },
     "team": {
       "name": "Team",
       "description": "Borradores, revisiones y resumen para un equipo editorial de verdad."
@@ -186,5 +201,8 @@
     "offlineQueued": "Sin conexión: se enviará cuando vuelvas a conectarte.",
     "updateAvailable": "Hay una versión nueva lista.",
     "updateAction": "Recargar"
+  },
+  "admin": {
+    "title": "Administración de Postly"
   }
 }

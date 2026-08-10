@@ -36,6 +36,21 @@ describe('money never renders as a float', () => {
     expect(props).toMatchObject({ value: { minor: 500, currency: 'JPY' } });
   });
 
+  test('the bigint minor units money() puts on a row widen without rounding', () => {
+    const props = widgetProps(field({}), { minor: 1999n, currency: 'EUR' }, ctx);
+    expect(props).toEqual({
+      widget: 'money',
+      field: 'total',
+      value: { minor: 1999, currency: 'EUR' },
+    });
+  });
+
+  test('a bigint past the safe integer range is refused, never truncated', () => {
+    expect(() =>
+      widgetProps(field({}), { minor: 9007199254740993n, currency: 'EUR' }, ctx),
+    ).toThrow(/minor units are integers/);
+  });
+
   test('a float is refused, not rounded', () => {
     expect(() => widgetProps(field({ currency: 'EUR' }), 19.99, ctx)).toThrow(
       /money value arrived as the number/,

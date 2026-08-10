@@ -177,6 +177,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_TRANSPORT_PROTOCOL` | the bus does not speak the protocol this build speaks | nats-server older than 2.11, JetStream not enabled, or something that is not NATS on the port | run `nats:2.11-alpine` or newer with `-js`; reconnecting cannot fix it, so this never retries |
 | `X_REPLICATION_FAILED` | the replication connection was refused | `wal_level` not `logical`, no publication, a slot another replicator holds, wrong credentials | the message names the object; the fix is the exact `ALTER SYSTEM` / `CREATE PUBLICATION` / `pg_drop_replication_slot` statement |
 | `X_REPLICATION_PROTOCOL` | the WAL stream cannot be decoded | a server or `pgoutput` version this build does not speak, or a proxy on the replication port | `x doctor db` — point the URL at postgres itself, on a server ≥ 14 |
+| `X_LIVE_CLIENT_MISSING` | a realtime hook ran with no `LiveClient` registered | `useLive` / `useConnection` / `useMutation` / `useMutationQueue` on a page whose entry never registered one | `setLiveClient(new LiveClient({ signal: createSignal, connect, buildId }))` in the app entry, above the first render |
 
 ## Cache
 
@@ -206,12 +207,14 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ROUTE_META_MISSING` | required metadata missing | no `meta.title`, or no `description` on a `site/` route | add it to `meta` in the route file |
 | `X_ROUTE_UNNORMALIZED` | a route was registered without `defineRoute` | `registerRoute({ config })` was handed the author's own object, so `meta` and `budget` were never normalized and every descriptor reader would read them wrong | wrap it: `registerRoute({ file, config: defineRoute({ … }) })` |
 | `X_ROUTE_DUPLICATE` | two route files resolve to one URL | a copied page directory | delete or rename one |
+| `X_ROUTE_FILE_INVALID` | a route file is not named for its surface | `site/pricing.tsx` or `site/blog/index.tsx` instead of `<dir>/page.tsx` | `mkdir -p <dir> && git mv <file> <dir>/page.tsx` — `route.ts` under `api/` |
 | `X_SURFACE_BOUNDARY` | a surface imported across the hard boundary | `site/` reached `app/`, transitively | `x fix boundary <file>`, or move the shared module out of `shared/ui` |
 | `X_BOUNDARY_SITE_TO_APP` | `site/` imported `app/` | the classic transitive import | the chain is printed in `cause`; break it at the named hop |
 | `X_BOUNDARY_APP_TO_API` | `app/` imported `api/` at runtime | a value import instead of `import type` | use `import type`, and call the typed client |
 | `X_BOUNDARY_ROUTE_TO_DB` | a route touched the database | SQL in a page file | move it into `repo.ts` and call a query |
 | `X_BOUNDARY_SERVICE_TO_HTTP` | a service imported HTTP | request awareness inside business logic | take the values as arguments so a job can reuse the service |
 | `X_BOUNDARY_SHARED_LEAF` | `shared/` imported a surface | `shared/` is a leaf | invert the dependency |
+| `X_ADMIN_FLATTENER_VIOLATION` | a production `@ultimat3/admin` file read `$meta` or called `$describe()` directly | a new admin module reached past `entity-columns.ts` for column facts | take `AdminColumnFacts` from `entity-columns.ts` instead |
 | `X_BUDGET_EXCEEDED` | a route blew its JS or LCP budget | a heavy transitive import | `x routes --json` for the chain; move it behind `hydrate: 'interaction'` or raise the budget deliberately |
 | `X_BUDGET_UNMEASURED` | a route declares a JS or LCP budget the build never measured | the route is absent from `.x/build-stats.json` | `x build`, then `x verify` |
 | `X_PRERENDER_FAILED` | a prerendered path threw during build | `prerender()` returned an id that no longer resolves | fix the data source, or narrow `prerender()` |
@@ -360,6 +363,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_SETUP_INSTALL_FAILED` | `bun install` failed during `bin/setup` | a conflicted lockfile, or a half-written `node_modules` | `rm -rf node_modules bun.lock && bun install` |
 | `X_RELEASE_VERSION_SKEW` | a workspace is not at the lockstep version | a package bumped on its own, or a release that stopped half-way | `bun run scripts/release.ts --bump patch --dry-run --json` to see the realignment, then run it without `--dry-run` and review the `package.json` diff |
 | `X_GENERATE_CONFLICT` | a generator would overwrite a file | the name is taken | `x g … --force`, or choose another name |
+| `X_GENERATE_JSON_INVALID` | a generator's own `merge: 'json'` output does not parse as a JSON object | a bug in the template that produced it — never a file already on disk, which `X_GENERATE_CONFLICT` covers | fix the template that emits it, then `bun test packages/cli/src/cmd-generate.test.ts` |
 | `X_SCAFFOLD_PATH_ESCAPE` | a generated path resolves outside the scaffold sandbox | a `..` segment or an absolute path in a template's `GeneratedFile.path` | make the path relative to the app root with no `..`, then `bun test packages/cli/src/scaffold-typecheck.contract.test.ts` |
 | `X_NOT_IMPLEMENTED` | a planned command, or a driver whose remote half is unwritten | one of the commands in [CLI reference](CLI-Reference)'s planned table | the `fix` names the closest shipped command — never "not a command", which would send you looking for a typo |
 | `X_ERROR_CODE_UNKNOWN` | no package registered this error code | a typo, or a code from a package this process could not import | `x errors list --json` — the nearest real code is in `fix`, and `data.unavailable` names any package that would not load |
@@ -369,6 +373,9 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ROADMAP_FILE_MISSING` | `docs/idea/14-roadmap.md` does not exist, so no status or artifact can be checked | the roadmap was deleted or moved — every other roadmap rule would otherwise pass silently | `git checkout -- docs/idea/14-roadmap.md` |
 | `X_ROADMAP_STATUS_MISSING` | a milestone has no row, or its row's status cell holds neither ✅ nor 🚧 | `docs/idea/14-roadmap.md` edited without keeping the marker | put ✅ or 🚧 in the second cell of the row `fix` names, then `bun run scripts/roadmap.ts --json` |
 | `X_ROADMAP_MILESTONE_UNVERIFIED` | a milestone the table marks ✅ is missing a package or file its own **Ships** column names | the artifact was deleted or renamed after the milestone was marked shipped | `git checkout -- <the paths in `fix`>`, or put 🚧 in that row's status cell |
+| `X_REFERENCE_APP_REGRESSED` | a step of `examples/dummy`'s own gate that was passing now fails — or the gate produced no step table at all | a framework change broke the reference app, and the step is not one of the pinned entries in `EXPECTED_RED` | `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
+| `X_REFERENCE_APP_PIN_STALE` | a step pinned as failing in `EXPECTED_RED` now passes | the app was repaired and the pin was not lowered — the ratchet only shrinks | delete the named entries from `EXPECTED_RED` in `scripts/reference-app-gate.ts` |
+| `X_REFERENCE_APP_UNREFERENCED` | `examples/dummy` typechecks but the root `tsconfig.json` does not reference it | the app came off the `typecheck` pin without joining the root `tsc -b` solution, so the packages' emitted `.d.ts` are never proved consumable | add `{ "path": "./examples/dummy" }` to the `references` array in `tsconfig.json` |
 
 ## Names used in the design docs
 

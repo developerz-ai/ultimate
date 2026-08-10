@@ -4,8 +4,10 @@ Multi-tenant team blog on Ultimate. Orgs own members; members write posts; posts
 and likes; each org sits on a billing plan; a nightly digest mails every member at 09:00 in
 their own timezone.
 
-This app is the framework's reference application — Ultimate's CI runs `x verify` here.
-Keep it small, keep it idiomatic. A clever file in Postly is a bug.
+This app is the framework's reference application — Ultimate's CI runs `x verify` here and
+**blocks** on the result, through the ratchet in `scripts/reference-app-gate.ts`: a step passing
+today must keep passing, and the steps still being repaired are pinned by name in its
+`EXPECTED_RED` table. Keep it small, keep it idiomatic. A clever file in Postly is a bug.
 
 ## Commands
 
@@ -41,6 +43,15 @@ packages/mcp                   the app's own MCP tools + prompts
 `apps/web/shared/theme.scss` is loaded once by the framework for both surfaces; it emits the
 `@ultimat3/ui` tokens and styles bare elements. `/signin`, `/signup` and `/signout` are mounted by
 the wrapped Better Auth integration, so they are in the route table without living in `site/`.
+
+`apps/web/shared/actor.ts` is the app half of the actor — org, orgs, member row, request clock —
+read through `useActor()`. Core's `Actor` (id, roles, scopes, tenant) is the framework half and
+stays that: `useCan('post:publish')` is how a component asks about a permission, and the row-level
+half of any rule is decided by the server, never in the browser.
+
+`imports.test.ts` at the app root loads every module and checks every named import against what
+the packages actually export. Both halves matter: Bun's test runner links lazily, so a symbol that
+does not exist is `undefined` under `bun test` and a hard failure under `bun run`.
 
 Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}.ts`.
 

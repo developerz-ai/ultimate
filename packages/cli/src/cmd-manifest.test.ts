@@ -29,7 +29,7 @@ const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
 const WHOLE_FILES: Readonly<Record<string, string>> = {
   'app.config.ts': APP_CONFIG,
   'package.json': JSON.stringify({ name: 'whole-fixture', version: '1.4.0' }),
-  'apps/web/site/pricing.tsx': `import { defineRoute } from '@ultimat3/render';
+  'apps/web/site/pricing/page.tsx': `import { defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
   render: 'static',

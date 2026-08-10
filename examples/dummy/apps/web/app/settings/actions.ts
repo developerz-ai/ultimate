@@ -1,6 +1,7 @@
 /**
- * Preference writes. Not a feature of its own — settings are a thin edit of the member row, so
- * the action lives beside the page that uses it and delegates to `ctx.orgs`.
+ * Preference writes. Settings are a thin edit of the member row, but "thin" is not a location:
+ * an `action` is only ever declared in `api/` or in a feature's `actions.ts`, so the settings
+ * slice gets one rather than a loose `settings-actions.ts` beside the page.
  *
  * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
@@ -8,8 +9,8 @@
 import { tag } from '@postly/db';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
-import { MemberView } from './orgs/entity';
-import { memberSelf } from './orgs/policy';
+import { MemberView } from '../orgs/entity';
+import { memberSelf } from '../orgs/policy';
 
 export const savePreferences = action({
   input: t.object({

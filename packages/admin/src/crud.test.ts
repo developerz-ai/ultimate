@@ -1,22 +1,34 @@
-import { describe, expect, test } from 'bun:test';
+// Proves the five CRUD operations from the outside: a denial is refused AND logged, a
+// destructive delete refuses to run without its own confirmation token echoed back, and both
+// the audit diff and the row actually persisted reflect only what validation approved — never
+// the caller's raw, unvalidated input.
+
+import { afterAll, describe, expect, test } from 'bun:test';
+import { clearRegistry, entity, newId, text, timestamp, uuid } from '@ultimat3/entity';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import { adminDestroy, adminUpdate, type CrudCtx } from './crud';
-import type { AdminEntity, AdminRow } from './registry';
+import type { AdminRow } from './registry';
 import { type AdminResource, adminResource } from './resource';
 
-const entity: AdminEntity = {
-  name: 'post',
+const post = entity('admin_crud_post', {
   columns: {
-    id: { type: 'uuid', primaryKey: true },
-    title: { type: 'varchar', index: true },
-    secret: { type: 'varchar', sensitive: true, nullable: true },
-    createdAt: { type: 'timestamptz', generated: true },
+    id: uuid().primaryKey(),
+    title: text({ max: 120 }),
+    secret: text({ max: 64 }).nullable(),
+    createdAt: timestamp().defaultNow(),
   },
-};
+});
+
+afterAll(clearRegistry);
+
+/** A real id: the update path validates the merged row against the entity's own schema. */
+const POST_ID = newId();
 
 function bound(store: Map<string, AdminRow>): AdminResource<AdminRow> {
-  return adminResource(entity, {
+  return adminResource(post, {
+    // An entity has no secret flag; the admin is where a column is declared unreadable.
+    fields: { secret: { sensitive: true } },
     repo: {
       list: async (): Promise<readonly AdminRow[]> => [...store.values()],
       find: async (id: string): Promise<AdminRow | null> => store.get(id) ?? null,
@@ -46,10 +58,13 @@ const ctxWith = (grants: readonly string[]): CrudCtx => ({
 describe('admin mutations are audited with a before/after diff', () => {
   test('update logs exactly the fields that changed', async () => {
     const store = new Map<string, AdminRow>([
-      ['p_1', { id: 'p_1', title: 'Draft', secret: 'old', createdAt: '2026-07-01T00:00:00.000Z' }],
+      [
+        POST_ID,
+        { id: POST_ID, title: 'Draft', secret: 'old', createdAt: '2026-07-01T00:00:00.000Z' },
+      ],
     ]);
-    const ctx = ctxWith(['admin:write', 'post:write']);
-    const result = await adminUpdate(bound(store), ctx, 'p_1', {
+    const ctx = ctxWith(['admin:write', 'admin_crud_post:write']);
+    const result = await adminUpdate(bound(store), ctx, POST_ID, {
       title: 'Published',
       secret: 'new',
     });
@@ -57,7 +72,7 @@ describe('admin mutations are audited with a before/after diff', () => {
     expect(result.ok).toBe(true);
     const entry = ctx.audit.entries()[0];
     expect(entry?.operation).toBe('update');
-    expect(entry?.entityId).toBe('p_1');
+    expect(entry?.entityId).toBe(POST_ID);
     expect(entry?.actor.id).toBe('u_1');
     expect(entry?.requestId).toBe('req_1');
     expect(entry?.diff).toEqual([
@@ -66,43 +81,63 @@ describe('admin mutations are audited with a before/after diff', () => {
     ]);
   });
 
+  test('an undeclared field in the patch is validated away, never persisted', async () => {
+    const store = new Map<string, AdminRow>([
+      [POST_ID, { id: POST_ID, title: 'Draft', createdAt: '2026-07-01T00:00:00.000Z' }],
+    ]);
+    const ctx = ctxWith(['admin:write', 'admin_crud_post:write']);
+    const result = await adminUpdate(bound(store), ctx, POST_ID, {
+      title: 'Published',
+      // Not a column of `post` — the entity's own schema drops it; the repo write must too.
+      isAdmin: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(store.get(POST_ID)).toEqual({
+      id: POST_ID,
+      title: 'Published',
+      createdAt: '2026-07-01T00:00:00.000Z',
+    });
+    expect(store.get(POST_ID)?.['isAdmin']).toBeUndefined();
+  });
+
   test('a denied update writes nothing and still leaves a record', async () => {
-    const store = new Map<string, AdminRow>([['p_1', { id: 'p_1', title: 'Draft' }]]);
+    const store = new Map<string, AdminRow>([[POST_ID, { id: POST_ID, title: 'Draft' }]]);
     const ctx = ctxWith(['admin:read']);
-    const result = await adminUpdate(bound(store), ctx, 'p_1', { title: 'Hijacked' });
+    const result = await adminUpdate(bound(store), ctx, POST_ID, { title: 'Hijacked' });
 
     expect(result.ok).toBe(false);
-    expect(store.get('p_1')).toEqual({ id: 'p_1', title: 'Draft' });
+    expect(store.get(POST_ID)).toEqual({ id: POST_ID, title: 'Draft' });
     expect(ctx.audit.entries()[0]?.outcome).toBe('denied');
   });
 });
 
 describe('destructive operations re-confirm', () => {
   test('delete without the confirmation token is refused and logged', async () => {
-    const store = new Map<string, AdminRow>([['p_1', { id: 'p_1', title: 'Draft' }]]);
-    const ctx = ctxWith(['admin:destroy', 'post:delete']);
-    const refused = await adminDestroy(bound(store), ctx, 'p_1', undefined);
+    const store = new Map<string, AdminRow>([[POST_ID, { id: POST_ID, title: 'Draft' }]]);
+    const ctx = ctxWith(['admin:destroy', 'admin_crud_post:delete']);
+    const refused = await adminDestroy(bound(store), ctx, POST_ID, undefined);
 
     expect(refused.ok).toBe(false);
     if (!refused.ok && refused.kind === 'denied') {
       expect(refused.confirmationRequired).toBe(true);
       expect(refused.decision.reason).toBe('admin.error.confirmation-required');
     }
-    expect(store.has('p_1')).toBe(true);
+    expect(store.has(POST_ID)).toBe(true);
     expect(ctx.audit.entries()[0]?.outcome).toBe('denied');
   });
 
   test('delete with the token removes the row and logs the before state', async () => {
-    const store = new Map<string, AdminRow>([['p_1', { id: 'p_1', title: 'Draft' }]]);
-    const ctx = ctxWith(['admin:destroy', 'post:delete']);
-    const result = await adminDestroy(bound(store), ctx, 'p_1', 'post:p_1');
+    const store = new Map<string, AdminRow>([[POST_ID, { id: POST_ID, title: 'Draft' }]]);
+    const ctx = ctxWith(['admin:destroy', 'admin_crud_post:delete']);
+    const result = await adminDestroy(bound(store), ctx, POST_ID, `admin_crud_post:${POST_ID}`);
 
     expect(result.ok).toBe(true);
-    expect(store.has('p_1')).toBe(false);
+    expect(store.has(POST_ID)).toBe(false);
     const entry = ctx.audit.entries()[0];
     expect(entry?.outcome).toBe('allowed');
     expect(entry?.diff).toEqual([
-      { field: 'id', before: 'p_1', after: undefined },
+      { field: 'id', before: POST_ID, after: undefined },
       { field: 'title', before: 'Draft', after: undefined },
     ]);
   });

@@ -139,7 +139,7 @@ export async function adminCreate<Row extends AdminRow>(
   const decision = decideOperation(resource, 'create', ctx);
   if (!decision.allowed) return refuse(resource, 'create', ctx, decision, null);
 
-  const parsed = await validateInput(resource.entity.schema, input);
+  const parsed = await validateInput(resource.entity.$schema, input);
   if (!parsed.ok) return invalid(resource, 'create', ctx, null, parsed.issues, decision);
 
   const row = await repoOf(resource).create(parsed.value);
@@ -172,10 +172,18 @@ export async function adminUpdate<Row extends AdminRow>(
 
   const repo = repoOf(resource);
   const before = await repo.find(id);
-  const parsed = await validateInput(resource.entity.schema, { ...(before ?? {}), ...patch });
+  const parsed = await validateInput(resource.entity.$schema, { ...(before ?? {}), ...patch });
   if (!parsed.ok) return invalid(resource, 'update', ctx, id, parsed.issues, decision);
 
-  const after = await repo.update(id, patch);
+  // Write what the schema validated, not the caller's raw patch — a field the schema would
+  // strip (undeclared, or normalized to a different value) must never reach the repo. Scoped
+  // to the keys actually submitted, so a partial update stays partial rather than rewriting
+  // every field of `before` too.
+  const submittedKeys = Object.keys(patch);
+  const validatedPatch: Readonly<Record<string, unknown>> = Object.fromEntries(
+    submittedKeys.filter((key) => key in parsed.value).map((key) => [key, parsed.value[key]]),
+  );
+  const after = await repo.update(id, validatedPatch);
   return {
     ok: true,
     row: after,

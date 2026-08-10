@@ -3,14 +3,19 @@
  * same logic runs whether the caller is HTTP, the typed client, a job, an MCP tool or admin.
  *
  * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
+ * `llm` is the one other framework import here, and it is not a second primitive: it is a factory
+ * that RETURNS an `action`, so `summarize` below belongs in this file for the same reason the rest
+ * do — see `docs/idea/09-ai-first.md`.
  */
 
 import { COMMENT_MAX, tag } from '@postly/db';
 import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
+import { llm } from '@ultimat3/ai';
 import { CommentView, CreatePostInput, PostView } from './entity';
 import { notifySubscribers } from './jobs';
 import { postCreate, postPublish, postRead } from './policy';
+import { summarizePrompt } from './prompts/summarize';
 
 export const createPost = action({
   // orgId is part of the input because the policy decides on it — authz reads the declaration,
@@ -58,4 +63,34 @@ export const createComment = action({
   async handle({ input, ctx }) {
     return ctx.posts.comment(postId(input.postId), input.body);
   },
+});
+
+/**
+ * The one model call in Postly. There is no `llm` primitive — the framework has eight and a model
+ * call is not one of them — so this is an `action` built by a factory, which is what gives it the
+ * same policy, the same MCP projection, the same OpenAPI operation and the same contract tests as
+ * every other command in this file.
+ *
+ * `orgId` is in the input for the usual reason: `postRead` decides on it. The named rule matters
+ * more here than elsewhere — an inline `can('post:read')` would carry the grant and drop the
+ * tenancy predicate, and "summarise any post by id" is exactly the read that must not cross an org.
+ */
+export const summarize = llm({
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
+  output: t.object({ summary: t.string, tags: t.array(t.string) }),
+  policy: postRead,
+  prompt: summarizePrompt,
+  // The one declared place a model call loads data: the input is an id, the prompt needs the row
+  // behind it, and a reader can see exactly what was sent.
+  vars: async ({ input, ctx }) => {
+    const post = await ctx.posts.byId(postId(input.postId));
+    return { title: post.title, body: post.body, locale: ctx.locale };
+  },
+  // `scope` is not optional in a multi-tenant app: cosine similarity has no notion of a tenant, so
+  // one shared cache would answer one org with another's summary.
+  cache: { semantic: { threshold: 0.97, ttl: '7d', scope: ({ orgId }) => orgId } },
+  // Refused before a token is spent, never truncated after — a runaway loop costs one refusal
+  // instead of a bill.
+  budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
+  mcp: { expose: true, description: 'Summarise a post into two sentences and up to four tags' },
 });

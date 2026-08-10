@@ -29,7 +29,7 @@ import * as postQueries from '../app/posts/live';
 // declaration instead of living in a parallel registry with a parallel authz path.
 import * as postMutators from '../app/posts/mutator';
 import '../app/posts/service';
-import * as settingsActions from '../app/settings-actions';
+import * as settingsActions from '../app/settings/actions';
 
 export const api = defineApi({
   actions: [postActions, orgActions, settingsActions],

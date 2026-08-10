@@ -18,6 +18,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_TEST_NO_FILES: 'x test --cwd <repo root>',
   X_TEST_SHARD_FAILED: 'x test --workers 1',
   X_SCAFFOLD_PATH_ESCAPE: 'x g route <name>   # a path with no ".." segment',
+  X_GENERATE_JSON_INVALID:
+    'bun test packages/cli/src/cmd-generate.test.ts   # the error names the template to fix',
   X_APP_PACKAGE_INVALID: 'bun pm pkg set name=<app> version=0.1.0',
   X_ERROR_CODE_UNKNOWN: 'x errors list --json',
   X_DECLARATION_UNKNOWN: 'x actions list --json',

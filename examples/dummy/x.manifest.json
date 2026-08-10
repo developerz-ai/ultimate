@@ -5,55 +5,55 @@
   "buildId": "8f2a1c4d9e7b3056",
   "ultimate": "0.0.1",
   "budgets": {
-    "app/feed": {
+    "app/feed/page": {
       "js": "60kb",
       "lcp": 2000,
       "measuredJs": "41kb",
       "measuredLcp": 1420
     },
-    "app/posts/[id]": {
+    "app/posts/[id]/page": {
       "js": "40kb",
       "lcp": 2000,
       "measuredJs": "28kb",
       "measuredLcp": 1180
     },
-    "app/posts/new": {
+    "app/posts/new/page": {
       "js": "0kb",
       "lcp": 1200,
       "measuredJs": "0kb",
       "measuredLcp": 540
     },
-    "app/settings": {
+    "app/settings/page": {
       "js": "45kb",
       "lcp": 1800,
       "measuredJs": "33kb",
       "measuredLcp": 990
     },
-    "site/blog/[slug]": {
+    "site/blog/[slug]/page": {
       "js": "0kb",
       "lcp": 1800,
       "measuredJs": "0kb",
       "measuredLcp": 780
     },
-    "site/blog/index": {
+    "site/blog/page": {
       "js": "0kb",
       "lcp": 1500,
       "measuredJs": "0kb",
       "measuredLcp": 660
     },
-    "site/index": {
-      "js": "0kb",
-      "lcp": 1200,
-      "measuredJs": "0kb",
-      "measuredLcp": 610
-    },
-    "site/offline": {
+    "site/offline/page": {
       "js": "8kb",
       "lcp": 1000,
       "measuredJs": "6kb",
       "measuredLcp": 240
     },
-    "site/pricing": {
+    "site/page": {
+      "js": "0kb",
+      "lcp": 1200,
+      "measuredJs": "0kb",
+      "measuredLcp": 610
+    },
+    "site/pricing/page": {
       "js": "0kb",
       "lcp": 1500,
       "measuredJs": "0kb",
@@ -241,7 +241,7 @@
     },
     {
       "name": "savePreferences",
-      "file": "apps/web/app/settings-actions.ts",
+      "file": "apps/web/app/settings/actions.ts",
       "route": "POST /_x/action/save-preferences",
       "policy": "member:self",
       "invalidates": ["member"],
@@ -350,11 +350,11 @@
   "llm": [
     {
       "name": "summarize",
-      "file": "apps/web/app/posts/prompts/summarize.ts",
-      "model": "claude-sonnet-4-5",
-      "prompt": "apps/web/app/posts/prompts/summarize.v3.md",
-      "promptVersion": 3,
-      "policy": "feed:read",
+      "file": "apps/web/app/posts/actions.ts",
+      "model": "claude-sonnet-5",
+      "prompt": "apps/web/app/posts/prompts/summarize.v4.md",
+      "promptVersion": 4,
+      "policy": "post:read",
       "evals": "apps/web/app/posts/prompts/summarize.eval.test.ts",
       "budget": {
         "tokensIn": 8000,
@@ -449,7 +449,7 @@
       "name": "feed:read",
       "file": "apps/web/app/posts/policy.ts",
       "rowFilter": true,
-      "usedBy": ["liveFeed", "postBySlug", "summarize"]
+      "usedBy": ["liveFeed", "postBySlug"]
     },
     {
       "name": "member:self",
@@ -491,7 +491,7 @@
       "name": "post:read",
       "file": "apps/web/app/posts/policy.ts",
       "rowFilter": false,
-      "usedBy": ["postById", "createComment"]
+      "usedBy": ["postById", "createComment", "summarize"]
     },
     {
       "name": "post:read-public",
@@ -504,7 +504,7 @@
   "routes": [
     {
       "path": "/",
-      "file": "apps/web/site/index.tsx",
+      "file": "apps/web/site/page.tsx",
       "surface": "site",
       "render": "static",
       "hydrate": "never",
@@ -519,7 +519,7 @@
     },
     {
       "path": "/blog",
-      "file": "apps/web/site/blog/index.tsx",
+      "file": "apps/web/site/blog/page.tsx",
       "surface": "site",
       "render": "isr",
       "hydrate": "never",
@@ -538,7 +538,7 @@
     },
     {
       "path": "/blog/[slug]",
-      "file": "apps/web/site/blog/[slug].tsx",
+      "file": "apps/web/site/blog/[slug]/page.tsx",
       "surface": "site",
       "render": "isr",
       "hydrate": "never",
@@ -560,7 +560,7 @@
     },
     {
       "path": "/feed",
-      "file": "apps/web/app/feed.tsx",
+      "file": "apps/web/app/feed/page.tsx",
       "surface": "app",
       "render": "stream",
       "hydrate": "idle",
@@ -576,7 +576,7 @@
     },
     {
       "path": "/offline",
-      "file": "apps/web/site/offline.tsx",
+      "file": "apps/web/site/offline/page.tsx",
       "surface": "site",
       "render": "static",
       "hydrate": "idle",
@@ -592,7 +592,7 @@
     },
     {
       "path": "/posts/[id]",
-      "file": "apps/web/app/posts/[id].tsx",
+      "file": "apps/web/app/posts/[id]/page.tsx",
       "surface": "app",
       "render": "ssr",
       "hydrate": "interaction",
@@ -607,7 +607,7 @@
     },
     {
       "path": "/posts/new",
-      "file": "apps/web/app/posts/new.tsx",
+      "file": "apps/web/app/posts/new/page.tsx",
       "surface": "app",
       "render": "stream",
       "hydrate": "never",
@@ -622,7 +622,7 @@
     },
     {
       "path": "/pricing",
-      "file": "apps/web/site/pricing.tsx",
+      "file": "apps/web/site/pricing/page.tsx",
       "surface": "site",
       "render": "isr",
       "hydrate": "never",
@@ -640,7 +640,7 @@
     },
     {
       "path": "/settings",
-      "file": "apps/web/app/settings.tsx",
+      "file": "apps/web/app/settings/page.tsx",
       "surface": "app",
       "render": "spa",
       "hydrate": "idle",

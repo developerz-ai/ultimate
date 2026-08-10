@@ -88,7 +88,7 @@ export const summarizeEval = defineEval({
   prompt: summarizePrompt,
   // The gate is the drop from these recorded scores, never an absolute number: models drift,
   // prompts should not. Accepting a new number is a diff in the committed file.
-  baseline: import.meta.resolve('./summarize.v3.baseline.json'),
+  baseline: import.meta.resolve('./summarize.v4.baseline.json'),
   tolerance: 0.05,
   scorers: [jsonSchemaValid(['summary', 'tags']), tagsFromSource, withinTwoSentences],
   cases: summarizeCases,

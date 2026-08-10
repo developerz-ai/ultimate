@@ -5,9 +5,9 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 
-const packageTsconfig = (): string => `{
+const packageTsconfig = (includes: readonly string[]): string => `{
   "extends": "../../tsconfig.json",
-  "include": ["**/*.ts"]
+  "include": [${includes.map((glob) => `"${glob}"`).join(', ')}]
 }
 `;
 
@@ -34,13 +34,16 @@ ${description}.
 `;
 
 /** `src/index.ts` is the package's own file, written separately since its contents differ
- * package to package — these three are identical in shape everywhere. */
+ * package to package — these three are identical in shape everywhere, except the tsconfig's
+ * `include`: a package whose data sits outside `src/` (i18n's catalog JSON) names an extra glob
+ * to reach it, so callers may override the default. */
 export const packageShapeFiles = (
   app: NameSet,
   name: string,
   description: string,
+  includes: readonly string[] = ['**/*.ts'],
 ): readonly GeneratedFile[] => [
   { path: `packages/${name}/README.md`, contents: packageReadme(app, name, description) },
   { path: `packages/${name}/CLAUDE.md`, contents: packageClaude(app, name, description) },
-  { path: `packages/${name}/tsconfig.json`, contents: packageTsconfig() },
+  { path: `packages/${name}/tsconfig.json`, contents: packageTsconfig(includes) },
 ];

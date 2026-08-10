@@ -77,6 +77,11 @@ export {
   permissionsForOperation,
 } from './crud';
 export { AdminDetail, type AdminDetailProps } from './detail';
+export {
+  type AdminColumnFacts,
+  type AdminColumnReference,
+  adminColumnsOf,
+} from './entity-columns';
 // The /_x dashboard is NOT re-exported here — it has its own door, `@ultimat3/admin/dev`, so a
 // host that only mounts the dev panels never loads a production admin component.
 export {
@@ -156,7 +161,10 @@ export {
   type AdminAction,
   type AdminActionCtx,
   type AdminColumn,
+  type AdminColumnDescription,
+  type AdminColumnMeta,
   type AdminEntity,
+  type AdminEntityDescription,
   type AdminFilter,
   type AdminJobSummary,
   type AdminListQuery,

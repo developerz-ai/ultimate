@@ -23,22 +23,23 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `entity` | [`packages/db/src/schema/members.ts`](packages/db/src/schema/members.ts) | `tz()` + `locale()` per member, `orgId()` tenancy |
 | `entity` | [`apps/web/app/posts/entity.ts`](apps/web/app/posts/entity.ts) | the feature's view schema (`PostView`) over the shared table |
 | `policy` | [`apps/web/app/posts/policy.ts`](apps/web/app/posts/policy.ts) | `post:publish` = owns-or-org-admin, one definition, five surfaces |
-| `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost` |
+| `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost`, and `summarize` — an `llm()` model call, which is an action factory rather than a ninth primitive |
 | `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic) |
+| `action` | [`apps/web/app/settings/actions.ts`](apps/web/app/settings/actions.ts) | `savePreferences` — a one-action slice still gets an `actions.ts` |
 | `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` — optimistic local twin, offline queue |
 | `query` | [`apps/web/app/posts/live.ts`](apps/web/app/posts/live.ts) | `liveFeed` (`live: true`, `persist: true`) + non-live `postBySlug` |
 | `job` | [`apps/web/app/orgs/jobs.ts`](apps/web/app/orgs/jobs.ts) | `onboardOrg` — durable steps + `step.sleep('3d')` |
 | `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `notifySubscribers` — fanout, per-tenant concurrency |
 | `job` | [`apps/web/app/digest/jobs.ts`](apps/web/app/digest/jobs.ts) | `sendDigest` — 09:00 **local per member**, DST-correct |
 | `task` | [`apps/web/api/tasks.ts`](apps/web/api/tasks.ts) | `nightlyDigest` cron with an explicit `tz` |
-| `route` | [`apps/web/site/index.tsx`](apps/web/site/index.tsx) | `static`, `hydrate: 'never'`, 0kb JS |
-| `route` | [`apps/web/site/pricing.tsx`](apps/web/site/pricing.tsx) | `isr`, money formatted at the edge |
-| `route` | [`apps/web/site/blog/[slug].tsx`](apps/web/site/blog/%5Bslug%5D.tsx) | `isr` + `prerender()` + `ld.Article` |
-| `route` | [`apps/web/site/blog/index.tsx`](apps/web/site/blog/index.tsx) | `isr` list + RSS/Atom/JSON feed from one declaration |
-| `route` | [`apps/web/app/posts/new.tsx`](apps/web/app/posts/new.tsx) | `stream` + `hydrate: 'never'` — a native form posting to an action |
-| `route` | [`apps/web/app/posts/[id].tsx`](apps/web/app/posts/%5Bid%5D.tsx) | `ssr`, fresh per request |
-| `route` | [`apps/web/app/feed.tsx`](apps/web/app/feed.tsx) | `stream`, `useLive(liveFeed)`, usable offline |
-| `route` | [`apps/web/app/settings.tsx`](apps/web/app/settings.tsx) | `spa`, locale + timezone + theme pickers |
+| `route` | [`apps/web/site/page.tsx`](apps/web/site/page.tsx) | `static`, `hydrate: 'never'`, 0kb JS |
+| `route` | [`apps/web/site/pricing/page.tsx`](apps/web/site/pricing/page.tsx) | `isr`, money formatted at the edge |
+| `route` | [`apps/web/site/blog/[slug]/page.tsx`](apps/web/site/blog/%5Bslug%5D/page.tsx) | `isr` + `prerender()` + `ld.Article` |
+| `route` | [`apps/web/site/blog/page.tsx`](apps/web/site/blog/page.tsx) | `isr` list + RSS/Atom/JSON feed from one declaration |
+| `route` | [`apps/web/app/posts/new/page.tsx`](apps/web/app/posts/new/page.tsx) | `stream` + `hydrate: 'never'` — a native form posting to an action |
+| `route` | [`apps/web/app/posts/[id]/page.tsx`](apps/web/app/posts/%5Bid%5D/page.tsx) | `ssr`, fresh per request |
+| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useLive(liveFeed)`, usable offline |
+| `route` | [`apps/web/app/settings/page.tsx`](apps/web/app/settings/page.tsx) | `spa`, locale + timezone + theme pickers |
 
 ## Why `packages/`
 
@@ -76,8 +77,8 @@ apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}
 | **Dark theme** | [`apps/web/shared/theme.scss`](apps/web/shared/theme.scss) | every colour is `var(--color-*)`; no raw hex in any `.tsx` or `.scss` |
 | **Timezones** | [`packages/core/src/digest-schedule.ts`](packages/core/src/digest-schedule.ts) | member `tz` drives every `<DateTime>`; digest fires 09:00 local, DST-correct across the March/November transitions |
 | **Money** | [`packages/core/src/billing.ts`](packages/core/src/billing.ts) | integer minor units, USD + EUR, arithmetic never leaves minor units, `Intl` only at the edge |
-| **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` queues offline and reconciles; feed reads from the persisted store; [`site/offline.tsx`](apps/web/site/offline.tsx) is the required fallback |
-| **Realtime** | [`apps/web/app/feed.tsx`](apps/web/app/feed.tsx) | tier 3 — `useLive(liveFeed)` is a Solid signal, patched per row |
+| **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` queues offline and reconciles; feed reads from the persisted store; [`site/offline/page.tsx`](apps/web/site/offline/page.tsx) is the required fallback |
+| **Realtime** | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | tier 3 — `useLive(liveFeed)` is a Solid signal, patched per row |
 | **AI-first** | [`packages/mcp/src/tools.ts`](packages/mcp/src/tools.ts) | every exposed action is an MCP tool with the *same* policy; admin ships its own MCP surface |
 | **Admin** | [`apps/admin/src/index.ts`](apps/admin/src/index.ts) | the whole dashboard, 20 lines of `defineAdmin` |
 | **Prompts** | [`apps/web/app/posts/prompts`](apps/web/app/posts/prompts) | versioned `.md` artifact + typed slots + a scored eval |
