@@ -1,6 +1,8 @@
-// Postly's test preload: the fixtures the APP owns. `clock`, `mail` and `runJobs` arrive with
-// the framework's own preload, imported below — an app registers only what the framework cannot
-// know, which here is the seed graph and how a member becomes an actor.
+// Postly's test preload: the fixtures the APP owns, which is two of them. Everything else in the
+// bag — `clock`, `mail`, `network`, `runJobs`, and the driver-backed `page`, `budget`, `signIn`,
+// `deploy`, `subscribe` — arrives with the framework's own preload, imported below. An app
+// registers only what the framework cannot know, which here is the seed graph and how a member
+// becomes an actor. Registering `page` here would be Postly deciding for itself what a page is.
 //
 //   [test]
 //   preload = ["./scripts/test-setup.ts"]

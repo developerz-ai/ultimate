@@ -34,11 +34,36 @@ export const jobTest = (name: string, body: TestBody): void => {
   test(testName('job', name), body);
 };
 
+/** One element selection, resolved when it is used rather than when it is built. */
+export interface LocatorLike {
+  count(): Promise<number>;
+  click(): Promise<void>;
+  first(): LocatorLike;
+  isVisible(): Promise<boolean>;
+}
+
+/**
+ * The browser surface an e2e test drives. Every member is one the reference app's e2e suite
+ * already calls — this is the observed contract, not a wish list, and the driver that implements
+ * it (a browser, at milestone 11) is the only thing that may add to it.
+ */
 export interface PageLike {
   goto(url: string): Promise<unknown>;
+  /** The first flush of a streamed response — the shell, before the holes resolve. */
+  gotoStreamed(url: string): Promise<{ readonly html: string }>;
   reload(): Promise<unknown>;
+  /** Resolves once the service worker controls the page, so the offline assertions are not racy. */
+  waitForServiceWorker(): Promise<void>;
   title(): Promise<string>;
   content(): Promise<string>;
+  url(): string;
+  evaluate<T>(fn: () => T): Promise<T>;
+  locator(selector: string): LocatorLike;
+  getByRole(
+    role: string,
+    options?: { readonly name?: string; readonly level?: number },
+  ): LocatorLike;
+  getByText(text: string): LocatorLike;
 }
 
 export interface E2eFixtures {

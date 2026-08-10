@@ -3,9 +3,15 @@
 // for reasons nobody can reproduce — so the default is "nothing gets out".
 
 import { isSelfOrigin } from '@ultimat3/core';
-import { NetworkSealedError } from './errors';
+import { NetworkOfflineError, NetworkSealedError } from './errors';
 
 export type FetchLike = typeof globalThis.fetch;
+
+/**
+ * `offline` is the cable pulled; `dropped` is the same for a request, but tells a transport its
+ * connection was cut rather than closed — so it reconnects and resumes instead of resubscribing.
+ */
+export type NetworkState = 'online' | 'offline' | 'dropped';
 
 export interface MockRoute {
   /** Exact URL, or a prefix ending in `*`, or a RegExp. */
@@ -18,9 +24,16 @@ interface SealState {
   readonly mocks: MockRoute[];
   readonly seen: string[];
   original: FetchLike | undefined;
+  network: NetworkState;
 }
 
-const state: SealState = { allowed: new Set(), mocks: [], seen: [], original: undefined };
+const state: SealState = {
+  allowed: new Set(),
+  mocks: [],
+  seen: [],
+  original: undefined,
+  network: 'online',
+};
 
 const matches = (route: MockRoute, url: string): boolean => {
   if (route.match instanceof RegExp) return route.match.test(url);
@@ -47,6 +60,15 @@ export function sealNetwork(): void {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = urlOf(input);
     state.seen.push(url);
+    // Ahead of the mocks on purpose: a test that mocked Stripe and then went offline is asserting
+    // the offline path, and a mock that still answered would be the one thing that path never sees.
+    if (state.network !== 'online') {
+      throw new NetworkOfflineError({
+        url,
+        method: methodOf(input, init),
+        mode: state.network,
+      });
+    }
     const mock = state.mocks.find((route) => matches(route, url));
     if (mock !== undefined) {
       return mock.handler(input instanceof Request ? input : new Request(url, init));
@@ -73,6 +95,17 @@ export function unsealNetwork(): void {
   globalThis.fetch = state.original;
   state.original = undefined;
 }
+
+/** Whether the patch is installed. The `network` fixture seals before going offline, so that
+ *  `offline()` has teeth in a process that deliberately unsealed (`ULTIMATE_TEST_ALLOW_NET=1`). */
+export const isNetworkSealed = (): boolean => state.original !== undefined;
+
+/** The one writer of the offline gate — `createTestNetwork()`. Never call it from a test body. */
+export function setNetworkState(next: NetworkState): void {
+  state.network = next;
+}
+
+export const networkState = (): NetworkState => state.network;
 
 function safeHost(url: string): string | undefined {
   try {
@@ -113,4 +146,5 @@ export function resetNetwork(): void {
   state.allowed.clear();
   state.mocks.length = 0;
   state.seen.length = 0;
+  state.network = 'online';
 }

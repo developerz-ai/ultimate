@@ -79,9 +79,12 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - Every prompt carries `<name>.evals.ts` (the cases) and `<name>.vN.baseline.json` (the recorded
   scores). A prompt with no eval fails `x verify` with `X_EVAL_MISSING`; the gate is the drop from
   the baseline, so re-record with `ULTIMATE_EVAL_RECORD=1 x test eval` and commit the diff.
-- Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `clock`,
-  `mail` and `runJobs` are the framework's; `seed` and `actorFor` are Postly's. A test that
-  destructures anything else fails with `X_TEST_FIXTURE_UNKNOWN` — register it there, once.
+- Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `seed` and
+  `actorFor` are Postly's; everything else is the framework's — `clock`, `mail`, `network`,
+  `runJobs` built in-process, and `page`, `budget`, `signIn`, `deploy`, `subscribe` waiting on a
+  driver (`X_TEST_FIXTURE_UNAVAILABLE` until one is installed). A test that destructures a name
+  nobody registered fails with `X_TEST_FIXTURE_UNKNOWN` — register it there, once. Never register
+  a framework name here: two apps would then disagree about what a `page` is.
 
 ## Boundaries (build errors, not lint warnings)
 

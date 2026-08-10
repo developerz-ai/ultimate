@@ -34,6 +34,8 @@ export {
 } from './determinism';
 export type { TestingErrorCode } from './errors';
 export {
+  FixtureUnavailableError,
+  NetworkOfflineError,
   NetworkSealedError,
   NondeterministicError,
   TESTING_ERROR_CODES,
@@ -44,24 +46,45 @@ export type { EntityLike, EntityRegistry, Factory, FactoryOptions } from './fact
 export { defineFactory, factoriesFor } from './factories';
 export type { TestClock, TestDuration } from './fixture-clock';
 export { createTestClock } from './fixture-clock';
+export type {
+  DriverFixtureName,
+  LiveFeed,
+  LiveFeedPatch,
+  LiveTarget,
+  SignIn,
+  Subscribe,
+  TestBudget,
+  TestDeploy,
+} from './fixture-drivers';
+export { DRIVER_FIXTURE_NEEDS, driverFixtures, unavailableFixture } from './fixture-drivers';
 export type { JobRunTrace, RunJobs, StepTally } from './fixture-jobs';
 export { createRunJobs } from './fixture-jobs';
 export type { MailRef, TestMail } from './fixture-mail';
 export { createTestMail } from './fixture-mail';
+export type { TestNetwork } from './fixture-network';
+export { createTestNetwork } from './fixture-network';
 export { fixtureTest as test } from './fixtures';
-export { FRAMEWORK_FIXTURE_NAMES, registerFrameworkFixtures } from './framework-fixtures';
+export {
+  ALL_FIXTURE_NAMES,
+  DRIVER_FIXTURE_NAMES,
+  FRAMEWORK_FIXTURE_NAMES,
+  registerFrameworkFixtures,
+} from './framework-fixtures';
 export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
-export type { MockRoute } from './sealed-network';
+export type { MockRoute, NetworkState } from './sealed-network';
 export {
   allowHost,
+  isNetworkSealed,
   mockFetch,
   mockJson,
+  networkState,
   requestedUrls,
   resetNetwork,
   sealNetwork,
+  setNetworkState,
   unsealNetwork,
 } from './sealed-network';
 export type { SqlRunner, TemplateDbConfig, WorkerDatabase } from './template-db';
@@ -82,6 +105,7 @@ export type {
   E2eFixtures,
   EvalCase,
   EvalOptions,
+  LocatorLike,
   OpenApiLike,
   PageLike,
   TestType,

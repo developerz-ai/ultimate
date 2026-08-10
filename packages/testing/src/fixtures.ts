@@ -11,8 +11,11 @@
 import { test as bunTest } from 'bun:test';
 import { fixtureUnknown } from './errors';
 import type { TestClock } from './fixture-clock';
+import type { SignIn, Subscribe, TestBudget, TestDeploy } from './fixture-drivers';
 import type { RunJobs } from './fixture-jobs';
 import type { TestMail } from './fixture-mail';
+import type { TestNetwork } from './fixture-network';
+import type { PageLike } from './test-types';
 
 /** Built once per test, on first use. */
 export type FixtureFactory<T = unknown> = () => T | Promise<T>;
@@ -20,8 +23,8 @@ export type FixtureFactory<T = unknown> = () => T | Promise<T>;
 export type FixtureMap = Readonly<Record<string, FixtureFactory>>;
 
 /**
- * What a test body receives. The three the framework owns are declared here and registered by
- * the preload; apps widen it by augmenting `Fixtures`:
+ * What a test body receives. Everything the framework owns is declared here and registered by the
+ * preload; apps widen it by augmenting `Fixtures`:
  *
  * ```ts
  * declare module '@ultimat3/testing' {
@@ -30,11 +33,21 @@ export type FixtureMap = Readonly<Record<string, FixtureFactory>>;
  *   }
  * }
  * ```
+ *
+ * The last five are declared but driver-backed: destructuring one in a process with no driver
+ * fails as `X_TEST_FIXTURE_UNAVAILABLE`, naming what is missing. Typed here anyway, because the
+ * type is the contract a driver implements — see `fixture-drivers.ts`.
  */
 export interface Fixtures {
   readonly clock: TestClock;
   readonly mail: TestMail;
+  readonly network: TestNetwork;
   readonly runJobs: RunJobs;
+  readonly budget: TestBudget;
+  readonly deploy: TestDeploy;
+  readonly page: PageLike;
+  readonly signIn: SignIn;
+  readonly subscribe: Subscribe;
 }
 
 const registry = new Map<string, FixtureFactory>();
