@@ -20,7 +20,7 @@ strings: format those with `Intl` via [@ultimat3/money](../money) and [@ultimat3
 `defineCatalogs` is the only way an app registers strings. Never call `registerCatalog` by hand.
 
 ```ts
-// packages/i18n/src/index.ts — the app's whole i18n module
+// the app's own packages/i18n/src/index.ts — its whole i18n module
 import { defineCatalogs, type TranslationKey, type Translator, useI18n } from '@ultimat3/i18n';
 import en from '../catalogs/en.json';
 import es from '../catalogs/es.json';

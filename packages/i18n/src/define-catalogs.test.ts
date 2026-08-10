@@ -1,3 +1,8 @@
+// `defineCatalogs` is the app's one registration call and it runs once, at boot — so a regression
+// here is not a failing render but a locale that registered with no strings, or with half of them.
+// These tests hold that line: all-or-nothing registration across every locale, and the app winning
+// over the framework on a shared key.
+
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   configureLocales,

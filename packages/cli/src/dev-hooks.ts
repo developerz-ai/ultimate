@@ -1,11 +1,6 @@
 // The two seams `@ultimat3/http` leaves open, bound to the packages that own them. `authorize`
-// evaluates the SAME `Policy` object every other surface evaluates — the route table's declared
-// permission — so a denial in `x dev` is the denial production produces, not a dev-only
-// approximation.
-//
-// It decides for pages only. An action route carries `enforcedBy: 'handler'`, so the pipeline
-// never asks: `invoke` is its one evaluation, and the only one holding the row a row-level rule
-// reads. Reconstructing that decision here would be the second authz system, one row short.
+// decides for pages only, from the SAME `Policy` object every other surface evaluates — the route
+// table's declared permission — so a denial in `x dev` is the one production produces.
 
 import { actorOf } from '@ultimat3/action';
 import type { AuthzDecision, ServerHooks } from '@ultimat3/http';
@@ -30,6 +25,9 @@ function policyFor(path: string): Policy<unknown, unknown> | undefined {
 export function devHooks(): ServerHooks {
   return {
     authorize: (route, _request, ctx): AuthzDecision => {
+      // An action route never arrives here: it carries `enforcedBy: 'handler'`, so the pipeline
+      // never asks. `invoke` is its one evaluation, and the only one holding the row a row-level
+      // rule reads — reconstructing it here would be a second authz system, one row short.
       const policy = policyFor(route.path);
       if (policy === undefined) {
         return {

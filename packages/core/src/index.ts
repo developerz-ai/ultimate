@@ -210,7 +210,7 @@ export {
   redactKeys,
   setLoggerContextFields,
 } from './logger';
-export type { ModuleRegistrar, PrimitiveKind } from './registrar';
+export type { ModuleRegistrar, PrimitiveKind, RegisteredPrimitive } from './registrar';
 export {
   hasPrimitiveRegistrar,
   primitiveRegistrar,

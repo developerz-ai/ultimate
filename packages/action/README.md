@@ -4,12 +4,12 @@ One declaration → six artifacts.
 
 | # | Artifact | Reach it with | Guarantees |
 |---|---|---|---|
-| 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(action)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
-| 2 | OpenAPI 3.1 operation + document | `action.openapi()` / `buildOpenApi()` | byte-stable output, diffed by `x verify` |
-| 3 | Typed RPC client | `action.client({ baseUrl })` / `rpc<Api['actions']>()` | server typo = compile error in Solid |
-| 4 | MCP tool | `action.tool()` | *identical* policy evaluation to the route |
-| 5 | Job handle | `action.job()` | enqueue durable work, no rewrite |
-| 6 | Contract tests | `action.contract()` | garbage rejected, anonymous denied, spec present |
+| 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(publishPost)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
+| 2 | OpenAPI 3.1 operation + document | `publishPost.openapi()` / `buildOpenApi()` | byte-stable output, diffed by `x verify` |
+| 3 | Typed RPC client | `publishPost.client({ baseUrl })` / `rpc<Api['actions']>()` | server typo = compile error in Solid |
+| 4 | MCP tool | `publishPost.tool()` | *identical* policy evaluation to the route |
+| 5 | Job handle | `publishPost.job()` | enqueue durable work, no rewrite |
+| 6 | Contract tests | `publishPost.contract()` | garbage rejected, anonymous denied, spec present |
 
 ## The fluent surface
 

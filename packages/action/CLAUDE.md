@@ -62,6 +62,11 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `@ultimat3/query`'s registry through core's registrar table (`primitiveRegistrar('query')`),
   never a sideways import — and throws `X_REGISTRAR_MISSING` rather than skipping a kind whose
   registrar is absent, because a silent skip drops every read of that kind.
+- `defineApi`'s returned maps are built from the **registrar's own results**, never from the
+  modules' exports. A feature module exports helpers next to its primitives; copying every export
+  would seat one in `Api['actions']` as a client method nothing serves, and let two modules'
+  same-named helpers overwrite each other with no `X_ACTION_DUPLICATE` to raise. The type does the
+  same filter, so `rpc<Api['actions']>()` offers only what registered.
 - `rpc` is the only name for the map-wide typed client. There is no `createClient` alias.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - `serializeOpenApi` output must be byte-stable: sorted keys, sorted registry, no clock.

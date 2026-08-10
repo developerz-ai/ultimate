@@ -1,8 +1,6 @@
-// The route projection, proven over the real pipeline rather than by calling `route.handler`.
-// What it pins is the task's whole point: an action route has ONE authz evaluation, it happens
-// inside `invoke`, and it happens after `row` has loaded. A pipeline that decided first would
-// decide from `row: null` — a denial for the row's own author, issued by an authz system that
-// never saw the row. That is the bug these tests exist to keep fixed.
+// The route projection, proven over the real pipeline rather than by calling `route.handler`:
+// an action route has ONE authz evaluation, it happens inside `invoke`, and it happens after
+// `row` has loaded.
 
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
@@ -76,7 +74,9 @@ describe('an action route over the pipeline', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ id: POST_ID, published: true });
-    // Twice would mean the pipeline decided too — with `row: null`, so it would have denied.
+    // Twice would mean the pipeline decided too, and it decides from `row: null` — a denial for
+    // the row's own author, issued by an authz system that never saw the row. That is the bug
+    // these tests exist to keep fixed.
     expect(evaluations.count).toBe(1);
   });
 

@@ -1,11 +1,7 @@
-// Single responsibility: the seam that lets one package hand a module of primitives to the
-// package that owns them, without a sideways import.
-//
-// `action` and `query` sit on the same tier, so `defineApi` in `@ultimat3/action` cannot
-// import `registerQueries` — the boundaries check is a build error, not a suggestion. Each
-// owning package announces its registrar here at import time; a caller asks by kind. Same
-// shape as `defineService` and `registerErrorCodes`: core holds the table, higher tiers fill
-// it, and nobody imports sideways to reach it.
+// Hands a module of primitives to the package that owns them, without a sideways import:
+// `defineApi` in `@ultimat3/action` cannot import `@ultimat3/query`'s `registerQueries` on
+// the same tier, so each owner announces its registrar here at import time and callers ask
+// by kind. Same shape as `defineService` and `registerErrorCodes`.
 
 import { UltimateError } from './errors';
 
@@ -20,8 +16,20 @@ export type PrimitiveKind =
   | 'route'
   | 'task';
 
+/**
+ * What a registrar hands back: the primitives it actually took, each carrying the name
+ * registration stamped on it. Returning the registered set — rather than nothing — is what lets
+ * a caller build its API map from what registered instead of from what a module exported.
+ */
+export interface RegisteredPrimitive {
+  readonly kind: PrimitiveKind;
+  readonly name: string;
+}
+
 /** `registerActions` / `registerQueries`: export names become primitive names. */
-export type ModuleRegistrar = (module: Readonly<Record<string, unknown>>) => readonly unknown[];
+export type ModuleRegistrar = (
+  module: Readonly<Record<string, unknown>>,
+) => readonly RegisteredPrimitive[];
 
 const registrars = new Map<PrimitiveKind, ModuleRegistrar>();
 
@@ -37,7 +45,10 @@ export function registerPrimitiveRegistrar(kind: PrimitiveKind, registrar: Modul
     throw new UltimateError({
       code: 'X_REGISTRAR_CONFLICT',
       cause: `two different ${kind} registrars are loaded, so ${kind} primitives would split across two registries`,
-      fix: `bun pm ls | grep @ultimat3/${kind} — then dedupe it to one version in package.json`,
+      // One command, because a `fix:` is pasted verbatim: collapsing every range on the package
+      // to one resolved version is the repair. `bun pm why @ultimat3/<kind>` names the dependents
+      // when a range genuinely disagrees and the update cannot converge on its own.
+      fix: `bun update @ultimat3/${kind}`,
       meta: { kind },
     });
   }

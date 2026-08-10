@@ -1,3 +1,8 @@
+// The barrel must re-export the ONE `t` from `@ultimat3/schema` by identity, never a copy — `t`
+// delegates to `schemaProvider()` on every access, so a spread or a re-declaration would freeze
+// the provider at import time and still typecheck, still build a `defineMail` input. Identity is
+// the only assertion that catches that, which is why this file exists.
+
 import { describe, expect, test } from 'bun:test';
 import { t as schemaT } from '@ultimat3/schema';
 import { blocks, defineMail, t } from './index';

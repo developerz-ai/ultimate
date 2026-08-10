@@ -11,6 +11,7 @@ import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { ActionDeniedError } from './errors';
 import { toOpenApiOperation } from './http';
 import { toJobHandle } from './job-handle';
 import { toMcpTool } from './mcp-tool';
@@ -187,6 +188,17 @@ describe('the mutator DSL surface', () => {
     const viaServer = await target.server(ctx, { postId: POST_ID });
     const viaCallable = await target({ postId: POST_ID }, { ctx });
     expect(viaServer).toEqual(viaCallable);
+
+    // The load-bearing half: the two calls above agree even if `.server()` reached the declared
+    // half directly, because both return the same value. The declared `server` ignores its ctx
+    // entirely, so it would answer an anonymous caller happily — only a call routed through
+    // `invoke` reaches the policy. This denial is what proves the route taken.
+    const denied = await target.server(createContext(), { postId: POST_ID }).then(
+      (value) => value,
+      (error: unknown) => error,
+    );
+    expect(denied).toBeInstanceOf(ActionDeniedError);
+    expect((denied as ActionDeniedError).code).toBe('X_UNAUTHENTICATED');
   });
 
   test('.tool() delegates to toMcpTool() — same data, same policy reference', () => {

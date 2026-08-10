@@ -178,6 +178,60 @@ describe('daysBetween', () => {
   });
 });
 
+// `Date.UTC(99, …)` does not mean year 99 — the legacy constructor remaps years 0–99 onto
+// 1900–1999, so any date arithmetic that rebuilds an epoch from zoned fields silently jumps
+// nineteen centuries for a first-century date. These fixtures come from ISO strings, which are
+// parsed literally, and the assertions are the values the proleptic Gregorian calendar gives.
+describe('years before 100', () => {
+  test('the 0099 → 0100 boundary is one day, not -693959', () => {
+    const from = fromIso('0099-12-31T12:00:00Z');
+    const to = fromIso('0100-01-01T12:00:00Z');
+    // Pins the fixtures: a remapped `from` would read 1999-12-31 and the test would prove nothing.
+    expect(toIso(from)).toBe('0099-12-31T12:00:00.000Z');
+    expect(toZoned(from, UTC).year).toBe(99);
+    expect(daysBetween(from, to, UTC)).toBe(1);
+    expect(daysBetween(to, from, UTC)).toBe(-1);
+  });
+
+  test('a whole local day inside year 0050 is one day', () => {
+    const from = fromIso('0050-06-10T00:00:00Z');
+    const to = fromIso('0050-06-11T00:00:00Z');
+    expect(daysBetween(from, to, UTC)).toBe(1);
+    expect(daysBetween(from, fromIso('0050-06-10T23:59:59.999Z'), UTC)).toBe(0);
+  });
+
+  test('a year spanning the boundary is 365 days — 0100 is not a leap year', () => {
+    const from = fromIso('0099-06-15T00:00:00Z');
+    const to = fromIso('0100-06-15T00:00:00Z');
+    expect(daysBetween(from, to, UTC)).toBe(365);
+  });
+
+  test('toZoned reports the real weekday: 0099-12-31 is a Thursday, not 1999-12-31 Friday', () => {
+    expect(toZoned(fromIso('0099-12-31T12:00:00Z'), UTC)).toMatchObject({
+      year: 99,
+      month: 12,
+      day: 31,
+      weekday: 4,
+    });
+    expect(toZoned(fromIso('0050-06-10T12:00:00Z'), UTC).weekday).toBe(5);
+  });
+
+  test('fromZoned resolves the year it was asked for, not 1900 + it', () => {
+    // The other half of the same remap: `offsetAt` rebuilds an epoch from wall-clock fields too,
+    // so before the fix this returned 1950 with `resolution: 'exact'` — or, once the caller was
+    // fixed alone, a ~1.9-million-year-off instant reported as a DST gap.
+    const resolved = fromZonedDetailed({ year: 50, month: 6, day: 10, hour: 12, minute: 0 }, UTC);
+    expect(resolved.resolution).toBe('exact');
+    expect(resolved.offsetMinutes).toBe(0);
+    expect(toIso(resolved.instant)).toBe('0050-06-10T12:00:00.000Z');
+    // And through a real zone, where the offset is what the remap corrupted: Berlin had no
+    // standard time in year 99, so `Intl` answers with its LMT, +00:53.
+    const berlin = fromZoned({ year: 99, month: 12, day: 31, hour: 0, minute: 0 }, BERLIN);
+    expect(offsetAt(BERLIN, berlin)).toBe(53);
+    expect(toIso(berlin)).toBe('0099-12-30T23:07:00.000Z');
+  });
+});
+
 function codeOf(run: () => unknown): string {
   try {
     run();

@@ -49,7 +49,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 
 ## The fluent surface
 
-Every projection is a method on the action — `publishPost.tool()`, never `toMcpTool(publishPost)` — and every declared field is lifted onto it. An action has no `.def`.
+Every projection is a method on the action — `publishPost.tool()`, never `toMcpTool(publishPost)`. Exactly four declared fields are lifted onto it as readable properties: `input`, `output`, `policy`, `mcp`. The rest of the declaration is structured metadata, reachable through `describe()` and nowhere else. An action has no `.def`.
 
 | Member | Is | Rule |
 |---|---|---|
@@ -60,10 +60,10 @@ Every projection is a method on the action — `publishPost.tool()`, never `toMc
 | `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
 | `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |
 | `.contract()` | the generated assertions | garbage rejected, anonymous denied, spec present |
-| `.describe()` | the manifest row | name, verb, resource, path, capability, schemas, invalidated tags, `mcp`, `rateLimit` |
-| `.input` `.output` `.policy` `.mcp` | the declaration, lifted | readable. `handle` is not among them |
+| `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
+| `.input` `.output` `.policy` `.mcp` | the declaration, lifted | the whole lifted set — readable, and `.mcp` present only when declared. `cache.invalidates`, `rateLimit` and `idempotent` are not properties: read them off `describe()`, where `cache.invalidates` flattens to `invalidates` |
 
-`handle` is unreachable by design. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `invoke` is the only thing that can run it — one execution path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'action'` is `X_ACTION_FOREIGN`, never a registered action.
+`handle` and `row` — the declaration's two functions — are unreachable by design: neither lifted nor described. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `invoke` is the only thing that can run them — one execution path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'action'` is `X_ACTION_FOREIGN`, never a registered action.
 
 Every projection needs the name `registerActions()` stamps on. It names the export in place, so `import { publishPost }` is the action that projects once the app has booted — there is no second, differently-named twin to remember.
 
@@ -73,7 +73,7 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 |---|---|---|---|
 | 1 | **HTTP route** | name + `input` | `POST /api/posts/publish` — first word is the verb, the rest is the pluralized resource. Body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | `publishPost.openapi()`, emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
-| 3 | **Typed client function** | `input` + `output` | `await api.publishPost({ postId })` in `app/`, or `publishPost.client({ baseUrl })` for one method — no fetch, no codegen step to remember |
+| 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
 | 5 | **MCP tool** | `mcp` + `input` + `policy` | `publishPost.tool()` — one `publish_post` per exposed action, JSON Schema from `input`, authz unchanged |
 | 6 | **Test** | `input` + `policy` | `publishPost.contract()` — schema round-trip plus a denial test per policy branch, generated green, not as a `TODO` |

@@ -2,7 +2,7 @@
 // through a plan that carries an org predicate; building one without it throws
 // `X_TENANCY_UNSCOPED` at the seam instead of leaking another tenant's rows.
 
-import { invariantViolated, tenancyUnscoped } from './errors';
+import { EntityError, tenancyUnscoped } from './errors';
 import type { ColumnMap } from './types';
 
 export type Operator =
@@ -69,11 +69,15 @@ export const resolveTenantColumn = (
 ): string | null => {
   if (declared === undefined) return tenantColumnOf(columns);
   if (!Object.hasOwn(columns, declared)) {
-    throw invariantViolated(
-      entityName,
-      'tenant',
-      `tenant: '${declared}' names no column — pick from: ${Object.keys(columns).join(', ')}`,
-    );
+    const available = Object.keys(columns).join(', ');
+    // Not `invariantViolated`: its fix points at `x entity explain`, which describes invariants
+    // the author never wrote. What repairs this is one edit to the declaration, so the error
+    // carries that edit and both ways out of it.
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entityName}.tenant: tenant: '${declared}' names no column — pick from: ${available}`,
+      fix: `set tenant to one of ${available} in entity('${entityName}'), or remove the tenant key — inference then takes the .tenant() column, else one named ${ORG_COLUMN}`,
+    });
   }
   return declared;
 };

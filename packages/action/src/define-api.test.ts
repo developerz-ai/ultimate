@@ -1,6 +1,11 @@
+// `defineApi` is the app's whole boot: one call decides what registered, and its return value is
+// the type the RPC client is shaped from. A drop, a silent overwrite or an unregistered export
+// slipping into the map would all ship as a client method the server never mounts.
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type ModuleRegistrar,
+  type RegisteredPrimitive,
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
 } from '@ultimat3/core';
@@ -18,15 +23,25 @@ const echo = () =>
     handle: ({ input }) => ({ id: input.id }),
   });
 
-/** Stands in for `@ultimat3/query`'s `registerQueries` — action cannot import it sideways. */
+/** A query, as far as the registrar seam can see one. */
+const fakeQuery = () => ({ kind: 'query' as const, name: '' });
+
+/**
+ * Stands in for `@ultimat3/query`'s `registerQueries` — action cannot import it sideways. Like
+ * the real one it takes only the branded exports and hands back what it took, named.
+ */
 function recordingQueryRegistrar(): { seen: string[]; registrar: ModuleRegistrar } {
   const seen: string[] = [];
   return {
     seen,
     registrar: (module) => {
-      const names = Object.keys(module).sort();
-      seen.push(...names);
-      return names;
+      const registered: RegisteredPrimitive[] = [];
+      for (const name of Object.keys(module).sort()) {
+        if ((module[name] as { kind?: unknown } | undefined)?.kind !== 'query') continue;
+        seen.push(name);
+        registered.push({ kind: 'query', name });
+      }
+      return registered;
     },
   };
 }
@@ -84,7 +99,7 @@ describe('defineApi', () => {
     const { seen, registrar } = recordingQueryRegistrar();
     registerPrimitiveRegistrar('query', registrar);
 
-    const api = defineApi({ queries: [{ liveFeed: {} }, { postById: {} }] });
+    const api = defineApi({ queries: [{ liveFeed: fakeQuery() }, { postById: fakeQuery() }] });
 
     expect(seen).toEqual(['liveFeed', 'postById']);
     expect(Object.keys(api.queries)).toEqual(['liveFeed', 'postById']);
@@ -93,7 +108,7 @@ describe('defineApi', () => {
   test('queries with no registrar loaded fail loudly instead of being dropped', () => {
     let code = '';
     try {
-      defineApi({ queries: { liveFeed: {} } });
+      defineApi({ queries: { liveFeed: fakeQuery() } });
     } catch (error) {
       code = (error as { code: string }).code;
     }
@@ -109,6 +124,35 @@ describe('defineApi', () => {
 
     expect(Object.keys(api.actions)).toEqual([]);
     expect(Object.keys(api.queries)).toEqual([]);
+  });
+
+  test('a module helper never reaches the API — the map is what registered, not what exported', () => {
+    const helper = (id: string): string => id;
+    const { registrar } = recordingQueryRegistrar();
+    registerPrimitiveRegistrar('query', registrar);
+
+    const api = defineApi({
+      actions: { createPost: echo(), slugFor: helper },
+      queries: { liveFeed: fakeQuery(), feedKey: helper },
+    });
+
+    expect(Object.keys(api.actions)).toEqual(['createPost']);
+    expect(Object.keys(api.queries)).toEqual(['liveFeed']);
+    // The clients this shapes would otherwise offer `slugFor` as a method nothing serves.
+    expect(api.actions).not.toHaveProperty('slugFor');
+    expect(api.queries).not.toHaveProperty('feedKey');
+  });
+
+  test('two modules exporting one helper name cannot overwrite each other in silence', () => {
+    // Same name, no collision to raise — because neither is a primitive, so neither registers.
+    const api = defineApi({
+      actions: [
+        { createPost: echo(), toRow: () => 'a' },
+        { inviteMember: echo(), toRow: () => 'b' },
+      ],
+    });
+
+    expect(Object.keys(api.actions).sort()).toEqual(['createPost', 'inviteMember']);
   });
 
   test('the returned surface is frozen — the API is declared once, not mutated later', () => {

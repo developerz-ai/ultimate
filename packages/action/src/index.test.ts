@@ -52,12 +52,13 @@ describe('@ultimat3/action public surface', () => {
       ['route', surface.toRoute(publishPost)],
     ];
 
-    for (const [label, projection] of projections) {
+    for (const [, projection] of projections) {
       // `route` legitimately carries a `handler` — a closure over `invoke`. A `handle` or a
       // `def` would be the declaration itself, reachable from whoever holds the projection.
-      expect({ [label]: Object.keys(projection) }).toEqual({
-        [label]: expect.not.arrayContaining(['handle', 'def']),
-      });
+      // Asked by property access, not `Object.keys`: a non-enumerable or inherited `def` is
+      // still reachable by whoever holds the projection, and a key list would not see it.
+      expect(projection).not.toHaveProperty('handle');
+      expect(projection).not.toHaveProperty('def');
     }
   });
 });

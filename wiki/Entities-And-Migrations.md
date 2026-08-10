@@ -112,7 +112,15 @@ Which column that is, in order — first match wins:
 | 3 | a column named `orgId` | literal property name, no mark needed |
 | 4 | none of those | `$tenantColumn` is `null` and the entity is not tenant-scoped |
 
-Omitting `tenant` keeps steps 2–4, so silence never means unscoped. A `tenant` key naming no column is a declaration error — `X_INVARIANT_VIOLATED`, listing the columns to pick from — because the alternative is a silently unscoped table.
+Omitting `tenant` keeps steps 2–4, so silence never means unscoped. A `tenant` key naming no column is a declaration error — because the alternative is a silently unscoped table. The error lists the columns to pick from and both edits that resolve it, so the declaration is repaired without opening the entity file:
+
+```
+X_INVARIANT_VIOLATED: a domain invariant rejected this row
+  cause: posts.tenant: tenant: 'workspaceId' names no column — pick from: id, title, body, orgId
+  fix:   set tenant to one of id, title, body, orgId in entity('posts'), or remove the tenant key — inference then takes the .tenant() column, else one named orgId
+```
+
+Removing the key is a real option, not a hedge: inference (steps 2–4) still applies, so the table stays scoped whenever a column is marked `.tenant()` or named `orgId`.
 
 | Consequence | Detail |
 |---|---|

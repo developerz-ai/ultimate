@@ -1,16 +1,23 @@
 /**
- * Pins the `route` DSL surface. `route.test.ts` proves `defineRoute` validates and
- * normalizes correctly; this file proves the *shape* cannot silently drift — the
- * descriptor's exact member set, and that every consumer reads the descriptor rather
- * than the declaration the author wrote. `route` is the one primitive whose façade is
- * a normalized descriptor instead of projection methods, so what has to stay true is
- * that all five readers see one shape and none of them branches.
+ * Pins the `route` DSL surface's *shape*, which `route.test.ts` (validation) does not:
+ * `route` is the one primitive whose façade is a normalized descriptor rather than
+ * projection methods, so every reader must see one shape and none may branch.
  */
 import { describe, expect, test } from 'bun:test';
 import { assertModeInvariants, assertModeShape } from './modes';
-import { clearRoutes, registerRoute } from './registry';
-import type { RouteDefinition } from './route';
+import { clearRoutes, registerRoute, routeFor } from './registry';
+import type { RouteConfig, RouteDefinition } from './route';
 import { defineRoute, isRouteConfig, tagKeys } from './route';
+
+/** The stable code every route-shape refusal carries; a bare `toThrow()` would accept any. */
+const codeOf = (run: () => unknown): string => {
+  try {
+    run();
+  } catch (error) {
+    return (error as { code?: string }).code ?? '';
+  }
+  return '';
+};
 
 // The exact contract: `RouteConfig` (route.ts). Kept in sync by hand on purpose — a
 // silent drift here is exactly the regression this file exists to catch. Optional
@@ -83,7 +90,7 @@ describe('the route DSL surface', () => {
       surface: 'site',
       suspenseBoundaries: 0,
     } as const;
-    expect(() => assertModeInvariants(hydrating, ctx)).toThrow();
+    expect(codeOf(() => assertModeInvariants(hydrating, ctx))).toBe('X_ROUTE_MODE_INVALID');
     const budgeted = defineRoute({ ...hydrating, budget: { js: '40kb' } });
     expect(() => assertModeInvariants(budgeted, ctx)).not.toThrow();
   });
@@ -91,7 +98,7 @@ describe('the route DSL surface', () => {
   test('mode invariants are checked on the descriptor, at declaration time', () => {
     // `defineRoute` runs `assertModeShape` itself, so a bad route fails at module
     // evaluation — build time — not on the first request.
-    expect(() => defineRoute({ ...minimal, render: 'isr' })).toThrow();
+    expect(codeOf(() => defineRoute({ ...minimal, render: 'isr' }))).toBe('X_ROUTE_MODE_INVALID');
     expect(() => assertModeShape(defineRoute(minimal))).not.toThrow();
   });
 
@@ -101,6 +108,13 @@ describe('the route DSL surface', () => {
     const entry = registerRoute({ file: 'app/posts/page.tsx', config });
     expect(entry.config).toBe(config);
     expect(entry.config.budget).toEqual({});
+    // The author's own object carries no normalized `budget`, so registering it would seat a
+    // route the descriptor's readers cannot read — `describeRoutes()` reaches `budget.js`.
+    const raw = minimal as unknown as RouteConfig;
+    expect(codeOf(() => registerRoute({ file: 'app/drafts/page.tsx', config: raw }))).toBe(
+      'X_ROUTE_UNNORMALIZED',
+    );
+    expect(routeFor('/drafts')).toBeUndefined();
     clearRoutes();
   });
 

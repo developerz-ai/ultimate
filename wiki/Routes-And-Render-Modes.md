@@ -47,6 +47,7 @@ Validation runs at **module evaluation**. `defineRoute` checks the shape and the
 | `meta` is a function | `defineRoute` | `X_ROUTE_META_MISSING` |
 | mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with no trigger; `ssr` with a `prerender`; `spa` with no `policy` | `defineRoute` | `X_ROUTE_MODE_INVALID` |
 | surface-dependent: mode allowed on the surface; `site/` hydration without `budget.js`; `stream` with no `<Suspense>`; `prerender` on a non-prerenderable mode | `registerRoute` | `X_ROUTE_MODE_INVALID` |
+| the config came from `defineRoute` and not straight from the author | `registerRoute` | `X_ROUTE_UNNORMALIZED` |
 | two files claiming one URL | `registerRoute` | `X_ROUTE_DUPLICATE` |
 
 The split is about what is knowable, not about strictness: everything decidable from the config alone is decided at import; the rest needs the file's surface, which only the route table knows.

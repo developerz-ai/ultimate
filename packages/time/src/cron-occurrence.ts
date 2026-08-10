@@ -7,7 +7,7 @@ import { type CronExpression, matchesDay, parseCronOnce } from './cron-parse';
 import { cronInvalid } from './errors';
 import { fromEpochMs, type Instant } from './instant';
 import { fromZoned, toZoned } from './zoned';
-import { assertTimeZone, type TimeZone } from './zones';
+import { assertTimeZone, type TimeZone, utcEpoch } from './zones';
 
 /** True when `at` matches the expression in `zone`, to the second. */
 export function matchesCron(
@@ -160,12 +160,12 @@ interface Cursor {
 }
 
 function isoWeekday(cursor: Cursor): number {
-  const day = new Date(Date.UTC(cursor.year, cursor.month - 1, cursor.day)).getUTCDay();
+  const day = new Date(utcEpoch(cursor.year, cursor.month, cursor.day)).getUTCDay();
   return ((day + 6) % 7) + 1;
 }
 
 function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return new Date(utcEpoch(year, month + 1, 0)).getUTCDate();
 }
 
 function resetTime(cursor: Cursor): void {

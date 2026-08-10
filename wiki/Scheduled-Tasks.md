@@ -11,7 +11,9 @@ v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading))
 export const nightlyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
-  enqueue: () => [[sendDigest, {}]],
+  // The occurrence, never the wall clock: a catch-up tick runs long after the instant it fires
+  // for, and a payload read off `Date.now()` there is silently for the wrong day.
+  enqueue: (occurrenceMs) => [[sendDigest, { occurrenceMs }]],
 });
 ```
 
@@ -110,7 +112,7 @@ Role table and drain sequence: [Deployment](Deployment).
 
 | Command / tool | Output |
 |---|---|
-| `x tasks list --json` | name, `cron`, `tz`, `enabled`, `lastRun`, `lastStatus`, **`nextRun`** (ISO 8601, UTC + the zone-local rendering) |
+| `x tasks list --json` | `name`, `cron`, `tz` and `enqueues` off the descriptor, plus the scheduler's last-tick state — `lastRun`, `lastStatus`, **`nextRun`** (ISO 8601, UTC + the zone-local rendering). Those three are run state, read from the scheduler's Postgres row and its next-occurrence resolution, never declared fields |
 | `x tasks show <name> --json` | the next N fire times, the jobs it enqueues, the resolved queue |
 | `x tasks run <name>` | fires one tick immediately, out of band, for verification. Dispatch only — the job still runs on a worker |
 | MCP `tasks.list` | same content as `x tasks list --json`, same authz |
@@ -122,7 +124,7 @@ Role table and drain sequence: [Deployment](Deployment).
 ```
 $ x tasks list --json
 {"tasks":[{"name":"nightlyDigest","cron":"0 3 * * *","tz":"UTC",
-  "enabled":true,"lastRun":"2026-07-26T03:00:00Z","lastStatus":"enqueued",
+  "lastRun":"2026-07-26T03:00:00Z","lastStatus":"enqueued",
   "nextRun":"2026-07-27T03:00:00Z","enqueues":["sendDigest"]}]}
 ```
 

@@ -5,7 +5,7 @@
  * from. Nothing downstream may keep its own list of routes.
  */
 
-import { RouteDuplicateError, SurfaceBoundaryError } from './errors';
+import { RouteDuplicateError, RouteUnnormalizedError, SurfaceBoundaryError } from './errors';
 import { assertModeInvariants } from './modes';
 import type {
   HydrateStrategy,
@@ -15,7 +15,7 @@ import type {
   RouteData,
   RouteParams,
 } from './route';
-import { tagKeys } from './route';
+import { isRouteConfig, tagKeys } from './route';
 import type { Surface } from './surfaces';
 import { surfaceOf } from './surfaces';
 
@@ -149,6 +149,17 @@ export interface RegisterRouteInput<TData = RouteData> {
 export function registerRoute<TData = RouteData>(
   input: RegisterRouteInput<TData>,
 ): RouteEntry<TData> {
+  // The type already refuses a declaration; this catches the JS caller and the cast. Without it a
+  // raw declaration registers, and `describeRoutes()` is where it surfaces — as a bare TypeError
+  // on `config.budget.js`, one build step away from the file that caused it.
+  if (!isRouteConfig(input.config)) {
+    throw new RouteUnnormalizedError(
+      `${input.file} registered a route declaration, not a descriptor: defineRoute normalizes ` +
+        '`meta` and `budget`, and the route table has no other normalizer',
+      `wrap the declaration in ${input.file}: registerRoute({ file, config: defineRoute({ … }) })`,
+    );
+  }
+
   const derived = routePathFromFile(input.file);
   const path = input.path ?? derived.path;
   const suspenseBoundaries = input.suspenseBoundaries ?? 0;

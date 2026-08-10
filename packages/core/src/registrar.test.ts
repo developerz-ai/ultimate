@@ -1,13 +1,20 @@
+// Guards the one seam that keeps same-tier packages from importing each other: a registrar that
+// resolved to `undefined`, or a second copy quietly winning the table, would split a kind's
+// primitives across two registries and drop half of them with nothing raised.
+
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   hasPrimitiveRegistrar,
   type ModuleRegistrar,
   primitiveRegistrar,
+  type RegisteredPrimitive,
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
 } from './registrar';
 
 const noop: ModuleRegistrar = () => [];
+
+const asQuery = (name: string): RegisteredPrimitive => ({ kind: 'query', name });
 
 beforeEach(() => {
   resetPrimitiveRegistrars();
@@ -45,10 +52,10 @@ describe('registerPrimitiveRegistrar', () => {
 });
 
 describe('primitiveRegistrar', () => {
-  test('returns the announced registrar', () => {
-    const registrar: ModuleRegistrar = (module) => Object.keys(module);
+  test('returns the announced registrar, and its results carry the registered names', () => {
+    const registrar: ModuleRegistrar = (module) => Object.keys(module).map(asQuery);
     registerPrimitiveRegistrar('action', registrar);
-    expect(primitiveRegistrar('action')({ a: 1, b: 2 })).toEqual(['a', 'b']);
+    expect(primitiveRegistrar('action')({ a: 1, b: 2 })).toEqual([asQuery('a'), asQuery('b')]);
   });
 
   test('throws X_REGISTRAR_MISSING with an installable fix rather than returning undefined', () => {

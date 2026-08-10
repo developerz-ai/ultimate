@@ -5,7 +5,7 @@
  * shaped from, which is why there is no second list of names to keep in step.
  */
 
-import { primitiveRegistrar } from '@ultimat3/core';
+import { primitiveRegistrar, type RegisteredPrimitive } from '@ultimat3/core';
 import { registerActions } from './registry';
 
 /** A module namespace: `import * as postActions from './actions'`. */
@@ -26,25 +26,36 @@ export interface ApiDef {
 type Get<TDef, TKey extends string> = TKey extends keyof TDef ? TDef[TKey] : undefined;
 
 /**
+ * The exports a registrar would take, and only those. A feature module legitimately exports its
+ * own helpers next to its primitives; carrying one into `Api['actions']` would offer the client a
+ * method the server never registered and no surface can project.
+ */
+type Registered<TModule, TKind extends string> = {
+  readonly [K in keyof TModule as TModule[K] extends { readonly kind: TKind }
+    ? K
+    : never]: TModule[K];
+};
+
+/**
  * Intersect a tuple of module namespaces. `{ createPost } & { inviteMember }` is the map the
  * typed client indexes, so `rpc<Api['actions']>()` knows every action without a codegen step.
  */
-type Merge<TModules> = [TModules] extends [undefined]
+type Merge<TModules, TKind extends string> = [TModules] extends [undefined]
   ? EmptyModule
   : TModules extends readonly [infer THead, ...infer TRest]
-    ? THead & Merge<TRest>
+    ? Registered<THead, TKind> & Merge<TRest, TKind>
     : TModules extends readonly []
       ? EmptyModule
-      : TModules;
+      : Registered<TModules, TKind>;
 
 type EmptyModule = Readonly<Record<never, never>>;
 
 /** What `defineApi` returns: the registered primitives, merged and keyed by export name. */
 export interface Api<TDef extends ApiDef> {
-  readonly actions: Merge<Get<TDef, 'actions'>> &
-    Merge<Get<TDef, 'mutators'>> &
-    Merge<Get<TDef, 'llm'>>;
-  readonly queries: Merge<Get<TDef, 'queries'>>;
+  readonly actions: Merge<Get<TDef, 'actions'>, 'action'> &
+    Merge<Get<TDef, 'mutators'>, 'action'> &
+    Merge<Get<TDef, 'llm'>, 'action'>;
+  readonly queries: Merge<Get<TDef, 'queries'>, 'query'>;
 }
 
 /**
@@ -72,17 +83,20 @@ export function defineApi<const TDef extends ApiDef>(def: TDef): Api<TDef> {
   ];
   const queryModules = moduleList(def.queries);
 
-  for (const module of actionModules) registerActions(module);
+  const actions: RegisteredPrimitive[] = [];
+  for (const module of actionModules) actions.push(...registerActions(module));
+
   // Resolved once, and only when there is something to register: a missing registrar with
   // queries to register must be an error, never a silent skip that drops every read.
+  const queries: RegisteredPrimitive[] = [];
   if (queryModules.length > 0) {
     const registerQueries = primitiveRegistrar('query');
-    for (const module of queryModules) registerQueries(module);
+    for (const module of queryModules) queries.push(...registerQueries(module));
   }
 
   return Object.freeze({
-    actions: mergeModules(actionModules),
-    queries: mergeModules(queryModules),
+    actions: byRegisteredName(actions),
+    queries: byRegisteredName(queries),
   }) as Api<TDef>;
 }
 
@@ -91,7 +105,13 @@ function moduleList(modules: ApiModules | undefined): readonly ApiModule[] {
   return Array.isArray(modules) ? modules : [modules as ApiModule];
 }
 
-/** Registration names in place, so the merged object holds the registered primitives. */
-function mergeModules(modules: readonly ApiModule[]): ApiModule {
-  return Object.freeze(Object.assign({}, ...modules) as ApiModule);
+/**
+ * Keyed by the name registration stamped, read back off the registrar's own results — never off
+ * the module's exports. Copying every export would seat a feature's helper in `api.actions` under
+ * a name no surface serves, and the last module exporting that name would win in silence.
+ */
+function byRegisteredName(primitives: readonly RegisteredPrimitive[]): ApiModule {
+  const map: Record<string, RegisteredPrimitive> = {};
+  for (const primitive of primitives) map[primitive.name] = primitive;
+  return Object.freeze(map);
 }
