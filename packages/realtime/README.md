@@ -50,6 +50,7 @@ frame handler is unchanged between rungs.
 |---|---|
 | tier 1 | `topic`, `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
 | tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `createReplicator`, `matcherFor` |
+| replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `subjectMatches` |
 | reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `drainPlan`, `AcceptBudget` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
@@ -94,16 +95,27 @@ because refusing without one just moves the herd next door.
   it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next flush re-snapshots rather than diverging.
-- `PgLogicalReplicationFeed` and `NatsTransport` are interface-complete and throw
-  `X_NOT_IMPLEMENTED` with a `fix:` line. `InMemoryChangeFeed` + `InProcessTransport` are the working
-  defaults used by `x dev` and every test.
+- **`PgLogicalReplicationFeed` decodes `pgoutput` off a real slot** — its own Postgres v3 client
+  (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
+  publication and the slot, creates the slot when there is none, and confirms the slot as it goes so
+  the WAL does not grow without bound. `InMemoryChangeFeed` + `InProcessTransport` remain the
+  defaults for `x dev` and every test; `NatsTransport` is still interface-complete and throws
+  `X_NOT_IMPLEMENTED` with a `fix:` line.
+- **The lsn is `<commit position><row position in the transaction>`, 24 hex characters.** Neither
+  half works alone: every row of one transaction shares a commit lsn, and logical decoding emits
+  *transactions* in commit order, so per-record WAL positions are not monotonic across them. The
+  pair sorts in delivery order and is byte-identical on replay, which is what turns at-least-once
+  redelivery into a drop instead of a duplicate.
+- **A live query needs `REPLICA IDENTITY FULL`.** Deciding whether a row *left* a result set needs
+  the old values; with the default identity a delete replicates only the key columns.
 - Tier 3's OPFS SQLite store is browser-only and throws until the browser entry ships; `MemoryLocalStore`
   implements the full journal/rollback/replay semantics today.
 
 ## Errors
 
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
-`X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_NOT_IMPLEMENTED`
+`X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_REPLICATION_FAILED` ·
+`X_REPLICATION_PROTOCOL` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.

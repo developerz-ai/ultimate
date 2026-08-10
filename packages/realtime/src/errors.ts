@@ -10,6 +10,8 @@ export type RealtimeErrorCode =
   | 'X_CURSOR_STALE'
   | 'X_REBASE_CONFLICT'
   | 'X_TRANSPORT_UNAVAILABLE'
+  | 'X_REPLICATION_PROTOCOL'
+  | 'X_REPLICATION_FAILED'
   | 'X_NOT_IMPLEMENTED';
 
 const DOCS_BASE = 'https://ultimate.dev/errors/';
@@ -93,6 +95,38 @@ export class TransportUnavailableError extends RealtimeError {
       code: 'X_TRANSPORT_UNAVAILABLE',
       cause: `transport "${args.transport}" is unavailable: ${args.reason}`,
       fix: 'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+    });
+  }
+}
+
+/**
+ * The bytes on the replication socket are not the bytes the protocol allows: a truncated message,
+ * an unknown pgoutput tag, an auth method we do not speak. Always a version or configuration
+ * mismatch rather than a transient fault, so retrying the same connection cannot help.
+ */
+export class ReplicationProtocolError extends RealtimeError {
+  constructor(args: { stage: string; detail: string; fix?: string }) {
+    super({
+      code: 'X_REPLICATION_PROTOCOL',
+      cause: `postgres replication ${args.stage}: ${args.detail}`,
+      fix:
+        args.fix ??
+        'x doctor db — the server must be postgres >= 14 with a pgoutput publication and wal_level=logical',
+    });
+  }
+}
+
+/**
+ * The replication connection itself failed — refused credentials, a slot another process holds,
+ * an `ErrorResponse` from the server. The server's own message is passed through verbatim
+ * because it names the object that has to change.
+ */
+export class ReplicationFailedError extends RealtimeError {
+  constructor(args: { stage: string; detail: string; fix: string }) {
+    super({
+      code: 'X_REPLICATION_FAILED',
+      cause: `postgres replication ${args.stage} failed: ${args.detail}`,
+      fix: args.fix,
     });
   }
 }

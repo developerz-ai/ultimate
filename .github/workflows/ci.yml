@@ -97,6 +97,7 @@ jobs:
           --health-retries=5
     env:
       TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
+      TEST_REPLICATION_URL: postgres://ultimate:ultimate@localhost:5433/postgres
     steps:
       - uses: actions/checkout@v7
         with:
@@ -110,6 +111,19 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      # `wal_level = logical` is a server argument, and a service container takes none —
+      # so the replication server is started by hand. Without it the logical-replication
+      # feed's live tests skip, and a decoder nothing exercises is a decoder nobody trusts.
+      - name: start a logical-replication postgres
+        run: |
+          docker run -d --name pg-logical \
+            -e POSTGRES_USER=ultimate -e POSTGRES_PASSWORD=ultimate -e POSTGRES_DB=postgres \
+            -p 5433:5432 postgres:17-alpine -c wal_level=logical
+          for _ in $(seq 1 30); do
+            docker exec pg-logical pg_isready -U ultimate && exit 0
+            sleep 2
+          done
+          echo 'postgres with wal_level=logical never became ready' >&2 && exit 1
       - name: bun test
         # No opt-in exclusions: the framework's e2e/contract/live/job/eval suites all run, every
         # time. The reference app's suites are not here — they run in `reference-app-verify`,
@@ -139,6 +153,7 @@ jobs:
           --health-retries=5
     env:
       TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
+      TEST_REPLICATION_URL: postgres://ultimate:ultimate@localhost:5433/postgres
     steps:
       - uses: actions/checkout@v7
         with:
@@ -152,6 +167,19 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      # `wal_level = logical` is a server argument, and a service container takes none —
+      # so the replication server is started by hand. Without it the logical-replication
+      # feed's live tests skip, and a decoder nothing exercises is a decoder nobody trusts.
+      - name: start a logical-replication postgres
+        run: |
+          docker run -d --name pg-logical \
+            -e POSTGRES_USER=ultimate -e POSTGRES_PASSWORD=ultimate -e POSTGRES_DB=postgres \
+            -p 5433:5432 postgres:17-alpine -c wal_level=logical
+          for _ in $(seq 1 30); do
+            docker exec pg-logical pg_isready -U ultimate && exit 0
+            sleep 2
+          done
+          echo 'postgres with wal_level=logical never became ready' >&2 && exit 1
       - name: x verify
         run: bun run scripts/verify.ts --json
 

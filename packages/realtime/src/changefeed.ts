@@ -2,8 +2,13 @@
 // `x dev` and every test use the in-memory feed. Both satisfy one interface, so the matcher, the
 // replicator, and the fanout never learn which one they are attached to.
 
-import { NotImplementedError } from './errors';
+import type { Clock } from '@ultimat3/core';
+import { ReplicationFailedError } from './errors';
 import type { Row } from './json';
+import { PgReplicationStream, type ReplicationStreamStats } from './pg-replication';
+import type { PgTarget } from './pg-socket';
+import type { PgStream } from './pg-wire';
+import type { Rng } from './thundering-herd';
 
 export type ChangeOp = 'insert' | 'update' | 'delete';
 
@@ -130,46 +135,57 @@ export class InMemoryChangeFeed implements ChangeFeed {
 }
 
 export interface PgLogicalReplicationOptions {
-  /** `Bun.sql` connection string for a role with REPLICATION. */
+  /** Connection string for a role with REPLICATION: `postgres://user:pass@host:5432/db`. */
   readonly url: string;
   /** Replication slot name. Exactly one `replicator` process may hold it. */
   readonly slot: string;
   readonly publication: string;
   /** Entities to decode; anything else is skipped before it reaches the matcher. */
   readonly entities: readonly string[];
+  /** How often the slot is confirmed. Longer means more WAL retained after a crash. */
+  readonly statusIntervalMs?: number | undefined;
+  readonly clock?: Clock | undefined;
+  /** Injected so the SCRAM nonce is deterministic under a seeded test. */
+  readonly rng?: Rng | undefined;
+  /** The byte pipe, injected. Defaults to `Bun.connect`; a test drives a scripted server instead. */
+  readonly stream?: ((target: PgTarget) => Promise<PgStream>) | undefined;
 }
 
 /**
- * The production feed: `pgoutput` decoding off a logical replication slot. Interface-complete and
- * config-validated; the WAL decoder itself is milestone 6 (the reconnect benchmark) because the
- * topology is not frozen until that number is known.
+ * The production feed: `pgoutput` decoding off a logical replication slot. Everything about *how*
+ * lives in `pg-replication.ts`; what this class adds is the `ChangeFeed` contract the matcher, the
+ * replicator and the fanout are written against — so swapping it for `InMemoryChangeFeed` in `x dev`
+ * changes nothing downstream.
  */
 export class PgLogicalReplicationFeed implements ChangeFeed {
   readonly source = 'pg-logical-replication';
-  readonly #options: PgLogicalReplicationOptions;
+  readonly #stream: PgReplicationStream;
 
   constructor(options: PgLogicalReplicationOptions) {
     if (options.entities.length === 0) {
-      throw new NotImplementedError({
-        what: 'PgLogicalReplicationFeed with an empty entity list',
+      throw new ReplicationFailedError({
+        stage: 'preflight',
+        detail: 'the feed was given an empty entity list, so no change could ever match',
         fix: 'pass the entities the publication covers: new PgLogicalReplicationFeed({ entities: [...] })',
       });
     }
-    this.#options = options;
+    this.#stream = new PgReplicationStream(options);
   }
 
-  async start(_options: ChangeFeedStartOptions): Promise<void> {
-    throw new NotImplementedError({
-      what: `pgoutput WAL decoding for slot "${this.#options.slot}"`,
-      fix: 'x dev uses InMemoryChangeFeed; for Postgres run `x db replication init` (milestone 6) or set REALTIME_FEED=in-memory',
-    });
+  async start(options: ChangeFeedStartOptions): Promise<void> {
+    await this.#stream.start({ from: options.from, onChange: options.onChange });
   }
 
   async stop(): Promise<void> {
-    // Nothing to release: `start` never acquired the slot.
+    await this.#stream.stop();
   }
 
   lastLsn(): string | null {
-    return null;
+    return this.#stream.lastLsn();
+  }
+
+  /** Delivered / skipped / replayed counts, for `/readyz` and the `x dev` dashboard. */
+  stats(): ReplicationStreamStats {
+    return this.#stream.stats();
   }
 }

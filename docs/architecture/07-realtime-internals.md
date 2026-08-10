@@ -39,18 +39,34 @@ graph TD
 ## Change feed record
 
 ```ts
-export interface ChangeRecord {
-  readonly lsn: string;            // '0/1A2B3C4' — monotonic, the only ordering authority
-  readonly table: string;
+// packages/realtime/src/changefeed.ts
+export interface ChangeEvent<R extends Row = Row> {
+  readonly entity: string;         // entity name; the matcher's dependency sets are in entity terms
   readonly op: 'insert' | 'update' | 'delete';
-  readonly tenantId: string | null;
-  readonly before: Row | null;     // requires REPLICA IDENTITY FULL, see below
-  readonly after: Row | null;
-  readonly trace: string | null;   // originating trace id, best-effort
+  readonly before: R | null;       // requires REPLICA IDENTITY FULL, see below
+  readonly after: R | null;
+  readonly lsn: string;            // the only ordering authority — see below
+  readonly txid: string;
+  readonly orgId: string | null;   // hoisted out of the row so fanout filters without parsing it
+  readonly at: number;             // commit time, epoch ms
 }
 ```
 
 `before` is mandatory for correct matching: deciding whether a row **left** a result set requires the old values. Any table with a registered live query is set to `REPLICA IDENTITY FULL` by the generated migration; `x verify` fails a `live: true` query over a table without it (`X_LIVE_REPLICA_IDENTITY`).
+
+### The lsn is a pair, not a WAL position
+
+`lsn` is `<16 hex commit position><8 hex row position inside that transaction>` — 24 characters, zero-padded so string order *is* stream order. Neither half is usable alone:
+
+| Candidate | Why it fails |
+|---|---|
+| commit lsn | every row of one transaction shares it, and the replicator drops anything that does not strictly increase — a five-row insert would deliver one row |
+| per-record WAL position | logical decoding emits **transactions** in commit order, so a later-committing transaction can carry lower record positions than an earlier one |
+| a counter, or the clock | not reproducible; a replay would produce new lsns and at-least-once delivery would duplicate instead of dedupe |
+
+The pair is monotonic in delivery order *and* byte-identical on replay. The row position counts every replicated row, selected or not, so narrowing the entity list cannot renumber a stream a resume cursor already points into.
+
+`PgLogicalReplicationFeed` speaks the Postgres v3 protocol directly (`pg-wire.ts`, `pg-auth.ts`, `pg-connection.ts`, `pg-socket.ts`) and decodes `pgoutput` (`pgoutput.ts`) — no driver dependency, because a replication connection is CopyBoth and no pooled client will hand one over. It preflights `wal_level`, the publication and the slot, so the three misconfigurations that produce an unreadable server message each get their own `fix:` line instead.
 
 ## Incremental matcher
 

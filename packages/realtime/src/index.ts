@@ -66,6 +66,8 @@ export {
   RealtimeError,
   type RealtimeErrorCode,
   RebaseConflictError,
+  ReplicationFailedError,
+  ReplicationProtocolError,
   SubscriptionLimitError,
   TopicForbiddenError,
   TransportUnavailableError,
@@ -137,6 +139,21 @@ export {
   type QueueState,
   type QueueStore,
 } from './offline-queue';
+// ---- the postgres replication path ------------------------------------------------------------
+export { camel, entityRow } from './pg-entity-row';
+export {
+  changeLsn,
+  commitPositionOf,
+  type ReplicationStreamStats,
+} from './pg-replication';
+export { bunPgStream, type PgTarget, parsePgUrl, type SslMode } from './pg-socket';
+export type { PgStream } from './pg-wire';
+export {
+  type PgColumn,
+  PgOutputDecoder,
+  type PgOutputMessage,
+  type PgRelation,
+} from './pgoutput';
 export { authorizeWithPolicy, type GateOptions, visibleWithPolicy } from './policy-gate';
 export {
   PRESENCE_KEY_PREFIX,

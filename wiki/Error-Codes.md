@@ -163,6 +163,8 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_CURSOR_STALE` | the resume LSN is outside the change buffer | a long disconnect | pass `snapshot` to `resumeFrom()` so the fallback re-snapshots |
 | `X_REBASE_CONFLICT` | a local mutation could not be rebased | server state moved incompatibly | set `conflict: 'server-wins'`, or return a row from `custom(merge)` |
 | `X_TRANSPORT_UNAVAILABLE` | the fanout bus is unreachable | NATS/Redis down or misconfigured | `x doctor transport` — check `REALTIME_TRANSPORT_URL` |
+| `X_REPLICATION_FAILED` | the replication connection was refused | `wal_level` not `logical`, no publication, a slot another replicator holds, wrong credentials | the message names the object; the fix is the exact `ALTER SYSTEM` / `CREATE PUBLICATION` / `pg_drop_replication_slot` statement |
+| `X_REPLICATION_PROTOCOL` | the WAL stream cannot be decoded | a server or `pgoutput` version this build does not speak, or a proxy on the replication port | `x doctor db` — point the URL at postgres itself, on a server ≥ 14 |
 
 ## Cache
 
