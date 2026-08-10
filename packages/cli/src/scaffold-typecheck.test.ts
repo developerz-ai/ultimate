@@ -2,14 +2,15 @@
 // Whether the scaffolded app actually compiles is the contract test next to this file.
 
 import { describe, expect, test } from 'bun:test';
+import { GENERATORS } from './cmd-generate';
 import { ScaffoldPathEscapeError } from './errors';
+import { FIXTURE_GENERATORS, scaffoldFixture, scaffoldVariants } from './scaffold-fixture';
 import {
-  FIXTURE_GENERATORS,
   formatDiagnostics,
+  gapsFor,
   KNOWN_GAPS,
   parseDiagnostics,
   sandboxPath,
-  scaffoldFixture,
   staleGapsIn,
   unexpectedIn,
 } from './scaffold-typecheck';
@@ -80,8 +81,21 @@ describe('unit · scaffold typecheck harness', () => {
     );
   });
 
-  test('every pinned gap names who fixes it', () => {
-    for (const entry of KNOWN_GAPS) expect(entry.owner.length).toBeGreaterThan(20);
+  test('every pinned gap names who fixes it, and the variant that reproduces it', () => {
+    const names = scaffoldVariants().map((variant) => variant.name);
+    for (const entry of KNOWN_GAPS) {
+      expect(entry.owner.length).toBeGreaterThan(20);
+      // A pin against a variant nobody compiles is a pin that can never go stale.
+      expect(names).toContain(entry.variant);
+    }
+  });
+
+  test('a pin is spent only by its own variant — another invocation cannot borrow it', () => {
+    expect(gapsFor('x new')).toEqual(KNOWN_GAPS);
+    expect(gapsFor('x new --no-example')).toEqual([]);
+    // The same diagnostic, in a variant that pinned nothing, is a finding rather than a pass.
+    expect(unexpectedIn([pinned], gapsFor('x new --no-example'))).toEqual([pinned]);
+    expect(unexpectedIn([pinned], gapsFor('x new'))).toEqual([]);
   });
 
   test('a failed gate reads as a runnable bug report', () => {
@@ -111,7 +125,27 @@ describe('unit · scaffold typecheck harness', () => {
     expect(FIXTURE_GENERATORS.length).toBeGreaterThanOrEqual(9);
     expect(paths).toContain('app.config.ts');
     expect(paths).toContain('apps/web/app/invoice/actions/send-invoice.ts');
+    // The admin override is a template no other invocation emits; unchecked, it drifts silently.
+    expect(paths).toContain('apps/web/app/invoice/admin/resource.ts');
     // First write wins, exactly as `x g` resolves a file two generators both produce.
     expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  test('the fixture covers every generator `x g` offers, so none escapes the compiler', () => {
+    expect([...new Set(FIXTURE_GENERATORS.map((options) => options.kind))].toSorted()).toEqual(
+      [...GENERATORS].toSorted(),
+    );
+  });
+
+  test('--no-example is its own variant: a different db package, so its own compile', () => {
+    const [example, empty] = scaffoldVariants();
+    expect(scaffoldVariants()).toHaveLength(2);
+    const schemaIn = (variant: typeof example): string =>
+      variant?.files.find((file) => file.path === 'packages/db/src/schema.ts')?.contents ?? '';
+    // The bug this variant exists to catch: an entity re-export naming a slice nobody wrote.
+    expect(schemaIn(example)).toContain("from '@ledger-demo/web/app/post/entity'");
+    expect(schemaIn(empty)).not.toContain('app/post/entity');
+    expect(empty?.files.some((file) => file.path.startsWith('apps/web/app/post/'))).toBe(false);
+    for (const variant of scaffoldVariants()) expect(variant.why.length).toBeGreaterThan(20);
   });
 });

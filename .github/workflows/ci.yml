@@ -246,3 +246,57 @@ jobs:
         continue-on-error: true
         working-directory: examples/dummy
         run: bun run ../../packages/cli/src/bin.ts verify
+
+  # The end-to-end promise, proved for real: a stranger with nothing but `bun` runs `x new`,
+  # `bun install`, `x verify` and gets a green gate. Distinct from scaffold-typecheck.ts (which
+  # compiles every generated file set in-process, in the workspace, against source packages, and
+  # tolerates a short list of pinned KNOWN_GAPS) — this job runs the real CLI-produced files
+  # through a real, separate `bun install` and a real `x verify` subprocess, catching whatever
+  # only shows up once an app is actually assembled and installed (a missing package-shape file,
+  # a dependency range with no matching release, a preload path that only resolves inside this
+  # workspace). It runs outside the checkout so nothing here can quietly depend on this repo's own
+  # workspace linking.
+  #
+  # `@ultimat3/*` isn't published to npm this early in the pipeline (that happens on release, from
+  # a tag — see PUBLISHING.md), so a plain `bun install` in the scaffolded app can't resolve it
+  # from the registry. `scripts/scaffold-smoke-overrides.ts` rewrites those ranges to `file:`
+  # overrides pointing at this repo's own `packages/*` first — the same source a release would
+  # publish, installed the same way `bun install` installs anything. `--linker=hoisted`: Bun's
+  # default isolated linker races on identical `file:` targets shared by many dependents (such as
+  # `@ultimat3/core`) and intermittently fails to link a few — hoisted does not.
+  scaffold-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, typecheck, boundaries]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - name: x new demoapp
+        run: bun run x -- new demoapp --dir "${{ runner.temp }}"
+      - name: point demoapp's @ultimat3/* ranges at this repo's own packages
+        run: bun run scripts/scaffold-smoke-overrides.ts "${{ runner.temp }}/demoapp"
+      - name: bun install (demoapp)
+        working-directory: ${{ runner.temp }}/demoapp
+        # Retried once: the race above is intermittent, and a clean second install is always
+        # idempotent — see the job comment for why the first can fail even on a good scaffold.
+        run: bun install --linker=hoisted || bun install --linker=hoisted
+      - name: x verify (demoapp)
+        working-directory: ${{ runner.temp }}/demoapp
+        # Advisory, same reasoning as reference-app-verify above: `x new --example`'s entity.ts
+        # carries the same pinned TS18048 gap scaffold-typecheck.ts's KNOWN_GAPS documents —
+        # `invariant()`'s generic key type falling back to `string` — which needs a breaking
+        # change to a shipped primitive to close, so a major version, not a fix this job can wait
+        # on. Everything else in the 17-step table is real signal: a new red step here is not that
+        # gap and should be read as a regression.
+        continue-on-error: true
+        run: bun run verify

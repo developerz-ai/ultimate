@@ -4,6 +4,7 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { docsFiles } from './scaffold-docs';
+import { packageShapeFiles } from './scaffold-package-shape';
 
 const rootPackage = (app: NameSet, version: string): string => `{
   "name": "${app.kebab}",
@@ -46,7 +47,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/query": "^${version}",
     "@ultimat3/render": "^${version}",
     "@ultimat3/ui": "^${version}",
-    "solid-js": "^2.0.0"
+    "solid-js": "2.0.0-experimental.16"
   },
   "engines": {
     "bun": ">=1.3.0"
@@ -213,16 +214,40 @@ export { db, sql, withTransaction } from '@ultimat3/db';
 export * as schema from './schema';
 `;
 
-const dbSchema = (
-  app: NameSet,
-): string => `// Every entity the app declares, re-exported here. This list is what the migration generator
-// reads, so an entity that is not exported here does not exist as far as the database is concerned.
-export { post } from '@${app.kebab}/web/app/post/entity';
+// The four pieces below describe the example slice's table. Under `--no-example` that slice is
+// never written, so each one ships its empty counterpart instead of a reference to a file that is
+// not there — `export { post } from …` alone made `x new --no-example` an app that cannot compile.
+
+const SCHEMA_HEADER = `// Every entity the app declares, re-exported here. This list is what the migration generator
+// reads, so an entity that is not exported here does not exist as far as the database is concerned.`;
+
+/**
+ * `bun run db:seed`'s entry point. Identical either way — only the rows differ. Interpolated, not
+ * nested, so it carries exactly the escaping a single template literal needs.
+ */
+const SEED_MAIN = `
+
+if (import.meta.main) {
+  const count = await seed();
+  // Bun's stdout, not process.stdout: one runtime, one API. Awaited because the write resolves
+  // asynchronously, and this JSON line is the whole output of \`bun run db:seed\`.
+  await Bun.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
+}
 `;
 
-const dbSeed = (
-  app: NameSet,
-): string => `// Deterministic seed: same rows every time, so a test and a demo see the same database.
+const dbSchema = (app: NameSet, example: boolean): string =>
+  example
+    ? `${SCHEMA_HEADER}
+export { post } from '@${app.kebab}/web/app/post/entity';
+`
+    : `${SCHEMA_HEADER}
+// \`x g entity <name>\` writes the entity; add its export here so the database learns about it.
+export {};
+`;
+
+const dbSeed = (app: NameSet, example: boolean): string =>
+  example
+    ? `// Deterministic seed: same rows every time, so a test and a demo see the same database.
 import { db, sql } from '@ultimat3/db';
 
 const ORG = '00000000-0000-0000-0000-000000000002';
@@ -240,18 +265,18 @@ export async function seed(): Promise<number> {
       on conflict (id) do nothing\`);
   }
   return rows.length;
-}
+}${SEED_MAIN}`
+    : `// Deterministic seed: same rows every time, so a test and a demo see the same database.
+// No entity is declared yet, so there is nothing to insert — the shape stays, so the first
+// \`x g entity\` has one obvious place to seed from.
 
-if (import.meta.main) {
-  const count = await seed();
-  // Bun's stdout, not process.stdout: one runtime, one API. Awaited because the write resolves
-  // asynchronously, and this JSON line is the whole output of \`bun run db:seed\`.
-  await Bun.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
-}
-`;
+export async function seed(): Promise<number> {
+  return 0;
+}${SEED_MAIN}`;
 
-const migration =
-  (): string => `-- 0000_initial: the example feature slice. Reversible: the down section is required.
+const migration = (example: boolean): string =>
+  example
+    ? `-- 0000_initial: the example feature slice. Reversible: the down section is required.
 CREATE TABLE IF NOT EXISTS posts (
   id uuid PRIMARY KEY,
   org_id uuid NOT NULL,
@@ -265,6 +290,12 @@ CREATE INDEX IF NOT EXISTS posts_org_created_idx ON posts (org_id, created_at);
 -- down
 -- DROP INDEX IF EXISTS posts_org_created_idx;
 -- DROP TABLE IF EXISTS posts;
+`
+    : `-- 0000_initial: no entity is declared yet, so this migration creates nothing. It exists so the
+-- schema hash beside it has a migration to belong to, and \`x verify\` sees no drift on run one.
+-- Reversible: the down section is required.
+
+-- down
 `;
 
 const i18nIndex =
@@ -288,6 +319,8 @@ export type Locale = keyof typeof catalogs;
 export const keys: readonly string[] = Object.keys(catalogs.en);
 `;
 
+// `app.post.*` is deliberately absent: the example slice ships its own `post.json`, and a key in
+// both files is one key shadowing another — and a dangling one under `--no-example`.
 const i18nCatalog = (app: NameSet): string => `{
   "site.home.title": "${app.pascal}",
   "site.home.description": "Everything you need, one command from shippable.",
@@ -296,7 +329,6 @@ const i18nCatalog = (app: NameSet): string => `{
   "app.dashboard.description": "Your workspace.",
   "app.offline.title": "You are offline",
   "app.offline.description": "This page will refresh itself when the connection returns.",
-  "app.post.empty": "No posts yet.",
   "admin.home.title": "Admin",
   "admin.home.description": "Operations for ${app.pascal}."
 }
@@ -385,7 +417,16 @@ unitTest('the app exposes its actions as MCP tools', () => {
 });
 `;
 
-export function repoFiles(app: NameSet, version: string): readonly GeneratedFile[] {
+/**
+ * `example` reaches only the four files that describe the slice's table — schema, seed, initial
+ * migration, and nothing in the catalog. Everything else is the same app either way, which is what
+ * `--no-example` promises: the same shape with an empty `app/`.
+ */
+export function repoFiles(
+  app: NameSet,
+  version: string,
+  example: boolean,
+): readonly GeneratedFile[] {
   return [
     ...docsFiles(app),
     { path: 'package.json', contents: rootPackage(app, version) },
@@ -400,20 +441,23 @@ export function repoFiles(app: NameSet, version: string): readonly GeneratedFile
       path: 'packages/domain/package.json',
       contents: domainPackage(app, 'domain', 'Pure types and constants, no I/O'),
     },
+    ...packageShapeFiles(app, 'domain', 'Pure types and constants, no I/O'),
     { path: 'packages/domain/src/index.ts', contents: domainIndex() },
     { path: 'packages/domain/src/index.test.ts', contents: domainTest() },
     {
       path: 'packages/db/package.json',
       contents: domainPackage(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
     },
+    ...packageShapeFiles(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
     { path: 'packages/db/src/index.ts', contents: dbIndex() },
-    { path: 'packages/db/src/schema.ts', contents: dbSchema(app) },
-    { path: 'packages/db/src/seed.ts', contents: dbSeed(app) },
-    { path: 'packages/db/migrations/0000_initial.sql', contents: migration() },
+    { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
+    { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
+    { path: 'packages/db/migrations/0000_initial.sql', contents: migration(example) },
     {
       path: 'packages/i18n/package.json',
       contents: domainPackage(app, 'i18n', 'Flat catalogs with loud misses'),
     },
+    ...packageShapeFiles(app, 'i18n', 'Flat catalogs with loud misses'),
     { path: 'packages/i18n/src/index.ts', contents: i18nIndex() },
     { path: 'packages/i18n/src/index.test.ts', contents: i18nTest() },
     { path: 'packages/i18n/catalogs/en/app.json', contents: i18nCatalog(app) },
@@ -421,6 +465,7 @@ export function repoFiles(app: NameSet, version: string): readonly GeneratedFile
       path: 'packages/ui/package.json',
       contents: domainPackage(app, 'ui', 'App components on @ultimat3/ui'),
     },
+    ...packageShapeFiles(app, 'ui', 'App components on @ultimat3/ui'),
     { path: 'packages/ui/src/index.ts', contents: uiIndex() },
     { path: 'packages/ui/src/card.tsx', contents: uiCard() },
     { path: 'packages/ui/src/card.module.scss', contents: uiCardStyle() },
@@ -428,6 +473,7 @@ export function repoFiles(app: NameSet, version: string): readonly GeneratedFile
       path: 'packages/mcp/package.json',
       contents: domainPackage(app, 'mcp', "The app's own MCP tools"),
     },
+    ...packageShapeFiles(app, 'mcp', "The app's own MCP tools"),
     { path: 'packages/mcp/src/index.ts', contents: mcpIndex(app) },
     { path: 'packages/mcp/src/index.test.ts', contents: mcpTest() },
   ];
