@@ -28,6 +28,7 @@ export const VERIFY_STEP_NAMES = [
   'contract-diff',
   'budgets',
   'manifest',
+  'roadmap',
 ] as const;
 
 export type VerifyStepName = (typeof VERIFY_STEP_NAMES)[number];

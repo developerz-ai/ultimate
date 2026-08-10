@@ -196,6 +196,7 @@ reports as skipped (`-`), never as passed.
 | `contract-diff` | published actions vs `openapi.json` |
 | `budgets` | per-route JS bytes and LCP |
 | `manifest` | `x.manifest.json` freshness |
+| `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
 A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,
 `*.e2e.test.ts` (or any test under `e2e/`), `*.eval.test.ts`. Everything else is a unit test, so no
@@ -209,7 +210,7 @@ reviewable diff.
 
 ```bash
 $ x verify --json
-{"ok":false,"command":"verify","summary":"1 of 16 steps failed","steps":[
+{"ok":false,"command":"verify","summary":"1 of 17 steps failed","steps":[
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
      "fix":"x fix boundary site/pricing/page.tsx",

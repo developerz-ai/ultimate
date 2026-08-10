@@ -126,6 +126,14 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       ]);
     },
   },
+  {
+    name: 'roadmap',
+    summary: "every roadmap milestone's status marker matches what is actually on disk",
+    // A generated app ships no `docs/idea/14-roadmap.md` — only the framework monorepo does, so
+    // only a host that registers this check has anything for the step to verify.
+    applies: async (ctx) => ctx.hostChecks?.roadmap !== undefined,
+    run: async (ctx) => fromFindings(await hostFindings(ctx, 'roadmap')),
+  },
 ];
 
 /** `assertNoDrift` throws `X_MANIFEST_DRIFT`; a step reports, so the error becomes a finding. */

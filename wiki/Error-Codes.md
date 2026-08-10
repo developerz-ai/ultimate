@@ -361,6 +361,8 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_DECLARATION_UNKNOWN` | no declaration with this name is registered | a typo, or a module that never imported | `x actions list --json` (or `queries` / `entities`); the nearest real name is in `fix` |
 | `X_JOB_UNKNOWN` | the queue holds no job with this id | a stale id, or a job already reaped | `x jobs ls --json` |
 | `X_FIX_TARGET_UNKNOWN` | the named file is not one of the app's source files | a path outside `apps/*/{site,app,api,shared}`, or a typo | `x fix boundary <nearest real path>` — `fix` carries it |
+| `X_ROADMAP_STATUS_MISSING` | a roadmap milestone's row carries no ✅/🚧 status marker | `docs/idea/14-roadmap.md` edited without keeping the marker | add the marker named in `fix` to the milestone's row in `docs/idea/14-roadmap.md` |
+| `X_ROADMAP_MILESTONE_UNVERIFIED` | a milestone marked ✅ is missing a package or file its own **Ships** column names | the artifact was deleted or renamed after the milestone was marked shipped | restore the missing path, or mark the milestone 🚧 until it is back |
 
 ## Names used in the design docs
 

@@ -66,6 +66,7 @@ describe('unit · x verify', () => {
       'contract-diff',
       'budgets',
       'manifest',
+      'roadmap',
     ]);
     expect(VERIFY_STEPS.every((step) => step.summary.length > 0)).toBe(true);
   });
@@ -183,6 +184,27 @@ describe('unit · x verify', () => {
         expect(outcome?.findings.map((finding) => finding.at)).toContain(OPENAPI_FILE);
         expect(outcome?.findings[0]?.fix).toBe('x manifest');
       });
+    });
+  });
+
+  describe('roadmap only runs when a host registers it', () => {
+    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'roadmap');
+
+    test('skipped with no host check registered', async () => {
+      expect(await step?.applies?.(ctx)).toBe(false);
+    });
+
+    test('applies and surfaces the host findings once one is registered', async () => {
+      const finding = {
+        code: 'X_ROADMAP_STATUS_MISSING',
+        cause: 'milestone 3 has no status marker',
+        fix: 'add a status marker to milestone 3',
+      };
+      const withHost: VerifyContext = { ...ctx, hostChecks: { roadmap: async () => [finding] } };
+      expect(await step?.applies?.(withHost)).toBe(true);
+      const outcome = await step?.run(withHost);
+      expect(outcome?.ok).toBe(false);
+      expect(outcome?.findings).toEqual([finding]);
     });
   });
 
