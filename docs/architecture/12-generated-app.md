@@ -165,7 +165,16 @@ live query's SQL carries `order by` and `limit`, the job dedupes a replayed enqu
 inside its byte budget. The CLI's own gate writes the whole scaffold to a sandbox and compiles it
 with the real `tsc` against the real workspace packages — `packages/cli/src/scaffold-typecheck.ts` —
 and the only diagnostics it tolerates are pinned one occurrence at a time in `KNOWN_GAPS`, each
-owned by a framework package, never by a template.
+owned by a framework package, never by a template, and each spendable only by the variant that
+pinned it.
+
+One compile per *file set*, listed in `scaffold-fixture.ts`: `x new` with every generator run on
+top of it (`--admin` included, since that override is a template no other invocation emits), and
+`x new --no-example` on its own. `--no-example` writes a different `packages/db` — no entity, so
+nothing for `schema.ts`, `seed.ts` or the initial migration to name — and compiling only the
+example app is exactly what let it ship a `schema.ts` importing a slice that invocation never
+wrote. A flag that changes which files are emitted earns a variant; one that changes their
+contents does not.
 
 `x g` never clobbers: a path that already exists is `X_GENERATE_CONFLICT` with the path and the
 `--force` that overrides it, so running the generator twice grows a slice instead of flattening it.

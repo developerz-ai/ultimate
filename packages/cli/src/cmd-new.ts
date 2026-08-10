@@ -23,7 +23,10 @@ export interface NewAppOptions {
 /** Pure: the complete file list for a new app, so `--dry-run` and the test see the same thing. */
 export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   const app = names(options.name);
-  const files: GeneratedFile[] = [...repoFiles(app, loadVersion()), ...appFiles(app)];
+  const files: GeneratedFile[] = [
+    ...repoFiles(app, loadVersion(), options.example),
+    ...appFiles(app),
+  ];
   if (options.example) {
     files.push(...resourceFiles('post', { surfaceDir: 'apps/web/app', feature: 'post' }));
   }

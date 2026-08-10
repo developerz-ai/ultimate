@@ -9,53 +9,14 @@
 import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import type { GenerateOptions } from './cmd-generate';
-import { generate } from './cmd-generate';
-import { planNewApp } from './cmd-new';
 import { ScaffoldPathEscapeError } from './errors';
 import type { Runner } from './exec';
 import { exec } from './exec';
+import { FIXTURE_APP, scaffoldFixture } from './scaffold-fixture';
 import type { GeneratedFile } from './templates';
 
 /** Derived from this file, never from cwd, so the harness works from any working directory. */
 export const workspaceRoot = (): string => resolve(import.meta.dir, '..', '..', '..');
-
-/** The app the fixture scaffolds. Kebab, multi-word: single-word names hide casing bugs. */
-export const FIXTURE_APP = 'ledger-demo';
-
-/**
- * One realistic invocation of every generator, on top of `x new --example`. Names differ from
- * their feature on purpose: `x g query invoice --feature invoice` would collide with the entity
- * import, and a fixture that trips over its own naming stops testing the templates.
- */
-export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
-  { kind: 'resource', name: 'invoice' },
-  { kind: 'entity', name: 'credit-note', feature: 'credit-note' },
-  { kind: 'policy', name: 'credit-note', feature: 'credit-note' },
-  { kind: 'action', name: 'send-invoice', feature: 'invoice' },
-  { kind: 'mutator', name: 'rename-invoice', feature: 'invoice' },
-  { kind: 'query', name: 'invoice-search', feature: 'invoice' },
-  { kind: 'query', name: 'invoice-feed', feature: 'invoice', live: true },
-  { kind: 'job', name: 'sweep-invoices', feature: 'invoice' },
-  { kind: 'task', name: 'nightly-sweep', feature: 'invoice' },
-  { kind: 'route', name: 'pricing', surface: 'site' },
-  { kind: 'route', name: 'billing', surface: 'app' },
-];
-
-/** First write wins, exactly as `x g` and `x new` resolve a shared file such as `errors.ts`. */
-const dedupe = (files: readonly GeneratedFile[]): readonly GeneratedFile[] => {
-  const seen = new Map<string, GeneratedFile>();
-  for (const file of files) if (!seen.has(file.path)) seen.set(file.path, file);
-  return [...seen.values()];
-};
-
-/** The whole scaffolded surface: a new app, then every generator run inside it. */
-export function scaffoldFixture(): readonly GeneratedFile[] {
-  return dedupe([
-    ...planNewApp({ name: FIXTURE_APP, example: true }),
-    ...FIXTURE_GENERATORS.flatMap((options) => generate(options)),
-  ]);
-}
 
 export interface TypeDiagnostic {
   /** Sandbox-relative path, or '' for a diagnostic the compiler raised about the project itself. */
@@ -94,6 +55,8 @@ export function parseDiagnostics(output: string): readonly TypeDiagnostic[] {
 }
 
 export interface KnownGap {
+  /** `ScaffoldVariant.name`. A pin bought by one invocation may not excuse another. */
+  readonly variant: string;
   readonly code: string;
   /** Exact sandbox-relative path. A pattern would absolve the same bug in a file nobody pinned. */
   readonly file: string;
@@ -108,8 +71,16 @@ export interface KnownGap {
 // identically: the fix is a column proxy typed from the entity's own columns, in @ultimat3/entity
 // — a different template cannot avoid it without dropping to `satisfies()`, which would silently
 // stop emitting the Postgres CHECK.
+//
+// Measured, not guessed: no open-keyed form avoids the `| undefined` (index signature, `Record`,
+// and a mapped type over `string` or a template-literal pattern all produce it), and typing the
+// proxy from `columns` only reaches `c` when the element of `invariants:` is itself
+// context-sensitive. `invariant(name, build)` is a *call*, which TypeScript checks before
+// `entity()`'s own `C` is fixed, so `K` falls back to `string` and nothing changes. Making it
+// reach means changing the shape of `invariants:` — a documented primitive, so a major.
 const INVARIANT_PROXY =
-  '@ultimat3/entity — type the invariant column proxy from the declared columns';
+  '@ultimat3/entity — type the invariant column proxy from the declared columns (needs a major: ' +
+  'the `invariants:` element shape has to become context-sensitive)';
 
 /** Every entity the fixture generates. Each one declares the same two invariants. */
 const FIXTURE_ENTITIES = [
@@ -126,9 +97,19 @@ const FIXTURE_ENTITIES = [
  */
 export const KNOWN_GAPS: readonly KnownGap[] = FIXTURE_ENTITIES.flatMap((file) =>
   ["'c.title' is possibly 'undefined'.", "'c.price' is possibly 'undefined'."].map(
-    (message): KnownGap => ({ code: 'TS18048', file, message, owner: INVARIANT_PROXY }),
+    (message): KnownGap => ({
+      variant: 'x new',
+      code: 'TS18048',
+      file,
+      message,
+      owner: INVARIANT_PROXY,
+    }),
   ),
 );
+
+/** The pins one invocation may spend. Another variant's pins are not its to spend. */
+export const gapsFor = (variant: string): readonly KnownGap[] =>
+  KNOWN_GAPS.filter((gap) => gap.variant === variant);
 
 const matches = (diagnostic: TypeDiagnostic, gap: KnownGap): boolean =>
   diagnostic.code === gap.code &&
@@ -146,8 +127,11 @@ export interface GapPartition {
  * One pass, first-fit, each pin spent once. Counting matters: two occurrences of a diagnostic
  * pinned once means a new regression is hiding behind an old bug, so the surplus is unexpected.
  */
-export function partitionDiagnostics(diagnostics: readonly TypeDiagnostic[]): GapPartition {
-  const budget = KNOWN_GAPS.map((gap) => ({ gap, spent: false }));
+export function partitionDiagnostics(
+  diagnostics: readonly TypeDiagnostic[],
+  gaps: readonly KnownGap[] = KNOWN_GAPS,
+): GapPartition {
+  const budget = gaps.map((gap) => ({ gap, spent: false }));
   const unexpected: TypeDiagnostic[] = [];
   for (const entry of diagnostics) {
     const slot = budget.find((pin) => !pin.spent && matches(entry, pin.gap));
@@ -158,12 +142,16 @@ export function partitionDiagnostics(diagnostics: readonly TypeDiagnostic[]): Ga
 }
 
 /** Everything the gate refuses: a diagnostic no unconsumed `KNOWN_GAPS` entry accounts for. */
-export const unexpectedIn = (diagnostics: readonly TypeDiagnostic[]): readonly TypeDiagnostic[] =>
-  partitionDiagnostics(diagnostics).unexpected;
+export const unexpectedIn = (
+  diagnostics: readonly TypeDiagnostic[],
+  gaps: readonly KnownGap[] = KNOWN_GAPS,
+): readonly TypeDiagnostic[] => partitionDiagnostics(diagnostics, gaps).unexpected;
 
 /** Entries that no longer reproduce — the bug is fixed and the pin has to go. */
-export const staleGapsIn = (diagnostics: readonly TypeDiagnostic[]): readonly KnownGap[] =>
-  partitionDiagnostics(diagnostics).stale;
+export const staleGapsIn = (
+  diagnostics: readonly TypeDiagnostic[],
+  gaps: readonly KnownGap[] = KNOWN_GAPS,
+): readonly KnownGap[] => partitionDiagnostics(diagnostics, gaps).stale;
 
 /** Written beside the app's own tsconfig so the gate inherits every flag the app ships with. */
 const OVERLAY = 'tsconfig.scaffold-check.json';
