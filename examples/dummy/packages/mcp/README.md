@@ -26,7 +26,7 @@ An MCP call and an HTTP call reach the **same** `policy` object with the same ac
 
 ```
 agent → tool postly.publishPost → policy post:publish → ownsPost(actor, postId)
-human → POST /_x/action/publish-post → policy post:publish → ownsPost(actor, postId)
+human → POST /api/posts/publish → policy post:publish → ownsPost(actor, postId)
 ```
 
 There is no MCP-specific permission table, no trusted-tool mode, and no service account with

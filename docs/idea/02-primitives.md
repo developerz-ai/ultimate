@@ -51,7 +51,7 @@ Localised agent-facing text is a separate, locale-resolved projection, not a sec
 
 | # | Artifact | Derived from | Notes |
 |---|---|---|---|
-| 1 | **HTTP route** | name + `input` | `POST /_x/action/publish-post`, body parsed by `input`, errors are `UltimateError` JSON |
+| 1 | **HTTP route** | name + `input` | `POST /api/posts/publish` — verb first, pluralized resource after. Body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | `await publishPost({ postId, orgId })` in `app/`, no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — the action's `input`, a namespaced job name, an `idempotencyKey` derived from the payload, and an `invoke` that lands in the same execution core with `surface: 'job'`. It is the shape a queue driver *registers*, not one you call: `.enqueue()` belongs to a declared `job` like `notifySubscribers` above; see [`04-jobs.md`](./04-jobs.md) |

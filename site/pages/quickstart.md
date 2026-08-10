@@ -40,7 +40,7 @@ versions.
 |---|---|---|---|---|
 | `site/` | `/` | `static` / `isr` | **0kb** | none |
 | `app/` | `/app` | `stream` | per-route budget | required |
-| `api/` | `/_x/action/*` | none | n/a | policy per action |
+| `api/` | `/api/<resource>/<verb>` | none | n/a | policy per action |
 | admin | `:3001` | `stream` | per-route budget | required, MCP exposed |
 | dev panel | `/_x` | — | — | dev only |
 | MCP dev server | `ws://localhost:9229` | — | — | dev only, never in `ROLE=web` |
@@ -90,7 +90,7 @@ const view = await publishPost({ postId });        // typed client, no fetch, no
 ```
 
 ```bash
-curl -sX POST localhost:3000/_x/action/publish-post \
+curl -sX POST localhost:3000/api/posts/publish \
   -H 'content-type: application/json' -d '{"postId":"1b9d…"}'
 ```
 
