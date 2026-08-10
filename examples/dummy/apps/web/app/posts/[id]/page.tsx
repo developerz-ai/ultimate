@@ -10,11 +10,11 @@ import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
-import { client } from '../../shared/client';
-import { Layout } from '../layout';
-import { useViewer } from '../viewer-context';
-import styles from './post.module.scss';
-import { LikeButton } from './ui/like-button';
+import { client } from '../../../shared/client';
+import { Layout } from '../../layout';
+import { useViewer } from '../../viewer-context';
+import { LikeButton } from '../ui/like-button';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'ssr',

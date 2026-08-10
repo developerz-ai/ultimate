@@ -4,6 +4,7 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { docsFiles } from './scaffold-docs';
+import { i18nFiles } from './scaffold-i18n';
 import { packageShapeFiles } from './scaffold-package-shape';
 
 const rootPackage = (app: NameSet, version: string): string => `{
@@ -72,6 +73,7 @@ const rootTsconfig = (app: NameSet): string => `{
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "resolveJsonModule": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
   },
@@ -298,57 +300,6 @@ CREATE INDEX IF NOT EXISTS posts_org_created_idx ON posts (org_id, created_at);
 -- down
 `;
 
-const i18nIndex =
-  (): string => `// Flat catalog, loud misses. A missing key renders ⟦key⟧ in dev and fails x verify in CI.
-// Every JSON file under catalogs/<locale>/ is merged, so \`x g route\` can add a file without
-// anyone remembering to also edit an index — the distant invariant this package exists to avoid.
-import { readdirSync, readFileSync } from 'node:fs';
-
-const load = (locale: string): Readonly<Record<string, string>> => {
-  const dir = new URL(\`../catalogs/\${locale}/\`, import.meta.url).pathname;
-  const entries = readdirSync(dir)
-    .filter((file) => file.endsWith('.json'))
-    .flatMap((file) => Object.entries(JSON.parse(readFileSync(dir + file, 'utf8'))));
-  return Object.fromEntries(entries) as Readonly<Record<string, string>>;
-};
-
-export const catalogs = { en: load('en') } as const;
-
-export type Locale = keyof typeof catalogs;
-
-export const keys: readonly string[] = Object.keys(catalogs.en);
-`;
-
-// `app.post.*` is deliberately absent: the example slice ships its own `post.json`, and a key in
-// both files is one key shadowing another — and a dangling one under `--no-example`.
-const i18nCatalog = (app: NameSet): string => `{
-  "site.home.title": "${app.pascal}",
-  "site.home.description": "Everything you need, one command from shippable.",
-  "site.home.cta": "Open the dashboard",
-  "app.dashboard.title": "Dashboard",
-  "app.dashboard.description": "Your workspace.",
-  "app.offline.title": "You are offline",
-  "app.offline.description": "This page will refresh itself when the connection returns.",
-  "admin.home.title": "Admin",
-  "admin.home.description": "Operations for ${app.pascal}."
-}
-`;
-
-const i18nTest = (): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
-import { catalogs, keys } from './index';
-
-unitTest('every catalog has the same keys as en', () => {
-  for (const catalog of Object.values(catalogs)) {
-    expect(Object.keys(catalog).sort()).toEqual([...keys].sort());
-  }
-});
-
-unitTest('no catalog value is empty', () => {
-  for (const value of Object.values(catalogs.en)) expect(String(value).length).toBeGreaterThan(0);
-});
-`;
-
 const uiIndex =
   (): string => `// App components on top of @ultimat3/ui. Same byte budgets as shared/: this package is imported
 // by site/, so a chart library in here costs the landing page.
@@ -453,14 +404,7 @@ export function repoFiles(
     { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
     { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
     { path: 'packages/db/migrations/0000_initial.sql', contents: migration(example) },
-    {
-      path: 'packages/i18n/package.json',
-      contents: domainPackage(app, 'i18n', 'Flat catalogs with loud misses'),
-    },
-    ...packageShapeFiles(app, 'i18n', 'Flat catalogs with loud misses'),
-    { path: 'packages/i18n/src/index.ts', contents: i18nIndex() },
-    { path: 'packages/i18n/src/index.test.ts', contents: i18nTest() },
-    { path: 'packages/i18n/catalogs/en/app.json', contents: i18nCatalog(app) },
+    ...i18nFiles(app, version),
     {
       path: 'packages/ui/package.json',
       contents: domainPackage(app, 'ui', 'App components on @ultimat3/ui'),

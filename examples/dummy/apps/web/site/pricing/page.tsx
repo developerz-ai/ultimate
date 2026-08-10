@@ -12,7 +12,7 @@ import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
-import styles from './pricing.module.scss';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'isr',

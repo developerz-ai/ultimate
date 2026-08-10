@@ -129,8 +129,9 @@ export function routeFiles(rawPath: string, options: RouteOptions): readonly Gen
     { path: `${dir}/page.module.scss`, contents: styleSource() },
     { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
     ...locales.map((locale) => ({
-      path: catalogPath(locale, kebab(path)),
+      path: catalogPath(locale),
       contents: catalogSource(path),
+      merge: 'json' as const,
     })),
   ];
 }

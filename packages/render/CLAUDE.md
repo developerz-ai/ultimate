@@ -16,6 +16,7 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | No `describe()` on a route | `describeRoutes()` is the one route list. A per-route projection would be a second one. |
 | Mode invariants | `modes.ts` only. Never inline a mode check in a render-\* file. |
 | Route truth | `registry.ts`. Never keep a second route list anywhere. |
+| Route filename | `page.tsx` under `site/`/`app/`, `route.ts` under `api/` — `ROUTE_FILENAME`, one per surface. The URL is the directory path. Anything else is `X_ROUTE_FILE_INVALID`; never widen the table to accept a second spelling. |
 | Registry input | descriptors only. `registerRoute` refuses a raw declaration with `X_ROUTE_UNNORMALIZED` — `defineRoute` is the one normalizer, and every reader downstream assumes it ran. |
 | Descriptors | `describeRoutes()` must stay JSON-safe, sorted by path, deterministic. |
 | Boundary | `surfaces.ts` throws; it never warns. Type-only edges are not violations. |

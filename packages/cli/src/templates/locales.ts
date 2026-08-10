@@ -1,5 +1,5 @@
 // The one locale resolver for generated catalogs: the default set, validation, canonical form and
-// dedupe. A locale is not a label here, it is a directory name — `packages/i18n/catalogs/<locale>/`
+// dedupe. A locale is not a label here, it is a file stem — `packages/i18n/catalogs/<locale>.json`
 // — so an unvalidated tag is a path, and `--locales=../../../../tmp` would write outside the app.
 
 import { BadFlagError, ScaffoldPathEscapeError } from '../errors';
@@ -7,12 +7,11 @@ import { BadFlagError, ScaffoldPathEscapeError } from '../errors';
 /** What a generated catalog ships for when the caller names no locale. */
 export const DEFAULT_LOCALES: readonly string[] = ['en'];
 
-/** Where every generated catalog lands. The locale is the next segment, hence the containment. */
+/** Where every generated catalog lands. The locale is the file's stem, hence the containment. */
 export const CATALOG_ROOT = 'packages/i18n/catalogs';
 
-/** The catalog layout, written down once: `x g route` and `x g resource` both emit into it. */
-export const catalogPath = (locale: string, feature: string): string =>
-  `${CATALOG_ROOT}/${locale}/${feature}.json`;
+/** The catalog layout, written down once: `x g route` and `x g resource` both merge into it. */
+export const catalogPath = (locale: string): string => `${CATALOG_ROOT}/${locale}.json`;
 
 /** The runnable form of the flag, used as the fix on every rejection below. */
 const LOCALES_FIX = 'x g resource <name> --locales=en,es';
@@ -67,10 +66,10 @@ export function resolveLocales(requested?: readonly string[]): readonly string[]
         fix: LOCALES_FIX,
       });
     }
-    // Lowercase, because the tag is a directory name: `en-US` and `en-us` are one directory on a
+    // Lowercase, because the tag is a file stem: `en-US.json` and `en-us.json` are one file on a
     // case-insensitive filesystem, and `zh-hant` is the normalized form @ultimat3/i18n resolves to.
-    const dir = canonical.toLowerCase();
-    if (!resolved.includes(dir)) resolved.push(dir);
+    const stem = canonical.toLowerCase();
+    if (!resolved.includes(stem)) resolved.push(stem);
   }
   return resolved.length === 0 ? DEFAULT_LOCALES : resolved;
 }

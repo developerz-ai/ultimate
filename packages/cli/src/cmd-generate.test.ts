@@ -140,7 +140,7 @@ describe('unit · x g', () => {
   test('a route ships an i18n catalog entry rather than a hardcoded string', () => {
     const files = generate({ kind: 'route', name: 'pricing', surface: 'site' });
     const catalog = files.find((file) => file.path.endsWith('.json'));
-    expect(catalog?.path).toBe('packages/i18n/catalogs/en/pricing.json');
+    expect(catalog?.path).toBe('packages/i18n/catalogs/en.json');
     const page = files.find((file) => file.path.endsWith('page.tsx'));
     expect(page?.contents).toContain("t('app.pricing.title')");
   });
@@ -173,7 +173,7 @@ describe('unit · x g', () => {
     const paths = files.map((file) => file.path);
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-card.tsx');
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-form.tsx');
-    const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en/invoice.json');
+    const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
     expect(catalog?.contents).toContain('app.invoice.empty');
   });
 
@@ -190,13 +190,24 @@ describe('unit · x g', () => {
     expect(source?.contents).toContain('invoiceAdminResource');
   });
 
-  test('a resource takes every configured locale for its catalogs', () => {
+  test('a resource takes every configured locale, merging the slice and its route into one file', () => {
     const files = generate({ kind: 'resource', name: 'invoice', locales: ['en', 'es'] });
     const paths = files.map((file) => file.path);
-    expect(paths).toContain('packages/i18n/catalogs/en/invoice.json');
-    expect(paths).toContain('packages/i18n/catalogs/es/invoice.json');
-    expect(paths).toContain('packages/i18n/catalogs/en/invoices.json');
-    expect(paths).toContain('packages/i18n/catalogs/es/invoices.json');
+    const catalogPaths = paths.filter((path) => path.startsWith('packages/i18n/catalogs/'));
+    // Exactly one file per locale: resourceFiles' own catalogSource and the routeFiles call inside
+    // it both target packages/i18n/catalogs/<locale>.json, and dedupe() merges rather than dupes.
+    expect(catalogPaths.toSorted()).toEqual([
+      'packages/i18n/catalogs/en.json',
+      'packages/i18n/catalogs/es.json',
+    ]);
+    for (const locale of ['en', 'es']) {
+      const catalog = files.find((file) => file.path === `packages/i18n/catalogs/${locale}.json`);
+      const keys = Object.keys(JSON.parse(catalog?.contents ?? '{}'));
+      // The slice's own key (catalogSource) and the route's (routeFiles, for the /invoices page)
+      // both survive the merge — this is the union, not whichever generator happened to run first.
+      expect(keys).toContain('app.invoice.empty');
+      expect(keys).toContain('app.invoices.title');
+    }
   });
 
   test('a route takes the configured locales too, not just a resource', () => {
@@ -207,8 +218,8 @@ describe('unit · x g', () => {
       locales: ['en', 'es'],
     });
     const paths = files.map((file) => file.path);
-    expect(paths).toContain('packages/i18n/catalogs/en/pricing.json');
-    expect(paths).toContain('packages/i18n/catalogs/es/pricing.json');
+    expect(paths).toContain('packages/i18n/catalogs/en.json');
+    expect(paths).toContain('packages/i18n/catalogs/es.json');
   });
 
   test('the catalog carries the admin title key the admin override resolves', () => {
@@ -216,7 +227,7 @@ describe('unit · x g', () => {
     // renders ⟦key⟧ and fails the i18n gate the moment someone writes the override by hand.
     for (const admin of [false, true]) {
       const files = generate({ kind: 'resource', name: 'invoice', admin });
-      const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en/invoice.json');
+      const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
       expect(JSON.parse(catalog?.contents ?? '{}')['admin.invoice.title']).toBe('Invoices');
     }
     const withAdmin = generate({ kind: 'resource', name: 'invoice', admin: true });
@@ -224,7 +235,7 @@ describe('unit · x g', () => {
     expect(override?.contents).toContain("titleKey: 'admin.invoice.title'");
   });
 
-  test('a locale that is really a path never becomes a catalog directory', () => {
+  test('a locale that is really a path never becomes a catalog file', () => {
     const failure = thrownBy(() =>
       generate({ kind: 'resource', name: 'invoice', locales: ['../../../../tmp'] }),
     );
@@ -254,10 +265,8 @@ describe('unit · x g', () => {
       .map((file) => file.path)
       .filter((path) => path.startsWith('packages/i18n/catalogs/'));
     expect(catalogs.toSorted()).toEqual([
-      'packages/i18n/catalogs/en/invoice.json',
-      'packages/i18n/catalogs/en/invoices.json',
-      'packages/i18n/catalogs/zh-hant/invoice.json',
-      'packages/i18n/catalogs/zh-hant/invoices.json',
+      'packages/i18n/catalogs/en.json',
+      'packages/i18n/catalogs/zh-hant.json',
     ]);
   });
 
@@ -328,6 +337,73 @@ describe('unit · x g writes inside the app and nowhere else', () => {
       ).catch((error: unknown) => error)) as { code?: string };
       expect(failure.code).toBe('X_SCAFFOLD_PATH_ESCAPE');
       expect(existsSync(outside)).toBe(false);
+    });
+  });
+
+  test('writeFiles merges a catalog: a human-edited value wins, and missing keys are added', async () => {
+    await withRoot(async (root) => {
+      const path = 'packages/i18n/catalogs/en.json';
+      await Bun.write(
+        join(root, path),
+        `${JSON.stringify(
+          { 'app.invoice.empty': 'Custom empty text', 'app.invoice.stale': 'kept' },
+          null,
+          2,
+        )}\n`,
+      );
+      const generated: GeneratedFile = {
+        path,
+        contents: JSON.stringify({
+          'app.invoice.empty': 'No invoices yet.',
+          'app.invoice.updated': 'Last updated',
+        }),
+        merge: 'json',
+      };
+      const report = await writeFiles(root, [generated], false);
+      expect(report.conflicts).toEqual([]);
+      expect(report.written).toEqual([path]);
+      const onDisk = JSON.parse(await Bun.file(join(root, path)).text()) as Record<string, string>;
+      // The key both sides emit keeps the human's value, not the generator's...
+      expect(onDisk['app.invoice.empty']).toBe('Custom empty text');
+      // ...a key only the file on disk had survives untouched...
+      expect(onDisk['app.invoice.stale']).toBe('kept');
+      // ...and a key only the generator emits is the one thing actually added.
+      expect(onDisk['app.invoice.updated']).toBe('Last updated');
+    });
+  });
+
+  test('writeFiles never rewrites a catalog once every generated key is already on disk', async () => {
+    await withRoot(async (root) => {
+      const path = 'packages/i18n/catalogs/en.json';
+      const contents = `${JSON.stringify({ 'app.invoice.empty': 'No invoices yet.' }, null, 2)}\n`;
+      await Bun.write(join(root, path), contents);
+      const report = await writeFiles(
+        root,
+        [{ path, contents: JSON.stringify({ 'app.invoice.empty': 'different' }), merge: 'json' }],
+        false,
+      );
+      // Nothing new to add, so the report says so honestly and the file is untouched byte-for-byte.
+      expect(report.written).toEqual([]);
+      expect(report.conflicts).toEqual([]);
+      expect(await Bun.file(join(root, path)).text()).toBe(contents);
+    });
+  });
+
+  test('a catalog that is not a JSON object is a finding, never a clobber and never a throw', async () => {
+    await withRoot(async (root) => {
+      const path = 'packages/i18n/catalogs/en.json';
+      await Bun.write(join(root, path), 'not json at all');
+      const report = await writeFiles(
+        root,
+        [{ path, contents: JSON.stringify({ 'app.invoice.empty': 'x' }), merge: 'json' }],
+        false,
+      );
+      expect(report.written).toEqual([]);
+      expect(report.conflicts).toHaveLength(1);
+      expect(report.conflicts[0]?.code).toBe('X_GENERATE_CONFLICT');
+      expect(report.conflicts[0]?.at).toBe(path);
+      // Not clobbered: the malformed bytes on disk are exactly what they were before the run.
+      expect(await Bun.file(join(root, path)).text()).toBe('not json at all');
     });
   });
 });

@@ -59,7 +59,7 @@ export const recentPosts = query({
 });
 `,
 
-  'apps/web/site/pricing.tsx': `import { defineRoute } from '@ultimat3/render';
+  'apps/web/site/pricing/page.tsx': `import { defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
   render: 'static',

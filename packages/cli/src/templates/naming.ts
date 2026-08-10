@@ -5,6 +5,9 @@ export interface GeneratedFile {
   /** POSIX path relative to the app root. */
   readonly path: string;
   readonly contents: string;
+  /** A catalog is one file per locale that many generators contribute keys to; a whole-file write
+   * would delete every key already in it, so a `'json'` file merges instead of overwriting. */
+  readonly merge?: 'json';
 }
 
 const words = (input: string): readonly string[] =>

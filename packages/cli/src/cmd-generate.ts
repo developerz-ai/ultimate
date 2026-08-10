@@ -63,10 +63,49 @@ const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
   app: 'apps/web/app',
 };
 
-/** Two generators can legitimately produce the same shared file (errors.ts); first write wins. */
-function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
+/** `undefined` when `text` does not parse as a JSON object — the one shape every catalog, whether
+ * generated or hand-edited on disk, must hold. */
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : undefined;
+}
+
+/** Deterministic catalog bytes: sorted keys, 2-space indent, trailing newline — a diff shows only
+ * the keys a run actually changed, never a reordering. */
+function prettyJson(value: Record<string, unknown>): string {
+  const sorted = Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+  return `${JSON.stringify(sorted, null, 2)}\n`;
+}
+
+/**
+ * Two generators can legitimately produce the same shared file. A plain file (errors.ts) keeps
+ * first-write-wins; a `merge: 'json'` catalog instead merges every contributor's keys into one
+ * file — `resourceFiles` and `routeFiles` both target the same locale's catalog, and a plain
+ * overwrite would drop whichever generator ran first. Later entries fill keys the earlier one
+ * lacks; the first occurrence wins a clash, the same rule `writeFiles` applies against the copy
+ * already on disk. Exported so `x new` (`cmd-new.ts`) and the scaffold fixture resolve a shared
+ * catalog the identical way — one merge rule, not three hand-copied ones.
+ */
+export function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[] {
   const seen = new Map<string, GeneratedFile>();
-  for (const file of files) if (!seen.has(file.path)) seen.set(file.path, file);
+  for (const file of files) {
+    const prior = seen.get(file.path);
+    if (prior === undefined) {
+      seen.set(file.path, file);
+    } else if (prior.merge === 'json' && file.merge === 'json') {
+      const later = parseJsonObject(file.contents) ?? {};
+      const earlier = parseJsonObject(prior.contents) ?? {};
+      seen.set(file.path, { ...prior, contents: prettyJson({ ...later, ...earlier }) });
+    }
+    // else: not mergeable — first write wins, exactly as it always has.
+  }
   return [...seen.values()];
 }
 
@@ -161,6 +200,43 @@ export function containedPath(root: string, path: string): string {
   return target;
 }
 
+/**
+ * A `merge: 'json'` catalog is never a conflict on existence and never subject to `--force`: an
+ * existing key on disk always wins, because it may hold a human translation, and only genuinely
+ * new keys are added — so a second, third… generator run keeps growing the same file instead of
+ * fighting over it. A file that exists but does not parse as a JSON object cannot be merged into
+ * without risking silent data loss, so that alone is reported rather than clobbered or thrown past.
+ */
+async function mergeJsonFile(
+  file: GeneratedFile,
+  absolute: string,
+): Promise<{ written: boolean; conflict?: Finding }> {
+  const generated = parseJsonObject(file.contents) ?? {};
+  if (!existsSync(absolute)) {
+    await Bun.write(absolute, prettyJson(generated));
+    return { written: true };
+  }
+  const existing = parseJsonObject(await Bun.file(absolute).text());
+  if (existing === undefined) {
+    return {
+      written: false,
+      conflict: {
+        code: 'X_GENERATE_CONFLICT',
+        cause: `${file.path} exists but is not a JSON object, so its keys cannot be merged`,
+        fix: `edit ${file.path} by hand until it parses as a JSON object, or delete it and re-run x g`,
+        docs: 'https://ultimate.dev/errors/X_GENERATE_CONFLICT',
+        at: file.path,
+      },
+    };
+  }
+  const gainedKeys = Object.keys(generated).some((key) => !(key in existing));
+  // Every key the generator wants is already there — leave the file untouched and unclaimed.
+  if (!gainedKeys) return { written: false };
+  // An existing key wins because it may hold a human translation; only the new keys are added.
+  await Bun.write(absolute, prettyJson({ ...generated, ...existing }));
+  return { written: true };
+}
+
 /** Never clobbers. A generator that overwrites is a generator nobody runs twice. */
 export async function writeFiles(
   root: string,
@@ -173,6 +249,12 @@ export async function writeFiles(
   // the earlier files on disk, so the whole set is proven before any of it lands.
   const targets = files.map((file) => ({ file, absolute: containedPath(root, file.path) }));
   for (const { file, absolute } of targets) {
+    if (file.merge === 'json') {
+      const result = await mergeJsonFile(file, absolute);
+      if (result.written) written.push(file.path);
+      if (result.conflict !== undefined) conflicts.push(result.conflict);
+      continue;
+    }
     if (!force && existsSync(absolute)) {
       conflicts.push({
         code: 'X_GENERATE_CONFLICT',

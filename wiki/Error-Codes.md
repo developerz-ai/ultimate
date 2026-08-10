@@ -206,6 +206,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ROUTE_META_MISSING` | required metadata missing | no `meta.title`, or no `description` on a `site/` route | add it to `meta` in the route file |
 | `X_ROUTE_UNNORMALIZED` | a route was registered without `defineRoute` | `registerRoute({ config })` was handed the author's own object, so `meta` and `budget` were never normalized and every descriptor reader would read them wrong | wrap it: `registerRoute({ file, config: defineRoute({ … }) })` |
 | `X_ROUTE_DUPLICATE` | two route files resolve to one URL | a copied page directory | delete or rename one |
+| `X_ROUTE_FILE_INVALID` | a route file is not named for its surface | `site/pricing.tsx` or `site/blog/index.tsx` instead of `<dir>/page.tsx` | `mkdir -p <dir> && git mv <file> <dir>/page.tsx` — `route.ts` under `api/` |
 | `X_SURFACE_BOUNDARY` | a surface imported across the hard boundary | `site/` reached `app/`, transitively | `x fix boundary <file>`, or move the shared module out of `shared/ui` |
 | `X_BOUNDARY_SITE_TO_APP` | `site/` imported `app/` | the classic transitive import | the chain is printed in `cause`; break it at the named hop |
 | `X_BOUNDARY_APP_TO_API` | `app/` imported `api/` at runtime | a value import instead of `import type` | use `import type`, and call the typed client |

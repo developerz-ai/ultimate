@@ -58,7 +58,7 @@ Overriding `offline` is allowed; contradictions are rejected.
 ```
 X_SW_UNCACHEABLE: route cannot use the requested offline strategy
   cause: app/reports declares offline: 'precache' with render: 'ssr' — a per-request render has no cacheable body
-  fix:   set render: 'isr' or offline: 'network-only' in apps/web/app/reports/route.ts
+  fix:   set render: 'isr' or offline: 'network-only' in apps/web/app/reports/page.tsx
 ```
 
 Mutations are never cached. **Offline writes go through the tier-3 mutator queue ([Realtime](Realtime)), not through Background Sync guesswork** — a durable queue with a declared `conflict` strategy per mutator, replayed on reconnect and rebased against server truth. Background Sync, when enabled, is only a wake-up trigger for that queue; it is never the queue.

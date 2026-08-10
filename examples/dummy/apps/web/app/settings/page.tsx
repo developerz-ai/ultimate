@@ -13,9 +13,9 @@ import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Select, Stack, Switch, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { createSignal, For } from 'solid-js';
-import { client } from '../shared/client';
-import { Layout } from './layout';
-import styles from './settings.module.scss';
+import { client } from '../../shared/client';
+import { Layout } from '../layout';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'spa',

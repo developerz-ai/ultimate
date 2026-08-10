@@ -53,7 +53,7 @@ afterEach(() => {
 
 describe('unit · x dev renders the app routes', () => {
   test('a static page answers with its own head and content-hashed headers', async () => {
-    register({ file: 'apps/web/site/index.tsx', render: 'static' });
+    register({ file: 'apps/web/site/page.tsx', render: 'static' });
     const response = await get('/');
     const body = await response.text();
 
@@ -62,15 +62,15 @@ describe('unit · x dev renders the app routes', () => {
     expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
     expect(response.headers.get('etag')).toMatch(/^"[0-9a-f]+"$/);
     expect(response.headers.get('x-ultimate-build')).toBe(BUILD_ID);
-    expect(body).toContain('<title>title of apps/web/site/index.tsx</title>');
+    expect(body).toContain('<title>title of apps/web/site/page.tsx</title>');
     expect(body).toContain('<meta name="description" content="rendered http://dev.test/">');
   });
 
   test('every mode gets its own cache posture, from render and not from the CLI', async () => {
-    register({ file: 'apps/web/site/index.tsx', render: 'static' });
-    register({ file: 'apps/web/site/pricing.tsx', render: 'isr', revalidate: { ttl: '5m' } });
-    register({ file: 'apps/web/site/blog/[slug].tsx', render: 'ssr' });
-    register({ file: 'apps/web/app/feed.tsx', render: 'stream' });
+    register({ file: 'apps/web/site/page.tsx', render: 'static' });
+    register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
+    register({ file: 'apps/web/site/blog/[slug]/page.tsx', render: 'ssr' });
+    register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
 
     const cacheControl = async (path: string): Promise<string | null> =>
       (await get(path)).headers.get('cache-control');
@@ -83,14 +83,14 @@ describe('unit · x dev renders the app routes', () => {
   });
 
   test('a dynamic segment reaches meta as a param, matched by the router', async () => {
-    register({ file: 'apps/web/site/blog/[slug].tsx', render: 'ssr' });
+    register({ file: 'apps/web/site/blog/[slug]/page.tsx', render: 'ssr' });
     const body = await (await get('/blog/hello-world')).text();
     expect(body).toContain('rendered http://dev.test/blog/hello-world');
   });
 
   test('a gated route is gated by the pipeline, not by a CLI check', async () => {
     register({
-      file: 'apps/web/app/settings.tsx',
+      file: 'apps/web/app/settings/page.tsx',
       render: 'spa',
       policy: { permission: 'settings.read' },
     });
@@ -102,14 +102,14 @@ describe('unit · x dev renders the app routes', () => {
   });
 
   test('a streamed page arrives as a stream, chunked and unbuffered', async () => {
-    register({ file: 'apps/web/app/feed.tsx', render: 'stream' });
+    register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
     const response = await get('/feed');
     expect(response.headers.get('x-accel-buffering')).toBe('no');
-    expect(await response.text()).toContain('<title>title of apps/web/app/feed.tsx</title>');
+    expect(await response.text()).toContain('<title>title of apps/web/app/feed/page.tsx</title>');
   });
 
   test('an unregistered path is a 404, not a blank page', async () => {
-    register({ file: 'apps/web/site/index.tsx', render: 'static' });
+    register({ file: 'apps/web/site/page.tsx', render: 'static' });
     expect((await get('/nope')).status).toBe(404);
   });
 

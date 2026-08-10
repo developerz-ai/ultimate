@@ -15,12 +15,12 @@ import { defineRoute } from '@ultimat3/render';
 import { Skeleton, Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show, Suspense } from 'solid-js';
-import { postHref, toCardPost } from '../shared/entities';
-import styles from './feed.module.scss';
-import { Layout } from './layout';
-import { liveFeed } from './posts/live';
-import { LikeButton } from './posts/ui/like-button';
-import { useViewer } from './viewer-context';
+import { postHref, toCardPost } from '../../shared/entities';
+import { Layout } from '../layout';
+import { liveFeed } from '../posts/live';
+import { LikeButton } from '../posts/ui/like-button';
+import { useViewer } from '../viewer-context';
+import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'stream',

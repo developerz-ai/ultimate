@@ -115,6 +115,8 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 - A 1–4 line header comment per file stating its single responsibility.
 - Comments explain **why**, never what.
 - Every package carries `README.md` (public API) + `CLAUDE.md` (boundary, deps, commands).
+- Route files: `page.tsx` on `site/`/`app/`, `route.ts` on `api/` — the directory is the URL, never the filename. `index.tsx` is not a page and `<name>.tsx` is not a route; `registerRoute()` enforces it (`X_ROUTE_FILE_INVALID`).
+- i18n catalogs: one flat file per locale, `packages/i18n/catalogs/<locale>.json` — never a directory per locale or a file per feature. `x g route` / `x g resource` merge keys into it.
 - Docs style: lead with the rule, fragments over sentences, tables for any ≥3-row structure, no meta-framing, no trailing summary. Date load-bearing claims `As of 2026-07`.
 
 ## Where things live

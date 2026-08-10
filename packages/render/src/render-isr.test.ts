@@ -96,7 +96,7 @@ describe('single-flight regeneration', () => {
 
 describe('the CDN is told the TTL the route declared', () => {
   test("revalidate: { ttl: '5m' } advertises s-maxage=300, not a house default", async () => {
-    isrRoute('apps/web/site/pricing.tsx', [postTag], '5m');
+    isrRoute('apps/web/site/pricing/page.tsx', [postTag], '5m');
     const controller = createIsrController({ routes: describeRoutes });
 
     const { result } = await controller.serve('/pricing', () => '<p>pricing</p>');
@@ -107,7 +107,7 @@ describe('the CDN is told the TTL the route declared', () => {
   });
 
   test('a sub-minute ttl shortens the shared cache too', async () => {
-    isrRoute('apps/web/site/status.tsx', [postTag], '30s');
+    isrRoute('apps/web/site/status/page.tsx', [postTag], '30s');
     const controller = createIsrController({ routes: describeRoutes });
 
     expect(sMaxAge((await controller.serve('/status', () => '<p>ok</p>')).result)).toBe('30');
@@ -123,7 +123,7 @@ describe('the CDN is told the TTL the route declared', () => {
   });
 
   test('the served-stale copy keeps its own TTL and is marked stale', async () => {
-    isrRoute('apps/web/site/pricing.tsx', [postTag], '5m');
+    isrRoute('apps/web/site/pricing/page.tsx', [postTag], '5m');
     const controller = createIsrController({ routes: describeRoutes });
 
     await controller.serve('/pricing', () => '<p>v1</p>');

@@ -82,7 +82,7 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
   test("a page route's declared permission is evaluated, not waved through", async () => {
     definePermissions(['settings:read'] as const);
     registerRoute({
-      file: 'apps/web/app/settings.tsx',
+      file: 'apps/web/app/settings/page.tsx',
       suspenseBoundaries: 0,
       config: defineRoute({
         render: 'spa',

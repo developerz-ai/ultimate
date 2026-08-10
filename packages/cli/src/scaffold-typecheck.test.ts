@@ -127,7 +127,8 @@ describe('unit · scaffold typecheck harness', () => {
     expect(paths).toContain('apps/web/app/invoice/actions/send-invoice.ts');
     // The admin override is a template no other invocation emits; unchecked, it drifts silently.
     expect(paths).toContain('apps/web/app/invoice/admin/resource.ts');
-    // First write wins, exactly as `x g` resolves a file two generators both produce.
+    // First write wins — or merges, for the one shared catalog file — exactly how `x g` resolves
+    // a file two generators both produce.
     expect(new Set(paths).size).toBe(paths.length);
   });
 

@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { chmod } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
+import { dedupe } from './cmd-generate';
 import type { CliCommand, CommandContext } from './command';
 import { writeSchemaHash } from './drift';
 import { msg } from './messages';
@@ -30,9 +31,10 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   if (options.example) {
     files.push(...resourceFiles('post', { surfaceDir: 'apps/web/app', feature: 'post' }));
   }
-  const seen = new Map<string, GeneratedFile>();
-  for (const file of files) if (!seen.has(file.path)) seen.set(file.path, file);
-  return [...seen.values()];
+  // `repoFiles`' own catalog entry and the example resource's both target the same flat catalog
+  // file, so this has to be the merge-aware dedupe — the one `cmd-generate.ts` uses for `x g` —
+  // or the second contributor's keys would silently vanish instead of landing in the one file.
+  return dedupe(files);
 }
 
 export interface WrittenApp {

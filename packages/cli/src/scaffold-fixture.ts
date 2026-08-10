@@ -3,7 +3,7 @@
 // it, because "which scaffolds exist" is a fact about the CLI's surface, not about running `tsc`.
 
 import type { GenerateOptions } from './cmd-generate';
-import { generate } from './cmd-generate';
+import { dedupe, generate } from './cmd-generate';
 import { planNewApp } from './cmd-new';
 import type { GeneratedFile } from './templates';
 
@@ -32,13 +32,6 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'route', name: 'pricing', surface: 'site' },
   { kind: 'route', name: 'billing', surface: 'app' },
 ];
-
-/** First write wins, exactly as `x g` and `x new` resolve a shared file such as `errors.ts`. */
-const dedupe = (files: readonly GeneratedFile[]): readonly GeneratedFile[] => {
-  const seen = new Map<string, GeneratedFile>();
-  for (const file of files) if (!seen.has(file.path)) seen.set(file.path, file);
-  return [...seen.values()];
-};
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */
 export function scaffoldFixture(): readonly GeneratedFile[] {

@@ -78,6 +78,13 @@ sorted, JSON-safe descriptor list. Every downstream generator reads that one tab
 | `app/dashboard/page.tsx` | `/dashboard` |
 | `api/posts/route.ts` | `/api/posts` |
 
+The URL is the **directory** path under the surface; the filename names the kind of file, never a
+URL segment. One spelling per surface — `page.tsx` under `site/` and `app/`, `route.ts` under
+`api/` — and `registerRoute` refuses anything else with `X_ROUTE_FILE_INVALID`. `index.tsx` is not
+a page. Two spellings would make "is this file a route?" undecidable for the module scan, the
+boundary walk, `sw.js` and the author reading the folder; one spelling also co-locates
+`page.tsx` + `page.module.scss` + `page.test.ts`, and gives `[slug]/` its own stylesheet.
+
 Consumers: `x.manifest.json`, the `/_x` routes panel, `sitemap.xml`, `sw.js`
 (`@ultimat3/pwa` takes descriptors as data — tier 4 packages never import each other).
 

@@ -5,7 +5,12 @@
  * from. Nothing downstream may keep its own list of routes.
  */
 
-import { RouteDuplicateError, RouteUnnormalizedError, SurfaceBoundaryError } from './errors';
+import {
+  RouteDuplicateError,
+  RouteFileInvalidError,
+  RouteUnnormalizedError,
+  SurfaceBoundaryError,
+} from './errors';
 import { assertModeInvariants } from './modes';
 import type {
   HydrateStrategy,
@@ -19,7 +24,19 @@ import { isRouteConfig, tagKeys } from './route';
 import type { Surface } from './surfaces';
 import { surfaceOf } from './surfaces';
 
-const PAGE_FILES = new Set(['page', 'index', 'route']);
+/**
+ * The one filename a route may carry, per surface. `shared/` is absent on purpose: it is a leaf
+ * of helpers with no URL, so a route file there has nowhere to resolve to.
+ */
+export const ROUTE_FILENAME: Readonly<Partial<Record<Surface, string>>> = Object.freeze({
+  site: 'page.tsx',
+  app: 'page.tsx',
+  api: 'route.ts',
+});
+
+/** Stems that already meant "this directory", so the repair is a rename in place, not a new folder. */
+const DIRECTORY_STEMS = new Set(['index', 'page', 'route']);
+
 const API_PREFIX = '/api';
 
 export interface RouteEntry<TData = RouteData> {
@@ -60,6 +77,10 @@ export interface CompiledPattern {
 /**
  * `apps/web/site/blog/[slug]/page.tsx` → `{ surface: 'site', path: '/blog/:slug' }`.
  *
+ * The URL is the **directory** path under the surface; the filename names the kind of file, never
+ * a URL segment. Anything else is `X_ROUTE_FILE_INVALID` — one spelling per surface, so an agent
+ * reading a folder knows which file is the route without opening any of them.
+ *
  * | file | path |
  * |---|---|
  * | `site/page.tsx` | `/` |
@@ -81,20 +102,47 @@ export function routePathFromFile(file: string): { surface: Surface; path: strin
   }
 
   const afterSurface = normalized.slice(normalized.indexOf(`${surface}/`) + surface.length + 1);
-  const withoutExt = afterSurface.replace(/\.(tsx|ts|jsx|js)$/, '');
-  const rawSegments = withoutExt.split('/').filter((s) => s.length > 0);
+  const rawSegments = afterSurface.split('/').filter((s) => s.length > 0);
+  assertRouteFilename(normalized, surface, rawSegments[rawSegments.length - 1]);
 
-  const last = rawSegments[rawSegments.length - 1];
-  const isPageFile = last !== undefined && PAGE_FILES.has(last);
-  const segments = isPageFile ? rawSegments.slice(0, -1) : rawSegments;
-
-  const urlSegments = segments
+  const urlSegments = rawSegments
+    .slice(0, -1)
     .filter((s) => !(s.startsWith('(') && s.endsWith(')')))
     .map(toUrlSegment);
 
   const base = surface === 'api' ? API_PREFIX : '';
   const path = `${base}/${urlSegments.join('/')}`.replace(/\/+$/, '') || '/';
   return { surface, path };
+}
+
+/**
+ * Enforced rather than documented (axiom 3): a convention that is not a build error is not a
+ * convention. The fix is the move that makes the file a route, spelled out — the directory the
+ * author already meant, plus the one filename that surface accepts.
+ */
+function assertRouteFilename(file: string, surface: Surface, basename: string | undefined): void {
+  const expected = ROUTE_FILENAME[surface];
+  if (expected === undefined) {
+    throw new RouteFileInvalidError(
+      `${file} is under shared/, which is a leaf of helpers with no URL — a route cannot live there`,
+      `move ${file} under site/, app/ or api/, named page.tsx (site/, app/) or route.ts (api/)`,
+    );
+  }
+  if (basename === expected) return;
+
+  // The directory the author meant is the file's own path minus its extension: `site/pricing.tsx`
+  // was always trying to be `/pricing`, so `site/pricing/page.tsx` is the move, not a guess.
+  // `index`, `page` and `route` are the exception — each already means "this directory", so the
+  // rename happens in place and no directory is created.
+  const stem = file.replace(/\.(tsx|ts|jsx|js)$/, '');
+  const dir = stem.slice(0, stem.lastIndexOf('/'));
+  const inPlace = DIRECTORY_STEMS.has(stem.slice(dir.length + 1));
+  const target = inPlace ? `${dir}/${expected}` : `${stem}/${expected}`;
+  throw new RouteFileInvalidError(
+    `${file} is a route on the ${surface} surface, so it must be named ${expected}: the URL is the ` +
+      'directory path and the filename names the kind of file',
+    inPlace ? `git mv ${file} ${target}` : `mkdir -p ${stem} && git mv ${file} ${target}`,
+  );
 }
 
 function toUrlSegment(segment: string): string {
