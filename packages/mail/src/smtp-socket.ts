@@ -140,7 +140,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
           stage: 'data',
           detail,
           retryable: true,
-          fix: 'check the SMTP host logs — the job will retry automatically',
+          fix: `read the SMTP server log on ${target.host} — the job will retry automatically`,
         })
       : handshakeFailure(handshake, detail);
 
@@ -199,7 +199,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
               stage: 'data',
               detail: `the socket stopped accepting bytes for ${target.timeoutMs}ms`,
               retryable: true,
-              fix: 'raise timeoutMs on createSmtpDriver, or check the route to the SMTP host',
+              fix: 'raise the write deadline: createSmtpDriver({ url: SMTP_URL, timeoutMs: 60_000 })',
             }),
           );
         }, target.timeoutMs);

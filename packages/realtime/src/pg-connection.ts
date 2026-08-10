@@ -273,7 +273,7 @@ export class PgConnection {
     throw new ReplicationFailedError({
       stage,
       detail: 'the server closed the connection without answering',
-      fix: 'check the postgres log and pg_hba.conf — a rejected host is closed exactly like this',
+      fix: 'add a `host replication <user> <cidr> scram-sha-256` line to pg_hba.conf and reload postgres',
     });
   }
 

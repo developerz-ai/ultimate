@@ -161,7 +161,7 @@ export function createResendDriver(options: ResendDriverOptions): MailDriver {
           stage: 'request',
           detail: error instanceof Error ? error.message : 'the request failed before a response',
           retryable: true,
-          fix: 'check connectivity to api.resend.com — the job will retry automatically',
+          fix: `curl -sS ${baseUrl}/emails from this host to confirm egress — the job will retry automatically`,
         });
       }
 

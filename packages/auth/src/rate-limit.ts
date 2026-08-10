@@ -97,6 +97,6 @@ export function loginFailed(): AuthError {
   return new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: 'the email and password combination did not match an account',
-    fix: 'check the address and password, or reset it at POST /auth/password/reset',
+    fix: 're-enter the email and password, or reset it at POST /auth/password/reset',
   });
 }

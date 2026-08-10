@@ -55,6 +55,7 @@ describe('unit · x verify', () => {
       'boundaries',
       'filesize',
       'package-shape',
+      'errors',
       'unit',
       'contract',
       'live',

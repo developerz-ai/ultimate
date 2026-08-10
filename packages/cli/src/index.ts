@@ -79,6 +79,15 @@ export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
 export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+export {
+  BANNED_PHRASES,
+  COMMAND_TOKENS,
+  checkErrorCodeDocs,
+  checkErrorFixes,
+  documentedCodes,
+  fixProblem,
+  staticFix,
+} from './error-contract';
 export type { CliErrorCode } from './errors';
 export {
   BadFlagError,
@@ -128,8 +137,17 @@ export {
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
 export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from './parse';
 export { CLI_VERSION, COMMANDS, commandFor, SPECS } from './registry';
+export {
+  eachSourceFile,
+  isGenerated,
+  isTest,
+  isVendored,
+  SOURCE_GLOBS,
+} from './source-files';
 export type { TestFile } from './test-select';
 export { belongsToType, discoverTests, sampleFiles } from './test-select';
+export type { CodeSite, FixSite, SourceSite } from './ts-scan';
+export { isCodeRegistry, maskLiterals, scanCodes, scanFixes, stripComments } from './ts-scan';
 export type {
   HostCheck,
   StepOutcome,

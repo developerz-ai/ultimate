@@ -302,7 +302,7 @@ describe('responseFields / describeFields / serverError', () => {
 
   test('serverError returns a ReplicationFailedError with the SQLSTATE-specific fix', () => {
     const cases: readonly (readonly [string, string])[] = [
-      ['28P01', 'check the password in the replication URL — the server refused the credentials'],
+      ['28P01', 'correct the password in the replication URL — the server refused the credentials'],
       [
         '55006',
         'another replicator holds the slot — exactly one replicator per database, by design',

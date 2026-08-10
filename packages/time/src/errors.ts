@@ -25,8 +25,6 @@ export const TIME_ERROR_TITLES: Readonly<Record<TimeErrorCode, string>> = {
   X_DST_AMBIGUOUS: 'the local time occurs twice',
   X_DST_NONEXISTENT: 'the local time does not exist',
   X_INSTANT_INVALID: 'not a parseable instant',
-  // Not yet in wiki/Error-Codes.md — derived from scheduleInvalid()'s own doc comment below,
-  // since no design doc names X_SCHEDULE_INVALID either.
   X_SCHEDULE_INVALID: 'a wall-clock field is out of range',
   X_LOCALE_INVALID: 'not a well-formed BCP 47 tag',
 };

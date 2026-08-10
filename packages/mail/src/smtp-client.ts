@@ -63,12 +63,12 @@ const QUIT_TIMEOUT_MS = 5_000;
 // falls back rather than a silent typo. `Partial` because `connect` and `request` never reach a
 // server reply: one belongs to the socket and the other to the HTTPS transport.
 const FIXES: Readonly<Partial<Record<SendStage, string>>> = {
-  greeting: 'check host and port in SMTP_URL — the server did not open with 220',
+  greeting: 'correct the host and port in SMTP_URL — the server did not open with 220',
   ehlo: 'point SMTP_URL at an ESMTP server (submission on 587, implicit TLS on 465)',
   reply: 'point SMTP_URL at the SMTP port itself — a proxy or an HTTP port answers like this',
   tls: 'fix the certificate on the implicit-TLS port, or use smtp://host:587 and STARTTLS',
   starttls: 'use smtps://host:465, or pass allowInsecure: true to send over a cleartext channel',
-  auth: 'check the user:password in SMTP_URL — the server rejected the credentials',
+  auth: 'correct the user:password in SMTP_URL — the server rejected the credentials',
   from: 'set mail.from in app.config.ts to an address this server is willing to relay for',
   recipient: 'the reply above names the address the server refused — correct or drop it',
   data: 'the reply above says why the body was refused (size, content or policy)',
@@ -135,7 +135,7 @@ class Conversation {
             stage,
             detail: `the server sent nothing for ${timeoutMs}ms`,
             retryable: true,
-            fix: 'raise timeoutMs on createSmtpDriver, or check the route to the SMTP host',
+            fix: 'raise the read deadline: createSmtpDriver({ url: SMTP_URL, timeoutMs: 60_000 })',
           }),
         );
       }, timeoutMs);
@@ -148,7 +148,7 @@ class Conversation {
           stage,
           detail: 'the server closed the connection mid-conversation',
           retryable: true,
-          fix: 'check the SMTP host logs — a dropped connection here is usually a rate limit',
+          fix: 'createSmtpDriver({ poolSize: 1 }) — a drop mid-conversation is usually the server rate-limiting',
         });
       }
       return chunk;
@@ -191,7 +191,7 @@ export async function smtpDeliver(
       stage: 'starttls',
       detail: 'the server does not advertise STARTTLS and the connection is not already TLS',
       retryable: false,
-      fix: FIXES['starttls'] ?? '',
+      fix: FIXES['starttls'] ?? 'use smtps://host:465, or pass allowInsecure: true',
     });
   }
 

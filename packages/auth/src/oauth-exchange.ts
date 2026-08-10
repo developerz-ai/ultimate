@@ -128,7 +128,7 @@ async function postForm(
       provider,
       stage: 'token',
       detail: error instanceof Error ? error.message : 'the request failed before a response',
-      fix: `check egress to ${new URL(url).host} from this host, then restart the flow`,
+      fix: `curl -sS https://${new URL(url).host}/ from this host — open egress, then restart the flow`,
     });
   }
 

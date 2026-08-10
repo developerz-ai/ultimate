@@ -27,7 +27,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, studio, branch | shipped |
-| `x verify` | the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets, manifest | shipped |
+| `x verify` | the gate: typecheck, lint, boundaries, errors, all tests, drift, contract, budgets, manifest | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -185,6 +185,7 @@ reports as skipped (`-`), never as passed.
 | `boundaries` | surface and layer imports, resolved transitively; package tiers in a monorepo |
 | `filesize` | a source file over 500 lines |
 | `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` |
+| `errors` | every `X_*` code has a runnable fix and a docs page |
 | `unit` | pure logic — services, money, policy predicates, matchers |
 | `contract` | action/query schemas, policy denials, emitted OpenAPI and MCP shapes |
 | `live` | live-query snapshot, incremental patches, reconnect delta, policy-filtered rows |
@@ -208,7 +209,7 @@ reviewable diff.
 
 ```bash
 $ x verify --json
-{"ok":false,"command":"verify","summary":"1 of 15 steps failed","steps":[
+{"ok":false,"command":"verify","summary":"1 of 16 steps failed","steps":[
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
      "fix":"x fix boundary site/pricing/page.tsx",

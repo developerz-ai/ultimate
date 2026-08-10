@@ -7,7 +7,14 @@
 //   bun run scripts/verify.ts [--json] [--verbose]
 
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
-import { exec, exitCodeFor, render, runVerify, VERIFY_STEPS } from '@ultimat3/cli';
+import {
+  checkErrorCodeDocs,
+  exec,
+  exitCodeFor,
+  render,
+  runVerify,
+  VERIFY_STEPS,
+} from '@ultimat3/cli';
 import {
   checkBoundaries,
   checkSharedLeaf,
@@ -52,8 +59,18 @@ export const frameworkManifest: HostCheck = async (root) => {
   }
 };
 
+/**
+ * The reference page every shipped `X_*` code must appear on. A framework monorepo publishes one
+ * and a generated app does not, so naming it is the host's job — the CLI owns the rule, this repo
+ * owns the file it is checked against.
+ */
+export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
+
+export const errorCodeDocs: HostCheck = (root) => checkErrorCodeDocs(root, ERROR_REFERENCE);
+
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   boundaries: tierBoundaries,
+  errors: errorCodeDocs,
   manifest: frameworkManifest,
 };
 

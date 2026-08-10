@@ -18,7 +18,7 @@ export const SCRIPTS: readonly Entry[] = [
   { command: 'bin/check', does: 'the gate — same steps as CI' },
   {
     command: 'bun run scripts/verify.ts',
-    does: 'the gate — `x verify` at the repo root, all 15 steps',
+    does: 'the gate — `x verify` at the repo root, all 16 steps',
   },
   {
     command: 'bun run scripts/boundaries.ts',

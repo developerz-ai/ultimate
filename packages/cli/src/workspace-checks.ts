@@ -5,29 +5,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding } from './output';
+import { eachSourceFile } from './source-files';
 
 export const LINE_CEILING = 500;
 
 export const PACKAGE_FILES = ['README.md', 'CLAUDE.md', 'tsconfig.json', 'src/index.ts'] as const;
 
-/**
- * Where source lives in both shapes this gate runs against: a package monorepo and an app. A
- * nested example app under `examples/` is not scanned — it runs this same gate from its own root.
- */
-const SOURCE_GLOBS = [
-  'packages/*/src/**/*.{ts,tsx}',
-  'scripts/**/*.{ts,tsx}',
-  'site/**/*.{ts,tsx}',
-  'app/**/*.{ts,tsx}',
-  'api/**/*.{ts,tsx}',
-  'shared/**/*.{ts,tsx}',
-  'apps/*/{app,site,api,shared}/**/*.{ts,tsx}',
-] as const;
-
 const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
-
-const skip = (path: string): boolean =>
-  path.includes('node_modules') || path.includes('/dist/') || path.startsWith('dist/');
 
 export const tooLongFinding = (path: string, lines: number): Finding => ({
   code: 'X_FILE_TOO_LONG',
@@ -48,14 +32,9 @@ export const countLines = (text: string): number =>
 /** Files are the unit of review: one file, one job, hard ceiling 500 lines. */
 export async function checkFileSizes(root: string): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
-  const seen = new Set<string>();
-  for (const pattern of SOURCE_GLOBS) {
-    for await (const path of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
-      if (skip(path) || seen.has(path)) continue;
-      seen.add(path);
-      const lines = countLines(await Bun.file(join(root, path)).text());
-      if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
-    }
+  for await (const path of eachSourceFile(root)) {
+    const lines = countLines(await Bun.file(join(root, path)).text());
+    if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
   }
   return findings;
 }

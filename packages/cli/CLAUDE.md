@@ -22,6 +22,26 @@ Every fact the CLI reports comes from a framework package: the manifest from
 `app-evals.ts` is why the `eval` step can apply with no eval suite at all: a prompt no eval
 names is `X_EVAL_MISSING`, and a skipped step would read as a green gate over untested code.
 
+## The `errors` step enforces the error contract
+
+| File | Job |
+|---|---|
+| `ts-scan.ts` | the strings a `fix:` can evaluate to, and the `X_*` codes a file declares |
+| `error-contract.ts` | the rules, and the two checks that turn them into findings |
+| `source-files.ts` | which files are shipped source — shared with `filesize`, never a second list |
+
+An empty `fix`, or a `fix` that says `check` / `make sure` / `try` / `see the docs` and names no
+command, call or file path, is `X_ERROR_FIX_INVALID`. A declared code the host's error reference
+does not name is `X_ERROR_CODE_UNDOCUMENTED` — `wiki/Error-Codes.md` here, nothing in a generated
+app, which is why that half arrives as a host check (`scripts/verify.ts`) rather than a hardcoded
+path in this package.
+
+`ts-scan.ts` masks comments and string contents before it looks for structure. The contract's own
+3-line rendering appears verbatim in doc blocks and interpolated messages, and a scanner that read
+those as declarations would report findings nobody can fix. What it cannot see is a `fix` with no
+literal — a parameter, or a table lookup with no fallback. Those are out of a static scan's reach,
+and the step says so rather than guessing.
+
 `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
 dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
 holds — a SQL runner, the committed manifest, the process's own services — supplied as

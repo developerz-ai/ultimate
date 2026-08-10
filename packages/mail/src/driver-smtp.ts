@@ -173,7 +173,7 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
         stage: 'connect',
         detail: `${target.host}:${target.port} — ${messageOf(error)}`,
         retryable: true,
-        fix: 'check host, port and network path in SMTP_URL — the job will retry automatically',
+        fix: `correct SMTP_URL in .env, or open the route to ${target.host}:${target.port} — the job will retry`,
       });
     });
 
@@ -193,7 +193,7 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
         stage: 'data',
         detail: messageOf(error),
         retryable: true,
-        fix: 'check the SMTP host logs — the job will retry automatically',
+        fix: `read the SMTP server log on ${target.host} — the job will retry automatically`,
       });
     } finally {
       stream.close();

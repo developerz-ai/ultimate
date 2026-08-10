@@ -18,6 +18,8 @@ export const CLI_ERROR_CODES = [
   'X_DECLARATION_UNKNOWN',
   'X_JOB_UNKNOWN',
   'X_FIX_TARGET_UNKNOWN',
+  'X_ERROR_FIX_INVALID',
+  'X_ERROR_CODE_UNDOCUMENTED',
 ] as const;
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
@@ -42,6 +44,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliErrorCode, string>> = {
   X_DECLARATION_UNKNOWN: 'no declaration with this name is registered',
   X_JOB_UNKNOWN: 'the queue holds no job with this id',
   X_FIX_TARGET_UNKNOWN: 'the named file is not one of the app source files',
+  X_ERROR_FIX_INVALID: "an error's fix line is not a runnable instruction",
+  X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
 };
 
 // `X_NOT_IMPLEMENTED` belongs to core, and a second registration throws X_ERROR_CODE_DUPLICATE.

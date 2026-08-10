@@ -14,6 +14,7 @@ import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
 import { checkDrift } from './drift';
+import { checkErrorFixes } from './error-contract';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
@@ -69,6 +70,14 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     summary: 'every package ships the same contract files',
     applies: (ctx) => hasWorkspacePackages(ctx.root),
     run: async (ctx) => fromFindings(await checkPackageShape(ctx.root)),
+  },
+  {
+    name: 'errors',
+    summary: 'every X_* code has a runnable fix and a docs page',
+    // The fix-line half runs anywhere source does. The docs half needs a reference page to check
+    // against, and which file that is belongs to the host repo — hence `hostFindings`.
+    run: async (ctx) =>
+      fromFindings([...(await checkErrorFixes(ctx.root)), ...(await hostFindings(ctx, 'errors'))]),
   },
   ...TEST_STEPS,
   {
