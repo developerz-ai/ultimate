@@ -61,7 +61,7 @@ scripts/theme.js          # the only JS: before-paint theme apply + delegated to
 pages/*.md                # content, with frontmatter
 assets/logo.svg           # mark + favicon, theme-aware via its own internal stylesheet
 assets/og.svg             # 1200x630 social card
-tsconfig.json             # this directory is a TS project, referenced by the root tsconfig
+tsconfig.json             # the site's own TypeScript project — the note below the tree owns why
 CNAME                     # ultimate.developerz.ai
 ```
 

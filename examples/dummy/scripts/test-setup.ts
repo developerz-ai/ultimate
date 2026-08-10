@@ -2,11 +2,6 @@
 // how a member becomes an actor. Everything else in the bag arrives with the framework's own
 // preload, imported below, so an app registers only what the framework cannot know.
 
-// The suite's one preload, named in `bunfig.toml`:
-//
-//   [test]
-//   preload = ["./scripts/test-setup.ts"]
-//
 // The framework is imported by relative path rather than by `@ultimat3/*`: this directory is not
 // a workspace member yet (issue #9), and a preload runs before anything else, so it must not
 // depend on workspace symlinks. A generated app writes `@ultimat3/testing` here. For the same
