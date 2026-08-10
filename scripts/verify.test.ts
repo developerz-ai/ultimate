@@ -15,6 +15,24 @@ import {
   tierBoundaries,
 } from './verify';
 
+const readJson = async (path: string): Promise<unknown> => Bun.file(path).json();
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** One key off a parsed tsconfig, checked rather than cast — the file is data, not a type. */
+const field = (value: unknown, key: string): unknown => (isRecord(value) ? value[key] : undefined);
+
+/** The `path` of every project a tsconfig references, in declaration order. */
+async function tsconfigReferences(path: string): Promise<readonly string[]> {
+  const references = field(await readJson(path), 'references');
+  if (!Array.isArray(references)) return [];
+  return references.flatMap((reference: unknown) => {
+    const target = field(reference, 'path');
+    return typeof target === 'string' ? [target] : [];
+  });
+}
+
 describe('unit · the repo gate is the CLI gate', () => {
   test('the repo adds rules to steps, never steps of its own', () => {
     const names: readonly string[] = verifyStepNames();
@@ -53,6 +71,21 @@ describe('unit · the repo gate is the CLI gate', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  // The `typecheck` step is `tsc -b` at the repo root, so a directory the root project does not
+  // reference is a directory the gate never reads. `site/` shipped for a year outside it.
+  test('the typecheck step reaches site/, not only packages/', async () => {
+    const references = await tsconfigReferences(join(repoRoot(), 'tsconfig.json'));
+    expect(references).toContain('./site');
+  });
+
+  test('site/ is its own bundle graph — no @ultimat3/* path resolves inside it', async () => {
+    const config = await readJson(join(repoRoot(), 'site/tsconfig.json'));
+    // Axiom 6: the static path never pays for the app path. Emptying the inherited `paths` makes
+    // that a build error rather than a comment — `import '@ultimat3/core'` here simply cannot
+    // resolve.
+    expect(field(field(config, 'compilerOptions'), 'paths')).toEqual({});
   });
 
   test('this repo has no tier violations and its manifest still generates', async () => {

@@ -5,17 +5,15 @@ import { flagBool, flagString, parseArgs } from './parse';
 import { thrownBy } from './thrown-by';
 
 const SPECS: readonly CommandSpec[] = [
-  {
-    name: 'verify',
-    summary: 'the gate',
-    usage: 'x verify',
-    flags: [{ name: 'only', type: 'string', summary: 'steps' }],
-  },
+  // `verify` really does declare no flags — narrowing the gate would make "green" mean whatever
+  // the caller chose (axiom 5), so the fixture carries no `--only`/`--skip` either.
+  { name: 'verify', summary: 'the gate', usage: 'x verify', flags: [] },
   {
     name: 'db',
     summary: 'database',
     usage: 'x db <sub>',
     subcommands: ['gen', 'migrate', 'branch'],
+    flags: [{ name: 'name', type: 'string', summary: 'migration or branch name' }],
   },
   { name: 'g', aliases: ['generate'], summary: 'scaffold', usage: 'x g <kind> <name>' },
   { name: 'help', summary: 'help', usage: 'x help' },
@@ -43,9 +41,11 @@ describe('unit · parseArgs', () => {
   });
 
   test('reads string flags in both --flag value and --flag=value form', () => {
-    expect(flagString(parseArgs(['verify', '--only', 'lint'], SPECS), 'only')).toBe('lint');
-    expect(flagString(parseArgs(['verify', '--only=lint,drift'], SPECS), 'only')).toBe(
-      'lint,drift',
+    expect(flagString(parseArgs(['db', 'branch', '--name', 'feat-billing'], SPECS), 'name')).toBe(
+      'feat-billing',
+    );
+    expect(flagString(parseArgs(['db', 'branch', '--name=feat-billing'], SPECS), 'name')).toBe(
+      'feat-billing',
     );
   });
 
@@ -59,9 +59,9 @@ describe('unit · parseArgs', () => {
   });
 
   test('everything after -- is passthrough, not a flag', () => {
-    const args = parseArgs(['verify', '--', '--only', 'nonsense'], SPECS);
-    expect(args.passthrough).toEqual(['--only', 'nonsense']);
-    expect(flagString(args, 'only')).toBeUndefined();
+    const args = parseArgs(['db', 'branch', '--', '--name', 'nonsense'], SPECS);
+    expect(args.passthrough).toEqual(['--name', 'nonsense']);
+    expect(flagString(args, 'name')).toBeUndefined();
   });
 
   test('an unknown command throws X_CLI_UNKNOWN_COMMAND with a suggestion', () => {
@@ -84,7 +84,7 @@ describe('unit · parseArgs', () => {
   });
 
   test('a string flag with no value is an error, not a silent empty string', () => {
-    expect(() => parseArgs(['verify', '--only'], SPECS)).toThrow();
+    expect(() => parseArgs(['db', 'branch', '--name'], SPECS)).toThrow();
   });
 
   test('bare argv and --help both route to the help command', () => {

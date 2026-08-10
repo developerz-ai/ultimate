@@ -27,7 +27,7 @@ import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './works
 export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'typecheck',
-    summary: 'tsc across every workspace',
+    summary: 'tsc -b across every project the root references',
     async run(ctx) {
       const result = await ctx.runner(['bunx', 'tsc', '-b', '--pretty', 'false'], {
         cwd: ctx.root,
