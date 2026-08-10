@@ -1,0 +1,159 @@
+/**
+ * Human-readable cron descriptions (`describeCron`): month and weekday names from `Intl`, every
+ * connective phrase supplied by the caller. Tier 1 cannot reach `t()`, and a default set would
+ * ship English to every locale that forgot the argument — so injection is mandatory, not opt-in.
+ */
+
+import { type CronExpression, parseCronOnce } from './cron-parse';
+import { localeInvalid } from './errors';
+
+export interface CronPhrases {
+  everyMinute: string;
+  everyNMinutes: string;
+  everyHour: string;
+  everyNHours: string;
+  at: string;
+  /** Closes a capped clock-time list, e.g. `and {n} more`. */
+  andMore: string;
+  onDaysOfMonth: string;
+  onWeekdays: string;
+  inMonths: string;
+  everyDay: string;
+}
+
+/** `1-59 * * * *` expands to 1416 clock times; a summary that long is not a summary. */
+const MAX_LISTED_TIMES = 6;
+
+/**
+ * `describeCron('0 3 * * MON-FRI', 'en', phrases)` → `at 03:00 on Monday–Friday`.
+ * Every phrase comes from the caller's `t('time.cron.*')`; only the names are `Intl`'s.
+ */
+export function describeCron(
+  expression: string | CronExpression,
+  locale: string,
+  phrases: CronPhrases,
+): string {
+  assertLocale(locale);
+  const cron = parseCronOnce(expression);
+  const list = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' });
+  const segments: string[] = [];
+
+  const minuteStep = uniformStep(cron.minutes, 60);
+  const hourStep = uniformStep(cron.hours, 24);
+  // Only a fixed clock time reads as "at 03:00 every day"; an interval already says it.
+  let explicitTime = false;
+
+  if (minuteStep !== undefined && cron.hours.length === 24) {
+    segments.push(
+      minuteStep === 1 ? phrases.everyMinute : fill(phrases.everyNMinutes, { n: minuteStep }),
+    );
+  } else if (cron.minutes.length === 1 && cron.minutes[0] === 0 && hourStep !== undefined) {
+    // Only an on-the-hour minute is a bare interval: `15 */6 * * *` must keep its :15 offset.
+    segments.push(hourStep === 1 ? phrases.everyHour : fill(phrases.everyNHours, { n: hourStep }));
+  } else {
+    explicitTime = true;
+    segments.push(fill(phrases.at, { time: clockTimes(cron, phrases, locale, list) }));
+  }
+
+  if (cron.dayOfMonthRestricted) {
+    const days = list.format(cron.daysOfMonth.map(String));
+    segments.push(fill(phrases.onDaysOfMonth, { days }));
+  }
+  if (cron.dayOfWeekRestricted) {
+    const days = list.format(cron.daysOfWeek.map((day) => weekdayName(day, locale)));
+    segments.push(fill(phrases.onWeekdays, { days }));
+  }
+  if (cron.months.length < 12) {
+    const months = list.format(cron.months.map((month) => monthName(month, locale)));
+    segments.push(fill(phrases.inMonths, { months }));
+  }
+  if (explicitTime && segments.length === 1) segments.push(phrases.everyDay);
+  return segments.join(' ');
+}
+
+/** The clock times, capped — the overflow is counted out loud so a cut list never reads whole. */
+function clockTimes(
+  cron: CronExpression,
+  phrases: CronPhrases,
+  locale: string,
+  list: Intl.ListFormat,
+): string {
+  const times = cron.hours.flatMap((hour) =>
+    cron.minutes.map((minute) => `${pad2(hour)}:${pad2(minute)}`),
+  );
+  if (times.length <= MAX_LISTED_TIMES) return list.format(times);
+  // A cut list is not a closed one, so it drops the conjunction: `… and 09:25` would promise
+  // 09:25 is the last time there is. `unit` is ICU's comma-only list for exactly that reason.
+  const open = new Intl.ListFormat(locale, { style: 'long', type: 'unit' });
+  const shown = open.format(times.slice(0, MAX_LISTED_TIMES));
+  return `${shown} ${fill(phrases.andMore, { n: times.length - MAX_LISTED_TIMES })}`;
+}
+
+/** `Intl` throws a bare `RangeError` on a malformed tag; convert it once, at the entry point. */
+function assertLocale(locale: string): void {
+  try {
+    Intl.DateTimeFormat.supportedLocalesOf([locale]);
+  } catch {
+    throw localeInvalid(locale);
+  }
+}
+
+/** Step fields: an evenly spaced set starting at 0 that covers the whole range. */
+function uniformStep(values: readonly number[], size: number): number | undefined {
+  const first = values[0];
+  if (values.length < 2 || first !== 0) return undefined;
+  const step = (values[1] ?? 0) - first;
+  if (step <= 0 || values.length !== Math.ceil(size / step)) return undefined;
+  for (let index = 1; index < values.length; index += 1) {
+    if ((values[index] ?? -1) - (values[index - 1] ?? -1) !== step) return undefined;
+  }
+  return step;
+}
+
+function fill(template: string, vars: Readonly<Record<string, string | number>>): string {
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = vars[name];
+    return value === undefined ? match : String(value);
+  });
+}
+
+/**
+ * Hard-capped rather than key-normalised, because `locale` can arrive from an Accept-Language
+ * header: `supportedLocalesOf` collapses unknown *tags*, but still returns a distinct string for
+ * every unknown `-u-` extension value, so only a bound keeps the key space finite. FIFO — a `Map`
+ * iterates in insertion order — and a miss costs one `Intl` construction, not a wrong answer.
+ */
+const MAX_CACHED_LOCALES = 32;
+const monthFormatters = new Map<string, Intl.DateTimeFormat>();
+const weekdayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(
+  cache: Map<string, Intl.DateTimeFormat>,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const hit = cache.get(locale);
+  if (hit !== undefined) return hit;
+  const formatter = new Intl.DateTimeFormat(locale, options);
+  if (cache.size >= MAX_CACHED_LOCALES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(locale, formatter);
+  return formatter;
+}
+
+function monthName(month: number, locale: string): string {
+  const formatter = formatterFor(monthFormatters, locale, { month: 'long', timeZone: 'UTC' });
+  return formatter.format(new Date(Date.UTC(2026, month - 1, 1)));
+}
+
+function weekdayName(isoDay: number, locale: string): string {
+  const formatter = formatterFor(weekdayFormatters, locale, { weekday: 'long', timeZone: 'UTC' });
+  // 2026-06-01 is a Monday, so ISO day N is that date + (N - 1).
+  return formatter.format(new Date(Date.UTC(2026, 5, isoDay)));
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}

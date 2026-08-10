@@ -107,6 +107,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_PASSWORD_WEAK` | strength check rejected the password | too short, or a known-common password | choose a longer, uncommon password — or relax `defineAuth({ password: { minLength } })` |
 | `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout | repeated failed attempts | `x auth unlock <key>` — `cause` names the key and the remaining seconds — or raise `defineAuth({ rateLimit })` |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong | one shape for all four — a precise message is an enumeration oracle | `x auth keys list --json`, then issue a fresh key |
+| `X_AUTH_WRITE_FAILED` | an adapter write returned no row, so it cannot be confirmed | an `insert … returning *` wrote nothing — the table is missing its migration, or a trigger or RLS policy swallowed the row | `x db apply`, then confirm the table with `x db query "select 1 from x_users limit 1" --json` |
 
 ## Entity and database
 
@@ -235,6 +236,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_CRON_INVALID` | not a parseable cron expression | wrong field count | 5 fields (`m h dom mon dow`) or 6 with seconds |
 | `X_DST_AMBIGUOUS` | the local time occurs twice | a fall-back overlap | pass `{ overlap: 'first' }` or `{ overlap: 'second' }` |
 | `X_DST_NONEXISTENT` | the local time does not exist | a spring-forward gap | pass `{ gap: 'next' }` or `{ gap: 'previous' }` |
+| `X_LOCALE_INVALID` | not a well-formed BCP 47 tag | `en_US`, `''`, or a raw `Accept-Language` value reaching `describeCron` | pass `en`, `en-GB`, `de-DE` — screen header input with `Intl.DateTimeFormat.supportedLocalesOf([tag])` |
 
 ## Mail
 

@@ -50,13 +50,17 @@ export interface HttpConfigInput {
   readonly rateLimit?: Partial<RateLimitConfig>;
 }
 
-/** `basePath` is stripped before matching so route paths never encode the mount point. */
+/**
+ * `basePath` is stripped before matching so route paths never encode the mount point.
+ * Matching is on a segment boundary: a mount at `/api` owns `/api` and `/api/...` but
+ * never `/apix`, which is a different route whose first three characters happen to agree.
+ */
 export const stripBasePath = (pathname: string, basePath: string): string => {
   if (basePath === '/' || basePath === '') return pathname;
   const prefix = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
-  if (!pathname.startsWith(prefix)) return pathname;
-  const rest = pathname.slice(prefix.length);
-  return rest.length === 0 ? '/' : rest;
+  if (pathname === prefix) return '/';
+  if (!pathname.startsWith(`${prefix}/`)) return pathname;
+  return pathname.slice(prefix.length);
 };
 
 const env = (name: string): string | undefined => {

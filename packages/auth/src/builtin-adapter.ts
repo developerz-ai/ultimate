@@ -15,6 +15,7 @@ import type {
   SessionPatch,
   UserPatch,
 } from './adapter';
+import { authWriteFailed } from './errors';
 
 type Row = Readonly<Record<string, unknown>>;
 
@@ -134,7 +135,10 @@ export class BuiltinAdapter implements AuthAdapter {
       values (${input.id}, ${input.email}, ${input.passwordHash}, ${input.orgId},
               ${[...input.roles]}, ${input.createdAt})
       returning *`);
-    return row === null ? toUser({}) : toUser(row);
+    // An empty `returning` means no row landed. A user fabricated from `{}` would travel back
+    // out of `register()` as a successful registration with no identity in it.
+    if (row === null) throw authWriteFailed('createUser', 'x_users');
+    return toUser(row);
   }
 
   async updateUser(id: string, patch: UserPatch): Promise<AuthUser | null> {

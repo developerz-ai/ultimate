@@ -15,6 +15,7 @@ export const AUTH_ERROR_CODES = [
   'X_PASSWORD_WEAK',
   'X_ACCOUNT_LOCKED',
   'X_API_KEY_INVALID',
+  'X_AUTH_WRITE_FAILED',
   'X_NOT_IMPLEMENTED',
 ] as const;
 
@@ -30,6 +31,7 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthErrorCode, string>> = {
   X_PASSWORD_WEAK: 'password does not meet the configured policy',
   X_ACCOUNT_LOCKED: 'too many failed attempts; this key is locked out',
   X_API_KEY_INVALID: 'api key is unknown, revoked, expired or wrong',
+  X_AUTH_WRITE_FAILED: 'an adapter write returned no row, so it cannot be confirmed',
   X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
@@ -200,6 +202,19 @@ export const apiKeyInvalid = (): AuthError =>
     code: 'X_API_KEY_INVALID',
     cause: 'the presented api key is unknown, revoked, expired or does not match its hash',
     fix: 'x auth keys list --json   # then: x auth keys issue --scopes "<scope>"',
+  });
+
+/**
+ * A write whose `returning *` came back empty wrote nothing the caller may trust. Synthesising a
+ * row from `{}` is what would let `register()` hand back a user with no id and no email — a
+ * registration that reads as successful and authenticates nobody — so the adapter fails closed.
+ */
+export const authWriteFailed = (operation: string, table: string): AuthError =>
+  new AuthError({
+    code: 'X_AUTH_WRITE_FAILED',
+    cause: `${operation} returned no row from ${table}, so the write cannot be confirmed`,
+    fix: `x db apply   # then: x db query "select 1 from ${table} limit 1" --json`,
+    meta: { operation, table },
   });
 
 /** For a custom `AuthAdapter` that implements part of the seam. Nothing shipped throws it. */
