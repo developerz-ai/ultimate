@@ -30,6 +30,9 @@ import. The CLI wires it.
 
 ## Invariants
 
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineAppMcp` file
+  imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on
+  every access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - Three outcomes, never blurred: role-hidden → `-32601` ToolNotFound with no `data`;
   scope → `-32600` `X_MCP_SCOPE_DENIED` naming the scope; policy → an `isError` result
   carrying `X_POLICY_DENIED`. Swapping any two is an enumeration oracle.

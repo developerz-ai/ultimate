@@ -1,6 +1,9 @@
 // Single responsibility: the public API of @ultimat3/mail. Explicit named exports only —
 // other packages call `defineMail`, `send` and the driver seam, and nothing else.
 
+/** Re-exported so a `defineMail` file needs one import, not two. Same object as schema's. */
+export type { Infer } from '@ultimat3/schema';
+export { t } from '@ultimat3/schema';
 export type { CalloutTone, MailBlock, MailTemplate, TemplateArgs } from './blocks';
 export { blocks } from './blocks';
 

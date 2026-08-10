@@ -9,8 +9,7 @@
  */
 
 import { describeActions } from '@ultimat3/action';
-import { defineAppMcp } from '@ultimat3/mcp';
-import { t } from '@ultimat3/schema';
+import { defineAppMcp, t } from '@ultimat3/mcp';
 import { expect, test } from '@ultimat3/testing';
 import { mcp } from './tools';
 

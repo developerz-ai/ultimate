@@ -4,8 +4,7 @@ Transactional email as data. One template renders **both** an HTML part and a pl
 every string is an i18n key, every colour is a design token, and delivery is a job.
 
 ```ts
-import { defineMail, send, blocks } from '@ultimat3/mail';
-import { t } from '@ultimat3/schema';
+import { defineMail, send, blocks, t } from '@ultimat3/mail';
 
 export const receiptMail = defineMail({
   id: 'receipt',

@@ -10,12 +10,13 @@
  * `packages/admin/src/mcp.ts` (the framework's own admin package) is the shape to follow once
  * they do — it wraps `resolveToken` around the same `actor({ token })` hook its HTTP surface
  * already uses.
+ *
+ * `t` comes from @ultimat3/mcp, not @ultimat3/schema: an MCP file imports one package.
  */
 
 import { localDateIn, nextDigestAt, quoteUpgrade, seatsRemaining } from '@postly/core';
 import { PLAN_CODES, seatLimit } from '@postly/domain';
-import { defineAppMcp } from '@ultimat3/mcp';
-import { t } from '@ultimat3/schema';
+import { defineAppMcp, t } from '@ultimat3/mcp';
 
 export const mcp = defineAppMcp({
   name: 'postly',

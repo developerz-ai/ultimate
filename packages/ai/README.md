@@ -86,7 +86,7 @@ Not a ninth primitive. A model call has an input schema, an output schema and a 
 is an `action` — so `llm()` returns one, and everything an action projects, it projects.
 
 ```ts
-import { llm } from '@ultimat3/ai';
+import { llm, t } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
 
 export const summarize = llm({

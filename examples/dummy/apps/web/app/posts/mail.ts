@@ -1,10 +1,11 @@
 /**
  * Mail the posts feature sends. A template is a declaration: the runtime renders it in the
  * recipient's locale, in the `worker` role, with no DOM and no request in scope.
+ *
+ * `t` comes from @ultimat3/mail, not @ultimat3/schema: a mail file imports one package.
  */
 
-import { blocks, defineMail } from '@ultimat3/mail';
-import { type Infer, t } from '@ultimat3/schema';
+import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
 import { MemberView } from '../orgs/entity';
 import { PostView } from './entity';
 

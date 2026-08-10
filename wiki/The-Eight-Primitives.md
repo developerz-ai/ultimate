@@ -43,6 +43,23 @@ The declaration lives in a private store inside the package that runs it, and no
 
 Each primitive's deep page carries the full member table.
 
+## One import per authoring file
+
+`t` is re-exported from every package that hosts a declaration factory. Import it from the package you declare in; never reach past that package to `@ultimat3/schema`. It is the **same object**, not a copy — `configureSchemaProvider()` still swaps the provider under it — and each package pins that with an identity assertion in its `index.test.ts`.
+
+| Import `t` from | When the file declares |
+|---|---|
+| `@ultimat3/entity` | an `entity` |
+| `@ultimat3/action` | an `action` or a `mutator` |
+| `@ultimat3/query` | a `query` |
+| `@ultimat3/jobs` | a `job` or a `task` |
+| `@ultimat3/mail` | a `defineMail` template |
+| `@ultimat3/mcp` | a `defineAppMcp` hand-written tool |
+| `@ultimat3/ai` | an `llm` — a factory over `action`, so it carries `t` too |
+| `@ultimat3/schema` | nothing — a plain view-schema module, where schema *is* the one import |
+
+`policy` and `route` declare no schema, so neither package re-exports `t`: a policy decides from `({ actor, input, row, ctx })` and a route from its path.
+
 ## `entity`
 
 A table + its domain type + invariants. The single source of the DB schema, the TS type, and the parse boundary.

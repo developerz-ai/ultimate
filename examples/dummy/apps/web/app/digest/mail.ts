@@ -3,10 +3,11 @@
  * usually wrong — the member's timezone. `localDate` is computed once by the job, in the member's
  * zone, and travels as a string: nothing here reaches for a clock, so "yesterday" means yesterday
  * where the reader is rather than where the worker runs.
+ *
+ * `t` comes from @ultimat3/mail, not @ultimat3/schema: a mail file imports one package.
  */
 
-import { blocks, defineMail } from '@ultimat3/mail';
-import { type Infer, t } from '@ultimat3/schema';
+import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
 import { MemberView } from '../orgs/entity';
 import { PostSummary } from '../posts/entity';
 

@@ -65,8 +65,13 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - Entities live in `packages/db`; a feature's `entity.ts` owns only that feature's view schemas.
 - One authz definition. `policy.ts` predicates are reused verbatim by HTTP, live queries, jobs,
   MCP tools, and admin. Never re-check authz inside `handle`.
-- `t` is two different things by file kind: the schema namespace (`@ultimat3/schema`) in schema/entity/action
-  files, the i18n translator (`useI18n()`) in components. Never both in one file.
+- `t` is two different things by file kind: the schema namespace in declaration files, the i18n
+  translator (`useI18n()`) in components. Never both in one file. A declaration file imports the
+  schema `t` from the package it declares in — `@ultimat3/action` in `actions.ts`/`mutator.ts`,
+  `@ultimat3/query` in `live.ts`, `@ultimat3/jobs` in `jobs.ts`, `@ultimat3/mail` in `mail.ts`,
+  `@ultimat3/mcp` in the MCP package — never reaching past it to `@ultimat3/schema`. It is the same
+  object either way. A module that declares no primitive (a feature's `entity.ts` view schemas)
+  imports `@ultimat3/schema` directly, because that already is its one import.
 - Money is `{ minor, currency }`. Arithmetic in `packages/core/src/billing.ts`; formatting only
   in `<Money>` at the edge.
 - Dates are UTC instants in the DB, rendered only through `<DateTime zone={member.tz}>`.
