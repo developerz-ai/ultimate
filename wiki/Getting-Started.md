@@ -117,7 +117,7 @@ Introspection an agent should use instead of grepping:
 | one action in detail | `x actions describe publishPost --json` | `actions.list` |
 | is this protected | `x policy explain publishPost --json` | `policies.list` |
 | the whole app as data | `x manifest --json` | `manifest.get` |
-| what an `X_*` code means | `x explain X_POLICY_DENIED` | `errors.explain` |
+| what an `X_*` code means | `x errors explain X_FORBIDDEN` | `errors.explain` |
 
 ## 4. `x verify`
 

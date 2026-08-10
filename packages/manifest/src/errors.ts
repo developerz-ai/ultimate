@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/manifest. `x verify` raises these, so each fix line is a
 // command the developer (or the agent) can run verbatim.
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MANIFEST_ERROR_CODES = [
   'X_MANIFEST_DRIFT',
@@ -11,6 +11,19 @@ export const MANIFEST_ERROR_CODES = [
 ] as const;
 
 export type ManifestErrorCode = (typeof MANIFEST_ERROR_CODES)[number];
+
+export const MANIFEST_ERROR_TITLES: Readonly<Record<ManifestErrorCode, string>> = {
+  X_MANIFEST_DRIFT: 'x.manifest.json differs from the code',
+  X_MANIFEST_BREAKING: 'a published contract was removed or narrowed',
+  X_AGENTS_MD_MISSING: 'no AGENTS.md',
+  X_AGENTS_MD_TOO_LARGE: 'AGENTS.md grew past its cap',
+};
+
+// Titles must be registered for format() to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(MANIFEST_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 const docsFor = (code: ManifestErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

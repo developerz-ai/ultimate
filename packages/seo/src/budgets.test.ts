@@ -64,7 +64,7 @@ describe('checkBudgets', () => {
     expect(checkBudgets(ROUTES, []).checked).toBe(0);
   });
 
-  test('assertBudgets throws X_BUDGET_EXCEEDED with an analyze command', () => {
+  test('assertBudgets throws X_SEO_BUDGET_EXCEEDED with an analyze command', () => {
     const report = checkBudgets(ROUTES, [{ route: '/', js: 51_200 }]);
     try {
       assertBudgets(report);

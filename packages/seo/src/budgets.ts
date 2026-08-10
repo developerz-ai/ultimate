@@ -1,6 +1,6 @@
 // Per-route performance budgets. `checkBudgets()` returns a `--json`-shaped
 // report; `x verify` fails CI on it. A budget that only warns is a budget that
-// gets ignored, so the assert path throws X_BUDGET_EXCEEDED naming the route file.
+// gets ignored, so the assert path throws X_SEO_BUDGET_EXCEEDED naming the route file.
 
 import { budgetExceeded, SEO_ERROR_CODES, SeoError } from './errors';
 import type { RouteBudget, RouteRecord } from './routes';

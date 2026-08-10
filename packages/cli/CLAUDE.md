@@ -41,6 +41,7 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
 | `mcp-db-target.ts` | which database the host is pointed at, and whether it is a branch |
 | `mcp-errors.ts` | `errors.explain`: one runnable command per code, typed over `CliErrorCode` |
+| `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for codes no command loads |
 | `mcp-test-output.ts` | reading `bun test`'s own summary back into a `TestRun` |
 | `cmd-mcp.ts` | `x mcp serve`: the two transports, and the local developer's caller |
 
@@ -50,5 +51,18 @@ only thing dev changes is which driver is behind an interface.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 
+## Planned commands are commands
+
+Every command in `wiki/CLI-Reference.md`'s planned table is in the registry, built from
+`PLANNED_COMMANDS` in `cmd-planned.ts`, and exits `X_NOT_IMPLEMENTED` with a `fix:` naming the
+closest **shipped** command. `X_CLI_UNKNOWN_COMMAND` would say "you typed something that does not
+exist", which is false and sends an agent hunting a typo. `cmd-planned.test.ts` enforces both
+halves: every row is reachable through the parser, and no `fix` points at another planned command.
+
+Implementing one means deleting its row and adding a real `cmd-<name>.ts` — the summary's
+`(planned)` suffix disappears with it, and `x help` follows automatically.
+
 Adding a command: write `cmd-<name>.ts` exporting a `CliCommand`, register it in `registry.ts`,
-add its message keys to `messages.ts`. Help and parsing derive from the spec automatically.
+add its message keys to `messages.ts`. Help and parsing derive from the spec automatically. A
+command's `run` must be `async`: a synchronous throw escapes every caller that awaits the promise
+the signature promises, `dispatch`'s own error path included.

@@ -1,6 +1,6 @@
 // The X_* codes owned by @ultimat3/jobs. Every one names the command or code change that
 // fixes it — a job failure an agent cannot act on is a job failure that gets retried forever.
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const JOB_ERROR_CODES = [
   'X_JOB_DUPLICATE',
@@ -14,6 +14,25 @@ export const JOB_ERROR_CODES = [
 ] as const;
 
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
+
+export const JOB_ERROR_TITLES: Readonly<Record<JobErrorCode, string>> = {
+  X_JOB_DUPLICATE: 'a live key already has a job',
+  X_STEP_DUPLICATE: 'two step.run calls share a name',
+  X_JOB_TIMEOUT: 'a job exceeded its wall-clock limit',
+  X_JOB_MAX_ATTEMPTS: 'the job exhausted its retries',
+  X_DRIVER_UNAVAILABLE: 'the queue driver is unreachable',
+  X_IDEMPOTENCY_REQUIRED: 'the job has no idempotencyKey',
+  X_OUTBOX_NO_TX: 'enqueue outside a transaction',
+  // Owned by @ultimat3/core; jobs only borrows it (see JobsNotImplementedError below). Keep this
+  // text identical to CORE_CODE_TITLES.X_NOT_IMPLEMENTED — hasErrorCode() skips re-registering it.
+  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(JOB_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 const docsFor = (code: JobErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

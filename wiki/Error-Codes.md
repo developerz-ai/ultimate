@@ -203,6 +203,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_SEO_DUPLICATE_META` | two routes share a title or description | copied metadata | make each page's meta unique |
 | `X_SEO_CANONICAL_MISMATCH` | canonical URL does not match the route path | a hand-written canonical | delete it — canonicals come from the route table |
 | `X_LD_INVALID` | JSON-LD node is missing a required schema.org field | an `ld.*` helper called with a partial object | supply the field named in `cause` |
+| `X_SEO_BUDGET_EXCEEDED` | route exceeded its performance budget | a `js`/`css`/`lcp`/`cls`/`inp` budget broken in the SEO report | `x routes --json` for the route's budget, then cut the regression `cause` names |
 | `X_SITEMAP_TOO_LARGE` | sitemap exceeds the 50,000-entry limit | too many prerendered URLs in one file | enable sitemap index splitting in `app.config.ts` |
 
 ## PWA and build skew
@@ -328,6 +329,11 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |
 | `X_GENERATE_CONFLICT` | a generator would overwrite a file | the name is taken | `x g … --force`, or choose another name |
 | `X_SCAFFOLD_PATH_ESCAPE` | a generated path resolves outside the scaffold sandbox | a `..` segment or an absolute path in a template's `GeneratedFile.path` | make the path relative to the app root with no `..`, then `bun test packages/cli/src/scaffold-typecheck.contract.test.ts` |
+| `X_NOT_IMPLEMENTED` | a planned command, or a driver whose remote half is unwritten | one of the commands in [CLI reference](CLI-Reference)'s planned table | the `fix` names the closest shipped command — never "not a command", which would send you looking for a typo |
+| `X_ERROR_CODE_UNKNOWN` | no package registered this error code | a typo, or a code from a package this process could not import | `x errors list --json` — the nearest real code is in `fix`, and `data.unavailable` names any package that would not load |
+| `X_DECLARATION_UNKNOWN` | no declaration with this name is registered | a typo, or a module that never imported | `x actions list --json` (or `queries` / `entities`); the nearest real name is in `fix` |
+| `X_JOB_UNKNOWN` | the queue holds no job with this id | a stale id, or a job already reaped | `x jobs ls --json` |
+| `X_FIX_TARGET_UNKNOWN` | the named file is not one of the app's source files | a path outside `apps/*/{site,app,api,shared}`, or a typo | `x fix boundary <nearest real path>` — `fix` carries it |
 
 ## Names used in the design docs
 
@@ -339,6 +345,7 @@ Some design docs predate the implementation. `As of 2026-07` these are the mappi
 | `X_JOB_DUPLICATE_STEP` | `X_STEP_DUPLICATE` |
 | `X_JOB_STEP_FAILED` | `X_JOB_MAX_ATTEMPTS` (retries exhausted) or `X_JOB_TIMEOUT` |
 | `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` | `X_SEO_META_MISSING` |
+| `X_BUDGET_EXCEEDED` thrown by `@ultimat3/seo` | `X_SEO_BUDGET_EXCEEDED` — `X_BUDGET_EXCEEDED` is `@ultimat3/render`'s, and one code is owned by exactly one package |
 | `X_BOUNDARY_VIOLATION` | `X_BOUNDARY_SITE_TO_APP` and the other `X_BOUNDARY_*` codes |
 | `X_TEST_NETWORK_EGRESS` | `X_TEST_NETWORK_SEALED` |
 | `X_LIVE_QUERY_LIMIT` | `X_SUBSCRIPTION_LIMIT` |

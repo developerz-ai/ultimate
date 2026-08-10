@@ -1,7 +1,7 @@
 // @ultimat3/ui error codes. Every throw carries a stable code, the cause, and
 // the exact fix — identical in the terminal, the browser overlay, and `--json`.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const UI_ERROR_CODES = {
   tokenUnknown: 'X_TOKEN_UNKNOWN',
@@ -12,12 +12,16 @@ export const UI_ERROR_CODES = {
 
 export type UiErrorCode = (typeof UI_ERROR_CODES)[keyof typeof UI_ERROR_CODES];
 
-registerErrorCodes({
-  X_TOKEN_UNKNOWN: { title: 'design token role does not exist' },
-  X_THEME_INVALID: { title: 'theme is not "light" or "dark"' },
-  X_UI_RUNTIME_MISSING: { title: 'a host capability @ultimat3/ui needs is absent' },
-  X_UI_INVALID_VALUE: { title: 'a formatting component received an unrenderable value' },
-});
+// Guarded like every other package: registering a code twice throws X_ERROR_CODE_DUPLICATE, and
+// a title collision must never be able to take down a process at import time.
+for (const [code, title] of Object.entries({
+  X_TOKEN_UNKNOWN: 'design token role does not exist',
+  X_THEME_INVALID: 'theme is not "light" or "dark"',
+  X_UI_RUNTIME_MISSING: 'a host capability @ultimat3/ui needs is absent',
+  X_UI_INVALID_VALUE: 'a formatting component received an unrenderable value',
+})) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 export class UiError extends UltimateError {
   override readonly name: string = 'UiError';

@@ -51,6 +51,7 @@ export {
   DriverUnavailableError,
   IdempotencyRequiredError,
   JOB_ERROR_CODES,
+  JOB_ERROR_TITLES,
   JobDuplicateError,
   JobMaxAttemptsError,
   JobsNotImplementedError,

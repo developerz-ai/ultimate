@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/cli. Every one names the exact command that resolves it,
 // because the CLI is the surface an agent reads first — a failure here has to be actionable
 // without a doc lookup or a second round-trip.
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const CLI_ERROR_CODES = [
   'X_CLI_UNKNOWN_COMMAND',
@@ -14,9 +14,40 @@ export const CLI_ERROR_CODES = [
   'X_TEST_SHARD_FAILED',
   'X_SCAFFOLD_PATH_ESCAPE',
   'X_APP_PACKAGE_INVALID',
+  'X_ERROR_CODE_UNKNOWN',
+  'X_DECLARATION_UNKNOWN',
+  'X_JOB_UNKNOWN',
+  'X_FIX_TARGET_UNKNOWN',
 ] as const;
 
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
+
+/**
+ * Registered titles, so `x errors list` enumerates the CLI's codes alongside every other
+ * package's instead of leaving a hole an agent has to read source to fill. Typed over
+ * `CliErrorCode`, so adding a code without a title is a build error.
+ */
+export const CLI_ERROR_TITLES: Readonly<Record<CliErrorCode, string>> = {
+  X_CLI_UNKNOWN_COMMAND: 'not a command in the registry',
+  X_CLI_BAD_FLAG: 'unknown flag, missing value, or a value the command refuses',
+  X_VERIFY_FAILED: 'at least one x verify step failed',
+  X_NOT_IN_APP: 'the command needs an app root and found none',
+  X_BUN_VERSION: 'Bun is older than the framework floor',
+  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
+  X_TEST_NO_FILES: 'the test selection matched no files',
+  X_TEST_SHARD_FAILED: 'a test shard exited non-zero',
+  X_SCAFFOLD_PATH_ESCAPE: 'a generated path resolves outside the directory it is written into',
+  X_APP_PACKAGE_INVALID: "the app's package.json supplies no name and version",
+  X_ERROR_CODE_UNKNOWN: 'no package registered this error code',
+  X_DECLARATION_UNKNOWN: 'no declaration with this name is registered',
+  X_JOB_UNKNOWN: 'the queue holds no job with this id',
+  X_FIX_TARGET_UNKNOWN: 'the named file is not one of the app source files',
+};
+
+// `X_NOT_IMPLEMENTED` belongs to core, and a second registration throws X_ERROR_CODE_DUPLICATE.
+for (const [code, title] of Object.entries(CLI_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 export const docsFor = (code: CliErrorCode): string => `https://ultimate.dev/errors/${code}`;
 
@@ -84,14 +115,22 @@ export class BunVersionError extends UltimateError {
   }
 }
 
-/** `x test` discovered nothing. A green run over zero files is the most expensive false pass. */
+/**
+ * `x test` discovered nothing. A green run over zero files is the most expensive false pass, so
+ * the selection that found nothing is named in full — a caller that cannot see whether the type
+ * or the filter emptied the set has to guess which one to drop.
+ */
 export class NoTestFilesError extends UltimateError {
-  constructor(input: { root: string; filter?: string }) {
-    const where = input.filter === undefined ? '' : ` matching "${input.filter}"`;
+  constructor(input: { root: string; type?: string; filter?: string }) {
+    const parts = [
+      input.type === undefined ? undefined : `of type ${input.type}`,
+      input.filter === undefined ? undefined : `matching "${input.filter}"`,
+    ].filter((part): part is string => part !== undefined);
+    const where = parts.length === 0 ? '' : ` ${parts.join(' ')}`;
     super({
       code: 'X_TEST_NO_FILES',
       cause: `no *.test.ts files${where} under ${input.root}`,
-      fix: input.filter === undefined ? 'x test --cwd <repo root>' : 'x test',
+      fix: parts.length === 0 ? 'x test --cwd <repo root>' : 'x test',
       docs: docsFor('X_TEST_NO_FILES'),
     });
   }
@@ -128,6 +167,80 @@ export class AppPackageInvalidError extends UltimateError {
       cause: `${input.path} ${input.problem}, so the manifest has no app name or version to gate on`,
       fix: 'bun pm pkg set name=<app> version=0.1.0',
       docs: docsFor('X_APP_PACKAGE_INVALID'),
+    });
+  }
+}
+
+/**
+ * `x errors explain` was handed a code no package registered. Inventing an explanation is the one
+ * answer worse than none: an agent would act on it. The suggestion makes the retry one keystroke.
+ */
+export class ErrorCodeUnknownError extends UltimateError {
+  constructor(input: { code: string; suggestion?: string }) {
+    super({
+      code: 'X_ERROR_CODE_UNKNOWN',
+      cause: `"${input.code}" is not a registered error code`,
+      fix:
+        input.suggestion === undefined
+          ? 'x errors list --json'
+          : `x errors explain ${input.suggestion}`,
+      docs: docsFor('X_ERROR_CODE_UNKNOWN'),
+    });
+  }
+}
+
+/**
+ * `x actions|queries|entities describe <name>` named a declaration the registries do not hold —
+ * a typo, or a module that never imported. `known` is the count, not the list: a 200-action app
+ * would bury the fix line under names nobody asked for, and `list` is one command away.
+ */
+export class DeclarationUnknownError extends UltimateError {
+  constructor(input: {
+    kind: string;
+    singular: string;
+    name: string;
+    known: readonly string[];
+    suggestion?: string;
+  }) {
+    super({
+      code: 'X_DECLARATION_UNKNOWN',
+      cause: `no ${input.singular} named "${input.name}" is registered (${input.known.length} known)`,
+      fix:
+        input.suggestion === undefined
+          ? `x ${input.kind} list --json`
+          : `x ${input.kind} describe ${input.suggestion}`,
+      docs: docsFor('X_DECLARATION_UNKNOWN'),
+    });
+  }
+}
+
+/** `x jobs show|retry <id>` against an id the queue does not hold — wrong id, or already reaped. */
+export class JobUnknownError extends UltimateError {
+  constructor(input: { id: string; driver: string }) {
+    super({
+      code: 'X_JOB_UNKNOWN',
+      cause: `the "${input.driver}" queue holds no job with id "${input.id}"`,
+      fix: 'x jobs ls --json',
+      docs: docsFor('X_JOB_UNKNOWN'),
+    });
+  }
+}
+
+/**
+ * `x fix boundary <file>` was pointed at something outside the app's surface graph. `suggestion`
+ * is the nearest real path: repeating the caller's own failing argument back at them as the fix
+ * is the shape "errors are instructions" exists to ban.
+ */
+export class FixTargetUnknownError extends UltimateError {
+  constructor(input: { file: string; scanned: number; suggestion?: string }) {
+    super({
+      code: 'X_FIX_TARGET_UNKNOWN',
+      cause: `"${input.file}" is not one of the ${input.scanned} source file(s) under apps/*/{site,app,api,shared}`,
+      fix:
+        input.suggestion === undefined
+          ? 'x routes --json   # every registered route file, app-root-relative'
+          : `x fix boundary ${input.suggestion}`,
+      docs: docsFor('X_FIX_TARGET_UNKNOWN'),
     });
   }
 }

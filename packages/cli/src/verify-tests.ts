@@ -68,6 +68,12 @@ const NEVER_A_TEST = ['**/dist/**', '**/build/**', '**/examples/**'];
 const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
   patterns.map((pattern) => `--path-ignore-patterns=${pattern}`);
 
+/**
+ * The substring that decides a file's type — the same one the step's `bun test` runs with, so
+ * `x test <type>` and the gate's `<type>` step can never disagree about what a contract test is.
+ */
+export const typeFilterOf = (type: Exclude<TestType, 'unit'>): string => SUITES[type].filter;
+
 /** Unit is everything the typed suites do not claim, so no test can fall between two steps. */
 export const testStepCommand = (type: TestType): readonly string[] =>
   type === 'unit'

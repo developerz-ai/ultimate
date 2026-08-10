@@ -3,7 +3,7 @@
  * (axiom 4), identical in the terminal, the browser overlay and `--json`.
  */
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const RENDER_ERROR_CODES = [
   'X_ROUTE_MODE_INVALID',
@@ -16,6 +16,22 @@ export const RENDER_ERROR_CODES = [
 ] as const;
 
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
+
+export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
+  X_ROUTE_MODE_INVALID: 'render mode not allowed on this surface',
+  X_ROUTE_OFFLINE_MISSING: "the route's offline strategy is missing or contradictory",
+  X_ROUTE_META_MISSING: 'required metadata missing',
+  X_ROUTE_DUPLICATE: 'two route files resolve to one URL',
+  X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
+  X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
+  X_PRERENDER_FAILED: 'a prerendered path threw during build',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(RENDER_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 const docsFor = (code: RenderErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

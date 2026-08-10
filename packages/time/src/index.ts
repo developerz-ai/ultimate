@@ -60,6 +60,7 @@ export {
   instantInvalid,
   localeInvalid,
   TIME_ERROR_CODES,
+  TIME_ERROR_TITLES,
   TimeError,
   type TimeErrorCode,
   timezoneInvalid,

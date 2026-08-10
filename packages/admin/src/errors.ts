@@ -1,7 +1,7 @@
 // The X_* codes owned by @ultimat3/admin. Every one names the exact edit that fixes it,
 // because the two dashboards fail at boot (bad registry, bad mount) where an agent has no
 // stack trace to reason from — only the message.
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const ADMIN_ERROR_CODES = [
   'X_ADMIN_ENTITY_UNKNOWN',
@@ -12,6 +12,19 @@ export const ADMIN_ERROR_CODES = [
 ] as const;
 
 export type AdminErrorCode = (typeof ADMIN_ERROR_CODES)[number];
+
+export const ADMIN_ERROR_TITLES: Readonly<Record<AdminErrorCode, string>> = {
+  X_ADMIN_ENTITY_UNKNOWN: 'the admin references an entity that does not exist',
+  X_ADMIN_FIELD_UNSUPPORTED: 'a column type the admin cannot render',
+  X_ADMIN_POLICY_MISSING: 'an admin-exposed subject has no policy',
+  X_DEV_DASHBOARD_IN_PROD: '/_x was mounted outside dev',
+  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
+};
+
+// X_NOT_IMPLEMENTED is core's; registering it twice would throw X_ERROR_CODE_DUPLICATE.
+for (const [code, title] of Object.entries(ADMIN_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 const docsFor = (code: AdminErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

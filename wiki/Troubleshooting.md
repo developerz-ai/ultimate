@@ -56,9 +56,9 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `X_BUDGET_EXCEEDED` on `js` | one import pulled a library into a surface | the error names the **import chain**; `x budgets report --json` for per-route detail |
+| `X_BUDGET_EXCEEDED` on `js` | one import pulled a library into a surface | the error names the **import chain**; `x routes --json` for per-route budgets |
 | A `site/` route reports non-zero JS | a component with client state leaked into the static surface | move it to `app/`, or set `hydrate: 'never'` |
-| LCP or CLS regression | an unsized image or a late-loading font | `x budgets report --json`; images go through the pipeline, never a raw `<img>` |
+| LCP or CLS regression | an unsized image or a late-loading font | `x routes --json` for the route's budget; images go through the pipeline, never a raw `<img>` |
 | `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` | `meta` missing a field, or a description outside 50–160 chars | add it to the route's `meta`. Deleting a description is a build error, by design |
 | `X_ROUTE_META_MISSING` | a route has no `meta` at all | every route sets `render`, `offline`, `hydrate`, `meta` |
 | `X_CATALOG_MISSING_KEYS` | a key exists in one locale's catalog and not another | the cause lists key + locale; add the translation. There is no silent English fallback |

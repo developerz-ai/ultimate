@@ -160,8 +160,12 @@ export function checkImportRules(files: readonly SourceFile[]): readonly Finding
 
 const APP_GLOBS = ['apps/*/{site,app,api,shared}/**/*.{ts,tsx}'];
 
-/** Read an app's sources and check them. The only I/O in this module. */
-export async function checkAppBoundaries(root: string): Promise<readonly Finding[]> {
+/**
+ * Read every source file under an app's site, app, api and shared surfaces (`APP_GLOBS`). The
+ * only I/O in this module, and the one definition of "which files are the app's sources" —
+ * `checkAppBoundaries` reads through this, and so does `x fix boundary`, never a second glob.
+ */
+export async function readAppSources(root: string): Promise<readonly SourceFile[]> {
   const files: SourceFile[] = [];
   for (const pattern of APP_GLOBS) {
     const glob = new Bun.Glob(pattern);
@@ -171,5 +175,15 @@ export async function checkAppBoundaries(root: string): Promise<readonly Finding
       files.push({ path: posix, source: await Bun.file(joinPath(root, posix)).text() });
     }
   }
-  return checkImportRules(files);
+  return files;
+}
+
+/** The resolved import graph over a file set — what `checkSurfaceBoundary` walks. */
+export function appImportGraph(files: readonly SourceFile[]): ImportGraph {
+  return graphOf(scan(files));
+}
+
+/** Read an app's sources and check them. */
+export async function checkAppBoundaries(root: string): Promise<readonly Finding[]> {
+  return checkImportRules(await readAppSources(root));
 }

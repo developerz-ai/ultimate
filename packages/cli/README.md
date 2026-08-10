@@ -16,6 +16,15 @@ The `x` binary. One char during dev, one command per job, `--json` on every one 
 | `x doctor` | environment, ports, drift, PWA prerequisites | every finding carries a fix command |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
+| `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `describe <name>`, straight off the registries |
+| `x jobs ls\|show\|retry\|drain` | the queue | depth, dead letters, step traces, `retry --from-step`, `drain --to` |
+| `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
+| `x errors explain <CODE>` | the error table, programmatically | refuses an unregistered code instead of inventing one |
+| `x fix boundary <file>` | the minimal cut for a crossed surface boundary | prints the plan and the `git mv`; never rewrites a file |
+
+Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is also in the registry
+and exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command — "not built yet"
+and "not a command" are different facts.
 
 ## The output contract
 

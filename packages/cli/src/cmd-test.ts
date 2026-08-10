@@ -1,11 +1,10 @@
 // `x test` — the missing half of the framework's test isolation. @ultimat3/testing already gives
 // every worker its own template-cloned database, keyed on ULTIMATE_TEST_WORKER; nothing ever set
 // that variable or spawned a second process, so the whole suite ran serially against one database.
-// This shards the files and hands each process its worker index.
+// This shards the files test-select.ts discovers and hands each process its worker index — scoped
+// to one of the six test types when the caller names one.
 
-import { statSync } from 'node:fs';
 import { cpus } from 'node:os';
-import { join } from 'node:path';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, docsFor, NoTestFilesError } from './errors';
 import type { Runner } from './exec';
@@ -14,43 +13,26 @@ import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import type { TestFile } from './test-select';
+import {
+  bySizeThenPath,
+  discoverTests,
+  missingSelection,
+  readSample,
+  readType,
+  sampleFiles,
+} from './test-select';
+import type { TestType } from './verify-tests';
+import { TEST_TYPES } from './verify-tests';
 
-export interface TestFile {
-  readonly path: string;
-  readonly bytes: number;
-}
+export type { TestFile } from './test-select';
+export { discoverTests } from './test-select';
 
 export interface Shard {
   readonly index: number;
   readonly files: readonly string[];
   readonly bytes: number;
 }
-
-const TEST_GLOB = '**/*.test.ts';
-
-/**
- * The root `test` script's ignore list, kept identical so `x test` and `bun run test` see one
- * suite. `e2e/` is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is
- * a suite nobody runs until CI says so. `examples/` is, because the reference app is a separate
- * project with its own gate — `x verify` there, not `x test` here.
- */
-const IGNORED = ['/dist/', '/node_modules/', '/examples/'];
-
-/** File size stands in for duration: cheap to read, and it correlates far better than file count. */
-export async function discoverTests(root: string, filter?: string): Promise<readonly TestFile[]> {
-  const files: TestFile[] = [];
-  for await (const found of new Bun.Glob(TEST_GLOB).scan({ cwd: root, absolute: false })) {
-    const path = found.split('\\').join('/');
-    if (IGNORED.some((part) => `/${path}`.includes(part))) continue;
-    if (filter !== undefined && !path.includes(filter)) continue;
-    files.push({ path, bytes: statSync(join(root, path)).size });
-  }
-  return files;
-}
-
-// Not localeCompare: its ordering depends on the machine's locale, and the split must not.
-const bySizeThenPath = (a: TestFile, b: TestFile): number =>
-  b.bytes - a.bytes || (a.path > b.path ? 1 : -1);
 
 /**
  * Largest-first greedy bin packing (LPT). Deterministic — the total order is (size desc, path asc),
@@ -80,10 +62,25 @@ export function planShards(files: readonly TestFile[], workers: number): readonl
 /** Explicit file list, so the child never re-globs and can never pick up another shard's files. */
 export const shardArgs = (shard: Shard): readonly string[] => ['bun', 'test', ...shard.files];
 
-/** `--workers` is part of the reproduction: a different worker count is a different split. */
-export function reproduceFor(shard: Shard, workers: number, filter: string | undefined): string {
-  const parts = ['x test', ...(filter === undefined ? [] : [filter])];
-  return [...parts, `--workers ${workers}`, `--worker ${shard.index}`].join(' ');
+/**
+ * `--workers` is part of the reproduction: a different worker count is a different split. So are
+ * the type and the substring filter — either one changes which files exist to shard in the first
+ * place, so the printed command has to carry both to actually reselect this shard's files.
+ */
+export function reproduceFor(
+  shard: Shard,
+  workers: number,
+  filter: string | undefined,
+  type: TestType | undefined,
+): string {
+  const parts = [
+    'x test',
+    ...(type === undefined ? [] : [type]),
+    ...(filter === undefined ? [] : ['--filter', filter]),
+    `--workers ${workers}`,
+    `--worker ${shard.index}`,
+  ];
+  return parts.join(' ');
 }
 
 export interface RunShardsOptions {
@@ -94,12 +91,15 @@ export interface RunShardsOptions {
   /** Run exactly one shard of the same split, not a one-worker run of everything. */
   readonly only?: number;
   readonly filter?: string;
+  readonly type?: TestType;
+  /** Set when `--sample` narrowed `files`; `total` is the count before sampling. */
+  readonly sample?: { readonly total: number };
 }
 
 const failureOf = (shard: Shard, code: number, opts: RunShardsOptions, of: number): Finding => ({
   code: 'X_TEST_SHARD_FAILED',
   cause: `shard ${shard.index} of ${of} exited ${code} (${shard.files.length} file(s))`,
-  fix: reproduceFor(shard, of, opts.filter),
+  fix: reproduceFor(shard, of, opts.filter, opts.type),
   docs: docsFor('X_TEST_SHARD_FAILED'),
 });
 
@@ -128,11 +128,17 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   }));
   const failed = runs.filter((run) => !run.result.ok).map((run) => run.shard.index);
   const fileCount = chosen.reduce((total, shard) => total + shard.files.length, 0);
+  const type = options.type;
+  const typeParam = type === undefined ? {} : { type };
   const data: JsonValue = {
+    ...typeParam,
     workers: shards.length,
     files: fileCount,
     durationMs,
     ...(options.filter === undefined ? {} : { filter: options.filter }),
+    ...(options.sample === undefined
+      ? {}
+      : { sample: { kept: fileCount, total: options.sample.total } }),
     shards: runs.map(({ shard, result }) => ({
       index: shard.index,
       files: shard.files.length,
@@ -140,7 +146,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
       ok: result.ok,
       exitCode: result.code,
       durationMs: result.durationMs,
-      reproduce: reproduceFor(shard, shards.length, options.filter),
+      reproduce: reproduceFor(shard, shards.length, options.filter, type),
     })),
     failed,
   };
@@ -149,9 +155,29 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     command: 'test',
     summary:
       failed.length === 0
-        ? msg('cli.test.pass', { files: fileCount, workers: chosen.length, ms: durationMs })
-        : msg('cli.test.fail', { failed: failed.length, workers: chosen.length }),
+        ? msg(type === undefined ? 'cli.test.pass' : 'cli.test.type.pass', {
+            ...typeParam,
+            files: fileCount,
+            workers: chosen.length,
+            ms: durationMs,
+          })
+        : msg(type === undefined ? 'cli.test.fail' : 'cli.test.type.fail', {
+            ...typeParam,
+            failed: failed.length,
+            workers: chosen.length,
+          }),
     steps,
+    ...(options.sample === undefined
+      ? {}
+      : {
+          lines: [
+            msg('cli.test.sampled', {
+              kept: fileCount,
+              total: options.sample.total,
+              type: type ?? 'all',
+            }),
+          ],
+        }),
     data,
     exitCode: failed.length === 0 ? 0 : 1,
   };
@@ -180,8 +206,9 @@ function readIndex(args: ParsedArgs, name: string, min: number): number | undefi
 export const testCommand: CliCommand = {
   spec: {
     name: 'test',
-    summary: 'run the suite across N processes, one isolated database per worker',
-    usage: 'x test [filter] [--workers N] [--worker I] [--json]',
+    summary:
+      'run one test type — or the whole suite — across N processes, one isolated database per worker',
+    usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--workers N] [--worker I] [--json]`,
     flags: [
       { name: 'workers', type: 'string', summary: 'process count (default: available CPUs)' },
       {
@@ -189,14 +216,24 @@ export const testCommand: CliCommand = {
         type: 'string',
         summary: 'rerun only shard I of the same split — reproduces a CI worker failure locally',
       },
+      { name: 'filter', type: 'string', summary: 'only files whose path contains this substring' },
+      {
+        name: 'sample',
+        type: 'string',
+        summary:
+          'run at most N files of the selected type — a fast signal for the eval loop, never a gate',
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const filter = ctx.args.positionals[0];
-    const files = await discoverTests(ctx.cwd, filter);
-    if (files.length === 0) {
-      throw new NoTestFilesError({ root: ctx.cwd, ...(filter === undefined ? {} : { filter }) });
+    const type = readType(ctx.args.positionals[0]);
+    const filter = flagString(ctx.args, 'filter');
+    const sample = readSample(ctx.args);
+    const discovered = await discoverTests(ctx.cwd, filter, type);
+    if (discovered.length === 0) {
+      throw new NoTestFilesError({ root: ctx.cwd, ...missingSelection(type, filter) });
     }
+    const files = sample === undefined ? discovered : sampleFiles(discovered, sample);
     const requested = readIndex(ctx.args, 'workers', 1) ?? availableCpus();
     const workers = Math.max(1, Math.min(requested, files.length));
     const only = readIndex(ctx.args, 'worker', 0);
@@ -214,6 +251,8 @@ export const testCommand: CliCommand = {
       workers,
       ...(only === undefined ? {} : { only }),
       ...(filter === undefined ? {} : { filter }),
+      ...(type === undefined ? {} : { type }),
+      ...(sample === undefined ? {} : { sample: { total: discovered.length } }),
     });
   },
 };

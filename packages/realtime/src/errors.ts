@@ -1,19 +1,42 @@
 // Realtime's X_* codes. Every throw in this package goes through one of these classes so
 // the same string renders in the terminal, the browser overlay, and `--json`.
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export type RealtimeErrorCode =
-  | 'X_TOPIC_FORBIDDEN'
-  | 'X_SUBSCRIPTION_LIMIT'
-  | 'X_PROTOCOL_VERSION'
-  | 'X_CURSOR_STALE'
-  | 'X_REBASE_CONFLICT'
-  | 'X_TRANSPORT_UNAVAILABLE'
-  | 'X_TRANSPORT_PROTOCOL'
-  | 'X_REPLICATION_PROTOCOL'
-  | 'X_REPLICATION_FAILED'
-  | 'X_NOT_IMPLEMENTED';
+export const REALTIME_ERROR_CODES = [
+  'X_TOPIC_FORBIDDEN',
+  'X_SUBSCRIPTION_LIMIT',
+  'X_PROTOCOL_VERSION',
+  'X_CURSOR_STALE',
+  'X_REBASE_CONFLICT',
+  'X_TRANSPORT_UNAVAILABLE',
+  'X_TRANSPORT_PROTOCOL',
+  'X_REPLICATION_PROTOCOL',
+  'X_REPLICATION_FAILED',
+  'X_NOT_IMPLEMENTED',
+] as const;
+
+export type RealtimeErrorCode = (typeof REALTIME_ERROR_CODES)[number];
+
+export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeErrorCode, string>> = {
+  X_TOPIC_FORBIDDEN: 'the actor may not subscribe to this topic',
+  X_SUBSCRIPTION_LIMIT: 'socket or tenant hit its subscription cap',
+  X_PROTOCOL_VERSION: 'client and sync node disagree on the wire protocol',
+  X_CURSOR_STALE: 'the resume LSN is outside the change buffer',
+  X_REBASE_CONFLICT: 'a local mutation could not be rebased',
+  X_TRANSPORT_UNAVAILABLE: 'the fanout bus is unreachable',
+  X_TRANSPORT_PROTOCOL: 'the bus does not speak the protocol this build speaks',
+  X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
+  X_REPLICATION_FAILED: 'the replication connection was refused',
+  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
+};
+
+// Titles must be registered for `format()` to render the contract's first line.
+// `X_NOT_IMPLEMENTED` belongs to core — guarded so import order never throws
+// X_ERROR_CODE_DUPLICATE.
+for (const [code, title] of Object.entries(REALTIME_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 const DOCS_BASE = 'https://ultimate.dev/errors/';
 

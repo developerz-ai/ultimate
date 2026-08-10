@@ -1,6 +1,6 @@
 // The X_* codes owned by @ultimat3/cache. Each one names the exact config change or
 // command that resolves it, so an agent reading the failure can act without a doc lookup.
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const CACHE_ERROR_CODES = [
   'X_CACHE_DRIVER_UNAVAILABLE',
@@ -10,6 +10,18 @@ export const CACHE_ERROR_CODES = [
 ] as const;
 
 export type CacheErrorCode = (typeof CACHE_ERROR_CODES)[number];
+
+export const CACHE_ERROR_TITLES: Readonly<Record<CacheErrorCode, string>> = {
+  X_CACHE_DRIVER_UNAVAILABLE: "a tier's backing store is missing",
+  X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
+  X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
+  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
+};
+
+// X_NOT_IMPLEMENTED is core's; registering it twice would throw X_ERROR_CODE_DUPLICATE.
+for (const [code, title] of Object.entries(CACHE_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 const docsFor = (code: CacheErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

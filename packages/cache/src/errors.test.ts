@@ -3,8 +3,10 @@
 // something asserts them — these tests are that something.
 
 import { describe, expect, test } from 'bun:test';
+import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import {
   CACHE_ERROR_CODES,
+  CACHE_ERROR_TITLES,
   CacheDriverUnavailableError,
   CacheNotImplementedError,
   CacheTagUnknownError,
@@ -80,5 +82,44 @@ describe('CacheNotImplementedError', () => {
     expect(err.cause).toContain('redis cluster mode');
     expect(err.fix).toBe('use a single-node redis client until clustering lands');
     expect(CACHE_ERROR_CODES).toContain(err.code);
+  });
+});
+
+describe('CACHE_ERROR_TITLES', () => {
+  test('has exactly one title per declared code, and no extras', () => {
+    const titled = Object.keys(CACHE_ERROR_TITLES).sort();
+    const declared = [...CACHE_ERROR_CODES].sort();
+    expect(titled).toEqual(declared);
+  });
+});
+
+describe('registration', () => {
+  test('every declared code is registered in the framework-wide registry', () => {
+    for (const code of CACHE_ERROR_CODES) {
+      expect(hasErrorCode(code)).toBe(true);
+    }
+  });
+
+  test('describeErrorCode renders the title this package declared', () => {
+    for (const code of CACHE_ERROR_CODES) {
+      expect(describeErrorCode(code).title).toBe(CACHE_ERROR_TITLES[code]);
+    }
+  });
+
+  test('X_NOT_IMPLEMENTED is borrowed from core, not re-registered by cache', () => {
+    // cache/src/errors.ts guards this code with hasErrorCode() and never calls
+    // registerErrorCodes() for it, so the title rendered here is core's — this pins that
+    // fact instead of letting the loop above pass on a coincidence.
+    expect(describeErrorCode('X_NOT_IMPLEMENTED').title).toBe(
+      'this driver does not implement the requested feature',
+    );
+  });
+});
+
+describe('docs', () => {
+  test('every code resolves to its canonical docs page', () => {
+    for (const code of CACHE_ERROR_CODES) {
+      expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
+    }
   });
 });

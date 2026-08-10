@@ -6,11 +6,16 @@ import { dbCommand } from './cmd-db';
 import { deployCommand } from './cmd-deploy';
 import { devCommand } from './cmd-dev';
 import { doctorCommand } from './cmd-doctor';
+import { errorsCommand } from './cmd-errors';
+import { fixCommand } from './cmd-fix';
 import { generateCommand } from './cmd-generate';
 import { createHelpCommand, createVersionCommand } from './cmd-help';
+import { jobsCommand } from './cmd-jobs';
 import { manifestCommand } from './cmd-manifest';
 import { mcpCommand } from './cmd-mcp';
 import { newCommand } from './cmd-new';
+import { plannedCommands } from './cmd-planned';
+import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 import { routesCommand } from './cmd-routes';
 import { testCommand } from './cmd-test';
 import { verifyCommand } from './cmd-verify';
@@ -32,10 +37,22 @@ const CORE: readonly CliCommand[] = [
   deployCommand,
   manifestCommand,
   routesCommand,
+  actionsCommand,
+  queriesCommand,
+  entitiesCommand,
+  jobsCommand,
+  errorsCommand,
+  fixCommand,
 ];
 
+/**
+ * Planned last, so `x help` reads shipped-first and the tail is honestly labelled. They are in the
+ * registry rather than absent from it because "not built yet" and "not a command" are different
+ * facts, and only one of them is true — see `cmd-planned.ts`.
+ */
 export const COMMANDS: readonly CliCommand[] = [
   ...CORE,
+  ...plannedCommands(),
   createHelpCommand(() => SPECS),
   createVersionCommand(CLI_VERSION),
 ];

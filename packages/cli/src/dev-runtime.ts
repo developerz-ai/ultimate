@@ -123,22 +123,54 @@ async function unwind(steps: readonly (() => void | Promise<void>)[]): Promise<v
   }
 }
 
-export async function startServices(services: DevServices): Promise<RunningServices> {
+export interface RunningQueue {
+  readonly db: DevDbClient;
+  readonly jobs: JobDriver;
+  stop(): Promise<void>;
+}
+
+/**
+ * The db + jobs half of `startServices`, alone: `x jobs` needs a real queue and nothing else —
+ * no transport, no storage, no mail — and booting those for a command that never reports on them
+ * would pay for services it cannot even use. `startServices` builds on this so there is one boot
+ * path for "which database" and "which queue", not two.
+ */
+export async function startQueue(services: DevServices): Promise<RunningQueue> {
   const db = startDb(services);
-  // Boot is a sequence of external resources, and every step after the first can reject —
-  // `db.ping()` is where a broken database is supposed to fail. Without this, `x dev` exits
-  // holding the PGlite lock and the ambient `db()` accessor, and nothing is left to release them.
-  const started: (() => void | Promise<void>)[] = [
-    async () => {
-      setDbClient(undefined);
-      await db.close();
-    },
-  ];
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
-    // fails at `x dev` rather than on some later route.
+    // fails at boot rather than on some later query.
     await db.ping();
     const jobs = await startJobs(db);
+    return {
+      db,
+      jobs,
+      async stop() {
+        setDbClient(undefined);
+        await db.close();
+      },
+    };
+  } catch (error) {
+    // `db.ping()` or `startJobs` is where a broken database is supposed to fail. Without this,
+    // the caller exits holding the PGlite lock and the ambient `db()` accessor, and nothing is
+    // left to release them.
+    await unwind([
+      async () => {
+        setDbClient(undefined);
+        await db.close();
+      },
+    ]);
+    throw error;
+  }
+}
+
+export async function startServices(services: DevServices): Promise<RunningServices> {
+  const queue = await startQueue(services);
+  const { db, jobs } = queue;
+  // Boot is a sequence of external resources, and every step after the first can reject — the
+  // queue is already up, so from here an unwind must release it exactly like everything after it.
+  const started: (() => void | Promise<void>)[] = [() => queue.stop()];
+  try {
     const events = createMemoryEventBus();
     setEventBus(events);
     const transport = await startTransport(services);
@@ -164,8 +196,7 @@ export async function startServices(services: DevServices): Promise<RunningServi
       async stop() {
         await transport.close();
         resetMailDriver();
-        setDbClient(undefined);
-        await db.close();
+        await queue.stop();
       },
     };
   } catch (error) {

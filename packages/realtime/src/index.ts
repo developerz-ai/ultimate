@@ -63,6 +63,8 @@ export {
   CursorStaleError,
   NotImplementedError,
   ProtocolVersionError,
+  REALTIME_ERROR_CODES,
+  REALTIME_ERROR_TITLES,
   RealtimeError,
   type RealtimeErrorCode,
   RebaseConflictError,

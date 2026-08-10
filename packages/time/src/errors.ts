@@ -3,7 +3,7 @@
  * DST ambiguity is a real state of the world, so it gets a code instead of a guess.
  */
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const TIME_ERROR_CODES = [
   'X_TIMEZONE_INVALID',
@@ -17,6 +17,25 @@ export const TIME_ERROR_CODES = [
 ] as const;
 
 export type TimeErrorCode = (typeof TIME_ERROR_CODES)[number];
+
+export const TIME_ERROR_TITLES: Readonly<Record<TimeErrorCode, string>> = {
+  X_TIMEZONE_INVALID: 'not an IANA zone',
+  X_CRON_INVALID: 'not a parseable cron expression',
+  X_DURATION_INVALID: 'not a parseable duration',
+  X_DST_AMBIGUOUS: 'the local time occurs twice',
+  X_DST_NONEXISTENT: 'the local time does not exist',
+  X_INSTANT_INVALID: 'not a parseable instant',
+  // Not yet in wiki/Error-Codes.md — derived from scheduleInvalid()'s own doc comment below,
+  // since no design doc names X_SCHEDULE_INVALID either.
+  X_SCHEDULE_INVALID: 'a wall-clock field is out of range',
+  X_LOCALE_INVALID: 'not a well-formed BCP 47 tag',
+};
+
+// Titles must be registered for `format()` to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(TIME_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 export class TimeError extends UltimateError {
   constructor(init: { code: TimeErrorCode; cause: string; fix: string }) {

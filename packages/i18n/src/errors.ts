@@ -3,7 +3,7 @@
  * Every throw carries a stable code, a cause, and a command that fixes it.
  */
 
-import { UltimateError } from '@ultimat3/core';
+import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const I18N_ERROR_CODES = [
   'X_LOCALE_UNSUPPORTED',
@@ -12,6 +12,18 @@ export const I18N_ERROR_CODES = [
 ] as const;
 
 export type I18nErrorCode = (typeof I18N_ERROR_CODES)[number];
+
+export const I18N_ERROR_TITLES: Readonly<Record<I18nErrorCode, string>> = {
+  X_LOCALE_UNSUPPORTED: 'locale is not in the supported set',
+  X_CATALOG_MISSING_KEYS: 'a catalog is missing keys used in source',
+  X_CATALOG_INVALID: 'a catalog entry is malformed',
+};
+
+// Titles must be registered for format() to render the contract's first line. Guarded
+// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
+for (const [code, title] of Object.entries(I18N_ERROR_TITLES)) {
+  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
+}
 
 export class I18nError extends UltimateError {
   constructor(init: { code: I18nErrorCode; cause: string; fix: string }) {

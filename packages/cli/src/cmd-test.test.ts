@@ -1,9 +1,22 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Shard, TestFile } from './cmd-test';
-import { discoverTests, planShards, reproduceFor, runShards, shardArgs } from './cmd-test';
+import {
+  discoverTests,
+  planShards,
+  reproduceFor,
+  runShards,
+  shardArgs,
+  testCommand,
+} from './cmd-test';
+import type { CommandContext } from './command';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
+import { flagString, parseArgs } from './parse';
+import type { TestType } from './verify-tests';
+import { TEST_TYPES } from './verify-tests';
 
 interface Call {
   readonly command: readonly string[];
@@ -46,6 +59,16 @@ const totalBytes = (files: readonly TestFile[]): number =>
 
 const paths = (shards: readonly Shard[]): readonly (readonly string[])[] =>
   shards.map((shard) => shard.files);
+
+/** A `CommandContext` for `testCommand.run`, scoped to just this command's own spec — never the
+ *  full registry, so these tests do not depend on another worker's in-progress `registry.ts`. */
+const context = (argv: readonly string[], cwd: string, runner: Runner): CommandContext => ({
+  args: parseArgs(argv, [testCommand.spec]),
+  cwd,
+  runner,
+  env: {},
+  bunVersion: '1.3.0',
+});
 
 describe('unit · x test sharding', () => {
   test('the same file set produces the same split, every run', () => {
@@ -136,7 +159,7 @@ describe('unit · x test execution', () => {
     expect(finding?.fix).toBe('x test --workers 4 --worker 1');
   });
 
-  test('a filter is carried into the reproduction command', async () => {
+  test('a filter is carried into the reproduction command as --filter, not a bare positional', async () => {
     const { runner } = recorder([0]);
     const result = await runShards({
       root: '/repo',
@@ -145,7 +168,24 @@ describe('unit · x test execution', () => {
       workers: 2,
       filter: 'packages/http',
     });
-    expect(result.steps?.[0]?.findings[0]?.fix).toBe('x test packages/http --workers 2 --worker 0');
+    expect(result.steps?.[0]?.findings[0]?.fix).toBe(
+      'x test --filter packages/http --workers 2 --worker 0',
+    );
+  });
+
+  test('a type is carried into the reproduction command ahead of --filter', async () => {
+    const { runner } = recorder([0]);
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files: corpus(10),
+      workers: 2,
+      filter: 'packages/http',
+      type: 'contract',
+    });
+    expect(result.steps?.[0]?.findings[0]?.fix).toBe(
+      'x test contract --filter packages/http --workers 2 --worker 0',
+    );
   });
 
   test('every shard reports its files, pass/fail and duration in --json', async () => {
@@ -181,6 +221,33 @@ describe('unit · x test execution', () => {
     expect(result.steps?.map((step) => step.ok)).toEqual([true, true, true]);
     expect(result.steps?.[0]?.name).toContain('shard 0');
   });
+
+  test('a typed run uses the .type. summary keys and names its type in data', async () => {
+    const { runner } = recorder();
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files: corpus(6),
+      workers: 2,
+      type: 'contract',
+    });
+    expect(result.summary).toContain('contract');
+    expect((result.data as { type?: string }).type).toBe('contract');
+  });
+
+  test('a sampled run names kept/total and is flagged in the human lines, not just data', async () => {
+    const { runner } = recorder();
+    const files = corpus(10);
+    const result = await runShards({
+      root: '/repo',
+      runner,
+      files: files.slice(0, 3),
+      workers: 1,
+      sample: { total: files.length },
+    });
+    expect(result.data).toMatchObject({ sample: { kept: 3, total: 10 } });
+    expect(result.lines?.[0]).toContain('sampled 3 of 10');
+  });
 });
 
 describe('unit · x test discovery', () => {
@@ -207,6 +274,144 @@ describe('unit · x test discovery', () => {
   test('shardArgs never re-globs in the child: the file list is explicit', () => {
     const shard: Shard = { index: 1, files: ['a.test.ts', 'b.test.ts'], bytes: 2 };
     expect(shardArgs(shard)).toEqual(['bun', 'test', 'a.test.ts', 'b.test.ts']);
-    expect(reproduceFor(shard, 4, undefined)).toBe('x test --workers 4 --worker 1');
+    expect(reproduceFor(shard, 4, undefined, undefined)).toBe('x test --workers 4 --worker 1');
+  });
+});
+
+describe('unit · x test type selection', () => {
+  const TYPE_FILES: Readonly<Record<TestType, string>> = {
+    unit: 'plain.test.ts',
+    contract: 'thing.contract.test.ts',
+    live: 'thing.live.test.ts',
+    job: 'thing.job.test.ts',
+    e2e: 'thing.e2e.test.ts',
+    eval: 'thing.eval.test.ts',
+  };
+
+  test('each of the six types selects exactly its own files, and no other type’s', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-types-'));
+    try {
+      for (const path of Object.values(TYPE_FILES)) {
+        await Bun.write(join(root, path), 'export {};\n');
+      }
+      // e2e's directory form: unit must exclude this too, not just the *.e2e.test.ts suffix.
+      await Bun.write(join(root, 'e2e/nested.test.ts'), 'export {};\n');
+
+      for (const type of TEST_TYPES) {
+        const selected = (await discoverTests(root, undefined, type))
+          .map((file) => file.path)
+          .sort();
+        const expected =
+          type === 'e2e' ? ['e2e/nested.test.ts', 'thing.e2e.test.ts'] : [TYPE_FILES[type]];
+        expect(selected).toEqual(expected);
+      }
+
+      // No positional still runs everything — today's whole-suite behaviour, unchanged.
+      const everything = await discoverTests(root);
+      expect(everything.length).toBe(Object.keys(TYPE_FILES).length + 1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('--filter composes with type: it narrows within the selected type only', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-filter-'));
+    try {
+      await Bun.write(join(root, 'cache.contract.test.ts'), 'export {};\n');
+      await Bun.write(join(root, 'other.contract.test.ts'), 'export {};\n');
+      await Bun.write(join(root, 'cache.live.test.ts'), 'export {};\n');
+      const selected = await discoverTests(root, 'cache', 'contract');
+      expect(selected.map((file) => file.path)).toEqual(['cache.contract.test.ts']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('x test contrat is refused before any discovery, suggesting the real type', async () => {
+    const { runner, calls } = recorder();
+    await expect(
+      testCommand.run(context(['test', 'contrat'], import.meta.dir, runner)),
+    ).rejects.toMatchObject({ code: 'X_CLI_BAD_FLAG', fix: 'x test contract' });
+    expect(calls.length).toBe(0);
+  });
+
+  test('a type + filter combination that matches nothing throws X_TEST_NO_FILES', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-nofiles-'));
+    try {
+      await Bun.write(join(root, 'thing.contract.test.ts'), 'export {};\n');
+      const { runner, calls } = recorder();
+      await expect(
+        testCommand.run(context(['test', 'contract', '--filter', 'nope'], root, runner)),
+      ).rejects.toMatchObject({ code: 'X_TEST_NO_FILES' });
+      expect(calls.length).toBe(0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('the spec lists --filter and --sample, so `x help test` cannot lie about them', () => {
+    const names = (testCommand.spec.flags ?? []).map((flag) => flag.name);
+    expect(names).toContain('filter');
+    expect(names).toContain('sample');
+    expect(testCommand.spec.usage).toContain('--sample');
+  });
+});
+
+describe('unit · x test --sample', () => {
+  test('--sample 2 runs exactly 2 files, the same two on a repeat run', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-sample-'));
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        await Bun.write(join(root, `f${i}.test.ts`), `${'x'.repeat(i * 10)}\nexport {};\n`);
+      }
+      const first = recorder();
+      const resultA = await testCommand.run(
+        context(['test', '--sample', '2', '--workers', '1'], root, first.runner),
+      );
+      const second = recorder();
+      const resultB = await testCommand.run(
+        context(['test', '--sample', '2', '--workers', '1'], root, second.runner),
+      );
+      const filesOf = (calls: readonly Call[]): readonly string[] =>
+        [...calls.flatMap((call) => call.command.slice(2))].sort();
+      expect(filesOf(first.calls)).toEqual(filesOf(second.calls));
+      expect(filesOf(first.calls).length).toBe(2);
+      expect(resultA.data).toMatchObject({ sample: { kept: 2, total: 5 } });
+      expect(resultB.ok).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('--sample 0 and --sample abc are refused, never silently coerced', async () => {
+    await expect(
+      testCommand.run(context(['test', '--sample', '0'], import.meta.dir, recorder().runner)),
+    ).rejects.toMatchObject({ code: 'X_CLI_BAD_FLAG' });
+    await expect(
+      testCommand.run(context(['test', '--sample', 'abc'], import.meta.dir, recorder().runner)),
+    ).rejects.toMatchObject({ code: 'X_CLI_BAD_FLAG' });
+  });
+});
+
+describe('unit · reproduceFor', () => {
+  test('round-trips through parseArgs to the same type, filter, workers and worker', () => {
+    const shard: Shard = { index: 2, files: ['a.test.ts'], bytes: 1 };
+    const command = reproduceFor(shard, 5, 'packages/http', 'contract');
+    expect(command).toBe('x test contract --filter packages/http --workers 5 --worker 2');
+    const tokens = command.split(' ').slice(1); // drop the leading `x`
+    const parsed = parseArgs(tokens, [testCommand.spec]);
+    expect(parsed.positionals[0]).toBe('contract');
+    expect(flagString(parsed, 'filter')).toBe('packages/http');
+    expect(flagString(parsed, 'workers')).toBe('5');
+    expect(flagString(parsed, 'worker')).toBe('2');
+  });
+
+  test('round-trips with no type and no filter, matching today’s bare form', () => {
+    const shard: Shard = { index: 0, files: ['a.test.ts'], bytes: 1 };
+    const command = reproduceFor(shard, 3, undefined, undefined);
+    expect(command).toBe('x test --workers 3 --worker 0');
+    const parsed = parseArgs(command.split(' ').slice(1), [testCommand.spec]);
+    expect(parsed.positionals[0]).toBeUndefined();
+    expect(flagString(parsed, 'filter')).toBeUndefined();
   });
 });
