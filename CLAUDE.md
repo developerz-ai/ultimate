@@ -12,7 +12,12 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** pre-alpha. Architecture + docs + package skeletons landed; milestones 0–5 are the path to usable. See [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
+**Status:** pre-1.0, `As of 2026-08`. All 28 `@ultimat3/*` packages are implemented (not skeletons) —
+entity/action/query/jobs/policy/route/mutator/task, HTTP, rendering, caching, realtime, auth,
+mail, storage, AI-first surface (MCP, `llm()`, evals), and admin/generators/`x new` all have real
+code and tests, several proven against live Postgres. Remaining work is deploy/docs/release
+hardening (roadmap milestone 11) and closing spec-vs-code divergences — not building primitives
+from scratch. See [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) for the milestone detail.
 
 ## Design axioms (override any instinct that conflicts)
 

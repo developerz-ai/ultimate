@@ -9,8 +9,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - `db` is tier 1 (it imports only `core`), which is what lets the Postgres driver live **here**
   rather than in a tier-3 package: `Driver` and its production implementation stay in one place.
   See [`docs/architecture/01-package-map.md`](../../docs/architecture/01-package-map.md).
-- No `drizzle-orm`. `types.ts` declares the column vocabulary we consume; Drizzle is the
-  production backing, documented not imported.
+- No `drizzle-orm` dependency, and none is the production backing — `postgresDriver()`
+  (`pg-driver.ts`/`pg-sql.ts`) is a hand-written SQL driver. `types.ts` declares the narrow
+  structural column vocabulary this package consumes so the generated SQL stays readable and
+  an agent can self-correct against it.
 
 ## Do not regress
 

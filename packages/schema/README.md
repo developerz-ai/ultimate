@@ -71,9 +71,10 @@ both: `registerErrorCodes(SCHEMA_ERROR_CODES)`.
 
 ## Swapping the library
 
-The builtin validators are small and dependency-free so a fresh install has zero deps.
-**ArkType is the intended production default**; Zod and Valibot work identically because all
-three implement Standard Schema v1.
+The builtin validators (`validators.ts`) are the shipped default — small, dependency-free, no
+adapter to install. No ArkType, Zod or Valibot adapter ships in this package; swapping to one
+means writing the ~40-line adapter below yourself. All three implement Standard Schema v1, so
+any of them works identically once wired.
 
 ```ts
 import { configureSchemaProvider } from '@ultimat3/schema';
