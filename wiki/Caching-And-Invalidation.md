@@ -93,7 +93,7 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
 | Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from actor scope |
-| Stale forever | a query whose tables no tag covers | `X_CACHE_UNTAGGED_QUERY` at `x verify` |
+| Stale forever | a query whose tables no tag covers | the tag rule — **not yet a gate**: `X_CACHE_UNTAGGED_QUERY` is reserved `As of 2026-08` and nothing raises it, so a cached query no tag covers is cached and never invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) |
 | Silent typo | `invalidates: [tag.pots]` | `X_CACHE_TAG_UNKNOWN`, or a compile error against the generated registry |
 
 Agents are measurably bad at *distant* invariants — "edit here, remember to also edit there" is where LLM-written code regresses most. Declaring `invalidates` at the write site is local, checkable, and typed.
@@ -139,7 +139,7 @@ Also cached exactly (tier 3, not semantic): embeddings themselves, keyed by cont
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_CACHE_UNTAGGED_QUERY` | a query's tables are covered by no tag, so it could never be invalidated | declare the entity tag, then `x manifest` |
+| `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
 | `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `x manifest` |
 | `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `raise cache.<tier>.maxBytes in app.config.ts, or cache a projection instead of the row` |
 | `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — no Redis binding, no CDN token | the error carries the exact config or command to fix |
@@ -149,7 +149,7 @@ Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-
 ## Rules
 
 - Cache keys are framework-generated. A hand-built key is a rejected PR.
-- Every cached `query` carries at least one tag, enforced by `x verify`.
+- Every cached `query` carries at least one tag. Review catches it `As of 2026-08`, not the gate — `X_CACHE_UNTAGGED_QUERY` is reserved and no `x verify` step reads a query's tags.
 - Never cache a value whose policy scope is not in its key.
 - `flushAll` exists only as `x cache clear` in dev; there is no runtime API for it.
 - Cache misses must be correct and merely slower — no code path may depend on a hit.

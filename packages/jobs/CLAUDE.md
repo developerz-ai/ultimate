@@ -19,8 +19,15 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   A job module no call reaches keeps the positional `anonymous-job-<n>` — a name that appears
   in no source file, on every queue row and in every dead-letter trace.
 - The same handle under the same name is one registration seen twice (`defineApi` and the
-  framework's module scan both reach the same declaration file), not a collision. A DIFFERENT
-  handle under a taken name is `X_JOB_DUPLICATE`.
+  framework's module scan both reach the same declaration file), not a collision. Everything
+  else that puts two things on one durable name is `X_JOB_DUPLICATE`, refused at the earliest
+  decidable point: two definitions sharing a `name:` collide inside `job()`/`task()`, and a
+  DIFFERENT handle — or the SAME handle under a second export name — collides at registration.
+  A handle exported twice matters because the rename is in place: the last alias would silently
+  move the queue key that queued rows were written to.
+- `registerJob`/`registerJobs`/`registerTask`/`registerTasks`/`nameJobs`/`nameTasks` are NOT in
+  `src/index.ts`. `defineApi` reaches them through core's registrar table; exporting them would
+  be a second registration path that bypasses `defineApi`'s own result.
 - `registerJobs`/`registerTasks` are announced in core's registrar table at import
   (`register.ts`). Never remove the announcement: `defineApi({ jobs })` would then throw
   `X_REGISTRAR_MISSING` — `@ultimat3/action` is on this tier and cannot import this package.

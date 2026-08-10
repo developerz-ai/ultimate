@@ -90,8 +90,11 @@ describe('audit levels', () => {
 describe('outcomeForCode', () => {
   test('authz codes are outcome 3, wherever in the stack they were decided', () => {
     expect(outcomeForCode('X_FORBIDDEN')).toBe('policy-denied');
-    expect(outcomeForCode('X_FORBIDDEN')).toBe('policy-denied');
     expect(outcomeForCode('X_UNAUTHENTICATED')).toBe('policy-denied');
+    // The superseded name, pinned as NOT a denial: `X_POLICY_DENIED` was collapsed onto
+    // `X_FORBIDDEN`, and a set that still recognised it would let the old code back in
+    // classifying correctly — which is exactly how a twin survives a rename.
+    expect(outcomeForCode('X_POLICY_DENIED')).toBe('failed');
   });
 
   test('anything else wants a human — including input the JSON Schema already passed', () => {

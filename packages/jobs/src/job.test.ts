@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { t } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
@@ -18,6 +19,14 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
     },
   };
 }
+
+/**
+ * What `describeJob` publishes for a schema no provider can introspect — `passthrough` above is
+ * exactly that case. A real `t.object({...})` converts to a real JSON Schema instead; the test
+ * below pins both halves, because "the manifest carries a schema" is the whole reason the field
+ * exists and a permissive node everywhere would satisfy the shape while carrying no fact.
+ */
+const PERMISSIVE = { type: 'object', additionalProperties: true } as const;
 
 interface OrgInput {
   readonly orgId: string;
@@ -150,14 +159,14 @@ describe('describe', () => {
     expect(describeJobs()).toEqual([
       {
         name: 'archiveOrg',
-        input: { vendor: 'ultimate-test' },
+        input: PERMISSIVE,
         queue: 'maintenance',
         retry: { attempts: 5, backoff: 'linear' },
         steps: [],
       },
       {
         name: 'notifySubscribers',
-        input: { vendor: 'ultimate-test' },
+        input: PERMISSIVE,
         queue: 'default',
         retry: { attempts: 3, backoff: 'exponential' },
         steps: [],
@@ -167,6 +176,24 @@ describe('describe', () => {
 
   test('handle.describe() and describeJobs() agree', () => {
     expect(describeJobs()).toEqual([notify.describe()]);
+  });
+
+  test('a real schema is published as JSON Schema, not as its vendor name', () => {
+    resetJobs();
+    const provision = job({
+      name: 'provisionOrg',
+      input: t.object({ orgId: t.string, seats: t.number }),
+      idempotencyKey: ({ orgId }) => `provision:${orgId}`,
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+    });
+
+    const { input } = provision.describe();
+    expect(input['type']).toBe('object');
+    expect(Object.keys((input['properties'] ?? {}) as Record<string, unknown>).sort()).toEqual([
+      'orgId',
+      'seats',
+    ]);
   });
 
   test('backoff falls back to the default when the definition omits it', () => {

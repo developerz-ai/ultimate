@@ -206,6 +206,64 @@ describe('registerTasks', () => {
   });
 });
 
+describe('one handle, one durable name', () => {
+  test('a second export name for the same undeclared job handle is refused', () => {
+    const handle = anonymousJob();
+
+    registerJobs({ first: handle });
+
+    // Without the guard the second pass finds `second` free, drops the `first` seat and rebinds —
+    // so the lexically last alias silently decides the queue key every queued row was written to.
+    expect(codeOf(() => registerJobs({ second: handle }))).toBe('X_JOB_DUPLICATE');
+    expect(getJob('first')).toBe(handle as AnyJobHandle);
+    expect(getJob('second')).toBeUndefined();
+    expect(handle.name).toBe('first');
+  });
+
+  test('a second export name for the same undeclared task handle is refused', () => {
+    const handle = anonymousTask();
+
+    registerTasks({ nightly: handle });
+
+    expect(codeOf(() => registerTasks({ alsoNightly: handle }))).toBe('X_JOB_DUPLICATE');
+    expect(getTask('nightly')).toBe(handle);
+    expect(getTask('alsoNightly')).toBeUndefined();
+  });
+
+  test('re-registering under the SAME export name stays idempotent', () => {
+    const handle = anonymousJob();
+
+    registerJobs({ first: handle });
+    registerJobs({ first: handle });
+
+    expect(registeredJobs()).toEqual([handle as AnyJobHandle]);
+  });
+
+  test('two jobs declaring one name collide at job(), before either can seat the other out', () => {
+    const declared = (): JobHandle<OrgInput> =>
+      job<OrgInput>({
+        name: 'send-digest',
+        input: passthrough<OrgInput>(),
+        idempotencyKey: ({ orgId }) => `digest:${orgId}`,
+        retry: { attempts: 3, backoff: 'exponential' },
+        run: () => Promise.resolve(),
+      });
+    const first = declared();
+
+    expect(codeOf(declared)).toBe('X_JOB_DUPLICATE');
+    expect(getJob('send-digest')).toBe(first as AnyJobHandle);
+  });
+
+  test('two tasks declaring one name collide at task(), not silently at registration', () => {
+    const declared = (): TaskHandle =>
+      task({ name: 'nightly', cron: '0 3 * * *', tz: 'UTC', enqueue: () => [] });
+    const first = declared();
+
+    expect(codeOf(declared)).toBe('X_JOB_DUPLICATE');
+    expect(getTask('nightly')).toBe(first);
+  });
+});
+
 describe('the registrar announcement', () => {
   test('job and task registrars resolve from core after importing the package', () => {
     expect(hasPrimitiveRegistrar('job')).toBe(true);

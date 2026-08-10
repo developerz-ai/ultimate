@@ -61,8 +61,17 @@ retrying and dead-lettered rows already carry, so renaming an export must never 
 are delivered — `@ultimat3/mail`'s `mail.send` relies on exactly that.
 
 Registering the same handle twice is one registration seen twice, because `defineApi` and the
-framework's module scan both reach the same declaration file. Two **different** handles under one
-name is `X_JOB_DUPLICATE`.
+framework's module scan both reach the same declaration file. Everything else that puts two
+things on one durable name is `X_JOB_DUPLICATE`, refused at the earliest point it is decidable:
+
+| Collision | Refused at |
+|---|---|
+| two definitions setting the same `name:` | `job()` / `task()`, before either can seat the other out |
+| two different handles under one export name | `defineApi` |
+| one handle exported twice (`export { notify as a, notify as b }`) | `defineApi` — the second alias would move the queue key |
+
+`registerJobs`/`registerTasks` are internal: `defineApi` reaches them through core's registrar
+table, and they are not part of this package's public API. There is one way to register.
 
 `.as()` **queues**; it never runs the handler inline. A job's execution surface is the queue,
 so an inline run would be a second execution path next to the worker's — with no retry, no

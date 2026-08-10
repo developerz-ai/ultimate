@@ -66,7 +66,8 @@ describe('unit · the framework manifest is generated, not written', () => {
 
   test('buildId is verifiable from the body alone', () => {
     expect(contentHash(bodyOf(fresh))).toBe(fresh.buildId);
-    expect(fresh.buildId).toMatch(/^[0-9a-f]{12}$/);
+    // A whole sha256, not a prefix: a truncated digest collides, and a collision reads as fresh.
+    expect(fresh.buildId).toMatch(/^[0-9a-f]{64}$/);
   });
 
   test('buildId moves when a package version moves', () => {
@@ -235,8 +236,10 @@ describe('unit · drift names the section that moved', () => {
     expect(manifestDrift(edited, fresh)).toEqual(['packages differs', 'errorCodes differs']);
   });
 
+  // The edit is a structurally valid buildId — full digest length, wrong value — so what this
+  // catches is the mismatch itself and not a shape check that would reject any short string.
   test('a hand-edited buildId over an unchanged body is still drift', () => {
-    expect(manifestDrift({ ...fresh, buildId: '000000000000' }, fresh)).toEqual([
+    expect(manifestDrift({ ...fresh, buildId: '0'.repeat(64) }, fresh)).toEqual([
       'buildId differs',
     ]);
   });

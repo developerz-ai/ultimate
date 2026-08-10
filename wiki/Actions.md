@@ -153,8 +153,9 @@ Every code carries the same `{ code, cause, fix, docs }` in the terminal, the de
 ```
 $ x actions list --json
 {"ok":true,"command":"actions","summary":"1 action","findings":[],
- "data":[{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
-   "method":"POST","path":"/api/posts/publish","capability":"post:publish", …}]}
+ "data":[{"kind":"action","mutator":false,"name":"publishPost","verb":"publish",
+   "resource":"posts","method":"POST","path":"/api/posts/publish",
+   "capability":"post:publish", …}]}
 ```
 
 Both subcommands emit the same `describe()` row — `list` one per action, `describe` the named one. It is exactly what `publishPost.describe()` returns in process, so the CLI has no private view of a primitive:
@@ -162,8 +163,9 @@ Both subcommands emit the same `describe()` row — `list` one per action, `desc
 ```
 $ x actions describe publishPost --json
 {"ok":true,"command":"actions","summary":"action publishPost","findings":[],
- "data":{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
-  "method":"POST","path":"/api/posts/publish","capability":"post:publish",
+ "data":{"kind":"action","mutator":false,"name":"publishPost","verb":"publish",
+  "resource":"posts","method":"POST","path":"/api/posts/publish",
+  "capability":"post:publish",
   "input":{"type":"object","required":["postId"],
     "properties":{"postId":{"type":"string","format":"uuid"},
                   "notify":{"type":"boolean","default":true}}},
@@ -173,7 +175,7 @@ $ x actions describe publishPost --json
   "rateLimit":null}}
 ```
 
-`invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. The same data is the MCP `actions.describe` tool (actions and queries in one call) and the `/_x` **Routes** panel.
+`invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. `mutator` is `true` only for a `mutator()` declaration; `kind` stays `"action"` for both, which is why the flag is a field of its own and not a second `kind`. The same data is the MCP `actions.describe` tool (actions and queries in one call) and the `/_x` **Routes** panel.
 
 ## Generated contract test
 

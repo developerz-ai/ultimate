@@ -6,6 +6,8 @@
 //
 //   bun run scripts/manifest.ts [--out framework.manifest.json] [--json]
 
+// `resolve` is `node:`-only by necessity: `--out` may be relative and may name a file that does
+// not exist yet, and `Bun.resolveSync` resolves modules, not paths.
 import { resolve } from 'node:path';
 import { collectDeclaredCodes } from '@ultimat3/cli';
 import { flagString, parseScriptArgs } from './lib/args';

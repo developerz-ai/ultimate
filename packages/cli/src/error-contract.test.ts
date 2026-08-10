@@ -279,6 +279,30 @@ describe('liveCodes', () => {
   test('treats a page without the heading as entirely live', () => {
     expect([...liveCodes('`X_ONE` `X_TWO`')]).toEqual(['X_ONE', 'X_TWO']);
   });
+
+  // The section that fails on a page is the one nothing reads. A substring match cuts the document
+  // at the first *mention* of the heading — and this contract quotes its own heading, in
+  // `unregisteredFinding`'s fix and in the row on the page that repeats it — so every live code
+  // below that mention silently stopped being checked while the step still reported green.
+  test('a heading quoted in prose does not cut the page short', () => {
+    const markdown = [
+      `move a row under \`${RESERVED_HEADING}\` when nothing throws it yet`,
+      '',
+      '| `X_LIVE` | means | cause | fix |',
+      '',
+      RESERVED_HEADING,
+      '',
+      '| `X_RESERVED` | means | cause | fix |',
+    ].join('\n');
+    expect([...liveCodes(markdown)]).toEqual(['X_LIVE']);
+  });
+
+  // Markdown allows the trailing space an editor leaves behind; the heading is still the heading.
+  test('matches the heading line whatever whitespace surrounds it', () => {
+    expect([...liveCodes(`\`X_LIVE\`\n  ${RESERVED_HEADING}  \n\`X_RESERVED\``)]).toEqual([
+      'X_LIVE',
+    ]);
+  });
 });
 
 describe('this repo', () => {

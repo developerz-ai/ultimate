@@ -52,15 +52,17 @@ Same code, three encodings.
 ```
 X_FORBIDDEN: policy denied the request
   cause: actor user_2 (roles: editor) lacks post:publish on post_9
-  fix:   grant post:publish to the actor's role, or call as the post owner
+  fix:   x actions describe publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts
 ```
 
 ```json
 { "code": "X_FORBIDDEN",
   "cause": "actor user_2 (roles: editor) lacks post:publish on post_9",
-  "fix": "grant post:publish to the actor's role, or call as the post owner",
+  "fix": "x actions describe publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts",
   "docs": "https://ultimate.dev/errors/X_FORBIDDEN" }
 ```
+
+A `fix` is a command to run, a call to paste, or a file to open — never advice. `x errors explain <CODE> --json` prints the same `{ code, cause, fix, docs }` for any registered code.
 
 | Code | Where | Status |
 |---|---|---|

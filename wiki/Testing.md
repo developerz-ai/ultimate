@@ -206,7 +206,7 @@ $ x verify
 | Code | Cause | Fix |
 |---|---|---|
 | `X_TEST_NETWORK_EGRESS` | a test reached the network without a mock | `x test mock <url>` |
-| `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | grant the permission, or assert the denial |
+| `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | `x actions describe <action> --json` names the capability it enforces: assert the denial with `.rejects.toBeUltimateError('X_FORBIDDEN')`, or grant that capability to the seeded actor's role in `apps/web/shared/policies.ts` |
 | `X_INVARIANT` | a domain invariant was violated inside a test fixture | fix the seed or the invariant |
 | `X_CONFIG_INVALID` | test config names an unknown worker count, driver, or test type | `x test --help` |
 

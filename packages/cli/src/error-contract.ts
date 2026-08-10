@@ -96,10 +96,19 @@ const undocumentedFinding = (code: string, at: string, line: number, page: strin
  */
 export const RESERVED_HEADING = '## Reserved codes';
 
-/** The codes the reference presents as live: every one named above the reserved section. */
+/**
+ * The codes the reference presents as live: every one named above the reserved section.
+ *
+ * The heading is matched as a whole line, never as a substring. The same text is quoted in prose,
+ * in a fenced sample and in this file's own `unregisteredFinding` fix — and `indexOf` would cut the
+ * page at the first of those mentions, silently exempting every live code below it from the
+ * registry rule. A gate that stops reading halfway through the page reads green over the half it
+ * never saw.
+ */
 export function liveCodes(markdown: string): ReadonlySet<string> {
-  const cut = markdown.indexOf(RESERVED_HEADING);
-  return documentedCodes(cut === -1 ? markdown : markdown.slice(0, cut));
+  const lines = markdown.split('\n');
+  const cut = lines.findIndex((line) => line.trim() === RESERVED_HEADING);
+  return documentedCodes(cut === -1 ? markdown : lines.slice(0, cut).join('\n'));
 }
 
 const unregisteredFinding = (code: string, page: string): Finding => ({

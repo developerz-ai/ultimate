@@ -10,7 +10,7 @@ import { describeEntities } from '@ultimat3/entity';
 import { describeJobs } from '@ultimat3/jobs';
 import { describeQueries } from '@ultimat3/query';
 import type { ManifestSources } from './build';
-import type { ErrorCodeFact, JobFact, JsonValue, PolicyFact, RouteFact, TaskFact } from './schema';
+import type { ErrorCodeFact, JsonValue, PolicyFact, RouteFact, TaskFact } from './schema';
 
 export interface FrameworkSourcesInput {
   readonly app: { readonly name: string; readonly version: string };
@@ -78,6 +78,15 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       live: query.live,
       cacheTags: query.tags,
     })),
-    jobs: describeJobs() as readonly JobFact[],
+    jobs: describeJobs().map((job) => ({
+      name: job.name,
+      input: asJson(job.input),
+      queue: job.queue,
+      retry: { attempts: job.retry.attempts, backoff: job.retry.backoff },
+      // Empty by construction, not dropped by the projection: a step name is chosen inside
+      // `run()` at execution time, so no static reader can know it. `x jobs show` reports the
+      // steps an actual run recorded.
+      steps: job.steps,
+    })),
   };
 }

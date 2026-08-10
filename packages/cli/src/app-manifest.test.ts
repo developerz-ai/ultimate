@@ -34,6 +34,23 @@ export const canPostWrite = can('post:publish');
   'apps/web/app/posts/errors.ts': `export const POSTS_ERROR_CODES = ['X_POST_NOT_FOUND'] as const;
 `,
 
+  // The two shapes an app actually declares codes in. Neither of the ones below is exported in any
+  // \`*_ERROR_CODES\` array — which is how the reference app writes every one of its codes, and why
+  // an exports-only scan published \`"errorCodes": []\` for an app that ships seven.
+  'apps/web/app/orgs/service.ts': `export const orgMissing = (id: string) => ({
+  code: 'X_ORG_NOT_FOUND',
+  cause: \`org \${id} does not exist\`,
+  fix: 'x db migrate --json',
+});
+`,
+
+  'packages/domain/src/rules.ts': `export const tenantMissing = () => ({
+  code: 'X_DB_TENANT_MISSING',
+  cause: 'no tenant is in scope',
+  fix: 'x db migrate --json',
+});
+`,
+
   'apps/web/app/posts/actions.ts': `import { action, mutator, t } from '@ultimat3/action';
 import { canPostWrite } from './policy';
 
@@ -176,9 +193,28 @@ describe('unit · x manifest', () => {
     ]);
   });
 
-  test('error codes are flattened out of the app, tagged with the workspace that owns them', async () => {
+  // Every code the app's source declares, through `collectDeclaredCodes` — the one answer to
+  // "which codes exist, and where is each declared?". The two throw-site codes are the regression:
+  // the exports-only scan this replaced saw `POSTS_ERROR_CODES` and nothing else, so an app that
+  // declares its codes where it throws them published a manifest claiming it had none.
+  test('error codes are every one the source declares, tagged with its workspace', async () => {
     const { manifest } = await appManifest(ROOT);
-    expect(manifest.errorCodes).toEqual([{ code: 'X_POST_NOT_FOUND', package: 'apps/web' }]);
+    expect(manifest.errorCodes).toEqual([
+      { code: 'X_ORG_NOT_FOUND', package: 'apps/web' },
+      { code: 'X_POST_NOT_FOUND', package: 'apps/web' },
+      { code: 'X_DB_TENANT_MISSING', package: 'packages/domain' },
+    ]);
+  });
+
+  // `loadApp` sorts by code and the manifest re-sorts by workspace, so the two orders differ on
+  // purpose; what may never differ is the set, or a fact's owner.
+  test('the loader hands the same codes over, sorted by code', async () => {
+    const { errorCodes } = await loadApp(ROOT);
+    expect(errorCodes).toEqual([
+      { code: 'X_DB_TENANT_MISSING', package: 'packages/domain' },
+      { code: 'X_ORG_NOT_FOUND', package: 'apps/web' },
+      { code: 'X_POST_NOT_FOUND', package: 'apps/web' },
+    ]);
   });
 
   test('a module that will not import is a finding, not a silently missing primitive', async () => {

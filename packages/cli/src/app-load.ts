@@ -10,6 +10,7 @@ import { registerActions } from '@ultimat3/action';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
 import { registerQueries } from '@ultimat3/query';
 import { isRouteConfig, registerRoute } from '@ultimat3/render';
+import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -24,7 +25,7 @@ export interface LoadedApp {
   readonly root: string;
   /** App-root-relative POSIX paths of every module that imported, sorted. */
   readonly files: readonly string[];
-  /** Flattened `*_ERROR_CODES` exports — the one fact no registry holds. */
+  /** Every `X_*` code the app's source declares, by code — the one fact no registry holds. */
   readonly errorCodes: readonly ErrorCodeFact[];
   /** Modules that would not import, and primitives that would not register. */
   readonly findings: readonly Finding[];
@@ -48,7 +49,6 @@ export function resetAppLoad(): void {
 
 export async function loadApp(root: string): Promise<LoadedApp> {
   const files: string[] = [];
-  const codes = new Map<string, ErrorCodeFact>();
   const findings: Finding[] = [];
 
   for (const pattern of APP_GLOBS) {
@@ -63,19 +63,13 @@ export async function loadApp(root: string): Promise<LoadedApp> {
         continue;
       }
       files.push(file);
-      collectErrorCodes(module, file, codes);
       const finding = await register(absolute, file, module);
       if (finding !== undefined) findings.push(finding);
     }
   }
 
   files.sort();
-  return {
-    root,
-    files,
-    errorCodes: [...codes.values()].sort((a, b) => a.code.localeCompare(b.code)),
-    findings,
-  };
+  return { root, files, errorCodes: await appErrorCodes(root), findings };
 }
 
 /** Registers a module once; every later call replays whatever the first one reported. */
@@ -111,17 +105,16 @@ const countSuspense = (source: string): number => source.match(/<Suspense[\s/>]/
 /** `packages/db/src/errors.ts` → `packages/db`; `apps/web/app/posts/errors.ts` → `apps/web`. */
 const workspaceOf = (file: string): string => file.split('/').slice(0, 2).join('/');
 
-function collectErrorCodes(
-  module: Record<string, unknown>,
-  file: string,
-  into: Map<string, ErrorCodeFact>,
-): void {
-  for (const [name, value] of Object.entries(module)) {
-    if (!name.endsWith('ERROR_CODES') || !Array.isArray(value)) continue;
-    for (const code of value) {
-      if (typeof code === 'string' && code.startsWith('X_')) {
-        into.set(code, { code, package: workspaceOf(file) });
-      }
-    }
-  }
-}
+/**
+ * The app's `X_*` codes, from the same walk and the same scanner the `errors` gate step uses.
+ * Deliberately not a second scan of the loaded modules' `*_ERROR_CODES` exports: that array is a
+ * convention some apps follow and most do not, so an app that declares every code at its throw
+ * site — the reference app included — published `"errorCodes": []`, a manifest claiming a
+ * completeness it never had. `collectDeclaredCodes` is the only answer to "which codes exist?",
+ * already sorted by code and one entry per code, so the projection is just the owning workspace.
+ */
+const appErrorCodes = async (root: string): Promise<readonly ErrorCodeFact[]> =>
+  (await collectDeclaredCodes(root)).map((site) => ({
+    code: site.code,
+    package: workspaceOf(site.at),
+  }));

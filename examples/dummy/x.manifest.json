@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "709e1d15e2e0f007",
+  "buildId": "8e87ab5d54a06788",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1394,7 +1394,27 @@
     {
       "name": "deliverDigest",
       "input": {
-        "vendor": "ultimate"
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "localDate": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slotAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "memberId",
+          "localDate",
+          "slotAt"
+        ],
+        "additionalProperties": false
       },
       "queue": "mail",
       "retry": {
@@ -1406,7 +1426,77 @@
     {
       "name": "mail.send",
       "input": {
-        "vendor": "ultimate"
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mailId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "html": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          },
+          "tz": {
+            "type": "string",
+            "format": "iana-time-zone"
+          },
+          "replyTo": {
+            "type": "string",
+            "format": "email"
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "unsubscribeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "mailId",
+          "to",
+          "subject",
+          "html",
+          "text",
+          "locale",
+          "tz"
+        ],
+        "additionalProperties": false
       },
       "queue": "default",
       "retry": {
@@ -1418,7 +1508,18 @@
     {
       "name": "notifySubscribers",
       "input": {
-        "vendor": "ultimate"
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId"
+        ],
+        "additionalProperties": false
       },
       "queue": "mail",
       "retry": {
@@ -1430,7 +1531,28 @@
     {
       "name": "onboardOrg",
       "input": {
-        "vendor": "ultimate"
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "to": {
+            "type": "string",
+            "format": "email"
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          }
+        },
+        "required": [
+          "orgId",
+          "to",
+          "locale"
+        ],
+        "additionalProperties": false
       },
       "queue": "default",
       "retry": {
@@ -1442,7 +1564,18 @@
     {
       "name": "sendDigest",
       "input": {
-        "vendor": "ultimate"
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "runDate": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "runDate"
+        ],
+        "additionalProperties": false
       },
       "queue": "digest",
       "retry": {
@@ -1454,7 +1587,18 @@
     {
       "name": "sendInvite",
       "input": {
-        "vendor": "ultimate"
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "memberId"
+        ],
+        "additionalProperties": false
       },
       "queue": "mail",
       "retry": {
@@ -1549,5 +1693,34 @@
     "en",
     "es"
   ],
-  "errorCodes": []
+  "errorCodes": [
+    {
+      "code": "X_ORG_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_POST_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_BILLING_NOT_AN_UPGRADE",
+      "package": "packages/core"
+    },
+    {
+      "code": "X_BILLING_SEATS_EXCEEDED",
+      "package": "packages/core"
+    },
+    {
+      "code": "X_DB_TENANT_MISSING",
+      "package": "packages/db"
+    },
+    {
+      "code": "X_DOMAIN_INVARIANT",
+      "package": "packages/domain"
+    },
+    {
+      "code": "X_MCP_TOOL_UNSAFE",
+      "package": "packages/mcp"
+    }
+  ]
 }

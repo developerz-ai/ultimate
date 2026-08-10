@@ -108,15 +108,17 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 
 Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres.
 
-## Untagged queries fail the build
+## Every cached query carries a tag
 
-```
-X_CACHE_UNTAGGED_QUERY: query "orgRollup" has no cache tag
-  cause: sql touches table "metrics_daily", which no entity declares a tag for
-  fix:   x manifest
-```
+The contract. **Not yet a gate** — `As of 2026-08` `X_CACHE_UNTAGGED_QUERY` is reserved: no code path raises it, and `x errors explain X_CACHE_UNTAGGED_QUERY` refuses it ([Error codes → Reserved codes](Error-Codes#reserved-codes)).
 
-A query whose tables are covered by no tag can never be invalidated, so it would be stale forever. `x verify` fails instead. Fix by declaring the entity tag — see `tags()` / `entityTag()` in [Caching and invalidation](Caching-And-Invalidation).
+| Case | Today |
+|---|---|
+| a cached query no tag covers | cached under a key no `invalidates` fan-out reaches — stale until its `ttlMs`, and forever without one |
+| a tag no entity declares | `X_CACHE_TAG_UNKNOWN`, `fix: x manifest` — the opposite mistake, and the one that is enforced |
+| the `x verify` gate | no step reads a query's tags. Nothing fails |
+
+Until it is a gate, tag coverage is a review item, not a build error. Declare the entity tag — `tags()` / `entityTag()` in [Caching and invalidation](Caching-And-Invalidation).
 
 ## Subscription caps
 

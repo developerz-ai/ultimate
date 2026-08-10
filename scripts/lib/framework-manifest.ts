@@ -52,11 +52,15 @@ export function frameworkManifestJson(manifest: FrameworkManifest): string {
  * Content hash of the whole body — tiers and package versions included, so any fact that moves
  * moves the hash. Excludes `buildId` itself and runs over the canonical form, so a reader can
  * recompute it from the file alone and catch a hand edit.
+ *
+ * The full 64-hex-char sha256, never a prefix: this file is committed and machine-read, and a
+ * truncated digest is a collision the drift gate would read as "fresh" — two different trees
+ * sharing one `buildId`, with nothing in the file to tell them apart.
  */
 export function contentHash(body: FrameworkManifestBody): string {
   const hasher = new Bun.CryptoHasher('sha256');
   hasher.update(canonical(body));
-  return hasher.digest('hex').slice(0, 12);
+  return hasher.digest('hex');
 }
 
 /** Sorted-key JSON. Never `JSON.stringify(value)` directly — key order is not a contract. */

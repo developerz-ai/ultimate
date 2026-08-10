@@ -98,7 +98,13 @@ const registry = new Map<string, TaskHandle>();
 let anonymous = 0;
 
 /** Job's store, for tasks: proof `task()` built the handle, plus whether it named itself. */
-const origin = new WeakMap<object, { readonly declaredName: boolean }>();
+interface TaskOrigin {
+  readonly declaredName: boolean;
+  /** The export name already stamped, once one has been. `undefined` while still provisional. */
+  readonly exportName?: string;
+}
+
+const origin = new WeakMap<object, TaskOrigin>();
 
 /**
  * `Intl` carries the runtime's copy of the tz database and rejects anything not in it with a
@@ -164,6 +170,10 @@ export function task(definition: TaskDefinition): TaskHandle {
     },
   };
   origin.set(handle, { declaredName: definition.name !== undefined });
+  // Refused here, not at `registerTask`: a second `task({ name: 'nightly' })` would otherwise
+  // replace the seated handle, and the scheduler's persisted `lastFiredAt` — keyed by that name —
+  // would silently start driving a different cron. The anonymous names cannot collide.
+  if (registry.has(name)) throw new JobNameTakenError({ kind: 'task', name });
   registry.set(name, handle);
   return handle;
 }
@@ -187,7 +197,8 @@ export function isTaskHandle(value: unknown): value is TaskHandle {
  * scheduler's persisted `lastFiredAt` is keyed by that name.
  */
 export function registerTask(name: string, target: TaskHandle): TaskHandle {
-  const key = origin.get(target)?.declaredName === true ? target.name : name;
+  const source = origin.get(target);
+  const key = source?.declaredName === true ? target.name : name;
   const seated = registry.get(key);
   // The same handle under the same name is one registration seen twice — `defineApi` and the
   // framework's module scan both reach the same declaration file. A DIFFERENT task under a taken
@@ -196,8 +207,13 @@ export function registerTask(name: string, target: TaskHandle): TaskHandle {
     if (seated !== target) throw new JobNameTakenError({ kind: 'task', name: key });
     return target;
   }
+  // One handle exported under two names: the rebind below is in place, so the second alias would
+  // move the occurrence key the scheduler dedupes ticks on.
+  if (source?.exportName !== undefined && source.exportName !== key)
+    throw new JobNameTakenError({ kind: 'task', name: key });
   registry.delete(target.name);
   Object.defineProperty(target, 'name', { value: key, configurable: true });
+  if (source !== undefined) origin.set(target, { ...source, exportName: key });
   registry.set(key, target);
   return target;
 }

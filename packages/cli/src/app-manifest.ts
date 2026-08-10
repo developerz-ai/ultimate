@@ -1,7 +1,7 @@
 // `x.manifest.json`: the framework's registries projected by `@ultimat3/manifest`. The CLI
 // supplies the facts that package cannot reach for itself — the app's name and version, the route
 // table, which surface enforces each permission, the locales the app registered, and the error
-// codes its workspaces export.
+// codes its source declares.
 
 // Bun ships no `Bun.*` path API: `join` builds the host-separator path to `x.manifest.json`.
 import { join } from 'node:path';
