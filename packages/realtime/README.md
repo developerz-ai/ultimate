@@ -52,6 +52,7 @@ frame handler is unchanged between rungs.
 | tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `createReplicator`, `matcherFor` |
 | replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `subjectMatches` |
+| the bus client | `NatsConnection`, `NatsProtocolParser`, `NatsKvSet`, `ensureKvBucket`, `parseNatsUrl`, `bunNatsStream`, `FakeNatsServer` |
 | reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `drainPlan`, `AcceptBudget` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
@@ -99,8 +100,15 @@ because refusing without one just moves the herd next door.
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication and the slot, creates the slot when there is none, and confirms the slot as it goes so
   the WAL does not grow without bound. `InMemoryChangeFeed` + `InProcessTransport` remain the
-  defaults for `x dev` and every test; `NatsTransport` is still interface-complete and throws
-  `X_NOT_IMPLEMENTED` with a `fix:` line.
+  defaults for `x dev` and every test.
+- **`NatsTransport` speaks NATS itself** — its own protocol codec and session over `Bun.connect`,
+  no client dependency. Fanout is core NATS; `shared` is a JetStream KV bucket the transport
+  creates on first connect, one key per presence member, expired by the **server's** per-message
+  TTL so a node that dies needs nobody to notice. Subscriptions are held as *intent*, so a lost
+  connection re-dials and re-subscribes underneath the caller — which is what makes `sync`
+  stateless. That bucket needs nats-server ≥ 2.11 (batch direct get, per-message TTL); an older
+  one is `X_TRANSPORT_PROTOCOL` on the first dial, never a retry loop, because no amount of
+  reconnecting makes a server newer.
 - **The lsn is `<commit position><row position in the transaction>`, 24 hex characters.** Neither
   half works alone: every row of one transaction shares a commit lsn, and logical decoding emits
   *transactions* in commit order, so per-record WAL positions are not monotonic across them. The
@@ -114,8 +122,8 @@ because refusing without one just moves the herd next door.
 ## Errors
 
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
-`X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_REPLICATION_FAILED` ·
-`X_REPLICATION_PROTOCOL` · `X_NOT_IMPLEMENTED`
+`X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
+`X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.

@@ -70,13 +70,12 @@ export {
   ReplicationProtocolError,
   SubscriptionLimitError,
   TopicForbiddenError,
+  TransportProtocolError,
   TransportUnavailableError,
 } from './errors';
 export {
   InProcessTransport,
   type InProcessTransportOptions,
-  NatsTransport,
-  type NatsTransportOptions,
   subjectMatches,
   type Transport,
   type TransportHandler,
@@ -128,6 +127,42 @@ export {
   type SubscriptionShape,
   toBridgeResult,
 } from './matcher-bridge';
+export type { NatsConnectOptions } from './nats-commands';
+// ---- the production bus -------------------------------------------------------------------------
+export {
+  NatsConnection,
+  type NatsConnectionOptions,
+  type NatsMessageHandler,
+  type NatsSubscription,
+} from './nats-connection';
+export { type FakeNatsOptions, FakeNatsServer, fakeNatsStream } from './nats-fake';
+export {
+  assertBucket,
+  assertServerVersion,
+  ensureKvBucket,
+  type JsError,
+  type KvRecord,
+  kvGet,
+  kvLast,
+  kvSubject,
+  kvWrite,
+} from './nats-jetstream';
+export { decodeToken, encodeToken, NatsKvSet, type NatsKvSetOptions } from './nats-kv';
+export {
+  type NatsHeaders,
+  type NatsMessage,
+  type NatsOperation,
+  NatsProtocolParser,
+  type NatsServerInfo,
+} from './nats-protocol';
+export {
+  bunNatsStream,
+  type NatsStream,
+  type NatsTarget,
+  natsStreamOver,
+  parseNatsUrl,
+} from './nats-socket';
+export { NatsTransport, type NatsTransportOptions } from './nats-transport';
 export {
   type DrainReport,
   MemoryQueueStore,

@@ -84,6 +84,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `X_TRANSPORT_UNAVAILABLE` | fanout bus unreachable, or `realtime.transport` is not `memory` with no URL set | `x doctor transport`; set `REALTIME_TRANSPORT_URL` |
+| `X_TRANSPORT_PROTOCOL` | nats-server older than 2.11, started without `-js`, or something other than NATS on the port | presence needs batch direct get and per-message TTL — run `nats:2.11-alpine` or newer with `-js` |
 | Live query rejected at build | unbounded — missing `orderBy` or `limit` | add both. An unbounded result has no bounded change buffer and no bounded reconnect snapshot |
 | Live query rejected for non-determinism | `now()` / `random()` in the `sql` | move it to `input`; the same `(input, row)` must always yield the same membership answer |
 | `X_SUBSCRIPTION_LIMIT` | a socket or tenant hit its cap | raise `realtime.limits.perSocket`, or unsubscribe unused live queries |

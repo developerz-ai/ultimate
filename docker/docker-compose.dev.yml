@@ -37,7 +37,9 @@ services:
       retries: 20
 
   events:
-    image: nats:2-alpine
+    # 2.11 is the floor, not a preference: presence is a JetStream KV bucket, and batch direct get
+    # plus per-message TTL landed there. An older server is X_TRANSPORT_PROTOCOL on the first dial.
+    image: nats:2.11-alpine
     command: ['-js', '-m', '8222']
     ports: ['4222:4222', '8222:8222']
 

@@ -101,13 +101,15 @@ function startStorage(services: DevServices): Storage {
 
 /**
  * `NATS_URL` selects the NATS transport rather than quietly keeping the in-process one: dev
- * pointed at compose is a parity check, and a parity check that silently ran the embedded
- * driver would be worse than no parity check. The NATS transport reports its own readiness.
+ * pointed at compose is a parity check, and a parity check that silently ran the embedded driver
+ * would be worse than no parity check. The connection and the KV bucket are established here, so
+ * an unreachable bus fails at `x dev` rather than on the first change nobody receives.
  */
-function startTransport(services: DevServices): Transport {
-  return services.events.mode === 'embedded'
-    ? new InProcessTransport()
-    : new NatsTransport({ url: services.events.url, bucket: 'x-dev' });
+async function startTransport(services: DevServices): Promise<Transport> {
+  if (services.events.mode === 'embedded') return new InProcessTransport();
+  const transport = new NatsTransport({ url: services.events.url, bucket: 'x-dev' });
+  await transport.connect();
+  return transport;
 }
 
 /** Undo what has already started, newest first. A failure here must not hide the boot failure. */
@@ -139,7 +141,7 @@ export async function startServices(services: DevServices): Promise<RunningServi
     const jobs = await startJobs(db);
     const events = createMemoryEventBus();
     setEventBus(events);
-    const transport = startTransport(services);
+    const transport = await startTransport(services);
     started.push(() => transport.close());
     const storage = startStorage(services);
     // Caught, not sent: the `/_x` mail panel reads this outbox, so the local loop can check what a

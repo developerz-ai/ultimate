@@ -98,6 +98,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
       TEST_REPLICATION_URL: postgres://ultimate:ultimate@localhost:5433/postgres
+      TEST_NATS_URL: nats://localhost:4222
     steps:
       - uses: actions/checkout@v7
         with:
@@ -124,6 +125,17 @@ jobs:
             sleep 2
           done
           echo 'postgres with wal_level=logical never became ready' >&2 && exit 1
+      # JetStream is a server argument too, and it is what presence is built on — the KV bucket,
+      # its per-message TTL and its batch direct reads. Without a real one the bus client is only
+      # ever proved against the in-memory server in nats-fake.ts, which is the thing being checked.
+      - name: start a JetStream nats-server
+        run: |
+          docker run -d --name nats-js -p 4222:4222 nats:2.11-alpine -js
+          for _ in $(seq 1 30); do
+            docker logs nats-js 2>&1 | grep -q 'Server is ready' && exit 0
+            sleep 2
+          done
+          echo 'nats-server never became ready' >&2 && exit 1
       - name: bun test
         # No opt-in exclusions: the framework's e2e/contract/live/job/eval suites all run, every
         # time. The reference app's suites are not here — they run in `reference-app-verify`,
@@ -154,6 +166,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
       TEST_REPLICATION_URL: postgres://ultimate:ultimate@localhost:5433/postgres
+      TEST_NATS_URL: nats://localhost:4222
     steps:
       - uses: actions/checkout@v7
         with:
@@ -180,6 +193,17 @@ jobs:
             sleep 2
           done
           echo 'postgres with wal_level=logical never became ready' >&2 && exit 1
+      # JetStream is a server argument too, and it is what presence is built on — the KV bucket,
+      # its per-message TTL and its batch direct reads. Without a real one the bus client is only
+      # ever proved against the in-memory server in nats-fake.ts, which is the thing being checked.
+      - name: start a JetStream nats-server
+        run: |
+          docker run -d --name nats-js -p 4222:4222 nats:2.11-alpine -js
+          for _ in $(seq 1 30); do
+            docker logs nats-js 2>&1 | grep -q 'Server is ready' && exit 0
+            sleep 2
+          done
+          echo 'nats-server never became ready' >&2 && exit 1
       - name: x verify
         run: bun run scripts/verify.ts --json
 

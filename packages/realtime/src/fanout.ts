@@ -4,7 +4,7 @@
 // default and the real bus route identically.
 
 import { type Clock, systemClock } from '@ultimat3/core';
-import { NotImplementedError, TransportUnavailableError } from './errors';
+import { TransportUnavailableError } from './errors';
 
 export type TransportHandler = (payload: string, subject: string) => void;
 
@@ -155,67 +155,5 @@ export class InProcessTransport implements Transport {
   }
 }
 
-export interface NatsTransportOptions {
-  readonly url: string;
-  /** KV bucket backing `shared`; must exist before the first `sync` node starts. */
-  readonly bucket: string;
-  readonly maxReconnectAttempts?: number;
-}
-
-const NATS_FIX =
-  'set REALTIME_TRANSPORT=in-process for single-node, or wait on milestone 6 (`x doctor transport` prints the current driver)';
-
-class UnavailableSet implements TransportSet {
-  async put(): Promise<void> {
-    throw new NotImplementedError({ what: 'NATS KV presence set', fix: NATS_FIX });
-  }
-  async touch(): Promise<boolean> {
-    throw new NotImplementedError({ what: 'NATS KV presence set', fix: NATS_FIX });
-  }
-  async drop(): Promise<void> {
-    throw new NotImplementedError({ what: 'NATS KV presence set', fix: NATS_FIX });
-  }
-  async entries(): Promise<readonly TransportSetEntry[]> {
-    throw new NotImplementedError({ what: 'NATS KV presence set', fix: NATS_FIX });
-  }
-}
-
-/**
- * The production bus. Interface-complete so topology code can be written and reviewed against it;
- * the connection itself lands with the reconnect benchmark, since that benchmark is what decides
- * whether the bus is NATS or Redis streams.
- */
-export class NatsTransport implements Transport {
-  readonly name = 'nats';
-  readonly shared: TransportSet = new UnavailableSet();
-  readonly #options: NatsTransportOptions;
-
-  constructor(options: NatsTransportOptions) {
-    if (!options.url.startsWith('nats://') && !options.url.startsWith('tls://')) {
-      throw new TransportUnavailableError({
-        transport: 'nats',
-        reason: `url "${options.url}" must start with nats:// or tls://`,
-      });
-    }
-    this.#options = options;
-  }
-
-  async publish(subject: string, _payload: string): Promise<void> {
-    throw this.#unavailable(`publish to ${subject}`);
-  }
-
-  async subscribe(subject: string, _handler: TransportHandler): Promise<TransportSubscription> {
-    throw this.#unavailable(`subscribe to ${subject}`);
-  }
-
-  async close(): Promise<void> {
-    // Nothing to close: no connection is ever established in this build.
-  }
-
-  #unavailable(what: string): NotImplementedError {
-    return new NotImplementedError({
-      what: `NatsTransport (${this.#options.url}) ${what}`,
-      fix: NATS_FIX,
-    });
-  }
-}
+// The production bus lives in `nats-transport.ts`: it needs a socket, a codec and a JetStream
+// client, none of which belong in the file that defines what a transport *is*.

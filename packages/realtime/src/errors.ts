@@ -10,6 +10,7 @@ export type RealtimeErrorCode =
   | 'X_CURSOR_STALE'
   | 'X_REBASE_CONFLICT'
   | 'X_TRANSPORT_UNAVAILABLE'
+  | 'X_TRANSPORT_PROTOCOL'
   | 'X_REPLICATION_PROTOCOL'
   | 'X_REPLICATION_FAILED'
   | 'X_NOT_IMPLEMENTED';
@@ -90,11 +91,31 @@ export class RebaseConflictError extends RealtimeError {
 
 /** The fanout bus is down. `sync` nodes are stateless, so this is always recoverable. */
 export class TransportUnavailableError extends RealtimeError {
-  constructor(args: { transport: string; reason: string }) {
+  constructor(args: { transport: string; reason: string; fix?: string }) {
     super({
       code: 'X_TRANSPORT_UNAVAILABLE',
       cause: `transport "${args.transport}" is unavailable: ${args.reason}`,
-      fix: 'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+      fix:
+        args.fix ??
+        'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+    });
+  }
+}
+
+/**
+ * The bytes on the bus socket are not the protocol we speak: an unknown NATS verb, a header block
+ * that is not `NATS/1.0`, a JetStream reply in a shape the API never produces. Always a version or
+ * configuration mismatch rather than a transient fault, so reconnecting to the same server cannot
+ * help — which is exactly why it is a different code from `X_TRANSPORT_UNAVAILABLE`.
+ */
+export class TransportProtocolError extends RealtimeError {
+  constructor(args: { transport: string; stage: string; detail: string; fix?: string }) {
+    super({
+      code: 'X_TRANSPORT_PROTOCOL',
+      cause: `transport "${args.transport}" ${args.stage}: ${args.detail}`,
+      fix:
+        args.fix ??
+        'x doctor transport — the bus must be nats-server >= 2.11 with JetStream enabled (`nats-server -js`)',
     });
   }
 }
