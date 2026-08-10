@@ -24,6 +24,42 @@ task      — a scheduled trigger (cron) that enqueues jobs
 | `route` | a route folder's `config` export | `x g route <path>` | [Routes and render modes](Routes-And-Render-Modes) |
 | `task` | `<feature>/jobs.ts` | `x g task <name>` | [Scheduled tasks](Scheduled-Tasks) |
 
+## Every primitive projects itself
+
+A primitive's surfaces are methods **on the primitive**, never free functions taking it. `publishPost.tool()`, not `toMcpTool(publishPost)`. Every declared field is lifted onto it, and the declaration object — the `handle`, the `sql`, the `server` — is not reachable from app code at all.
+
+| Primitive | Its surface |
+|---|---|
+| `entity` | `$`-sigil members: `posts.$view([...])`, `posts.$parse(row)`, `posts.$assert(row)`, `posts.$migration()`. An entity *is* its columns, so the sigil keeps the namespace clear — `posts.name` is a column, `posts.$name` is the entity |
+| `policy` | one signature, `({ actor, input, row, ctx })`, identical on every surface. `row` is required and nullable, never smuggled through `input` |
+| `action` | `.as()` `.tool()` `.openapi()` `.client()` `.job()` `.contract()` `.describe()`, plus `.input` `.output` `.policy` `.mcp`. `handle` is not among them |
+| `mutator` | everything `action` has, plus `.local()` `.server()` `.conflict` `.describeMutator()` |
+| `query` | `.as()` `.live()` `.tool()` `.client()` `.describe()`, plus `.input` `.policy` `.cache` `.mcp` `.isLive`. `sql` is not among them |
+| `job` | `.enqueue()` `.as()` `.describe()`, plus `.parse()` and `.idempotencyKeyFor()` |
+| `route` | a normalized descriptor rather than methods — `meta()` always awaits, `budget` is always an object. A route declares no behaviour to project; `describeRoutes()` is the one route list |
+| `task` | `.entries()` `.enqueue()` `.describe()` |
+
+The declaration lives in a private store inside the package that runs it, and nothing exports a reader for it. So there is one execution path and one authz path structurally, not by convention: a hand-rolled look-alike carrying the right `kind` is `X_ACTION_FOREIGN` / `X_QUERY_FOREIGN`, never a registered primitive. Registration stamps the export name **in place**, so `import { publishPost }` is the object that projects once the app has booted — there is no second, differently-named twin to remember.
+
+Each primitive's deep page carries the full member table.
+
+## One import per authoring file
+
+`t` is re-exported from every package that hosts a declaration factory. Import it from the package you declare in; never reach past that package to `@ultimat3/schema`. It is the **same object**, not a copy — `configureSchemaProvider()` still swaps the provider under it — and each package pins that with an identity assertion in its `index.test.ts`.
+
+| Import `t` from | When the file declares |
+|---|---|
+| `@ultimat3/entity` | an `entity` |
+| `@ultimat3/action` | an `action` or a `mutator` |
+| `@ultimat3/query` | a `query` |
+| `@ultimat3/jobs` | a `job` or a `task` |
+| `@ultimat3/mail` | a `defineMail` template |
+| `@ultimat3/mcp` | a `defineAppMcp` hand-written tool |
+| `@ultimat3/ai` | an `llm` — a factory over `action`, so it carries `t` too |
+| `@ultimat3/schema` | nothing — a plain view-schema module, where schema *is* the one import |
+
+`policy` and `route` declare no schema, so neither package re-exports `t`: a policy decides from `({ actor, input, row, ctx })` and a route from its path.
+
 ## `entity`
 
 A table + its domain type + invariants. The single source of the DB schema, the TS type, and the parse boundary.

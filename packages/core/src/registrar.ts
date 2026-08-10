@@ -1,0 +1,83 @@
+// Hands a module of primitives to the package that owns them, without a sideways import:
+// `defineApi` in `@ultimat3/action` cannot import `@ultimat3/query`'s `registerQueries` on
+// the same tier, so each owner announces its registrar here at import time and callers ask
+// by kind. Same shape as `defineService` and `registerErrorCodes`.
+
+import { UltimateError } from './errors';
+
+/** The eight primitives. A registrar exists only for the kinds registered by module. */
+export type PrimitiveKind =
+  | 'action'
+  | 'entity'
+  | 'job'
+  | 'mutator'
+  | 'policy'
+  | 'query'
+  | 'route'
+  | 'task';
+
+/**
+ * What a registrar hands back: the primitives it actually took, each carrying the name
+ * registration stamped on it. Returning the registered set — rather than nothing — is what lets
+ * a caller build its API map from what registered instead of from what a module exported.
+ */
+export interface RegisteredPrimitive {
+  readonly kind: PrimitiveKind;
+  readonly name: string;
+}
+
+/** `registerActions` / `registerQueries`: export names become primitive names. */
+export type ModuleRegistrar = (
+  module: Readonly<Record<string, unknown>>,
+) => readonly RegisteredPrimitive[];
+
+const registrars = new Map<PrimitiveKind, ModuleRegistrar>();
+
+/**
+ * Announce the registrar for `kind`, once per process. Re-announcing the same function is a
+ * no-op (a module re-evaluated under a different specifier); announcing a *different* one
+ * means two copies of the owning package are loaded, each with its own registry — half the
+ * primitives would register into a table nothing else reads.
+ */
+export function registerPrimitiveRegistrar(kind: PrimitiveKind, registrar: ModuleRegistrar): void {
+  const existing = registrars.get(kind);
+  if (existing !== undefined && existing !== registrar) {
+    throw new UltimateError({
+      code: 'X_REGISTRAR_CONFLICT',
+      cause: `two different ${kind} registrars are loaded, so ${kind} primitives would split across two registries`,
+      // One command, because a `fix:` is pasted verbatim: collapsing every range on the package
+      // to one resolved version is the repair. `bun pm why @ultimat3/<kind>` names the dependents
+      // when a range genuinely disagrees and the update cannot converge on its own.
+      fix: `bun update @ultimat3/${kind}`,
+      meta: { kind },
+    });
+  }
+  registrars.set(kind, registrar);
+}
+
+export function hasPrimitiveRegistrar(kind: PrimitiveKind): boolean {
+  return registrars.has(kind);
+}
+
+/**
+ * The registrar for `kind`. Throws rather than returning `undefined`: a caller that skipped a
+ * missing registrar would drop every primitive of that kind silently, which is exactly the
+ * failure this seam exists to make impossible.
+ */
+export function primitiveRegistrar(kind: PrimitiveKind): ModuleRegistrar {
+  const registrar = registrars.get(kind);
+  if (registrar === undefined) {
+    throw new UltimateError({
+      code: 'X_REGISTRAR_MISSING',
+      cause: `no ${kind} registrar is loaded, so ${kind} primitives cannot be registered`,
+      fix: `bun add @ultimat3/${kind}`,
+      meta: { kind },
+    });
+  }
+  return registrar;
+}
+
+/** Test-only. Production announces once at import and never withdraws. */
+export function resetPrimitiveRegistrars(): void {
+  registrars.clear();
+}

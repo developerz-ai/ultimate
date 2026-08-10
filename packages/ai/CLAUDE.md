@@ -37,6 +37,9 @@ rather than imported. Same contract, two wire formats.
 
 - **`llm()` returns an `action`. It is not a ninth primitive** (root `CLAUDE.md`, 2026-08). It
   never re-implements parse, authz or invoke — `action()` owns those and `invoke` runs them.
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so an `llm` file imports one
+  package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
+  access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - The model half is the only thing `llm.ts` adds: render the prompt, project `output` into the
   one tool the model may answer through, reserve the budget, consult the semantic cache.
 - One repair turn, then `X_LLM_OUTPUT_INVALID`. Two schema failures is a prompt/schema

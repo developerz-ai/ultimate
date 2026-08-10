@@ -9,6 +9,7 @@ export const RENDER_ERROR_CODES = [
   'X_ROUTE_MODE_INVALID',
   'X_ROUTE_OFFLINE_MISSING',
   'X_ROUTE_META_MISSING',
+  'X_ROUTE_UNNORMALIZED',
   'X_ROUTE_DUPLICATE',
   'X_SURFACE_BOUNDARY',
   'X_BUDGET_EXCEEDED',
@@ -21,6 +22,7 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ROUTE_MODE_INVALID: 'render mode not allowed on this surface',
   X_ROUTE_OFFLINE_MISSING: "the route's offline strategy is missing or contradictory",
   X_ROUTE_META_MISSING: 'required metadata missing',
+  X_ROUTE_UNNORMALIZED: 'a route was registered without defineRoute',
   X_ROUTE_DUPLICATE: 'two route files resolve to one URL',
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
   X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
@@ -71,6 +73,23 @@ export class RouteMetaMissingError extends UltimateError {
       cause,
       fix,
       docs: docsFor(RouteMetaMissingError.code),
+    });
+  }
+}
+
+/**
+ * The route table holds descriptors, never declarations. `defineRoute` is the one normalizer, so
+ * a raw declaration reaching the registry means `budget` and `meta` are whatever the author wrote
+ * — and every reader downstream (`describeRoutes`, `sw.js`, the sitemap) assumes they are not.
+ */
+export class RouteUnnormalizedError extends UltimateError {
+  static readonly code = 'X_ROUTE_UNNORMALIZED' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: RouteUnnormalizedError.code,
+      cause,
+      fix,
+      docs: docsFor(RouteUnnormalizedError.code),
     });
   }
 }

@@ -41,6 +41,8 @@ X_DB_DRIFT: schema differs from migrations
 | `X_ID_INVALID` | value is not a valid id | a hand-built string passed where a typed id is required | generate ids with `uuid()` / `typedId<'post'>()` from `@ultimat3/core` |
 | `X_CURSOR_INVALID` | pagination cursor is malformed, tampered with or from another query | signature mismatch — an edited cursor, or `ULTIMATE_CURSOR_SECRET` rotated — or a cursor built for a different query, filter or sort order | drop the cursor and request the first page (`after: null`) |
 | `X_ERROR_CODE_DUPLICATE` | error code registered twice | two packages declared the same code | rename the colliding code in the registering package's `src/errors.ts` |
+| `X_REGISTRAR_MISSING` | no registrar is loaded for a primitive kind | the owning package is absent from the graph, so nothing announced a registrar — `defineApi({ queries })` without `@ultimat3/query`. `meta.kind` names the kind, and the owner is `@ultimat3/<kind>`; importing it is what announces | `bun add @ultimat3/<kind>` |
+| `X_REGISTRAR_CONFLICT` | two different registrars are loaded for one primitive kind | two copies of `@ultimat3/<kind>` in the dependency tree, each with its own registry, so half the primitives register where nothing reads them. `bun pm why @ultimat3/<kind>` names the dependents when ranges genuinely disagree | `bun update @ultimat3/<kind>` |
 
 ## Images
 
@@ -202,6 +204,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ROUTE_MODE_INVALID` | render mode not allowed on this surface | `stream` on a `site/` route | use `static`, `isr` or `ssr` in `site/`; `stream`, `spa` or `ssr` in `app/` |
 | `X_ROUTE_OFFLINE_MISSING` | the route's offline strategy is missing or contradictory | `precache` on an `ssr` route | set a compatible `offline`, or change the render mode |
 | `X_ROUTE_META_MISSING` | required metadata missing | no `meta.title`, or no `description` on a `site/` route | add it to `meta` in the route file |
+| `X_ROUTE_UNNORMALIZED` | a route was registered without `defineRoute` | `registerRoute({ config })` was handed the author's own object, so `meta` and `budget` were never normalized and every descriptor reader would read them wrong | wrap it: `registerRoute({ file, config: defineRoute({ … }) })` |
 | `X_ROUTE_DUPLICATE` | two route files resolve to one URL | a copied page directory | delete or rename one |
 | `X_SURFACE_BOUNDARY` | a surface imported across the hard boundary | `site/` reached `app/`, transitively | `x fix boundary <file>`, or move the shared module out of `shared/ui` |
 | `X_BOUNDARY_SITE_TO_APP` | `site/` imported `app/` | the classic transitive import | the chain is printed in `cause`; break it at the named hop |

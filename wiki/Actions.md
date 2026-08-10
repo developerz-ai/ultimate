@@ -47,16 +47,36 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `ctx.signal` | `AbortSignal` | client disconnect / drain; pass it to long calls |
 | `ctx.role` / `ctx.buildId` | `Role` / `string` | which runtime role is executing, and which build |
 
+## The fluent surface
+
+Every projection is a method on the action — `publishPost.tool()`, never `toMcpTool(publishPost)`. Exactly four declared fields are lifted onto it as readable properties: `input`, `output`, `policy`, `mcp`. The rest of the declaration is structured metadata, reachable through `describe()` and nowhere else. An action has no `.def`.
+
+| Member | Is | Rule |
+|---|---|---|
+| `publishPost(input, options?)` | the mutation | parse `input` → load `row` → evaluate `policy` → `handle` → parse `output` |
+| `.as(actor, input, options?)` | the same mutation, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
+| `.tool()` | the MCP tool descriptor | `publishPost.tool().policy === publishPost.policy` — one authz object, never a copy |
+| `.openapi()` | the OpenAPI 3.1 operation | byte-stable; `x verify` diffs it for contract drift |
+| `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
+| `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |
+| `.contract()` | the generated assertions | garbage rejected, anonymous denied, spec present |
+| `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
+| `.input` `.output` `.policy` `.mcp` | the declaration, lifted | the whole lifted set — readable, and `.mcp` present only when declared. `cache.invalidates`, `rateLimit` and `idempotent` are not properties: read them off `describe()`, where `cache.invalidates` flattens to `invalidates` |
+
+`handle` and `row` — the declaration's two functions — are unreachable by design: neither lifted nor described. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `invoke` is the only thing that can run them — one execution path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'action'` is `X_ACTION_FOREIGN`, never a registered action.
+
+Every projection needs the name `registerActions()` stamps on. It names the export in place, so `import { publishPost }` is the action that projects once the app has booted — there is no second, differently-named twin to remember.
+
 ## Six generated artifacts
 
 | # | Artifact | Derived from | Notes |
 |---|---|---|---|
-| 1 | **HTTP route** | name + `input` | `POST /_x/action/publish-post`, body parsed by `input`, errors are `UltimateError` JSON |
-| 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
-| 3 | **Typed client function** | `input` + `output` | `await api.publishPost({ postId })` in `app/` — no fetch, no codegen step to remember |
+| 1 | **HTTP route** | name + `input` | `POST /api/posts/publish` — first word is the verb, the rest is the pluralized resource. Body parsed by `input`, errors are `UltimateError` JSON |
+| 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | `publishPost.openapi()`, emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
+| 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
-| 5 | **MCP tool** | `mcp` + `input` + `policy` | one tool per exposed action, JSON Schema from `input`, authz unchanged |
-| 6 | **Test** | `input` + `policy` | schema round-trip plus a denial test per policy branch — generated green, not as a `TODO` |
+| 5 | **MCP tool** | `mcp` + `input` + `policy` | `publishPost.tool()` — one `publish_post` per exposed action, JSON Schema from `input`, authz unchanged |
+| 6 | **Test** | `input` + `policy` | `publishPost.contract()` — schema round-trip plus a denial test per policy branch, generated green, not as a `TODO` |
 
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).
 
@@ -133,22 +153,25 @@ Every code carries the same `{ code, cause, fix, docs }` in the terminal, the de
 
 ```
 $ x actions list --json
-{"actions":[{"name":"publishPost","path":"/_x/action/publish-post","capability":"post:publish",
-  "idempotent":false,"mcp":{"expose":true,"tool":"publishPost"},
-  "invalidates":["post","feed"]}]}
+{"ok":true,"command":"actions","summary":"1 action","findings":[],
+ "data":[{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
+   "method":"POST","path":"/api/posts/publish","capability":"post:publish", …}]}
 ```
+
+Both subcommands emit the same `describe()` row — `list` one per action, `describe` the named one. It is exactly what `publishPost.describe()` returns in process, so the CLI has no private view of a primitive:
 
 ```
 $ x actions describe publishPost --json
-{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
- "method":"POST","path":"/_x/action/publish-post","capability":"post:publish",
- "input":{"type":"object","required":["postId"],
-   "properties":{"postId":{"type":"string","format":"uuid"},
-                 "notify":{"type":"boolean","default":true}}},
- "output":{"$ref":"#/components/schemas/PostView"},
- "invalidates":["feed","post"],"idempotent":false,
- "mcp":{"expose":true,"tool":"publishPost","description":"Publish a draft post"},
- "rateLimit":null}
+{"ok":true,"command":"actions","summary":"action publishPost","findings":[],
+ "data":{"kind":"action","name":"publishPost","verb":"publish","resource":"posts",
+  "method":"POST","path":"/api/posts/publish","capability":"post:publish",
+  "input":{"type":"object","required":["postId"],
+    "properties":{"postId":{"type":"string","format":"uuid"},
+                  "notify":{"type":"boolean","default":true}}},
+  "output":{"$ref":"#/components/schemas/PostView"},
+  "invalidates":["feed","post"],"idempotent":false,
+  "mcp":{"expose":true,"tool":"publish_post","description":"Publish a draft post"},
+  "rateLimit":null}}
 ```
 
 `invalidates` is sorted and de-duplicated, so descriptor output never depends on declaration order — a diffable contract. The same data is the MCP `actions.describe` tool (actions and queries in one call) and the `/_x` **Routes** panel.

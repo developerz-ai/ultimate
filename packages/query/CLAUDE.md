@@ -18,7 +18,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
 | `client.ts` | typed read client (browser-safe: no server imports) |
 | `naming.ts` | export name → `/_x/query/<kebab>` + snake_case tool name. Pure string math |
-| `registry.ts` | export-name registration, `describeQueries()` |
+| `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `matcher.ts` | change event → minimal patch, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
@@ -48,6 +48,9 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   the author said so.
 - `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
   is the same tier, so its naming is ported here, never imported.
+- `registry.ts` announces `registerQueries` in core's registrar table at import. That is how
+  `defineApi({ queries })` in `@ultimat3/action` registers a read without importing this package
+  sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
 - `paginate` has no `offset` parameter and must never grow one.

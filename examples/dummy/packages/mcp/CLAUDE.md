@@ -6,7 +6,7 @@ The app's own MCP surface. Wired in by `app.config.ts` (`mcp.server`).
 
 | May import | Must never |
 |---|---|
-| `@ultimat3/mcp`, `@ultimat3/schema`, `@postly/core`, `@postly/domain` | `apps/*` at runtime, `@postly/db` |
+| `@ultimat3/mcp` (`t` included — never `@ultimat3/schema` past it), `@postly/core`, `@postly/domain` | `apps/*` at runtime, `@postly/db` |
 | `import type` from the app's `Api` for tool typing | a second authz path, a service account, a "trusted" mode |
 
 Actions reach this surface because they declare `mcp: { expose: true }`, not because this package

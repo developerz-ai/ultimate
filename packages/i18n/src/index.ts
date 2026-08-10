@@ -16,7 +16,6 @@ export {
   configureLocales,
   currentDirection,
   currentLocale,
-  currentTranslator,
   LOCALE_COOKIE,
   type LocaleConfig,
   type LocaleResolution,
@@ -31,7 +30,14 @@ export {
   resolveLocale,
   t,
   translatorFor,
+  useI18n,
 } from './context';
+export {
+  type CatalogSet,
+  type CatalogSources,
+  type DefineCatalogsInput,
+  defineCatalogs,
+} from './define-catalogs';
 export {
   catalogInvalid,
   catalogMissingKeys,
@@ -85,4 +91,10 @@ export {
   parseAcceptLanguage,
   SUPPORTED_LOCALES,
 } from './locales';
-export { createTranslator, isMiss, type TranslateVars, type Translator } from './translator';
+export {
+  createTranslator,
+  isMiss,
+  type TranslateVars,
+  type TranslationKey,
+  type Translator,
+} from './translator';

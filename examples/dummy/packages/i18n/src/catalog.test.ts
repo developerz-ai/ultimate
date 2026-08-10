@@ -57,14 +57,19 @@ test('interpolation slots match between locales', () => {
 });
 
 test('every plural key carries both categories Spanish and English need', () => {
-  const pluralParents = [...flatEn.keys()]
-    .filter((key) => key.endsWith('.one') || key.endsWith('.other'))
-    .map((key) => key.slice(0, key.lastIndexOf('.')));
+  // Underscore suffixes on the leaf, never a nested `{ one, other }` branch: `selectPluralKey`
+  // probes `<stem>_one` / `<stem>_other`, so a nested branch renders `⟦key⟧` at every call site.
+  const stems = [...flatEn.keys()]
+    .filter((key) => key.endsWith('_one') || key.endsWith('_other'))
+    .map((key) => key.slice(0, key.lastIndexOf('_')));
 
-  for (const parent of new Set(pluralParents)) {
-    expect(flatEn.has(`${parent}.one`)).toBe(true);
-    expect(flatEn.has(`${parent}.other`)).toBe(true);
-    expect(flatEs.has(`${parent}.one`)).toBe(true);
-    expect(flatEs.has(`${parent}.other`)).toBe(true);
+  // Without this the loop below is vacuous: rename the convention and the test stays green.
+  expect(new Set(stems).size).toBeGreaterThan(0);
+
+  for (const stem of new Set(stems)) {
+    expect(flatEn.has(`${stem}_one`)).toBe(true);
+    expect(flatEn.has(`${stem}_other`)).toBe(true);
+    expect(flatEs.has(`${stem}_one`)).toBe(true);
+    expect(flatEs.has(`${stem}_other`)).toBe(true);
   }
 });

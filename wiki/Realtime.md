@@ -40,6 +40,27 @@ export const likePost = mutator({
 
 `local` is a pure function of `(tx, input)`, therefore replayable. Hence the rule: **no I/O, no `Date.now()`, no `Math.random()` inside `local`.** Same input, same patch, every replay.
 
+## The fluent surface
+
+`interface Mutator extends Action` — a mutator **is** an action, so every action member is already on it (`likePost.tool()`, `.openapi()`, `.client({ baseUrl })`, `.job()`, `.contract()`, `.as()`, `.describe()`, `.named()`, and the lifted `.input` `.output` `.policy` `.mcp`). The three names it was authored with — `.local`, `.server`, `.conflict` — project unchanged, plus a brand and its own descriptor. Both halves are reached through the mutator itself, `likePost.local(tx, input)`, never a declaration object. A mutator has no `.def`.
+
+| Member | Is | Rule |
+|---|---|---|
+| `.local(tx, input)` | the optimistic twin | runs against the local store, synchronously, no I/O, returns `void`. Takes **already-parsed** input — nothing re-parses on this half |
+| `.server(ctx, input)` | the authoritative half | takes **raw** input, like the callable and `.as()`, because this is where parsing happens |
+| `.conflict` | the rebase strategy, lifted | `'server-wins'` \| `'last-write-wins'` \| `custom(merge)` — the declared value verbatim, merge function included |
+| `.isMutator` | the brand | always `true`; `isMutator(value)` is the guard |
+| `.describeMutator()` | the manifest row | the action descriptor plus `kind: 'mutator'` and the **resolved** strategy name — `custom(merge)` describes as `'custom'` |
+| `.describe()` | the action descriptor | still reports `kind: 'action'`. `describeMutator()` is the one that says `mutator` |
+
+**`.server()` routes through the action's own callable, never the declared `server`.** It calls `base(input, { ctx })`, and that callable *is* `invoke` — so the authoritative half cannot skip the input parse, the policy or the output parse. Reaching the declaration from there would be a second execution path, which is the one thing `@ultimat3/action` exists to prevent. Hence the guarantee this page rests on: the offline/realtime half of a mutator gets exactly the same parse → policy → handle → parse core as an HTTP call, an MCP tool call and a job run, because it **is** that call. A denied `.server()` never reaches the declared half, and neither does one whose input fails the schema — `X_UNAUTHENTICATED`, `X_FORBIDDEN` and `X_INPUT_INVALID` come back from the same core that serves the HTTP route.
+
+The parsed-vs-raw asymmetry between `.local()` and `.server()` is deliberate, not an inconsistency. `local` replays on every rebase and must stay a pure function of `(tx, input)` — no I/O, no clock, no randomness — so re-parsing on each replay would be wasted work on input that was already validated once.
+
+`.local()` is the name. No alias: the old `.applyLocal` is gone, not deprecated.
+
+`.named()` rewraps rather than dropping the twin — a renamed mutator keeps both halves, its `conflict`, and every inherited action member.
+
 ## Tier 2 → tier 3 is `persist: true`
 
 ```ts

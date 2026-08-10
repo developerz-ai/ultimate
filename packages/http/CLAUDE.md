@@ -12,6 +12,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Rules
 
 - Route `meta.auth` is required. Never default a route to public.
+- **`meta.enforcedBy` says who evaluates `meta.policy`, and the `authz` stage obeys it.**
+  `'pipeline'` (the default, and what a page wants) means the stage decides through
+  `hooks.authorize`; `'handler'` means the handler is the one evaluation and the stage returns
+  without deciding — no hook required, and none consulted. An action route says `'handler'`
+  because `@ultimat3/action`'s `invoke` loads the row a row-level rule reads and this stage
+  cannot. Deciding in both places is two authz systems, and the one that answers first is the
+  one holding less.
 - **`ctx.actor` is never null.** `asCtx` publishes the request context itself as core's `Ctx`,
   and `Ctx.actor` is an `Actor` — so "nobody" is core's anonymous actor, not `null`. The
   `authenticate` hook still says it with `null`; the `auth` stage is where that becomes

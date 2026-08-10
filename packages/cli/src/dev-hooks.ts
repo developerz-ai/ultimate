@@ -1,9 +1,8 @@
 // The two seams `@ultimat3/http` leaves open, bound to the packages that own them. `authorize`
-// evaluates the SAME `Policy` object every other surface evaluates — the action registry's for an
-// action route, the route table's declared permission for a page — so a denial in `x dev` is the
-// denial production produces, not a dev-only approximation.
+// decides for pages only, from the SAME `Policy` object every other surface evaluates — the route
+// table's declared permission — so a denial in `x dev` is the one production produces.
 
-import { actorOf, getAction } from '@ultimat3/action';
+import { actorOf } from '@ultimat3/action';
 import type { AuthzDecision, ServerHooks } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import type { KnownPermission, Policy } from '@ultimat3/policy';
@@ -17,14 +16,8 @@ import { routeFor } from '@ultimat3/render';
  */
 const isPermission = (value: string): value is KnownPermission => /^[^:]+:[^:]+$/.test(value);
 
-/**
- * An action carries its policy object; a `route` carries only the permission label, because that
- * is all `RouteGuard` keeps. Reconstructing the label's check with `can()` is exact for a route
- * and would be a guess for an action — which is why actions are looked up, never reconstructed.
- */
-function policyFor(name: string, path: string): Policy<unknown, unknown> | undefined {
-  const action = getAction(name);
-  if (action !== undefined) return action.policy;
+/** A page carries only the permission label, because that is all `RouteGuard` keeps. */
+function policyFor(path: string): Policy<unknown, unknown> | undefined {
   const permission = routeFor(path)?.config.policy?.permission;
   return permission !== undefined && isPermission(permission) ? can(permission) : undefined;
 }
@@ -32,7 +25,10 @@ function policyFor(name: string, path: string): Policy<unknown, unknown> | undef
 export function devHooks(): ServerHooks {
   return {
     authorize: (route, _request, ctx): AuthzDecision => {
-      const policy = policyFor(route.meta.name, route.path);
+      // An action route never arrives here: it carries `enforcedBy: 'handler'`, so the pipeline
+      // never asks. `invoke` is its one evaluation, and the only one holding the row a row-level
+      // rule reads — reconstructing it here would be a second authz system, one row short.
+      const policy = policyFor(route.path);
       if (policy === undefined) {
         return {
           allowed: false,

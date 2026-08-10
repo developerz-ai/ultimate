@@ -106,5 +106,8 @@ describe('describeRoutes', () => {
     const comments = described.find((entry) => entry.name === 'comments.show');
     expect(comments?.params).toEqual(['id', 'commentId']);
     expect(comments?.auth).toBe('public');
+    // Named on every row, never left to be inferred from its absence: a described policy
+    // with no stated evaluator reads as an unguarded one.
+    expect(described.every((entry) => entry.enforcedBy === 'pipeline')).toBe(true);
   });
 });

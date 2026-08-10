@@ -9,7 +9,7 @@ import type { Ctx } from '@ultimat3/core';
 import { assertNever } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action, ActionCache, ActionDef, ActionDescriptor, ActionMcp } from './action';
-import { action } from './action';
+import { action, isAction } from './action';
 import type { ActionPolicy } from './policy-gate';
 
 /** Minimum shape of a locally-stored row: an id the local twin can address. */
@@ -123,8 +123,14 @@ export function mutator<TInput extends StandardSchemaV1, TOutput extends Standar
   return wrap(def, action(actionDef));
 }
 
+/**
+ * Structural, exactly like `isAction`: the brand alone is not enough, because a
+ * mutator's authoritative half runs through the action's declaration and a
+ * look-alike has none. Branding without `isAction` would have made this the one
+ * primitive whose façade a hand-rolled object could counterfeit.
+ */
 export function isMutator(value: unknown): value is Mutator {
-  return typeof value === 'function' && (value as { isMutator?: unknown }).isMutator === true;
+  return isAction(value) && (value as { isMutator?: unknown }).isMutator === true;
 }
 
 function wrap<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(

@@ -9,13 +9,14 @@
  * The prompt itself is a versioned artifact. Bumping `version` changes its content hash, which
  * keys the semantic cache and appears in traces, so a summary can always be attributed to the
  * exact text that produced it.
+ *
+ * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
 
 import { tag } from '@postly/db';
-import { action } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
 import { definePrompt } from '@ultimat3/ai';
 import { can } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
 import { summarizeTemplate } from './summarize-template';
 
 /** Editing the markdown requires bumping this version — it keys the cache and the traces. */

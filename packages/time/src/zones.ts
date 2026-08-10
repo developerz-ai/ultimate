@@ -15,6 +15,26 @@ export const UTC: TimeZone = 'UTC';
 /** ES2024 `Intl` accepts `+01:00` as a zone; we do not — a fixed offset has no DST rules. */
 const NUMERIC_OFFSET = /^[+-]/;
 
+/**
+ * The package's only builder of a UTC epoch from calendar fields, because `Date.UTC` remaps
+ * years 0–99 onto 1900–1999 — silently, so a first-century wall clock resolves 1900 years off
+ * and every derived answer (offset, weekday, day count) is wrong without ever throwing.
+ * Overflow still carries exactly as `Date.UTC` does: day 0, day 32 and hour 24 all roll.
+ */
+export function utcEpoch(
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+): number {
+  const at = new Date(0);
+  at.setUTCFullYear(year, month - 1, day);
+  at.setUTCHours(hour, minute, second, 0);
+  return at.getTime();
+}
+
 export function isValidTimeZone(zone: string): boolean {
   if (zone === '' || NUMERIC_OFFSET.test(zone)) return false;
   try {
@@ -70,9 +90,9 @@ export function zonePartsAt(zone: TimeZone, at: Instant): ZoneParts {
  */
 export function offsetAt(zone: TimeZone, at: Instant): number {
   const parts = zonePartsAt(zone, at);
-  const asIfUtc = Date.UTC(
+  const asIfUtc = utcEpoch(
     parts.year,
-    parts.month - 1,
+    parts.month,
     parts.day,
     parts.hour,
     parts.minute,

@@ -47,6 +47,12 @@ const routes: readonly Route[] = [
     meta: { name: 'guarded', auth: 'public', policy: 'post:publish' },
     handler: () => text('never reached'),
   },
+  {
+    method: 'GET',
+    path: '/self-guarded',
+    meta: { name: 'self-guarded', auth: 'public', policy: 'post:publish', enforcedBy: 'handler' },
+    handler: () => text('the handler decided'),
+  },
 ];
 
 const config = defineHttpConfig({ dev: false, buildId: null, hostname: '127.0.0.1' });
@@ -56,6 +62,8 @@ interface PipelineTestOptions {
   decision?: AuthzDecision;
   buildId?: string | null;
   rateLimitCapacity?: number;
+  /** Fires whenever the `authorize` hook is consulted, so "never asked" is assertable. */
+  onAuthorize?: () => void;
 }
 
 const pipelineWith = (options: PipelineTestOptions) => {
@@ -65,6 +73,11 @@ const pipelineWith = (options: PipelineTestOptions) => {
       : defineHttpConfig({ dev: false, buildId: options.buildId });
   const decision = options.decision;
   const actorId = options.actorId;
+  const onAuthorize = options.onAuthorize;
+  const authorize = (): AuthzDecision => {
+    onAuthorize?.();
+    return decision ?? { allowed: true };
+  };
   return createPipeline({
     table: createRouter(routes),
     config: active,
@@ -79,7 +92,7 @@ const pipelineWith = (options: PipelineTestOptions) => {
     }),
     hooks: {
       authenticate: () => (actorId === undefined ? null : ({ id: actorId } as never)),
-      ...(decision === undefined ? {} : { authorize: () => decision }),
+      ...(decision === undefined ? {} : { authorize }),
     },
   });
 };
@@ -189,6 +202,23 @@ describe('lifecycle', () => {
     expect(String(((await response.json()) as Record<string, unknown>)['cause'])).toContain(
       'no authorizer wired',
     );
+  });
+
+  test('a route enforced by its handler needs no authorizer and gets no second opinion', async () => {
+    let asked = 0;
+    const pipeline = pipelineWith({
+      // Allowed, so a denial cannot be what proves the point — only the count can.
+      decision: { allowed: true },
+      onAuthorize: () => {
+        asked += 1;
+      },
+    });
+
+    // Two runs, one with a hook wired and one without: the stage stands down either way,
+    // because the handler is where this route's policy is evaluated.
+    expect((await pipeline.handle(get('/self-guarded'), { role: 'web' })).status).toBe(200);
+    expect(asked).toBe(0);
+    expect((await pipelineWith({}).handle(get('/self-guarded'), { role: 'web' })).status).toBe(200);
   });
 
   test('a policy denial becomes 403 and keeps the reason', async () => {

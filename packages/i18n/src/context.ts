@@ -141,22 +141,29 @@ export function catalogFor(locale: Locale): Catalog {
   return registry.get(locale) ?? {};
 }
 
-/** Memoized per locale — building a translator per render is pure waste. */
-export function translatorFor(locale: Locale): Translator {
-  const cached = translators.get(locale);
-  if (cached !== undefined) return cached;
-  const translator = createTranslator(catalogFor(locale), locale);
-  translators.set(locale, translator);
-  return translator;
+/**
+ * Memoized per locale — building a translator per render is pure waste.
+ * `TCatalog` narrows the key type only; the runtime catalog is whatever is registered.
+ */
+export function translatorFor<TCatalog = Catalog>(locale: Locale): Translator<TCatalog> {
+  let translator = translators.get(locale);
+  if (translator === undefined) {
+    translator = createTranslator(catalogFor(locale), locale);
+    translators.set(locale, translator);
+  }
+  // One cast, one place. `TCatalog` narrows the key parameter and nothing else, so the memoized
+  // object already is the right value — the registry cannot be keyed by an app's catalog type.
+  return translator as unknown as Translator<TCatalog>;
 }
 
-export function currentTranslator(): Translator {
-  return translatorFor(currentLocale());
+/** The ambient translator for the in-flight request. Pass the app's catalog type to get typed keys. */
+export function useI18n<TCatalog = Catalog>(): Translator<TCatalog> {
+  return translatorFor<TCatalog>(currentLocale());
 }
 
 /** The ambient `t` — what framework and app code calls. Never takes a locale. */
 export function t(key: string, vars?: TranslateVars): string {
-  return currentTranslator()(key, vars);
+  return useI18n()(key, vars);
 }
 
 /** Test/CLI seam: drop every registered catalog. */

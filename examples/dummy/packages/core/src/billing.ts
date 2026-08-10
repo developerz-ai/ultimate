@@ -1,10 +1,12 @@
 /**
- * Plan upgrade arithmetic. Everything here is integer minor units with an attached currency;
- * nothing in this file formats, and nothing converts between currencies.
+ * Plan upgrade arithmetic, and the billing period it prorates against. Everything here is integer
+ * minor units with an attached currency; nothing in this file formats, and nothing converts
+ * between currencies.
  */
 
 import { type BillingCurrency, isUpgrade, type PlanCode, priceOf, seatLimit } from '@postly/domain';
 import { isNegative, type Money, multiply, subtract, zero } from '@ultimat3/money';
+import { addMs, fromZoned, type Instant, type TimeZone, toZoned } from '@ultimat3/time';
 import { NotAnUpgrade, SeatsExceeded } from './errors';
 
 export type UpgradeQuoteInput = {
@@ -47,6 +49,23 @@ export const quoteUpgrade = (input: UpgradeQuoteInput): UpgradeQuote => {
     nextPeriod: priceOf(input.to, input.currency),
     seats: seatLimit(input.to),
   };
+};
+
+/**
+ * A billing period is one calendar month in the org's zone, and it ends at the last millisecond of
+ * its last local day — not at the first of the next, so `daysRemaining` never borrows a day from
+ * the following cycle. `periodOffset` walks whole periods: `-1` is the period before `at`.
+ *
+ * Built from local calendar fields and converted once, because a month is 28..31 days and a day is
+ * 23, 24 or 25 hours — neither is a constant to multiply by.
+ */
+export const endOfBillingPeriod = (at: Instant, zone: TimeZone, periodOffset = 0): Instant => {
+  const local = toZoned(at, zone);
+  const nextPeriodStart = fromZoned(
+    { year: local.year, month: local.month + periodOffset + 1, day: 1, hour: 0, minute: 0 },
+    zone,
+  );
+  return addMs(nextPeriodStart, -1);
 };
 
 /** Called before an invite is written, not after — the seat limit is a plan promise, not advice. */

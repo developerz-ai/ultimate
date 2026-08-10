@@ -98,7 +98,7 @@ describe('the fluent surface', () => {
     expect(ran).toEqual({ id: POST_ID, published: true });
   });
 
-  test('.client() calls the derived path, same as createClient', async () => {
+  test('.client() calls the derived path, same as rpc', async () => {
     const { target } = definePublish();
     let url: string | null = null;
     const fetchStub: FetchLike = async (input, init) => {

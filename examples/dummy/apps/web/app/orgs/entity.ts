@@ -2,6 +2,9 @@
  * The orgs feature's view schemas: what an org, a membership and a billing receipt look like on
  * the wire. Money crosses the wire as minor units plus a currency — never as a formatted string,
  * because a client that receives "€18,00" cannot do arithmetic with it.
+ *
+ * `t` comes from @ultimat3/schema here, not from a primitive package: this file declares no
+ * primitive, so schema *is* its one import. Every primitive package re-exports the same object.
  */
 
 import {

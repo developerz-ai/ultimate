@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { flattenCatalog } from './catalog';
 import {
   currentLocale,
-  currentTranslator,
   localeCookieOf,
   registerCatalog,
   resetCatalogs,
   resolveLocale,
   t,
+  useI18n,
 } from './context';
 
 const supported = ['en', 'es', 'de'] as const;
@@ -65,6 +65,6 @@ describe('ambient translator', () => {
   test('app catalogs registered later override framework strings', () => {
     registerCatalog('en', flattenCatalog({ errors: { notFound: { title: 'Page not found' } } }));
     registerCatalog('en', flattenCatalog({ errors: { notFound: { title: 'Lost?' } } }));
-    expect(currentTranslator()('errors.notFound.title')).toBe('Lost?');
+    expect(useI18n()('errors.notFound.title')).toBe('Lost?');
   });
 });

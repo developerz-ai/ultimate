@@ -1,7 +1,9 @@
 // Public API of @ultimat3/mcp. Explicit — nothing is re-exported by wildcard, so the
 // surface an app or an agent can reach is exactly this list.
 
-export { formatIssues } from '@ultimat3/schema';
+/** Re-exported so a `defineAppMcp` file needs one import, not two. Same object as schema's. */
+export type { Infer } from '@ultimat3/schema';
+export { formatIssues, t } from '@ultimat3/schema';
 export type {
   AnyAppToolDefinition,
   AppToolArgs,

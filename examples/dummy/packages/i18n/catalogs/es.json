@@ -39,7 +39,8 @@
       "subheading": "Elige moneda al registrarte. Nunca adivinamos un tipo de cambio por ti.",
       "currencyLabel": "Moneda",
       "perMonth": "al mes",
-      "seats": { "one": "{count} asiento", "other": "{count} asientos" },
+      "seats_one": "{count} asiento",
+      "seats_other": "{count} asientos",
       "cta": "Elegir {plan}",
       "included": "Incluido en todos los planes",
       "includedList": "Feeds en vivo, «me gusta» sin conexión, resumen diario, dos idiomas y acceso MCP"
@@ -59,10 +60,8 @@
       "metaDescription": "No hay conexión. Postly mantiene tu feed legible y encola lo que escribas hasta que vuelva la red.",
       "heading": "No tienes conexión",
       "body": "El feed que ya habías cargado se sigue leyendo. Lo que escribas queda en cola y se envía al volver la conexión.",
-      "queued": {
-        "one": "{count} cambio pendiente de enviar",
-        "other": "{count} cambios pendientes de enviar"
-      },
+      "queued_one": "{count} cambio pendiente de enviar",
+      "queued_other": "{count} cambios pendientes de enviar",
       "queuedNone": "No hay nada pendiente de enviar."
     }
   },
@@ -84,7 +83,8 @@
       "publishing": "Publicando",
       "like": "Me gusta",
       "unlike": "Quitar me gusta",
-      "likes": { "one": "{count} me gusta", "other": "{count} me gusta" },
+      "likes_one": "{count} me gusta",
+      "likes_other": "{count} me gusta",
       "commentsHeading": "Comentarios",
       "commentsEmpty": "Aún no hay comentarios.",
       "commentPlaceholder": "Di algo útil",
@@ -174,10 +174,8 @@
   "digest": {
     "subject": "Resumen de Postly del {date}",
     "greeting": "Buenos días, {name}.",
-    "intro": {
-      "one": "{count} artículo nuevo en {org}.",
-      "other": "{count} artículos nuevos en {org}."
-    },
+    "intro_one": "{count} artículo nuevo en {org}.",
+    "intro_other": "{count} artículos nuevos en {org}.",
     "readAction": "Leerlo en Postly",
     "footer": "Enviado a las 09:00 en {zone}. Puedes cambiarlo en tus ajustes.",
     "unsubscribe": "Desactivar el resumen"

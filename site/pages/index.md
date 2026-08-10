@@ -70,7 +70,7 @@ export const publishPost = action({
 
 | # | Generated | Derived from | Notes |
 |---|---|---|---|
-| 1 | **HTTP route** | name + `input` | `POST /_x/action/publish-post`, body parsed by `input`, errors are `UltimateError` JSON |
+| 1 | **HTTP route** | name + `input` | `POST /api/posts/publish` — verb first, pluralized resource after. Body parsed by `input`, errors are `UltimateError` JSON |
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | `await publishPost({ postId })` in `app/` — no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `ctx.jobs.enqueue(publishPost, input)` runs the same handler durably |

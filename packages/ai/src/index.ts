@@ -1,6 +1,9 @@
 // Public API of @ultimat3/ai. Explicit — a wildcard barrel would leak internals an app
 // could depend on, and the gateway's guarantees only hold if every call goes through it.
 
+/** Re-exported so an `llm` file needs one import, not two. Same object as schema's. */
+export type { Infer } from '@ultimat3/schema';
+export { t } from '@ultimat3/schema';
 export type {
   BudgetLedgerInput,
   BudgetLimits,

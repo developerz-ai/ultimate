@@ -1,6 +1,9 @@
 /**
  * The posts feature's view schemas. The table lives in `@postly/db` because admin and the worker
  * need it too; what a *post looks like on the wire* is this feature's business, so it lives here.
+ *
+ * `t` comes from @ultimat3/schema here, not from a primitive package: this file declares no
+ * primitive, so schema *is* its one import. Every primitive package re-exports the same object.
  */
 
 import type { Post } from '@postly/db';

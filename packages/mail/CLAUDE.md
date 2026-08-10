@@ -26,6 +26,9 @@
 
 ## Rules
 
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineMail` file
+  imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on
+  every access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - `SendOptions.locale` is non-optional in the type. Never relax it, never default it.
 - Text part is derived from blocks and must be non-empty (`X_MAIL_TEXT_MISSING`).
 - No literal user-facing string in `templates/` or `layout.ts` — keys only.

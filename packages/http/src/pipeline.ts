@@ -95,7 +95,7 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'authz',
     phase: 'request',
-    why: 'the last gate: one policy, evaluated here exactly as it is in jobs, live queries and MCP tools',
+    why: 'the last gate, and only for a route whose policy nothing downstream evaluates: one policy, decided here exactly as it is in jobs, live queries and MCP tools. A route marked enforcedBy: handler is skipped, because its handler holds the row this stage cannot load',
   },
   { name: 'handler', phase: 'terminal', why: 'the only stage that is app code' },
   {
@@ -249,6 +249,10 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
     authz: async (request, ctx) => {
       const route = ctx.route;
       if (route === undefined || route.meta.policy === undefined) return undefined;
+      // The handler owns this route's single evaluation (`RouteMeta.enforcedBy`). Deciding
+      // here as well would be a second authz system holding strictly less than the first —
+      // no row — and it is the one that answers first, so it is the one that would win.
+      if (route.meta.enforcedBy === 'handler') return undefined;
       if (hooks.authorize === undefined) {
         // A declared policy with no evaluator is a wiring bug, and failing open
         // here is exactly how a framework ends up with two authz systems.

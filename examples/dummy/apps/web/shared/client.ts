@@ -13,12 +13,12 @@
  * client's own inputs.
  */
 
-import { createClient } from '@ultimat3/action';
+import { rpc } from '@ultimat3/action';
 import { EnvMissingError } from '@ultimat3/core';
 import type { Api } from '../api';
 
 /**
- * Resolved on access, never at import: `createClient` reads `baseUrl` only when a method is taken
+ * Resolved on access, never at import: `rpc` reads `baseUrl` only when a method is taken
  * off the client, so a missing `APP_URL` fails the call that needed an origin. Throwing at import
  * would take down every test that merely renders a component. An empty string is worse than
  * either — it makes relative requests that appear to work in a browser and fail to parse
@@ -35,7 +35,7 @@ function appUrl(): string {
   return url;
 }
 
-export const client = createClient<Api['actions']>({
+export const client = rpc<Api['actions']>({
   get baseUrl() {
     return appUrl();
   },

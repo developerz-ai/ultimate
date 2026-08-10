@@ -5,7 +5,7 @@
 
 import { dstAmbiguous, dstNonexistent } from './errors';
 import { addMs, type Instant } from './instant';
-import { assertTimeZone, offsetAt, type TimeZone, zonePartsAt } from './zones';
+import { assertTimeZone, offsetAt, type TimeZone, utcEpoch, zonePartsAt } from './zones';
 
 /** A local date and time with no zone attached — meaningless until paired with one. */
 export interface WallClock {
@@ -59,7 +59,7 @@ export function toZoned(at: Instant, zone: TimeZone): ZonedDateTime {
   assertTimeZone(zone);
   const parts = zonePartsAt(zone, at);
   const offsetMinutes = offsetAt(zone, at);
-  const asIfUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
+  const asIfUtc = utcEpoch(parts.year, parts.month, parts.day);
   return {
     ...parts,
     millisecond: at.getTime() - Math.floor(at.getTime() / 1000) * 1000,
@@ -97,9 +97,9 @@ export function fromZonedDetailed(
   // Normalize overflow first (day 32, hour 24, month 13) so callers can do naive calendar
   // arithmetic — `addDaysInZone` relies on it — and so verification compares real fields.
   const normal = normalizeWall(wall);
-  const target = Date.UTC(
+  const target = utcEpoch(
     normal.year,
-    normal.month - 1,
+    normal.month,
     normal.day,
     normal.hour,
     normal.minute,
@@ -197,6 +197,22 @@ export function isSameLocalDay(left: Instant, right: Instant, zone: TimeZone): b
   return isoDateInZone(left, zone) === isoDateInZone(right, zone);
 }
 
+/**
+ * Whole calendar days from `from` to `to`, counted as local day boundaries crossed in `zone`.
+ * Signed, and always integral. Not `differenceMs / 86_400_000`: a 23- or 25-hour DST day is
+ * still one day, and 24 real hours inside a 25-hour local day is still zero.
+ */
+export function daysBetween(from: Instant, to: Instant, zone: TimeZone): number {
+  // Both dates are reduced to a UTC midnight, so the subtraction carries no offset at all.
+  return (localDayEpoch(to, zone) - localDayEpoch(from, zone)) / 86_400_000;
+}
+
+/** The instant's local calendar date, expressed as the UTC midnight of that date. */
+function localDayEpoch(at: Instant, zone: TimeZone): number {
+  const zoned = toZoned(at, zone);
+  return utcEpoch(zoned.year, zoned.month, zoned.day);
+}
+
 function finish(
   epochMs: number,
   millisecond: number,
@@ -219,7 +235,7 @@ interface NormalWall {
 
 function normalizeWall(wall: WallClock): NormalWall {
   const asUtc = new Date(
-    Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second ?? 0),
+    utcEpoch(wall.year, wall.month, wall.day, wall.hour, wall.minute, wall.second ?? 0),
   );
   return {
     year: asUtc.getUTCFullYear(),

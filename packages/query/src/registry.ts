@@ -3,6 +3,7 @@
  * subscription protocol and the `/_x` dashboard all address a read by the same
  * identifier the source file uses.
  */
+import { registerPrimitiveRegistrar } from '@ultimat3/core';
 import { QueryDuplicateError, QueryPolicyMissingError } from './errors';
 import type { AnyQuery, QueryDescriptor } from './query';
 import { isQuery, nameQuery } from './query';
@@ -25,7 +26,7 @@ export function registerQuery<Q extends AnyQuery>(name: string, target: Q): Q {
 }
 
 /** `registerQueries(await import('./live'))` — export names become query names. */
-export function registerQueries(module: Record<string, unknown>): readonly AnyQuery[] {
+export function registerQueries(module: Readonly<Record<string, unknown>>): readonly AnyQuery[] {
   const registered: AnyQuery[] = [];
   for (const name of Object.keys(module).sort()) {
     const value = module[name];
@@ -33,6 +34,11 @@ export function registerQueries(module: Record<string, unknown>): readonly AnyQu
   }
   return registered;
 }
+
+// `defineApi` lives in `@ultimat3/action`, which sits on this tier and so cannot import this
+// file. Announcing the registrar in core's table is what lets one `defineApi({ queries })` call
+// register a read without a sideways import — importing the module you pass is what loads this.
+registerPrimitiveRegistrar('query', registerQueries);
 
 export function getQuery(name: string): AnyQuery | undefined {
   return registry.get(name);

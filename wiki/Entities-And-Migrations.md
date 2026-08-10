@@ -70,6 +70,29 @@ The table name is the first argument. Everything else is the init object:
 
 Presence of a `deletedAt` column is what makes an entity soft-deletable — not a flag.
 
+## The fluent surface
+
+Every projection is a method on the entity — `posts.$view(['id', 'title'])`, never `view(posts, ['id', 'title'])` — and every declared field is lifted onto it under a `$`. An entity has no `.def`.
+
+| Member | Is | Rule |
+|---|---|---|
+| `posts.title` | a column reference | the columns are the entity's own properties, which is what forces the `$` sigil onto every framework member |
+| `$row` | the phantom that carries the row type | `export type Post = typeof posts.$row`. Reading it as a value throws `X_INVARIANT_VIOLATED` — a type was meant |
+| `$schema` | the Standard Schema the columns already describe | forms and actions hand input to it; the row shape is never declared a second time |
+| `$parse(value)` | the parse boundary | fills declared defaults, then validates every column through the column that owns it. Throws on a bad value |
+| `$view(keys)` | the row projection | `const PostView = posts.$view(['id', 'title'])` — what an action names as its `output`. An unknown key is a compile error, and `X_INVARIANT_VIOLATED` at declaration for a JS caller |
+| `$assert(row)` | every invariant, run | called by the repo on insert and on update; reports **every** failing invariant at once, so one round trip fixes all |
+| `$migration()` | the CHECK and UNIQUE statements this entity contributes | `ALTER TABLE … ADD CONSTRAINT … CHECK` per `check`, `CREATE UNIQUE INDEX` per `unique`. A JS-only rule is `kind: 'assert'` and emits nothing — never a pretend CHECK |
+| `$describe()` | the manifest row | name, table, primary key, physical columns, invariants, index names, tags, `cacheTag`, `softDelete`, `orgScoped` |
+| `$cacheTag` | `entity:<name>` | the string `@ultimat3/cache` invalidates by |
+| `$tagFor(id)` | `entity:<name>:<id>` | row-level invalidation for live queries |
+| `$tenantColumn` | the tenant column's property key, or `null` | presence is what turns tenancy on — resolution order under **Tenant column rule** below |
+| `$name` `$table` `$columns` `$primaryKey` `$indexes` `$invariants` `$tags` `$softDelete` | the declaration, lifted | readable. `$table` is `$name` verbatim — the first argument to `entity()` is the physical table name, never pluralised or snake-cased for you |
+
+`entity` is the one primitive whose surface is `$`-prefixed, and the type says why: `type Entity<Row, C> = EntityCore<Row, C> & C` — the entity **is** its columns. `posts.title` is a column reference, so an unprefixed member would make `view`, `name` or `tenant` an illegal column name; with the sigil, a column called `name` and the entity's own name coexist as `posts.name` and `posts.$name`. `action`, `query` and `job` carry no sigil because nothing is merged into them. Reaching for `posts.view([…])` after reading [Actions](Actions) does not typecheck — there is no such member, only `$view`, and there is no free `view(entity, keys)` to import either. Nothing is hidden the way an action's `handle` is: an entity has no body to protect, so the whole declaration reads back, and the sigil protects the column namespace instead. Registration is not a second step — `entity()` registers itself as it is declared, which is why a duplicate name is `X_ENTITY_DUPLICATE` at import rather than a silent last-one-wins.
+
+`$view()` is what closes the type chain. `output: posts.$view(['id', 'title', 'excerpt'])` returns a Standard Schema over `Pick<Row, K>`, so renaming a column stops the key list itself from compiling, and the action's output type and every consumer of it fail in the same pass — not at runtime as a missing field. What it catches is the key list and the projected type; a value is still checked at runtime, by the column that owns it rather than by a second copy of its rule. A view never invents a default: it projects a row that already exists, so an absent required column is missing data.
+
 ## Tenant column rule
 
 Every multi-tenant entity declares `tenant`. Every query against it is tenant-scoped or it fails:
@@ -79,6 +102,25 @@ X_TENANCY_UNSCOPED: query is not scoped to a tenant
   cause: select on "posts" has no predicate on tenant column "orgId"
   fix:   query through posts repo (ctx.posts.*) — it applies the tenant scope from ctx.actor
 ```
+
+Which column that is, in order — first match wins:
+
+| Order | Source | Detail |
+|---|---|---|
+| 1 | `tenant: 'workspaceId'` | the declaration, said out loud. It need not be named `orgId` and need not carry `.tenant()`. Declared, it wins outright — a `.tenant()` mark elsewhere is not a conflict, just not the winner |
+| 2 | `.tenant()` on a column | the first column marked, in declaration order |
+| 3 | a column named `orgId` | literal property name, no mark needed |
+| 4 | none of those | `$tenantColumn` is `null` and the entity is not tenant-scoped |
+
+Omitting `tenant` keeps steps 2–4, so silence never means unscoped. A `tenant` key naming no column is a declaration error — because the alternative is a silently unscoped table. The error lists the columns to pick from and both edits that resolve it, so the declaration is repaired without opening the entity file:
+
+```
+X_INVARIANT_VIOLATED: a domain invariant rejected this row
+  cause: posts.tenant: tenant: 'workspaceId' names no column — pick from: id, title, body, orgId
+  fix:   set tenant to one of id, title, body, orgId in entity('posts'), or remove the tenant key — inference then takes the .tenant() column, else one named orgId
+```
+
+Removing the key is a real option, not a hedge: inference (steps 2–4) still applies, so the table stays scoped whenever a column is marked `.tenant()` or named `orgId`.
 
 | Consequence | Detail |
 |---|---|

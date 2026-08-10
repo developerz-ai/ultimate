@@ -85,7 +85,7 @@ user's app:
 
 ```ts
 // apps/admin/src/mcp.ts
-import { defineAppMcp } from '@ultimat3/mcp';
+import { defineAppMcp, t } from '@ultimat3/mcp';
 
 export const mcp = defineAppMcp({
   name: 'acme-admin',

@@ -19,6 +19,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
+| `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
+| the registrar table one same-tier package reaches another through | `registrar.ts` |
 | decode → resize → encode, the one image pipeline | `image/` |
 | `assertNever`, `invariant` | `assert.ts` |
 

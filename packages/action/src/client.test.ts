@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
-import { createClient, type FetchLike } from './client';
+import { type FetchLike, rpc } from './client';
 import { BUILD_ID_HEADER } from './http';
 
 const Input = t.object({ postId: t.uuid });
@@ -32,7 +32,7 @@ describe('typed client', () => {
       return Response.json({ id: POST_ID, published: true });
     };
 
-    const api = createClient<typeof actions>({
+    const api = rpc<typeof actions>({
       baseUrl: 'https://app.test/',
       fetch: fetchStub,
       buildId: 'build-1',
@@ -59,7 +59,7 @@ describe('typed client', () => {
         { status: 400, headers: { 'content-type': 'application/problem+json' } },
       );
 
-    const api = createClient<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
     const failure = await api.publishPost({ postId: 'nope' }).catch((error: unknown) => error);
     expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');
     expect((failure as { fix?: string }).fix).toBe('x actions describe publishPost --json');
@@ -72,7 +72,7 @@ describe('typed client', () => {
         { headers: { [BUILD_ID_HEADER]: 'build-2' } },
       );
 
-    const api = createClient<typeof actions>({
+    const api = rpc<typeof actions>({
       baseUrl: 'https://app.test',
       fetch: fetchStub,
       buildId: 'build-1',

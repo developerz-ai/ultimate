@@ -34,7 +34,8 @@ errors.*     user-facing text for the error codes a user can actually cause
 ## Plurals and interpolation
 
 ```json
-"likes": { "one": "{count} like", "other": "{count} likes" }
+"likes_one": "{count} like",
+"likes_other": "{count} likes"
 ```
 
 Call it as `t('app.post.likes', { count })`. The category is chosen by `Intl.PluralRules` for the

@@ -25,6 +25,33 @@ export const config = defineRoute({
 | Owns | render mode, hydration timing, metadata, offline strategy |
 | Never | touch the DB directly, hold business logic, or omit `meta.description` in `site/` — that is a build error |
 
+## The descriptor
+
+`route` is the one primitive whose façade is a **normalized descriptor** rather than a set of projection methods, because a route declares no behaviour to project. It is read by the router, the prerenderer, `sw.js` generation, the sitemap and the budget check, and the descriptor's job is to hand all five **one shape** so none of them branches. There is no `.describe()` on a route either — `describeRoutes()` is the one route list.
+
+| Member | Is | Rule |
+|---|---|---|
+| `kind: 'route'` | the brand | lets the registry reject a non-route export. `isRouteConfig(value)` is the guard |
+| `meta(data)` | the `<head>` producer | **always returns a promise.** A synchronous declared `meta` is wrapped, and a `meta` that throws synchronously becomes a rejection — so `await config.meta(data)` is the one way to fail as well as the one way to succeed, and no consumer branches on a thenable |
+| `budget` | the per-route limits | **always an object**, `{}` when undeclared, rather than a second undefined-check at every call site |
+| `render` `revalidate` `prerender` `offline` `hydrate` `policy` | the declaration, carried through | unchanged. Optional keys are omitted, never set to `undefined` |
+| the whole object | `Object.freeze`d | no consumer can mutate the route another consumer is about to read |
+
+**The always-present `budget` does not weaken the `site/` JS-budget check.** `budget` is always an object, but its *fields* stay optional — so `budget.js === undefined` still means "this route declared no JS budget", and a `site/` route that opts into any `hydrate` other than `never` without one is `X_ROUTE_MODE_INVALID`, exactly as before the normalization. Measuring the declared numbers against the built output is the separate concern in **Budgets**, below.
+
+Validation runs at **module evaluation**. `defineRoute` checks the shape and the mode-local invariants immediately, so a bad route fails at build time rather than on the first request in production.
+
+| Checked | Where | Code |
+|---|---|---|
+| `offline` present and a known strategy | `defineRoute` | `X_ROUTE_OFFLINE_MISSING` |
+| `meta` is a function | `defineRoute` | `X_ROUTE_META_MISSING` |
+| mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with no trigger; `ssr` with a `prerender`; `spa` with no `policy` | `defineRoute` | `X_ROUTE_MODE_INVALID` |
+| surface-dependent: mode allowed on the surface; `site/` hydration without `budget.js`; `stream` with no `<Suspense>`; `prerender` on a non-prerenderable mode | `registerRoute` | `X_ROUTE_MODE_INVALID` |
+| the config came from `defineRoute` and not straight from the author | `registerRoute` | `X_ROUTE_UNNORMALIZED` |
+| two files claiming one URL | `registerRoute` | `X_ROUTE_DUPLICATE` |
+
+The split is about what is knowable, not about strictness: everything decidable from the config alone is decided at import; the rest needs the file's surface, which only the route table knows.
+
 ## Five render modes
 
 | Mode | Behavior | Use |
