@@ -4,6 +4,7 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { docsFiles } from './scaffold-docs';
+import { packageShapeFiles } from './scaffold-package-shape';
 
 const rootPackage = (app: NameSet, version: string): string => `{
   "name": "${app.kebab}",
@@ -46,7 +47,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/query": "^${version}",
     "@ultimat3/render": "^${version}",
     "@ultimat3/ui": "^${version}",
-    "solid-js": "^2.0.0"
+    "solid-js": "2.0.0-experimental.16"
   },
   "engines": {
     "bun": ">=1.3.0"
@@ -440,12 +441,14 @@ export function repoFiles(
       path: 'packages/domain/package.json',
       contents: domainPackage(app, 'domain', 'Pure types and constants, no I/O'),
     },
+    ...packageShapeFiles(app, 'domain', 'Pure types and constants, no I/O'),
     { path: 'packages/domain/src/index.ts', contents: domainIndex() },
     { path: 'packages/domain/src/index.test.ts', contents: domainTest() },
     {
       path: 'packages/db/package.json',
       contents: domainPackage(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
     },
+    ...packageShapeFiles(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
     { path: 'packages/db/src/index.ts', contents: dbIndex() },
     { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
     { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
@@ -454,6 +457,7 @@ export function repoFiles(
       path: 'packages/i18n/package.json',
       contents: domainPackage(app, 'i18n', 'Flat catalogs with loud misses'),
     },
+    ...packageShapeFiles(app, 'i18n', 'Flat catalogs with loud misses'),
     { path: 'packages/i18n/src/index.ts', contents: i18nIndex() },
     { path: 'packages/i18n/src/index.test.ts', contents: i18nTest() },
     { path: 'packages/i18n/catalogs/en/app.json', contents: i18nCatalog(app) },
@@ -461,6 +465,7 @@ export function repoFiles(
       path: 'packages/ui/package.json',
       contents: domainPackage(app, 'ui', 'App components on @ultimat3/ui'),
     },
+    ...packageShapeFiles(app, 'ui', 'App components on @ultimat3/ui'),
     { path: 'packages/ui/src/index.ts', contents: uiIndex() },
     { path: 'packages/ui/src/card.tsx', contents: uiCard() },
     { path: 'packages/ui/src/card.module.scss', contents: uiCardStyle() },
@@ -468,6 +473,7 @@ export function repoFiles(
       path: 'packages/mcp/package.json',
       contents: domainPackage(app, 'mcp', "The app's own MCP tools"),
     },
+    ...packageShapeFiles(app, 'mcp', "The app's own MCP tools"),
     { path: 'packages/mcp/src/index.ts', contents: mcpIndex(app) },
     { path: 'packages/mcp/src/index.test.ts', contents: mcpTest() },
   ];
