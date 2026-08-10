@@ -1,15 +1,15 @@
 // The X_* codes owned by @ultimat3/cli. Every one names the exact command that resolves it,
 // because the CLI is the surface an agent reads first — a failure here has to be actionable
 // without a doc lookup or a second round-trip.
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const CLI_ERROR_CODES = [
+/** Codes this package declares and owns. */
+export const CLI_OWNED_ERROR_CODES = [
   'X_CLI_UNKNOWN_COMMAND',
   'X_CLI_BAD_FLAG',
   'X_VERIFY_FAILED',
   'X_NOT_IN_APP',
   'X_BUN_VERSION',
-  'X_NOT_IMPLEMENTED',
   'X_TEST_NO_FILES',
   'X_TEST_SHARD_FAILED',
   'X_SCAFFOLD_PATH_ESCAPE',
@@ -22,20 +22,31 @@ export const CLI_ERROR_CODES = [
   'X_ERROR_CODE_UNDOCUMENTED',
 ] as const;
 
+/**
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s — `CliNotImplementedError` and every planned command
+ * throw it, and none of them may declare a title for it. The CLI is the process that imports every
+ * package (`error-catalog.ts`), so a title declared twice here is the one that would win by load
+ * order rather than by ownership.
+ */
+export const CLI_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code the CLI can throw: the ones it owns plus the one it borrows. */
+export const CLI_ERROR_CODES = [...CLI_OWNED_ERROR_CODES, ...CLI_BORROWED_ERROR_CODES] as const;
+
+export type CliOwnedErrorCode = (typeof CLI_OWNED_ERROR_CODES)[number];
 export type CliErrorCode = (typeof CLI_ERROR_CODES)[number];
 
 /**
  * Registered titles, so `x errors list` enumerates the CLI's codes alongside every other
  * package's instead of leaving a hole an agent has to read source to fill. Typed over
- * `CliErrorCode`, so adding a code without a title is a build error.
+ * `CliOwnedErrorCode`, so adding a code without a title is a build error.
  */
-export const CLI_ERROR_TITLES: Readonly<Record<CliErrorCode, string>> = {
+export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_CLI_UNKNOWN_COMMAND: 'not a command in the registry',
   X_CLI_BAD_FLAG: 'unknown flag, missing value, or a value the command refuses',
   X_VERIFY_FAILED: 'at least one x verify step failed',
   X_NOT_IN_APP: 'the command needs an app root and found none',
   X_BUN_VERSION: 'Bun is older than the framework floor',
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
   X_TEST_NO_FILES: 'the test selection matched no files',
   X_TEST_SHARD_FAILED: 'a test shard exited non-zero',
   X_SCAFFOLD_PATH_ESCAPE: 'a generated path resolves outside the directory it is written into',
@@ -48,10 +59,11 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliErrorCode, string>> = {
   X_ERROR_CODE_UNDOCUMENTED: 'a shipped error code has no row in the error reference',
 };
 
-// `X_NOT_IMPLEMENTED` belongs to core, and a second registration throws X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries(CLI_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// One unconditional call, so a second package claiming one of the CLI's codes throws
+// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(CLI_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 export const docsFor = (code: CliErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

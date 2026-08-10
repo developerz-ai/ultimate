@@ -53,27 +53,21 @@ export type { PlannedCommand } from './cmd-planned';
 export { PLANNED_COMMANDS, plannedCommands } from './cmd-planned';
 export { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 export { renderRouteTable, routesCommand } from './cmd-routes';
-export type { RunShardsOptions, Shard } from './cmd-test';
-export {
-  availableCpus,
-  planShards,
-  reproduceFor,
-  runShards,
-  shardArgs,
-  testCommand,
-} from './cmd-test';
+export { availableCpus, testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
 export type { DevDashboardInput, DevStatus } from './dev-dashboard';
 export { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 export { devHooks } from './dev-hooks';
+export type { DevDbClient, RunningQueue } from './dev-queue';
+export { startQueue } from './dev-queue';
 export type { DevRenderOptions, DevRouteData } from './dev-render';
 export { appRoutes } from './dev-render';
 export type { RunningRoles, StartRolesOptions } from './dev-roles';
 export { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
-export type { DevDbClient, RunningQueue, RunningServices } from './dev-runtime';
-export { startQueue, startServices } from './dev-runtime';
+export type { RunningServices } from './dev-runtime';
+export { startServices } from './dev-runtime';
 export type { DevServices, ServiceBinding } from './dev-services';
 export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
@@ -106,20 +100,11 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
-export type {
-  DrainFailure,
-  DrainOutcome,
-  JobsListFilter,
-  JobsListResult,
-} from './jobs-report';
-export {
-  drainJobs,
-  JOB_STATES,
-  listJobs,
-  renderJobTable,
-  retryJob,
-  showJob,
-} from './jobs-report';
+export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
+export { drainJobs } from './jobs-drain';
+export type { JobsListFilter, JobsListResult } from './jobs-report';
+export { JOB_STATES, listJobs, retryJob, showJob } from './jobs-report';
+export { renderJobTable } from './jobs-table';
 export type { CliMcpServer, DevHostInput } from './mcp-host';
 export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
@@ -146,6 +131,8 @@ export {
 } from './source-files';
 export type { TestFile } from './test-select';
 export { belongsToType, discoverTests, sampleFiles } from './test-select';
+export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
+export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
 export type { CodeSite, FixSite, SourceSite } from './ts-scan';
 export { isCodeRegistry, maskLiterals, scanCodes, scanFixes, stripComments } from './ts-scan';
 export type {

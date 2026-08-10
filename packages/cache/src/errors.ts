@@ -1,27 +1,40 @@
 // The X_* codes owned by @ultimat3/cache. Each one names the exact config change or
 // command that resolves it, so an agent reading the failure can act without a doc lookup.
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const CACHE_ERROR_CODES = [
+/** Codes this package declares and owns. */
+export const CACHE_OWNED_ERROR_CODES = [
   'X_CACHE_DRIVER_UNAVAILABLE',
   'X_CACHE_TAG_UNKNOWN',
   'X_CACHE_TOO_LARGE',
-  'X_NOT_IMPLEMENTED',
 ] as const;
 
+/**
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `CacheNotImplementedError` throws it; this package
+ * neither titles nor registers it, because the owner's title is the only one that may exist.
+ */
+export const CACHE_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code cache can throw: the ones it owns plus the one it borrows. */
+export const CACHE_ERROR_CODES = [
+  ...CACHE_OWNED_ERROR_CODES,
+  ...CACHE_BORROWED_ERROR_CODES,
+] as const;
+
+export type CacheOwnedErrorCode = (typeof CACHE_OWNED_ERROR_CODES)[number];
 export type CacheErrorCode = (typeof CACHE_ERROR_CODES)[number];
 
-export const CACHE_ERROR_TITLES: Readonly<Record<CacheErrorCode, string>> = {
+export const CACHE_ERROR_TITLES: Readonly<Record<CacheOwnedErrorCode, string>> = {
   X_CACHE_DRIVER_UNAVAILABLE: "a tier's backing store is missing",
   X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
   X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
-// X_NOT_IMPLEMENTED is core's; registering it twice would throw X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries(CACHE_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// One unconditional call, so a second package claiming one of cache's codes throws
+// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(CACHE_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: CacheErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

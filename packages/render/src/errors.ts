@@ -3,7 +3,7 @@
  * (axiom 4), identical in the terminal, the browser overlay and `--json`.
  */
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const RENDER_ERROR_CODES = [
   'X_ROUTE_MODE_INVALID',
@@ -27,11 +27,12 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
 };
 
-// Titles must be registered for `format()` to render the contract's first line. Guarded
-// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
-for (const [code, title] of Object.entries(RENDER_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// Titles must be registered for `format()` to render the contract's first line. Every code above is
+// owned here and none is borrowed, so the call is unconditional: a second package claiming one has
+// to fail as X_ERROR_CODE_DUPLICATE, not quietly keep whichever title was registered first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(RENDER_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: RenderErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

@@ -1,17 +1,16 @@
-// Version loader — reads from root package.json to avoid circular dependency with core at
-// module initialization time. This is necessary because registry.ts imports all command modules
-// before core has finished initializing, so we bypass core and read the package.json directly.
+// The CLI's own version, read lazily. Lazily because `registry.ts` evaluates every command module
+// at import, and a top-level cross-package import from there is what broke module initialisation
+// order before — so the value is fetched at the call, not at module scope.
 
-import { readFileSync } from 'node:fs';
+// Bun has no path-join primitive; `import.meta.dir` is this module's directory in both the
+// checked-out `src/` layout and the published `dist/` one, each one level below the package root.
 import { resolve } from 'node:path';
+import { readPackageVersion } from '@ultimat3/core';
 
-interface PackageJson {
-  version: string;
-}
+/** `@ultimat3/cli`'s own manifest — released in lockstep with the rest of `@ultimat3/*`. */
+export const CLI_MANIFEST = resolve(import.meta.dir, '..', 'package.json');
 
+/** Throws `X_INVARIANT` if this package shipped without a version — see `readPackageVersion`. */
 export function loadVersion(): string {
-  const packageJsonPath = resolve(__dirname, '../../..', 'package.json');
-  const content = readFileSync(packageJsonPath, 'utf-8');
-  const pkg = JSON.parse(content) as PackageJson;
-  return pkg.version;
+  return readPackageVersion(CLI_MANIFEST);
 }

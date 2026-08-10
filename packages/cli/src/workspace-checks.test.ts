@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  badVersionFinding,
   checkFileSizes,
   checkPackageShape,
   countLines,
@@ -26,7 +27,7 @@ beforeAll(async () => {
   await Bun.write(join(dir, 'packages/short/README.md'), '# short\n');
   await Bun.write(join(dir, 'packages/short/CLAUDE.md'), '# short\n');
   await Bun.write(join(dir, 'packages/short/tsconfig.json'), '{}\n');
-  await Bun.write(join(dir, 'packages/short/package.json'), '{"name":"short"}\n');
+  await Bun.write(join(dir, 'packages/short/package.json'), '{"name":"short","version":"1.2.3"}\n');
   await Bun.write(join(dir, 'packages/long/src/index.ts'), lines(LINE_CEILING + 1));
   await Bun.write(join(dir, 'packages/long/package.json'), '{"name":"long"}\n');
   await Bun.write(join(dir, 'packages/long/node_modules/dep/src/huge.ts'), lines(2_000));
@@ -90,8 +91,22 @@ describe('unit · the package shape', () => {
       'packages/long/README.md',
       'packages/long/CLAUDE.md',
       'packages/long/tsconfig.json',
+      'packages/long/package.json',
     ]);
     expect(findings.every((finding) => finding.code === 'X_PACKAGE_SHAPE')).toBe(true);
+  });
+
+  test('a manifest with no semver version is a finding, not a silent 0.0.0', async () => {
+    // Every published package reads its own version back at runtime, so this is the difference
+    // between a working `x --version` and one that prints `undefined` to whoever installed it.
+    expect(badVersionFinding('long', undefined).fix).toContain('packages/long/package.json');
+    const bad = await mkdtemp(join(tmpdir(), 'ultimate-version-'));
+    for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
+    await Bun.write(join(bad, 'packages/p/package.json'), '{"name":"p","version":"latest"}\n');
+    const findings = await checkPackageShape(bad);
+    expect(findings.map((finding) => finding.at)).toEqual(['packages/p/package.json']);
+    expect(findings[0]?.cause).toContain('"latest"');
+    await rm(bad, { recursive: true, force: true });
   });
 
   test('this repo satisfies the shape it enforces', async () => {

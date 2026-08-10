@@ -10,7 +10,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | Errors | `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
 | Subprocesses | only through `exec.ts`, so a test can inject a fake `Runner` |
 | Templates | `templates/*.ts` return strings; no fixture files on disk |
-| Strings | `messages.ts` flat catalog, missing key renders `⟦key⟧` |
+| Strings | rendered output through `messages.ts`, missing key renders `⟦key⟧` — see below for what is *not* rendered output |
 | Facts | load the app (`app-load.ts`), then project it — never parse source for primitives |
 
 Every fact the CLI reports comes from a framework package: the manifest from
@@ -21,6 +21,18 @@ Every fact the CLI reports comes from a framework package: the manifest from
 
 `app-evals.ts` is why the `eval` step can apply with no eval suite at all: a prompt no eval
 names is `X_EVAL_MISSING`, and a skipped step would read as a green gate over untested code.
+
+## What goes in `messages.ts`, and what does not
+
+`messages.ts` holds the strings a command *renders* — `CommandResult.summary`, `lines`, anything
+the human renderer prints. Three things stay inline, deliberately, and a review asking to move
+them is answered by this table rather than by a second convention:
+
+| Not in the catalog | Why |
+|---|---|
+| `CommandSpec.summary` / `.usage` / `FlagSpec.summary` | the spec is the command's declaration, next to the `run` it describes; parsing and `x help` both derive from it. All command modules declare it inline — moving a subset creates two places to look for one command's help |
+| `Finding.cause` / `Finding.fix`, and `BadFlagError`'s `reason` | stable machine-readable diagnostics. A `fix:` is copied and run verbatim; a translated one is a broken command |
+| Fixed-width table headers (`renderJobTable`, `renderRouteTable`) | column keys, not prose — the widths are computed from them and `--json` carries the same names |
 
 ## The `errors` step enforces the error contract
 
@@ -52,7 +64,8 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 | File | Job |
 |---|---|
 | `dev-services.ts` | resolve which service each binding points at — embedded or external |
-| `dev-runtime.ts` | start them and install the ambient accessors (`db()`, `jobDriver()`, storage, transport) |
+| `dev-queue.ts` | the db + queue pair alone, and the one place that takes `db()` and `jobDriver()` back |
+| `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |

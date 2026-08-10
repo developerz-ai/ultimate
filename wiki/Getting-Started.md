@@ -104,9 +104,9 @@ claude mcp add ultimate --transport ws ws://localhost:9229
 The agent now sees `publishPost` as a tool with JSON Schema from `input`, the description from `mcp.description`, and **the action's own `policy` as its authorization** — unwrapped, identical to the HTTP path. A denial is the same code in all three encodings:
 
 ```json
-{ "code": "X_POLICY_DENIED", "cause": "actor user_2 lacks post:publish on post_9",
+{ "code": "X_FORBIDDEN", "cause": "actor user_2 lacks post:publish on post_9",
   "fix": "grant post:publish to the actor's role, or call as the post owner",
-  "docs": "https://ultimate.dev/errors/X_POLICY_DENIED" }
+  "docs": "https://ultimate.dev/errors/X_FORBIDDEN" }
 ```
 
 Introspection an agent should use instead of grepping:

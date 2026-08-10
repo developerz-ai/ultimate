@@ -1,3 +1,7 @@
+// Selection, tested away from the command that calls it: which positional is a type, what
+// `--sample` refuses, and which files each type claims. One file for the decisions `x test` makes
+// before anything runs, so a red line here names a selection bug and never a wiring one.
+
 import { describe, expect, test } from 'bun:test';
 import { NoTestFilesError } from './errors';
 import type { CommandSpec, ParsedArgs } from './parse';

@@ -1,8 +1,9 @@
 // The X_* codes owned by @ultimat3/jobs. Every one names the command or code change that
 // fixes it — a job failure an agent cannot act on is a job failure that gets retried forever.
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const JOB_ERROR_CODES = [
+/** Codes this package declares and owns. */
+export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_DUPLICATE',
   'X_STEP_DUPLICATE',
   'X_JOB_TIMEOUT',
@@ -10,12 +11,22 @@ export const JOB_ERROR_CODES = [
   'X_DRIVER_UNAVAILABLE',
   'X_IDEMPOTENCY_REQUIRED',
   'X_OUTBOX_NO_TX',
-  'X_NOT_IMPLEMENTED',
 ] as const;
 
+/**
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `JobsNotImplementedError` below throws it; jobs keeps
+ * no title for it, because the copy this file used to hold was a second title that nothing would
+ * have failed on once core's changed.
+ */
+export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code jobs can throw: the ones it owns plus the one it borrows. */
+export const JOB_ERROR_CODES = [...JOB_OWNED_ERROR_CODES, ...JOB_BORROWED_ERROR_CODES] as const;
+
+export type JobOwnedErrorCode = (typeof JOB_OWNED_ERROR_CODES)[number];
 export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
-export const JOB_ERROR_TITLES: Readonly<Record<JobErrorCode, string>> = {
+export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_DUPLICATE: 'a live key already has a job',
   X_STEP_DUPLICATE: 'two step.run calls share a name',
   X_JOB_TIMEOUT: 'a job exceeded its wall-clock limit',
@@ -23,16 +34,13 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobErrorCode, string>> = {
   X_DRIVER_UNAVAILABLE: 'the queue driver is unreachable',
   X_IDEMPOTENCY_REQUIRED: 'the job has no idempotencyKey',
   X_OUTBOX_NO_TX: 'enqueue outside a transaction',
-  // Owned by @ultimat3/core; jobs only borrows it (see JobsNotImplementedError below). Keep this
-  // text identical to CORE_CODE_TITLES.X_NOT_IMPLEMENTED — hasErrorCode() skips re-registering it.
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
-// Titles must be registered for `format()` to render the contract's first line. Guarded
-// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
-for (const [code, title] of Object.entries(JOB_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// One unconditional call, so a second package claiming one of jobs' codes throws
+// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(JOB_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: JobErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

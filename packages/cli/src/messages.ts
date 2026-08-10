@@ -25,12 +25,17 @@ const CATALOG = {
   'cli.fix.clean': 'no boundary violation involves {file}',
   'cli.fix.plan': '{count} boundary violation(s) involve {file} — {edits} edit(s) to make',
   'cli.generate.wrote': 'wrote {count} file(s) for {kind} {name}',
+  'cli.jobs.deadLetters': '{count} dead letter(s):',
   'cli.jobs.depth':
     '{ready} ready · {running} running · {delayed} delayed · {dead} dead across {queues} queue(s)',
   'cli.jobs.drained': 'drained {count} job(s) from {from} to {to}',
+  'cli.jobs.drainedPartial':
+    'drained {count} job(s) from {from} to {to} — {skipped} left on {from}',
   'cli.jobs.listed': '{count} job(s)',
+  'cli.jobs.noError': 'no error recorded',
   'cli.jobs.retried': 'job {id} re-queued — {state}',
   'cli.jobs.shown': 'job {id} — {state}, attempt {attempt} of {attempts}',
+  'cli.jobs.skipped': '{count} job(s) left on {from} — re-run the drain once each is claimable:',
   'cli.manifest.blocked': 'manifest not written — {count} module(s) did not load',
   'cli.manifest.fresh': 'manifest is fresh',
   'cli.manifest.stale': 'manifest is stale',

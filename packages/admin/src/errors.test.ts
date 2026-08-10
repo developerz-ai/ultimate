@@ -4,13 +4,24 @@
 
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
-import { ADMIN_ERROR_CODES, ADMIN_ERROR_TITLES } from './errors';
+import {
+  ADMIN_BORROWED_ERROR_CODES,
+  ADMIN_ERROR_CODES,
+  ADMIN_ERROR_TITLES,
+  ADMIN_OWNED_ERROR_CODES,
+} from './errors';
 
 describe('ADMIN_ERROR_TITLES', () => {
-  test('has exactly one title per declared code, and no extras', () => {
-    const titled = Object.keys(ADMIN_ERROR_TITLES).sort();
-    const declared = [...ADMIN_ERROR_CODES].sort();
-    expect(titled).toEqual(declared);
+  test('titles exactly the codes admin owns — a borrowed code carries no title here', () => {
+    expect(Object.keys(ADMIN_ERROR_TITLES).sort()).toEqual([...ADMIN_OWNED_ERROR_CODES].sort());
+  });
+
+  test('owned and borrowed are disjoint and together are every code admin throws', () => {
+    const owned = new Set<string>(ADMIN_OWNED_ERROR_CODES);
+    for (const code of ADMIN_BORROWED_ERROR_CODES) expect(owned.has(code)).toBe(false);
+    expect([...ADMIN_ERROR_CODES].sort()).toEqual(
+      [...ADMIN_OWNED_ERROR_CODES, ...ADMIN_BORROWED_ERROR_CODES].sort(),
+    );
   });
 });
 
@@ -22,15 +33,13 @@ describe('registration', () => {
   });
 
   test('describeErrorCode renders the title this package declared', () => {
-    for (const code of ADMIN_ERROR_CODES) {
+    for (const code of ADMIN_OWNED_ERROR_CODES) {
       expect(describeErrorCode(code).title).toBe(ADMIN_ERROR_TITLES[code]);
     }
   });
 
   test('X_NOT_IMPLEMENTED is borrowed from core, not re-registered by admin', () => {
-    // admin/src/errors.ts guards this code with hasErrorCode() and never calls
-    // registerErrorCodes() for it, so the title rendered here is core's — this pins that
-    // fact instead of letting the loop above pass on a coincidence.
+    // admin declares no title for it, so the string below can only have come from core.
     expect(describeErrorCode('X_NOT_IMPLEMENTED').title).toBe(
       'this driver does not implement the requested feature',
     );

@@ -1,26 +1,26 @@
 // `x jobs ls|show|retry|drain` — introspect and recover the job queue, bound to `@ultimat3/jobs`'s
-// own introspection so the CLI, `/_x` and MCP report identically. This file is CLI wiring only;
-// the driver-injected logic it wires lives in `jobs-report.ts`.
+// own introspection so the CLI, `/_x` and MCP report identically. This file is CLI wiring only:
+// the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
+// `jobs-table.ts`.
 
 import type { JobDriver } from '@ultimat3/jobs';
 import { createMemoryDriver, createNatsDriver, createRedisDriver, jobDriver } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { startQueue } from './dev-runtime';
+import { startQueue } from './dev-queue';
 import { resolveServices } from './dev-services';
 import { BadFlagError } from './errors';
+import { drainJobs } from './jobs-drain';
 import {
   deadLetterToJson,
   depthToJson,
   drainFailureToJson,
-  drainJobs,
+  drainSkipToJson,
   jobRecordToJson,
   jobTraceToJson,
-  listJobs,
-  renderJobTable,
-  retryJob,
-  showJob,
-} from './jobs-report';
+} from './jobs-json';
+import { listJobs, retryJob, showJob } from './jobs-report';
+import { renderJobTable } from './jobs-table';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
@@ -106,10 +106,11 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
     lines.push(...renderJobTable(result.rows).map((line) => `  ${line}`));
   }
   if (result.deadLetters.length > 0) {
-    lines.push(`  ${result.deadLetters.length} dead letter(s):`);
+    lines.push(`  ${msg('cli.jobs.deadLetters', { count: result.deadLetters.length })}`);
     for (const entry of result.deadLetters) {
+      const why = entry.lastError ?? msg('cli.jobs.noError');
       lines.push(
-        `    ${entry.id}  ${entry.name}  (${entry.queue})  ${entry.lastError ?? 'no error recorded'}  — ${entry.retryCommand}`,
+        `    ${entry.id}  ${entry.name}  (${entry.queue})  ${why}  — ${entry.retryCommand}`,
       );
     }
   }
@@ -158,19 +159,35 @@ async function runRetry(driver: JobDriver, ctx: CommandContext): Promise<Command
   };
 }
 
+/**
+ * A skipped candidate is not an error — a job whose `runAt` has not arrived is unclaimable by
+ * design — so it carries no `X_*` finding. It still fails the command: `x jobs drain` is run to
+ * empty a driver, and a partial move that exited 0 would read as "the queue is clear".
+ */
 async function runDrain(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
   const target = buildDrainTarget(flagString(ctx.args, 'to'), ctx.env);
   const dryRun = flagBool(ctx.args, 'dry-run');
   const outcome = await drainJobs(driver, target, dryRun);
   const findings = outcome.failures.map((failure) => failure.finding);
+  const lines: string[] = [];
+  if (outcome.skipped.length > 0) {
+    const count = outcome.skipped.length;
+    lines.push(`  ${msg('cli.jobs.skipped', { count, from: outcome.from })}`);
+    for (const skip of outcome.skipped) {
+      lines.push(`    ${skip.id}  ${skip.name}  (${skip.queue})  ${skip.state}  ${skip.reason}`);
+    }
+  }
+  const partial = outcome.skipped.length > 0;
   return {
-    ok: findings.length === 0,
+    ok: findings.length === 0 && !partial,
     command: 'jobs',
-    summary: msg('cli.jobs.drained', {
+    summary: msg(partial ? 'cli.jobs.drainedPartial' : 'cli.jobs.drained', {
       count: dryRun ? outcome.candidates.length : outcome.moved.length,
       from: outcome.from,
       to: outcome.to,
+      skipped: outcome.skipped.length,
     }),
+    lines,
     findings,
     data: {
       from: outcome.from,
@@ -178,6 +195,7 @@ async function runDrain(driver: JobDriver, ctx: CommandContext): Promise<Command
       dryRun: outcome.dryRun,
       candidates: outcome.candidates.map(jobRecordToJson),
       moved: outcome.moved.map(jobRecordToJson),
+      skipped: outcome.skipped.map(drainSkipToJson),
       failures: outcome.failures.map(drainFailureToJson),
     },
   };
@@ -213,5 +231,7 @@ export const jobsCommand: CliCommand = {
   },
 };
 
-export type { DrainFailure, DrainOutcome, JobsListFilter, JobsListResult } from './jobs-report';
-export { drainJobs, listJobs, retryJob, showJob } from './jobs-report';
+export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
+export { drainJobs } from './jobs-drain';
+export type { JobsListFilter, JobsListResult } from './jobs-report';
+export { listJobs, retryJob, showJob } from './jobs-report';

@@ -49,6 +49,22 @@ export const missingFileFinding = (dir: string, file: string, scaffolder: boolea
   at: `packages/${dir}/${file}`,
 });
 
+/**
+ * A published package reports its own version by reading its own `package.json` at runtime
+ * (`@ultimat3/core`'s `FRAMEWORK_VERSION`, the CLI's `CLI_VERSION`, every dependency `x new` pins).
+ * A manifest with no semver `version` therefore breaks the MCP handshake and every scaffold — so
+ * the gate refuses the publish here, where the fix is one line, rather than at someone's install.
+ */
+export const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
+
+export const badVersionFinding = (dir: string, found: unknown): Finding => ({
+  code: 'X_PACKAGE_SHAPE',
+  cause: `packages/${dir}/package.json has no semver "version" (found ${JSON.stringify(found)})`,
+  fix: `set a semver "version" in packages/${dir}/package.json, then: bun run verify`,
+  docs: docs('X_PACKAGE_SHAPE'),
+  at: `packages/${dir}/package.json`,
+});
+
 export async function workspacePackages(root: string): Promise<readonly string[]> {
   const dirs: string[] = [];
   for await (const path of new Bun.Glob('packages/*/package.json').scan({
@@ -72,6 +88,14 @@ export async function checkPackageShape(root: string): Promise<readonly Finding[
     for (const file of PACKAGE_FILES) {
       if (existsSync(join(root, 'packages', dir, file))) continue;
       findings.push(missingFileFinding(dir, file, scaffolder));
+    }
+    const manifest: unknown = await Bun.file(join(root, 'packages', dir, 'package.json')).json();
+    const version =
+      typeof manifest === 'object' && manifest !== null
+        ? (manifest as { version?: unknown }).version
+        : undefined;
+    if (typeof version !== 'string' || !SEMVER.test(version)) {
+      findings.push(badVersionFinding(dir, version));
     }
   }
   return findings;

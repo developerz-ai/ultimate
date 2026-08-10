@@ -165,11 +165,9 @@ describe('the checks, over a repo', () => {
 describe('this repo', () => {
   const root = join(import.meta.dir, '..', '..', '..');
 
+  // The other half — every shipped code has a row in wiki/Error-Codes.md — is asserted once, in
+  // `scripts/verify.test.ts` through `errorCodeDocs(root)`: the page is the host repo's to name.
   test('every shipped fix line is runnable', async () => {
     expect(await checkErrorFixes(root)).toEqual([]);
-  });
-
-  test('every shipped code has a row in wiki/Error-Codes.md', async () => {
-    expect(await checkErrorCodeDocs(root, 'wiki/Error-Codes.md')).toEqual([]);
   });
 });

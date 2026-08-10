@@ -47,14 +47,29 @@ function explainOne(code: string): CommandResult {
   };
 }
 
+/**
+ * A package that resolved and then threw is a defect, not a host gap: its codes are missing from
+ * this answer and something is broken that a `fix:` can address. Reported as findings — and `ok`
+ * goes false — so the incomplete catalog cannot read as a complete one.
+ */
 function listAll(catalog: ErrorCatalog): CommandResult {
   const all = explainEveryErrorCode();
   return {
-    ok: true,
+    ok: catalog.failed.length === 0,
     command: 'errors',
     summary: msg('cli.errors.count', { count: all.length }),
     lines: all.map((entry) => `  ${entry.code.padEnd(30)} ${entry.cause}`),
-    data: { codes: all.map(asJson), unavailable: [...catalog.unavailable] },
+    findings: catalog.failed,
+    data: {
+      codes: all.map(asJson),
+      unavailable: [...catalog.unavailable],
+      failed: catalog.failed.map((finding) => ({
+        code: finding.code,
+        cause: finding.cause,
+        fix: finding.fix,
+        at: finding.at ?? null,
+      })),
+    },
   };
 }
 

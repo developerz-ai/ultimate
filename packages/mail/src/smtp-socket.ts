@@ -199,7 +199,7 @@ export function smtpStreamOver(runtime: BunConnect, target: SmtpTarget): Promise
               stage: 'data',
               detail: `the socket stopped accepting bytes for ${target.timeoutMs}ms`,
               retryable: true,
-              fix: 'raise the write deadline: createSmtpDriver({ url: SMTP_URL, timeoutMs: 60_000 })',
+              fix: 'pass timeoutMs: 60_000 to createSmtpDriver() in app.config.ts',
             }),
           );
         }, target.timeoutMs);

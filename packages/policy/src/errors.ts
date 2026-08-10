@@ -1,7 +1,7 @@
 // The policy layer's stable error codes. `X_POLICY_MISSING` is deliberately a build
 // error rather than a runtime default: an action with no policy is not "public", it
 // is unfinished.
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const POLICY_ERROR_CODES = [
   'X_FORBIDDEN',
@@ -17,13 +17,13 @@ export const POLICY_ERROR_TITLES: Readonly<Record<PolicyErrorCode, string>> = {
   X_PERMISSION_UNKNOWN: 'permission string is not in the permission set',
 };
 
-// This package OWNS X_FORBIDDEN — http, auth and every surface adapter borrow it. One authz code,
-// one title, so every surface renders the same string. Guarded because `auth` is the same tier
-// and cannot import this package: it registers the identical title defensively, and whichever
-// module the host loads first must not make the second one throw X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries(POLICY_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// This package OWNS X_FORBIDDEN — http, auth, ai, realtime and every other surface adapter throw
+// it and none of them declare a title for it. One authz code, one title, so every surface renders
+// the same string. Registered unconditionally: a second package claiming one of these codes is a
+// bug the registry must surface as X_ERROR_CODE_DUPLICATE, not absorb into a silent first-wins.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(POLICY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 export class PolicyError extends UltimateError {
   override readonly name = 'PolicyError';

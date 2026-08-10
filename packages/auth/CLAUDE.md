@@ -53,6 +53,8 @@ bun run --filter @ultimat3/auth typecheck
 Gotchas:
 - `exactOptionalPropertyTypes` — declare optional fields as `x?: T | undefined`.
 - `noUncheckedIndexedAccess` — index a `Record` into a local before narrowing it.
-- `X_NOT_IMPLEMENTED` is core's, `X_FORBIDDEN` is policy's: `errors.ts` guards registration
-  with `hasErrorCode()` or import order throws `X_ERROR_CODE_DUPLICATE`.
+- `X_NOT_IMPLEMENTED` is core's, `X_FORBIDDEN` is policy's. `errors.ts` registers only the codes
+  this package **owns**, unconditionally, and lists the borrowed two in `AUTH_BORROWED_ERROR_CODES`
+  without a title. A `hasErrorCode()` guard would suppress the `X_ERROR_CODE_DUPLICATE` that is
+  supposed to fire when two packages claim one code.
 - Tests run against `MemoryAdapter`; nothing in this package needs a database.

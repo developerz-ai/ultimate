@@ -111,7 +111,12 @@ describe('unit · x fix boundary', () => {
     expect(split?.surface).toBe('app');
     expect(split?.to).toBe('apps/s2/app/panel.tsx');
     expect(split?.importers).toEqual(['apps/s2/app/dashboard.tsx']);
-    expect(result.findings?.[0]?.fix).toBe('git mv apps/s2/shared/panel.tsx apps/s2/app/panel.tsx');
+    // The move ALONE is not the repair: `dashboard.tsx` still imports `../shared/panel`, so the
+    // published fix has to carry every specifier the move invalidates.
+    expect(result.findings?.[0]?.fix).toStartWith(split?.command ?? '');
+    expect(result.findings?.[0]?.fix).toContain(
+      "apps/s2/app/dashboard.tsx, apps/s2/shared/panel.tsx → './panel'",
+    );
   });
 
   test('the same shape reached by two surfaces gets no git mv — a cut instead', async () => {

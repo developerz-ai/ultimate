@@ -67,8 +67,8 @@ const FIXES: Readonly<Partial<Record<SendStage, string>>> = {
   ehlo: 'point SMTP_URL at an ESMTP server (submission on 587, implicit TLS on 465)',
   reply: 'point SMTP_URL at the SMTP port itself — a proxy or an HTTP port answers like this',
   tls: 'fix the certificate on the implicit-TLS port, or use smtp://host:587 and STARTTLS',
-  starttls: 'use smtps://host:465, or pass allowInsecure: true to send over a cleartext channel',
-  auth: 'correct the user:password in SMTP_URL — the server rejected the credentials',
+  starttls: 'set SMTP_URL in .env to smtps://host:465',
+  auth: 'set SMTP_URL in .env to smtps://user:password@host:465 with a valid user and password',
   from: 'set mail.from in app.config.ts to an address this server is willing to relay for',
   recipient: 'the reply above names the address the server refused — correct or drop it',
   data: 'the reply above says why the body was refused (size, content or policy)',
@@ -133,9 +133,9 @@ class Conversation {
           sendFailed({
             driver: 'smtp',
             stage,
-            detail: `the server sent nothing for ${timeoutMs}ms`,
+            detail: `the server sent nothing for ${timeoutMs}ms, so the read deadline expired`,
             retryable: true,
-            fix: 'raise the read deadline: createSmtpDriver({ url: SMTP_URL, timeoutMs: 60_000 })',
+            fix: 'pass timeoutMs: 60_000 to createSmtpDriver() in app.config.ts',
           }),
         );
       }, timeoutMs);
@@ -146,9 +146,11 @@ class Conversation {
         throw sendFailed({
           driver: 'smtp',
           stage,
-          detail: 'the server closed the connection mid-conversation',
+          detail:
+            'the server closed the connection mid-conversation, which is usually it ' +
+            'rate-limiting the sessions it keeps open at once',
           retryable: true,
-          fix: 'createSmtpDriver({ poolSize: 1 }) — a drop mid-conversation is usually the server rate-limiting',
+          fix: 'pass poolSize: 1 to createSmtpDriver() in app.config.ts',
         });
       }
       return chunk;
@@ -189,9 +191,11 @@ export async function smtpDeliver(
     throw sendFailed({
       driver: 'smtp',
       stage: 'starttls',
-      detail: 'the server does not advertise STARTTLS and the connection is not already TLS',
+      detail:
+        'the server does not advertise STARTTLS and the connection is not already TLS; ' +
+        'allowInsecure: true on createSmtpDriver() would send this in the clear instead',
       retryable: false,
-      fix: FIXES['starttls'] ?? 'use smtps://host:465, or pass allowInsecure: true',
+      fix: FIXES['starttls'] ?? 'set SMTP_URL in .env to smtps://host:465',
     });
   }
 

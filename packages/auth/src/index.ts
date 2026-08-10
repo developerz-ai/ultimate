@@ -52,7 +52,7 @@ export {
 export { BuiltinAdapter } from './builtin-adapter';
 export type { AuthErrorCode, AuthThrowCode, OAuthExchangeFailure } from './errors';
 export {
-  AUTH_BORROWED_ERROR_TITLES,
+  AUTH_BORROWED_ERROR_CODES,
   AUTH_ERROR_CODES,
   AUTH_ERROR_TITLES,
   AuthError,

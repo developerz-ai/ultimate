@@ -3,34 +3,42 @@
  * fallback, a missing build id, a bad scope — fails here at build time instead.
  */
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const PWA_ERROR_CODES = [
+/** Codes this package declares and owns. */
+export const PWA_OWNED_ERROR_CODES = [
   'X_PWA_NO_OFFLINE_FALLBACK',
   'X_PWA_ICON_MISSING',
   'X_PWA_MANIFEST_INVALID',
   'X_BUILD_ID_MISSING',
   'X_SW_SCOPE_INVALID',
-  'X_NOT_IMPLEMENTED',
 ] as const;
 
+/**
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. Thrown here, titled only there — the copy this file
+ * used to keep was a second title that could drift from core's with nothing to catch it.
+ */
+export const PWA_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code pwa can throw: the ones it owns plus the one it borrows. */
+export const PWA_ERROR_CODES = [...PWA_OWNED_ERROR_CODES, ...PWA_BORROWED_ERROR_CODES] as const;
+
+export type PwaOwnedErrorCode = (typeof PWA_OWNED_ERROR_CODES)[number];
 export type PwaErrorCode = (typeof PWA_ERROR_CODES)[number];
 
-export const PWA_ERROR_TITLES: Readonly<Record<PwaErrorCode, string>> = {
+export const PWA_ERROR_TITLES: Readonly<Record<PwaOwnedErrorCode, string>> = {
   X_PWA_NO_OFFLINE_FALLBACK: 'pwa.offline.fallback is not set',
   X_PWA_ICON_MISSING: 'no source icon to generate from',
   X_PWA_MANIFEST_INVALID: 'the generated web manifest failed validation',
   X_BUILD_ID_MISSING: 'no immutable build ID',
   X_SW_SCOPE_INVALID: 'the service-worker scope cannot serve the routes it precaches',
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
-// Titles must be registered for `format()` to render the contract's first line.
-// `X_NOT_IMPLEMENTED` belongs to core — guarded so import order never throws
-// X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries(PWA_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// One unconditional call, so a second package claiming one of pwa's codes throws
+// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(PWA_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: PwaErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

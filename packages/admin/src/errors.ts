@@ -1,30 +1,43 @@
 // The X_* codes owned by @ultimat3/admin. Every one names the exact edit that fixes it,
 // because the two dashboards fail at boot (bad registry, bad mount) where an agent has no
 // stack trace to reason from — only the message.
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const ADMIN_ERROR_CODES = [
+/** Codes this package declares and owns. */
+export const ADMIN_OWNED_ERROR_CODES = [
   'X_ADMIN_ENTITY_UNKNOWN',
   'X_ADMIN_FIELD_UNSUPPORTED',
   'X_ADMIN_POLICY_MISSING',
   'X_DEV_DASHBOARD_IN_PROD',
-  'X_NOT_IMPLEMENTED',
 ] as const;
 
+/**
+ * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `DevSourceUnavailableError` throws it; this package
+ * neither titles nor registers it, because the owner's title is the only one that may exist.
+ */
+export const ADMIN_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code admin can throw: the ones it owns plus the one it borrows. */
+export const ADMIN_ERROR_CODES = [
+  ...ADMIN_OWNED_ERROR_CODES,
+  ...ADMIN_BORROWED_ERROR_CODES,
+] as const;
+
+export type AdminOwnedErrorCode = (typeof ADMIN_OWNED_ERROR_CODES)[number];
 export type AdminErrorCode = (typeof ADMIN_ERROR_CODES)[number];
 
-export const ADMIN_ERROR_TITLES: Readonly<Record<AdminErrorCode, string>> = {
+export const ADMIN_ERROR_TITLES: Readonly<Record<AdminOwnedErrorCode, string>> = {
   X_ADMIN_ENTITY_UNKNOWN: 'the admin references an entity that does not exist',
   X_ADMIN_FIELD_UNSUPPORTED: 'a column type the admin cannot render',
   X_ADMIN_POLICY_MISSING: 'an admin-exposed subject has no policy',
   X_DEV_DASHBOARD_IN_PROD: '/_x was mounted outside dev',
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
-// X_NOT_IMPLEMENTED is core's; registering it twice would throw X_ERROR_CODE_DUPLICATE.
-for (const [code, title] of Object.entries(ADMIN_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// One unconditional call, so a second package claiming one of admin's codes throws
+// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(ADMIN_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 const docsFor = (code: AdminErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

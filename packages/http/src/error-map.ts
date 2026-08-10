@@ -68,7 +68,12 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 export const factsOf = (error: unknown): ErrorFacts => {
   const record = asRecord(error);
   const code = str(record, 'code') ?? 'X_INTERNAL';
+  // The error's own title first: every `UltimateError` resolves one from the code registry at
+  // construction, so this renders the OWNING package's title — including the codes http only
+  // borrows (`X_FORBIDDEN` is policy's, `X_UNAUTHENTICATED` is auth's) and so cannot title itself.
+  // Falling through to `message` here shipped the code twice: `X_FORBIDDEN: policy denied… — …`.
   const title =
+    str(record, 'title') ??
     HTTP_ERROR_TITLES[code as keyof typeof HTTP_ERROR_TITLES] ??
     str(record, 'message') ??
     'unhandled server error';

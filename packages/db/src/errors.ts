@@ -2,9 +2,13 @@
 // fixes the situation — `X_DB_DRIFT` is the flagship and its rendering is byte-for-byte
 // pinned by the framework contract, so change its strings only with the contract.
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const DB_ERROR_CODES = [
+/**
+ * Codes this package declares and owns. `X_DB_DRIFT` is db's: it is a statement about migrations
+ * against a schema, and `@ultimat3/entity` — which imports db — only throws it.
+ */
+export const DB_OWNED_ERROR_CODES = [
   'X_DB_UNAVAILABLE',
   'X_DB_DRIFT',
   'X_MIGRATION_CONFLICT',
@@ -12,12 +16,18 @@ export const DB_ERROR_CODES = [
   'X_SQL_UNSAFE',
   'X_BRANCH_EXISTS',
   'X_READONLY_VIOLATION',
-  'X_NOT_IMPLEMENTED',
 ] as const;
 
+/** `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. Never titled here, never registered here. */
+export const DB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+
+/** Every code db can throw: the ones it owns plus the ones it borrows. */
+export const DB_ERROR_CODES = [...DB_OWNED_ERROR_CODES, ...DB_BORROWED_ERROR_CODES] as const;
+
+export type DbOwnedErrorCode = (typeof DB_OWNED_ERROR_CODES)[number];
 export type DbErrorCode = (typeof DB_ERROR_CODES)[number];
 
-export const DB_ERROR_TITLES: Readonly<Record<DbErrorCode, string>> = {
+export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_UNAVAILABLE: 'cannot reach the database',
   X_DB_DRIFT: 'schema differs from migrations',
   X_MIGRATION_CONFLICT: 'the migration ledger disagrees with this build',
@@ -25,15 +35,13 @@ export const DB_ERROR_TITLES: Readonly<Record<DbErrorCode, string>> = {
   X_SQL_UNSAFE: 'SQL was built by string interpolation',
   X_BRANCH_EXISTS: 'that branch database already exists',
   X_READONLY_VIOLATION: 'a mutating statement reached a read-only client',
-  X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
 };
 
-// Titles must be registered for `format()` to render the contract's first line, but
-// `X_NOT_IMPLEMENTED` belongs to core and `X_DB_DRIFT` is also declared by @ultimat3/entity —
-// registering a code twice throws X_ERROR_CODE_DUPLICATE at import.
-for (const [code, title] of Object.entries(DB_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// Registered unconditionally, in one call, so a second package claiming one of db's codes fails
+// loudly as X_ERROR_CODE_DUPLICATE at import instead of silently losing to whoever loaded first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(DB_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 export interface DbErrorInit {
   readonly code: DbErrorCode;

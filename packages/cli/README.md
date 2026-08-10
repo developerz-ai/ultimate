@@ -4,6 +4,8 @@ The `x` binary. One char during dev, one command per job, `--json` on every one 
 
 ## What it owns
 
+Commands and the `x verify` step count, `As of 2026-08`:
+
 | Command | Does | Notes |
 |---|---|---|
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |

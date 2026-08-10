@@ -26,9 +26,11 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `drain()` and `healthzPayload()`/`readyzPayload()`. Never keep a private `state` or
   in-flight counter — core waits on work it does not know about, so a private counter
   hangs every deploy at the `inflight` phase.
-- **Borrowed error codes are never re-registered.** `X_FORBIDDEN` is policy's,
-  `X_UNAUTHENTICATED` is auth's; both are listed in `HTTP_BORROWED_CODES` and filtered
-  out of `registerErrorCodes`. Re-declaring throws `X_ERROR_CODE_DUPLICATE` at import.
+- **Borrowed error codes are never titled or registered here.** `X_FORBIDDEN` is policy's,
+  `X_UNAUTHENTICATED` is auth's; both sit in `HTTP_BORROWED_ERROR_CODES`, which carries codes
+  only. `HTTP_ERROR_TITLES` holds owned codes, and `registerErrorCodes` takes it whole and
+  unguarded — declaring a borrowed one throws `X_ERROR_CODE_DUPLICATE` at import, which is the
+  point. `factsOf` therefore reads a borrowed code's title off the error itself, never the map.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in
   `e2e/` and run with `bun test packages/http/e2e`, sealed: `start()` calls core's
   `markListening()`, so the seal treats our own port as self, not egress. Never unseal.

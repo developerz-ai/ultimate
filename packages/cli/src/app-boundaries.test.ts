@@ -4,9 +4,12 @@ import { join } from 'node:path';
 import type { SourceFile } from './app-boundaries';
 import {
   appImportGraph,
+  BOUNDARY_CODES,
+  boundaryCodeOf,
   checkAppBoundaries,
   checkImportRules,
   readAppSources,
+  relativeSpecifier,
   resolveSpecifier,
 } from './app-boundaries';
 
@@ -83,6 +86,23 @@ describe('unit · app boundaries', () => {
     expect(chained?.at).toBe('apps/web/shared/price.ts');
   });
 
+  test('every surface rule maps to a declared boundary code, and the findings use that map', () => {
+    expect(boundaryCodeOf('site-imports-app')).toBe('X_BOUNDARY_SITE_TO_APP');
+    expect(boundaryCodeOf('shared-is-a-leaf')).toBe('X_BOUNDARY_SHARED_LEAF');
+    expect(boundaryCodeOf('app-imports-api-at-runtime')).toBe('X_BOUNDARY_APP_TO_API');
+    for (const rule of [
+      'site-imports-app',
+      'shared-is-a-leaf',
+      'app-imports-api-at-runtime',
+    ] as const) {
+      expect(BOUNDARY_CODES).toContain(boundaryCodeOf(rule));
+    }
+    const findings = checkImportRules([
+      file('apps/web/site/pricing/page.tsx', "import { Chart } from '../../app/charts';"),
+    ]);
+    expect(findings[0]?.code).toBe(boundaryCodeOf('site-imports-app'));
+  });
+
   test('a specifier resolves onto the graph key it names, extension and all', () => {
     const keys = new Set(['apps/web/shared/price.ts', 'apps/web/shared/ui/index.tsx']);
     expect(resolveSpecifier('apps/web/site/page.tsx', '../shared/price', keys)).toBe(
@@ -94,6 +114,32 @@ describe('unit · app boundaries', () => {
     expect(resolveSpecifier('apps/web/site/page.tsx', '@ultimat3/http', keys)).toBe(
       '@ultimat3/http',
     );
+  });
+
+  test('relativeSpecifier writes the specifier that reaches a target from the file itself', () => {
+    expect(relativeSpecifier('apps/web/app/dashboard.tsx', 'apps/web/app/panel.tsx')).toBe(
+      './panel',
+    );
+    expect(relativeSpecifier('apps/web/app/deep/report.tsx', 'apps/web/app/panel.tsx')).toBe(
+      '../panel',
+    );
+    expect(relativeSpecifier('apps/web/shared/outer.ts', 'apps/web/app/inner.ts')).toBe(
+      '../app/inner',
+    );
+  });
+
+  test('relativeSpecifier round-trips through resolveSpecifier — it is the same map, backwards', () => {
+    const keys = new Set([
+      'apps/web/app/panel.tsx',
+      'apps/web/shared/ui/index.tsx',
+      'apps/web/site/page.tsx',
+    ]);
+    for (const from of keys) {
+      for (const target of keys) {
+        if (from === target) continue;
+        expect(resolveSpecifier(from, relativeSpecifier(from, target), keys)).toBe(target);
+      }
+    }
   });
 });
 

@@ -5,8 +5,9 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import { TESTING_ERROR_CODES, TESTING_ERROR_TITLES } from './errors';
+import { testName } from './test-types';
 
-describe('TESTING_ERROR_TITLES', () => {
+describe(testName('unit', 'TESTING_ERROR_TITLES'), () => {
   test('has exactly one entry per code in TESTING_ERROR_CODES, and no others', () => {
     expect(Object.keys(TESTING_ERROR_TITLES).sort()).toEqual([...TESTING_ERROR_CODES].sort());
   });
@@ -17,9 +18,15 @@ describe('TESTING_ERROR_TITLES', () => {
       expect(TESTING_ERROR_TITLES[code].length).toBeGreaterThan(0);
     }
   });
+
+  test('every code this package declares is one it owns, so all of them are titled', () => {
+    // Nothing here is borrowed: `TESTING_ERROR_CODES` is exactly what `registerErrorCodes()`
+    // is handed at import, unconditionally, so a collision surfaces as X_ERROR_CODE_DUPLICATE.
+    expect(Object.keys(TESTING_ERROR_TITLES).length).toBe(TESTING_ERROR_CODES.length);
+  });
 });
 
-describe('error code registry', () => {
+describe(testName('unit', 'error code registry'), () => {
   test('every testing code is registered with its declared title', () => {
     for (const code of TESTING_ERROR_CODES) {
       expect(hasErrorCode(code)).toBe(true);

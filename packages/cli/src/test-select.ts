@@ -1,8 +1,9 @@
 // Decides which files `x test` runs: discovery, the `--filter`/type/`--sample` narrowing, and the
-// validation behind the type positional and `--sample`. Split out of cmd-test.ts to keep that file
-// (sharding and execution) under its size ceiling — nothing here spawns a process.
+// validation behind the type positional and `--sample`. Selection only — nothing here splits a
+// shard or spawns a process, so a wrong file list is always this file's bug and never a race.
 
-import { statSync } from 'node:fs';
+// Bun ships no equivalent: `join` builds the host-separator path from the scan root to a hit.
+// Sizing is Bun's own (`Bun.file().size`), so nothing here reaches for `node:fs`.
 import { join } from 'node:path';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
@@ -41,7 +42,7 @@ export async function discoverTests(
     if (IGNORED.some((part) => `/${path}`.includes(part))) continue;
     if (filter !== undefined && !path.includes(filter)) continue;
     if (type !== undefined && !belongsToType(path, type)) continue;
-    files.push({ path, bytes: statSync(join(root, path)).size });
+    files.push({ path, bytes: Bun.file(join(root, path)).size });
   }
   return files;
 }

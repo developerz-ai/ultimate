@@ -5,7 +5,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
-import { REALTIME_ERROR_CODES, REALTIME_ERROR_TITLES } from './errors';
+import {
+  REALTIME_BORROWED_ERROR_CODES,
+  REALTIME_ERROR_CODES,
+  REALTIME_ERROR_TITLES,
+  REALTIME_OWNED_ERROR_CODES,
+} from './errors';
 
 const ORIGINAL_MEMBERS = [
   'X_TOPIC_FORBIDDEN',
@@ -20,20 +25,33 @@ const ORIGINAL_MEMBERS = [
   'X_NOT_IMPLEMENTED',
 ];
 
+/** Widened once: these lists are compared against plain strings, not against the literal union. */
+const EVERY_CODE: readonly string[] = REALTIME_ERROR_CODES;
+const OWNED_CODES: readonly string[] = REALTIME_OWNED_ERROR_CODES;
+const BORROWED_CODES: readonly string[] = REALTIME_BORROWED_ERROR_CODES;
+
 describe('REALTIME_ERROR_CODES', () => {
   test('has exactly the 10 members RealtimeErrorCode declared as a bare union before', () => {
     expect(REALTIME_ERROR_CODES.length).toBe(10);
-    expect([...REALTIME_ERROR_CODES].sort()).toEqual([...ORIGINAL_MEMBERS].sort());
+    expect([...EVERY_CODE].sort()).toEqual([...ORIGINAL_MEMBERS].sort());
+  });
+
+  test('owned and borrowed are disjoint and together are every code realtime throws', () => {
+    const owned = new Set(OWNED_CODES);
+    for (const code of BORROWED_CODES) expect(owned.has(code)).toBe(false);
+    expect([...EVERY_CODE].sort()).toEqual([...OWNED_CODES, ...BORROWED_CODES].sort());
   });
 });
 
 describe('REALTIME_ERROR_TITLES', () => {
-  test('has exactly one entry per code in REALTIME_ERROR_CODES, and no others', () => {
-    expect(Object.keys(REALTIME_ERROR_TITLES).sort()).toEqual([...REALTIME_ERROR_CODES].sort());
+  test('titles exactly the codes realtime owns — a borrowed code carries no title here', () => {
+    expect(Object.keys(REALTIME_ERROR_TITLES).sort()).toEqual(
+      [...REALTIME_OWNED_ERROR_CODES].sort(),
+    );
   });
 
   test('every title is a non-empty string', () => {
-    for (const code of REALTIME_ERROR_CODES) {
+    for (const code of REALTIME_OWNED_ERROR_CODES) {
       expect(typeof REALTIME_ERROR_TITLES[code]).toBe('string');
       expect(REALTIME_ERROR_TITLES[code].length).toBeGreaterThan(0);
     }
@@ -41,8 +59,8 @@ describe('REALTIME_ERROR_TITLES', () => {
 });
 
 describe('error code registry', () => {
-  test('every realtime code is registered with its declared title', () => {
-    for (const code of REALTIME_ERROR_CODES) {
+  test('every realtime-owned code is registered with its declared title', () => {
+    for (const code of REALTIME_OWNED_ERROR_CODES) {
       expect(hasErrorCode(code)).toBe(true);
       expect(describeErrorCode(code).title).toBe(REALTIME_ERROR_TITLES[code]);
     }
@@ -54,13 +72,11 @@ describe('error code registry', () => {
     }
   });
 
-  test('X_NOT_IMPLEMENTED is borrowed from core, not re-registered with a realtime-owned title', () => {
+  test('X_NOT_IMPLEMENTED is borrowed from core, read through the registry not through realtime', () => {
     expect(hasErrorCode('X_NOT_IMPLEMENTED')).toBe(true);
     expect(describeErrorCode('X_NOT_IMPLEMENTED').title).toBe(
       'this driver does not implement the requested feature',
     );
-    expect(REALTIME_ERROR_TITLES.X_NOT_IMPLEMENTED).toBe(
-      describeErrorCode('X_NOT_IMPLEMENTED').title,
-    );
+    expect(Object.keys(REALTIME_ERROR_TITLES)).not.toContain('X_NOT_IMPLEMENTED');
   });
 });

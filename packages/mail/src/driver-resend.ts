@@ -156,12 +156,14 @@ export function createResendDriver(options: ResendDriverOptions): MailDriver {
       } catch (error) {
         // DNS/TLS/reset, or the timeout firing — none of them got far enough to have a status,
         // and every one of them can succeed unchanged on the job's next attempt.
+        const reason =
+          error instanceof Error ? error.message : 'the request failed before a response';
         throw sendFailed({
           driver: 'resend',
           stage: 'request',
-          detail: error instanceof Error ? error.message : 'the request failed before a response',
+          detail: `${reason} — nothing left this host for ${baseUrl}/emails (egress, DNS or TLS)`,
           retryable: true,
-          fix: `curl -sS ${baseUrl}/emails from this host to confirm egress — the job will retry automatically`,
+          fix: `curl -sS -m 5 -o /dev/null ${baseUrl}/emails`,
         });
       }
 

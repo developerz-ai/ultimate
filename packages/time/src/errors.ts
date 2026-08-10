@@ -3,7 +3,7 @@
  * DST ambiguity is a real state of the world, so it gets a code instead of a guess.
  */
 
-import { hasErrorCode, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const TIME_ERROR_CODES = [
   'X_TIMEZONE_INVALID',
@@ -29,11 +29,12 @@ export const TIME_ERROR_TITLES: Readonly<Record<TimeErrorCode, string>> = {
   X_LOCALE_INVALID: 'not a well-formed BCP 47 tag',
 };
 
-// Titles must be registered for `format()` to render the contract's first line. Guarded
-// because registering a code twice throws X_ERROR_CODE_DUPLICATE at import time.
-for (const [code, title] of Object.entries(TIME_ERROR_TITLES)) {
-  if (!hasErrorCode(code)) registerErrorCodes({ [code]: { title } });
-}
+// Titles must be registered for `format()` to render the contract's first line. Every code above is
+// owned here and none is borrowed, so the call is unconditional: a second package claiming one has
+// to fail as X_ERROR_CODE_DUPLICATE, not quietly keep whichever title was registered first.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(TIME_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
 
 export class TimeError extends UltimateError {
   constructor(init: { code: TimeErrorCode; cause: string; fix: string }) {

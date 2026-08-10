@@ -100,8 +100,10 @@ class ScramSha256Session implements ScramSession {
     if (serverError !== undefined) {
       throw new ReplicationFailedError({
         stage: 'auth',
-        detail: `server rejected the SCRAM exchange: ${serverError}`,
-        fix: 'correct the password in DATABASE_URL, or in psql: ALTER ROLE <user> PASSWORD <new>',
+        detail:
+          `server rejected the SCRAM exchange: ${serverError} — the password in DATABASE_URL ` +
+          "is not this role's, so either that value or the role itself has to change",
+        fix: 'psql "$DATABASE_URL" -c "ALTER ROLE <user> WITH PASSWORD \'<new>\'"',
       });
     }
 
@@ -118,8 +120,10 @@ class ScramSha256Session implements ScramSession {
       throw new ReplicationFailedError({
         stage: 'auth',
         detail:
-          'server-final-message signature does not match — the server could not prove it knows the password',
-        fix: 'point DATABASE_URL at postgres itself, or reset the role in psql: ALTER ROLE <user> PASSWORD <new>',
+          'server-final-message signature does not match — the server could not prove it knows ' +
+          'the password, so DATABASE_URL points at something other than postgres, or the role ' +
+          'password changed under this connection',
+        fix: 'psql "$DATABASE_URL" -c "SELECT version()"',
       });
     }
   }

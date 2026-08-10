@@ -4,7 +4,7 @@
 // Both halves are decidable before the code runs, which is why they are a gate step and not a
 // runtime assertion nobody sees until the failure they describe has already happened.
 
-import { existsSync } from 'node:fs';
+// `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { docsFor } from './errors';
 import type { Finding } from './output';
@@ -94,8 +94,8 @@ const undocumentedFinding = (code: string, at: string, line: number, page: strin
  * is why this arrives through the same host-check seam the tier table uses on `boundaries`.
  */
 export async function checkErrorCodeDocs(root: string, page: string): Promise<readonly Finding[]> {
-  const path = join(root, page);
-  if (!existsSync(path)) {
+  const reference = Bun.file(join(root, page));
+  if (!(await reference.exists())) {
     return [
       {
         code: 'X_ERROR_CODE_UNDOCUMENTED',
@@ -106,7 +106,7 @@ export async function checkErrorCodeDocs(root: string, page: string): Promise<re
       },
     ];
   }
-  const documented = documentedCodes(await Bun.file(path).text());
+  const documented = documentedCodes(await reference.text());
   const findings: Finding[] = [];
   const seen = new Set<string>();
   for await (const source of eachSourceFile(root)) {

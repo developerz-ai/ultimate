@@ -1,187 +1,19 @@
-// `x test` — the missing half of the framework's test isolation. @ultimat3/testing already gives
-// every worker its own template-cloned database, keyed on ULTIMATE_TEST_WORKER; nothing ever set
-// that variable or spawned a second process, so the whole suite ran serially against one database.
-// This shards the files test-select.ts discovers and hands each process its worker index — scoped
-// to one of the six test types when the caller names one.
+// `x test`'s command surface: the flags and the one positional it accepts, and the refusals that
+// happen before a single process starts. Which files run is test-select.ts, how they are split and
+// spawned is test-shards.ts — this file only turns argv into their inputs, so a parsing bug can
+// never be read as a sharding one.
 
+// Bun ships no CPU-count primitive; `cpus()` is the fallback when navigator cannot answer.
 import { cpus } from 'node:os';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, docsFor, NoTestFilesError } from './errors';
-import type { Runner } from './exec';
-import { execOutput } from './exec';
-import { msg } from './messages';
-import type { CommandResult, Finding, JsonValue, StepResult } from './output';
+import { BadFlagError, NoTestFilesError } from './errors';
+import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
-import type { TestFile } from './test-select';
-import {
-  bySizeThenPath,
-  discoverTests,
-  missingSelection,
-  readSample,
-  readType,
-  sampleFiles,
-} from './test-select';
+import { discoverTests, missingSelection, readSample, readType, sampleFiles } from './test-select';
+import { quoteArg, runShards } from './test-shards';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
-
-export type { TestFile } from './test-select';
-export { discoverTests } from './test-select';
-
-export interface Shard {
-  readonly index: number;
-  readonly files: readonly string[];
-  readonly bytes: number;
-}
-
-/**
- * Largest-first greedy bin packing (LPT). Deterministic — the total order is (size desc, path asc),
- * so the filesystem's scan order never reaches the assignment and a CI failure on worker 3 is the
- * same worker 3 locally. Balanced — every file lands in the currently emptiest bin, which bounds a
- * bin at average + largest file; round-robin or hashing can pile every slow file onto one worker.
- * The inner scan is O(files × workers), and workers is a core count, so a heap would only add
- * allocation.
- */
-export function planShards(files: readonly TestFile[], workers: number): readonly Shard[] {
-  const count = Math.max(1, Math.min(Math.trunc(workers), files.length));
-  const loads = new Array<number>(count).fill(0);
-  const buckets: string[][] = Array.from({ length: count }, () => []);
-  for (const file of [...files].sort(bySizeThenPath)) {
-    let target = 0;
-    for (let i = 1; i < count; i += 1) if ((loads[i] ?? 0) < (loads[target] ?? 0)) target = i;
-    buckets[target]?.push(file.path);
-    loads[target] = (loads[target] ?? 0) + file.bytes;
-  }
-  return buckets.map((paths, index) => ({
-    index,
-    files: [...paths].sort(),
-    bytes: loads[index] ?? 0,
-  }));
-}
-
-/** Explicit file list, so the child never re-globs and can never pick up another shard's files. */
-export const shardArgs = (shard: Shard): readonly string[] => ['bun', 'test', ...shard.files];
-
-/**
- * `--workers` is part of the reproduction: a different worker count is a different split. So are
- * the type and the substring filter — either one changes which files exist to shard in the first
- * place, so the printed command has to carry both to actually reselect this shard's files.
- */
-export function reproduceFor(
-  shard: Shard,
-  workers: number,
-  filter: string | undefined,
-  type: TestType | undefined,
-): string {
-  const parts = [
-    'x test',
-    ...(type === undefined ? [] : [type]),
-    ...(filter === undefined ? [] : ['--filter', filter]),
-    `--workers ${workers}`,
-    `--worker ${shard.index}`,
-  ];
-  return parts.join(' ');
-}
-
-export interface RunShardsOptions {
-  readonly root: string;
-  readonly runner: Runner;
-  readonly files: readonly TestFile[];
-  readonly workers: number;
-  /** Run exactly one shard of the same split, not a one-worker run of everything. */
-  readonly only?: number;
-  readonly filter?: string;
-  readonly type?: TestType;
-  /** Set when `--sample` narrowed `files`; `total` is the count before sampling. */
-  readonly sample?: { readonly total: number };
-}
-
-const failureOf = (shard: Shard, code: number, opts: RunShardsOptions, of: number): Finding => ({
-  code: 'X_TEST_SHARD_FAILED',
-  cause: `shard ${shard.index} of ${of} exited ${code} (${shard.files.length} file(s))`,
-  fix: reproduceFor(shard, of, opts.filter, opts.type),
-  docs: docsFor('X_TEST_SHARD_FAILED'),
-});
-
-export async function runShards(options: RunShardsOptions): Promise<CommandResult> {
-  const shards = planShards(options.files, options.workers);
-  const only = options.only;
-  const chosen = only === undefined ? shards : shards.filter((shard) => shard.index === only);
-  const started = performance.now();
-  // All shards at once: wall-clock is the whole point, and each one owns a separate database.
-  const runs = await Promise.all(
-    chosen.map(async (shard) => ({
-      shard,
-      result: await options.runner(shardArgs(shard), {
-        cwd: options.root,
-        env: { ULTIMATE_TEST_WORKER: String(shard.index) },
-      }),
-    })),
-  );
-  const durationMs = Math.round(performance.now() - started);
-  const steps: readonly StepResult[] = runs.map(({ shard, result }) => ({
-    name: `shard ${shard.index} · ${shard.files.length} files`,
-    ok: result.ok,
-    durationMs: result.durationMs,
-    findings: result.ok ? [] : [failureOf(shard, result.code, options, shards.length)],
-    output: execOutput(result),
-  }));
-  const failed = runs.filter((run) => !run.result.ok).map((run) => run.shard.index);
-  const fileCount = chosen.reduce((total, shard) => total + shard.files.length, 0);
-  const type = options.type;
-  const typeParam = type === undefined ? {} : { type };
-  const data: JsonValue = {
-    ...typeParam,
-    workers: shards.length,
-    files: fileCount,
-    durationMs,
-    ...(options.filter === undefined ? {} : { filter: options.filter }),
-    ...(options.sample === undefined
-      ? {}
-      : { sample: { kept: fileCount, total: options.sample.total } }),
-    shards: runs.map(({ shard, result }) => ({
-      index: shard.index,
-      files: shard.files.length,
-      bytes: shard.bytes,
-      ok: result.ok,
-      exitCode: result.code,
-      durationMs: result.durationMs,
-      reproduce: reproduceFor(shard, shards.length, options.filter, type),
-    })),
-    failed,
-  };
-  return {
-    ok: failed.length === 0,
-    command: 'test',
-    summary:
-      failed.length === 0
-        ? msg(type === undefined ? 'cli.test.pass' : 'cli.test.type.pass', {
-            ...typeParam,
-            files: fileCount,
-            workers: chosen.length,
-            ms: durationMs,
-          })
-        : msg(type === undefined ? 'cli.test.fail' : 'cli.test.type.fail', {
-            ...typeParam,
-            failed: failed.length,
-            workers: chosen.length,
-          }),
-    steps,
-    ...(options.sample === undefined
-      ? {}
-      : {
-          lines: [
-            msg('cli.test.sampled', {
-              kept: fileCount,
-              total: options.sample.total,
-              type: type ?? 'all',
-            }),
-          ],
-        }),
-    data,
-    exitCode: failed.length === 0 ? 0 : 1,
-  };
-}
 
 /** navigator first: it is the runtime's own answer, and it respects a container's CPU limit. */
 export function availableCpus(): number {
@@ -201,6 +33,24 @@ function readIndex(args: ParsedArgs, name: string, min: number): number | undefi
     });
   }
   return value;
+}
+
+/**
+ * One positional, and it is the type. `x test contract live` used to run `contract` and drop
+ * `live` on the floor, so a caller reading "contract passed" believed two suites had run. A path
+ * substring is what `--filter` is for, which is what the fix hands back.
+ */
+function readOnlyType(positionals: readonly string[]): TestType | undefined {
+  const [first, second] = positionals;
+  if (second === undefined) return readType(first);
+  const known: readonly string[] = TEST_TYPES;
+  const type = first !== undefined && known.includes(first) ? first : TEST_TYPES[0];
+  throw new BadFlagError({
+    flag: 'type',
+    command: 'test',
+    reason: `takes at most one test type, got ${positionals.length}: ${positionals.join(' ')}`,
+    fix: `x test ${type} --filter ${quoteArg(second)}`,
+  });
 }
 
 export const testCommand: CliCommand = {
@@ -226,7 +76,7 @@ export const testCommand: CliCommand = {
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const type = readType(ctx.args.positionals[0]);
+    const type = readOnlyType(ctx.args.positionals);
     const filter = flagString(ctx.args, 'filter');
     const sample = readSample(ctx.args);
     const discovered = await discoverTests(ctx.cwd, filter, type);
@@ -252,7 +102,8 @@ export const testCommand: CliCommand = {
       ...(only === undefined ? {} : { only }),
       ...(filter === undefined ? {} : { filter }),
       ...(type === undefined ? {} : { type }),
-      ...(sample === undefined ? {} : { sample: { total: discovered.length } }),
+      // `kept` is the corpus the split saw; a `--worker` rerun must name it, not its own shard.
+      ...(sample === undefined ? {} : { sample: { kept: files.length, total: discovered.length } }),
     });
   },
 };

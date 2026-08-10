@@ -57,6 +57,13 @@ const splitJson = (split: BoundaryCut['split']): JsonValue =>
         to: split.to,
         command: split.command,
         importers: split.importers,
+        // The human `edit` line names every specifier the move invalidates, so `--json` carries
+        // them structured — a plan an agent can apply without re-parsing the sentence.
+        edits: split.edits.map((edit) => ({
+          file: edit.file,
+          imported: edit.imported,
+          specifier: edit.specifier,
+        })),
       };
 
 const cutJson = (cut: BoundaryCut): JsonValue => ({

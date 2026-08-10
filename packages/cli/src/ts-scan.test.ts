@@ -27,6 +27,26 @@ describe('maskLiterals', () => {
     expect(masked).toHaveLength(source.length);
     expect(masked).toBe("const a = '     ';");
   });
+
+  test('blanks a regex body, keeping its slashes and the length', () => {
+    const source = 'const re = /[a-z]+/g;';
+    expect(maskLiterals(source)).toBe('const re = /      /g;');
+  });
+
+  test('a division is not a regex, so the expression survives masking', () => {
+    expect(maskLiterals('const ratio = width / height;')).toBe('const ratio = width / height;');
+    expect(maskLiterals('const half = (a + b) / 2;')).toBe('const half = (a + b) / 2;');
+  });
+
+  test('a lone slash that never closes is division, not a literal eating the file', () => {
+    const source = "const per = total / count;\nconst a = 'x';";
+    expect(maskLiterals(source)).toBe("const per = total / count;\nconst a = ' ';");
+  });
+
+  test('a JSX close tag and a self-closing tag are not regex literals', () => {
+    const source = '<p>{a}</p><b name="x" />;';
+    expect(maskLiterals(source)).toBe('<p>{a}</p><b name=" " />;');
+  });
 });
 
 describe('scanFixes', () => {
@@ -51,6 +71,25 @@ describe('scanFixes', () => {
 
   test('stops at the property that follows', () => {
     expect(fixes("({ fix: 'x help', docs: 'https://ultimate.dev/errors/X_A' })")).toEqual([
+      'x help',
+    ]);
+  });
+
+  // The bug this guards: the quotes inside a regex like this file's own `CODE_LITERAL` read as
+  // string delimiters, so the masking desynced and blanked the `fix:` declared after it. The file
+  // then reported no fixes at all and the gate passed over error text nobody had checked.
+  test('a regex holding quote characters does not hide the declaration after it', () => {
+    const source = `const CODE_LITERAL = /(['"\`])(X_[A-Z0-9_]+)\\1/g;
+throw new E({ fix: 'x doctor --json' });`;
+    expect(fixes(source)).toEqual(['x doctor --json']);
+  });
+
+  test('an escape and a character class do not close the regex early', () => {
+    expect(fixes("const re = /[/']|a\\/b/;\nthrow new E({ fix: 'x help' });")).toEqual(['x help']);
+  });
+
+  test('a division is read as one, so the declaration after it survives', () => {
+    expect(fixes("const per = total / count;\nthrow new E({ fix: 'x help' });")).toEqual([
       'x help',
     ]);
   });
