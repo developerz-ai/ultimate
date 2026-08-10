@@ -1,3 +1,6 @@
+// `compose` is the only ordering guarantee middleware has — the pipeline is the blessed
+// extension point and this is the small escape hatch beside it. Nesting order and the right
+// to stop the chain are invisible in the type signature, so they are asserted here.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import { createRequestContext, type RequestContext } from './context';

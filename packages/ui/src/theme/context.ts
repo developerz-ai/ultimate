@@ -6,7 +6,7 @@ import type { Translator } from '@ultimat3/i18n';
 import { createTranslator, type Direction, directionOf, type Locale } from '@ultimat3/i18n';
 import type { TimeZone } from '@ultimat3/time';
 import type { Theme } from '../tokens/tokens';
-import { type SolidContext, solid } from './solid-adapter';
+import { type SolidContext, type SolidRuntime, solid } from './solid-adapter';
 
 export type { Direction };
 
@@ -42,12 +42,22 @@ export function defaultUiContext(): UiContextValue {
   };
 }
 
-let context: SolidContext<UiContextValue> | null = null;
+let cached: {
+  readonly runtime: SolidRuntime;
+  readonly context: SolidContext<UiContextValue>;
+} | null = null;
 
-/** Created lazily so importing this module never needs a Solid runtime. */
+/**
+ * Created lazily so importing this module never needs a Solid runtime, and keyed on the runtime
+ * that built it: a context belongs to the reactive graph that created it, so handing a stale one
+ * to a replaced runtime reads as a working provider while every consumer sees the default value.
+ */
 export function uiContext(): SolidContext<UiContextValue> {
-  context ??= solid().createContext(defaultUiContext());
-  return context;
+  const runtime = solid();
+  if (cached === null || cached.runtime !== runtime) {
+    cached = { runtime, context: runtime.createContext(defaultUiContext()) };
+  }
+  return cached.context;
 }
 
 export function useUi(): UiContextValue {

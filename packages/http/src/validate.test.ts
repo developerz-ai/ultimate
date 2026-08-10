@@ -1,3 +1,7 @@
+// Validation reaches the app through Standard Schema rather than a vendor API, so this seam
+// has to behave the same for a hand-written validator as for ArkType, and has to say
+// something an agent can act on when an async schema is used on the sync path. Neither is
+// visible in the type, so both are asserted here.
 import { describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
 import type { Schema } from './validate';

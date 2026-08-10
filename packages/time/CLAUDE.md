@@ -12,7 +12,10 @@
 | `zoned.ts` | `toZoned` / `fromZoned` + gap and overlap policies. Everything depends on this. |
 | `format.ts` | `Intl` rendering. Every function takes `locale` **and** `zone`. |
 | `duration.ts` | `'2h30m'` ⇄ ms |
-| `cron.ts` | parse + next occurrence, wall-clock driven |
+| `cron.ts` | barrel over the three cron modules — the only one `index.ts` re-exports |
+| `cron-parse.ts` | field grammar → `CronExpression`. Non-integer, non-name tokens are rejected. |
+| `cron-occurrence.ts` | next occurrence, wall-clock driven |
+| `cron-describe.ts` | `describeCron` — `Intl` names, phrases injected. `CronPhrases` is required. |
 | `schedule.ts` | `nextLocalSlot` — "09:00 local tomorrow" |
 | `business.ts` | weekends as config, holidays as local dates |
 | `context.ts` | request timezone via ALS |

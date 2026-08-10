@@ -1,3 +1,8 @@
+// Single responsibility: pins the builtin validators' accept/reject contract at the public
+// `validate()` boundary — the same seam actions, jobs and MCP tools trust. WHY there and not
+// against the checks directly: a loosened rule has to fail here, as a red test, rather than
+// downstream as a mass-assigned field, a float Money row or an unparseable date.
+
 import { describe, expect, test } from 'bun:test';
 import { validate } from './standard';
 import {

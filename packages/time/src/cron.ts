@@ -5,7 +5,7 @@
  * of drifting to 02:00 or 04:00 for half the year.
  */
 
-export { type CronPhrases, DEFAULT_CRON_PHRASES, describeCron } from './cron-describe';
+export { type CronPhrases, describeCron } from './cron-describe';
 export {
   firedSince,
   matchesCron,

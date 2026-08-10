@@ -26,7 +26,11 @@ export function matchesCron(
   );
 }
 
-/** Iteration guard: ~4 years of minute-level field advancement. */
+/**
+ * Iteration guard, counted in field advancements — not in minutes, and not in years. Each step
+ * moves whichever field rejected first, so one step is worth a second or a whole month depending
+ * on the expression; the budget only has to outlast every schedule that can actually match.
+ */
 const MAX_STEPS = 200_000;
 
 /**
@@ -104,7 +108,7 @@ export function nextCronOccurrence(
 
   throw cronInvalid(
     typeof expression === 'string' ? expression : cron.source,
-    'no occurrence within the next ~4 years — the date fields can never all match (e.g. "0 0 30 2 *")',
+    `no occurrence after ${MAX_STEPS} search steps — the date fields can never all match (e.g. "0 0 30 2 *", a 30th of February)`,
   );
 }
 

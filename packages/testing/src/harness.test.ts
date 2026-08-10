@@ -1,15 +1,14 @@
-// Tests describeApp/testApp — the framework's own in-process app-boot harness. A fake `boot`
-// stands in for a real server, so this proves the lifecycle contract (seed -> boot -> requests ->
-// close) without spinning up a real app. `installDeterminism`/`sealNetwork` are process-global and
-// bun shares one process across files, so boot()/close() flipping them for real (not just for this
-// file) has to be undone in a trailing `afterAll` — otherwise every file that runs after this one
-// loses the frozen clock and the sealed network, a load-order flake rather than a failure.
+// A fake `boot` proves the harness lifecycle contract without a real server behind it. The
+// determinism and seal it installs are process-global and bun shares one process across files, so
+// the trailing `afterAll` puts them back: without it every file loaded after this one silently
+// loses its frozen clock and sealed network — a load-order flake, not a failure.
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { installDeterminism, seededRandom } from './determinism';
 import type { AppOptions, BootedApp } from './harness';
 import { describeApp, testApp } from './harness';
 import { sealNetwork } from './sealed-network';
+import { testName } from './test-types';
 
 afterAll(() => {
   installDeterminism();
@@ -25,6 +24,16 @@ interface Recorder {
 function recorder(): Recorder {
   return { sequence: [], seededUrl: undefined, closed: false };
 }
+
+/** Nothing listens here, so a request that gets past the seal fails locally and immediately. */
+const CLOSED_PORT = 59_431;
+
+/** `undefined` when the request unexpectedly succeeded — which then fails the assertion. */
+const failureCode = async (url: string): Promise<string | undefined> =>
+  fetch(url).then(
+    () => undefined,
+    (error: unknown) => (error as { code?: string }).code ?? 'no-code',
+  );
 
 function fakeBoot(rec: Recorder): AppOptions['boot'] {
   return async ({ databaseUrl }) => {
@@ -46,7 +55,7 @@ function fakeBoot(rec: Recorder): AppOptions['boot'] {
   };
 }
 
-describe('describeApp lifecycle', () => {
+describe(testName('unit', 'describeApp lifecycle'), () => {
   const rec = recorder();
 
   describeApp(
@@ -87,7 +96,7 @@ describe('describeApp lifecycle', () => {
   });
 });
 
-describe('describeApp: accessing the handle before boot', () => {
+describe(testName('unit', 'describeApp: accessing the handle before boot'), () => {
   let earlyAccessError: unknown;
 
   describeApp('booted late', { boot: fakeBoot(recorder()) }, (app) => {
@@ -105,7 +114,7 @@ describe('describeApp: accessing the handle before boot', () => {
   });
 });
 
-describe('describeApp: options wiring', () => {
+describe(testName('unit', 'describeApp: options wiring'), () => {
   describeApp(
     'deterministic options',
     {
@@ -128,32 +137,30 @@ describe('describeApp: options wiring', () => {
     'an unlisted host stays sealed, an allow-listed one is let through the seal',
     {
       boot: fakeBoot(recorder()),
-      allowHosts: ['never-resolves.invalid'],
+      // A closed loopback port, so "through the seal" is proved by a local connection refusal
+      // instead of real egress: nothing announced this port, so `isSelfOrigin` does not cover it
+      // and the allowlist is the only thing that can let the request past.
+      allowHosts: [`127.0.0.1:${CLOSED_PORT}`],
     },
     (app) => {
       test('a host nobody allow-listed is refused before it ever dials out', async () => {
         void app;
-        try {
-          await fetch('https://also-not-allowed.invalid/x');
-          throw new Error('expected the sealed network to refuse this');
-        } catch (error) {
-          expect((error as { code?: string }).code).toBe('X_TEST_NETWORK_SEALED');
-        }
+        expect(await failureCode('https://also-not-allowed.invalid/x')).toBe(
+          'X_TEST_NETWORK_SEALED',
+        );
       });
 
-      test('an allow-listed host clears the seal — failure is a real network error, not X_TEST_NETWORK_SEALED', async () => {
+      test('an allow-listed host clears the seal — failure is the transport, not the seal', async () => {
         void app;
-        const code = await fetch('https://never-resolves.invalid/x').then(
-          () => undefined,
-          (error: unknown) => (error as { code?: string }).code,
-        );
+        const code = await failureCode(`http://127.0.0.1:${CLOSED_PORT}/x`);
+        expect(code).toBeDefined();
         expect(code).not.toBe('X_TEST_NETWORK_SEALED');
       });
     },
   );
 });
 
-describe('testApp', () => {
+describe(testName('unit', 'testApp'), () => {
   const rec = recorder();
 
   testApp('boots and closes around a single test', { boot: fakeBoot(rec) }, async (app) => {

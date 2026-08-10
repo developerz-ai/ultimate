@@ -1,3 +1,7 @@
+// Tags are the only invalidation currency in the framework, so their wire form is a protocol
+// every tier and every CDN parses: one drifted separator and a purge matches nothing, silently.
+// These tests pin that form, the match semantics fan-out depends on, and the unknown-tag refusal.
+
 import { afterEach, describe, expect, test } from 'bun:test';
 import { CacheTagUnknownError } from './errors';
 import {

@@ -1,3 +1,7 @@
+// `UltimateRequest` is the only door a handler has to params, query and body, so whatever it
+// mis-parses or lets past the size limit is beyond the reach of any later check. These tests
+// pin the parse and the refusal together: every rejection has to arrive as an HttpError
+// carrying a code and a cause, never as a raw throw from the runtime.
 import { describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
 import { defineHttpConfig, type HttpConfigInput } from './config';
@@ -24,24 +28,30 @@ const build = (
   return { req: new UltimateRequest(raw, ctx), ctx, config, raw, url };
 };
 
-const captureError = async (run: () => Promise<unknown>): Promise<HttpError> => {
+/**
+ * Captures the HttpError a call is expected to throw. A call that does not throw leaves the
+ * capture `undefined`, which fails the caller's `?.code` assertion — an unexpected success is
+ * a bug, not a pass. Anything that is not an HttpError is rethrown rather than reported as a
+ * missing code, so the real failure reaches the runner intact.
+ */
+const captureError = async (run: () => Promise<unknown>): Promise<HttpError | undefined> => {
   try {
     await run();
   } catch (error) {
     if (error instanceof HttpError) return error;
     throw error;
   }
-  throw new Error('expected the operation to throw an HttpError');
+  return undefined;
 };
 
-const captureSyncError = (run: () => unknown): HttpError => {
+const captureSyncError = (run: () => unknown): HttpError | undefined => {
   try {
     run();
   } catch (error) {
     if (error instanceof HttpError) return error;
     throw error;
   }
-  throw new Error('expected the operation to throw an HttpError');
+  return undefined;
 };
 
 describe('getters', () => {
@@ -106,9 +116,9 @@ describe('param()', () => {
     expect(() => req.param('missing')).toThrow();
 
     const error = captureSyncError(() => req.param('missing'));
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause).toContain('missing');
-    expect(error.cause).toContain(':missing');
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('missing');
+    expect(error?.cause).toContain(':missing');
   });
 });
 
@@ -140,8 +150,8 @@ describe('query()', () => {
     const { req } = build('https://example.com/x');
     const schema = t.object({ page: t.string });
     const error = captureSyncError(() => req.query(schema));
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause.length).toBeGreaterThan(0);
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause.length).toBeGreaterThan(0);
   });
 
   test('a schema with controlled issues surfaces them verbatim in the cause', () => {
@@ -154,8 +164,8 @@ describe('query()', () => {
       },
     };
     const error = captureSyncError(() => req.query(schema));
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause).toContain('a: must be a widget');
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('a: must be a widget');
   });
 });
 
@@ -179,9 +189,9 @@ describe('bodyRaw() — size limit', () => {
       { bodyLimitBytes: 10 },
     );
     const error = await captureError(() => req.bodyRaw());
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause).toContain('999999');
-    expect(error.cause).toContain('10');
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('999999');
+    expect(error?.cause).toContain('10');
   });
 
   test('an actual body over the limit throws even when content-length was absent', async () => {
@@ -192,9 +202,9 @@ describe('bodyRaw() — size limit', () => {
       { bodyLimitBytes: 10 },
     );
     const error = await captureError(() => req.bodyRaw());
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause).toContain('50');
-    expect(error.cause).toContain('10');
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('50');
+    expect(error?.cause).toContain('10');
   });
 });
 
@@ -230,9 +240,9 @@ describe('bodyRaw() — content-type dispatch', () => {
       body: '{not json',
     });
     const error = await captureError(() => req.bodyRaw());
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause).toContain('application/json');
-    expect(error.cause).toContain('could not parse');
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('application/json');
+    expect(error?.cause).toContain('could not parse');
   });
 
   test('application/x-www-form-urlencoded parses into a plain object', async () => {
@@ -269,9 +279,9 @@ describe('bodyRaw() — content-type dispatch', () => {
       body: new Uint8Array([1, 2, 3]),
     });
     const error = await captureError(() => req.bodyRaw());
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause).toContain('unsupported content-type');
-    expect(error.cause).toContain('application/octet-stream');
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('unsupported content-type');
+    expect(error?.cause).toContain('application/octet-stream');
   });
 });
 
@@ -308,8 +318,8 @@ describe('body()', () => {
     });
     const schema = t.object({ name: t.string });
     const error = await captureError(() => req.body(schema));
-    expect(error.code).toBe('X_BODY_INVALID');
-    expect(error.cause.length).toBeGreaterThan(0);
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause.length).toBeGreaterThan(0);
   });
 });
 
@@ -336,8 +346,8 @@ describe('assertBuild()', () => {
     const { req, ctx } = build('https://example.com/x', {}, { buildId: 'server-1' });
     ctx.buildId = 'client-2';
     const error = captureSyncError(() => req.assertBuild());
-    expect(error.code).toBe('X_BUILD_SKEW');
-    expect(error.cause).toContain('client-2');
-    expect(error.cause).toContain('server-1');
+    expect(error?.code).toBe('X_BUILD_SKEW');
+    expect(error?.cause).toContain('client-2');
+    expect(error?.cause).toContain('server-1');
   });
 });

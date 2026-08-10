@@ -1,3 +1,7 @@
+// The ladder's order is data, not control flow, so nothing but a test stops a deployment from
+// being walked the wrong way round — and a read that skips the write-back quietly costs every
+// later reader the same round trip. Order, write-back and expiry are the three things pinned.
+
 import { describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';

@@ -121,8 +121,8 @@ function parseField(
     if (rangePart === undefined || (part.includes('/') && stepPart === undefined)) {
       throw cronInvalid(expression, `malformed step in "${part}"`);
     }
-    const step = stepPart === undefined ? 1 : Number.parseInt(stepPart, 10);
-    if (!Number.isInteger(step) || step < 1) {
+    const step = stepPart === undefined ? 1 : parseInteger(stepPart);
+    if (step === undefined || step < 1) {
       throw cronInvalid(expression, `step must be a positive integer in "${part}"`);
     }
 
@@ -161,12 +161,25 @@ function toNumber(
   nameOffset: number,
 ): number {
   if (token === undefined || token === '') throw cronInvalid(expression, 'missing value');
-  const named = names.indexOf(token.slice(0, 3));
-  const value = named === -1 ? Number.parseInt(token, 10) : named + nameOffset;
-  if (!Number.isInteger(value) || value < min || value > max) {
+  // Names match on their first three letters, so `mon` and `monday` both work — but a token
+  // carrying anything that is not a letter is a typo, not a name, and falls through to digits.
+  const named = /^[a-z]+$/.test(token) ? names.indexOf(token.slice(0, 3)) : -1;
+  const value = named === -1 ? parseInteger(token) : named + nameOffset;
+  if (value === undefined) {
+    throw cronInvalid(expression, `"${token}" is not a number or a name`);
+  }
+  if (value < min || value > max) {
     throw cronInvalid(expression, `"${token}" is out of range ${min}-${max}`);
   }
   return value;
+}
+
+/**
+ * Digits only. `Number.parseInt('5x')` is 5, which would let `* * * * 5x` validate — a
+ * validator that accepts what the scheduler cannot mean hides the typo until it misfires.
+ */
+function parseInteger(token: string): number | undefined {
+  return /^\d+$/.test(token) ? Number.parseInt(token, 10) : undefined;
 }
 
 function isWildcard(field: string): boolean {

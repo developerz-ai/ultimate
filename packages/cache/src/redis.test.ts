@@ -1,3 +1,7 @@
+// The tag -> keys bookkeeping is what buys the one-`EVAL` invalidation instead of a `KEYS` scan,
+// and it is invisible from the outside: a bucket written wrong leaves keys that no tag can ever
+// reach again. A fake Redis records every command so the wire traffic itself is the assertion.
+
 import { describe, expect, test } from 'bun:test';
 import { CacheDriverUnavailableError } from './errors';
 import type { RedisLike } from './redis';

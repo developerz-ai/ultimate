@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
 import { BuiltinAdapter } from './builtin-adapter';
+import { AuthError } from './errors';
 
 const ID = '00000000-0000-7000-8000-000000000101';
 
@@ -110,18 +111,24 @@ describe('BuiltinAdapter — users', () => {
     expect(user.roles).toEqual(['owner']);
   });
 
-  test('createUser falls back to an empty row rather than throw when nothing returns', async () => {
+  test('createUser throws rather than fabricate a user when the insert returns no row', async () => {
     setup();
-    const user = await adapter.createUser({
-      id: ID,
-      email: 'ada@example.test',
-      passwordHash: null,
-      orgId: null,
-      roles: [],
-      createdAt: new Date(),
-    });
-    expect(user.id).toBe('');
-    expect(user.roles).toEqual([]);
+    const thrown: unknown = await adapter
+      .createUser({
+        id: ID,
+        email: 'ada@example.test',
+        passwordHash: null,
+        orgId: null,
+        roles: [],
+        createdAt: new Date(),
+      })
+      .catch((error: unknown) => error);
+    // A returned `AuthUser` here is the bug: `register()` would pass it off as a real identity.
+    expect(thrown).toBeInstanceOf(AuthError);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_AUTH_WRITE_FAILED');
+    expect(error?.cause).toContain('x_users');
+    expect(error?.fix).toContain('x db apply');
   });
 
   test('updateUser sends every patch field as a bound case-when, untouched fields pass through', async () => {
@@ -130,9 +137,14 @@ describe('BuiltinAdapter — users', () => {
     const user = await adapter.updateUser(ID, { disabledAt: new Date('2026-03-01T00:00:00.000Z') });
     expect(lastText()).toContain('update x_users set');
     expect(lastText()).toContain('password_hash = case when $1');
-    expect(lastText()).toContain('disabled_at = case when $9');
+    // The statement text is constant, so only the bound pair proves which column was written:
+    // $9/$10 is the disabled_at flag and its replacement value, $13 the row being matched.
+    expect(lastText()).toContain('disabled_at = case when $9 then $10 else disabled_at end');
+    expect(lastValues().slice(8, 10)).toEqual([true, new Date('2026-03-01T00:00:00.000Z')]);
     // Only `disabledAt` was set: every other `!== undefined` flag binds false.
-    expect(lastValues()[0]).toBe(false);
+    const untouchedFlags = [0, 2, 4, 6, 10].map((index) => lastValues()[index]);
+    expect(untouchedFlags).toEqual([false, false, false, false, false]);
+    expect(lastValues()[12]).toBe(ID);
     expect(user?.disabledAt).toEqual(new Date('2026-03-01T00:00:00.000Z'));
   });
 
@@ -140,11 +152,11 @@ describe('BuiltinAdapter — users', () => {
     setup();
     client.on('update x_users', { rows: [userRow({ mfa_secret: null })] });
     await adapter.updateUser(ID, { mfaSecret: null });
-    // The "set" flag is true and the bound replacement value is null, not omitted.
-    const mfaFlagIndex = lastText()
-      .split(',')
-      .findIndex((clause) => clause.includes('mfa_secret'));
-    expect(mfaFlagIndex).toBeGreaterThan(-1);
+    // `null` means "clear this field", and every clause is in the text whether or not it was
+    // patched — so the flag binding true beside a null value is the only proof it was not
+    // silently dropped to `undefined` (which would leave the old secret in place).
+    expect(lastText()).toContain('mfa_secret = case when $5 then $6 else mfa_secret end');
+    expect(lastValues().slice(4, 6)).toEqual([true, null]);
   });
 
   test('updateUser returns null when no row matches the id', async () => {

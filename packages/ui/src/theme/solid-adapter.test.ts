@@ -1,5 +1,6 @@
-// Registration mechanics for the process-global Solid runtime slot: unset by
-// default, set/read/replace/clear, and the exact error thrown while unset.
+// The runtime slot is process-global and every component reaches through it, so a wrong answer
+// while unset surfaces as a blank render deep in a tree rather than at the registration site.
+// These cases pin the slot's answer in each state, and pin the error that names the fix.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
@@ -49,14 +50,14 @@ describe('solid runtime registration', () => {
   });
 
   test('solid() throws a runtime-missing error when nothing is registered', () => {
+    let caught: unknown;
     try {
       solid();
-      throw new Error('expected a throw');
     } catch (error) {
-      const err = error as { code?: string; fix?: string };
-      expect(err.code).toBe(UI_ERROR_CODES.runtimeMissing);
-      expect(err.fix).toContain('setSolidRuntime');
+      caught = error;
     }
+    expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
+    expect((caught as { fix?: string }).fix).toContain('setSolidRuntime');
   });
 
   test('setSolidRuntime registers the exact object passed in', () => {

@@ -1,3 +1,7 @@
+// CORS is the one header set where a permissive mistake is invisible from the origin that
+// made it and useful to every other one. These tests hold the default shut and pin the two
+// ways it quietly widens: a wildcard standing next to credentials, and preflight answering an
+// origin the allow-list rejects.
 import { describe, expect, test } from 'bun:test';
 import { corsHeaders, DEFAULT_CORS, preflight } from './cors';
 

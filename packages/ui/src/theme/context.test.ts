@@ -1,5 +1,6 @@
-// The ambient UI context: default values, the loud-miss fallback translator,
-// and lazy Solid-context creation/caching behind the injected runtime.
+// Every component reads its locale, zone and currency from this one context, so a silent change
+// here is a silent change everywhere. Fake runtimes keep the contract provable with no Solid
+// runtime installed — the state the package is actually published in.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { directionOf, isMiss } from '@ultimat3/i18n';
@@ -94,13 +95,13 @@ describe('uiContext', () => {
   });
 
   test('throws a runtime-missing error when no Solid runtime is registered', () => {
+    let caught: unknown;
     try {
       uiContext();
-      throw new Error('expected a throw');
     } catch (error) {
-      const err = error as { code?: string };
-      expect(err.code).toBe(UI_ERROR_CODES.runtimeMissing);
+      caught = error;
     }
+    expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
   });
 
   test('creates the context via the registered runtime, caching it across calls', () => {
@@ -127,6 +128,26 @@ describe('uiContext', () => {
     expect(rest).toEqual(defaultRest);
     expect(typeof t).toBe('function');
     expect(isMiss(t('some.unknown.key'))).toBe(true);
+  });
+
+  test('a replaced runtime rebuilds the context instead of handing back the old one', () => {
+    setSolidRuntime(fakeRuntime());
+    const first = uiContext();
+    setSolidRuntime(fakeRuntime());
+    expect(uiContext()).not.toBe(first);
+  });
+
+  test('clearing the runtime makes the next call throw, whatever ran before it', () => {
+    setSolidRuntime(fakeRuntime());
+    uiContext();
+    clearSolidRuntime();
+    let caught: unknown;
+    try {
+      uiContext();
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
   });
 });
 

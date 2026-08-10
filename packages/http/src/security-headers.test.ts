@@ -1,3 +1,7 @@
+// A security header is worth only what the browser does with it, and every mistake here
+// fails open and silent: a CSP widened by one source, a report-only policy shipped to
+// production, an HSTS header sent over plaintext where it is ignored outright. These tests
+// pin the locked baseline and each way config is allowed to move it.
 import { describe, expect, test } from 'bun:test';
 import type { SecurityConfig } from './security-headers';
 import { buildCsp, DEFAULT_SECURITY, securityHeaders } from './security-headers';

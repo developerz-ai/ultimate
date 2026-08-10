@@ -1,5 +1,10 @@
+// Single responsibility: pins the s3 driver's request/response contract against an injected
+// fake `S3ClientLike` — key guard, stat mapping, list paging, presign options, lazy client.
+// WHY a fake and not a bucket: the driver's only job is translating Bun's S3 surface into
+// StorageObject/StorageError, so that translation must break here, offline, not in CI or prod.
+
 import { describe, expect, test } from 'bun:test';
-import { ConfigInvalidError, EnvMissingError } from '@ultimat3/core';
+import { ConfigInvalidError, EnvMissingError, InternalError } from '@ultimat3/core';
 import { sha256Base64 } from './driver';
 import {
   type S3ClientLike,
@@ -9,7 +14,10 @@ import {
   type S3StatLike,
   s3Driver,
 } from './driver-s3';
-import { isStorageError } from './errors';
+import { isStorageError, objectNotFound } from './errors';
+
+/** The driver's private `DRIVER_NAME`; the fake reports failures against the same disk. */
+const FAKE_DISK = 's3';
 
 interface FakeObject {
   bytes: Uint8Array;
@@ -54,14 +62,23 @@ class FakeS3Client implements S3ClientLike {
       },
       async arrayBuffer() {
         const entry = store.get(key);
-        if (entry === undefined) throw new Error(`fake: no object at ${key}`);
+        // Reads the way the provider does: a GET on a key that is not there is a 404, and the
+        // driver is expected to have gated it behind exists() before ever getting here.
+        if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
         return new Uint8Array(entry.bytes).buffer;
       },
       async exists() {
         return store.has(key);
       },
       async delete() {
-        if (client.failDeleteFor === key) throw new Error('fake: delete rejected');
+        // Deliberately NOT a StorageError: the driver's catch-all has to swallow a rejection
+        // it never authored, which is the only kind a real provider hands back.
+        if (client.failDeleteFor === key) {
+          throw new InternalError({
+            cause: `the fake s3 provider rejected DELETE ${key}`,
+            fix: 'clear failDeleteFor on the fake client to let the delete through',
+          });
+        }
         store.delete(key);
       },
       stream() {
@@ -76,7 +93,7 @@ class FakeS3Client implements S3ClientLike {
       },
       async stat(): Promise<S3StatLike> {
         const entry = store.get(key);
-        if (entry === undefined) throw new Error(`fake: no object at ${key}`);
+        if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
         return {
           size: entry.bytes.byteLength,
           type: entry.type,

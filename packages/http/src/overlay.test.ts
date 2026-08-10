@@ -1,3 +1,6 @@
+// The overlay is a dev-only surface, which is exactly why it is tested: it is the screen an
+// agent debugs from, and it must show the same facts the terminal and `--json` do. An
+// escaping slip or a field silently dropped from the render turns that screen into a lie.
 import { describe, expect, test } from 'bun:test';
 import { bodyInvalid, routeNotFound } from './errors';
 import { overlayResponse, renderOverlay, wantsOverlay } from './overlay';

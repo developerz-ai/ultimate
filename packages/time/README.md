@@ -54,8 +54,10 @@ Half-hour and 45-minute zones (`Asia/Kolkata`, `Asia/Kathmandu`, `Australia/Adel
 macros, and Vixie's dom/dow OR rule. `nextCronOccurrence(expr, zone, after)` iterates the
 zone's **wall clock**, so `0 3 * * *` in `Europe/Berlin` stays at 03:00 local across a DST
 change, and a job scheduled inside the gap runs at the first existing local time instead of
-being skipped. `describeCron(expr, locale, phrases)` renders the dashboard summary —
-month and weekday names from `Intl`, connective words injected from `t('time.cron.*')`.
+being skipped. `describeCron(expr, locale, phrases)` renders the dashboard summary — month and
+weekday names from `Intl`, every connective word **required** from the caller's `t('time.cron.*')`,
+because tier 1 cannot reach `t()` and a built-in default would ship English to every locale. A
+long clock-time list is capped and the remainder counted with `andMore`, never silently cut.
 
 ## Business days
 
@@ -72,6 +74,7 @@ The weekend is configuration. `WEEKEND_SAT_SUN`, `WEEKEND_FRI_SAT` (much of the 
 | `X_DST_AMBIGUOUS` | overlap hit with `overlap: 'throw'` |
 | `X_DST_NONEXISTENT` | gap hit with `gap: 'throw'` |
 | `X_INSTANT_INVALID` | unparseable timestamp |
+| `X_LOCALE_INVALID` | a tag `Intl` cannot parse (`en_US`, `''`) reached `describeCron` |
 
 ## Why it exists
 

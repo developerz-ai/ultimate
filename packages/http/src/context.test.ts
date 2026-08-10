@@ -1,3 +1,7 @@
+// The request context is built once and read everywhere through core's ALS, so a wrong value
+// here has no call site to blame it on — it is simply wrong in every handler. These tests pin
+// what creation resolves and that the ALS hands the same object back, rather than a copy that
+// drifts from what the pipeline decided.
 import { describe, expect, test } from 'bun:test';
 import { anonymousActor, isAnonymous, runWithContext, userActor, uuid } from '@ultimat3/core';
 import { defineHttpConfig } from './config';

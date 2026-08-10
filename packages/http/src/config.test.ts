@@ -1,3 +1,7 @@
+// `defineHttpConfig` is where every HTTP default is decided once, so these tests are the
+// record of what an app gets when it writes nothing — a quiet change to a default changes
+// every app that never set the field. `stripBasePath` is here too, because a mount point that
+// matches off a segment boundary hands one route's traffic to another.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig, stripBasePath } from './config';
 import { DEFAULT_CORS } from './cors';
@@ -17,6 +21,12 @@ describe('stripBasePath', () => {
 
   test('a pathname not starting with the prefix is returned unchanged', () => {
     expect(stripBasePath('/other/posts', '/api')).toBe('/other/posts');
+  });
+
+  test('a sibling path sharing only a character prefix is not treated as mounted', () => {
+    expect(stripBasePath('/apix/posts', '/api')).toBe('/apix/posts');
+    expect(stripBasePath('/apix/posts', '/api/')).toBe('/apix/posts');
+    expect(stripBasePath('/apix', '/api')).toBe('/apix');
   });
 
   test('a pathname starting with the prefix has the prefix stripped', () => {

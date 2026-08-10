@@ -1,3 +1,7 @@
+// The graph is the single hop from a changed tag to everything that must die with it: an edge it
+// fails to return is a stale read in a tier nobody was watching, and one it keeps after
+// `unregisterDependent` purges what never changed. Both directions are asserted here.
+
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   dependentsOf,

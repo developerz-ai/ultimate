@@ -1,3 +1,7 @@
+// A cache error is worth exactly what its instruction is worth: the code an agent branches on
+// and the command it can run next. Both are prose the compiler cannot check, so they rot unless
+// something asserts them — these tests are that something.
+
 import { describe, expect, test } from 'bun:test';
 import {
   CACHE_ERROR_CODES,

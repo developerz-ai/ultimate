@@ -1,3 +1,7 @@
+// This cache decides when two prompts are "the same question", which makes its threshold a
+// correctness boundary rather than a tuning knob: set slightly too loose, it hands a user the
+// answer to somebody else's question. The maths, that boundary and expiry are pinned here.
+
 import { describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { cosineSimilarity, createMemorySemanticCache } from './semantic';

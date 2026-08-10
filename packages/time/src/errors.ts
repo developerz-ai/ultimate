@@ -13,6 +13,7 @@ export const TIME_ERROR_CODES = [
   'X_DST_NONEXISTENT',
   'X_INSTANT_INVALID',
   'X_SCHEDULE_INVALID',
+  'X_LOCALE_INVALID',
 ] as const;
 
 export type TimeErrorCode = (typeof TIME_ERROR_CODES)[number];
@@ -77,6 +78,19 @@ export function dstNonexistent(wall: string, zone: string): TimeError {
     code: 'X_DST_NONEXISTENT',
     cause: `${wall} never happens in ${zone} (the spring-forward gap skips it)`,
     fix: "pass { gap: 'next' } to shift forward past the gap or { gap: 'previous' } to shift back before it",
+  });
+}
+
+/**
+ * A tag `Intl` cannot parse. Distinct from i18n's `X_LOCALE_UNSUPPORTED`, which is a
+ * well-formed tag outside the app's supported set — this one is not a tag at all, and a raw
+ * `RangeError` from a formatter says nothing about which caller supplied it.
+ */
+export function localeInvalid(locale: string): TimeError {
+  return new TimeError({
+    code: 'X_LOCALE_INVALID',
+    cause: `"${locale}" is not a well-formed BCP 47 language tag`,
+    fix: "pass a tag like 'en', 'en-GB' or 'de-DE' — screen a header-supplied value with Intl.DateTimeFormat.supportedLocalesOf([tag]) before it reaches a formatter",
   });
 }
 

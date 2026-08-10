@@ -1,47 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  describeCron,
-  isValidCron,
+  firedSince,
   matchesCron,
   nextCronOccurrence,
+  nextCronOccurrenceMs,
   nextCronOccurrences,
-  parseCron,
-} from './cron';
+} from './cron-occurrence';
 import { fromIso, toIso } from './instant';
 import { toZoned } from './zoned';
 
 const BERLIN = 'Europe/Berlin';
 const UTC = 'UTC';
-
-describe('parseCron', () => {
-  test('parses 5 fields, steps, ranges, lists and names', () => {
-    expect(parseCron('0 3 * * *')).toMatchObject({ minutes: [0], hours: [3] });
-    expect(parseCron('*/15 * * * *').minutes).toEqual([0, 15, 30, 45]);
-    expect(parseCron('0 9-17/4 * * *').hours).toEqual([9, 13, 17]);
-    expect(parseCron('0 0 1,15 * *').daysOfMonth).toEqual([1, 15]);
-    expect(parseCron('0 9 * * MON-FRI').daysOfWeek).toEqual([1, 2, 3, 4, 5]);
-    expect(parseCron('0 0 * JAN,JUL *').months).toEqual([1, 7]);
-    // cron day 0 and day 7 are both Sunday; ISO calls it 7.
-    expect(parseCron('0 0 * * 0').daysOfWeek).toEqual([7]);
-    expect(parseCron('0 0 * * 7').daysOfWeek).toEqual([7]);
-  });
-
-  test('parses a 6-field expression with seconds and the @macros', () => {
-    expect(parseCron('30 0 3 * * *')).toMatchObject({ seconds: [30], minutes: [0], hours: [3] });
-    expect(parseCron('@daily')).toMatchObject({ minutes: [0], hours: [0] });
-    expect(parseCron('@weekly').daysOfWeek).toEqual([7]);
-  });
-
-  test('rejects malformed expressions with X_CRON_INVALID and a working example', () => {
-    expect(codeOf(() => parseCron('0 3 * *'))).toBe('X_CRON_INVALID');
-    expect(codeOf(() => parseCron('61 * * * *'))).toBe('X_CRON_INVALID');
-    expect(codeOf(() => parseCron('0 3 * * FUNDAY'))).toBe('X_CRON_INVALID');
-    expect(codeOf(() => parseCron('*/0 * * * *'))).toBe('X_CRON_INVALID');
-    expect(fixOf(() => parseCron('nonsense'))).toContain("'0 3 * * *'");
-    expect(isValidCron('0 3 * * *')).toBe(true);
-    expect(isValidCron('nope')).toBe(false);
-  });
-});
 
 describe('nextCronOccurrence', () => {
   test('basic daily schedule in UTC', () => {
@@ -68,6 +37,18 @@ describe('nextCronOccurrence', () => {
     // "1st of the month OR any Monday" — both restricted means either matches.
     const next = nextCronOccurrence('0 0 1 * MON', UTC, fromIso('2026-03-14T00:00:00Z'));
     expect(toIso(next)).toBe('2026-03-16T00:00:00.000Z'); // the Monday comes first
+  });
+
+  test('an unmatchable date fails with the search budget it actually spent', () => {
+    // February never has a 30th, so the walk runs out of steps rather than looping forever.
+    const error = errorOf(() =>
+      nextCronOccurrence('0 0 30 2 *', UTC, fromIso('2026-03-14T00:00:00Z')),
+    );
+    const cause = String(error.cause);
+    expect(error.code).toBe('X_CRON_INVALID');
+    expect(cause).toContain('search steps');
+    // A step is a field advancement, so the guard cannot honestly promise a span in years.
+    expect(cause).not.toContain('years');
   });
 });
 
@@ -111,36 +92,29 @@ describe('matchesCron', () => {
   });
 });
 
-describe('describeCron', () => {
-  test('renders a human summary with Intl month and weekday names', () => {
-    expect(describeCron('0 3 * * *', 'en')).toBe('at 03:00 every day');
-    expect(describeCron('*/15 * * * *', 'en')).toBe('every 15 minutes');
-    expect(describeCron('0 9 * * MON-FRI', 'en')).toContain('Monday');
-    expect(describeCron('0 0 1 1 *', 'en')).toContain('January');
-    expect(describeCron('0 0 1 1 *', 'de')).toContain('Januar');
-  });
-
-  test('phrases can be injected from t() so no English is hardcoded upstream', () => {
-    expect(describeCron('0 3 * * *', 'de', { at: 'um {time}', everyDay: 'täglich' })).toBe(
-      'um 03:00 täglich',
-    );
+describe('firedSince', () => {
+  test('is true only when an occurrence falls inside the half-open window', () => {
+    const since = fromIso('2026-03-14T02:30:00Z');
+    expect(firedSince('0 3 * * *', UTC, since, fromIso('2026-03-14T03:00:00Z'))).toBe(true);
+    expect(firedSince('0 3 * * *', UTC, since, fromIso('2026-03-14T02:59:00Z'))).toBe(false);
+    // An empty or reversed window never fires, whatever the expression.
+    expect(firedSince('* * * * *', UTC, since, since)).toBe(false);
+    expect(firedSince('* * * * *', UTC, since, fromIso('2026-03-14T02:00:00Z'))).toBe(false);
   });
 });
 
-function codeOf(run: () => unknown): string {
-  try {
-    run();
-  } catch (error) {
-    return String((error as { code?: unknown }).code);
-  }
-  return 'no-throw';
-}
+describe('nextCronOccurrenceMs', () => {
+  test('takes and returns epoch milliseconds for callers that only have a number', () => {
+    const afterMs = Date.UTC(2026, 2, 14, 4, 0, 0);
+    expect(nextCronOccurrenceMs('0 3 * * *', UTC, afterMs)).toBe(Date.UTC(2026, 2, 15, 3, 0, 0));
+  });
+});
 
-function fixOf(run: () => unknown): string {
+function errorOf(run: () => unknown): { code?: unknown; cause?: unknown } {
   try {
     run();
   } catch (error) {
-    return String((error as { fix?: unknown }).fix);
+    return error as { code?: unknown; cause?: unknown };
   }
-  return 'no-throw';
+  return { code: 'no-throw', cause: 'no-throw' };
 }

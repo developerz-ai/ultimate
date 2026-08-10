@@ -1,3 +1,7 @@
+// Every date and number the app formats is formatted from what this negotiation returns —
+// there is no ambient locale or time zone to fall back on anywhere in the framework. These
+// tests pin the fallback chain so a header we cannot honour degrades to the configured
+// default instead of to a zone no formatter accepts.
 import { describe, expect, test } from 'bun:test';
 import { isValidTimeZone, negotiateLocale, readCookie, resolveTimeZone } from './locale';
 

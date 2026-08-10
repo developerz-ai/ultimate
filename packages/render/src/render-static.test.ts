@@ -41,6 +41,18 @@ function blogRoute(prerender?: PrerenderFn) {
   });
 }
 
+/**
+ * A fixture that must fail still fails the framework's way — a coded error, never a bare
+ * `Error`. Its cause and fix are deliberately unlike the wrappers under test, so a lost
+ * re-wrap surfaces as a message/fix mismatch instead of passing on class alone.
+ */
+function fixtureFailure(): PrerenderFailedError {
+  return new PrerenderFailedError(
+    'the fixture threw on purpose',
+    'delete the deliberate throw in render-static.test.ts once the wrap is covered elsewhere',
+  );
+}
+
 beforeEach(() => {
   clearRoutes();
 });
@@ -145,11 +157,14 @@ describe('enumeratePrerender', () => {
       file: 'apps/web/site/pricing/page.tsx',
       config: staticConfig({
         prerender: () => {
-          throw new Error('boom');
+          throw fixtureFailure();
         },
       }),
     });
-    await expect(enumeratePrerender(entry)).rejects.toThrow(PrerenderFailedError);
+    await expect(enumeratePrerender(entry)).rejects.toMatchObject({
+      code: 'X_PRERENDER_FAILED',
+      message: expect.stringContaining('prerender() for /pricing threw:'),
+    });
   });
 
   test('a rejecting prerender surfaces as PrerenderFailedError, not the original error', async () => {
@@ -157,11 +172,16 @@ describe('enumeratePrerender', () => {
       file: 'apps/web/site/status/page.tsx',
       config: staticConfig({
         prerender: async () => {
-          throw new Error('boom');
+          throw fixtureFailure();
         },
       }),
     });
-    await expect(enumeratePrerender(entry)).rejects.toThrow(PrerenderFailedError);
+    // The wrapper's own cause and fix — the fixture's would name neither the route nor the file.
+    await expect(enumeratePrerender(entry)).rejects.toMatchObject({
+      code: 'X_PRERENDER_FAILED',
+      message: expect.stringContaining('prerender() for /status threw:'),
+      fix: expect.stringContaining('fix prerender in apps/web/site/status/page.tsx'),
+    });
   });
 
   test('a non-array resolution throws PrerenderFailedError', async () => {
@@ -220,17 +240,16 @@ describe('renderStatic', () => {
   test('a render failure rejects with PrerenderFailedError naming the failing path', async () => {
     const entry = blogRoute(async () => ['a', 'b']);
     const render: StaticRenderFn = ({ path }) => {
-      if (path === '/blog/b') throw new Error('boom');
+      if (path === '/blog/b') throw fixtureFailure();
       return `<p>${path}</p>`;
     };
 
-    try {
-      await renderStatic(entry, render, { buildId: 'b1' });
-      throw new Error('expected renderStatic to reject');
-    } catch (error) {
-      expect(error).toBeInstanceOf(PrerenderFailedError);
-      expect((error as Error).message).toContain('/blog/b');
-    }
+    // `rejects` carries the "must not resolve" half: a resolved build fails this assertion.
+    await expect(renderStatic(entry, render, { buildId: 'b1' })).rejects.toMatchObject({
+      code: 'X_PRERENDER_FAILED',
+      message: expect.stringContaining('rendering /blog/b failed:'),
+      fix: expect.stringContaining('x build --route /blog/b'),
+    });
   });
 
   test('produces one artifact per enumerated param set, in order', async () => {

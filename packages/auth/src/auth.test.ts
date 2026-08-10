@@ -39,14 +39,18 @@ const newAuth = (adapter = new MemoryAdapter(), startMs = 1_700_000_000_000): Au
     rateLimit: { maxAttempts: 5, windowMs: 900_000, lockoutMs: 900_000 },
   });
 
-const caught = async (fn: () => Promise<unknown>): Promise<AuthError> => {
+/** Captures the thrown `AuthError`, or `undefined` when the call unexpectedly resolved. The
+ *  caller's `expect(error?.code).toBe(...)` is then the assertion that fails, naming the code it
+ *  wanted — a sentinel thrown from in here would carry no code and no fix. Anything that is not
+ *  an `AuthError` is rethrown untouched: this helper never swallows an unexpected failure. */
+const caught = async (fn: () => Promise<unknown>): Promise<AuthError | undefined> => {
   try {
     await fn();
+    return undefined;
   } catch (error) {
     if (error instanceof AuthError) return error;
     throw error;
   }
-  throw new Error('expected the call to throw');
 };
 
 describe('defineAuth', () => {
@@ -75,7 +79,7 @@ describe('register', () => {
   test('a weak password is rejected before any user is created', async () => {
     const auth = newAuth();
     const error = await caught(() => register(auth, { email: EMAIL, password: 'short' }));
-    expect(error.code).toBe('X_PASSWORD_WEAK');
+    expect(error?.code).toBe('X_PASSWORD_WEAK');
     expect(await auth.adapter.findUserByEmail(NORMALISED_EMAIL)).toBeNull();
   });
 });
@@ -97,7 +101,7 @@ describe('login', () => {
     const auth = newAuth();
     await register(auth, { email: EMAIL, password: PASSWORD });
     const error = await caught(() => login(auth, { email: EMAIL, password: 'nope-nope-nope' }));
-    expect(error.code).toBe('X_UNAUTHENTICATED');
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
   });
 
   test('a disabled account is rejected identically to a wrong password', async () => {
@@ -106,8 +110,8 @@ describe('login', () => {
     await auth.adapter.updateUser(user.id, { disabledAt: auth.clock.now() });
 
     const error = await caught(() => login(auth, { email: EMAIL, password: PASSWORD }));
-    expect(error.code).toBe('X_UNAUTHENTICATED');
-    expect(error.cause).not.toContain('disabled');
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
+    expect(error?.cause).not.toContain('disabled');
   });
 
   test('an mfa-enrolled user stops at X_MFA_REQUIRED and mints no session', async () => {
@@ -116,7 +120,7 @@ describe('login', () => {
     await auth.adapter.updateUser(user.id, { mfaSecret: 'JBSWY3DPEHPK3PXP' });
 
     const error = await caught(() => login(auth, { email: EMAIL, password: PASSWORD }));
-    expect(error.code).toBe('X_MFA_REQUIRED');
+    expect(error?.code).toBe('X_MFA_REQUIRED');
     expect(await auth.adapter.listSessions(user.id)).toHaveLength(0);
   });
 
@@ -162,7 +166,7 @@ describe('authenticate', () => {
   test('a forged or unknown token throws X_UNAUTHENTICATED', async () => {
     const auth = newAuth();
     const error = await caught(() => authenticate(auth, 'nonexistent-id.some-secret'));
-    expect(error.code).toBe('X_UNAUTHENTICATED');
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
   });
 
   test('a session for a disabled user is deleted and rejected, not silently accepted', async () => {
@@ -172,7 +176,7 @@ describe('authenticate', () => {
     await auth.adapter.updateUser(user.id, { disabledAt: auth.clock.now() });
 
     const error = await caught(() => authenticate(auth, logged.token));
-    expect(error.code).toBe('X_UNAUTHENTICATED');
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
     expect(await auth.adapter.getSession(logged.session.id)).toBeNull();
   });
 
@@ -184,7 +188,7 @@ describe('authenticate', () => {
 
     const gone = newAuth(withUserGone(adapter));
     const error = await caught(() => authenticate(gone, logged.token));
-    expect(error.code).toBe('X_UNAUTHENTICATED');
+    expect(error?.code).toBe('X_UNAUTHENTICATED');
     expect(await adapter.getSession(logged.session.id)).toBeNull();
   });
 });

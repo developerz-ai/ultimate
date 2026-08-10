@@ -1,3 +1,7 @@
+// Memoization is never required for correctness, so what is actually at stake here is lifetime:
+// a value that outlives its request is not a stale read, it is one user's data answering
+// another's. These tests hold the store to the context it was born in, and to degrading outside.
+
 import { describe, expect, test } from 'bun:test';
 import { createContext, runWithContext } from '@ultimat3/core';
 import { clearMemo, createMemoTier, memoSize } from './memo';

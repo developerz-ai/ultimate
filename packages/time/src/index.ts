@@ -29,7 +29,6 @@ export {
 export {
   type CronExpression,
   type CronPhrases,
-  DEFAULT_CRON_PHRASES,
   describeCron,
   firedSince,
   isValidCron,
@@ -59,6 +58,7 @@ export {
   dstNonexistent,
   durationInvalid,
   instantInvalid,
+  localeInvalid,
   TIME_ERROR_CODES,
   TimeError,
   type TimeErrorCode,

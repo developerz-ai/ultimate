@@ -1,3 +1,7 @@
+// An error code is stable forever once shipped, and its cause/fix pair is the entire
+// interface an agent gets when a request fails. These tests treat that as the contract it is:
+// the code list cannot drift from what the docs promise, and no factory may emit a fix line
+// that names nothing runnable.
 import { describe, expect, test } from 'bun:test';
 import {
   bodyInvalid,

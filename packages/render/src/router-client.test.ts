@@ -1,7 +1,7 @@
 /**
- * Covers the vendored client router: route resolution, navigation, guards,
- * scroll restoration, view transitions, prefetch (hover/visible), and popstate —
- * all through fake `ReactivePrimitives`/`RouterHost`, no solid-js and no DOM.
+ * Why fake ports, not a browser: `ReactivePrimitives` + `RouterHost` are the router's whole
+ * contract with the outside world, so faking them is what makes history, scroll and prefetch
+ * deterministic here — with no DOM and no solid-js, which this package may never import.
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';

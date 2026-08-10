@@ -1,3 +1,7 @@
+// The CDN is the one tier Ultimate never reads back from, so the emitted header and the purge
+// call ARE the contract — a wrong `Surrogate-Key` is a stale page that no later read can catch,
+// and an unimplemented driver that fails quietly is the same outage with no stack trace.
+
 import { describe, expect, test } from 'bun:test';
 import type { PurgeDriver } from './cdn';
 import {
@@ -61,7 +65,9 @@ describe('noopPurgeDriver', () => {
   test('purge echoes back the same keys it was given', async () => {
     const driver = noopPurgeDriver();
     const keys = ['post', 'post:1'];
-    await expect(driver.purge(keys)).resolves.toBe(keys);
+    // `PurgeDriver.purge` promises the accepted keys, not the caller's array object: a driver
+    // that maps or copies before resolving is conforming, so identity is not the contract.
+    await expect(driver.purge(keys)).resolves.toEqual(keys);
   });
 
   test('purgeAll resolves without throwing', async () => {
