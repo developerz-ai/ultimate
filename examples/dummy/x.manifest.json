@@ -241,7 +241,7 @@
     },
     {
       "name": "savePreferences",
-      "file": "apps/web/app/settings-actions.ts",
+      "file": "apps/web/app/settings/actions.ts",
       "route": "POST /_x/action/save-preferences",
       "policy": "member:self",
       "invalidates": ["member"],
@@ -350,11 +350,11 @@
   "llm": [
     {
       "name": "summarize",
-      "file": "apps/web/app/posts/prompts/summarize.ts",
+      "file": "apps/web/app/posts/actions.ts",
       "model": "claude-sonnet-4-5",
       "prompt": "apps/web/app/posts/prompts/summarize.v3.md",
       "promptVersion": 3,
-      "policy": "feed:read",
+      "policy": "post:read",
       "evals": "apps/web/app/posts/prompts/summarize.eval.test.ts",
       "budget": {
         "tokensIn": 8000,
@@ -449,7 +449,7 @@
       "name": "feed:read",
       "file": "apps/web/app/posts/policy.ts",
       "rowFilter": true,
-      "usedBy": ["liveFeed", "postBySlug", "summarize"]
+      "usedBy": ["liveFeed", "postBySlug"]
     },
     {
       "name": "member:self",
@@ -491,7 +491,7 @@
       "name": "post:read",
       "file": "apps/web/app/posts/policy.ts",
       "rowFilter": false,
-      "usedBy": ["postById", "createComment"]
+      "usedBy": ["postById", "createComment", "summarize"]
     },
     {
       "name": "post:read-public",

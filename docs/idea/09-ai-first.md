@@ -86,15 +86,25 @@ over an existing primitive; the eight stay eight.
 ```ts
 export const summarize = llm({
   model: 'claude-sonnet-5',
-  input:  t.object({ postId: t.uuid }),
+  input:  t.object({ postId: t.uuid, orgId: t.uuid }),   // orgId: the policy decides on it
   output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact
   vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
-  cache:  { semantic: { threshold: 0.97, ttl: '7d' } },
+  cache:  { semantic: { threshold: 0.97, ttl: '7d', scope: ({ orgId }) => orgId } },
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
-  policy: can('post:read'),
+  policy: postRead,                              // declared once in the feature's policy.ts
 });
 ```
+
+Because `llm()` returns an `action`, every rule in [`02-primitives.md`](./02-primitives.md) applies
+to it unchanged — including the two that bite hardest here. The policy object is **named**, never an
+inline `can('post:read')`: the inline form carries the grant and drops the tenancy predicate, and
+"summarise any post by id" is exactly the read that must not cross an org. And the declaration lives
+in the feature's `actions.ts`, not beside the prompt — `prompts/` holds the artifact, its evals and
+its baseline.
+
+`scope` is not optional in a multi-tenant app: cosine similarity has no notion of a tenant, so one
+shared semantic cache answers one org with another org's summary.
 
 `vars` is the one declared place a model call loads data: the input is an id, the prompt needs
 the row behind it, and a reader can see exactly what was sent.

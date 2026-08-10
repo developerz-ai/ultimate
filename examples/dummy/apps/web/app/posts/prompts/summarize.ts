@@ -1,22 +1,17 @@
 /**
- * The one model call in Postly.
+ * The prompt artifact behind `summarize`, and nothing else.
  *
- * There is no `llm` primitive: the framework has eight, and a model call is not one of them.
- * It is an `action` whose handler happens to call the gateway — so it gets the same policy,
- * the same cache invalidation, the same MCP projection and the same tracing as every other
- * mutation, instead of a parallel set of rules that only apply to AI.
+ * A versioned artifact, not a string literal: `definePrompt` hashes the template into the
+ * prompt's identity, which keys the semantic cache and appears in every trace, so a summary can
+ * always be attributed to the exact text that produced it. Bumping `version` changes the hash.
  *
- * The prompt itself is a versioned artifact. Bumping `version` changes its content hash, which
- * keys the semantic cache and appears in traces, so a summary can always be attributed to the
- * exact text that produced it.
- *
- * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
+ * The `llm()` declaration that uses it lives in `../actions.ts`, because `llm()` returns an
+ * `action` and an action is only ever declared in `api/` or a feature's `actions.ts`. What lives
+ * beside this file is the rest of the artifact: `summarize.v3.md`, `summarize.evals.ts` and
+ * `summarize.v3.baseline.json`.
  */
 
-import { tag } from '@postly/db';
-import { action, t } from '@ultimat3/action';
 import { definePrompt } from '@ultimat3/ai';
-import { can } from '@ultimat3/policy';
 import { summarizeTemplate } from './summarize-template';
 
 /** Editing the markdown requires bumping this version — it keys the cache and the traces. */
@@ -34,24 +29,5 @@ export const summarizePrompt = definePrompt({
     type: 'object',
     properties: { summary: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
     required: ['summary', 'tags'],
-  },
-});
-
-export const summarize = action({
-  input: t.object({ postId: t.uuid }),
-  output: t.object({ summary: t.string, tags: t.array(t.string) }),
-  policy: can('feed:read'),
-  cache: { invalidates: [tag.post] },
-  mcp: { expose: true, description: 'Summarise a post into two sentences and up to four tags' },
-
-  async handle({ input, ctx }) {
-    const post = await ctx.posts.byId(input.postId);
-    // The gateway carries the budget: it refuses before the call rather than truncating after,
-    // so a runaway loop costs one refusal instead of a bill.
-    const result = await ctx.ai.generate({
-      prompt: summarizePrompt,
-      vars: { title: post.title, body: post.body, locale: ctx.actor.locale },
-    });
-    return result.output;
   },
 });
