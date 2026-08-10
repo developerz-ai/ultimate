@@ -17,7 +17,7 @@ import type { JobDescriptor } from './describe';
 import { describeJob } from './describe';
 import type { EnqueueResult } from './driver';
 import { DEFAULT_QUEUE } from './driver';
-import { IdempotencyRequiredError } from './errors';
+import { IdempotencyRequiredError, JobNameTakenError } from './errors';
 import { NO_TENANT, tenantKeyFrom } from './limits';
 import type { EnqueueOptions } from './outbox';
 import { jobsFacade } from './outbox';
@@ -36,7 +36,10 @@ export interface JobRunArgs<I> {
 }
 
 export interface JobDefinition<I> {
-  /** Assigned by `x manifest` from the export name; only set by hand in tests. */
+  /**
+   * Omit it: `defineApi({ jobs })` assigns the export name. Set it only to pin a queue key the
+   * export name must not decide — a framework job like `mail.send`, or a name rows already carry.
+   */
   readonly name?: string;
   readonly input: StandardSchemaV1<unknown, I>;
   /** REQUIRED. See the file header — this is the whole point. */
@@ -90,6 +93,13 @@ export type AnyJobHandle = JobHandle<unknown>;
 
 const registry = new Map<string, AnyJobHandle>();
 let anonymous = 0;
+
+/**
+ * Proof `job()` built this handle, plus whether its definition named itself. Private, and
+ * deliberately not a registry lookup: the registry is what `registerJob` rewrites, so a guard
+ * that read it would reject exactly the handles registration exists to rename.
+ */
+const origin = new WeakMap<object, { readonly declaredName: boolean }>();
 
 export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
   anonymous += 1;
@@ -146,6 +156,7 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     },
   };
 
+  origin.set(handle, { declaredName: definition.name !== undefined });
   registry.set(name, handle as AnyJobHandle);
   return handle;
 }
@@ -157,17 +168,55 @@ function tenantFor(actor: JobActor | null): string {
 }
 
 /**
+ * Structural, not nominal: an object counts as a job handle only if `job()` built it, because
+ * only then does a retry policy, an idempotency key and a queue exist behind it. A look-alike
+ * carrying `kind: 'job'` never reaches the registry, the queue or the manifest.
+ */
+export function isJobHandle(value: unknown): value is AnyJobHandle {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { kind?: unknown }).kind === 'job' &&
+    origin.has(value)
+  );
+}
+
+/**
+ * Register `target` under `name`, stamping the name onto the handle the module exported rather
+ * than seating a differently-named copy: `import { notifySubscribers }` is the handle
+ * `enqueue()` routes through after boot, with nothing to remember.
+ *
+ * A definition that supplied its own `name` keeps it. A job name is the durable queue key that
+ * queued, retrying and dead-lettered rows already carry, so renaming an export must never move
+ * where they are delivered.
+ */
+export function registerJob<H extends AnyJobHandle>(name: string, target: H): H {
+  const key = origin.get(target)?.declaredName === true ? target.name : name;
+  const seated = registry.get(key);
+  // Re-registering the SAME handle under the SAME name is one registration seen twice, not a
+  // collision: `defineApi` hands over a feature module at boot and the framework's module scan
+  // reaches the same declaration file directly. Only a DIFFERENT job under a taken name is the
+  // ambiguity `X_JOB_DUPLICATE` exists to refuse.
+  if (seated !== undefined) {
+    if (seated !== (target as AnyJobHandle))
+      throw new JobNameTakenError({ kind: 'job', name: key });
+    return target;
+  }
+  registry.delete(target.name);
+  // The caller holds a reference to this exact object, so rebind its name in place.
+  Object.defineProperty(target, 'name', { value: key, configurable: true });
+  registry.set(key, target as AnyJobHandle);
+  return target;
+}
+
+/**
  * Called by generated code with `{ onboardOrg, sendDigest }` so queue rows carry the export
- * name rather than a positional id. Enqueue works either way; the name is for humans.
+ * name rather than a positional id. `registerJobs(module)` is the call app code makes; this is
+ * the same rules over an explicit record — a declared `name` wins, and a second handle under a
+ * taken name is `X_JOB_DUPLICATE`.
  */
 export function nameJobs(record: Readonly<Record<string, AnyJobHandle>>): void {
-  for (const [exportName, handle] of Object.entries(record)) {
-    if (handle.name === exportName) continue;
-    registry.delete(handle.name);
-    // The caller holds a reference to this exact object, so rebind its name in place.
-    Object.defineProperty(handle, 'name', { value: exportName, configurable: true });
-    registry.set(exportName, handle);
-  }
+  for (const [exportName, handle] of Object.entries(record)) registerJob(exportName, handle);
 }
 
 export function getJob(name: string): AnyJobHandle | undefined {

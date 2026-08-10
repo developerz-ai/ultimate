@@ -157,7 +157,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_IDEMPOTENCY_REQUIRED` | the job has no `idempotencyKey` | the field was omitted — normally a compile error, checked again at registration | add `idempotencyKey: (input) => '<stable>:' + input.id` |
-| `X_JOB_DUPLICATE` | a live key already has a job | a second enqueue inside the dedupe window | pass `onConflict: 'dedupe'`, or make the key narrower |
+| `X_JOB_DUPLICATE` | a name or a live key already has a job | a second enqueue inside the dedupe window, or a second job/task registered under a name already taken | pass `onConflict: 'dedupe'` or make the key narrower; for a name clash, rename one export |
 | `X_STEP_DUPLICATE` | two `step.run` calls share a name | copy-paste inside `run()` | rename one — step names are the replay key |
 | `X_JOB_MAX_ATTEMPTS` | the job exhausted its retries | a step kept failing | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` |
 | `X_JOB_TIMEOUT` | a job exceeded its wall-clock limit | one long step | raise `timeout`, or split the work into more `step.run()` calls |
@@ -314,7 +314,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ADMIN_DENIED` | the actor may not use this admin surface | missing `admin:*` permission | grant the permission through the normal policy layer |
 | `X_ADMIN_TOOL_FORBIDDEN` | an admin MCP tool was called without permission | agent acting beyond its user | nothing to fix — the policy is correct |
 | `X_DEV_DASHBOARD_IN_PROD` | `/_x` was mounted outside dev | the dev dashboard shipped in the image | delete the `/_x` mount from the production entrypoint |
-| `X_MANIFEST_DRIFT` | `x.manifest.json` differs from the code | a primitive changed without regenerating | `x manifest` |
+| `X_MANIFEST_DRIFT` | a committed manifest differs from the code | a primitive changed without regenerating, or the file was hand-edited so its `buildId` no longer hashes its own contents | `x manifest` — `bun run manifest` for this repo's own `framework.manifest.json` |
 | `X_MANIFEST_STALE` | `openapi.json` is stale | the committed spec does not match the actions the code registers | `x manifest`, then commit |
 | `X_MANIFEST_BREAKING` | a published contract was removed or narrowed | a breaking change with no version bump | bump the major version, or restore the contract |
 | `X_AGENTS_MD_MISSING` | no `AGENTS.md` | the human-authored file was deleted | write it by hand — short: stack, commands, conventions |

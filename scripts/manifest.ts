@@ -1,33 +1,32 @@
 #!/usr/bin/env bun
-// Generated facts about the framework itself: packages, tiers, every X_* error code and where it
-// is declared. Same rule as an app's x.manifest.json — emitted from the code, never hand-edited,
-// so "which codes exist?" is a file read instead of a grep.
+// Generated facts about the framework itself: packages, tiers, every X_* error code and where it is
+// declared. Same rule as an app's x.manifest.json — emitted from the code, committed, never
+// hand-edited — so "which codes exist?" is a file read instead of a grep, and the gate can fail on
+// a copy the code has moved past.
 //
-//   bun run scripts/manifest.ts [--out .x/manifest.json] [--json]
+//   bun run scripts/manifest.ts [--out framework.manifest.json] [--json]
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { flagString, parseScriptArgs } from './lib/args';
+import type { FrameworkManifest, FrameworkManifestBody } from './lib/framework-manifest';
+import {
+  contentHash,
+  frameworkManifestJson,
+  manifestDrift,
+  readFrameworkManifest,
+} from './lib/framework-manifest';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { TIERS } from './lib/tiers';
 import { listWorkspaces } from './lib/workspaces';
 
-export const DEFAULT_OUT = join('.x', 'manifest.json');
+/**
+ * Committed at the repo root, beside llms.txt. Deliberately not `x.manifest.json`: that filename
+ * is an *app's* manifest, a different schema, and `x verify` would read this one as that.
+ */
+export const DEFAULT_OUT = 'framework.manifest.json';
 
 const CODE_PATTERN = /'(X_[A-Z0-9_]+)'/g;
-
-export interface FrameworkManifest {
-  readonly version: 1;
-  readonly buildId: string;
-  readonly tiers: Readonly<Record<string, readonly string[]>>;
-  readonly packages: readonly {
-    readonly name: string;
-    readonly version: string;
-    readonly tier: number;
-    readonly private: boolean;
-  }[];
-  readonly errorCodes: readonly { readonly code: string; readonly package: string }[];
-}
 
 /** Codes are string literals in `src/errors.ts`; reading them is exact and needs no runtime. */
 export async function collectErrorCodes(
@@ -53,12 +52,8 @@ export async function collectErrorCodes(
 export async function buildManifest(root: string): Promise<FrameworkManifest> {
   const workspaces = await listWorkspaces(root);
   const errorCodes = await collectErrorCodes(root);
-  const hasher = new Bun.CryptoHasher('sha256');
-  for (const workspace of workspaces) hasher.update(`${workspace.name}@${workspace.version}`);
-  for (const entry of errorCodes) hasher.update(entry.code);
-  return {
+  const body: FrameworkManifestBody = {
     version: 1,
-    buildId: hasher.digest('hex').slice(0, 12),
     tiers: Object.fromEntries(Object.entries(TIERS).map(([tier, names]) => [tier, [...names]])),
     packages: workspaces.map((workspace) => ({
       name: workspace.name,
@@ -68,6 +63,23 @@ export async function buildManifest(root: string): Promise<FrameworkManifest> {
     })),
     errorCodes,
   };
+  return { ...body, buildId: contentHash(body) };
+}
+
+/**
+ * The gate's question: does the committed file still describe this tree? Builds fresh, reads the
+ * committed copy and names the sections that moved. An absolute `out` wins over `root`, so a test
+ * can point this at a temp file instead of the repo.
+ */
+export async function frameworkManifestDrift(
+  root: string,
+  out: string = DEFAULT_OUT,
+): Promise<readonly string[]> {
+  const [fresh, onDisk] = await Promise.all([
+    buildManifest(root),
+    readFrameworkManifest(resolve(root, out)),
+  ]);
+  return manifestDrift(onDisk, fresh);
 }
 
 if (import.meta.main) {
@@ -75,7 +87,7 @@ if (import.meta.main) {
   const root = repoRoot();
   const out = flagString(args, 'out') ?? DEFAULT_OUT;
   const manifest = await buildManifest(root);
-  await Bun.write(join(root, out), `${JSON.stringify(manifest, null, 2)}\n`);
+  await Bun.write(resolve(root, out), frameworkManifestJson(manifest));
   report(
     {
       ok: true,

@@ -67,6 +67,10 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
         expose: action.mcp.expose,
         ...(action.mcp.description === null ? {} : { description: action.mcp.description }),
       },
+      // Written only when true, exactly like `mcp.description`: `ActionFact.mutator` is optional,
+      // so absence already reads as "a plain action", and a `false` on every other action would
+      // be bytes added to a file that is reviewed by hand for no fact gained.
+      ...(action.mutator ? { mutator: true } : {}),
     })),
     queries: describeQueries().map((query) => ({
       name: query.name,

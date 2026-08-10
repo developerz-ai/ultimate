@@ -18,7 +18,7 @@ verifyContract({ before: committed, after: manifest });
 |---|---|
 | `routes` | url, render mode, offline strategy, hydrate, revalidate tags, budget |
 | `entities` | table, columns (type, nullability, PK, FK), named invariants |
-| `actions` | input + output schema, policy, cache invalidations, MCP exposure |
+| `actions` | input + output schema, policy, cache invalidations, MCP exposure, `mutator` when it is one |
 | `queries` | input schema, policy, live, cache tags |
 | `jobs` | input schema, queue, retry policy, step names |
 | `tasks` | cron, tz, jobs enqueued |
@@ -86,7 +86,7 @@ past 200 lines, or claims to be generated.
 
 | Code | Meaning | Fix |
 |---|---|---|
-| `X_MANIFEST_DRIFT` | committed file no longer matches the code | `x manifest` |
+| `X_MANIFEST_DRIFT` | committed file no longer matches the code, or was hand-edited so its `buildId` no longer hashes its own body | `x manifest` |
 | `X_MANIFEST_BREAKING` | contract broke with no major bump | bump the version, or restore |
 | `X_AGENTS_MD_MISSING` | no `AGENTS.md` | write one by hand |
 | `X_AGENTS_MD_TOO_LARGE` | over the byte budget | move facts to `x.manifest.json` |

@@ -5,7 +5,7 @@ import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
-import { describeJobs, job, resetJobs } from './job';
+import { describeJobs, getJob, job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
@@ -179,5 +179,28 @@ describe('describe', () => {
       run: () => Promise.resolve(),
     });
     expect(sweep.describe().retry).toEqual({ attempts: 2, backoff: 'exponential' });
+  });
+});
+
+describe('an unregistered job', () => {
+  // `registerJobs(module)` is what gives a job its export name; `job()` on its own is unchanged,
+  // and must stay so — 1.0.0 semver, and every existing caller declares without registering.
+  test('still takes a positional name and is still enqueueable under it', async () => {
+    resetJobs();
+    setJobDriver(driver);
+    const orphan = job<OrgInput>({
+      input: passthrough<OrgInput>(),
+      idempotencyKey: ({ orgId }) => `orphan:${orgId}`,
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+    });
+
+    expect(orphan.name).toMatch(/^anonymous-job-\d+$/);
+    expect(getJob(orphan.name)).toBe(orphan as JobHandle<unknown>);
+    expect(orphan.describe().name).toBe(orphan.name);
+
+    await orphan.enqueue({ orgId: 'org-1' });
+    const rows = (await driver.introspect?.list()) ?? [];
+    expect(rows[0]?.name).toBe(orphan.name);
   });
 });

@@ -60,7 +60,7 @@ Every projection is a method on the action — `publishPost.tool()`, never `toMc
 | `.client({ baseUrl })` | the typed RPC method | derives `POST /api/posts/publish` by string math, so the browser imports no server code |
 | `.job()` | the durable-work handle | the same handler, run through the queue as `action:publishPost` |
 | `.contract()` | the generated assertions | garbage rejected, anonymous denied, spec present |
-| `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
+| `.describe()` | the manifest row | `kind`, `name`, `verb`, `resource`, `method`, `path`, `capability`, `input`, `output`, `invalidates`, `idempotent`, `mutator`, `mcp`, `rateLimit` — and the only reader for the declared metadata that is not lifted |
 | `.input` `.output` `.policy` `.mcp` | the declaration, lifted | the whole lifted set — readable, and `.mcp` present only when declared. `cache.invalidates`, `rateLimit` and `idempotent` are not properties: read them off `describe()`, where `cache.invalidates` flattens to `invalidates` |
 
 `handle` and `row` — the declaration's two functions — are unreachable by design: neither lifted nor described. The declaration lives in a private store inside `invoke.ts` and `@ultimat3/action` exports no reader for it, so `invoke` is the only thing that can run them — one execution path and one authz path, structurally rather than by convention. A hand-rolled object with `kind: 'action'` is `X_ACTION_FOREIGN`, never a registered action.

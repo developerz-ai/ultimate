@@ -9,6 +9,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
+import { resetCatalogs } from '@ultimat3/i18n';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
 import { resetRegistry as resetQueries } from '@ultimat3/query';
@@ -33,7 +34,7 @@ export const canPostWrite = can('post:publish');
   'apps/web/app/posts/errors.ts': `export const POSTS_ERROR_CODES = ['X_POST_NOT_FOUND'] as const;
 `,
 
-  'apps/web/app/posts/actions.ts': `import { action, t } from '@ultimat3/action';
+  'apps/web/app/posts/actions.ts': `import { action, mutator, t } from '@ultimat3/action';
 import { canPostWrite } from './policy';
 
 export const publishPost = action({
@@ -44,6 +45,27 @@ export const publishPost = action({
   async handle({ input }) {
     return { id: input.id };
   },
+});
+
+export const likePost = mutator({
+  input: t.object({ id: t.uuid }),
+  output: t.object({ id: t.uuid }),
+  policy: canPostWrite,
+  local() {},
+  async server(_ctx, input) {
+    return { id: input.id };
+  },
+  conflict: 'server-wins',
+});
+`,
+
+  // Under `packages/*/src/**`, which is where `defineCatalogs()` runs in a real app — the
+  // manifest's locales have to come from the registry that call populates, not a directory scan.
+  'packages/i18n/src/index.ts': `import { defineCatalogs } from '@ultimat3/i18n';
+
+export const catalogs = defineCatalogs({
+  default: 'en',
+  locales: { en: { posts: { title: 'Posts' } }, fr: { posts: { title: 'Articles' } } },
 });
 `,
 
@@ -85,6 +107,9 @@ const resetRegistries = (): void => {
   resetTasks();
   clearPermissions();
   clearRoles();
+  // The catalog registry is process-global like the rest, and `locales` is read straight off it —
+  // a locale another suite registered would otherwise turn up in this app's manifest.
+  resetCatalogs();
   resetAppLoad();
 };
 
@@ -106,11 +131,25 @@ describe('unit · x manifest', () => {
     const { manifest } = await appManifest(ROOT);
 
     expect(manifest.app).toEqual({ name: 'fixture-app', version: '2.1.0' });
-    expect(manifest.actions.map((action) => action.name)).toEqual(['publishPost']);
-    expect(manifest.actions[0]?.policy).toBe('post:publish');
-    expect(manifest.actions[0]?.mcp).toEqual({ expose: true, description: 'publish a post' });
+    expect(manifest.actions.map((action) => action.name)).toEqual(['likePost', 'publishPost']);
+    expect(manifest.actions[1]?.policy).toBe('post:publish');
+    expect(manifest.actions[1]?.mcp).toEqual({ expose: true, description: 'publish a post' });
     expect(manifest.queries.map((query) => query.name)).toEqual(['recentPosts']);
     expect(manifest.queries[0]?.live).toBe(true);
+  });
+
+  // A mutator registers as an action and describes with `kind: 'action'`, so without the flag
+  // `x manifest`'s mutator count reads zero for an app that ships one.
+  test('a mutator is an action carrying the flag; a plain action has no such key', async () => {
+    const { manifest } = await appManifest(ROOT);
+    expect(manifest.actions.map((action) => 'mutator' in action)).toEqual([true, false]);
+    expect(manifest.actions[0]?.mutator).toBe(true);
+  });
+
+  // `defineCatalogs()` ran during `loadApp`, so the locales are the ones the app registered.
+  test('the locales are read off the i18n registry the app populated at import', async () => {
+    const { manifest } = await appManifest(ROOT);
+    expect(manifest.locales).toEqual(['en', 'fr']);
   });
 
   test('a route is registered through render, so its URL comes from the file path', async () => {
@@ -132,7 +171,7 @@ describe('unit · x manifest', () => {
     const { manifest } = await appManifest(ROOT);
     expect(manifest.permissions).toEqual(['post:publish', 'post:read']);
     expect(manifest.policies).toEqual([
-      { permission: 'post:publish', enforcedIn: ['action:publishPost'] },
+      { permission: 'post:publish', enforcedIn: ['action:likePost', 'action:publishPost'] },
       { permission: 'post:read', enforcedIn: ['query:recentPosts'] },
     ]);
   });
@@ -160,7 +199,7 @@ describe('unit · x manifest', () => {
   test('rescanning does not double-register', async () => {
     await loadApp(ROOT);
     const { manifest, findings } = await appManifest(ROOT);
-    expect(manifest.actions).toHaveLength(1);
+    expect(manifest.actions).toHaveLength(2);
     expect(manifest.queries).toHaveLength(1);
     expect(findings.map((finding) => finding.code)).toHaveLength(1);
   });

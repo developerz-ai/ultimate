@@ -10,6 +10,23 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 ## Rules
 
+- **The export name IS the job/task name.** `registerJobs(module)` / `registerTasks(module)`
+  stamp it onto the handle the module exported and re-key the registry, so
+  `import { sendInvite }` is the object the queue routes to after boot — never a renamed copy.
+  A definition that supplied its own `name:` keeps it: a job name is a durable queue key that
+  queued, retrying and dead-lettered rows already carry.
+- **`defineApi({ jobs, tasks })` is where a module is handed over.** Nothing else registers.
+  A job module no call reaches keeps the positional `anonymous-job-<n>` — a name that appears
+  in no source file, on every queue row and in every dead-letter trace.
+- The same handle under the same name is one registration seen twice (`defineApi` and the
+  framework's module scan both reach the same declaration file), not a collision. A DIFFERENT
+  handle under a taken name is `X_JOB_DUPLICATE`.
+- `registerJobs`/`registerTasks` are announced in core's registrar table at import
+  (`register.ts`). Never remove the announcement: `defineApi({ jobs })` would then throw
+  `X_REGISTRAR_MISSING` — `@ultimat3/action` is on this tier and cannot import this package.
+- `isJobHandle`/`isTaskHandle` are structural: `kind` plus proof `job()`/`task()` built it.
+  A look-alike never registers. Deliberately not a registry lookup — the registry is what
+  registration rewrites.
 - `idempotencyKey` is NON-OPTIONAL in `JobDefinition`. Never relax it, never default it.
 - `tz` is NON-OPTIONAL in `TaskDefinition`, and checked against the runtime's IANA database —
   a non-empty string is not a timezone. A task never contains a handler body.
@@ -43,7 +60,8 @@ change in `@ultimat3/time` is a one-line fix, not a sweep.
 
 | File | Owns |
 |---|---|
-| `job.ts` | the `job()` primitive + registry + the handle's fluent surface |
+| `job.ts` | the `job()` primitive + registry + the handle's fluent surface + `registerJob` |
+| `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
 | `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot, outbox SQL |
@@ -53,7 +71,7 @@ change in `@ultimat3/time` is a one-line fix, not a sweep.
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
 | `retry.ts` | backoff arithmetic, dead-letter decision |
 | `worker.ts` | `worker` role, claim loop, `executeJob`, drain |
-| `scheduler.ts` | `task()` primitive, `scheduler` role, catch-up, leader election |
+| `scheduler.ts` | `task()` primitive + registry + `registerTask`, `scheduler` role, catch-up, leader election |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` | stored event bus for `step.waitForEvent` |
 | `inspect.ts` | `--json` introspection |

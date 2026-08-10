@@ -17,7 +17,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `facade.ts` | the fluent surface — binds each projection to the action, re-implements none |
 | `mutator.ts` | action + optimistic `.local` twin + authoritative `.server` + `.conflict` |
 | `registry.ts` | export-name registration, collisions, `describeActions()` |
-| `define-api.ts` | `defineApi({ actions, mutators, queries, llm })` — the app's one boot call |
+| `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `client.ts` | typed RPC client (browser-safe: no server imports) |
@@ -59,9 +59,15 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
   access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
 - `defineApi` is the app's registration call; `registerActions` is what it composes. It reaches
-  `@ultimat3/query`'s registry through core's registrar table (`primitiveRegistrar('query')`),
-  never a sideways import — and throws `X_REGISTRAR_MISSING` rather than skipping a kind whose
-  registrar is absent, because a silent skip drops every read of that kind.
+  `@ultimat3/query`'s and `@ultimat3/jobs`' registries through core's registrar table
+  (`primitiveRegistrar('query' | 'job' | 'task')`), never a sideways import — and throws
+  `X_REGISTRAR_MISSING` rather than skipping a kind whose registrar is absent, because a silent
+  skip drops every primitive of that kind.
+- **`jobs` and `tasks` belong in the same call, for the same reason `queries` do.** The export
+  name becomes the job's durable queue key; a job module nothing hands over keeps `job()`'s
+  positional `anonymous-job-<n>`, on every queue row and in the manifest. A definition with its
+  own `name:` keeps it — that rule lives in `@ultimat3/jobs`, not here. Jobs register before
+  tasks: a task descriptor lists the jobs it enqueues by name.
 - `defineApi`'s returned maps are built from the **registrar's own results**, never from the
   modules' exports. A feature module exports helpers next to its primitives; copying every export
   would seat one in `Api['actions']` as a client method nothing serves, and let two modules'

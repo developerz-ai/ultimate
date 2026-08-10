@@ -1,10 +1,12 @@
 // `x.manifest.json`: the framework's registries projected by `@ultimat3/manifest`. The CLI
-// supplies only the facts no registry holds — the app's name and version, the route table, which
-// surface enforces each permission, and the error codes its workspaces export.
+// supplies the facts that package cannot reach for itself — the app's name and version, the route
+// table, which surface enforces each permission, the locales the app registered, and the error
+// codes its workspaces export.
 
 // Bun ships no `Bun.*` path API: `join` builds the host-separator path to `x.manifest.json`.
 import { join } from 'node:path';
 import { describeActions } from '@ultimat3/action';
+import { registeredLocales } from '@ultimat3/i18n';
 import { registeredTasks } from '@ultimat3/jobs';
 import type { Manifest, PolicyFact, RouteFact, TaskFact } from '@ultimat3/manifest';
 import {
@@ -37,6 +39,10 @@ export async function appManifest(root: string): Promise<AppManifest> {
       routes: routeFacts(),
       policies: policyFacts(),
       tasks: taskFacts(),
+      // The i18n registry, never a scan of `packages/i18n/catalogs/`: `loadApp` above has already
+      // imported every app module, so each `defineCatalogs()` has run and registered its locales.
+      // Counting catalog files instead would be a second answer, wrong the day the two disagree.
+      locales: registeredLocales(),
       errorCodes: loaded.errorCodes,
     }),
   );

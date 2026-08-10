@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type ModuleRegistrar,
+  type PrimitiveKind,
   type RegisteredPrimitive,
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
@@ -23,28 +24,34 @@ const echo = () =>
     handle: ({ input }) => ({ id: input.id }),
   });
 
-/** A query, as far as the registrar seam can see one. */
+/** A query, a job and a task, as far as the registrar seam can see one. */
 const fakeQuery = () => ({ kind: 'query' as const, name: '' });
+const fakeJob = () => ({ kind: 'job' as const, name: '' });
+const fakeTask = () => ({ kind: 'task' as const, name: '' });
 
 /**
- * Stands in for `@ultimat3/query`'s `registerQueries` — action cannot import it sideways. Like
- * the real one it takes only the branded exports and hands back what it took, named.
+ * Stands in for the owning package's registrar — action cannot import `@ultimat3/query` or
+ * `@ultimat3/jobs` sideways. Like the real ones it takes only the branded exports and hands
+ * back what it took, named.
  */
-function recordingQueryRegistrar(): { seen: string[]; registrar: ModuleRegistrar } {
+function recordingRegistrar(kind: PrimitiveKind): { seen: string[]; registrar: ModuleRegistrar } {
   const seen: string[] = [];
   return {
     seen,
     registrar: (module) => {
       const registered: RegisteredPrimitive[] = [];
       for (const name of Object.keys(module).sort()) {
-        if ((module[name] as { kind?: unknown } | undefined)?.kind !== 'query') continue;
+        if ((module[name] as { kind?: unknown } | undefined)?.kind !== kind) continue;
         seen.push(name);
-        registered.push({ kind: 'query', name });
+        registered.push({ kind, name });
       }
       return registered;
     },
   };
 }
+
+const recordingQueryRegistrar = (): { seen: string[]; registrar: ModuleRegistrar } =>
+  recordingRegistrar('query');
 
 beforeEach(() => {
   resetRegistry();
@@ -124,6 +131,76 @@ describe('defineApi', () => {
 
     expect(Object.keys(api.actions)).toEqual([]);
     expect(Object.keys(api.queries)).toEqual([]);
+    expect(Object.keys(api.jobs)).toEqual([]);
+    expect(Object.keys(api.tasks)).toEqual([]);
+  });
+
+  test('jobs and tasks route through the registrar table, keyed by export name', () => {
+    const jobs = recordingRegistrar('job');
+    const tasks = recordingRegistrar('task');
+    registerPrimitiveRegistrar('job', jobs.registrar);
+    registerPrimitiveRegistrar('task', tasks.registrar);
+
+    const api = defineApi({
+      jobs: [{ sendInvite: fakeJob() }, { onboardOrg: fakeJob() }],
+      tasks: { nightlyDigest: fakeTask() },
+    });
+
+    expect(jobs.seen).toEqual(['sendInvite', 'onboardOrg']);
+    expect(tasks.seen).toEqual(['nightlyDigest']);
+    // The whole point: without this, every one of them registers as `anonymous-job-<n>`.
+    expect(Object.keys(api.jobs)).toEqual(['sendInvite', 'onboardOrg']);
+    expect(Object.keys(api.tasks)).toEqual(['nightlyDigest']);
+  });
+
+  test('jobs with no registrar loaded fail loudly instead of being dropped', () => {
+    let code = '';
+    try {
+      defineApi({ jobs: { sendInvite: fakeJob() } });
+    } catch (error) {
+      code = (error as { code: string }).code;
+    }
+    expect(code).toBe('X_REGISTRAR_MISSING');
+  });
+
+  test('tasks with no registrar loaded fail loudly instead of being dropped', () => {
+    let code = '';
+    try {
+      defineApi({ tasks: { nightlyDigest: fakeTask() } });
+    } catch (error) {
+      code = (error as { code: string }).code;
+    }
+    expect(code).toBe('X_REGISTRAR_MISSING');
+  });
+
+  test('no jobs and no tasks means neither registrar is ever demanded', () => {
+    expect(() => defineApi({ actions: { createPost: echo() } })).not.toThrow();
+  });
+
+  test('jobs register before tasks — a task descriptor reads the queue keys jobs just took', () => {
+    const order: string[] = [];
+    registerPrimitiveRegistrar('job', () => {
+      order.push('job');
+      return [];
+    });
+    registerPrimitiveRegistrar('task', () => {
+      order.push('task');
+      return [];
+    });
+
+    defineApi({ tasks: { nightlyDigest: fakeTask() }, jobs: { sendDigest: fakeJob() } });
+
+    expect(order).toEqual(['job', 'task']);
+  });
+
+  test('a helper exported next to a job never reaches api.jobs', () => {
+    const { registrar } = recordingRegistrar('job');
+    registerPrimitiveRegistrar('job', registrar);
+
+    const api = defineApi({ jobs: { sendInvite: fakeJob(), inviteKey: (id: string) => id } });
+
+    expect(Object.keys(api.jobs)).toEqual(['sendInvite']);
+    expect(api.jobs).not.toHaveProperty('inviteKey');
   });
 
   test('a module helper never reaches the API — the map is what registered, not what exported', () => {

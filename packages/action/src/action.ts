@@ -110,6 +110,12 @@ export interface McpDescriptorMeta {
 
 export interface ActionDescriptor {
   readonly kind: 'action';
+  /**
+   * Built by `mutator()`. `kind` cannot carry this: `describeActions()` hands back
+   * `ActionDescriptor`, whose `kind` is the literal `'action'` for a mutator too — so every
+   * reader downstream (`x.manifest.json`'s mutator count included) sees zero without it.
+   */
+  readonly mutator: boolean;
   readonly name: string;
   readonly verb: string;
   readonly resource: string;
@@ -250,6 +256,10 @@ export function describeAction(target: AnyAction): ActionDescriptor {
   const mcp = def.mcp;
   return {
     kind: 'action',
+    // The brand `mutator()`'s `wrap` stamps on the action it lifted, read structurally.
+    // Importing `isMutator` would point this module at the one that already imports it, for a
+    // check that needs the brand and not the predicate — `defOf` above already proved the rest.
+    mutator: (target as { readonly isMutator?: unknown }).isMutator === true,
     name,
     verb: path.verb,
     resource: path.resource,

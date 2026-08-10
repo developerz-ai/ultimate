@@ -67,13 +67,17 @@ Register it, with every other primitive, in one call. Importing `api/index.ts` I
 // apps/web/api/index.ts
 import { defineApi } from '@ultimat3/action';
 import * as postActions from '../app/posts/actions';
-import * as postMutators from '../app/posts/mutator';
+import * as postJobs from '../app/posts/jobs';
 import * as postQueries from '../app/posts/live';
+import * as postMutators from '../app/posts/mutator';
+import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
   actions: [postActions],
   mutators: [postMutators],
   queries: [postQueries],
+  jobs: [postJobs],
+  tasks: [scheduledTasks],
 });
 
 export type Api = typeof api;

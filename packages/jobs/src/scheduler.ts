@@ -15,6 +15,7 @@ import { assert, logger } from '@ultimat3/core';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
+import { JobNameTakenError } from './errors';
 import type { AnyJobHandle } from './job';
 import type { EnqueueOptions } from './outbox';
 
@@ -29,6 +30,8 @@ export type TaskEnqueueEntry = readonly [AnyJobHandle, unknown];
 export type CatchUpPolicy = 'skip' | 'run-once' | 'run-all';
 
 export interface TaskDefinition {
+  /** Omit it: `defineApi({ tasks })` assigns the export name. Set it only to pin the name the
+   * scheduler's `lastFiredAt` and occurrence lock are already keyed by. */
   readonly name?: string;
   readonly cron: string;
   /** REQUIRED IANA zone, e.g. `'UTC'`, `'America/New_York'`. */
@@ -94,6 +97,9 @@ const defaultCronResolver: CronResolver = (cron, options) =>
 const registry = new Map<string, TaskHandle>();
 let anonymous = 0;
 
+/** Job's store, for tasks: proof `task()` built the handle, plus whether it named itself. */
+const origin = new WeakMap<object, { readonly declaredName: boolean }>();
+
 /**
  * `Intl` carries the runtime's copy of the tz database and rejects anything not in it with a
  * `RangeError`, so it is the only check that can tell `America/Bogota` from `Bogota`.
@@ -157,17 +163,48 @@ export function task(definition: TaskDefinition): TaskHandle {
       };
     },
   };
+  origin.set(handle, { declaredName: definition.name !== undefined });
   registry.set(name, handle);
   return handle;
 }
 
-export function nameTasks(record: Readonly<Record<string, TaskHandle>>): void {
-  for (const [exportName, handle] of Object.entries(record)) {
-    if (handle.name === exportName) continue;
-    registry.delete(handle.name);
-    Object.defineProperty(handle, 'name', { value: exportName, configurable: true });
-    registry.set(exportName, handle);
+/** Structural, exactly as `isJobHandle` is: only a handle `task()` built has a cron behind it. */
+export function isTaskHandle(value: unknown): value is TaskHandle {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { kind?: unknown }).kind === 'task' &&
+    origin.has(value)
+  );
+}
+
+/**
+ * Register `target` under `name`, stamped onto the handle the module exported — the scheduler's
+ * occurrence key is `task:occurrenceMs:jobKey`, so the task's name is what stops two nodes
+ * double-firing a tick, and a copy under a second name would defeat it.
+ *
+ * A definition that supplied its own `name` keeps it, for the same reason a job's does: the
+ * scheduler's persisted `lastFiredAt` is keyed by that name.
+ */
+export function registerTask(name: string, target: TaskHandle): TaskHandle {
+  const key = origin.get(target)?.declaredName === true ? target.name : name;
+  const seated = registry.get(key);
+  // The same handle under the same name is one registration seen twice — `defineApi` and the
+  // framework's module scan both reach the same declaration file. A DIFFERENT task under a taken
+  // name is the ambiguity to refuse.
+  if (seated !== undefined) {
+    if (seated !== target) throw new JobNameTakenError({ kind: 'task', name: key });
+    return target;
   }
+  registry.delete(target.name);
+  Object.defineProperty(target, 'name', { value: key, configurable: true });
+  registry.set(key, target);
+  return target;
+}
+
+/** `registerTasks(module)` is the call app code makes; this is the same rules over a record. */
+export function nameTasks(record: Readonly<Record<string, TaskHandle>>): void {
+  for (const [exportName, handle] of Object.entries(record)) registerTask(exportName, handle);
 }
 
 export function registeredTasks(): readonly TaskHandle[] {

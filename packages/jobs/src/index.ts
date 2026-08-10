@@ -54,6 +54,7 @@ export {
   JOB_ERROR_TITLES,
   JobDuplicateError,
   JobMaxAttemptsError,
+  JobNameTakenError,
   JobsNotImplementedError,
   JobTimeoutError,
   OutboxNoTxError,
@@ -77,7 +78,16 @@ export {
   retryFromStep,
 } from './inspect';
 export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job';
-export { describeJobs, getJob, job, nameJobs, registeredJobs, resetJobs } from './job';
+export {
+  describeJobs,
+  getJob,
+  isJobHandle,
+  job,
+  nameJobs,
+  registeredJobs,
+  registerJob,
+  resetJobs,
+} from './job';
 export type {
   Lease,
   LimitConfig,
@@ -110,6 +120,7 @@ export {
   SQL_OUTBOX_TABLE,
   setJobsFacade,
 } from './outbox';
+export { registerJobs, registerTasks } from './register';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
 export type {
@@ -130,8 +141,10 @@ export {
   createMemorySchedulerState,
   createScheduler,
   getTask,
+  isTaskHandle,
   nameTasks,
   registeredTasks,
+  registerTask,
   resetTasks,
   soleLeader,
   task,

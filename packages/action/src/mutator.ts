@@ -89,6 +89,11 @@ export interface Mutator<
   TInput extends StandardSchemaV1 = StandardSchemaV1,
   TOutput extends StandardSchemaV1 = StandardSchemaV1,
 > extends Action<TInput, TOutput> {
+  /**
+   * The brand, and the only thing `describeAction` has to go on: it reads this field to set
+   * `ActionDescriptor.mutator`, because a mutator's `describe()` still reports `kind: 'action'`.
+   * Renaming it here would silently turn every mutator back into a plain action downstream.
+   */
   readonly isMutator: true;
   readonly conflict: Conflict<InferOutput<TOutput>>;
   /**

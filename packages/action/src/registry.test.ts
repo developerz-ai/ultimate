@@ -67,6 +67,39 @@ describe('registry', () => {
     expect(code).toBe('X_ACTION_DUPLICATE');
   });
 
+  test('registering the same action twice under the same name is one registration', () => {
+    // `defineApi` registers a feature module at boot; the framework's module scan reaches the
+    // same declaration file directly. Both arrive at the identical object, so the second call
+    // is the first one seen twice — not the collision `X_ACTION_DUPLICATE` refuses.
+    const publishPost = define();
+    expect(registerAction('publishPost', publishPost)).toBe(publishPost);
+    expect(registerAction('publishPost', publishPost)).toBe(publishPost);
+    expect(getAction('publishPost')).toBe(publishPost);
+    expect(describeActions()).toHaveLength(1);
+  });
+
+  test('re-registering a whole module is a no-op, not a collision', () => {
+    const module = { publishPost: define(), archivePost: define() };
+    registerActions(module);
+    registerActions(module);
+    expect(describeActions().map((entry) => entry.name)).toEqual(['archivePost', 'publishPost']);
+  });
+
+  test('a DIFFERENT action under a taken name is still X_ACTION_DUPLICATE', () => {
+    // The idempotence above must not become a licence to overwrite: two features exporting one
+    // name have to collide, or the last import silently wins and a surface serves the wrong one.
+    registerAction('publishPost', define());
+    const other = define();
+    let code: unknown;
+    try {
+      registerAction('publishPost', other);
+    } catch (error) {
+      code = (error as { code?: string }).code;
+    }
+    expect(code).toBe('X_ACTION_DUPLICATE');
+    expect(getAction('publishPost')).not.toBe(other);
+  });
+
   test('an action without a policy fails at registration', () => {
     // The type forbids this; the runtime check is what protects a JS caller and
     // a generator template that forgot the line.

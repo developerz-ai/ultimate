@@ -51,7 +51,7 @@ export const likePost = mutator({
 | `.conflict` | the rebase strategy, lifted | `'server-wins'` \| `'last-write-wins'` \| `custom(merge)` — the declared value verbatim, merge function included |
 | `.isMutator` | the brand | always `true`; `isMutator(value)` is the guard |
 | `.describeMutator()` | the manifest row | the action descriptor plus `kind: 'mutator'` and the **resolved** strategy name — `custom(merge)` describes as `'custom'` |
-| `.describe()` | the action descriptor | still reports `kind: 'action'`. `describeMutator()` is the one that says `mutator` |
+| `.describe()` | the action descriptor | still reports `kind: 'action'`, with `mutator: true` — that flag is what puts the `mutator` count in `x.manifest.json`. `describeMutator()` is the one that says `kind: 'mutator'`, plus the resolved strategy |
 
 **`.server()` routes through the action's own callable, never the declared `server`.** It calls `base(input, { ctx })`, and that callable *is* `invoke` — so the authoritative half cannot skip the input parse, the policy or the output parse. Reaching the declaration from there would be a second execution path, which is the one thing `@ultimat3/action` exists to prevent. Hence the guarantee this page rests on: the offline/realtime half of a mutator gets exactly the same parse → policy → handle → parse core as an HTTP call, an MCP tool call and a job run, because it **is** that call. A denied `.server()` never reaches the declared half, and neither does one whose input fails the schema — `X_UNAUTHENTICATED`, `X_FORBIDDEN` and `X_INPUT_INVALID` come back from the same core that serves the HTTP route.
 

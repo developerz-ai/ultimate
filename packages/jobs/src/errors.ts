@@ -56,6 +56,23 @@ export class JobDuplicateError extends UltimateError {
   }
 }
 
+/**
+ * Two different handles claim one name at registration. Shares `X_JOB_DUPLICATE` with the
+ * enqueue-time collision because it is the same statement — this key already belongs to another
+ * job — caught one stage earlier. Left unrefused, the second registration would silently take
+ * over delivery of every row already queued under the first.
+ */
+export class JobNameTakenError extends UltimateError {
+  constructor(input: { kind: 'job' | 'task'; name: string }) {
+    super({
+      code: 'X_JOB_DUPLICATE',
+      cause: `two ${input.kind}s are registered under the name "${input.name}"`,
+      fix: `rename one export — a ${input.kind} name is the durable queue key and is globally unique: x jobs ls --json`,
+      docs: docsFor('X_JOB_DUPLICATE'),
+    });
+  }
+}
+
 /** Two steps in one run share a name, so replay cannot tell their persisted results apart. */
 export class StepDuplicateError extends UltimateError {
   constructor(input: { job: string; step: string }) {

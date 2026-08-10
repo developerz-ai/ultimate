@@ -3,8 +3,8 @@
 Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http action
 query jobs realtime`. **Never** `render mcp ai pwa ui admin testing cli`.
 
-Route and policy facts come from tier 4 / per-app code, so they are **injected** by the CLI,
-not imported.
+Route, policy, task and locale facts come from tier 4 / per-app code, so they are **injected**
+by the CLI, not imported.
 
 ## Owns
 

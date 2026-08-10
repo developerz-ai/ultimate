@@ -16,7 +16,15 @@ const registry = new Map<string, AnyAction>();
  * "use the return value instead" rule to forget.
  */
 export function registerAction<A extends AnyAction>(name: string, target: A): A {
-  if (registry.has(name)) throw new ActionDuplicateError(name);
+  const seated = registry.get(name);
+  if (seated !== undefined) {
+    // Re-registering the SAME object under the SAME name is one registration seen twice, not a
+    // collision: `defineApi` registers a feature module at boot and the framework's module scan
+    // reaches the same declaration file directly, so both arrive at the identical action. Only a
+    // DIFFERENT action under a taken name is the ambiguity `X_ACTION_DUPLICATE` exists to refuse.
+    if (seated !== (target as AnyAction)) throw new ActionDuplicateError(name);
+    return target;
+  }
   if (target.policy === undefined || target.policy === null) {
     throw new ActionPolicyMissingError(name);
   }

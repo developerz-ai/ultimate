@@ -28,7 +28,7 @@ import {
 } from './boundaries';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { repoRoot } from './lib/run';
-import { buildManifest, DEFAULT_OUT } from './manifest';
+import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { checkRoadmap } from './roadmap';
 
 /**
@@ -45,11 +45,15 @@ export const tierBoundaries: HostCheck = async (root) => [
   ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
 ];
 
-/** The framework's own manifest is generated from the packages; it must still generate. */
+/**
+ * The framework's own manifest is generated from the packages: it must still generate, and the
+ * committed copy must still match. Regenerating without comparing proves only that the generator
+ * runs — a step that cannot fail, which is worse than no step at all.
+ */
 export const frameworkManifest: HostCheck = async (root) => {
+  let drift: readonly string[];
   try {
-    await buildManifest(root);
-    return [];
+    drift = await frameworkManifestDrift(root);
   } catch (error) {
     return [
       {
@@ -64,6 +68,16 @@ export const frameworkManifest: HostCheck = async (root) => {
       },
     ];
   }
+  if (drift.length === 0) return [];
+  return [
+    {
+      code: 'X_MANIFEST_DRIFT',
+      cause: `${DEFAULT_OUT} no longer describes the code: ${drift.join(', ')}`,
+      fix: 'bun run manifest',
+      docs: 'https://ultimate.dev/errors/X_MANIFEST_DRIFT',
+      at: DEFAULT_OUT,
+    },
+  ];
 };
 
 /**

@@ -63,6 +63,14 @@ describe('mutator', () => {
     expect(likePost.isMutator).toBe(true);
   });
 
+  // `describeActions()` hands the registry back as `ActionDescriptor`, so `kind` stays `'action'`
+  // here and `mutator` is the only thing left telling the manifest these two apart.
+  test('the plain descriptor still reports it as a mutator', () => {
+    expect(likePost.describe().kind).toBe('action');
+    expect(likePost.describe().mutator).toBe(true);
+    expect(likePost.describeMutator().mutator).toBe(true);
+  });
+
   test('.local applies the optimistic twin against the client store', () => {
     const rows = new Map<string, PostRow>([[POST_ID, { id: POST_ID, likes: 3 }]]);
     likePost.local(fakeTx(rows), { postId: POST_ID });
@@ -107,6 +115,8 @@ describe('mutator', () => {
     expect(renamed.conflict).toBe('server-wins');
     expect(renamed.describeMutator().conflict).toBe('server-wins');
     expect(renamed.describe().name).toBe('favoritePost');
+    // A rewrap that dropped the brand would file the twin as a plain action in the manifest.
+    expect(renamed.describe().mutator).toBe(true);
 
     const rows = new Map<string, PostRow>([[POST_ID, { id: POST_ID, likes: 3 }]]);
     renamed.local(fakeTx(rows), { postId: POST_ID });

@@ -41,6 +41,29 @@ nightlyDigest.describe();                         // { kind: 'task', cron, tz, j
 | `enqueue(options?)` | `TaskHandle` | fires every declared entry now, one result per entry |
 | `describe()` | `TaskHandle` | `TaskDescriptor` — cron, tz, catch-up, jobs in declaration order |
 
+## The export name is the job's name
+
+```ts
+export const api = defineApi({
+  jobs: [postJobs, orgJobs],     // module namespaces, never a list of name strings
+  tasks: [scheduledTasks],
+});
+```
+
+`defineApi` hands each module to `registerJobs`/`registerTasks`, which stamp the export name
+onto **the handle the module exported** and re-key the registry — `import { onboardOrg }` is the
+object `enqueue()` routes through after boot, not a renamed copy of it. Hand nothing over and a
+job keeps the positional name `job()` gave it: `anonymous-job-2` on the queue row, in
+`x.manifest.json` and in every dead-letter trace, appearing in no source file.
+
+A definition that sets `name:` keeps it. A job name is the durable queue key that queued,
+retrying and dead-lettered rows already carry, so renaming an export must never move where they
+are delivered — `@ultimat3/mail`'s `mail.send` relies on exactly that.
+
+Registering the same handle twice is one registration seen twice, because `defineApi` and the
+framework's module scan both reach the same declaration file. Two **different** handles under one
+name is `X_JOB_DUPLICATE`.
+
 `.as()` **queues**; it never runs the handler inline. A job's execution surface is the queue,
 so an inline run would be a second execution path next to the worker's — with no retry, no
 dedupe and no dead letter. Its idempotency key is the job's own, so a manual `task.enqueue()`
@@ -157,7 +180,7 @@ burning an attempt — one org's 50k-row import cannot starve the fleet.
 |---|---|
 | `X_IDEMPOTENCY_REQUIRED` | job defined without an idempotency key (JS callers) |
 | `X_STEP_DUPLICATE` | two steps share a name in one run |
-| `X_JOB_DUPLICATE` | enqueue collided with a live key under `onConflict: 'error'` |
+| `X_JOB_DUPLICATE` | enqueue collided with a live key under `onConflict: 'error'`; or two different job/task handles registered under one name |
 | `X_JOB_TIMEOUT` | job or required `waitForEvent` exceeded its timeout |
 | `X_JOB_MAX_ATTEMPTS` | retries exhausted, job dead-lettered |
 | `X_OUTBOX_NO_TX` | enqueue outside a transaction with `mode: 'required'` |

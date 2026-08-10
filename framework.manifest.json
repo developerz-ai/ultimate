@@ -1,0 +1,929 @@
+{
+  "version": 1,
+  "buildId": "b37c681ade90",
+  "tiers": {
+    "0": [
+      "core",
+      "schema"
+    ],
+    "1": [
+      "i18n",
+      "money",
+      "time",
+      "cache",
+      "seo",
+      "db",
+      "storage"
+    ],
+    "2": [
+      "entity",
+      "policy",
+      "http",
+      "auth"
+    ],
+    "3": [
+      "action",
+      "query",
+      "jobs",
+      "realtime"
+    ],
+    "4": [
+      "render",
+      "pwa",
+      "mcp",
+      "ai",
+      "manifest",
+      "mail"
+    ],
+    "5": [
+      "ui",
+      "admin",
+      "testing",
+      "cli"
+    ]
+  },
+  "packages": [
+    {
+      "name": "@ultimat3/core",
+      "version": "1.0.0",
+      "tier": 0,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/schema",
+      "version": "1.0.0",
+      "tier": 0,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/cache",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/db",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/i18n",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/money",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/seo",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/storage",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/time",
+      "version": "1.0.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/auth",
+      "version": "1.0.0",
+      "tier": 2,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/entity",
+      "version": "1.0.0",
+      "tier": 2,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/http",
+      "version": "1.0.0",
+      "tier": 2,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/policy",
+      "version": "1.0.0",
+      "tier": 2,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/action",
+      "version": "1.0.0",
+      "tier": 3,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/jobs",
+      "version": "1.0.0",
+      "tier": 3,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/query",
+      "version": "1.0.0",
+      "tier": 3,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/realtime",
+      "version": "1.0.0",
+      "tier": 3,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/ai",
+      "version": "1.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/mail",
+      "version": "1.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/manifest",
+      "version": "1.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/mcp",
+      "version": "1.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/pwa",
+      "version": "1.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/render",
+      "version": "1.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/admin",
+      "version": "1.0.0",
+      "tier": 5,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/cli",
+      "version": "1.0.0",
+      "tier": 5,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/testing",
+      "version": "1.0.0",
+      "tier": 5,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/ui",
+      "version": "1.0.0",
+      "tier": 5,
+      "private": false
+    },
+    {
+      "name": "create-ultimate",
+      "version": "1.0.0",
+      "tier": 6,
+      "private": false
+    }
+  ],
+  "errorCodes": [
+    {
+      "code": "X_ACCOUNT_LOCKED",
+      "package": "auth"
+    },
+    {
+      "code": "X_ACTION_DUPLICATE",
+      "package": "action"
+    },
+    {
+      "code": "X_ACTION_FOREIGN",
+      "package": "action"
+    },
+    {
+      "code": "X_ACTION_POLICY_MISSING",
+      "package": "action"
+    },
+    {
+      "code": "X_ACTION_UNREGISTERED",
+      "package": "action"
+    },
+    {
+      "code": "X_ADMIN_ENTITY_UNKNOWN",
+      "package": "admin"
+    },
+    {
+      "code": "X_ADMIN_FIELD_UNSUPPORTED",
+      "package": "admin"
+    },
+    {
+      "code": "X_ADMIN_POLICY_MISSING",
+      "package": "admin"
+    },
+    {
+      "code": "X_AGENTS_MD_MISSING",
+      "package": "manifest"
+    },
+    {
+      "code": "X_AGENTS_MD_TOO_LARGE",
+      "package": "manifest"
+    },
+    {
+      "code": "X_AI_BUDGET_EXCEEDED",
+      "package": "ai"
+    },
+    {
+      "code": "X_AI_GATEWAY_MISSING",
+      "package": "ai"
+    },
+    {
+      "code": "X_AI_KEY_MISSING",
+      "package": "ai"
+    },
+    {
+      "code": "X_AI_PROMPT_VERSION",
+      "package": "ai"
+    },
+    {
+      "code": "X_AI_PROVIDER_UNAVAILABLE",
+      "package": "ai"
+    },
+    {
+      "code": "X_AI_REQUEST_INVALID",
+      "package": "ai"
+    },
+    {
+      "code": "X_ALLOCATION_INVALID",
+      "package": "money"
+    },
+    {
+      "code": "X_API_KEY_INVALID",
+      "package": "auth"
+    },
+    {
+      "code": "X_APP_PACKAGE_INVALID",
+      "package": "cli"
+    },
+    {
+      "code": "X_AUTH_WRITE_FAILED",
+      "package": "auth"
+    },
+    {
+      "code": "X_BODY_INVALID",
+      "package": "http"
+    },
+    {
+      "code": "X_BRANCH_EXISTS",
+      "package": "db"
+    },
+    {
+      "code": "X_BUDGET_EXCEEDED",
+      "package": "render"
+    },
+    {
+      "code": "X_BUILD_ID_MISSING",
+      "package": "pwa"
+    },
+    {
+      "code": "X_BUILD_SKEW",
+      "package": "http"
+    },
+    {
+      "code": "X_BUN_VERSION",
+      "package": "cli"
+    },
+    {
+      "code": "X_CACHE_DRIVER_UNAVAILABLE",
+      "package": "cache"
+    },
+    {
+      "code": "X_CACHE_TAG_UNKNOWN",
+      "package": "cache"
+    },
+    {
+      "code": "X_CACHE_TOO_LARGE",
+      "package": "cache"
+    },
+    {
+      "code": "X_CATALOG_INVALID",
+      "package": "i18n"
+    },
+    {
+      "code": "X_CATALOG_MISSING_KEYS",
+      "package": "i18n"
+    },
+    {
+      "code": "X_CLI_BAD_FLAG",
+      "package": "cli"
+    },
+    {
+      "code": "X_CLI_UNKNOWN_COMMAND",
+      "package": "cli"
+    },
+    {
+      "code": "X_CONFIG_INVALID",
+      "package": "core"
+    },
+    {
+      "code": "X_CONTRACT_DRIFT",
+      "package": "action"
+    },
+    {
+      "code": "X_CRON_INVALID",
+      "package": "time"
+    },
+    {
+      "code": "X_CURRENCY_MISMATCH",
+      "package": "money"
+    },
+    {
+      "code": "X_CURRENCY_UNKNOWN",
+      "package": "money"
+    },
+    {
+      "code": "X_CURSOR_STALE",
+      "package": "realtime"
+    },
+    {
+      "code": "X_DB_DRIFT",
+      "package": "db"
+    },
+    {
+      "code": "X_DB_UNAVAILABLE",
+      "package": "db"
+    },
+    {
+      "code": "X_DECLARATION_UNKNOWN",
+      "package": "cli"
+    },
+    {
+      "code": "X_DEV_DASHBOARD_IN_PROD",
+      "package": "admin"
+    },
+    {
+      "code": "X_DRIVER_UNAVAILABLE",
+      "package": "jobs"
+    },
+    {
+      "code": "X_DST_AMBIGUOUS",
+      "package": "time"
+    },
+    {
+      "code": "X_DST_NONEXISTENT",
+      "package": "time"
+    },
+    {
+      "code": "X_DURATION_INVALID",
+      "package": "time"
+    },
+    {
+      "code": "X_ENTITY_DUPLICATE",
+      "package": "entity"
+    },
+    {
+      "code": "X_ENV_MISSING",
+      "package": "core"
+    },
+    {
+      "code": "X_ERROR_CODE_UNDOCUMENTED",
+      "package": "cli"
+    },
+    {
+      "code": "X_ERROR_CODE_UNKNOWN",
+      "package": "cli"
+    },
+    {
+      "code": "X_ERROR_FIX_INVALID",
+      "package": "cli"
+    },
+    {
+      "code": "X_EVAL_BASELINE_INVALID",
+      "package": "ai"
+    },
+    {
+      "code": "X_EVAL_BASELINE_MISSING",
+      "package": "ai"
+    },
+    {
+      "code": "X_EVAL_MISSING",
+      "package": "ai"
+    },
+    {
+      "code": "X_EVAL_THRESHOLD",
+      "package": "ai"
+    },
+    {
+      "code": "X_FIX_TARGET_UNKNOWN",
+      "package": "cli"
+    },
+    {
+      "code": "X_FORBIDDEN",
+      "package": "action"
+    },
+    {
+      "code": "X_GENERATE_JSON_INVALID",
+      "package": "cli"
+    },
+    {
+      "code": "X_IDEMPOTENCY_CONFLICT",
+      "package": "action"
+    },
+    {
+      "code": "X_IDEMPOTENCY_REQUIRED",
+      "package": "jobs"
+    },
+    {
+      "code": "X_INPUT_INVALID",
+      "package": "action"
+    },
+    {
+      "code": "X_INSTANT_INVALID",
+      "package": "time"
+    },
+    {
+      "code": "X_INTERNAL",
+      "package": "core"
+    },
+    {
+      "code": "X_INVARIANT_VIOLATED",
+      "package": "entity"
+    },
+    {
+      "code": "X_JOB_DUPLICATE",
+      "package": "jobs"
+    },
+    {
+      "code": "X_JOB_MAX_ATTEMPTS",
+      "package": "jobs"
+    },
+    {
+      "code": "X_JOB_TIMEOUT",
+      "package": "jobs"
+    },
+    {
+      "code": "X_JOB_UNKNOWN",
+      "package": "cli"
+    },
+    {
+      "code": "X_LD_INVALID",
+      "package": "seo"
+    },
+    {
+      "code": "X_LIVE_CLIENT_MISSING",
+      "package": "realtime"
+    },
+    {
+      "code": "X_LLM_OUTPUT_INVALID",
+      "package": "ai"
+    },
+    {
+      "code": "X_LOCALE_INVALID",
+      "package": "time"
+    },
+    {
+      "code": "X_LOCALE_UNSUPPORTED",
+      "package": "i18n"
+    },
+    {
+      "code": "X_MAIL_DRIVER_UNAVAILABLE",
+      "package": "mail"
+    },
+    {
+      "code": "X_MAIL_DUPLICATE",
+      "package": "mail"
+    },
+    {
+      "code": "X_MAIL_HEADER_INVALID",
+      "package": "mail"
+    },
+    {
+      "code": "X_MAIL_LOCALE_MISSING",
+      "package": "mail"
+    },
+    {
+      "code": "X_MAIL_SEND_FAILED",
+      "package": "mail"
+    },
+    {
+      "code": "X_MAIL_TEMPLATE_UNKNOWN",
+      "package": "mail"
+    },
+    {
+      "code": "X_MAIL_TEXT_MISSING",
+      "package": "mail"
+    },
+    {
+      "code": "X_MANIFEST_BREAKING",
+      "package": "manifest"
+    },
+    {
+      "code": "X_MANIFEST_DRIFT",
+      "package": "manifest"
+    },
+    {
+      "code": "X_MATCHER_UNSUPPORTED",
+      "package": "query"
+    },
+    {
+      "code": "X_MCP_ARGS_INVALID",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_NOT_BRANCH_DB",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_PROTOCOL",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_QUERY_REJECTED",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_SCOPE_DENIED",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_TOOL_DUPLICATE",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_TOOL_UNDECLARED",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_TOOL_UNKNOWN",
+      "package": "mcp"
+    },
+    {
+      "code": "X_MCP_TOOL_UNSAFE",
+      "package": "mcp"
+    },
+    {
+      "code": "X_METHOD_NOT_ALLOWED",
+      "package": "http"
+    },
+    {
+      "code": "X_MFA_REQUIRED",
+      "package": "auth"
+    },
+    {
+      "code": "X_MIGRATION_CONFLICT",
+      "package": "db"
+    },
+    {
+      "code": "X_MIGRATION_IRREVERSIBLE",
+      "package": "db"
+    },
+    {
+      "code": "X_MONEY_NOT_INTEGER",
+      "package": "money"
+    },
+    {
+      "code": "X_NOT_FOUND",
+      "package": "entity"
+    },
+    {
+      "code": "X_NOT_IMPLEMENTED",
+      "package": "storage"
+    },
+    {
+      "code": "X_NOT_IN_APP",
+      "package": "cli"
+    },
+    {
+      "code": "X_OAUTH_EXCHANGE_FAILED",
+      "package": "auth"
+    },
+    {
+      "code": "X_OAUTH_STATE_INVALID",
+      "package": "auth"
+    },
+    {
+      "code": "X_OAUTH_TOKEN_INVALID",
+      "package": "auth"
+    },
+    {
+      "code": "X_OUTBOX_NO_TX",
+      "package": "jobs"
+    },
+    {
+      "code": "X_OUTPUT_INVALID",
+      "package": "action"
+    },
+    {
+      "code": "X_PASSWORD_WEAK",
+      "package": "auth"
+    },
+    {
+      "code": "X_PERMISSION_UNKNOWN",
+      "package": "policy"
+    },
+    {
+      "code": "X_PIPELINE_NO_RESPONSE",
+      "package": "http"
+    },
+    {
+      "code": "X_POLICY_MISSING",
+      "package": "policy"
+    },
+    {
+      "code": "X_PRERENDER_FAILED",
+      "package": "render"
+    },
+    {
+      "code": "X_PROTOCOL_VERSION",
+      "package": "realtime"
+    },
+    {
+      "code": "X_PWA_ICON_MISSING",
+      "package": "pwa"
+    },
+    {
+      "code": "X_PWA_MANIFEST_INVALID",
+      "package": "pwa"
+    },
+    {
+      "code": "X_PWA_NO_OFFLINE_FALLBACK",
+      "package": "pwa"
+    },
+    {
+      "code": "X_QUERY_DUPLICATE",
+      "package": "query"
+    },
+    {
+      "code": "X_QUERY_FOREIGN",
+      "package": "query"
+    },
+    {
+      "code": "X_QUERY_POLICY_MISSING",
+      "package": "query"
+    },
+    {
+      "code": "X_QUERY_UNREGISTERED",
+      "package": "query"
+    },
+    {
+      "code": "X_RATE_LIMITED",
+      "package": "http"
+    },
+    {
+      "code": "X_RATE_MISSING",
+      "package": "money"
+    },
+    {
+      "code": "X_READONLY_VIOLATION",
+      "package": "db"
+    },
+    {
+      "code": "X_REBASE_CONFLICT",
+      "package": "realtime"
+    },
+    {
+      "code": "X_REPLICATION_FAILED",
+      "package": "realtime"
+    },
+    {
+      "code": "X_REPLICATION_PROTOCOL",
+      "package": "realtime"
+    },
+    {
+      "code": "X_ROUTE_CONFLICT",
+      "package": "http"
+    },
+    {
+      "code": "X_ROUTE_DUPLICATE",
+      "package": "render"
+    },
+    {
+      "code": "X_ROUTE_FILE_INVALID",
+      "package": "render"
+    },
+    {
+      "code": "X_ROUTE_META_MISSING",
+      "package": "render"
+    },
+    {
+      "code": "X_ROUTE_MODE_INVALID",
+      "package": "render"
+    },
+    {
+      "code": "X_ROUTE_NOT_FOUND",
+      "package": "http"
+    },
+    {
+      "code": "X_ROUTE_OFFLINE_MISSING",
+      "package": "render"
+    },
+    {
+      "code": "X_ROUTE_UNNORMALIZED",
+      "package": "render"
+    },
+    {
+      "code": "X_RPC_FAILED",
+      "package": "action"
+    },
+    {
+      "code": "X_SCAFFOLD_PATH_ESCAPE",
+      "package": "cli"
+    },
+    {
+      "code": "X_SCHEDULE_INVALID",
+      "package": "time"
+    },
+    {
+      "code": "X_SCHEMA_UNSUPPORTED",
+      "package": "schema"
+    },
+    {
+      "code": "X_SEO_BUDGET_EXCEEDED",
+      "package": "seo"
+    },
+    {
+      "code": "X_SEO_CANONICAL_MISMATCH",
+      "package": "seo"
+    },
+    {
+      "code": "X_SEO_DUPLICATE_META",
+      "package": "seo"
+    },
+    {
+      "code": "X_SEO_META_MISSING",
+      "package": "seo"
+    },
+    {
+      "code": "X_SEO_META_TOO_LONG",
+      "package": "seo"
+    },
+    {
+      "code": "X_SERVER_NOT_STARTED",
+      "package": "http"
+    },
+    {
+      "code": "X_SESSION_EXPIRED",
+      "package": "auth"
+    },
+    {
+      "code": "X_SITEMAP_TOO_LARGE",
+      "package": "seo"
+    },
+    {
+      "code": "X_SQL_UNSAFE",
+      "package": "db"
+    },
+    {
+      "code": "X_STEP_DUPLICATE",
+      "package": "jobs"
+    },
+    {
+      "code": "X_STORAGE_CHECKSUM_MISMATCH",
+      "package": "storage"
+    },
+    {
+      "code": "X_STORAGE_DISK_UNKNOWN",
+      "package": "storage"
+    },
+    {
+      "code": "X_STORAGE_NOT_FOUND",
+      "package": "storage"
+    },
+    {
+      "code": "X_STORAGE_PATH_UNSAFE",
+      "package": "storage"
+    },
+    {
+      "code": "X_STORAGE_TOO_LARGE",
+      "package": "storage"
+    },
+    {
+      "code": "X_STORAGE_TYPE_REJECTED",
+      "package": "storage"
+    },
+    {
+      "code": "X_SUBSCRIPTION_LIMIT",
+      "package": "realtime"
+    },
+    {
+      "code": "X_SURFACE_BOUNDARY",
+      "package": "render"
+    },
+    {
+      "code": "X_SW_SCOPE_INVALID",
+      "package": "pwa"
+    },
+    {
+      "code": "X_TENANCY_UNSCOPED",
+      "package": "entity"
+    },
+    {
+      "code": "X_TEST_DB_UNAVAILABLE",
+      "package": "testing"
+    },
+    {
+      "code": "X_TEST_FIXTURE_UNAVAILABLE",
+      "package": "testing"
+    },
+    {
+      "code": "X_TEST_FIXTURE_UNKNOWN",
+      "package": "testing"
+    },
+    {
+      "code": "X_TEST_NETWORK_OFFLINE",
+      "package": "testing"
+    },
+    {
+      "code": "X_TEST_NETWORK_SEALED",
+      "package": "testing"
+    },
+    {
+      "code": "X_TEST_NO_FILES",
+      "package": "cli"
+    },
+    {
+      "code": "X_TEST_NONDETERMINISTIC",
+      "package": "testing"
+    },
+    {
+      "code": "X_TEST_SHARD_FAILED",
+      "package": "cli"
+    },
+    {
+      "code": "X_THEME_INVALID",
+      "package": "ui"
+    },
+    {
+      "code": "X_TIMEZONE_INVALID",
+      "package": "time"
+    },
+    {
+      "code": "X_TOKEN_UNKNOWN",
+      "package": "ui"
+    },
+    {
+      "code": "X_TOPIC_FORBIDDEN",
+      "package": "realtime"
+    },
+    {
+      "code": "X_TRANSPORT_PROTOCOL",
+      "package": "realtime"
+    },
+    {
+      "code": "X_TRANSPORT_UNAVAILABLE",
+      "package": "realtime"
+    },
+    {
+      "code": "X_UI_INVALID_VALUE",
+      "package": "ui"
+    },
+    {
+      "code": "X_UI_RUNTIME_MISSING",
+      "package": "ui"
+    },
+    {
+      "code": "X_UNAUTHENTICATED",
+      "package": "auth"
+    },
+    {
+      "code": "X_VALIDATION_FAILED",
+      "package": "schema"
+    },
+    {
+      "code": "X_VECTOR_DIM_MISMATCH",
+      "package": "ai"
+    },
+    {
+      "code": "X_VECTOR_SCOPE_WIDENED",
+      "package": "ai"
+    },
+    {
+      "code": "X_VERIFY_FAILED",
+      "package": "cli"
+    }
+  ]
+}
