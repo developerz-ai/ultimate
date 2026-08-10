@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c1ecb3b172e70d091cd070012c47c369282fba8a18b1129a88dd3d216ecb637e",
+  "buildId": "da83ad56ba4a56e0859a3b3d3e085575c1402035883978ada0126909119b4bfe",
   "tiers": {
     "0": [
       "core",
@@ -475,6 +475,11 @@
     },
     {
       "code": "X_CURSOR_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_CURSOR_SECRET_DEV",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
     },
@@ -970,6 +975,11 @@
     },
     {
       "code": "X_QUERY_FOREIGN",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_NOT_PAGEABLE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
     },

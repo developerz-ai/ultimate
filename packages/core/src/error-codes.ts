@@ -30,6 +30,7 @@ const CORE_CODE_TITLES = {
   X_ABORTED: 'operation aborted',
   X_CONFIG_INVALID: 'app.config.ts is invalid',
   X_CURSOR_INVALID: 'pagination cursor is malformed, tampered with or from another query',
+  X_CURSOR_SECRET_DEV: 'cursors are signed with the shipped development key',
   X_DRAINING: 'process is draining and refuses new work',
   X_ENV_MISSING: 'required environment variables are missing or invalid',
   X_ERROR_CODE_DUPLICATE: 'error code registered twice',

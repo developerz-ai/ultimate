@@ -74,7 +74,7 @@ export const postgresRepo = <Row>(
         rows,
         nextCursor:
           found.length > plan.limit && last !== undefined
-            ? cursorFor(plan, last, idOf(last))
+            ? cursorFor(entity, plan, last, idOf(last))
             : null,
       };
     },

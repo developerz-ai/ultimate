@@ -10,6 +10,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { queryClientMethodFor } from './client';
 import { toLiveQuery } from './live';
 import { toQueryTool } from './mcp-tool';
+import { paginate } from './pagination';
 import type { Query, QueryDef, QueryFacade } from './query';
 import { queryName, runQuery } from './read';
 
@@ -29,6 +30,9 @@ export function facadeFor<TInput extends StandardSchemaV1, TRow extends object>(
     // `.as()` is impersonation on the one read path: `runQuery` keeps the
     // surrounding context whole and swaps only the actor.
     as: (actor, input, options) => runQuery(self(), input, { ...options, actor }),
+    // A page is the read's own answer, not a helper someone has to import: the
+    // signed cursor is only reachable through the query that issued it.
+    page: (input, args) => paginate(self(), input, args),
     live: (input, options) => toLiveQuery(self(), input, options),
     tool: () => toQueryTool(self()),
     client: (options) => queryClientMethodFor(queryName(self()), options),

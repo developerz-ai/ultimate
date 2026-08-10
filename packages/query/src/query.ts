@@ -13,6 +13,7 @@ import type { QueryClientMethod, QueryClientOptions } from './client';
 import { facadeFor } from './facade';
 import type { LiveQuery, ToLiveOptions } from './live';
 import type { QueryToolDescriptor } from './mcp-tool';
+import type { Page, PaginateArgs } from './pagination';
 import type { QueryPolicy, QuerySurface } from './policy-gate';
 import { policyCapability } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
@@ -99,6 +100,8 @@ export interface AnyQuery {
   named(name: string): AnyQuery;
   /** Read as this actor. Same read path, only the context's actor changes. */
   as(actor: Actor | null, input: unknown, options?: QueryOptions): Promise<readonly object[]>;
+  /** One bounded page plus the signed cursor that continues it. There is no `offset`. */
+  page(input: unknown, args: PaginateArgs): Promise<Page<object>>;
   live(input: unknown, options?: ToLiveOptions): Promise<LiveQuery>;
   tool(): QueryToolDescriptor;
 }
@@ -116,6 +119,7 @@ export interface Query<
     input: InferInput<TInput>,
     options?: QueryOptions,
   ): Promise<readonly TRow[]>;
+  page(input: InferInput<TInput>, args: PaginateArgs): Promise<Page<TRow>>;
   live(input: InferInput<TInput>, options?: ToLiveOptions): Promise<LiveQuery>;
   /**
    * Typed against this query's input and row type, which is the whole point of it —
@@ -127,7 +131,7 @@ export interface Query<
 /** The fluent half of a query: lifted declaration plus one method per projection. */
 export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = Pick<
   Query<TInput, TRow>,
-  'input' | 'policy' | 'cache' | 'mcp' | 'as' | 'live' | 'tool' | 'client'
+  'input' | 'policy' | 'cache' | 'mcp' | 'as' | 'page' | 'live' | 'tool' | 'client'
 >;
 
 export function query<TInput extends StandardSchemaV1, TRow extends object>(

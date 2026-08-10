@@ -38,6 +38,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 |---|---|---|
 | `liveFeed(input, options?)` | the read | parse input → evaluate policy → build source → execute, through the cache tiers |
 | `.as(actor, input, options?)` | the same read, as someone else | keeps the surrounding context whole — services, clock, locale, trace — and swaps only the actor. `null` is the signed-out caller |
+| `.page(input, { first, after? })` | one bounded page | `{ rows, endCursor, hasNextPage }`. The cursor is signed and scoped to this read plus these arguments; there is no `offset` and there never will be |
 | `.live(input, options?)` | the subscription descriptor | a `LiveQuery` carrying the **same** policy object, re-evaluated per subscriber |
 | `.tool()` | the MCP read tool | `liveFeed.tool().policy === liveFeed.policy`. Reads fresh: an agent diffing two calls must be reading rows, not a TTL |
 | `.client({ baseUrl })` | the typed browser method | `GET /_x/query/live-feed?orgId=…`, keys sorted so one input is one URL |

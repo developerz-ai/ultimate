@@ -12,6 +12,7 @@ import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryTool } from './mcp-tool';
+import { paginate } from './pagination';
 import { query } from './query';
 import { from } from './source';
 
@@ -41,7 +42,17 @@ function defineTarget() {
 // purpose — a silent drift here is exactly the regression this file exists
 // to catch.
 const BASE_MEMBERS = ['kind', 'name', 'isLive', 'describe', 'named'] as const;
-const FACADE_MEMBERS = ['input', 'policy', 'cache', 'mcp', 'as', 'live', 'tool', 'client'] as const;
+const FACADE_MEMBERS = [
+  'input',
+  'policy',
+  'cache',
+  'mcp',
+  'as',
+  'page',
+  'live',
+  'tool',
+  'client',
+] as const;
 
 describe('the query DSL surface', () => {
   test('a built query is callable, and carries every façade member', () => {
@@ -88,6 +99,20 @@ describe('the query DSL surface', () => {
     const target = defineTarget();
     const rows = await target.as(readerActor, { orgId: ORG });
     expect(rows.map((row) => row.id)).toEqual(['a']);
+  });
+
+  test('.page() delegates to paginate() — same rows, same signed cursor', async () => {
+    // The cursor is only reachable through the query that issued it, so the façade must bind
+    // `paginate` rather than leave app code importing a projection function.
+    const target = defineTarget();
+    const args = { first: 1, ctx: createContext({ actor: readerActor }) };
+    const viaFacade = await target.page({ orgId: ORG }, args);
+    const direct = await paginate(target, { orgId: ORG }, args);
+    expect(viaFacade.rows).toEqual(direct.rows);
+    expect(viaFacade.endCursor).toBe(direct.endCursor);
+    expect(viaFacade.hasNextPage).toBe(direct.hasNextPage);
+    // Opaque and bound to this read: nothing decodes it without the query's own scope.
+    expect(viaFacade.endCursor).toContain('.');
   });
 
   // The DSL's central claim: no surface reaches a second authz object. `.tool()`

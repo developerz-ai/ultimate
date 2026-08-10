@@ -10,6 +10,7 @@
 // `db-integration.test.ts`; CI's `postgres` service container sets `TEST_DATABASE_URL`.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import {
   createPostgresClient,
   generateMigration,
@@ -22,7 +23,7 @@ import { database } from './database';
 import { entity } from './entity';
 import { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 import { clearRegistry } from './registry';
-import type { Page } from './repo';
+import type { FindManyArgs, Page } from './repo';
 
 const adminUrl = Bun.env['TEST_DATABASE_URL'] ?? Bun.env['DATABASE_URL'];
 const hasPostgres = typeof adminUrl === 'string' && adminUrl.length > 0;
@@ -101,6 +102,44 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       total: { minor: 1000n, currency: 'USD' },
       ...patch,
     });
+
+  /** A page walk asserts over a whole tenant, so each one needs a tenant nobody else wrote to. */
+  const newOrg = async (slug: string): Promise<string> =>
+    (await database({ orgs }, { driver: postgresDriver() }).orgs.insert({ slug })).id;
+
+  /** Pages to exhaustion from `cursor`, in the order the driver handed the rows back. */
+  const walkFrom = async (args: FindManyArgs, cursor: string | null): Promise<Invoice[]> => {
+    const rows: Invoice[] = [];
+    let next = cursor;
+    let more = true;
+    // Bounded: a seek that stops advancing has to fail the test, never hang the run.
+    for (let page = 0; page < 12 && more; page += 1) {
+      const result: Page<Invoice> = await repo().findMany({ ...args, cursor: next });
+      rows.push(...result.rows);
+      next = result.nextCursor;
+      more = next !== null;
+    }
+    expect(next).toBeNull();
+    return rows;
+  };
+
+  const referencesOf = (rows: readonly Invoice[]): string[] => rows.map((row) => row.reference);
+
+  /** The cursor a page had to hand back — otherwise `string | null` leaks into every caller. */
+  const cursorOf = (page: Page<Invoice>): string => {
+    expect(page.nextCursor).toBeTypeOf('string');
+    return page.nextCursor ?? '';
+  };
+
+  /** The stable code a call rejected with. Message text is not the contract; the code is. */
+  const rejectionCode = async (call: Promise<unknown>): Promise<string> => {
+    try {
+      await call;
+      return 'resolved';
+    } catch (error) {
+      return isUltimateError(error) ? error.code : String(error);
+    }
+  };
 
   test('the generated migration is a migration Postgres accepts', () => {
     // Both halves are load-bearing and both were wrong: the unique column must not also get an
@@ -242,6 +281,104 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       cursor: first.nextCursor,
     });
     await expect(elsewhere).rejects.toThrow();
+  });
+
+  test('a row inserted before the cursor position neither duplicates nor skips a row', async () => {
+    const org = await newOrg('cursor-insert');
+    const seeded = ['SHIFT-b', 'SHIFT-c', 'SHIFT-d', 'SHIFT-e', 'SHIFT-f'];
+    for (const reference of seeded) await write(org, reference);
+
+    const listing: FindManyArgs = {
+      orgId: org,
+      orderBy: [{ column: 'reference', direction: 'asc' }],
+      limit: 2,
+    };
+    const first = await repo().findMany(listing);
+    expect(referencesOf(first.rows)).toEqual(['SHIFT-b', 'SHIFT-c']);
+
+    // The write the doc's OFFSET table gets wrong: a row lands *behind* the open cursor, which
+    // under OFFSET shifts every later page down one — repeating one row and dropping the next.
+    await write(org, 'SHIFT-a');
+    const seen = referencesOf([...first.rows, ...(await walkFrom(listing, cursorOf(first)))]);
+
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen).toEqual(seeded);
+    // The late row really is in the tenant — it stayed out of the walk because the cursor names a
+    // position in the ordering, not a row count taken at some earlier instant.
+    expect(await repo().count({ orgId: org })).toBe(6);
+  });
+
+  test('the boundary row deleted between pages does not restart pagination', async () => {
+    const org = await newOrg('cursor-delete');
+    const seeded = ['GAP-a', 'GAP-b', 'GAP-c', 'GAP-d', 'GAP-e'];
+    for (const reference of seeded) await write(org, reference);
+
+    const listing: FindManyArgs = {
+      orgId: org,
+      orderBy: [{ column: 'reference', direction: 'asc' }],
+      limit: 2,
+    };
+    const first = await repo().findMany(listing);
+    const boundary = first.rows.at(-1);
+    expect(boundary?.reference).toBe('GAP-b');
+
+    // The row the cursor was cut at is gone before the next request — the case an id-only cursor
+    // cannot survive, because seeking by a row that is no longer there matches everything again.
+    await repo().delete(boundary?.id ?? '', { orgId: org });
+
+    const second = await repo().findMany({ ...listing, cursor: cursorOf(first) });
+    expect(referencesOf(second.rows)).toEqual(['GAP-c', 'GAP-d']);
+    expect(referencesOf(await walkFrom(listing, cursorOf(second)))).toEqual(['GAP-e']);
+  });
+
+  test('a descending listing pages correctly through a real mixed-direction seek', async () => {
+    const org = await newOrg('cursor-desc');
+    const seeded = ['DESC-a', 'DESC-b', 'DESC-c', 'DESC-d', 'DESC-e'];
+    for (const reference of seeded) await write(org, reference);
+
+    // `planFor` always appends the primary key ascending, so the plan is `reference desc, id asc`
+    // — a mixed pair no `(a, b) < (x, y)` can express, which is why `seekSql` spells it out.
+    const listing: FindManyArgs = {
+      orgId: org,
+      orderBy: [{ column: 'reference', direction: 'desc' }],
+      limit: 2,
+    };
+    expect(referencesOf(await walkFrom(listing, null))).toEqual([...seeded].reverse());
+
+    // A tie straddling a page boundary, where only the id tiebreak separates the two rows: a seek
+    // that compares the sort value alone either loses the second row or returns the first twice.
+    const tied = await newOrg('cursor-tie');
+    const ids = [(await write(tied, 'TIE')).id, (await write(tied, 'TIE')).id];
+    const walked = await walkFrom({ ...listing, orgId: tied, limit: 1 }, null);
+
+    expect(walked.map((row) => row.id).sort()).toEqual([...ids].sort());
+  });
+
+  test('a tampered cursor is X_CURSOR_INVALID, not a silent page one', async () => {
+    const org = await newOrg('cursor-tamper');
+    for (const reference of ['TAMPER-a', 'TAMPER-b', 'TAMPER-c']) await write(org, reference);
+
+    const listing: FindManyArgs = { orgId: org, limit: 1 };
+    const live = cursorOf(await repo().findMany(listing));
+    const body = live.slice(0, live.lastIndexOf('.'));
+    const signature = live.slice(live.lastIndexOf('.') + 1);
+    // Derived from the character already there: substituting a fixed one into a hex signature is
+    // a no-op one run in sixteen, and a test that only usually fails a forgery proves nothing.
+    const forged = `${signature.startsWith('0') ? '1' : '0'}${signature.slice(1)}`;
+
+    expect(await rejectionCode(repo().findMany({ ...listing, cursor: `${body}.${forged}` }))).toBe(
+      'X_CURSOR_INVALID',
+    );
+
+    // The signature covers the body, so a position lifted from another plan cannot borrow this
+    // cursor's signature to get itself accepted — and its scope would not have matched either.
+    const elsewhere = cursorOf(
+      await repo().findMany({ ...listing, orderBy: [{ column: 'reference', direction: 'desc' }] }),
+    );
+    const stolen = `${elsewhere.slice(0, elsewhere.lastIndexOf('.'))}.${signature}`;
+    expect(await rejectionCode(repo().findMany({ ...listing, cursor: stolen }))).toBe(
+      'X_CURSOR_INVALID',
+    );
   });
 
   test('a repository call joins the open transaction without being handed one', async () => {

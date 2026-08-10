@@ -16,6 +16,7 @@ import { queryHash, queryName, sourceFor } from './query';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
 import type { SqlSource } from './source';
+import { isAfterKey } from './source';
 
 export interface Page<TRow> {
   readonly rows: readonly TRow[];
@@ -63,12 +64,18 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   };
 }
 
+/**
+ * The cursor names a POSITION in the ordering, so the fallback filters by that position — the
+ * same comparison `Builder.seek()` pushes into SQL. Locating the cursor's row by id instead
+ * looks equivalent and is not: the row can be gone by the next request, `findIndex` answers -1,
+ * and every row from the top comes back as page two. Under a delete between two pages that is a
+ * silent restart, which is the failure keyset pagination exists to make impossible.
+ */
 function sliceAfter(
   rows: readonly object[],
   after: SeekKey | null,
   shape: QueryShape,
 ): readonly object[] {
   if (after === null) return rows;
-  const index = rows.findIndex((row) => seekKeyOf(row, shape).id === after.id);
-  return index === -1 ? rows : rows.slice(index + 1);
+  return rows.filter((row) => isAfterKey(row, after, shape.orderBy));
 }

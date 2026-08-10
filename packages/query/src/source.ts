@@ -113,29 +113,40 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     }
     if (this.after !== null) {
       const cut = this.after;
-      result = result.filter((row) => afterKey(row, cut, this.order));
+      result = result.filter((row) => isAfterKey(row, cut, this.order));
     }
     return this.rowLimit === null ? result : result.slice(0, this.rowLimit);
   }
 
   /**
-   * Row-value keyset comparison — `(createdAt, id) > ($1, $2)` — which Postgres
-   * can serve straight off the matching index. Mixed asc/desc orderings have no
-   * single row-value form, so those fall back to the id tiebreak alone.
+   * The keyset predicate, spelled out per key rather than as a row comparison.
+   * `(created_at, id) < ($1, $2)` requires every key to sort the same way, and a
+   * listing that is `createdAt desc, id asc` does not — the id-tiebreak-only
+   * fallback this replaced returned rows the ordering had already been past, so
+   * a mixed listing repeated and skipped rows while `execute()` did the right
+   * thing. Same shape as `@ultimat3/entity`'s `seekSql`: one meaning, two drivers.
    */
   private seekClause(after: SeekKey, params: unknown[]): string {
-    const columns = this.order.map((key) => `"${key.column}"`);
-    const ascending = this.order.every((key) => key.direction === 'asc');
-    const descending = this.order.every((key) => key.direction === 'desc');
-    if (columns.length === 0 || (!ascending && !descending)) {
-      params.push(after.id);
-      return `"id" > $${params.length}`;
-    }
-    const slots = [...after.key, after.id].map((value) => {
+    const slot = (value: unknown): string => {
       params.push(value);
       return `$${params.length}`;
+    };
+    // The id tiebreak is appended only when the ordering has not already named it: a second
+    // `id` term compares the key to itself and can never be true, so it is dead SQL an agent
+    // then has to reason about.
+    const ordered = this.order.some((key) => key.column === 'id');
+    const keys: readonly OrderKey[] = ordered
+      ? this.order
+      : [...this.order, { column: 'id', direction: 'asc' }];
+    const values = ordered ? [...after.key] : [...after.key, after.id];
+    const terms = keys.map((key, index) => {
+      const equal = keys
+        .slice(0, index)
+        .map((earlier, position) => `"${earlier.column}" = ${slot(values[position])}`);
+      const compare = `"${key.column}" ${key.direction === 'desc' ? '<' : '>'} ${slot(values[index])}`;
+      return `(${[...equal, compare].join(' and ')})`;
     });
-    return `(${[...columns, '"id"'].join(', ')}) ${ascending ? '>' : '<'} (${slots.join(', ')})`;
+    return `(${terms.join(' or ')})`;
   }
 
   private derive(patch: Partial<BuilderState>): Builder<TRow> {
@@ -159,8 +170,12 @@ interface BuilderState {
   readonly unsupported: readonly string[];
 }
 
-/** Keyset comparison: strictly after the cursor's sort key, id breaking ties. */
-function afterKey(row: object, cursor: SeekKey, order: readonly OrderKey[]): boolean {
+/**
+ * Keyset comparison: strictly after the cursor's sort key, id breaking ties. Exported because
+ * pagination needs the same answer when a source cannot push the seek down — a second definition
+ * of "after" is how one path skips a row the other returns.
+ */
+export function isAfterKey(row: object, cursor: SeekKey, order: readonly OrderKey[]): boolean {
   for (const [index, key] of order.entries()) {
     const result = compareValues(columnOf(row, key.column), cursor.key[index]);
     const signed = key.direction === 'asc' ? result : -result;

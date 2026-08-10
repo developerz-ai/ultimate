@@ -27,6 +27,7 @@ Every projection is a method on the query itself. A query has no `.def`.
 |---|---|
 | `liveFeed({ orgId })` | the rows, policy enforced, through the cache tiers |
 | `liveFeed.as(actor, { orgId })` | the same read as another actor — the surrounding context is untouched, `null` is signed out |
+| `liveFeed.page({ orgId }, { first: 20, after })` | one bounded page plus the signed cursor that continues it. There is no `offset` |
 | `liveFeed.live({ orgId })` | the `LiveQuery` `@ultimat3/realtime` subscribes to, carrying the same policy object |
 | `liveFeed.tool()` | the MCP read tool. `tool().policy === liveFeed.policy`, and it reads fresh |
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
@@ -96,9 +97,20 @@ HMAC-signed, and bound to one query + arguments — a cursor from another query 
 
 The codec lives in `@ultimat3/core`, not here: `encodeCursor`, `decodeCursor`,
 `configureCursorSigning` (set the signing secret once at boot; rotating it invalidates every
-open cursor) and `usesDevCursorSecret` are all imported from there. `paginate()` supplies the
-only thing that is this package's business — the scope, `queryHash(name, input)` — and
-re-exports `CursorInvalidError` so the failure keeps its name on this surface.
+open cursor) and `usesDevCursorSecret` are all imported from there — `x doctor` reports
+`X_CURSOR_SECRET_DEV` when a production process is still signing with the shipped dev key.
+`paginate()` supplies the only thing that is this package's business — the scope,
+`queryHash(name, input)` — and re-exports `CursorInvalidError` so the failure keeps its name on
+this surface.
+
+A cursor names a **position in the ordering**, never a row and never a count. Both seek paths
+answer "is this row after that position?" through the one predicate, `isAfterKey`: `Builder.seek()`
+compiles it to SQL — spelled out per key, so a mixed `createdAt desc, id asc` listing is a real
+predicate rather than an id tiebreak — and `paginate()` applies the same comparison when a source
+has no `seek()`. Filtering by position is what makes a delete between two pages harmless; locating
+the cursor's row by id and slicing after it silently restarts the listing the moment that row is
+gone. A row with no `id` cannot name a position at all: that is `X_QUERY_NOT_PAGEABLE`, not a
+cursor signed over `"undefined"`.
 
 ## Caching
 

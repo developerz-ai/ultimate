@@ -6,6 +6,10 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: '1.3.14',
   root: '/app',
   port: 3000,
+  // The ordinary developer: the shipped cursor key, off production. Every case below that does
+  // not say otherwise is this one.
+  devCursorSecret: true,
+  production: false,
   exists: () => true,
   portFree: async () => true,
   drift: async () => [],
@@ -61,6 +65,26 @@ describe('unit · x doctor', () => {
       }),
     );
     expect(findings.at(-1)?.fix).toBe('x db gen "add publish_at"');
+  });
+
+  // A finding every developer sees on day one is one they learn to skip, and the report goes with
+  // it — so the noise case is what makes the production gate real, not the finding itself.
+  test('the shipped cursor key is silent in development, where it is the design', async () => {
+    expect(await codes(probe({ devCursorSecret: true }))).toEqual([]);
+  });
+
+  test('the shipped cursor key in production is reported with the command that mints one', async () => {
+    const findings = await runDoctor(probe({ devCursorSecret: true, production: true }));
+    const cursor = findings.find((finding) => finding.code === 'X_CURSOR_SECRET_DEV');
+    expect(cursor?.cause).toContain('forge a page position');
+    // Pinned verbatim: this string is copied into a shell, so a paraphrase of it is a broken fix.
+    expect(cursor?.fix).toBe(
+      'set ULTIMATE_CURSOR_SECRET in the deploy environment: openssl rand -hex 32',
+    );
+  });
+
+  test('a production deploy with its own cursor secret reports nothing', async () => {
+    expect(await codes(probe({ devCursorSecret: false, production: true }))).toEqual([]);
   });
 
   test('every finding carries a fix command — a diagnostic without one is not shippable', async () => {

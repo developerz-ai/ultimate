@@ -34,6 +34,7 @@ export {
   QueryDuplicateError,
   QueryForeignError,
   QueryInputInvalidError,
+  QueryNotPageableError,
   QueryPolicyMissingError,
   QueryRequestFailedError,
   QueryUnregisteredError,
@@ -75,6 +76,7 @@ export {
 export type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
 export { compareRows, compareValues, matchesFilter, matchesFilters, seekKeyOf } from './shape';
 export type { RowProvider, SqlSource, SqlText } from './source';
-export { Builder, from } from './source';
+/** `isAfterKey` is the one definition of "after this position" — both seek paths use it. */
+export { Builder, from, isAfterKey } from './source';
 export type { ExplainResult, QuerySqlInfo } from './sql';
 export { describeSql, explain } from './sql';

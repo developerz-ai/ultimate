@@ -34,7 +34,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   total. The cursor carries the sort **values**, not just an id — seeking by an id that was
   deleted between two requests would restart pagination at the top.
 - **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
-  `cursorFor(plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. This package owns only
+  `cursorFor(entity, plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. Both call
+  `assertSeekable`, so an ordering that cannot carry a position — a nullable key, an undeclared
+  column, a money property named without `.minor`/`.currency` — is refused when the cursor is
+  *minted*, not one page later where the page size decides whether anyone finds out. This package owns only
   what a cursor is *bound* to — `planScope(plan)`: the entity, its filters and its sort order,
   hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
   cannot move a row). A cursor that fails either the signature or the scope is `X_CURSOR_INVALID`;

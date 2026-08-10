@@ -130,12 +130,12 @@ base64url(JSON [scope, id, key]) "." hmac-sha256(body, secret)[0:32]
 |---|---|---|
 | `scope` | the read plus its arguments: entity, filters, sort order | a cursor from another query, another filter or a flipped sort is `X_CURSOR_INVALID`, never a wrong page |
 | `key` | the ordering tuple of the last row of the page, in `orderBy` order | the keyset predicate is rebuilt from the cursor — no server-side page state to expire |
-| `id` | that row's primary key | the tiebreak that makes the order total |
+| `id` | that row's primary key | the tiebreak that makes the order total. A read that returns rows without one is `X_QUERY_NOT_PAGEABLE`, never a cursor signed over `"undefined"` |
 | signature | truncated HMAC-SHA256 over the body, compared in constant time | a client can replay a position it was handed, never invent one |
 
 | Rule | Detail |
 |---|---|
-| Secret | `ULTIMATE_CURSOR_SECRET`, with a dev default so `x dev` pages unconfigured. `configureCursorSigning(secret)` overrides it in-process; `usesDevCursorSecret()` reports the dev key is still in use |
+| Secret | `ULTIMATE_CURSOR_SECRET`, with a dev default so `x dev` pages unconfigured. `configureCursorSigning(secret)` overrides it in-process; `usesDevCursorSecret()` reports the dev key is still in use, and `x doctor` turns that into `X_CURSOR_SECRET_DEV` when the process is running in production — the shipped key is published, so there it is a forgeable position |
 | Rotation | rotating the secret invalidates every open cursor — clients restart from `after: null` |
 | Signed, not encrypted | the client already holds the rows the cursor points at. Tamper-evidence, not authorization: policy still runs per page |
 | Opaque | never parsed, extended or built by hand on either side of the wire |
