@@ -1,7 +1,7 @@
 {
   "eval": "posts.summarize",
   "prompt": "posts.summarize@3",
-  "promptHash": "f60443c06505b347bbb83cc6b9d5fded",
+  "promptHash": "215d606b00b1903646324de11c384672",
   "score": 0.972,
   "cases": {
     "english/tenancy": 1,
