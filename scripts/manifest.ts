@@ -6,9 +6,14 @@
 //
 //   bun run scripts/manifest.ts [--out framework.manifest.json] [--json]
 
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { collectDeclaredCodes } from '@ultimat3/cli';
 import { flagString, parseScriptArgs } from './lib/args';
-import type { FrameworkManifest, FrameworkManifestBody } from './lib/framework-manifest';
+import type {
+  FrameworkErrorCode,
+  FrameworkManifest,
+  FrameworkManifestBody,
+} from './lib/framework-manifest';
 import {
   contentHash,
   frameworkManifestJson,
@@ -26,27 +31,26 @@ import { listWorkspaces } from './lib/workspaces';
  */
 export const DEFAULT_OUT = 'framework.manifest.json';
 
-const CODE_PATTERN = /'(X_[A-Z0-9_]+)'/g;
+/**
+ * Who a declaration belongs to, read off its path: a package by its directory name, anything else
+ * by its top directory — `scripts` for the gate's own codes, which ship to nobody and so can
+ * never be a package's.
+ */
+export function ownerOf(path: string): string {
+  const segments = path.split('/');
+  return (segments[0] === 'packages' ? segments[1] : segments[0]) ?? '';
+}
 
-/** Codes are string literals in `src/errors.ts`; reading them is exact and needs no runtime. */
-export async function collectErrorCodes(
-  root: string,
-): Promise<readonly { code: string; package: string }[]> {
-  const found = new Map<string, string>();
-  for await (const path of new Bun.Glob('packages/*/src/errors.ts').scan({
-    cwd: root,
-    absolute: false,
-  })) {
-    const owner = path.split('/')[1] ?? '';
-    const source = await Bun.file(join(root, path)).text();
-    for (const match of source.matchAll(CODE_PATTERN)) {
-      const code = match[1];
-      if (code !== undefined && !found.has(code)) found.set(code, owner);
-    }
-  }
-  return [...found.entries()]
-    .map(([code, owner]) => ({ code, package: owner }))
-    .sort((a, b) => a.code.localeCompare(b.code));
+/**
+ * Every declared code, from the same walk and the same scanner the `errors` gate step uses — not a
+ * second regex over one filename per package. That is what the old scan was: one `src/errors.ts`
+ * per package and nothing else, so a code thrown from `scripts/boundaries.ts`,
+ * `packages/core/src/roles.ts` or any other non-registry module was missing from a file whose
+ * whole claim is "every X_* code".
+ */
+export async function collectErrorCodes(root: string): Promise<readonly FrameworkErrorCode[]> {
+  const sites = await collectDeclaredCodes(root);
+  return sites.map((site) => ({ code: site.code, owner: ownerOf(site.at), at: site.at }));
 }
 
 export async function buildManifest(root: string): Promise<FrameworkManifest> {

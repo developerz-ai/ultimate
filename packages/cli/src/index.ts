@@ -87,6 +87,7 @@ export {
   checkErrorCodeDocs,
   checkErrorCodeRegistry,
   checkErrorFixes,
+  collectDeclaredCodes,
   documentedCodes,
   fixProblem,
   liveCodes,
@@ -145,7 +146,14 @@ export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
 export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
 export type { CodeSite, FixSite, SourceSite } from './ts-scan';
-export { isCodeRegistry, maskLiterals, scanCodes, scanFixes, stripComments } from './ts-scan';
+export {
+  isCodeRegistry,
+  maskLiterals,
+  scanBorrowedCodes,
+  scanCodes,
+  scanFixes,
+  stripComments,
+} from './ts-scan';
 export type {
   HostCheck,
   StepOutcome,

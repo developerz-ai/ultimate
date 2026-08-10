@@ -9,8 +9,8 @@ import { join } from 'node:path';
 import { docsFor } from './errors';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
-import type { FixSite } from './ts-scan';
-import { scanCodes, scanFixes } from './ts-scan';
+import type { CodeSite, FixSite } from './ts-scan';
+import { isCodeRegistry, scanBorrowedCodes, scanCodes, scanFixes } from './ts-scan';
 
 /** Advice, not instruction. The list is the one in `docs/architecture/04-error-contract.md`. */
 export const BANNED_PHRASES: readonly RegExp[] = [
@@ -134,6 +134,51 @@ export async function checkErrorCodeRegistry(
 }
 
 /**
+ * How strong a claim one site has on being *the* declaration of its code. A package declares the
+ * codes it owns in its own registry (`docs/architecture/04-error-contract.md`), and names the ones
+ * it borrows in that same file — so a registry that owns the code outranks a throw site, and a
+ * registry that has said the code is somebody else's ranks below both.
+ */
+const claim = (site: CodeSite, borrowed: ReadonlySet<string>): number => {
+  if (!isCodeRegistry(site.at)) return 1;
+  return borrowed.has(site.code) ? 0 : 2;
+};
+
+/**
+ * The stronger claim wins; equal claims settle by path, then line. Deliberately not glob order:
+ * `Bun.Glob` yields in directory order, which differs by filesystem, and a committed manifest
+ * keyed on the answer would drift between two machines reading the same tree.
+ */
+const declarationOf = (a: [CodeSite, number], b: [CodeSite, number]): [CodeSite, number] => {
+  if (a[1] !== b[1]) return a[1] > b[1] ? a : b;
+  if (a[0].at !== b[0].at) return a[0].at < b[0].at ? a : b;
+  return a[0].line <= b[0].line ? a : b;
+};
+
+/**
+ * Every `X_*` code shipped source declares, with the file and line that declares it — one walk of
+ * the whole source set, sorted by code, one entry per code. The answer to "which codes exist?"
+ * has exactly one implementation: the docs check below reads it, and so does the framework's
+ * generated manifest. A scanner that looked only at a package's own `src/errors.ts` would miss
+ * every code a gate script or a non-registry module throws, and two lists that disagree mean
+ * whichever one a reader trusts is the wrong one.
+ */
+export async function collectDeclaredCodes(root: string): Promise<readonly CodeSite[]> {
+  const sites = new Map<string, [CodeSite, number]>();
+  for await (const source of eachSourceFile(root)) {
+    if (isTest(source) || isGenerated(source)) continue;
+    const text = await Bun.file(join(root, source)).text();
+    const borrowed = scanBorrowedCodes(text);
+    for (const site of scanCodes(text, source)) {
+      const found: [CodeSite, number] = [site, claim(site, borrowed)];
+      const seen = sites.get(site.code);
+      sites.set(site.code, seen === undefined ? found : declarationOf(seen, found));
+    }
+  }
+  return [...sites.values()].map(([site]) => site).sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/**
  * Every `X_*` code shipped source declares must appear on the repo's error reference. The page is
  * the host repo's to name — a framework monorepo publishes one, a generated app does not — which
  * is why this arrives through the same host-check seam the tier table uses on `boundaries`.
@@ -152,15 +197,7 @@ export async function checkErrorCodeDocs(root: string, page: string): Promise<re
     ];
   }
   const documented = documentedCodes(await reference.text());
-  const findings: Finding[] = [];
-  const seen = new Set<string>();
-  for await (const source of eachSourceFile(root)) {
-    if (isTest(source) || isGenerated(source)) continue;
-    for (const site of scanCodes(await Bun.file(join(root, source)).text(), source)) {
-      if (documented.has(site.code) || seen.has(site.code)) continue;
-      seen.add(site.code);
-      findings.push(undocumentedFinding(site.code, site.at, site.line, page));
-    }
-  }
-  return findings;
+  return (await collectDeclaredCodes(root))
+    .filter((site) => !documented.has(site.code))
+    .map((site) => undocumentedFinding(site.code, site.at, site.line, page));
 }

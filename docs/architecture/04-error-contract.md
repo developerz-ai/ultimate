@@ -39,6 +39,7 @@ throw new UltimateError({
 | Stability | **stable forever once shipped.** A code is a public API — agents match on it, docs URLs resolve to it, dashboards group by it |
 | Deprecation | never rename. Add the new code, keep the old one throwing with `data.supersededBy` |
 | Ownership | each package declares its own codes in `src/errors.ts` and subclasses `UltimateError` |
+| Borrowing | a package that throws another's code names it in `<PKG>_BORROWED_ERROR_CODES` and titles it nowhere. That line is the machine-readable half: it is how `framework.manifest.json` attributes `X_NOT_IMPLEMENTED` to `core` and not to the eleven packages that throw it |
 | Uniqueness | one code, one meaning, one package. `x verify` fails on a code declared in two packages |
 | Reuse | reuse an existing code rather than minting a near-synonym; add a `rule`/`kind` field in `data` to discriminate (see `X_BOUNDARY_VIOLATION` in [`02-boundaries.md`](./02-boundaries.md)) |
 
@@ -135,6 +136,8 @@ Enforced by the **`errors` step** of `x verify`. It reads every `fix:` string li
 A **command token** is the `x` CLI, a known tool (`bun`, `bunx`, `git`, `docker`, `psql`, `curl`, …), a literal call expression (`name(`), or a file path (`app.config.ts`, `apps/web/api/index.ts`). "check `x doctor --json`" passes; "check your database connection" does not.
 
 The docs half is a **host check** the framework repo contributes to the `errors` step — the same seam the tier table uses on `boundaries`.
+
+"Which codes exist?" has one implementation, `collectDeclaredCodes` in `packages/cli/src/error-contract.ts`: one walk of every shipped source file, one entry per code, the owning registry preferred over any throw site and over any registry that borrowed it. The docs check reads it, and so does `framework.manifest.json` — a second scanner over a narrower file set is how the manifest came to omit 26 codes and misattribute a 27th.
 
 Out of reach: a `fix` computed at runtime. `fix: input.fix` has no literal to read, so the step cannot judge it — the value's own author does.
 

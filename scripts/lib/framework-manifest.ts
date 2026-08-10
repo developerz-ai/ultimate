@@ -13,7 +13,20 @@ export interface FrameworkManifest {
     readonly tier: number;
     readonly private: boolean;
   }[];
-  readonly errorCodes: readonly { readonly code: string; readonly package: string }[];
+  readonly errorCodes: readonly FrameworkErrorCode[];
+}
+
+/**
+ * One declared `X_*` code. `owner` is a package's directory name, or `scripts` for a code only
+ * this repo's own gate throws — the field is not called `package` because that was true only
+ * while the scanner read one filename per package, and a code declared in `scripts/boundaries.ts`
+ * has an owner but no package. `at` is where the declaration is, so the answer to "where does
+ * this come from?" is in the file rather than one grep away.
+ */
+export interface FrameworkErrorCode {
+  readonly code: string;
+  readonly owner: string;
+  readonly at: string;
 }
 
 /** What `buildId` is computed over: the whole manifest except `buildId` itself. */

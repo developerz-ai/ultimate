@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { isCodeRegistry, maskLiterals, scanCodes, scanFixes, stripComments } from './ts-scan';
+import {
+  isCodeRegistry,
+  maskLiterals,
+  scanBorrowedCodes,
+  scanCodes,
+  scanFixes,
+  stripComments,
+} from './ts-scan';
 
 const fixes = (source: string): readonly string[] =>
   scanFixes(source, 'a.ts').map((site) => site.fix);
@@ -147,6 +154,41 @@ describe('scanCodes', () => {
 
   test('deduplicates a code declared twice in one file', () => {
     expect(scanCodes("code: 'X_A'; code: 'X_A';", 'thing.ts')).toHaveLength(1);
+  });
+});
+
+describe('scanBorrowedCodes', () => {
+  test('reads the codes a registry says are somebody else’s', () => {
+    const source = "export const CLI_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;\n";
+    expect([...scanBorrowedCodes(source)]).toEqual(['X_NOT_IMPLEMENTED']);
+  });
+
+  test('reads every entry, and every list in one file', () => {
+    const source = [
+      "export const AUTH_BORROWED_ERROR_CODES = ['X_FORBIDDEN', 'X_NOT_IMPLEMENTED'] as const;",
+      "const MORE_BORROWED_ERROR_CODES: readonly string[] = ['X_DB_DRIFT'];",
+    ].join('\n');
+    expect([...scanBorrowedCodes(source)].sort()).toEqual([
+      'X_DB_DRIFT',
+      'X_FORBIDDEN',
+      'X_NOT_IMPLEMENTED',
+    ]);
+  });
+
+  // Borrowing is a claim about ownership, so only the declaration makes it — otherwise the prose
+  // above every one of these lists would disown the codes the file actually owns.
+  test('a code the file owns, or one merely named in prose, is not borrowed', () => {
+    const source = [
+      '// X_OWNED is ours; BORROWED_ERROR_CODES below names the rest.',
+      "export const DB_OWNED_ERROR_CODES = ['X_OWNED'] as const;",
+      "export const DB_BORROWED_ERROR_CODES = ['X_LENT'] as const;",
+      'export const DB_ERROR_CODES = [...DB_OWNED_ERROR_CODES, ...DB_BORROWED_ERROR_CODES];',
+    ].join('\n');
+    expect([...scanBorrowedCodes(source)]).toEqual(['X_LENT']);
+  });
+
+  test('a file that borrows nothing borrows nothing', () => {
+    expect(scanBorrowedCodes("export const CODES = ['X_A'] as const;\n").size).toBe(0);
   });
 });
 

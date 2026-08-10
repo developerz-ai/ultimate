@@ -7,6 +7,7 @@ import {
   checkErrorCodeDocs,
   checkErrorCodeRegistry,
   checkErrorFixes,
+  collectDeclaredCodes,
   documentedCodes,
   fixProblem,
   liveCodes,
@@ -128,6 +129,68 @@ describe('the checks, over a repo', () => {
     await write('packages/db/src/thing.test.ts', "expect(e.fix).toBe('check the connection');\n");
     await write('packages/db/src/thing.d.ts', "declare const fix: 'check the connection';\n");
     expect(await checkErrorFixes(root)).toEqual([]);
+  });
+
+  // One walk answers "which codes exist?" for the docs check and for the framework's own
+  // manifest. A collector that read one filename per package would leave both blind to the same
+  // codes, and the manifest would claim a completeness it never had.
+  test('collectDeclaredCodes reads every source file, not just a package registry', async () => {
+    await write('packages/db/src/errors.ts', "export const CODES = ['X_B'] as const;\n");
+    await write('packages/db/src/pool.ts', "throw new E({ code: 'X_C', fix: 'x db status' });\n");
+    await write('scripts/gate.ts', "throw new E({ code: 'X_A', fix: 'bun run gate' });\n");
+    expect(await collectDeclaredCodes(root)).toEqual([
+      { code: 'X_A', at: 'scripts/gate.ts', line: 1 },
+      { code: 'X_B', at: 'packages/db/src/errors.ts', line: 1 },
+      { code: 'X_C', at: 'packages/db/src/pool.ts', line: 1 },
+    ]);
+  });
+
+  test('collectDeclaredCodes skips tests and generated declarations', async () => {
+    await write('packages/db/src/errors.ts', "export const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/pool.test.ts', "expect(e.code).toBe('X_INVENTED');\n");
+    await write('packages/db/src/errors.d.ts', "export declare const C: 'X_DECLARED';\n");
+    expect(await collectDeclaredCodes(root)).toEqual([
+      { code: 'X_A', at: 'packages/db/src/errors.ts', line: 1 },
+    ]);
+  });
+
+  // A package declares its codes in its registry, so that is the declaration however many files
+  // throw it — and `aaa.ts` proves the rule is not just "the alphabetically first path".
+  test('collectDeclaredCodes prefers the registry over any throw site', async () => {
+    await write('packages/db/src/aaa.ts', "throw new E({ code: 'X_A', fix: 'x db status' });\n");
+    await write('packages/db/src/errors.ts', "\nexport const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/pool.ts', "throw new E({ code: 'X_A', fix: 'x db status' });\n");
+    expect(await collectDeclaredCodes(root)).toEqual([
+      { code: 'X_A', at: 'packages/db/src/errors.ts', line: 2 },
+    ]);
+  });
+
+  // Without this the owner of a code eleven packages throw is whichever one sorts first — how the
+  // manifest came to call `X_NOT_IMPLEMENTED` storage's when every borrower says it is core's.
+  test('collectDeclaredCodes skips past a registry that says the code is borrowed', async () => {
+    await write(
+      'packages/admin/src/errors.ts',
+      "export const ADMIN_BORROWED_ERROR_CODES = ['X_A'] as const;\n",
+    );
+    await write('packages/core/src/error-codes.ts', "const T = {\n  X_A: 'not implemented',\n};\n");
+    expect(await collectDeclaredCodes(root)).toEqual([
+      { code: 'X_A', at: 'packages/core/src/error-codes.ts', line: 2 },
+    ]);
+  });
+
+  // `Bun.Glob` yields in directory order, so "whichever file the walk reached first" is a
+  // different answer on a different filesystem — and the framework manifest, which commits this
+  // path and gates on the diff, would drift between two machines reading the same tree.
+  test('collectDeclaredCodes settles two throw sites by path, then line', async () => {
+    await write('packages/db/src/pool.ts', "throw new E({ code: 'X_A', fix: 'x db status' });\n");
+    await write(
+      'packages/db/src/aaa.ts',
+      "\n\nthrow new E({ code: 'X_A', fix: 'x db status' });\n",
+    );
+    await write('packages/db/src/aaa/deep.ts', "throw new E({ code: 'X_A', fix: 'x db a' });\n");
+    expect(await collectDeclaredCodes(root)).toEqual([
+      { code: 'X_A', at: 'packages/db/src/aaa.ts', line: 3 },
+    ]);
   });
 
   test('checkErrorCodeDocs reports a declared code the page does not name', async () => {

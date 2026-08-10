@@ -38,9 +38,15 @@ them is answered by this table rather than by a second convention:
 
 | File | Job |
 |---|---|
-| `ts-scan.ts` | the strings a `fix:` can evaluate to, and the `X_*` codes a file declares |
-| `error-contract.ts` | the rules, and the two checks that turn them into findings |
+| `ts-scan.ts` | the strings a `fix:` can evaluate to, the `X_*` codes a file declares, and the ones it says it borrows |
+| `error-contract.ts` | the rules, the two checks that turn them into findings, and `collectDeclaredCodes` |
 | `source-files.ts` | which files are shipped source — shared with `filesize`, never a second list |
+
+`collectDeclaredCodes` is the only answer to "which codes exist, and where is each declared?" — one
+walk, one entry per code, the owning registry preferred over any throw site and over a registry
+that named the code in its `<PKG>_BORROWED_ERROR_CODES`. The docs check reads it and so does the
+framework's own `framework.manifest.json`, because a second scanner over a narrower file set is a
+manifest that claims completeness it does not have.
 
 An empty `fix`, or a `fix` that says `check` / `make sure` / `try` / `see the docs` and names no
 command, call or file path, is `X_ERROR_FIX_INVALID`. A declared code the host's error reference

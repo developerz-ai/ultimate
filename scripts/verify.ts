@@ -6,20 +6,16 @@
 //
 //   bun run scripts/verify.ts [--json] [--verbose]
 
-// Bun ships no path-join primitive: `join` reaches a repo-relative source file on disk.
-import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {
   checkErrorCodeDocs,
   checkErrorCodeRegistry,
-  eachSourceFile,
+  collectDeclaredCodes,
   exec,
   exitCodeFor,
-  isTest,
   registeredErrorCodes,
   render,
   runVerify,
-  scanCodes,
   VERIFY_STEPS,
 } from '@ultimat3/cli';
 import {
@@ -101,17 +97,15 @@ export const ERROR_REFERENCE = 'wiki/Error-Codes.md';
  * Scanned rather than listed, so a new script code needs no second edit here; a *documented* code
  * that neither a package nor a script declares is still the ghost row the registry check exists
  * to catch.
+ *
+ * The exemption follows the code's *declaration*, not every file that names it: a code a package
+ * declares and a script merely throws — `X_BUN_VERSION` — is the package's to register, and
+ * exempting it because `scripts/setup.ts` mentions it would waive the rule for a shipped code.
  */
-const hostOwnedCodes = async (root: string): Promise<readonly string[]> => {
-  const codes: string[] = [];
-  for await (const path of eachSourceFile(root)) {
-    if (!path.startsWith('scripts/') || isTest(path)) continue;
-    for (const site of scanCodes(await Bun.file(join(root, path)).text(), path)) {
-      codes.push(site.code);
-    }
-  }
-  return codes;
-};
+const hostOwnedCodes = async (root: string): Promise<readonly string[]> =>
+  (await collectDeclaredCodes(root))
+    .filter((site) => site.at.startsWith('scripts/'))
+    .map((site) => site.code);
 
 /**
  * Both halves of the reference's contract, on one step. Every shipped code has a row here, and

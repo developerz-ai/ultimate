@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { registeredErrorCodes } from '@ultimat3/cli';
 import type { FrameworkManifest } from './lib/framework-manifest';
 import {
   canonical,
@@ -12,7 +13,7 @@ import {
   readFrameworkManifest,
 } from './lib/framework-manifest';
 import { repoRoot } from './lib/run';
-import { buildManifest, DEFAULT_OUT, frameworkManifestDrift } from './manifest';
+import { buildManifest, DEFAULT_OUT, frameworkManifestDrift, ownerOf } from './manifest';
 
 let dir = '';
 let fresh: FrameworkManifest;
@@ -53,6 +54,16 @@ describe('unit · the framework manifest is generated, not written', () => {
     expect(Object.keys(fresh.tiers)).toContain('0');
   });
 
+  test('buildId moves when a code moves file, because `at` is a fact like any other', () => {
+    const moved = {
+      ...bodyOf(fresh),
+      errorCodes: fresh.errorCodes.map((entry, index) =>
+        index === 0 ? { ...entry, at: 'packages/core/src/somewhere-else.ts' } : entry,
+      ),
+    };
+    expect(contentHash(moved)).not.toBe(fresh.buildId);
+  });
+
   test('buildId is verifiable from the body alone', () => {
     expect(contentHash(bodyOf(fresh))).toBe(fresh.buildId);
     expect(fresh.buildId).toMatch(/^[0-9a-f]{12}$/);
@@ -72,7 +83,10 @@ describe('unit · the framework manifest is generated, not written', () => {
   test('buildId moves when an error code is added', () => {
     const withCode = {
       ...bodyOf(fresh),
-      errorCodes: [...fresh.errorCodes, { code: 'X_INVENTED_FOR_A_TEST', package: 'core' }],
+      errorCodes: [
+        ...fresh.errorCodes,
+        { code: 'X_INVENTED_FOR_A_TEST', owner: 'core', at: 'packages/core/src/errors.ts' },
+      ],
     };
     expect(contentHash(withCode)).not.toBe(fresh.buildId);
   });
@@ -80,6 +94,85 @@ describe('unit · the framework manifest is generated, not written', () => {
   test('the hash reads the canonical form, so key order alone is never a change', () => {
     expect(canonical({ b: 1, a: [{ d: 2, c: 3 }] })).toBe(canonical({ a: [{ c: 3, d: 2 }], b: 1 }));
     expect(canonical({ b: 1, a: 2 })).not.toBe(JSON.stringify({ b: 1, a: 2 }));
+  });
+});
+
+describe('unit · every code, not the ones in one filename per package', () => {
+  const entryFor = (code: string) => fresh.errorCodes.find((entry) => entry.code === code);
+
+  // The bug: the scan globbed `packages/<pkg>/src/errors.ts` and nothing else, so core's
+  // `error-codes.ts` — twenty codes, the framework's own registry — was absent from a file whose
+  // whole claim is "every X_* code and its owner".
+  test('a code in a registry the old glob could not name is in the manifest', () => {
+    expect(entryFor('X_ROLE_INVALID')).toEqual({
+      code: 'X_ROLE_INVALID',
+      owner: 'core',
+      at: 'packages/core/src/error-codes.ts',
+    });
+    expect(entryFor('X_UNREACHABLE')?.owner).toBe('core');
+    expect(entryFor('X_SERVICE_MISSING')?.owner).toBe('core');
+  });
+
+  // Eleven packages throw `X_NOT_IMPLEMENTED` and each says in its own registry that the code is
+  // core's. The manifest said `storage`, which is only the package that sorted first.
+  test('a borrowed code is attributed to the package that owns it', () => {
+    expect(entryFor('X_NOT_IMPLEMENTED')).toEqual({
+      code: 'X_NOT_IMPLEMENTED',
+      owner: 'core',
+      at: 'packages/core/src/error-codes.ts',
+    });
+    expect(entryFor('X_DB_DRIFT')?.owner).toBe('db');
+    expect(entryFor('X_UNAUTHENTICATED')?.owner).toBe('auth');
+  });
+
+  // `scripts/` ships to nobody, so no package may own these — but they are codes an agent can be
+  // handed by this repo's own gate, and a manifest that omitted them would be answering a
+  // narrower question than the one it is asked.
+  test('a code only this repo’s gate throws is in the manifest, owned by scripts', () => {
+    expect(entryFor('X_BOUNDARY_VIOLATION')).toEqual({
+      code: 'X_BOUNDARY_VIOLATION',
+      owner: 'scripts',
+      at: 'scripts/boundaries.ts',
+    });
+    expect(fresh.errorCodes.filter((entry) => entry.owner === 'scripts').length).toBeGreaterThan(4);
+  });
+
+  test('ownerOf reads a package by name and anything else by its top directory', () => {
+    expect(ownerOf('packages/core/src/roles.ts')).toBe('core');
+    expect(ownerOf('packages/cli/src/templates/deep/thing.ts')).toBe('cli');
+    expect(ownerOf('scripts/boundaries.ts')).toBe('scripts');
+    expect(ownerOf('site/build.ts')).toBe('site');
+  });
+
+  /**
+   * The independent check: the process-wide registry is built by importing every package and is
+   * derived from nothing this generator reads. A registered code the manifest cannot name is
+   * exactly the drift the old scan shipped — 17 of them, `X_ROLE_INVALID` and friends.
+   */
+  test('every code x errors explain answers for is in the manifest', async () => {
+    const listed = new Set(fresh.errorCodes.map((entry) => entry.code));
+    const missing = [...(await registeredErrorCodes())].filter((code) => !listed.has(code)).sort();
+    expect(missing).toEqual([]);
+  });
+
+  test('a code only a test file invents is not a code', () => {
+    const codes = fresh.errorCodes.map((entry) => entry.code);
+    expect(codes).not.toContain('X_INVENTED_FOR_A_TEST');
+    expect(codes).not.toContain('X_MADE_UP');
+    expect(codes).not.toContain('X_GHOST');
+  });
+
+  // `at` is load-bearing or it is decoration: every one has to point at a file that really is
+  // where that code is written.
+  test('every `at` names a real file that really declares its code', async () => {
+    const unreadable: string[] = [];
+    for (const entry of fresh.errorCodes) {
+      const source = Bun.file(join(repoRoot(), entry.at));
+      if (!(await source.exists()) || !(await source.text()).includes(entry.code)) {
+        unreadable.push(`${entry.code} -> ${entry.at}`);
+      }
+    }
+    expect(unreadable).toEqual([]);
   });
 });
 
