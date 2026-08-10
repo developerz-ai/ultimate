@@ -1,6 +1,7 @@
 // The dev server's authorizer must decide from the app's own policy objects. A dev-only
 // approximation here is how "it worked locally" happens, so these tests pin the lookup: the
-// action registry for actions, the route table's declared permission for pages, deny otherwise.
+// route table's declared permission for pages, deny otherwise — and nothing at all for an
+// action, whose route says `enforcedBy: 'handler'` because `invoke` is its one evaluation.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { action, registerAction, resetRegistry, t, toRoute } from '@ultimat3/action';
@@ -41,39 +42,7 @@ afterEach(() => {
 });
 
 describe('unit · x dev authorizes from the app’s own policies', () => {
-  test('a public action is allowed — the pipeline no longer denies for want of an authorizer', async () => {
-    const echo = action({
-      input: t.object({ word: t.string }),
-      output: t.object({ word: t.string }),
-      policy: allow(),
-      handle: async ({ input }) => input,
-    });
-    registerAction('echoWord', echo);
-
-    expect(await decide(toRoute(echo.named('echoWord')), context('/api/words/echo'))).toEqual({
-      allowed: true,
-    });
-  });
-
-  test('a gated action is denied for an actor without the permission, with policy’s own reason', async () => {
-    definePermissions(['post:publish'] as const);
-    const publish = action({
-      input: t.object({ id: t.uuid }),
-      output: t.object({ id: t.uuid }),
-      policy: can('post:publish'),
-      handle: async ({ input }) => input,
-    });
-    registerAction('publishPost', publish);
-
-    const decision = await decide(
-      toRoute(publish.named('publishPost')),
-      context('/api/posts/publish'),
-    );
-    expect(decision.allowed).toBe(false);
-    expect(decision).toMatchObject({ code: 'X_UNAUTHENTICATED' });
-  });
-
-  test('an actor holding the permission is allowed', async () => {
+  test('an action route is never brought here — its handler holds the one evaluation', async () => {
     definePermissions(['post:publish'] as const);
     defineRoles({ editor: { grants: ['post:publish'] } });
     const publish = action({
@@ -84,9 +53,30 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
     });
     registerAction('publishPost', publish);
 
-    const ctx = context('/api/posts/publish');
-    ctx.actor = { kind: 'user', id: 'u1', roles: ['editor'], scopes: [] };
-    expect(await decide(toRoute(publish.named('publishPost')), ctx)).toEqual({ allowed: true });
+    // The route says so, and the pipeline's authz stage reads exactly this field. A dev
+    // authorizer that answered for an action would be the second authz system — one that
+    // decides before `row` has loaded, and therefore denies the row's own author.
+    const route = toRoute(publish.named('publishPost'));
+    expect(route.meta.enforcedBy).toBe('handler');
+
+    // Asked anyway — a wiring accident, a hand-rolled host — it refuses rather than guessing.
+    const decision = await decide(route, context('/api/posts/publish'));
+    expect(decision.allowed).toBe(false);
+    expect(decision).toMatchObject({ reason: expect.stringContaining('no policy is registered') });
+  });
+
+  test('a public action is allowed by its own handler, so the stage is skipped too', () => {
+    const echo = action({
+      input: t.object({ word: t.string }),
+      output: t.object({ word: t.string }),
+      policy: allow(),
+      handle: async ({ input }) => input,
+    });
+    registerAction('echoWord', echo);
+
+    const route = toRoute(echo.named('echoWord'));
+    expect(route.meta.auth).toBe('public');
+    expect(route.meta.enforcedBy).toBe('handler');
   });
 
   test("a page route's declared permission is evaluated, not waved through", async () => {

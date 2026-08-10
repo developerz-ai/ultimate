@@ -42,6 +42,18 @@ export interface RouteMeta {
   readonly auth: 'public' | 'required';
   /** Name of the policy the authz stage must satisfy. Resolved by tier 3. */
   readonly policy?: string;
+  /**
+   * Which layer evaluates `policy`. `'pipeline'` — the default, and what a page route
+   * wants — means the `authz` stage decides through `ServerHooks.authorize`. `'handler'`
+   * means the handler is the one evaluation and the stage must not pre-judge.
+   *
+   * An action route says `'handler'` because `invoke` loads the row a row-level rule
+   * decides about, and the stage cannot: deciding here too would evaluate the same policy
+   * with `row: null`, deny the row's own author, and never reach the evaluation that had
+   * the row. Two authz systems is how every Meteor-like framework died — this field is
+   * which one is the system.
+   */
+  readonly enforcedBy?: 'pipeline' | 'handler';
   /** Validated in the body stage; also what the OpenAPI/MCP emitters read. */
   readonly input?: Schema;
   readonly render?: RenderMode;
@@ -216,6 +228,8 @@ export interface RouteDescription {
   readonly params: readonly string[];
   readonly auth: 'public' | 'required';
   readonly policy: string | null;
+  /** Named, not inferred: a policy with no stated evaluator reads as an unguarded one. */
+  readonly enforcedBy: 'pipeline' | 'handler';
   readonly render: RenderMode | null;
   readonly rateLimit: string | null;
   readonly tags: readonly string[];
@@ -240,6 +254,7 @@ export const describeRoutes = (table: RouteTable): readonly RouteDescription[] =
       params: paramsOf(route.path),
       auth: route.meta.auth,
       policy: route.meta.policy ?? null,
+      enforcedBy: route.meta.enforcedBy ?? 'pipeline',
       render: route.meta.render ?? null,
       rateLimit: route.meta.rateLimit ?? null,
       tags: route.meta.tags ?? [],

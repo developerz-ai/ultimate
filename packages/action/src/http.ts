@@ -68,6 +68,11 @@ export function toRoute(target: AnyAction): Route {
     // what keeps "forgot the policy" from ever looking like "meant to be public".
     auth: def.policy.kind === 'allow' ? 'public' : 'required',
     policy: policyCapability(def.policy),
+    // Named so the pipeline's authz stage stands down: `invoke` is this route's one
+    // evaluation, and it is the only one that has run `row` by the time it decides. A
+    // stage deciding first would decide from `row: null` — a denial for the row's own
+    // author, from an authz system that never saw the row.
+    enforcedBy: 'handler',
     input: def.input,
     cache: { mode: 'no-store', tags: tagKeys(def.cache?.invalidates ?? []) },
     tags: [resource],
