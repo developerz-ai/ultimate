@@ -81,20 +81,16 @@ export function contractTestsFor(
  */
 export function policyTestStubFor(target: AnyAction): string {
   const name = actionName(target);
-  return `import { describe, test } from 'bun:test';
-import { contractTestsFor } from '@ultimat3/action';
+  return `import { contractTestsFor } from '@ultimat3/action';
 import { ${name} } from './actions';
 
-describe('${name}', () => {
-  for (const contract of contractTestsFor(${name})) {
-    test(contract.name, async () => {
-      await contract.run();
-    });
-  }
-
-  // Fill in: arrange a foreign actor, expect the policy to deny.
-  test.todo('a member of another org is denied');
-});
+// Fill in: arrange a foreign actor, expect the policy to deny.
+// The contract tests below are framework-generated and always included.
+for (const contract of contractTestsFor(${name})) {
+  test(contract.name, async () => {
+    await contract.run();
+  });
+}
 `;
 }
 
