@@ -23,6 +23,7 @@ export const CATALOG_PACKAGES = [
   '@ultimat3/core',
   '@ultimat3/db',
   '@ultimat3/entity',
+  '@ultimat3/flags',
   '@ultimat3/http',
   '@ultimat3/i18n',
   '@ultimat3/jobs',

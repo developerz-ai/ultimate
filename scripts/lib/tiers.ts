@@ -8,7 +8,7 @@
 // of a package that is not listed is a build error, never a shrug.
 export const TIERS: Readonly<Record<number, readonly string[]>> = {
   0: ['core', 'schema'],
-  1: ['i18n', 'money', 'time', 'cache', 'seo', 'db', 'storage'],
+  1: ['i18n', 'money', 'time', 'cache', 'seo', 'db', 'storage', 'flags'],
   2: ['entity', 'policy', 'http', 'auth'],
   3: ['action', 'query', 'jobs', 'realtime'],
   4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail'],

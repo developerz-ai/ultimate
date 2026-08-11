@@ -1,6 +1,15 @@
-{{/* One Service per role that listens. worker, scheduler and replicator take no traffic. */}}
+{{/*
+One Service per enabled role. The roles that take no traffic — worker, scheduler, replicator —
+still get one, headless: it exists only so a ServiceMonitor has something to select, and
+`queue_depth` belongs to exactly one of them. A headless Service allocates no ClusterIP, so
+nothing about it invites traffic it would not answer.
+
+The metrics port is published on the Service but never on the ingress, which routes to backend
+ports BY NAME (`http`) — so `/metrics` stays cluster-internal by construction rather than by an
+exclusion rule somebody has to remember to write.
+*/}}
 {{- range $role, $cfg := .Values.roles }}
-{{- if and $cfg.enabled $cfg.port }}
+{{- if $cfg.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -11,13 +20,21 @@ metadata:
     app.kubernetes.io/component: {{ $role }}
 spec:
   type: ClusterIP
+  {{- if not $cfg.port }}
+  clusterIP: None
+  {{- end }}
   selector:
     app.kubernetes.io/instance: {{ $.Release.Name }}
     app.kubernetes.io/component: {{ $role }}
   ports:
+    {{- if $cfg.port }}
     - name: http
       port: 80
       targetPort: http
+    {{- end }}
+    - name: metrics
+      port: {{ $.Values.metricsPort | int }}
+      targetPort: metrics
 {{- end }}
 {{- end }}
 ---

@@ -1,9 +1,12 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
-import type { ReadableSpan } from '@ultimat3/core';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ErrorReport, ReadableSpan } from '@ultimat3/core';
 import {
   collectMetrics,
+  configureErrorReporting,
   configureTelemetry,
+  memoryErrorReporter,
   memoryExporter,
+  resetErrorReporting,
   resetMetrics,
   resetTelemetry,
 } from '@ultimat3/core';
@@ -66,6 +69,14 @@ const routes: readonly Route[] = [
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
     handler: () => text('one post'),
+  },
+  {
+    method: 'GET',
+    path: '/boom/:id',
+    meta: { name: 'boom', auth: 'public' },
+    handler: () => {
+      throw new TypeError('undefined is not a function');
+    },
   },
 ];
 
@@ -372,5 +383,59 @@ describe('every request lands in the metrics the deploy chart scales on', () => 
     await pipeline.handle(get('/.env'), { role: 'web' });
 
     expect(totalFor('unmatched', '4xx')).toBe(2);
+  });
+});
+
+/**
+ * The seam that shipped with nothing plugged into it. `onError` stays the APP's sink; the
+ * framework's own reporting is a stage, so an app that never writes a hook is still not blind.
+ */
+describe('a server fault reaches the error reporter', () => {
+  const reporter = memoryErrorReporter();
+
+  beforeEach(() => {
+    resetErrorReporting();
+    reporter.reset();
+    configureErrorReporting({ reporter });
+  });
+
+  afterEach(() => {
+    resetErrorReporting();
+  });
+
+  test('reports a 5xx with the request id, the trace and the route PATTERN', async () => {
+    const pipeline = pipelineWith({});
+    const response = await pipeline.handle(get('/boom/7'), { role: 'web' });
+
+    expect(response.status).toBe(500);
+    expect(reporter.events).toHaveLength(1);
+    const event = reporter.events[0] as ErrorReport;
+    expect(event.source).toBe('http');
+    expect(event.code).toBe('X_INTERNAL');
+    expect(event.scope.requestId).toBe(response.headers.get('x-request-id') as string);
+    expect(event.scope.role).toBe('web');
+    // The pattern, never `/boom/7`: a report facet is as attacker-chosen as a metric label.
+    expect(event.scope.operation).toBe('GET /boom/:id');
+  });
+
+  test('a 4xx is the caller’s mistake and is NOT reported', async () => {
+    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
+    await pipeline.handle(get('/guarded'), { role: 'web' });
+    await pipeline.handle(get('/wp-admin'), { role: 'web' });
+
+    expect(reporter.events).toEqual([]);
+  });
+
+  test('the app’s own onError hook still fires, alongside the framework’s report', async () => {
+    const seen: string[] = [];
+    const pipeline = createPipeline({
+      table: createRouter(routes),
+      config,
+      hooks: { onError: (error) => seen.push((error as Error).name) },
+    });
+    await pipeline.handle(get('/boom/7'), { role: 'web' });
+
+    expect(seen).toEqual(['TypeError']);
+    expect(reporter.events).toHaveLength(1);
   });
 });

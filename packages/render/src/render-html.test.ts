@@ -1,0 +1,78 @@
+import { describe, expect, test } from 'bun:test';
+import { Fragment, h } from './jsx';
+import { renderComponent, renderToHtml } from './render-html';
+
+describe('renderToHtml', () => {
+  test('renders an element with its attributes and children', async () => {
+    expect(await renderToHtml(h('main', { class: 'hero' }, h('h1', null, 'Title')))).toBe(
+      '<main class="hero"><h1>Title</h1></main>',
+    );
+  });
+
+  test('a void element has no closing tag and ignores children', async () => {
+    expect(await renderToHtml(h('img', { src: '/a.png' }, 'ignored'))).toBe('<img src="/a.png">');
+  });
+
+  test('text children are escaped', async () => {
+    expect(await renderToHtml(h('p', null, '<script>'))).toBe('<p>&lt;script&gt;</p>');
+  });
+
+  test('nothing renders for the empty values JSX uses as guards', async () => {
+    expect(await renderToHtml([null, undefined, false, true])).toBe('');
+  });
+
+  test('a fragment adds no wrapper element', async () => {
+    expect(await renderToHtml(h(Fragment, null, h('i', null, 'a'), h('b', null, 'c')))).toBe(
+      '<i>a</i><b>c</b>',
+    );
+  });
+
+  test('a component is called with its props', async () => {
+    const Greeting = (props: Record<string, unknown>): unknown =>
+      h('p', null, `hi ${String(props['name'])}`);
+    expect(await renderToHtml(h(Greeting, { name: 'ada' }))).toBe('<p>hi ada</p>');
+  });
+
+  test('an async component is awaited, which is what `ssr` needs', async () => {
+    const Slow = async (): Promise<unknown> => {
+      await Promise.resolve();
+      return h('p', null, 'late');
+    };
+    expect(await renderToHtml(h(Slow, null))).toBe('<p>late</p>');
+  });
+
+  test('a thunk child is called, so a signal read renders its value', async () => {
+    expect(await renderToHtml(h('p', null, () => 'read'))).toBe('<p>read</p>');
+  });
+
+  test('an array child renders in order', async () => {
+    expect(await renderToHtml(h('ul', null, [h('li', null, 1), h('li', null, 2)]))).toBe(
+      '<ul><li>1</li><li>2</li></ul>',
+    );
+  });
+
+  test('innerHTML is the one prop that emits unescaped markup', async () => {
+    expect(await renderToHtml(h('div', { innerHTML: '<b>raw</b>' }))).toBe('<div><b>raw</b></div>');
+  });
+
+  test('a component that renders itself fails with a cause, not a stack overflow', async () => {
+    const Loop = (): unknown => h(Loop, null);
+    expect(renderToHtml(h(Loop, null))).rejects.toThrow(/renders itself/);
+  });
+});
+
+describe('renderComponent', () => {
+  test('names the file when the component throws', async () => {
+    const Broken = (): unknown => {
+      throw new TypeError('boom');
+    };
+    expect(renderComponent(Broken, {}, 'apps/web/site/page.tsx')).rejects.toThrow(
+      /apps\/web\/site\/page\.tsx threw: boom/,
+    );
+  });
+
+  test('passes the props straight through', async () => {
+    const Echo = (props: Record<string, unknown>): unknown => h('p', null, String(props['url']));
+    expect(await renderComponent(Echo, { url: '/x' }, 'apps/web/site/page.tsx')).toBe('<p>/x</p>');
+  });
+});

@@ -92,3 +92,4 @@ packages/cli/.mcp-fixture/
 # Scratch credential files. A mis-set path once wrote an npm session token into the repo root.
 .npmrc-login
 undefined/
+.serve-fixture/

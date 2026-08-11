@@ -10,7 +10,7 @@ import { registerActions } from '@ultimat3/action';
 import { localeConfig } from '@ultimat3/i18n';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
 import { registerQueries } from '@ultimat3/query';
-import { isRouteConfig, registerRoute } from '@ultimat3/render';
+import { isRouteConfig, pageComponentOf, registerRoute } from '@ultimat3/render';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -114,7 +114,16 @@ async function register(
       // The build counts boundaries from the compiled JSX; before a build there is only the
       // source, and `render: 'stream'` is rejected without one — so count them in the text.
       const source = await Bun.file(absolute).text();
-      registerRoute({ file, config, suspenseBoundaries: countSuspense(source) });
+      // The page component comes from the same module as its config, resolved by render's own
+      // rule — the CLI does not decide which export is a page any more than it decides what a
+      // route is. A module with no component registers without one, and renders a bare shell.
+      const component = pageComponentOf(module);
+      registerRoute({
+        file,
+        config,
+        suspenseBoundaries: countSuspense(source),
+        ...(component === undefined ? {} : { component }),
+      });
     }
     registerActions(module);
     registerQueries(module);

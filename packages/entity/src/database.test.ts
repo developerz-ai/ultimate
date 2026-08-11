@@ -23,7 +23,7 @@ const posts = entity('db_test_posts', {
     createdAt: timestamp().defaultNow(),
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
-  invariants: [invariant('like_count_non_negative', (c) => c.likeCount.atLeast(0))],
+  invariants: (c) => [invariant('like_count_non_negative', c.likeCount.atLeast(0))],
 });
 
 const ORG = '00000000-0000-7000-8000-0000000000a1';

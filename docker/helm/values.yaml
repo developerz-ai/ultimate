@@ -9,7 +9,21 @@ env:
   NODE_ENV: production
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
 
-existingSecret: ultimate-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET
+existingSecret: ultimate-secrets   # DATABASE_URL, NATS_URL, S3_*, AUTH_SECRET, SENTRY_DSN
+
+# The scrape listener every serving role opens, on its own port and never the app's: the ingress
+# below routes `/` to web, so `/metrics` beside `/healthz` on 3000 is `/metrics` on the internet.
+# This is `METRICS_PORT` in the container; move one and the other follows.
+metricsPort: 9090
+
+# Prometheus-operator discovery for that port. OFF by default: a cluster without the operator has
+# no ServiceMonitor CRD at all, and a chart that always rendered one could not install there.
+# Leave it off and the roles still serve /metrics — nothing is scraping them.
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}         # what your operator's `serviceMonitorSelector` matches, if it uses one
 
 serviceAccount:
   create: true

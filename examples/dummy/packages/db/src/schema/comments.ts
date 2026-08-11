@@ -18,7 +18,7 @@ export const comments = entity('comments', {
     body: text({ max: COMMENT_MAX }),
     createdAt: timestamp().defaultNow(),
   },
-  invariants: [invariant('comment_body_present', (c) => c.body.trimmed().minLength(1))],
+  invariants: (c) => [invariant('comment_body_present', c.body.trimmed().minLength(1))],
   indexes: [{ on: ['postId', 'createdAt'] }],
 });
 

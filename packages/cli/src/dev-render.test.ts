@@ -4,8 +4,15 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
-import type { RegisterRouteInput, RenderMode } from '@ultimat3/render';
-import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
+import type { RegisterRouteInput, RenderMode, RouteComponent } from '@ultimat3/render';
+import {
+  clearRoutes,
+  clearStylesheets,
+  defineRoute,
+  h,
+  loadStylesheet,
+  registerRoute,
+} from '@ultimat3/render';
 import { appRoutes } from './dev-render';
 
 const BUILD_ID = 'build-under-test';
@@ -15,12 +22,14 @@ interface RouteFixture {
   readonly render: RenderMode;
   readonly policy?: { readonly permission: string };
   readonly revalidate?: { readonly ttl: string };
+  readonly component?: RouteComponent;
 }
 
 function register(fixture: RouteFixture): void {
   const input: RegisterRouteInput = {
     file: fixture.file,
     suspenseBoundaries: fixture.render === 'stream' ? 1 : 0,
+    ...(fixture.component === undefined ? {} : { component: fixture.component }),
     config: defineRoute<{ url: string; params: Record<string, string> }>({
       render: fixture.render,
       offline: 'network-only',
@@ -49,6 +58,7 @@ const get = async (path: string): Promise<Response> =>
 
 afterEach(() => {
   clearRoutes();
+  clearStylesheets();
 });
 
 describe('unit · x dev renders the app routes', () => {
@@ -115,5 +125,40 @@ describe('unit · x dev renders the app routes', () => {
 
   test('no registered routes means no page routes — and no crash', () => {
     expect(appRoutes({ buildId: BUILD_ID })).toEqual([]);
+  });
+
+  test("a route's component reaches the body, inside the hydration root", async () => {
+    register({
+      file: 'apps/web/site/page.tsx',
+      render: 'static',
+      component: (props) => h('main', { class: 'hero' }, h('h1', null, String(props['url']))),
+    });
+    const body = await (await get('/')).text();
+    expect(body).toContain('<div id="x-root"><main class="hero"><h1>http://dev.test/</h1></main>');
+    expect(body).not.toContain('<div id="x-root"></div>');
+  });
+
+  test('a module with no component still serves its shell, never a 404', async () => {
+    register({ file: 'apps/web/site/page.tsx', render: 'static' });
+    expect(await (await get('/')).text()).toContain('<div id="x-root"></div>');
+  });
+
+  test('the surface CSS is inlined, and a site page never carries app CSS', async () => {
+    loadStylesheet('/srv/demo/apps/web/site/page.module.scss', '.hero{color:red}');
+    loadStylesheet('/srv/demo/apps/web/app/feed/page.module.scss', '.feed{color:blue}');
+    register({ file: 'apps/web/site/page.tsx', render: 'static' });
+    const body = await (await get('/')).text();
+    expect(body).toContain('<style>');
+    expect(body).toContain('color:red');
+    expect(body).not.toContain('color:blue');
+  });
+
+  test('a streamed page flushes the component in its first chunk', async () => {
+    register({
+      file: 'apps/web/app/feed/page.tsx',
+      render: 'stream',
+      component: () => h('section', null, 'feed'),
+    });
+    expect(await (await get('/feed')).text()).toContain('<section>feed</section>');
   });
 });

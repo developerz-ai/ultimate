@@ -1,0 +1,38 @@
+{{/*
+Prometheus-operator discovery for the scrape listener every serving role opens. Without this the
+pods answer /metrics and nothing ever asks, which is what left the HPAs in hpa.yaml reading
+<unknown>.
+
+Gated behind a values flag, not rendered unconditionally: a cluster with no Prometheus operator has
+no ServiceMonitor CRD, and `helm install` fails on an unknown kind rather than skipping it.
+
+ONE object for the release rather than one per role. Every role's Service publishes the same
+`metrics` port name, so per-role copies would differ in nothing but their own names — and
+`targetLabels` carries the component through, which is what an alert and a metric adapter key on.
+*/}}
+{{- if and .Values.serviceMonitor .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "ultimate.fullname" . }}
+  labels:
+    {{- include "ultimate.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "ultimate.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  # The role, as a label on every series. An HPA scales one Deployment, so it needs the component.
+  targetLabels:
+    - app.kubernetes.io/component
+  endpoints:
+    # The Service port NAME, never the integer: an operator who moves `metricsPort` must not have
+    # to remember a second place.
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+{{- end }}

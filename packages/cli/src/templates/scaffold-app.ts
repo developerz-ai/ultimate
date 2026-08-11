@@ -66,18 +66,18 @@ const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .hero {
   display: grid;
-  gap: tokens.$space-4;
-  padding: tokens.$space-8;
-  background: tokens.$surface-base;
-  color: tokens.$text-primary;
+  gap: tokens.space(4);
+  padding: tokens.space(8);
+  background: tokens.role('bg');
+  color: tokens.role('fg');
 }
 
 .cta {
   justify-self: start;
-  padding: tokens.$space-2 tokens.$space-4;
-  border-radius: tokens.$radius-md;
-  background: tokens.$accent-solid;
-  color: tokens.$accent-on-solid;
+  padding: tokens.space(2) tokens.space(4);
+  border-radius: tokens.radius('md');
+  background: tokens.role('accent');
+  color: tokens.role('accent-fg');
 }
 `;
 
@@ -102,7 +102,12 @@ import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
-  render: 'stream',
+  // 'ssr', not 'stream', and this is not a downgrade: 'stream' requires at least one <Suspense>
+  // boundary to stream into, and the pinned solid-js@2.0.0-experimental.16 does not export
+  // Suspense from its SERVER build. So a scaffolded 'stream' route failed x routes with
+  // X_ROUTE_MODE_INVALID on the first run, and the fix line it printed could not be followed.
+  // Ship the mode that works; move to 'stream' when the Solid pin does.
+  render: 'ssr',
   hydrate: 'visible',
   offline: 'runtime',
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
@@ -123,17 +128,17 @@ export function DashboardPage() {
 const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .panel {
-  padding: tokens.$space-6;
-  background: tokens.$surface-raised;
-  color: tokens.$text-primary;
+  padding: tokens.space(6);
+  background: tokens.role('surface-raised');
+  color: tokens.role('fg');
 }
 `;
 
 const dashboardTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
-unitTest('the dashboard streams, requires a permission and has an offline strategy', () => {
-  expect(config.render).toBe('stream');
+unitTest('the dashboard renders on the server, is gated, and has an offline strategy', () => {
+  expect(config.render).toBe('ssr');
   expect(config.policy?.permission).toBe('dashboard:read');
   expect(config.offline).toBe('runtime');
 });
@@ -160,10 +165,10 @@ const offlineStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .offline {
   display: grid;
-  gap: tokens.$space-3;
-  padding: tokens.$space-8;
-  background: tokens.$surface-base;
-  color: tokens.$text-secondary;
+  gap: tokens.space(3);
+  padding: tokens.space(8);
+  background: tokens.role('bg');
+  color: tokens.role('fg-muted');
 }
 `;
 
@@ -207,16 +212,16 @@ contractTest('health projects one MCP tool and one OpenAPI operation', () => {
 `;
 
 const sharedTokens =
-  (): string => `// Semantic tokens for this app, layered on @ultimat3/ui. Components reference these names; a raw
-// hex anywhere in the app is a lint failure, because dark theme is not a later project.
-@use '@ultimat3/ui/tokens' as base;
-
-$surface-base: base.$surface-base;
-$surface-raised: base.$surface-raised;
-$text-primary: base.$text-primary;
-$text-secondary: base.$text-secondary;
-$accent-solid: base.$accent-solid;
-$accent-on-solid: base.$accent-on-solid;
+  (): string => `// This app's one styling entry point. Forwards @ultimat3/ui's token layer verbatim and is where
+// this app's own additions go. Emits no CSS: the global custom properties come from ui's theme.scss.
+//
+// A raw hex anywhere in the app is a lint failure, because dark theme is not a later project.
+//
+// The API is functions, not variables: \`role('accent')\`, \`space(4)\`, \`radius('md')\`,
+// \`text('lg')\`, \`shadow('sm')\`, plus mixins like \`@include focus-ring\` and \`@include surface\`.
+// Colours are stored as space-separated RGB CHANNELS, so \`role('accent', 0.12)\` gives you a tint
+// without inventing a second token.
+@forward '@ultimat3/ui/tokens';
 `;
 
 const sharedActor =
@@ -368,7 +373,12 @@ export function appFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'apps/web/shared/actor.test.ts', contents: sharedActorTest() },
     { path: 'apps/admin/package.json', contents: adminPackage(app) },
     { path: 'apps/admin/tsconfig.json', contents: tsconfig() },
-    { path: 'apps/admin/app/page.tsx', contents: adminPage() },
+    // `apps/admin/app/admin/page.tsx`, not `apps/admin/app/page.tsx`: the directory IS the URL,
+    // relative to the surface root, so the shallower path resolves to `/` and collides with
+    // `apps/web/site/page.tsx` — `x dev` loads both surfaces into one route table and the
+    // scaffolded app failed its own `x routes` with X_ROUTE_DUPLICATE. `/admin` also matches
+    // @ultimat3/admin's own `basePath` default, so the two agree instead of merely not clashing.
+    { path: 'apps/admin/app/admin/page.tsx', contents: adminPage() },
     { path: 'apps/mobile/README.md', contents: placeholder('mobile', app) },
     { path: 'apps/desktop/README.md', contents: placeholder('desktop', app) },
   ];

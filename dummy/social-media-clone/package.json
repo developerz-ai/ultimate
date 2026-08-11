@@ -1,0 +1,48 @@
+{
+  "name": "social-media-clone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "bin/setup",
+    "dev": "x dev",
+    "check": "bin/check",
+    "verify": "x verify",
+    "typecheck": "tsc -b --pretty",
+    "lint": "biome check .",
+    "test": "bun test",
+    "db:migrate": "x db migrate",
+    "db:seed": "bun run packages/db/src/seed.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@electric-sql/pglite": "^0.5.4",
+    "@types/bun": "^1.3.14",
+    "@ultimat3/testing": "^1.2.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@ultimat3/action": "^1.2.0",
+    "@ultimat3/cache": "^1.2.0",
+    "@ultimat3/cli": "^1.2.0",
+    "@ultimat3/core": "^1.2.0",
+    "@ultimat3/db": "^1.2.0",
+    "@ultimat3/entity": "^1.2.0",
+    "@ultimat3/i18n": "^1.2.0",
+    "@ultimat3/jobs": "^1.2.0",
+    "@ultimat3/mcp": "^1.2.0",
+    "@ultimat3/policy": "^1.2.0",
+    "@ultimat3/pwa": "^1.2.0",
+    "@ultimat3/query": "^1.2.0",
+    "@ultimat3/render": "^1.2.0",
+    "@ultimat3/ui": "^1.2.0",
+    "solid-js": "2.0.0-experimental.16"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  }
+}

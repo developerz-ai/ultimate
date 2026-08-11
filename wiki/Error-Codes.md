@@ -43,6 +43,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_CURSOR_INVALID` | pagination cursor is malformed, tampered with or from another query | signature mismatch — an edited cursor, or `ULTIMATE_CURSOR_SECRET` rotated — or a cursor built for a different query, filter or sort order | drop the cursor and request the first page (`after: null`) |
 | `X_CURSOR_SECRET_DEV` | cursors are signed with the shipped development key | `ULTIMATE_CURSOR_SECRET` is unset in a production environment, so the signing key is the constant published in `@ultimat3/core` and a client can forge a page position. Reported by `x doctor`, never thrown | `export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"` |
 | `X_ERROR_CODE_DUPLICATE` | error code registered twice | two packages declared the same code | rename the colliding code in the registering package's `src/errors.ts` |
+| `X_ERROR_REPORTER_DSN_INVALID` | the error monitor DSN is malformed | `SENTRY_DSN` is not a URL, carries no public key, names no project, or uses a scheme that is not `http`/`https`. Thrown at boot rather than at the first failure, because a monitor that was never connected looks exactly like an app that never failed | set `SENTRY_DSN=https://<publicKey>@<host>/<projectId>` in `.env`, then run `x env check` |
 | `X_REGISTRAR_MISSING` | no registrar is loaded for a primitive kind | the owning package is absent from the graph, so nothing announced a registrar — `defineApi({ queries })` without `@ultimat3/query`. `meta.kind` names the kind, and the owner is `@ultimat3/<kind>`; importing it is what announces | `bun add @ultimat3/<kind>` |
 | `X_REGISTRAR_CONFLICT` | two different registrars are loaded for one primitive kind | two copies of `@ultimat3/<kind>` in the dependency tree, each with its own registry, so half the primitives register where nothing reads them. `bun pm why @ultimat3/<kind>` names the dependents when ranges genuinely disagree | `bun update @ultimat3/<kind>` |
 
@@ -216,6 +217,22 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_STORAGE_PATH_UNSAFE` | object key escapes its prefix | an absolute key, a `..` segment, or a backslash | build the key with `scopedKey(orgId, ...parts)` — relative, forward slashes, no `..` |
 | `X_STORAGE_TOO_LARGE` | payload exceeds the upload size limit | a file over the policy's `maxBytes`; `cause` carries both numbers | `uploadPolicy({ maxBytes: <bytes> })` for a higher limit, or compress the file first |
 | `X_STORAGE_TYPE_REJECTED` | content type is not allowed for this upload | a type absent from `allowedContentTypes`, or magic bytes that disagree with the declared `Content-Type` — the bytes win | add the declared type to `allowedContentTypes` in the upload policy, or re-upload with the `Content-Type` `cause` sniffed |
+| `X_STORAGE_URL_INVALID` | signed URL does not match its signature | an edited constraint (`x-max`, `x-ct`, the key), a URL outside the mounted base, a `PUT` grant replayed as a `GET`, or a `Content-Type` header the signature does not cover | mint a fresh one with `grantUpload({ disk, orgId, request })` and send it unedited — every constraint is inside the signature |
+| `X_STORAGE_URL_EXPIRED` | signed URL is past its expiry | a form left open longer than the grant's window | call `grantUpload({ disk, orgId, request, expiresInMs })` again — a longer `expiresInMs` widens the window the signature grants |
+| `X_STORAGE_ORG_MISMATCH` | object key belongs to another org | a key from one tenant used while the actor resolves to another; the signature can be perfectly valid and this still fires | build it with `scopedKey('<orgId>', ...parts)`, and pass the **actor's** org as `orgId` — never one read off the request |
+| `X_STORAGE_UPLOAD_FAILED` | the signed upload was refused | the presigned `PUT` answered non-2xx, or never reached the disk (`status: 0`) | call `uploadFile({ file, grant })` again for a fresh grant; a 4xx here is the constraint named in the body, not a transport fault |
+
+## Flags
+
+`X_FLAG_EXPIRED` is the only code in the framework that is **reported and never thrown**: an overdue temporary flag is a debt, not an outage, so `isEnabled()` hands it to the configured `ErrorReporter` as a `warning` (rate-limited to one report per key per hour) and still answers its targeting. Everything else here fails at declaration time.
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_FLAG_DUPLICATE` | two flags were declared with the same key | a copy-pasted `defineFlag()`, so one of the two declarations decides nothing | rename one of the two `defineFlag({ key: '<key>' })` declarations |
+| `X_FLAG_EXPIRED` | a temporary flag is past its expiry and is still being evaluated | scaffolding that outlived the change it was wrapping; `cause` names the owner and how overdue it is | delete the branch and its `defineFlag()` declaration, or move it to `kind: 'permanent'` if it is a real product switch |
+| `X_FLAG_EXPIRY_INVALID` | a temporary flag has no usable expiry date | `expiresAt` absent or unparseable — reachable from a store snapshot or plain JS; in TypeScript the union already refuses it | set `expiresAt` to an ISO-8601 date such as `'2026-12-01'` in `defineFlag({ key: '<key>' })` |
+| `X_FLAG_TARGETING_INVALID` | flag targeting is out of range or malformed | `rollout: 0.5` (a fraction read as a percentage means nobody), a rollout outside 0-100, or `default: true` beside a rollout | set `rollout` to a whole percentage 0-100 in `defineFlag({ key: '<key>' })`, and leave `default` false when a rollout decides |
+| `X_FLAG_UNKNOWN` | no flag is declared under this key | a typo at the `isEnabled()` call site — answered as an error rather than a silent `false`, which would be a branch that never runs and never says so | declare it with `defineFlag({ key: '<key>', … })`, or correct the key at the call site |
 
 ## Routes, render and budgets
 

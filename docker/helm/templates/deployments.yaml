@@ -13,7 +13,13 @@ metadata:
     {{- include "ultimate.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $role }}
 spec:
-  {{- if not $cfg.autoscaling.enabled }}
+  {{/*
+  `scheduler` and `replicator` declare no `autoscaling` block at all — they are pinned to one
+  replica by design — so this must ask whether the block exists before reading through it, exactly
+  as hpa.yaml already does. Without the guard the whole chart fails to render, which is why
+  `helm lint` never passed.
+  */}}
+  {{- if not (and $cfg.autoscaling $cfg.autoscaling.enabled) }}
   replicas: {{ $cfg.replicas }}
   {{- end }}
   selector:

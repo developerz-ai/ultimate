@@ -14,21 +14,28 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 |---|---|---|---|
 | `docker` | one OCI image, `ROLE` selects behavior | the normal path ([`11-topology.md`](./11-topology.md)) | works — entry `docker/Dockerfile`, `ENTRYPOINT ["bun", "apps/web/server.ts"]` |
 | `binary` | `dist/myapp` — `bun build --compile`, all roles inside | VMs, systemd, air-gapped, a CLI-shaped product | **compiles, then crashes at import** |
-| `static` | `dist/static/` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently | works — entry `apps/web/prerender.ts` |
+| `static` | `dist/static/` — one self-contained HTML file per `render: 'static'` route | CDN / object storage, deployed independently | works — entry `apps/web/prerender.ts`. Emits **no** sitemap, robots, feeds or asset files `As of 2026-08` |
 
 **`--target binary` is not usable today.** `FRAMEWORK_VERSION` reads `@ultimat3/core`'s own `package.json` at module scope ([`packages/core/src/version.ts`](../../packages/core/src/version.ts)) — deliberately, so a broken publish fails loudly instead of reporting `undefined`. A single-file executable carries no `package.json`, so the read throws before any role starts. The bare-VM row in [Targets](#targets) depends on this and is therefore also unproven.
 
-All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `sw.js`, and `x.manifest.json` ([`08-pwa-offline.md`](./08-pwa-offline.md)).
+All targets share one build ID (content hash), from `x.manifest.json`. It reaches a served page as the `x-ultimate-build` **response header** on every mode, and as a `<meta>` inside a `spa` shell. It is **not** stamped into asset filenames — there are no hashed asset files, because there is no client bundle to name (below).
 
-```
-$ x build --target docker
-  ✓ typecheck + boundaries           ✓ site/  12 routes  static   0kb js
-  ✓ app/   31 routes  stream         ✓ static assets     avif+webp, 214 files
-  ✓ sw.js  precache 1.9MB / 3MB      ✓ manifest + openapi emitted
-  ✓ image  myapp:8f2a1c9  118MB      build id 8f2a1c9
-```
+`x build` runs six of `x verify`'s steps before it produces anything: `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors` ([`packages/cli/src/cmd-build.ts`](../../packages/cli/src/cmd-build.ts)). It does **not** run `budgets`, `contract`, `drift` or any test suite — `x verify` is still the gate, and `x build` is the subset that can run before an artifact exists.
 
-`x build` runs `x verify`'s static checks (typecheck, lint, boundaries, budgets, SEO, manifest freshness). A build that would fail `x verify` does not produce an artifact.
+## What a build compiles
+
+Two source kinds need a compiler before an Ultimate app runs at all, and both are Bun runtime loaders installed by `@ultimat3/render` ([`packages/render/src/module-loader.ts`](../../packages/render/src/module-loader.ts)) rather than a separate bundling pass. `x dev`, `x build` and `bun test` therefore load a page through exactly one code path.
+
+| Source | Compiled to | Why a loader, not `tsconfig` |
+|---|---|---|
+| `*.tsx` | `h(…)` calls into render's server JSX factory ([`packages/render/src/jsx.ts`](../../packages/render/src/jsx.ts)) | `jsx: 'preserve'` makes Bun fall back to the **classic** `React.createElement` factory and ignore `jsxImportSource` entirely. `jsxImportSource: 'solid-js'` stays, because that is where the JSX *type* namespace lives — the runtime factory is the framework's |
+| `*.module.scss` | CSS plus the scoped class map the `import styles from …` already assumes ([`packages/render/src/css-modules.ts`](../../packages/render/src/css-modules.ts)) | Bun has no SCSS loader; without one, `styles` is the *path string* and every `styles.foo` is `undefined` |
+
+Class names are content-addressed (`hero_92a494d7`), so two checkouts at different paths compile to byte-identical CSS. A stylesheet that does not compile is `X_PRERENDER_FAILED` naming the file — never a silently unstyled page.
+
+The compiled CSS is **inlined** into the document as one `<style>`, filtered to the route's own surface: a `site/` page never carries `app/` CSS ([axiom 6](./00-thesis.md)). Inline rather than linked because a `site/` artifact is a single file a CDN serves with no round trip and no second upload.
+
+**There is no client bundle `As of 2026-08`.** Nothing calls `Bun.build` anywhere in the framework, so there are no chunks, no code splitting, no `modulepreload`, and nothing to hydrate with. The blocker is upstream, not scheduling: the pinned `solid-js@2.0.0-experimental.16` publishes the reactivity core only — no `solid-js/web`, therefore no `render`, `hydrate`, `renderToString`, `template` or `ssr`, and its `jsx-runtime` subpath carries *types* and no factory. Islands, `hydrate: 'idle' | 'visible' | 'interaction'` and `renderSpaShell`'s `chunks` are declared and unbacked until a DOM renderer exists. Pages render server-side and ship 0 bytes of JS, which is correct for `site/` and incomplete for `app/`.
 
 ## Dev compose
 
@@ -100,6 +107,8 @@ x build --target static --out dist/static     # then upload dist/static to a CDN
 ```
 
 `x deploy` has two methods, `compose` and `helm`; pushing static output is not one of them, and no `--to <cdn>` flag exists. Copying a directory is the vendor's own CLI, which is [axiom 7](./00-thesis.md) working as intended — the framework does not grow an uploader per host.
+
+The build also writes `.x/build-stats.json` — one measured `jsBytes` per prerendered route, counted from the emitted document's own `<script>` tags — which is what the `budgets` step of `x verify` compares a declared `budget.js` against. A route that declares a budget and is not in that file is `X_BUDGET_UNMEASURED`, so only `render: 'static'` routes clear the gate today; every other mode needs a running process and is not weighed. `budget.css` is declared and unmeasured `As of 2026-08`.
 
 The `site/` output is a separate artifact with a separate lifecycle.
 

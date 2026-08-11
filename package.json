@@ -6,7 +6,10 @@
     "packages/*",
     "examples/*",
     "examples/*/apps/*",
-    "examples/*/packages/*"
+    "examples/*/packages/*",
+    "dummy/*",
+    "dummy/*/apps/*",
+    "dummy/*/packages/*"
   ],
   "scripts": {
     "setup": "bun run scripts/setup.ts",
@@ -16,8 +19,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "test": "bun test --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**'",
-    "test:watch": "bun test --watch --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**'",
+    "test": "bun test --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",
+    "test:watch": "bun test --watch --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",
     "verify": "bun run scripts/verify.ts",
     "boundaries": "bun run scripts/boundaries.ts",
     "manifest": "bun run scripts/manifest.ts",

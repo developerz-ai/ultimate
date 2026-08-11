@@ -18,9 +18,9 @@ export const orgs = entity('orgs', {
     createdAt: timestamp().defaultNow(),
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
-  invariants: [
-    invariant('org_slug_shape', (c) => c.slug.matches(isValidSlug)),
-    invariant('org_name_present', (c) => c.name.trimmed().minLength(1)),
+  invariants: (c) => [
+    invariant('org_slug_shape', c.slug.matches(isValidSlug)),
+    invariant('org_name_present', c.name.trimmed().minLength(1)),
   ],
   indexes: [{ on: ['planCode'] }],
 });

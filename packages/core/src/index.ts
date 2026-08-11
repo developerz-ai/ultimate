@@ -114,6 +114,36 @@ export {
   resetErrorCodes,
 } from './error-codes';
 export type {
+  ErrorReport,
+  ErrorReporter,
+  ErrorReportingOptions,
+  ErrorScope,
+  ErrorSeverity,
+  ErrorSource,
+  MemoryErrorReporter,
+  ReportErrorOptions,
+} from './error-reporter';
+export {
+  configureErrorReporting,
+  ERROR_SOURCES,
+  errorReport,
+  memoryErrorReporter,
+  noopErrorReporter,
+  reportError,
+  resetErrorReporting,
+} from './error-reporter';
+export type {
+  SentryDsn,
+  SentryEnvelopeOptions,
+  SentryReporterOptions,
+} from './error-reporter-sentry';
+export {
+  ErrorReporterDsnInvalidError,
+  parseSentryDsn,
+  sentryEnvelope,
+  sentryErrorReporter,
+} from './error-reporter-sentry';
+export type {
   CodedErrorInit,
   FormatErrorOptions,
   UltimateErrorInit,

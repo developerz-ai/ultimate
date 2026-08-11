@@ -152,6 +152,15 @@ export function renderJson(result: CommandResult): string {
     durationMs: step.durationMs,
     skipped: step.skipped === true,
     findings: step.findings,
+    // A FAILED step carries its captured stdout, exactly as the human renderer prints it. CI runs
+    // `--json`, and without this the log said only "one or more unit tests failed" with a generic
+    // fix line — the failing test's name and its assertion diff existed and were thrown away, so
+    // the only way to learn what broke was to re-run it somewhere else. CI output is a prompt:
+    // whoever reads it next, agent or human, must be able to act without reproducing first.
+    // Success stays quiet (`--verbose` is the human's opt-in) so a green run is not a wall of text.
+    ...(step.ok || step.output === undefined || step.output.length === 0
+      ? {}
+      : { output: step.output }),
   }));
   const payload = {
     ok: result.ok,

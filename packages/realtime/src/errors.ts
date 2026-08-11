@@ -26,6 +26,34 @@ export const REALTIME_OWNED_ERROR_CODES = [
  */
 export const REALTIME_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
 
+/**
+ * The sync protocol's answer to "which of these is a 4xx". A denied topic, a subscription cap, a
+ * skewed protocol version and a cursor that fell out of the buffer are all conditions the CLIENT
+ * caused and the ack frame already explains — so an error monitor that held them would be a log
+ * nobody reads. Everything else, including an accidental `TypeError`, is this node's fault.
+ * Kept beside the code list so the two cannot drift.
+ */
+export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
+  'X_TOPIC_FORBIDDEN',
+  'X_SUBSCRIPTION_LIMIT',
+  'X_PROTOCOL_VERSION',
+  'X_CURSOR_STALE',
+  'X_REBASE_CONFLICT',
+  'X_FORBIDDEN',
+  'X_UNAUTHENTICATED',
+]);
+
+/** True when the client is the one who can fix it, so the node must not page anyone about it. */
+export function isClientFault(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'string' &&
+    REALTIME_CLIENT_FAULT_CODES.has((error as { code: string }).code)
+  );
+}
+
 /** Every code realtime can throw through `RealtimeError`: the ones it owns plus the borrowed one. */
 export const REALTIME_ERROR_CODES = [
   ...REALTIME_OWNED_ERROR_CODES,

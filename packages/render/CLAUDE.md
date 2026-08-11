@@ -1,7 +1,8 @@
 # @ultimat3/render — boundary
 
 Owns: the `route` primitive, the five render modes, the route table, the surface boundary,
-islands + budgets, hydration directives, the vendored client router, `<head>` merge.
+islands + budgets, hydration directives, the vendored client router, `<head>` merge, **the server
+JSX runtime and the two Bun loaders that make an app's `.tsx` and `.scss` runnable**.
 
 Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cache`, `seo`,
 `entity`, `policy`, `http`, `action`, `query`. **Never** `pwa`, `mcp`, `ai`, `manifest`
@@ -23,7 +24,11 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Errors | `errors.ts` subclasses only. Never a bare `Error`, never a bare `TODO`. |
 | Policy | render checks *presence* only. Evaluation belongs to `@ultimat3/policy`. |
 | Responses | return `RenderResult`. `@ultimat3/http` builds the `Response`. |
-| Solid | no `solid-js` import anywhere in this package. Inject primitives. |
+| Solid | no `solid-js` import anywhere in this package. Inject primitives. The JSX factory in `jsx.ts` builds inert nodes — it is not a Solid renderer and must never become one. |
+| The loaders | `module-loader.ts` installs them at `index.ts` module scope, once. A plugin only affects modules loaded after it, so a second install point is a page that renders in one entry point and not another. |
+| Escaping | `html.ts` only. A second escaper is how one of them ends up missing a character, and a missing character in an attribute is an injection. |
+| Which export is the page | `route-component.ts`, one precedence: `Page` → a single `…Page` → a single capitalised function. Never a per-generator name table. |
+| Stylesheets | compiled by `css-modules.ts` and served **inlined** per surface. `sass` is this package's only third-party dependency and its only reason to exist here. |
 | Colours | tokens and `data-theme` only. No hex in `head.ts` or any emitted script. |
 | `<head>` binding | `head.ts` stays injection-only (testable with no catalog); `head-seo.ts` is the ONE binding of `HeadRenderers` to `@ultimat3/seo`. A caller writing its own converter is the drift this file prevents. |
 

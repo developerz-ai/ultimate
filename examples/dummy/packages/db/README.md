@@ -31,9 +31,9 @@ indexes, and invariants; anything that decides *whether* something may happen li
 ## Invariants are one declaration
 
 ```ts
-invariants: [
-  invariant('slug_shape', (c) => c.slug.matches(SLUG_PATTERN)),
-  invariant('publish_coherent', (c) => c.status.eq('published').iff(c.publishedAt.isNotNull())),
+invariants: (c) => [
+  invariant('slug_shape', c.slug.matches(SLUG_PATTERN)),
+  invariant('publish_coherent', c.status.eq('published').iff(c.publishedAt.isNotNull())),
 ]
 ```
 

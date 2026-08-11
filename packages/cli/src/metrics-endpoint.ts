@@ -14,9 +14,10 @@ import {
  * A port of its own, and NOT the role's HTTP port, for one reason the chart makes concrete:
  * `docker/helm/templates/ingress.yaml` routes `path: /` `Prefix` to the web Service, so a
  * `/metrics` mounted beside `/healthz` on port 3000 is `/metrics` on the internet — route
- * patterns, request volumes and error rates, published. Nothing in the chart fronts this port:
- * `service.yaml` only publishes `http`, so the endpoint is cluster-internal by construction
- * rather than by an ingress exclusion somebody has to remember to write.
+ * patterns, request volumes and error rates, published. `service.yaml` does publish this port
+ * so a `ServiceMonitor` has a named target, but `ingress.yaml` selects its backend port BY NAME
+ * (`http`), so the endpoint stays cluster-internal by construction rather than by an ingress
+ * exclusion somebody has to remember to write.
  *
  * It is also the only thing `worker`, `scheduler` and `replicator` could ever be scraped on —
  * they open no HTTP socket at all, and `queue_depth` is exactly the signal one of them owns.

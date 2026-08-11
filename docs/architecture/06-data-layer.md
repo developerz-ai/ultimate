@@ -18,10 +18,12 @@ export const posts = entity('posts', {
     deletedAt: timestamp().nullable(),   // presence alone makes the entity soft-deletable
   },
   tenant: 'orgId',
-  invariants: [
-    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
-    invariant('post_publish_coherent', (c) =>
-      c.satisfies(hasCoherentPublishState, ['status', 'publishedAt'])),
+  invariants: (c) => [
+    invariant('post_title_present', c.title.trimmed().minLength(1)),
+    invariant(
+      'post_publish_coherent',
+      c.satisfies(hasCoherentPublishState, ['status', 'publishedAt']),
+    ),
   ],
   indexes: [{ on: ['orgId', 'publishedAt'], order: 'desc' }],
 });
@@ -32,7 +34,7 @@ export const posts = entity('posts', {
 | Signature | `entity(name, init)` — name first, `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }` |
 | Projects to | SQL DDL, domain type (`typeof posts.$row`), migration, repo, admin screen, seed factory, cache tag |
 | `tenant` | required on any multi-tenant entity; names the column, not a value. `.tenant()` on the column says the same thing, `init` wins when both appear, and with neither a column named `orgId` is inferred — silence never means unscoped |
-| `invariants` | plural, and each one is `invariant(name, build)` written in the expression language, so one declaration yields the TS check **and** the `CHECK`/`UNIQUE` the migration emits |
+| `invariants` | one callback `(c) => [...]`, each entry `invariant(name, expr)` written in the expression language, so one declaration yields the TS check **and** the `CHECK`/`UNIQUE` the migration emits. `c` is typed from `columns`, so a typo is a compile error that names the real column |
 | A JS-predicate invariant | `c.satisfies(fn, [...columns])` and `c.matches(fn)` cannot be translated, so they report `kind: 'assert'` with `sql: null` — a rule the DB does not know is a rule a migration script can violate, and it is never faked as a CHECK |
 | Soft delete | the presence of a `deletedAt` column, not a flag — there is no `softDelete:` option |
 | Never | business logic, I/O, HTTP awareness, policy decisions |

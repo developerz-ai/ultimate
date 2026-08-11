@@ -40,7 +40,7 @@ export const posts = entity('posts', {
     likeCount: integer().default(0),
     publishedAt: timestamp().nullable(),
   },
-  invariants: [invariant('post_title_present', (c) => c.title.trimmed().minLength(1))],
+  invariants: (c) => [invariant('post_title_present', c.title.trimmed().minLength(1))],
 });
 
 export type Post = typeof posts.$row;

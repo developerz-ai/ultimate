@@ -8,6 +8,8 @@ import type { RouteEntry } from '@ultimat3/render';
 import { renderStatic, routeEntries } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
+import type { RouteStats } from './budgets';
+import { measureJsBytes, writeBuildStats } from './budgets';
 import { routeDocument } from './dev-render';
 
 /**
@@ -38,6 +40,8 @@ export interface PrerenderReport {
   readonly pages: readonly PrerenderedPage[];
   /** Routes that exist and are not static. Reported, so "only 2 pages" is never a mystery. */
   readonly skipped: readonly string[];
+  /** Where the measured stats landed, for the `budgets` gate step to read. */
+  readonly stats: string;
 }
 
 export const DEFAULT_ORIGIN = 'https://localhost';
@@ -50,6 +54,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const origin = options.origin ?? DEFAULT_ORIGIN;
   const pages: PrerenderedPage[] = [];
   const skipped: string[] = [];
+  const routes: RouteStats[] = [];
 
   for (const entry of routeEntries()) {
     if (!isPrerenderable(entry)) {
@@ -65,7 +70,14 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       const file = join(options.out, artifact.outputPath);
       const bytes = await Bun.write(file, artifact.html);
       pages.push({ path: artifact.path, file: artifact.outputPath, hash: artifact.hash, bytes });
+      // Measured from the document that was just written, so the `budgets` step compares a
+      // declared budget against bytes that exist on disk rather than against a graph's estimate.
+      routes.push({
+        path: artifact.path,
+        jsBytes: await measureJsBytes(artifact.html, options.out),
+      });
     }
   }
-  return { out: options.out, buildId, pages, skipped };
+  const stats = await writeBuildStats(options.root, { routes });
+  return { out: options.out, buildId, pages, skipped, stats };
 }

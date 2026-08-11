@@ -2,9 +2,10 @@
 // `@ultimat3/render`'s own function for that mode — the CLI picks the mode and supplies the
 // document, it never decides what a mode means or what headers it earns.
 //
-// The document is head + shell. Islands are the compiled client graph's, and there is no
-// compiled graph before `x build`, so a dev page serves its real `<head>`, its real status and
-// its real cache headers around an empty root — never a 404.
+// The document is head + the route's own component, rendered by `@ultimat3/render`'s server JSX
+// writer, with the surface's compiled CSS inlined. Inlined rather than linked because a `site/`
+// page is a 0kb-JS artifact a CDN serves as one file: a stylesheet link would add a round trip to
+// the render path the mode exists to make cheap, and a static export would need a second file.
 
 import type { Ctx } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
@@ -14,6 +15,7 @@ import {
   contentHash,
   createIsrController,
   headFromMeta,
+  renderComponent,
   renderHead,
   renderSpa,
   renderSsr,
@@ -22,6 +24,7 @@ import {
   seoRenderers,
   staticHeaders,
   streamResult,
+  stylesFor,
 } from '@ultimat3/render';
 
 export interface DevRenderOptions {
@@ -43,17 +46,38 @@ const headFor = async (entry: RouteEntry, data: DevRouteData): Promise<string> =
     headFromMeta(await entry.config.meta(data), seoRenderers({ path: new URL(data.url).pathname })),
   );
 
+/** `<style>` for the surface's own stylesheets, or nothing at all when the surface imports none. */
+const styleTag = (entry: RouteEntry): string => {
+  const css = stylesFor(entry.surface);
+  return css.length === 0 ? '' : `<style>${css}</style>`;
+};
+
 /**
- * Head + shell for one route render. Exported because the build's prerenderer must emit the same
+ * The route's rendered body, inside the hydration root. A module that exports no component (an
+ * `api/` route, or a `spa` whose data is all client-side) renders an empty root, which is the
+ * shell those modes are defined to serve — not a fallback for a component that failed.
+ */
+export async function routeBody(entry: RouteEntry, data: DevRouteData): Promise<string> {
+  if (entry.component === undefined) return `<div id="${SPA_ROOT_ID}"></div>`;
+  const html = await renderComponent(
+    entry.component,
+    { params: data.params, url: data.url },
+    entry.file,
+  );
+  return `<div id="${SPA_ROOT_ID}">${html}</div>`;
+}
+
+/**
+ * Head + body for one route render. Exported because the build's prerenderer must emit the same
  * document `x dev` serves — two document builders is how a page that works in dev ships broken.
  */
 export async function routeDocument(entry: RouteEntry, data: DevRouteData): Promise<string> {
-  return shellFor(await headFor(entry, data));
+  const [head, body] = await Promise.all([headFor(entry, data), routeBody(entry, data)]);
+  return (
+    `<!doctype html><html lang="${LANG}"><head>${head}${styleTag(entry)}</head>` +
+    `<body>${body}</body></html>`
+  );
 }
-
-const shellFor = (head: string): string =>
-  `<!doctype html><html lang="${LANG}"><head>${head}</head>` +
-  `<body><div id="${SPA_ROOT_ID}"></div></body></html>`;
 
 async function resultFor(
   entry: RouteEntry,
@@ -75,19 +99,24 @@ async function resultFor(
       return served.result;
     }
     case 'spa':
+      // The shell renders no body by definition, but it still carries the surface's CSS: the
+      // client paints into `#x-root` and a flash of unstyled shell is the mode's own regression.
       return renderSpa({
         entry,
         buildId: options.buildId,
-        head: await headFor(entry, data),
+        head: (await headFor(entry, data)) + styleTag(entry),
         chunks: [],
         lang: LANG,
       });
     case 'stream': {
-      const head = await headFor(entry, data);
+      // The shell IS the component: `solid-js@2.0.0-experimental.16` ships no `Suspense` and no
+      // server renderer, so there is nothing yet that can mark a subtree as a hole. Until one
+      // exists the first flush carries the whole body — correct output, no streaming benefit.
+      const [head, shell] = await Promise.all([headFor(entry, data), routeBody(entry, data)]);
       return streamResult(
         {
-          head: `<!doctype html><html lang="${LANG}"><head>${head}</head><body>`,
-          shell: `<div id="${SPA_ROOT_ID}"></div>`,
+          head: `<!doctype html><html lang="${LANG}"><head>${head}${styleTag(entry)}</head><body>`,
+          shell,
           holes: [],
         },
         { buildId: options.buildId },

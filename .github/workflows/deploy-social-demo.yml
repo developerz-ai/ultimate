@@ -1,0 +1,103 @@
+name: deploy-social-demo
+
+# Builds and publishes the social demo's image. It does NOT deploy: this repo holds no cluster
+# credentials, and it never will. The handoff is an image digest — the cluster's image updater
+# watches the registry, patches the live app, and the GitOps controller rolls the pods.
+#
+# The tag format is the contract. The updater matches `sha-<7>` and nothing else, so if this
+# workflow stops emitting that tag, deployment freezes silently on the old digest and nothing
+# reports an error. Do not "simplify" the tag list.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # The demo links the framework through workspace symlinks, so a change to any package it
+      # imports changes the image. Narrowing this to `dummy/**` would ship a stale framework.
+      - 'dummy/social-media-clone/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/deploy-social-demo.yml'
+  workflow_dispatch:
+
+# Serialize, and never cancel a publish mid-flight — a half-pushed manifest is worse than a queue.
+concurrency:
+  group: deploy-social-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: registry.digitalocean.com/developerz-ai/ultimate-social
+
+jobs:
+  # The gate runs first and separately: an image that cannot pass `x verify` must never reach the
+  # registry, because the updater would roll it into production ~2 minutes later on its own.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup
+      - run: bun run verify
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: social-demo
+      url: https://social-media.ultimate.demo.developerz.ai
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: resolve the built commit
+        id: built
+        run: |
+          sha="$(git rev-parse HEAD)"
+          {
+            echo "sha=$sha"
+            echo "short=sha-$(printf '%.7s' "$sha")"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The DO API token is used as both username and password — that is what the registry expects.
+      - uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ secrets.DOCR_TOKEN }}
+          password: ${{ secrets.DOCR_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          # Root context: the demo imports the framework packages from this tree, not from npm.
+          context: .
+          file: dummy/social-media-clone/docker/Dockerfile.monorepo
+          push: true
+          build-args: |
+            BUILD_ID=${{ steps.built.outputs.short }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.built.outputs.short }}
+            ${{ env.IMAGE }}:${{ steps.built.outputs.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=ultimate-social
+          cache-to: type=gha,scope=ultimate-social,mode=max
+          # Both off deliberately: the attestation manifests they add confuse the image updater's
+          # tag resolution, and this image is not consumed by anything that verifies them.
+          provenance: false
+          sbom: false
+
+      - name: prove the pushed tags resolve
+        env:
+          SHORT: ${{ steps.built.outputs.short }}
+          SHA: ${{ steps.built.outputs.sha }}
+        run: |
+          for ref in "${IMAGE}:${SHORT}" "${IMAGE}:${SHA}" "${IMAGE}:latest"; do
+            docker buildx imagetools inspect "$ref" > /dev/null
+            echo "ok $ref"
+          done

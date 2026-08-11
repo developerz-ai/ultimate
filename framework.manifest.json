@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "58f19ae82fa7deab514ce9de490e4199fbfd5f51fdcb8f4d74c76026c3a8cac8",
+  "buildId": "a7080679c087c45423f3824de20f911b219ab3e0836a29b5c29b7603160a5e7a",
   "tiers": {
     "0": [
       "core",
@@ -13,7 +13,8 @@
       "cache",
       "seo",
       "db",
-      "storage"
+      "storage",
+      "flags"
     ],
     "2": [
       "entity",
@@ -63,6 +64,12 @@
     },
     {
       "name": "@ultimat3/db",
+      "version": "1.2.0",
+      "tier": 1,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/flags",
       "version": "1.2.0",
       "tier": 1,
       "private": false
@@ -619,6 +626,11 @@
       "at": "packages/cli/src/errors.ts"
     },
     {
+      "code": "X_ERROR_REPORTER_DSN_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
       "code": "X_EVAL_BASELINE_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
@@ -652,6 +664,31 @@
       "code": "X_FIX_TARGET_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/errors.ts"
+    },
+    {
+      "code": "X_FLAG_DUPLICATE",
+      "owner": "flags",
+      "at": "packages/flags/src/errors.ts"
+    },
+    {
+      "code": "X_FLAG_EXPIRED",
+      "owner": "flags",
+      "at": "packages/flags/src/errors.ts"
+    },
+    {
+      "code": "X_FLAG_EXPIRY_INVALID",
+      "owner": "flags",
+      "at": "packages/flags/src/errors.ts"
+    },
+    {
+      "code": "X_FLAG_TARGETING_INVALID",
+      "owner": "flags",
+      "at": "packages/flags/src/errors.ts"
+    },
+    {
+      "code": "X_FLAG_UNKNOWN",
+      "owner": "flags",
+      "at": "packages/flags/src/errors.ts"
     },
     {
       "code": "X_FORBIDDEN",
@@ -1319,6 +1356,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_ORG_MISMATCH",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_PATH_UNSAFE",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -1330,6 +1372,21 @@
     },
     {
       "code": "X_STORAGE_TYPE_REJECTED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_UPLOAD_FAILED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_URL_EXPIRED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_URL_INVALID",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

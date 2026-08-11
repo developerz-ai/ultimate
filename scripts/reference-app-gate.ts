@@ -37,8 +37,12 @@ export const REPRODUCE = `cd ${REFERENCE_APP} && bun run ../../packages/cli/src/
  */
 export const EXPECTED_RED: Readonly<Record<string, string>> = {
   typecheck:
-    "database()'s EntitySet constraint rejects a real Entity, so every db.<table> degrades to " +
-    'Table<unknown> | undefined and 277 errors follow — the data-substrate work owns it',
+    'the app calls builder methods @ultimat3/entity does not have — .join(), .with(), ' +
+    '.returning(), .onConflictDoNothing(), .returningInserted() — and needs one deliberately ' +
+    'cross-tenant read that X_TENANCY_UNSCOPED refuses with no escape hatch. 227 errors, and ' +
+    'the data-substrate work owns them. NOT the EntitySet variance bug this line used to blame: ' +
+    "that was Invariant.holds being a function-typed property, it is fixed, and packages/db's " +
+    'schema now typechecks clean',
   boundaries:
     'three site/ routes read @postly/db directly; they need the bounded queries the ' +
     'data-substrate work adds',

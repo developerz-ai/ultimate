@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { enumerated, integer, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
+import { invariantColumns } from './expr';
 import { assertInvariants, constraintName, invariant, invariantsToSql, toSql } from './invariants';
 import { clearRegistry } from './registry';
 
@@ -20,21 +21,21 @@ const posts = entity('invariants_test_posts', {
     publishedAt: timestamp().nullable(),
     deletedAt: timestamp().nullable(),
   },
-  invariants: [
-    invariant('like_count_non_negative', (c) => c.likeCount.atLeast(0)),
-    invariant('title_present', (c) => c.title.trimmed().minLength(1)),
-    invariant('slug_unique_per_org', (c) => c.unique(['orgId', 'slug'])),
-    invariant('slug_shape', (c) => c.slug.matches(isSlug)),
-    invariant('publish_coherent', (c) => c.satisfies(coherent, ['status', 'publishedAt'])),
+  invariants: (c) => [
+    invariant('like_count_non_negative', c.likeCount.atLeast(0)),
+    invariant('title_present', c.title.trimmed().minLength(1)),
+    invariant('slug_unique_per_org', c.unique(['orgId', 'slug'])),
+    invariant('slug_shape', c.slug.matches(isSlug)),
+    invariant('publish_coherent', c.satisfies(coherent, ['status', 'publishedAt'])),
   ],
 });
 
 const plans = entity('invariants_test_plans', {
   columns: { code: text(), currency: text(), monthly: money() },
   primaryKey: ['code', 'currency'],
-  invariants: [
-    invariant('price_non_negative', (c) => c.monthly.minor.atLeast(0)),
-    invariant('currency_matches_price', (c) => c.monthly.currency.eq(c.currency)),
+  invariants: (c) => [
+    invariant('price_non_negative', c.monthly.minor.atLeast(0)),
+    invariant('currency_matches_price', c.monthly.currency.eq(c.currency)),
   ],
 });
 
@@ -133,8 +134,32 @@ describe('the app runs the same rules', () => {
     expect(() =>
       entity('invariants_test_typo', {
         columns: { id: uuid().primaryKey(), title: text() },
-        invariants: [invariant('bad', (c) => c.titel.trimmed().minLength(1))],
+        // A compile error first (`InvariantColumns<C>` is mapped over the declared columns, so
+        // `titel` is not a key); the Proxy is what still catches a JS caller, and its message
+        // names the columns that do exist.
+        // @ts-expect-error `titel` is not a declared column — pinned in `type-pins.ts` too
+        invariants: (c) => [invariant('bad', c.titel.trimmed().minLength(1))],
       }),
     ).toThrow(/no column "titel"/);
+  });
+
+  test('the physical name a rule binds comes from the entity, never from the author', () => {
+    // `orgId` -> `org_id` and `monthly` -> `monthly_minor` happen exactly once, in `entity()`.
+    expect(named('slug_unique_per_org').columns).toEqual(['org_id', 'slug']);
+    expect(plans.$invariants.map((inv) => inv.columns)).toEqual([
+      ['monthly_minor'],
+      ['monthly_currency', 'currency'],
+    ]);
+  });
+
+  test('a JS caller reaching the proxy untyped still gets the naming error', () => {
+    // The compile error is unavailable to a plain-JS app and to a rule built dynamically, so the
+    // Proxy stays: it names the columns that do exist instead of `undefined is not a function`.
+    const columns = invariantColumns('invariants_test_js', ['title', 'slug']) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(() => columns['titel']).toThrow(/no column "titel"; declared columns are title, slug/);
+    expect(columns['title']).toBeDefined();
   });
 });

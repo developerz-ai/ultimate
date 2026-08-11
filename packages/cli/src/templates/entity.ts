@@ -35,9 +35,10 @@ export const ${name.camel} = entity('${table}', {
     createdAt: timestamp().defaultNow(),
   },
   // Each rule runs in the app on write AND as a Postgres CHECK — one declaration, both sides.
-  invariants: [
-    invariant('${snake}_title_not_blank', (c) => c.title.trimmed().minLength(1)),
-    invariant('${snake}_price_non_negative', (c) => c.price.minor.atLeast(0)),
+  // \`c\` is typed from the columns above: \`c.titel\` is a compile error that names \`title\`.
+  invariants: (c) => [
+    invariant('${snake}_title_not_blank', c.title.trimmed().minLength(1)),
+    invariant('${snake}_price_non_negative', c.price.minor.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'createdAt'] }],
 });

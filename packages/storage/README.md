@@ -60,6 +60,57 @@ allowlist → sniff → checksum.
 
 `validateUpload({ key, declaredContentType, bytes }, uploadPolicy({ maxBytes: 5e6 }))`
 
+## The direct-upload round trip
+
+Three calls, one per hop. The **client never names the key** — it asks for a grant and is told
+one — so it cannot aim an upload at another tenant, at a row it does not own, or at a size the
+policy never allowed.
+
+```ts
+// 1. server, inside an action's handle: mint the grant
+const grant = await grantUpload({
+  disk: disk('uploads'),
+  orgId: ctx.actor.orgId,            // the ACTOR's org, never one read off the request
+  request: { filename, contentType, size },
+  policy: uploadPolicy({ maxBytes: 5e6 }),
+  // target: { entity: 'post', id, field: 'cover' } — omit it and the key lands under `pending/`
+});
+
+// 2. browser: PUT at it, with real progress, and get the key back
+const { key } = await uploadFile({ file, grant: (request) => api.requestUpload(request), onProgress });
+
+// 3. server, in the route mounted at `/_storage`: take it back, or refuse
+const object = await acceptSignedUpload({
+  url: request.url, secret, baseUrl: '/_storage/local',
+  disk: disk('uploads'), orgId: ctx.actor.orgId,
+  bytes, declaredContentType: request.headers.get('content-type') ?? undefined,
+  policy: uploadPolicy({ maxBytes: 5e6 }),
+});
+```
+
+`acceptSignedUpload` refuses on any of: a signature that does not verify, an expired grant, a
+`PUT` grant replayed as a `GET`, a key outside the actor's org, more bytes than the signature
+granted, a `Content-Type` the signature does not cover, or magic bytes that contradict it.
+`readSignedObject` is the GET half and applies the same verification and the same org check.
+Neither owns a `Request`, a `Response` or a status number — mounting is the host's job, and
+`@ultimat3/http` is the only layer that turns an `X_*` code into a status.
+
+## Attachments and orphans
+
+An upload happens **before** the row it belongs to exists, so it lands at
+`org/<orgId>/pending/<uploadId><ext>` and is promoted once there is an id:
+
+| Call | Key |
+|---|---|
+| `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
+| `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
+| `promoteAttachment({ disk, key, orgId, target })` | copy then delete — never the reverse |
+| `sweepOrphans({ disk, orgId, olderThanMs })` | deletes stale `pending/` keys, returns them |
+
+The filename contributes nothing but its extension, and only if it matches `.[a-z0-9]{1,12}`.
+`sweepOrphans` can only reach the `pending/` prefix of one org — a sweep that could touch an
+attached key is a job that deletes production data the first time an app forgets to promote.
+
 ## Errors
 
 | Code | Fires when |
@@ -70,6 +121,10 @@ allowlist → sniff → checksum.
 | `X_STORAGE_TOO_LARGE` | payload over the policy `maxBytes` |
 | `X_STORAGE_TYPE_REJECTED` | declared type off the allowlist, or contradicted by magic bytes |
 | `X_STORAGE_CHECKSUM_MISMATCH` | supplied base64 SHA-256 does not describe the bytes |
+| `X_STORAGE_URL_INVALID` | a signed request that does not match what was signed — edited constraint, wrong base, wrong method, contradicting `Content-Type` |
+| `X_STORAGE_URL_EXPIRED` | the grant's window closed; the signature was fine |
+| `X_STORAGE_ORG_MISMATCH` | the key is well-formed and unforged, and belongs to another org |
+| `X_STORAGE_UPLOAD_FAILED` | client half: the presigned `PUT` answered non-2xx or never landed |
 | `X_NOT_IMPLEMENTED` | S3 user metadata |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif`/`webp` encode, or a source no built-in decoder reads |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |

@@ -6,10 +6,13 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import {
+  isClientFault,
   REALTIME_BORROWED_ERROR_CODES,
+  REALTIME_CLIENT_FAULT_CODES,
   REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
   REALTIME_OWNED_ERROR_CODES,
+  TopicForbiddenError,
 } from './errors';
 
 const ORIGINAL_MEMBERS = [
@@ -85,5 +88,34 @@ describe('error code registry', () => {
       'this driver does not implement the requested feature',
     );
     expect(Object.keys(REALTIME_ERROR_TITLES)).not.toContain('X_NOT_IMPLEMENTED');
+  });
+});
+
+/**
+ * The sync protocol has no status codes, so this set is the only thing standing between an error
+ * monitor and every denied subscribe on the internet.
+ */
+describe('isClientFault', () => {
+  test('a denied topic, a cap and a skewed protocol are the client’s, not the node’s', () => {
+    expect(isClientFault(new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1' }))).toBe(true);
+    expect(isClientFault({ code: 'X_SUBSCRIPTION_LIMIT' })).toBe(true);
+    expect(isClientFault({ code: 'X_PROTOCOL_VERSION' })).toBe(true);
+    // Borrowed from policy/auth: a surface denial is still the caller's condition.
+    expect(isClientFault({ code: 'X_FORBIDDEN' })).toBe(true);
+  });
+
+  test('an unreachable bus and an accidental TypeError are this node’s fault', () => {
+    expect(isClientFault({ code: 'X_TRANSPORT_UNAVAILABLE' })).toBe(false);
+    expect(isClientFault(new TypeError('undefined is not a function'))).toBe(false);
+    expect(isClientFault('a string nobody typed')).toBe(false);
+  });
+
+  test('every client-fault code is one this package or a sibling actually declares', () => {
+    const known = new Set<string>([...REALTIME_ERROR_CODES, 'X_FORBIDDEN', 'X_UNAUTHENTICATED']);
+    for (const code of REALTIME_CLIENT_FAULT_CODES) {
+      expect(known.has(code), `${code} is in the client-fault set but nothing declares it`).toBe(
+        true,
+      );
+    }
   });
 });

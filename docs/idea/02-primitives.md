@@ -91,17 +91,18 @@ export const posts = entity('posts', {
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
   tenant: 'orgId',      // said out loud; inferred from `.tenant()` or an `orgId` column if omitted
-  invariants: [
-    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
-    invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0)),
+  invariants: (c) => [
+    invariant('post_title_present', c.title.trimmed().minLength(1)),
+    invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'status'] }],
 });
 ```
 
-`invariants` is plural, and each entry is a named `invariant(name, build)` — the name becomes the
-constraint name (`posts_post_title_present_check`), which is what makes a violation point at a rule
-instead of at a column.
+`invariants` is one callback over the whole list, and each entry is a named `invariant(name, expr)`
+— the name becomes the constraint name (`posts_post_title_present_check`), which is what makes a
+violation point at a rule instead of at a column. `c` is typed from the `columns` above it, so
+`c.titel` is a compile error naming `title`, never a `ColumnExpr | undefined` to assert away.
 
 | Aspect | Rule |
 |---|---|

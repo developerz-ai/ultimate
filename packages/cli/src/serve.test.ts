@@ -1,8 +1,18 @@
 import { expect, test } from 'bun:test';
+import type { ErrorReport } from '@ultimat3/core';
+import {
+  configureErrorReporting,
+  InternalError,
+  memoryErrorReporter,
+  reportError,
+  resetErrorReporting,
+} from '@ultimat3/core';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import {
   CONTAINER_BINDING,
+  configureReporting,
   DEFAULT_PORT,
+  ERROR_DSN_KEY,
   metricsPortFromEnv,
   portFromEnv,
   roleFromEnv,
@@ -67,4 +77,35 @@ test('runRole refuses a bad ROLE before it starts a single service', async () =>
   expect(runRole({ root: '/nonexistent-app-root', env: { ROLE: 'webb' } })).rejects.toThrow(
     'X_ROLE_UNKNOWN',
   );
+});
+
+test('every report a container sends is tagged with the build id this boot computed', () => {
+  const reporter = memoryErrorReporter();
+  configureErrorReporting({ reporter });
+  configureReporting({}, 'build-abc');
+  reportError(new InternalError({ cause: 'boom', fix: 'x doctor --json' }), { source: 'http' });
+
+  // `x-ultimate-build` and the release a monitor groups by are ONE identity, not two.
+  expect((reporter.events[0] as ErrorReport).release).toBe('build-abc');
+  resetErrorReporting();
+});
+
+test('no DSN leaves the no-op reporter in place, so a laptop pages nobody', () => {
+  resetErrorReporting();
+  // Absent, empty and whitespace all mean "not configured" — a platform that injects an empty
+  // string must not be read as a monitor at an empty URL.
+  for (const env of [{}, { SENTRY_DSN: '' }, { SENTRY_DSN: '   ' }]) {
+    expect(() => {
+      configureReporting(env, 'build-abc');
+    }).not.toThrow();
+  }
+  resetErrorReporting();
+});
+
+test('a malformed DSN fails the boot, because a monitor never connected looks like no failures', () => {
+  const thrown: ThrownShape = thrownBy(() => {
+    configureReporting({ [ERROR_DSN_KEY]: 'not-a-dsn' }, 'build-abc');
+  });
+  expect(thrown.code).toBe('X_ERROR_REPORTER_DSN_INVALID');
+  resetErrorReporting();
 });

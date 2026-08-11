@@ -1,0 +1,16 @@
+{
+  "name": "@social-media-clone/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Flat catalogs with loud misses",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@ultimat3/i18n": "^1.2.0"
+  }
+}

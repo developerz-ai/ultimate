@@ -12,6 +12,10 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_TOO_LARGE',
   'X_STORAGE_TYPE_REJECTED',
   'X_STORAGE_CHECKSUM_MISMATCH',
+  'X_STORAGE_URL_INVALID',
+  'X_STORAGE_URL_EXPIRED',
+  'X_STORAGE_ORG_MISMATCH',
+  'X_STORAGE_UPLOAD_FAILED',
 ] as const;
 
 /**
@@ -37,6 +41,10 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_TOO_LARGE: 'payload exceeds the upload size limit',
   X_STORAGE_TYPE_REJECTED: 'content type is not allowed for this upload',
   X_STORAGE_CHECKSUM_MISMATCH: 'bytes do not match the declared checksum',
+  X_STORAGE_URL_INVALID: 'signed URL does not match its signature',
+  X_STORAGE_URL_EXPIRED: 'signed URL is past its expiry',
+  X_STORAGE_ORG_MISMATCH: 'object key belongs to another org',
+  X_STORAGE_UPLOAD_FAILED: 'the signed upload was refused',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -141,6 +149,46 @@ export const checksumMismatch = (key: string, declared: string, actual: string):
     cause: `"${key}" declared sha256 ${declared} but the bytes hash to ${actual}`,
     fix: 'recompute the checksum over the exact bytes you send, or omit it and let the driver hash',
     meta: { key, declared, actual },
+  });
+
+/**
+ * A signed request that does not match what was signed — a tampered constraint, a URL outside
+ * the mounted base, a method the grant never covered, a header the signature contradicts.
+ * ONE code for all of them on purpose: telling a forger which half of the tuple they got wrong
+ * is an oracle, and `meta.reason` is there for the server's own log.
+ */
+export const signedUrlRejected = (reason: string, detail: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_URL_INVALID',
+    cause: `the signed request was rejected as ${reason}: ${detail}`,
+    fix: 'mint a fresh one with grantUpload({ disk, orgId, request }) and send it unedited — every constraint is inside the signature',
+    meta: { reason, detail },
+  });
+
+export const signedUrlExpired = (key: string, detail: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_URL_EXPIRED',
+    cause: `the signed request for "${key}" ${detail}`,
+    fix: 'call grantUpload({ disk, orgId, request, expiresInMs }) again — a longer expiresInMs widens the window the signature grants',
+    meta: { key, detail },
+  });
+
+/** The key is well-formed and unforged, and still belongs to somebody else. */
+export const orgMismatch = (key: string, orgId: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_ORG_MISMATCH',
+    cause: `key "${key}" is not inside org "${orgId}"`,
+    fix: `build it with scopedKey('${orgId}', ...parts), and pass the ACTOR's org as orgId — never one read off the request`,
+    meta: { key, orgId },
+  });
+
+/** The client half: the disk answered the presigned PUT with something other than 2xx. */
+export const uploadFailed = (path: string, status: number, detail: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_UPLOAD_FAILED',
+    cause: `PUT ${path} answered ${status}: ${detail === '' ? 'no body' : detail}`,
+    fix: 'call uploadFile({ file, grant }) again for a fresh grant; a 4xx here is the constraint named in the body, not a transport fault',
+    meta: { path, status, detail },
   });
 
 /** An interface-complete driver whose remote half is not bound yet. Always carries a fix. */

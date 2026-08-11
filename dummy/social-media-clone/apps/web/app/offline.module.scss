@@ -1,0 +1,9 @@
+@use '../shared/tokens' as t;
+
+.offline {
+  display: grid;
+  gap: t.space(3);
+  padding: t.space(8);
+  background: t.role('bg');
+  color: t.role('fg-muted');
+}

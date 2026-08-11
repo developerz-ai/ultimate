@@ -36,10 +36,10 @@ export const members = entity('members', {
     digestOptIn: boolean().default(true),
     createdAt: timestamp().defaultNow(),
   },
-  invariants: [
-    invariant('member_email_shape', (c) => c.email.contains('@')),
+  invariants: (c) => [
+    invariant('member_email_shape', c.email.contains('@')),
     /** One membership per user per org: the uniqueness makes `inviteMember` replay-safe. */
-    invariant('member_unique_per_org', (c) => c.unique(['orgId', 'userId'])),
+    invariant('member_unique_per_org', c.unique(['orgId', 'userId'])),
   ],
   indexes: [
     { on: ['orgId', 'role'] },
