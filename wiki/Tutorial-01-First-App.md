@@ -72,32 +72,20 @@ bunx x verify
 
 `-` is skipped, not passed: no `*.contract.test.ts` exists yet, so the step has nothing to check. [Tutorial 2](Tutorial-02-First-Feature) turns four of those dashes into ticks.
 
-### The one red step on run one
+### The invariant block is typed from your columns
 
-With the example slice, `typecheck` fails on two pinned errors:
-
-```text
-  ✗ typecheck          10586ms
-      X_TYPECHECK_FAILED
-        cause: the project does not typecheck
-        fix:   bunx tsc -b --pretty false
-        docs:  https://ultimate.dev/errors/X_TYPECHECK_FAILED
-      | apps/web/app/post/entity.ts(22,46): error TS18048: 'c.title' is possibly 'undefined'.
-      | apps/web/app/post/entity.ts(23,49): error TS18048: 'c.price' is possibly 'undefined'.
-```
-
-`InvariantColumns` is an index signature (`readonly [column: string]: ColumnExpr`) and the app's `tsconfig.json` sets `noUncheckedIndexedAccess: true`, so `c.title` widens to `ColumnExpr | undefined`. It affects `x g resource` and `x g entity` output too, not only the scaffolded example.
-
-Workaround — a non-null assertion on the column reference. Verified green:
+`invariants` is one callback over the whole list, and `c` is typed from the `columns` above it:
 
 ```ts
-invariants: [
-  invariant('post_title_not_blank', (c) => c.title!.trimmed().minLength(1)),
-  invariant('post_price_non_negative', (c) => c.price!.minor.atLeast(0)),
+invariants: (c) => [
+  invariant('post_title_not_blank', c.title.trimmed().minLength(1)),
+  invariant('post_price_non_negative', c.price.minor.atLeast(0)),
 ],
 ```
 
-Tracked in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) under 1.1.0's known gaps. Everything else that shipped broken: [Known gaps](Known-Gaps).
+`c.titel` is a compile error that names `title`, not a runtime surprise. Everything `x new` and `x g` write typechecks as generated — no `!`, no edit before the first `x verify`.
+
+What still ships broken: [Known gaps](Known-Gaps).
 
 ## Run it
 

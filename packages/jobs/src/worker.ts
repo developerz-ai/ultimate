@@ -4,7 +4,15 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { logger, onShutdown, recordQueueDepth, uuid, withSpan } from '@ultimat3/core';
+import {
+  logger,
+  onShutdown,
+  recordJob,
+  recordQueueDepth,
+  reportError,
+  uuid,
+  withSpan,
+} from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
@@ -27,6 +35,19 @@ import { createStepRunner, isStepSuspension } from './steps';
 const QUEUE_DEPTH_INTERVAL_MS = 15_000;
 
 export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered';
+
+/**
+ * `JobOutcome` -> the `jobs_total` label, and `null` for the outcome that is not one. `suspended`
+ * is deliberately unmapped: parking a run is control flow, so counting it would make every
+ * `step.sleep` read as a finished job and make the failure ratio meaningless.
+ */
+const JOB_OUTCOME_LABELS: Readonly<Record<JobOutcome, 'ok' | 'failed' | 'dead' | null>> =
+  Object.freeze({
+    completed: 'ok',
+    suspended: null,
+    retried: 'failed',
+    'dead-lettered': 'dead',
+  });
 
 export interface JobExecution {
   readonly outcome: JobOutcome;
@@ -125,6 +146,24 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       attempt: claimed.attempt,
       retry: decision.retry,
       error: message,
+    });
+    // This package's ONE error-reporting call site, and it is here rather than in the loop because
+    // this is the only frame that still holds the thrown value — the loop sees a message string.
+    // A retry is a failure the framework recovered from, so it is a `warning`; a dead letter is
+    // one nobody recovered from. `x jobs run` takes this path too, which is the point: one
+    // execution path means one place a failed job can become visible.
+    reportError(error, {
+      source: 'job',
+      severity: decision.retry ? 'warning' : 'error',
+      scope: {
+        operation: handle.name,
+        extra: {
+          jobId: claimed.id,
+          runId: claimed.runId,
+          attempt: claimed.attempt,
+          retry: decision.retry,
+        },
+      },
     });
     return settle({
       outcome: decision.retry ? 'retried' : 'dead-lettered',
@@ -316,6 +355,12 @@ export function createWorker(options: WorkerOptions): Worker {
             else if (execution.outcome === 'suspended') suspended += 1;
             else if (execution.outcome === 'retried') failed += 1;
             else deadLettered += 1;
+            // The other half of this package's metrics contract: `queue_depth` says how much work
+            // is waiting, `jobs_total` says whether any of it is succeeding. Depth alone cannot
+            // tell a drained queue from a queue nothing ever claimed. Labelled by QUEUE and
+            // OUTCOME only — a label per job name is unbounded in an app's own vocabulary.
+            const label = JOB_OUTCOME_LABELS[execution.outcome];
+            if (label !== null) recordJob(queue, label);
             return execution;
           })
           .finally(() => {

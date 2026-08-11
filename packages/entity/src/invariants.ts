@@ -3,11 +3,12 @@
 // never disagree with the code — a bulk import, a psql session or a second service all hit the
 // same rule.
 //
-// `invariant()` is unbound on purpose: it is written next to the columns, and `entity()` binds
-// it to their physical names. That is what keeps a physical name from being typed twice.
+// `invariant()` names an already-built expression: `entity()` hands the whole `invariants:`
+// callback the typed column proxy once, so a rule is written against property keys (`c.likeCount`)
+// and `entity()` alone resolves them to physical names. A physical name is never typed twice.
 
 import { invariantViolated } from './errors';
-import type { Expr, InvariantColumns, Resolve, Row } from './expr';
+import type { Expr, Resolve, Row } from './expr';
 
 /** `assert` is a rule only the app can run — a JS predicate with no SQL translation. */
 export type InvariantKind = 'check' | 'unique' | 'assert';
@@ -24,20 +25,25 @@ export interface Invariant<T> {
   readonly columns: readonly string[];
   /** Partial-constraint predicate, e.g. `deleted_at is null`. */
   readonly where?: string;
-  readonly holds: (row: T) => boolean;
+  /**
+   * A method, not a `readonly holds: (row: T) => boolean` property, and the difference is
+   * load-bearing: a function-typed property is checked contravariantly, which made `Invariant<Post>`
+   * unassignable to `Invariant<unknown>` and so made every real entity fail `EntitySet`. Every
+   * `database({ posts, … })` call then degraded to `Table<unknown>` and cascaded — 275 errors in
+   * the reference app from this one position. Method syntax is bivariant, which is what
+   * `EntityCore.$assert` beside it already relies on. Pinned by `database.variance.test.ts`.
+   */
+  holds(row: T): boolean;
 }
 
-/** What `invariant()` returns: a rule that does not yet know its physical column names. */
+/** What `invariant()` returns: a named rule that does not yet know its physical column names. */
 export interface InvariantDef {
   readonly name: string;
-  readonly build: (columns: InvariantColumns) => Expr;
+  readonly expr: Expr;
 }
 
-/** `invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0))` */
-export const invariant = (
-  name: string,
-  build: (columns: InvariantColumns) => Expr,
-): InvariantDef => ({ name, build });
+/** `invariants: (c) => [invariant('post_like_count_non_negative', c.likeCount.atLeast(0))]` */
+export const invariant = (name: string, expr: Expr): InvariantDef => ({ name, expr });
 
 const asRow = (value: unknown): Row =>
   typeof value === 'object' && value !== null ? (value as Row) : {};
@@ -45,11 +51,10 @@ const asRow = (value: unknown): Row =>
 /** Called by `entity()`: resolves property paths to physical names and freezes the rule. */
 export const bindInvariant = <T>(
   def: InvariantDef,
-  columns: InvariantColumns,
   resolve: Resolve,
   partialWhere: string | undefined,
 ): Invariant<T> => {
-  const expr = def.build(columns);
+  const expr = def.expr;
   const sql = expr.toSql(resolve);
   const kind: InvariantKind = expr.kind === 'unique' ? 'unique' : sql === null ? 'assert' : 'check';
   return {

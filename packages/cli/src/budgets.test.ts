@@ -3,10 +3,18 @@
 // weighed is the false green axiom 5 forbids.
 
 import { describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { RouteFact } from '@ultimat3/manifest';
 import { buildManifest } from '@ultimat3/manifest';
 import type { BuildStats } from './budgets';
-import { BUILD_STATS_FILE, checkBudgets } from './budgets';
+import {
+  BUILD_STATS_FILE,
+  checkBudgets,
+  measureJsBytes,
+  readBuildStats,
+  writeBuildStats,
+} from './budgets';
 
 const manifestOf = (...routes: readonly RouteFact[]) =>
   buildManifest({ app: { name: 'fixture', version: '1.0.0' }, routes });
@@ -71,5 +79,51 @@ describe('unit · budgets', () => {
     );
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_EXCEEDED']);
     expect(findings[0]?.cause).toContain('2400ms');
+  });
+});
+
+describe('unit · measureJsBytes weighs the document, not the graph', () => {
+  const out = join(tmpdir(), 'x-budget-measure');
+
+  test('a page with no script ships no JS, measured rather than assumed', async () => {
+    expect(await measureJsBytes('<html><body><h1>hi</h1></body></html>', out)).toBe(0);
+  });
+
+  test('an inline script counts its own bytes', async () => {
+    expect(await measureJsBytes('<script>let a=1</script>', out)).toBe('let a=1'.length);
+  });
+
+  test('a src the artifact does not contain contributes nothing it cannot prove', async () => {
+    expect(await measureJsBytes('<script src="/missing.js"></script>', out)).toBe(0);
+  });
+
+  test('a cross-origin script is not this build`s to weigh', async () => {
+    expect(await measureJsBytes('<script src="https://cdn.test/a.js"></script>', out)).toBe(0);
+  });
+
+  test('a chunk on disk is weighed at its real size', async () => {
+    const dir = join(out, `case-${Bun.hash('chunk').toString(16)}`);
+    await Bun.write(join(dir, 'chunk.js'), 'console.log(1)');
+    expect(await measureJsBytes('<script src="/chunk.js"></script>', dir)).toBe(14);
+  });
+});
+
+describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', () => {
+  test('round-trips through the path checkBudgets reads', async () => {
+    const root = join(tmpdir(), `x-budget-stats-${Bun.hash(import.meta.path).toString(16)}`);
+    const written = await writeBuildStats(root, { routes: [{ path: '/', jsBytes: 42 }] });
+    expect(written).toEndWith(BUILD_STATS_FILE);
+    expect(await readBuildStats(root)).toEqual({ routes: [{ path: '/', jsBytes: 42 }] });
+  });
+
+  test('a route the build never wrote stays unmeasured, so the gate reports it', async () => {
+    const root = join(tmpdir(), `x-budget-gap-${Bun.hash(`${import.meta.path}gap`).toString(16)}`);
+    await writeBuildStats(root, { routes: [{ path: '/', jsBytes: 0 }] });
+    const measured = await readBuildStats(root);
+    const findings = checkBudgets(
+      manifestOf(route('/dash', { js: '40kb' })),
+      measured ?? { routes: [] },
+    );
+    expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
   });
 });

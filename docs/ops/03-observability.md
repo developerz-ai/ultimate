@@ -13,15 +13,36 @@ dashboard.
 | `/healthz` and `/readyz`, both returning a JSON body with named checks | **shipped** — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) | works today: probes and blackbox checks |
 | OTel-shaped spans, trace context propagated as `traceparent` | **shipped as a seam** — [`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts) | the default exporter is a no-op; `noopExporter` and `memoryExporter` are the only ones that ship |
 | An OTLP span exporter | **not yet implemented** | to get traces off the box you must implement `SpanExporter` and register it |
-| A `/metrics` endpoint on any role | **not yet implemented** at the time of writing — a metrics seam is landing in `packages/core` | check what your build exposes; the scrape and alert design below holds either way |
+| `/metrics` in the Prometheus text format, on every role | **shipped** — [`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts), served on `METRICS_PORT` (9090), **not** the app's port | scrape it; see [Scrape config](#scrape-config) |
+| Error reporting: caught server faults, with code, cause and `fix:` | **shipped as a seam** — [`packages/core/src/error-reporter.ts`](../../packages/core/src/error-reporter.ts), wired for HTTP, jobs and realtime | the default reporter is a no-op; set `SENTRY_DSN` to switch the shipped transport on |
 | `x logs` | listed **planned** in `x --help` | — |
+
+`As of 2026-08` the five series every process emits are declared in
+[`packages/core/src/runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts), and each has
+exactly one emitter:
+
+| Series | Type | Labels | Emitted by |
+|---|---|---|---|
+| `http_requests_total` | counter | `method`, `route` (PATTERN), `status` (CLASS) | the HTTP pipeline, once per request, error paths included |
+| `http_request_duration_seconds` | histogram | same three | same call |
+| `connections` | gauge | none | the sync node's socket table, `+1`/`-1` |
+| `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s |
+| `jobs_total` | counter | `queue`, `outcome` (`ok`\|`failed`\|`dead`) | the worker's outcome path |
+
+Labels are deliberately low-cardinality: the route **pattern** and the status **class**, never a
+concrete path, a user id or a job name. A label an attacker chooses is a label that decides how
+much memory your monitoring stack allocates.
 
 **Read this before enabling autoscaling.** [`docker/helm/values.yaml`](../../docker/helm/values.yaml)
 declares per-role HPAs targeting custom pod metrics named `rps`, `connections` and `queue_depth`. A
-`Pods`-type HPA metric needs both an emitter **and** a custom metrics adapter installed in the
-cluster; the chart ships neither. Left enabled with no source, those HPAs sit at `<unknown>` and
-never scale. Either wire both first, or set `roles.<role>.autoscaling.enabled: false` and pin
-`replicas`.
+`Pods`-type HPA metric needs an emitter, a scrape **and** a custom metrics adapter that turns the
+scraped series into the metric name the HPA asks for. The chart now ships the first two —
+container port `metrics` on every serving role, a Service that publishes it, and a `ServiceMonitor`
+behind `serviceMonitor.enabled` — but **not** the adapter, and `rps` in particular is a rate the
+adapter has to derive (`rate(http_requests_total[1m])`); no process emits a series with that name.
+Until prometheus-adapter (or equivalent) is installed and configured, those HPAs still read
+`<unknown>`. Either wire the adapter first, or set `roles.<role>.autoscaling.enabled: false` and
+pin `replicas`.
 
 ## What you get with zero app changes
 
@@ -59,26 +80,69 @@ needs the insecure flag.
 
 ## Scrape config
 
-Discover `ServiceMonitor` objects cluster-wide rather than by a release label; a monitor that
-silently does not match its operator's selector looks identical to one that works.
+The chart ships it. Turn it on:
 
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: <app>-web
-  namespace: <app>
-  labels: { app.kubernetes.io/name: <app>, app.kubernetes.io/component: web }
-spec:
-  selector:
-    matchLabels: { app.kubernetes.io/name: <app>, app.kubernetes.io/component: web }
-  endpoints:
-    - port: metrics        # the Service port NAME, never the integer
-      path: /metrics
+```bash
+helm upgrade --install <release> docker/helm --set serviceMonitor.enabled=true
 ```
 
-The Service must carry matching labels and expose the metrics port **by name**. This is inert until
-the framework serves `/metrics`.
+That renders one `ServiceMonitor` for the release —
+[`docker/helm/templates/servicemonitor.yaml`](../../docker/helm/templates/servicemonitor.yaml) —
+selecting every role's Service by `app.kubernetes.io/name` + `instance`, scraping the port **named**
+`metrics` at `/metrics`. `targetLabels: [app.kubernetes.io/component]` carries the role onto every
+series, which is what an alert and a metric adapter key on.
+
+| Decision | Why |
+|---|---|
+| Off by default | a cluster with no Prometheus operator has no `ServiceMonitor` CRD, and `helm install` fails on an unknown kind rather than skipping it |
+| Its own port (`metricsPort`, 9090), not the app's | `ingress.yaml` routes `/` to web, so `/metrics` on 3000 would be your route patterns and error rates on the internet |
+| A Service for **every** role, headless for the ones that take no traffic | `worker`, `scheduler` and `replicator` open no HTTP socket, and `queue_depth` belongs to one of them — a ServiceMonitor needs a Service to select |
+| The port **by name**, never the integer | an operator who moves `metricsPort` must not have to remember a second place; the ingress selects `http` by name for the same reason, which is what keeps `/metrics` off the internet |
+
+Discover `ServiceMonitor` objects cluster-wide rather than by a release label; a monitor that
+silently does not match its operator's selector looks identical to one that works. If your operator
+uses a `serviceMonitorSelector`, put the labels it matches in `serviceMonitor.labels`.
+
+Verify before believing it:
+
+```bash
+helm template <release> docker/helm --set serviceMonitor.enabled=true | grep -A3 'name: metrics'
+kubectl port-forward deploy/<release>-ultimate-worker 9090:9090 && curl -s localhost:9090/metrics
+```
+
+## Error reporting
+
+Every server fault the framework catches goes through one `ErrorReporter`
+([`packages/core/src/error-reporter.ts`](../../packages/core/src/error-reporter.ts)), carrying the
+error contract intact: stable `X_*` code, cause, and the runnable `fix:` — so whoever is paged
+reads the command next to the failure instead of a stack trace.
+
+| Surface | Call site | Reported |
+|---|---|---|
+| HTTP | the `error-map` stage of the pipeline | `status >= 500` only. A 404 or a 422 is the caller's mistake and the problem document already said so |
+| jobs | `executeJob`'s failure path | a retry as `warning`, a dead letter as `error`. `x jobs run` takes the same path |
+| realtime | the sync node's frame handler and its detached presence writes | everything that is not a client fault (`X_TOPIC_FORBIDDEN`, `X_SUBSCRIPTION_LIMIT`, `X_PROTOCOL_VERSION`, `X_CURSOR_STALE`, `X_REBASE_CONFLICT`, `X_FORBIDDEN`, `X_UNAUTHENTICATED`) |
+
+The default reporter is a **no-op**, so an unconfigured app and every test pay nothing and page
+nobody. `x serve` switches it on when the environment carries a DSN:
+
+```bash
+SENTRY_DSN=https://<publicKey>@<your-monitor-host>/<projectId>
+```
+
+The framework ships the *interface* plus one transport that speaks the documented Sentry **envelope**
+wire format — the same relationship `metrics-text.ts` has to Prometheus. It names no host, no
+organisation and no vendor endpoint: the DSN is your app's typed env, pointing at whatever you run
+(the protocol has several self-hostable implementations). A malformed DSN fails the boot with
+`X_ERROR_REPORTER_DSN_INVALID`, because a monitor that was never connected looks exactly like an app
+that never failed.
+
+Every event is tagged with `release` = the deploy's **build id** — the same value
+`x-ultimate-build` carries and the same one `x serve` computed, never a second identity — plus
+`environment`, the `X_*` code, the source (`http`/`job`/`realtime`) and the role. Group on the code.
+
+To send somewhere else, implement `ErrorReporter` and call `configureErrorReporting({ reporter })`
+in the app entry. `memoryErrorReporter()` is the one to use in tests.
 
 ## The baseline alert set
 
@@ -172,10 +236,11 @@ rule built on it is blind to a job that has never succeeded — never fired, or 
 The companion rule keys off metric *absence* (`unless on (namespace, cronjob)`) and detects it about
 a day later. Slow, but it is the difference between "we have no backups" being noticed and not.
 
-## Alerts to add once Ultimate emits metrics
+## Alerts on the app's own metrics
 
-Marked **not yet implemented** — these are the app-level signals the role model implies, and they are
-what the chart's HPAs need anyway.
+`As of 2026-08` the five series above are emitted and scrapable, so these are writable today.
+`queue_depth` and `jobs_total` together are what tell a drained queue from a queue nothing is
+claiming — depth alone cannot.
 
 | Role | Alert on | Because |
 |---|---|---|

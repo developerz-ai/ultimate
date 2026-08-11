@@ -63,15 +63,15 @@ export const todo = entity('todos', {
     price: money(),              // two physical columns: price_minor bigint + price_currency char(3)
     createdAt: timestamp().defaultNow(),
   },
-  invariants: [
-    invariant('todo_title_not_blank', (c) => c.title!.trimmed().minLength(1)),
-    invariant('todo_price_non_negative', (c) => c.price!.minor.atLeast(0)),
+  invariants: (c) => [
+    invariant('todo_title_not_blank', c.title.trimmed().minLength(1)),
+    invariant('todo_price_non_negative', c.price.minor.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'createdAt'] }],
 });
 ```
 
-The two `!` are the 1.1.0 workaround from [tutorial 1](Tutorial-01-First-App#the-one-red-step-on-run-one); the generator emits them without and `typecheck` fails.
+`c` is typed from the `columns` above it, so `c.titel` is a compile error naming `title` — see [tutorial 1](Tutorial-01-First-App#the-invariant-block-is-typed-from-your-columns).
 
 Each invariant runs twice from one declaration — in the app on every write, and as a Postgres `CHECK` in the migration. Details: [Entities and migrations](Entities-And-Migrations).
 

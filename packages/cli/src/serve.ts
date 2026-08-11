@@ -6,7 +6,13 @@
 
 import { listActions, toRoute } from '@ultimat3/action';
 import type { Role } from '@ultimat3/core';
-import { isRole, logger, ROLES } from '@ultimat3/core';
+import {
+  configureErrorReporting,
+  isRole,
+  logger,
+  ROLES,
+  sentryErrorReporter,
+} from '@ultimat3/core';
 import { type MigrationReport, migrate } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
 import { loadApp } from './app-load';
@@ -65,6 +71,31 @@ export function portFromEnv(env: Env): number {
  */
 export function metricsPortFromEnv(env: Env): number {
   return portValue(env, 'METRICS_PORT', DEFAULT_METRICS_PORT);
+}
+
+/**
+ * The one env var that turns error monitoring on, and the only vendor-shaped name in the boot
+ * path. Not a platform primitive (axiom 7): the value is a URL to whatever the operator runs, the
+ * wire format behind it is documented and self-hostable, and `SENTRY_DSN` is what every monitor
+ * that speaks it already documents — inventing a second spelling would mean an operator's existing
+ * tooling sets a variable this framework ignores. Exactly the precedent
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` already sets in `docker/helm/values.yaml`.
+ */
+export const ERROR_DSN_KEY = 'SENTRY_DSN';
+
+/**
+ * Switch reporting on for this process. Unset DSN leaves core's no-op reporter in place, so a
+ * laptop and a CI run pay nothing and page nobody — and the release every event carries is the
+ * build id this boot already computed, never a second identity for the same deploy.
+ */
+export function configureReporting(env: Env, buildId: string): void {
+  const dsn = env[ERROR_DSN_KEY]?.trim();
+  configureErrorReporting({
+    release: buildId,
+    // A malformed DSN throws here, at boot, rather than at the first outage: a monitor that was
+    // never connected looks exactly like an app that never failed.
+    ...(dsn === undefined || dsn.length === 0 ? {} : { reporter: sentryErrorReporter({ dsn }) }),
+  });
 }
 
 export interface ServeOptions {
@@ -149,6 +180,9 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     stamped !== undefined && stamped.length > 0
       ? stamped
       : (await appManifest(options.root)).manifest.buildId;
+  // Before the first socket opens: everything above this line fails loudly into the container's
+  // own logs, everything below it is a served request, a claimed job or a routed frame.
+  configureReporting(options.env, buildId);
   const routes: readonly Route[] = [
     ...listActions().map(toRoute),
     ...assetRoutes({ root: options.root, storage: runtime.storage }),

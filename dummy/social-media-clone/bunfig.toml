@@ -1,0 +1,4 @@
+[test]
+root = "."
+# Frozen clock, seeded RNG, sealed network — nondeterminism in a test is a bug.
+preload = ["@ultimat3/testing/preload"]

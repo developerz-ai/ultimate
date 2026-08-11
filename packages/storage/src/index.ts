@@ -1,6 +1,25 @@
 // Single responsibility: the public API of @ultimat3/storage. Explicit named exports only —
 // every consumer imports from here, so this list is the package's contract.
 
+export type { AcceptSignedUploadInput, SignedRequestInput } from './accept';
+export { acceptSignedUpload, readSignedObject } from './accept';
+export type {
+  AttachmentTarget,
+  PromoteAttachmentInput,
+  SweepOrphansInput,
+} from './attachment';
+export {
+  attachmentKey,
+  attachmentPrefix,
+  isPendingKey,
+  PENDING_SEGMENT,
+  pendingKey,
+  pendingPrefix,
+  promoteAttachment,
+  sweepOrphans,
+  uploadExtension,
+  uploadName,
+} from './attachment';
 export type {
   ListOptions,
   ListPage,
@@ -38,13 +57,19 @@ export {
   diskUnknown,
   isStorageError,
   objectNotFound,
+  orgMismatch,
   pathUnsafe,
   STORAGE_ERROR_CODES,
   STORAGE_ERROR_TITLES,
   StorageError,
+  signedUrlExpired,
+  signedUrlRejected,
   storageNotImplemented,
   tooLarge,
+  uploadFailed,
 } from './errors';
+export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
+export { grantUpload } from './grant';
 export type {
   ImageFit,
   ImageFormat,
@@ -109,3 +134,17 @@ export {
   uploadPolicy,
   validateUpload,
 } from './upload';
+export type {
+  SignedPut,
+  SignedPutInput,
+  UploadedFile,
+  UploadFileInput,
+  UploadProgress,
+  UploadSource,
+} from './upload-client';
+export {
+  defaultSignedPut,
+  fetchSignedPut,
+  uploadFile,
+  xhrSignedPut,
+} from './upload-client';

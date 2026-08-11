@@ -19,11 +19,19 @@ app.kubernetes.io/version: {{ default .Chart.AppVersion .Values.image.tag | quot
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{/* The container spec for a role. `role` is the only thing that varies. */}}
+{{/*
+The container spec for a role. `role` is the only thing that varies.
+
+`migrate` is the one role that opens no socket at all — it applies migrations and exits — so it
+declares no port and no scrape target. Every OTHER role opens the metrics listener, including the
+three that serve no HTTP: `queue_depth` belongs to `worker`, and a pod with no container port
+named `metrics` is a ServiceMonitor with nothing to scrape and an HPA pinned at <unknown>.
+*/}}
 {{- define "ultimate.container" -}}
 {{- $role := .role -}}
 {{- $cfg := .cfg -}}
 {{- $root := .root -}}
+{{- $scraped := ne $role "migrate" -}}
 - name: {{ $role }}
   image: {{ include "ultimate.image" $root }}
   imagePullPolicy: {{ $root.Values.image.pullPolicy }}
@@ -35,6 +43,10 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
     - name: PORT
       value: {{ $cfg.port | quote }}
     {{- end }}
+    {{- if $scraped }}
+    - name: METRICS_PORT
+      value: {{ $root.Values.metricsPort | quote }}
+    {{- end }}
     {{- range $key, $value := $root.Values.env }}
     - name: {{ $key }}
       value: {{ $value | quote }}
@@ -42,10 +54,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
   envFrom:
     - secretRef:
         name: {{ $root.Values.existingSecret }}
-  {{- if $cfg.port }}
+  {{- if or $cfg.port $scraped }}
   ports:
+    {{- if $cfg.port }}
     - name: http
       containerPort: {{ $cfg.port }}
+    {{- end }}
+    {{- if $scraped }}
+    - name: metrics
+      containerPort: {{ $root.Values.metricsPort | int }}
+    {{- end }}
+  {{- end }}
+  {{- if $cfg.port }}
   readinessProbe:
     httpGet: { path: /readyz, port: http }
     periodSeconds: 5

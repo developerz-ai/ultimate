@@ -1,5 +1,16 @@
 /** Public API of `@ultimat3/render`: the `route` primitive, the five modes, the table. */
 
+import { installRenderLoader } from './module-loader';
+
+// A side effect on import, deliberately: a Bun plugin only transforms modules loaded AFTER it, and
+// every consumer that will ever load a `.tsx` route or a `.scss` module imports this package first
+// (an app's route file imports `defineRoute` from here before it imports anything else it owns).
+// Any later hook — `x dev`, `x build`, `server.ts` — would each have to remember, which is four
+// places one fact can be wrong instead of none.
+installRenderLoader();
+
+export type { CompiledStylesheet } from './css-modules';
+export { compileStylesheet, isCssModule, scopeClasses } from './css-modules';
 export type { RenderErrorCode } from './errors';
 export {
   BudgetExceededError,
@@ -48,6 +59,8 @@ export {
   parseByteBudget,
   routeJsBytes,
 } from './islands';
+export type { JsxComponent, JsxNode, JsxProps } from './jsx';
+export { Fragment, h, isJsxNode, JSX_NODE } from './jsx';
 export type { ModeCheckContext, ModeSpec, RouteShape } from './modes';
 export {
   assertModeInvariants,
@@ -56,6 +69,15 @@ export {
   MODE_SPECS,
   RENDER_MODES,
 } from './modes';
+export type { Stylesheet } from './module-loader';
+export {
+  clearStylesheets,
+  installRenderLoader,
+  loadStylesheet,
+  registeredStylesheets,
+  stylesFor,
+  transformTsx,
+} from './module-loader';
 export type {
   CompiledPattern,
   RegisterRouteInput,
@@ -75,6 +97,7 @@ export {
   routeFor,
   routePathFromFile,
 } from './registry';
+export { renderComponent, renderToHtml } from './render-html';
 export type {
   IsrController,
   IsrControllerOptions,
@@ -84,7 +107,6 @@ export type {
   IsrState,
   IsrStore,
 } from './render-isr';
-
 export {
   createIsrController,
   invalidateAndRevalidate,
@@ -138,6 +160,8 @@ export {
   OFFLINE_STRATEGIES,
   tagKeys,
 } from './route';
+export type { RouteComponent } from './route-component';
+export { pageComponentOf } from './route-component';
 export type {
   NavigateOptions,
   NavigationGuard,

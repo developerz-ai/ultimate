@@ -32,6 +32,7 @@
   "dependencies": {
     "@ultimat3/cache": "1.2.0",
     "@ultimat3/core": "1.2.0",
-    "@ultimat3/seo": "1.2.0"
+    "@ultimat3/seo": "1.2.0",
+    "sass": "1.102.0"
   }
 }

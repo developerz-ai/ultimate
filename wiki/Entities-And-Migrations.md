@@ -47,9 +47,9 @@ export const posts = entity('posts', {
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
   tenant: 'orgId',   // said out loud; inferred from `.tenant()` or an `orgId` column if omitted
-  invariants: [
-    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
-    invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0)),
+  invariants: (c) => [
+    invariant('post_title_present', c.title.trimmed().minLength(1)),
+    invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'publishedAt'], order: 'desc' }],
 });
@@ -63,7 +63,7 @@ The table name is the first argument. Everything else is the init object:
 |---|---|
 | `columns` | types + defaults + FKs. Money is `bigint` minor units + `char(3)` currency, never a float; timestamps are `timestamptz`, stored UTC |
 | `tenant` | the tenant column. Omitted, it is inferred from `.tenant()` or a column named `orgId` — silence never means unscoped |
-| `invariants` | named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible |
+| `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
 | `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead |
 | `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
 | `tags` | extra cache tags this entity participates in, beyond its own `entity:<name>` |

@@ -90,3 +90,39 @@ export async function readBuildStats(root: string): Promise<BuildStats | undefin
   if (!existsSync(path)) return undefined;
   return (await Bun.file(path).json()) as BuildStats;
 }
+
+const SCRIPT_TAG = /<script(?<attrs>[^>]*)>(?<body>[\s\S]*?)<\/script>/g;
+const SRC_ATTR = /\ssrc="(?<src>[^"]*)"/;
+
+/**
+ * What a rendered document actually makes the browser execute: the bytes of every inline script
+ * plus the size of every file a `src` points at. Measured from the emitted HTML rather than from
+ * the declared graph, because the graph is what a route *says* it ships and this gate exists to
+ * catch the case where those two disagree.
+ */
+export async function measureJsBytes(html: string, out: string): Promise<number> {
+  let total = 0;
+  for (const match of html.matchAll(SCRIPT_TAG)) {
+    const attrs = match.groups?.['attrs'] ?? '';
+    const src = SRC_ATTR.exec(attrs)?.groups?.['src'];
+    if (src === undefined) {
+      total += Buffer.byteLength(match.groups?.['body'] ?? '', 'utf8');
+      continue;
+    }
+    // Only a path inside the artifact can be weighed; a cross-origin script is not this build's.
+    if (!src.startsWith('/')) continue;
+    const file = Bun.file(join(out, src.slice(1)));
+    total += (await file.exists()) ? file.size : 0;
+  }
+  return total;
+}
+
+/**
+ * The file `checkBudgets` reads. Written by the build and by nothing else — a stats file produced
+ * anywhere but from real output is the false green this gate exists to prevent.
+ */
+export async function writeBuildStats(root: string, stats: BuildStats): Promise<string> {
+  const path = join(root, BUILD_STATS_FILE);
+  await Bun.write(path, `${JSON.stringify(stats, null, 2)}\n`);
+  return path;
+}

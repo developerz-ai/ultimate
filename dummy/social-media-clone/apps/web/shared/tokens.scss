@@ -1,0 +1,114 @@
+// The app's one styling entry point: `@use '../../shared/tokens' as t;` and nothing else.
+// It forwards @ultimat3/ui's token layer verbatim and adds the computed layer the framework
+// deliberately leaves to the app — fluid sizing, the two breakpoint intents `respond-to` cannot
+// express, and the motion guard. Emits no CSS; global custom properties come from ui's theme.scss.
+
+@use 'sass:map';
+@use 'sass:math';
+@use 'sass:meta';
+@use '@ultimat3/ui/tokens' as ui;
+
+// `role('accent')`, `space(4)`, `text('lg')`, `radius('md')`, `shadow('sm')`, `duration('fast')`,
+// `@include focus-ring`, `@include surface`, `@include truncate`, `@include respond-to('md')`, …
+@forward '@ultimat3/ui/tokens';
+
+// --- Computed values ---------------------------------------------------------
+// SCSS earns its place by GENERATING css. These compute; they do not restate a constant.
+
+/// px -> rem against the root size. The design system is rem-only: a raw px in a component is a
+/// bug, so a wrong unit is a build error rather than a layout that is subtly off at 200% zoom.
+@function rem($value, $root: 16px) {
+  @if meta.type-of($value) == 'number' and math.is-unitless($value) {
+    @return math.div($value, 16) * 1rem;
+  }
+  @if math.unit($value) == 'rem' {
+    @return $value;
+  }
+  @if math.unit($value) != 'px' {
+    @error 'X_TOKEN_UNIT: rem() expected px, rem or a unitless number — got `#{$value}`. fix: pass a px value, e.g. rem(24px)';
+  }
+  @return math.div($value, $root) * 1rem;
+}
+
+/// One `clamp()` with a real slope and intercept, so type and space scale with the viewport
+/// between two widths instead of stepping at a breakpoint. A guessed clamp is not this.
+@function fluid($min, $max, $from: 20rem, $to: 80rem) {
+  @if $from == $to {
+    @error 'X_TOKEN_RANGE: fluid() needs $from and $to to differ — both are `#{$from}`. fix: widen the range, e.g. fluid(1rem, 2rem, 20rem, 80rem)';
+  }
+
+  $slope: math.div($max - $min, $to - $from);
+  $intercept: $min - $slope * $from;
+  @return clamp(#{$min}, calc(#{$intercept} + #{$slope * 100}vw), #{$max});
+}
+
+// --- Breakpoint intents ------------------------------------------------------
+// `respond-to` is min-width only. These are the other two, over the SAME map, so there is still
+// one place a rung is defined. Prefer a container query to any of the three.
+
+@mixin bp-down($bp) {
+  @if not map.has-key(ui.$breakpoints, $bp) {
+    @error 'X_TOKEN_UNKNOWN: breakpoint "#{$bp}" is not in $breakpoints. fix: add it to @ultimat3/ui/tokens/_breakpoints.scss';
+  }
+  // 0.02px below the rung: `max-width: 768px` and `min-width: 768px` both match at exactly 768px,
+  // which is how a rule ends up applying in two ranges at once.
+  @media (max-width: (map.get(ui.$breakpoints, $bp) - 0.02px)) {
+    @content;
+  }
+}
+
+@mixin bp-between($from, $to) {
+  @if not map.has-key(ui.$breakpoints, $from) or not map.has-key(ui.$breakpoints, $to) {
+    @error 'X_TOKEN_UNKNOWN: bp-between("#{$from}", "#{$to}") — one of those is not in $breakpoints. fix: use a named rung';
+  }
+  @media (min-width: map.get(ui.$breakpoints, $from)) and (max-width: (map.get(ui.$breakpoints, $to) - 0.02px)) {
+    @content;
+  }
+}
+
+// --- Motion ------------------------------------------------------------------
+
+/// Opt-IN motion: the content is emitted only when the viewer has not asked for less. Stronger
+/// than a global `reduce` override, because there is nothing to override — a component that
+/// forgets the guard has no animation to begin with, instead of one that needs `!important`.
+@mixin motion {
+  @media (prefers-reduced-motion: no-preference) {
+    @content;
+  }
+}
+
+// --- Composed patterns -------------------------------------------------------
+
+/// Lift on hover. The shadow change is for everyone; only the transform is gated, and the element
+/// never changes layout size — a hover that reflows is a hover that costs CLS.
+@mixin lift($elevation: 'md', $distance: -2px) {
+  @include ui.transition(box-shadow, transform);
+
+  &:hover {
+    box-shadow: ui.shadow($elevation);
+
+    @include motion {
+      transform: translateY($distance);
+    }
+  }
+}
+
+/// Text painted with a gradient. The solid `color` is set first and is not decoration: it is what
+/// renders wherever `background-clip: text` is unsupported or forced-colors is on.
+@mixin gradient-text($from: ui.role('accent'), $to: ui.role('accent-strong')) {
+  color: $from;
+  background-image: linear-gradient(120deg, $from, $to);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/// The feed's card rhythm, used by post, comment and notification alike so three components
+/// cannot drift into three paddings.
+@mixin card {
+  @include ui.surface('surface-raised', 'sm');
+  @include ui.padding-block(ui.space(4));
+  @include ui.padding-inline(ui.space(4));
+
+  border-radius: ui.radius('lg');
+}

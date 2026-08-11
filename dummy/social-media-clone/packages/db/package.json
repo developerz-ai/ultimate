@@ -1,0 +1,13 @@
+{
+  "name": "@social-media-clone/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Entity re-exports and SQL migrations, no business logic",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  }
+}

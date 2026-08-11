@@ -82,14 +82,14 @@ const uiStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .list {
   display: grid;
-  gap: tokens.$space-2;
+  gap: tokens.space(2);
 }
 
 .item {
-  padding: tokens.$space-2;
-  border-radius: tokens.$radius-sm;
-  background: tokens.$surface-raised;
-  color: tokens.$text-primary;
+  padding: tokens.space(2);
+  border-radius: tokens.radius('sm');
+  background: tokens.role('surface-raised');
+  color: tokens.role('fg');
 }
 `;
 

@@ -25,7 +25,7 @@ const definePosts = () =>
       deletedAt: timestamp().nullable(),
     },
     tags: ['tag:feed'],
-    invariants: [invariant('title_present', (c) => c.title.trimmed().minLength(1))],
+    invariants: (c) => [invariant('title_present', c.title.trimmed().minLength(1))],
     indexes: [
       { on: ['orgId', 'publishedAt'], order: 'desc', where: (c) => c.status.eq('published') },
     ],

@@ -1,0 +1,91 @@
+@use '../tokens' as t;
+
+.wrap {
+  @include t.control;
+  display: flex;
+  flex-direction: column;
+  gap: t.space(2);
+
+  &:focus-within {
+    border-color: t.role('accent');
+    outline: 2px solid t.role('accent');
+    outline-offset: 1px;
+  }
+
+  &[data-disabled='true'] {
+    background: t.role('bg-soft');
+    color: t.role('fg-muted');
+  }
+
+  &:has([aria-invalid='true']) {
+    border-color: t.role('danger');
+  }
+}
+
+// The wrapper owns the box; the native control is transparent inside it. Its own button is
+// styled rather than replaced — it is already focusable, keyboard-driven and localised.
+.input {
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+
+  &::file-selector-button {
+    @include t.transition(background-color, border-color);
+    margin-inline-end: t.space(3);
+    border: 1px solid t.role('line');
+    border-radius: t.radius(md);
+    background: t.role('surface');
+    color: t.role('fg-strong');
+    font: inherit;
+    font-weight: t.weight(medium);
+    padding-block: t.space(1);
+    padding-inline: t.space(3);
+    cursor: pointer;
+  }
+
+  &::file-selector-button:hover {
+    background: t.role('bg-soft');
+    border-color: t.role('accent');
+  }
+
+  &:disabled::file-selector-button {
+    @include t.disabled;
+    cursor: not-allowed;
+  }
+}
+
+.progress {
+  display: block;
+  block-size: 0.375rem;
+  border-radius: t.radius(pill);
+  background: t.role('bg-soft');
+  overflow: hidden;
+}
+
+// Inline-start, not `left`: the bar has to fill from the reading edge under `dir="rtl"` too.
+.bar {
+  display: block;
+  block-size: 100%;
+  inline-size: var(--file-progress, 0%);
+  border-start-start-radius: t.radius(pill);
+  border-end-start-radius: t.radius(pill);
+  background: t.role('accent');
+  @include t.transition(inline-size);
+}
+
+.size-sm {
+  padding-block: t.space(1);
+  font-size: t.text(sm);
+}
+
+.size-md {
+  padding-block: t.space(2);
+}
+
+.size-lg {
+  padding-block: t.space(3);
+  font-size: t.text(lg);
+}

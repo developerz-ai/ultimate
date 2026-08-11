@@ -69,9 +69,9 @@ const styleSource =
 @use '@ultimat3/ui/tokens' as tokens;
 
 .page {
-  padding: tokens.$space-6;
-  background: tokens.$surface-base;
-  color: tokens.$text-primary;
+  padding: tokens.space(6);
+  background: tokens.role('bg');
+  color: tokens.role('fg');
 }
 `;
 

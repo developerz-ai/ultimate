@@ -56,9 +56,9 @@ export const posts = entity('posts', {
     publishedAt: timestamp().nullable(),
     createdAt: timestamp().defaultNow(),
   },
-  invariants: [
-    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
-    invariant('post_slug_unique', (c) => c.unique(['slug'])),
+  invariants: (c) => [
+    invariant('post_title_present', c.title.trimmed().minLength(1)),
+    invariant('post_slug_unique', c.unique(['slug'])),
   ],
   indexes: [{ on: ['orgId', 'publishedAt'], order: 'desc' }],
 });
@@ -69,7 +69,7 @@ export const posts = entity('posts', {
 export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publishedAt']);
 ```
 
-- `entity(name, init)` is name-first; `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }`. `invariants` is plural.
+- `entity(name, init)` is name-first; `init` is `{ columns, tenant?, primaryKey?, invariants?, indexes?, tags? }`. `invariants` is one callback over the list, and its `c` is typed from `columns`.
 - Tenancy is `.tenant()` on the column or `tenant: 'orgId'` in `init`; with neither, a column named `orgId` is inferred. The repo injects the filter, you never write it.
 - Each invariant emits its own `CHECK`/`UNIQUE` automatically; only `c.satisfies(fn, [...])` and `c.matches(fn)` stay TS-only, and a rule the DB does not know is a rule a migration can violate.
 - Money → `money()`; dates → `timestamp()` (always `timestamptz`) ([`10-cross-cutting.md`](./10-cross-cutting.md)).

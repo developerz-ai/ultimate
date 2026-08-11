@@ -1,0 +1,13 @@
+{
+  "name": "@social-media-clone/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The app's own MCP tools",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  }
+}

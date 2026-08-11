@@ -16,11 +16,11 @@ export const plans = entity('plans', {
     seats: integer(),
   },
   primaryKey: ['code', 'currency'],
-  invariants: [
-    invariant('plan_price_non_negative', (c) => c.monthly.minor.atLeast(0)),
+  invariants: (c) => [
+    invariant('plan_price_non_negative', c.monthly.minor.atLeast(0)),
     /** The row's own currency and its price's currency cannot drift apart. */
-    invariant('plan_currency_matches_price', (c) => c.monthly.currency.eq(c.currency)),
-    invariant('plan_seats_positive', (c) => c.seats.atLeast(1)),
+    invariant('plan_currency_matches_price', c.monthly.currency.eq(c.currency)),
+    invariant('plan_seats_positive', c.seats.atLeast(1)),
   ],
 });
 

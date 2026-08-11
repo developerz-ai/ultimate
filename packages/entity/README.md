@@ -22,10 +22,10 @@ export const posts = entity('posts', {
     createdAt: timestamp().defaultNow(),
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
-  invariants: [
-    invariant('post_title_present', (c) => c.title.trimmed().minLength(1)),
-    invariant('post_slug_unique_per_org', (c) => c.unique(['orgId', 'slug'])),
-    invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0)),
+  invariants: (c) => [
+    invariant('post_title_present', c.title.trimmed().minLength(1)),
+    invariant('post_slug_unique_per_org', c.unique(['orgId', 'slug'])),
+    invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),
   ],
   indexes: [{ on: ['orgId', 'createdAt'], order: 'desc', where: (c) => c.status.eq('published') }],
 });

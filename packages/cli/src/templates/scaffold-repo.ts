@@ -340,14 +340,15 @@ export function Card(props: CardProps) {
 const uiCardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 .card {
-  padding: tokens.$space-4;
-  border-radius: tokens.$radius-md;
-  background: tokens.$surface-raised;
-  color: tokens.$text-primary;
+  padding: tokens.space(4);
+  border-radius: tokens.radius('md');
+  background: tokens.role('surface-raised');
+  color: tokens.role('fg');
 }
 
 .title {
-  font: tokens.$text-heading-sm;
+  font-size: tokens.text('lg');
+  font-weight: tokens.weight('semibold');
 }
 `;
 

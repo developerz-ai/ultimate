@@ -1,0 +1,13 @@
+{
+  "name": "@social-media-clone/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure types and constants, no I/O",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  }
+}

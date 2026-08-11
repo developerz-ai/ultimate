@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { GENERATORS } from './cmd-generate';
 import { ScaffoldPathEscapeError } from './errors';
 import { FIXTURE_GENERATORS, scaffoldFixture, scaffoldVariants } from './scaffold-fixture';
+import type { KnownGap } from './scaffold-typecheck';
 import {
   formatDiagnostics,
   gapsFor,
@@ -17,8 +18,24 @@ import {
 
 const gap = { file: 'apps/web/app/post/entity.ts', line: 20, code: 'TS18048' } as const;
 const pinned = { ...gap, message: "'c.title' is possibly 'undefined'." };
+const OWNER = '@ultimat3/entity — a fixture owner, stated the way a real pin has to state one';
+/**
+ * The bookkeeping is exercised against a list this file supplies, never against `KNOWN_GAPS`:
+ * the shipped list is empty, and a rule proved only by today's data stops being proved the day
+ * the data changes. What `KNOWN_GAPS` itself has to satisfy is asserted separately, below.
+ */
+const GAPS: readonly KnownGap[] = [
+  { variant: 'x new', code: gap.code, file: gap.file, message: pinned.message, owner: OWNER },
+  {
+    variant: 'x new',
+    code: gap.code,
+    file: gap.file,
+    message: "'c.price' is possibly 'undefined'.",
+    owner: OWNER,
+  },
+];
 /** Every pin satisfied at once, so a test can assert on the surplus alone. */
-const allPinned = KNOWN_GAPS.map((entry) => ({
+const allPinned = GAPS.map((entry) => ({
   file: entry.file,
   line: 20,
   code: entry.code,
@@ -49,36 +66,36 @@ describe('unit · scaffold typecheck harness', () => {
       { file: '', line: 0, code: 'TS5083', message: 'bad config' },
     ]);
     // The point of the split: a trailing \r inside the message would defeat every pin.
-    expect(unexpectedIn(parseDiagnostics(crlf).slice(0, 1))).toEqual([]);
+    expect(unexpectedIn(parseDiagnostics(crlf).slice(0, 1), GAPS)).toEqual([]);
   });
 
   test('a config error carries no file and still counts — a silent harness is a green lie', () => {
-    expect(unexpectedIn(parseDiagnostics('error TS6053: File not found'))).toHaveLength(1);
+    expect(unexpectedIn(parseDiagnostics('error TS6053: File not found'), GAPS)).toHaveLength(1);
   });
 
   test('a pinned gap is accepted and everything else is not', () => {
-    expect(unexpectedIn([pinned])).toEqual([]);
-    expect(unexpectedIn([{ ...pinned, code: 'TS2322' }])).toHaveLength(1);
-    expect(unexpectedIn([{ ...pinned, file: 'apps/web/app/post/repo.ts' }])).toHaveLength(1);
-    expect(unexpectedIn([{ ...pinned, message: "'row' is possibly 'undefined'." }])).toHaveLength(
-      1,
-    );
+    expect(unexpectedIn([pinned], GAPS)).toEqual([]);
+    expect(unexpectedIn([{ ...pinned, code: 'TS2322' }], GAPS)).toHaveLength(1);
+    expect(unexpectedIn([{ ...pinned, file: 'apps/web/app/post/repo.ts' }], GAPS)).toHaveLength(1);
+    expect(
+      unexpectedIn([{ ...pinned, message: "'row' is possibly 'undefined'." }], GAPS),
+    ).toHaveLength(1);
   });
 
   test('a pin is spent by one match, so a second identical diagnostic still fails the gate', () => {
-    expect(unexpectedIn(allPinned)).toEqual([]);
+    expect(unexpectedIn(allPinned, GAPS)).toEqual([]);
     // Same file, same code, same message, one occurrence too many: a new regression hiding
     // behind an old bug is exactly what an unpinned count would wave through.
-    expect(unexpectedIn([...allPinned, pinned])).toEqual([pinned]);
+    expect(unexpectedIn([...allPinned, pinned], GAPS)).toEqual([pinned]);
   });
 
   test('a gap that stops reproducing is reported, so a pin cannot outlive its bug', () => {
-    expect(staleGapsIn(allPinned)).toEqual([]);
-    expect(staleGapsIn([])).toEqual(KNOWN_GAPS);
+    expect(staleGapsIn(allPinned, GAPS)).toEqual([]);
+    expect(staleGapsIn([], GAPS)).toEqual(GAPS);
     // One of the two pins on this file is satisfied; the other is not, and only it is stale.
-    expect(staleGapsIn([pinned]).map((entry) => `${entry.file} ${entry.message}`)).not.toContain(
-      `${pinned.file} ${pinned.message}`,
-    );
+    expect(
+      staleGapsIn([pinned], GAPS).map((entry) => `${entry.file} ${entry.message}`),
+    ).not.toContain(`${pinned.file} ${pinned.message}`);
   });
 
   test('every pinned gap names who fixes it, and the variant that reproduces it', () => {
@@ -90,12 +107,20 @@ describe('unit · scaffold typecheck harness', () => {
     }
   });
 
+  test('nothing is pinned: every file `x new` and `x g` write compiles clean', () => {
+    // The six TS18048 pins this list carried were `InvariantColumns` typed as an index signature,
+    // so `c.title` was `ColumnExpr | undefined` in every generated entity. `invariants:` is now
+    // one callback and the proxy is typed from the declared columns, so there is nothing to
+    // excuse. An entry reappearing here is a template shipping a diagnostic at the user.
+    expect(KNOWN_GAPS).toEqual([]);
+  });
+
   test('a pin is spent only by its own variant — another invocation cannot borrow it', () => {
-    expect(gapsFor('x new')).toEqual(KNOWN_GAPS);
-    expect(gapsFor('x new --no-example')).toEqual([]);
+    expect(gapsFor('x new', GAPS)).toEqual(GAPS);
+    expect(gapsFor('x new --no-example', GAPS)).toEqual([]);
     // The same diagnostic, in a variant that pinned nothing, is a finding rather than a pass.
-    expect(unexpectedIn([pinned], gapsFor('x new --no-example'))).toEqual([pinned]);
-    expect(unexpectedIn([pinned], gapsFor('x new'))).toEqual([]);
+    expect(unexpectedIn([pinned], gapsFor('x new --no-example', GAPS))).toEqual([pinned]);
+    expect(unexpectedIn([pinned], gapsFor('x new', GAPS))).toEqual([]);
   });
 
   test('a failed gate reads as a runnable bug report', () => {

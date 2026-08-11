@@ -44,8 +44,8 @@ export const posts = entity('posts', {
     createdAt: timestamp().defaultNow(),
     updatedAt: timestamp().defaultNow().onUpdateNow(),
   },
-  invariants: [
-    invariant('post_slug_shape', (c) => c.slug.matches(isValidSlug)),
+  invariants: (c) => [
+    invariant('post_slug_shape', c.slug.matches(isValidSlug)),
     /**
      * Global, not per-org. The public blog URL is `/blog/{slug}` with no tenant anywhere in it,
      * and `repo.publishedBySlug` resolves it by slug alone — so a per-org constraint let two orgs
@@ -55,10 +55,11 @@ export const posts = entity('posts', {
      * before stops holding; `createDraft` derives the slug from the title, so a cross-org title
      * collision is now a write that fails loudly instead of a public page that resolves at random.
      */
-    invariant('post_slug_unique', (c) => c.unique(['slug'])),
-    invariant('post_like_count_non_negative', (c) => c.likeCount.atLeast(0)),
+    invariant('post_slug_unique', c.unique(['slug'])),
+    invariant('post_like_count_non_negative', c.likeCount.atLeast(0)),
     /** One declaration → one CHECK constraint → one runtime guard. */
-    invariant('post_publish_coherent', (c) =>
+    invariant(
+      'post_publish_coherent',
       c.satisfies(hasCoherentPublishState, ['status', 'publishedAt']),
     ),
   ],

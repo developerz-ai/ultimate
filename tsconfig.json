@@ -36,6 +36,9 @@
       "path": "./packages/entity"
     },
     {
+      "path": "./packages/flags"
+    },
+    {
       "path": "./packages/http"
     },
     {

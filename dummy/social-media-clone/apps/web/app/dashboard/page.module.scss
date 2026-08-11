@@ -1,0 +1,7 @@
+@use '../../shared/tokens' as t;
+
+.panel {
+  padding: t.space(6);
+  background: t.role('surface-raised');
+  color: t.role('fg');
+}

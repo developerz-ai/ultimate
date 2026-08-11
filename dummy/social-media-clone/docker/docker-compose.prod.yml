@@ -1,0 +1,69 @@
+# The production topology: one service per role, one image, differing only by ROLE and replicas.
+# What `x deploy --method compose` runs. migrate runs to completion before anything serves.
+#
+#   IMAGE=ghcr.io/you/social-media-clone:1.2.3 x deploy --image ghcr.io/you/social-media-clone:1.2.3
+name: social-media-clone
+
+x-image: &image
+  image: ${IMAGE:-social-media-clone:dev}
+  env_file: [../.env.production]
+  restart: unless-stopped
+  stop_grace_period: 30s # SIGTERM → drain in-flight requests, jobs and sockets
+  depends_on:
+    db: { condition: service_healthy }
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: social-media-clone
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+    restart: unless-stopped
+
+  # The release phase. Applies pending migrations under an advisory lock and exits; every serving
+  # role waits for it to complete, so no replica ever serves against a schema it does not ship.
+  migrate:
+    <<: *image
+    environment: [ROLE=migrate]
+    restart: 'no'
+
+  web:
+    <<: *image
+    environment: [ROLE=web]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 2 } # stateless: scales on RPS
+    ports: ['3000:3000']
+
+  sync:
+    <<: *image
+    environment: [ROLE=sync]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 1 } # scales on concurrent websockets; no sticky sessions
+    ports: ['3001:3001']
+
+  worker:
+    <<: *image
+    environment: [ROLE=worker]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 1 } # scales on queue depth
+
+  scheduler:
+    <<: *image
+    environment: [ROLE=scheduler]
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    deploy: { replicas: 1 } # fixed 1; leadership is a Postgres advisory lock
+
+volumes:
+  pgdata:

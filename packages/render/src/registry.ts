@@ -21,6 +21,7 @@ import type {
   RouteParams,
 } from './route';
 import { isRouteConfig, tagKeys } from './route';
+import type { RouteComponent } from './route-component';
 import type { Surface } from './surfaces';
 import { surfaceOf } from './surfaces';
 
@@ -47,6 +48,11 @@ export interface RouteEntry<TData = RouteData> {
   readonly suspenseBoundaries: number;
   readonly islands: readonly string[];
   readonly pattern: CompiledPattern;
+  /**
+   * The module's page component. Absent for `api/` routes and for a module that exports none —
+   * a `spa` shell is the mode that legitimately has no server-rendered body.
+   */
+  readonly component?: RouteComponent;
 }
 
 export interface RouteDescriptor {
@@ -200,6 +206,8 @@ export interface RegisterRouteInput<TData = RouteData> {
   readonly islands?: readonly string[];
   /** Override the convention (locale roots, rewrites). Rarely needed. */
   readonly path?: string;
+  /** The page component, resolved from the module by `pageComponentOf`. */
+  readonly component?: RouteComponent;
 }
 
 /** Register a route and enforce every invariant that needs the surrounding module. */
@@ -244,6 +252,9 @@ export function registerRoute<TData = RouteData>(
     suspenseBoundaries,
     islands: input.islands ?? [],
     pattern: compilePattern(path),
+    // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a
+    // different answer from an absent key, and every reader tests presence.
+    ...(input.component === undefined ? {} : { component: input.component }),
   };
   routes.set(path, entry as RouteEntry);
   return entry;

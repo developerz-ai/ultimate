@@ -12,11 +12,13 @@ import {
   markReady,
   onShutdown,
   readyzPayload,
+  reportError,
   systemClock,
   uuid,
 } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
 import { topic as makeTopic } from './channel';
+import { isClientFault } from './errors';
 import type { Transport, TransportSubscription } from './fanout';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
@@ -105,6 +107,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         at,
         error: error instanceof Error ? error.message : String(error),
       });
+      // Nobody is awaiting this, so the log is the only trace it leaves — and a log is not a
+      // signal anyone is paged on. The bus is this node's dependency, never the client's.
+      reportError(error, { source: 'realtime', scope: { operation: `presence.${at}` } });
     });
   };
 
@@ -293,6 +298,14 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           try {
             await routeFrame(socket, decode(message));
           } catch (error) {
+            // The ack frame tells the client what it did wrong; the monitor only hears about what
+            // this node did wrong. Same rule the HTTP pipeline applies at `status >= 500`.
+            if (!isClientFault(error)) {
+              reportError(error, {
+                source: 'realtime',
+                scope: { operation: 'sync.frame', extra: { socketId: socket.id } },
+              });
+            }
             socket.send({
               type: 'ack',
               v: PROTOCOL_VERSION,

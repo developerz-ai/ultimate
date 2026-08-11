@@ -44,8 +44,15 @@ the bug:
 | `recordRequest` | `@ultimat3/http` `pipeline.ts`, the `finally` around `execute` | every request passes it once, error paths included |
 | `recordConnection` | `@ultimat3/realtime` `socket.ts`, `SocketRegistry.add`/`remove` | the only definition of a live connection; close, idle sweep and drain all pass through it, so the gauge cannot leak |
 | `recordQueueDepth` | `@ultimat3/jobs` `worker.ts`, throttled inside `tick()` | the worker is the only process that reads its own queue |
+| `recordJob` | `@ultimat3/jobs` `worker.ts`, the outcome branch inside `tick()` | the loop is where the queue name is in scope; `JOB_OUTCOME_LABELS` maps the four outcomes onto three labels and drops `suspended`, because parking a run is control flow |
 
-`recordJob` has no caller yet — `jobs_total` is declared and not emitted.
+`error-reporter.ts` is the same shape a third time: `ErrorReporter`, a no-op default, a memory
+reporter for tests, and a transport on the wire (`error-reporter-sentry.ts`, an optional separate
+export — the DSN is the app's typed env, never a constant here). `reportError` never throws and
+never awaits. One call site per package, same rule as the recorders: `@ultimat3/http`'s
+`pipeline.ts` (`status >= 500` only), `@ultimat3/jobs`' `executeJob`, `@ultimat3/realtime`'s
+`sync-node.ts`. `configureErrorReporting({ release })` is fed the build id `serve.ts` already
+computed — never a second deploy identity.
 
 `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts`, on `METRICS_PORT` (9090) and
 **not** on the role's HTTP port: the chart's ingress routes `/` to `web`, so `/metrics` beside

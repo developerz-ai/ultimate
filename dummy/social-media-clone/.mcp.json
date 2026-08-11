@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    },
+    "app": {
+      "type": "http",
+      "url": "${APP_URL:-http://localhost:3000}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${APP_MCP_TOKEN}"
+      }
+    },
+    "db-gateway": {
+      "type": "http",
+      "url": "${DB_GATEWAY_URL}/mcp"
+    },
+    "error-monitor": {
+      "type": "http",
+      "url": "${ERROR_MONITOR_MCP_URL}"
+    }
+  }
+}

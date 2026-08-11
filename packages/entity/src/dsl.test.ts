@@ -47,7 +47,7 @@ const target = entity('dsl_test_posts', {
     title: text({ max: 120 }),
     createdAt: timestamp().defaultNow(),
   },
-  invariants: [invariant('title_present', (c) => c.title.trimmed().minLength(1))],
+  invariants: (c) => [invariant('title_present', c.title.trimmed().minLength(1))],
 });
 
 afterAll(() => {

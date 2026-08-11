@@ -7,6 +7,7 @@ import {
   isAnonymous,
   logger,
   recordRequest,
+  reportError,
   runWithContext,
   withSpan,
 } from '@ultimat3/core';
@@ -297,6 +298,22 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
     'error-map': (request, ctx) => {
       const error = ctx.error;
       const facts = factsOf(error);
+      // This package's ONE error-reporting call site, and it is the framework's own — `onError`
+      // below stays the APP's sink. 5xx only: a 404 or a 422 is the caller's mistake, the problem
+      // document already told them, and a monitor that also holds those is a log nobody reads.
+      // The `operation` is the route PATTERN for the same reason `recordRequest` uses it.
+      if (facts.status >= 500) {
+        reportError(error, {
+          source: 'http',
+          scope: {
+            requestId: ctx.requestId,
+            traceId: ctx.traceId,
+            role: ctx.role,
+            operation: `${ctx.method} ${ctx.route?.path ?? UNMATCHED_ROUTE}`,
+            actorId: isAnonymous(ctx.actor) ? undefined : ctx.actor.id,
+          },
+        });
+      }
       hooks.onError?.(error, ctx);
       logger.error(`${facts.code}: ${facts.cause} [${ctx.requestId}]`);
       if (config.dev && wantsOverlay(request.raw)) {

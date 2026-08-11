@@ -36,6 +36,7 @@ const CORE_CODE_TITLES = {
   X_ENV_MISSING: 'required environment variables are missing or invalid',
   X_ENVIRONMENT_INVALID: 'ULTIMATE_ENV is not a known environment',
   X_ERROR_CODE_DUPLICATE: 'error code registered twice',
+  X_ERROR_REPORTER_DSN_INVALID: 'the error monitor DSN is malformed',
   X_ID_INVALID: 'value is not a valid id',
   X_IMAGE_DECODE_FAILED: 'image bytes are malformed, truncated or internally inconsistent',
   X_IMAGE_TOO_LARGE: 'image exceeds the pipeline pixel ceiling',

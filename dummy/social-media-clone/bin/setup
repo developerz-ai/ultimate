@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fresh clone to running. Idempotent: safe to re-run.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+command -v bun >/dev/null || { echo "X_BUN_MISSING: install bun — https://bun.sh"; exit 1; }
+bun install
+[ -f .env.development.local ] || printf '# per-box secrets, gitignored, wins over .env.development\n' > .env.development.local
+bunx x db migrate "$@"
+bun run db:seed
+echo "setup complete — next: x dev"

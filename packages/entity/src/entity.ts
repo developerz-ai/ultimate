@@ -27,7 +27,7 @@ export interface IndexInit<C extends ColumnMap> {
   readonly order?: 'asc' | 'desc';
   readonly unique?: boolean;
   /** Partial index predicate, written in the same language as an invariant. */
-  readonly where?: (columns: InvariantColumns) => Expr;
+  readonly where?: (columns: InvariantColumns<C>) => Expr;
 }
 
 export interface EntityInit<C extends ColumnMap> {
@@ -39,7 +39,12 @@ export interface EntityInit<C extends ColumnMap> {
   readonly tenant?: keyof C & string;
   /** Composite keys only — a single key is `uuid().primaryKey()` on the column itself. */
   readonly primaryKey?: readonly (keyof C & string)[];
-  readonly invariants?: readonly InvariantDef[];
+  /**
+   * A callback, not an array of `(c) => …` builders: the column proxy is typed from `C`, and `C`
+   * is only fixed once for the whole `invariants` argument. Per-element builders were checked
+   * before `C` existed, which is why `c.title` used to be `ColumnExpr | undefined`.
+   */
+  readonly invariants?: (columns: InvariantColumns<C>) => readonly InvariantDef[];
   readonly indexes?: readonly IndexInit<C>[];
   /** Extra cache tags this entity participates in, beyond its own. */
   readonly tags?: readonly string[];
@@ -143,13 +148,14 @@ export const entity = <const C extends ColumnMap>(
     return `${snake(property)}_${part}`;
   };
 
-  const columnsExpr = invariantColumns(
+  const columnsExpr = invariantColumns<C>(
     name,
     entries.map(([property]) => property),
   );
   const partialWhere = softDelete ? `${snake(SOFT_DELETE_COLUMN)} is null` : undefined;
-  const invariants: readonly Invariant<Row>[] = (init.invariants ?? []).map((def) =>
-    bindInvariant<Row>(def, columnsExpr, resolve, partialWhere),
+  // Called once, here, so an unknown column throws while the entity is being declared.
+  const invariants: readonly Invariant<Row>[] = (init.invariants?.(columnsExpr) ?? []).map((def) =>
+    bindInvariant<Row>(def, resolve, partialWhere),
   );
 
   const declared: readonly IndexDef[] = [

@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-46 components: `Alert` · `AppShell` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `EmptyState` · `ErrorState` · `Field` · `Form` · `Grid` · `IconButton` · `Image` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toolbar` · `Tooltip`
+48 components: `Alert` · `AppShell` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `IconButton` · `Image` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -234,6 +234,29 @@ Edge-anchored panel, also a native <dialog> so it inherits the top layer and ine
 | `footer` | `JSX.Element` | — |  |
 | `class` | `string` | — |  |
 
+### Dropzone
+
+A drop surface that is a real `<label>` around a real, visually-hidden `<input type="file">`. That shape is what makes it usable without a mouse: click, Enter and Space already open the picker, focus already lands somewhere, and the accessible name is the instruction the label renders. A `<div onClick>` with `tabindex` would reimplement all four and get one of them wrong. Dragging is the enhancement on top, never the only way in.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `label` | `string` | yes | Already-translated instruction. Required — it is the control's accessible name. |
+| `hint` | `string` | — | Already-translated secondary line: the accepted types, the size ceiling. |
+| `id` | `string` | — |  |
+| `name` | `string` | — |  |
+| `accept` | `string` | — | The `accept` attribute, and the same list a dropped file is partitioned against. |
+| `multiple` | `boolean` | — |  |
+| `required` | `boolean` | — |  |
+| `disabled` | `boolean` | — |  |
+| `maxBytes` | `number` | — | Client-side ceiling. The server enforces its own; this only spares a doomed transfer. |
+| `maxFiles` | `number` | — |  |
+| `progress` | `number` | — | 0..1 while an upload runs. Absent renders no bar at all — never one stuck at zero. |
+| `progressLabel` | `string` | — | Already-translated accessible name for the progress bar. |
+| `class` | `string` | — |  |
+| `aria-describedby` | `string` | — |  |
+| `aria-invalid` | `boolean` | — |  |
+| `onSelect` | `(selection: FileSelection<File>) => void` | yes | Every file offered, partitioned into accepted and refused-with-a-reason. |
+
 ### EmptyState
 
 The "nothing here yet" surface. Title and description arrive as already translated strings; the action slot takes a Button so there is one CTA shape.
@@ -271,6 +294,30 @@ Label + hint + error, wired for a11y. Field owns the ids and hands them to the c
 | `required` | `boolean` | — |  |
 | `markOptional` | `boolean` | — | Appends a translated "(optional)" marker instead of marking required. |
 | `class` | `string` | — |  |
+
+### FileInput
+
+A file picker that keeps the platform control and dresses it. The native button and the browser's own "no file chosen" summary are already localised, focusable and keyboard-driven, so replacing them with a div buys nothing and costs an accessible name. What the platform has no opinion about is added here: a determinate progress bar, and a partition of what it refused.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `id` | `string` | — |  |
+| `name` | `string` | — |  |
+| `accept` | `string` | — | The `accept` attribute, and the same list the refusal partition is computed against. |
+| `multiple` | `boolean` | — |  |
+| `size` | `Size` | — |  |
+| `required` | `boolean` | — |  |
+| `disabled` | `boolean` | — |  |
+| `maxBytes` | `number` | — | Client-side ceiling. The server enforces its own; this only spares a doomed transfer. |
+| `maxFiles` | `number` | — |  |
+| `progress` | `number` | — | 0..1 while an upload runs. Absent renders no bar at all — never one stuck at zero. |
+| `progressLabel` | `string` | — | Already-translated accessible name for the progress bar. |
+| `class` | `string` | — |  |
+| `aria-label` | `string` | — |  |
+| `aria-describedby` | `string` | — |  |
+| `aria-invalid` | `boolean` | — |  |
+| `onSelect` | `((selection: FileSelection<File>) => void)` | — | Every chosen file, partitioned into accepted and refused-with-a-reason. |
+| `onBlur` | `JSX.EventHandlerUnion<HTMLInputElement, FocusEvent>` | — |  |
 
 ### Form
 

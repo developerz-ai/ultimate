@@ -31,6 +31,19 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   X_PERMISSION_UNKNOWN: 500,
   // @ultimat3/seo — a transform query the caller wrote, so the caller is the one who can fix it.
   X_IMAGE_QUERY_INVALID: 400,
+  // @ultimat3/storage — every one of these is reachable from a route: `/media/*` already serves
+  // objects, and a mounted `/_storage` serves signed reads and takes signed writes. Without a row
+  // a missing image answers 500, which reads as an outage instead of a 404.
+  X_STORAGE_NOT_FOUND: 404,
+  X_STORAGE_PATH_UNSAFE: 400,
+  X_STORAGE_TOO_LARGE: 413,
+  X_STORAGE_TYPE_REJECTED: 415,
+  X_STORAGE_CHECKSUM_MISMATCH: 422,
+  X_STORAGE_URL_INVALID: 403,
+  X_STORAGE_URL_EXPIRED: 410,
+  // 404, deliberately NOT 403: the org check fires before anything is read, so answering
+  // "forbidden" would confirm that a key exists to the one caller who must not learn it.
+  X_STORAGE_ORG_MISMATCH: 404,
   // @ultimat3/core
   // The caller asked for a format the pipeline cannot produce (`?f=avif`): the request names an
   // unsupported representation, which is 415 — not a 500, which would blame the server for it.

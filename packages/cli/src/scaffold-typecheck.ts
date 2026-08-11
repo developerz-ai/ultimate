@@ -66,50 +66,28 @@ export interface KnownGap {
   readonly owner: string;
 }
 
-// `InvariantColumns` is an index-signature type, so `c.title` is `ColumnExpr | undefined` under
-// `noUncheckedIndexedAccess`. Every hand-written entity in `examples/dummy` reproduces it
-// identically: the fix is a column proxy typed from the entity's own columns, in @ultimat3/entity
-// — a different template cannot avoid it without dropping to `satisfies()`, which would silently
-// stop emitting the Postgres CHECK.
-//
-// Measured, not guessed: no open-keyed form avoids the `| undefined` (index signature, `Record`,
-// and a mapped type over `string` or a template-literal pattern all produce it), and typing the
-// proxy from `columns` only reaches `c` when the element of `invariants:` is itself
-// context-sensitive. `invariant(name, build)` is a *call*, which TypeScript checks before
-// `entity()`'s own `C` is fixed, so `K` falls back to `string` and nothing changes. Making it
-// reach means changing the shape of `invariants:` — a documented primitive, so a major.
-const INVARIANT_PROXY =
-  '@ultimat3/entity — type the invariant column proxy from the declared columns (needs a major: ' +
-  'the `invariants:` element shape has to become context-sensitive)';
-
-/** Every entity the fixture generates. Each one declares the same two invariants. */
-const FIXTURE_ENTITIES = [
-  'apps/web/app/credit-note/entity.ts',
-  'apps/web/app/invoice/entity.ts',
-  'apps/web/app/post/entity.ts',
-] as const;
-
 /**
  * Diagnostics a template cannot fix, pinned one occurrence at a time. Pinned, never ignored:
  * `unexpectedIn` fails on anything not listed here — including a second copy of a listed
  * diagnostic, because each entry is consumed by exactly one match — and `staleGapsIn` fails when
  * a listed entry stops reproducing, so an entry cannot outlive the bug it describes.
+ *
+ * Empty, and that is the point: `invariants:` is one callback over the whole list, so `c` is typed
+ * from the entity's own columns and the six `TS18048 'c.title' is possibly 'undefined'` pins this
+ * list used to carry are gone. A new entry here is a template shipping a diagnostic, which needs
+ * an owner who can remove it — not a permanent exemption.
  */
-export const KNOWN_GAPS: readonly KnownGap[] = FIXTURE_ENTITIES.flatMap((file) =>
-  ["'c.title' is possibly 'undefined'.", "'c.price' is possibly 'undefined'."].map(
-    (message): KnownGap => ({
-      variant: 'x new',
-      code: 'TS18048',
-      file,
-      message,
-      owner: INVARIANT_PROXY,
-    }),
-  ),
-);
+export const KNOWN_GAPS: readonly KnownGap[] = [];
 
-/** The pins one invocation may spend. Another variant's pins are not its to spend. */
-export const gapsFor = (variant: string): readonly KnownGap[] =>
-  KNOWN_GAPS.filter((gap) => gap.variant === variant);
+/**
+ * The pins one invocation may spend. Another variant's pins are not its to spend. `gaps` is a
+ * parameter for the same reason it is on `unexpectedIn` and `staleGapsIn`: with `KNOWN_GAPS`
+ * legitimately empty, the bookkeeping is only testable against a list a test supplies.
+ */
+export const gapsFor = (
+  variant: string,
+  gaps: readonly KnownGap[] = KNOWN_GAPS,
+): readonly KnownGap[] => gaps.filter((gap) => gap.variant === variant);
 
 const matches = (diagnostic: TypeDiagnostic, gap: KnownGap): boolean =>
   diagnostic.code === gap.code &&

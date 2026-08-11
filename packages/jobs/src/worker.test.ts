@@ -2,11 +2,31 @@
 // that reads its own queue, so it is the only thing that can publish the number — and it must
 // publish it without letting the read cost a tick or repeat itself sixty times a scrape.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
-import { collectMetrics, createContext, resetMetrics } from '@ultimat3/core';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ErrorReport } from '@ultimat3/core';
+import {
+  collectMetrics,
+  configureErrorReporting,
+  createContext,
+  memoryErrorReporter,
+  resetErrorReporting,
+  resetMetrics,
+} from '@ultimat3/core';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { createMemoryDriver } from './driver-memory';
+import { job, resetJobs } from './job';
 import { createWorker } from './worker';
+
+function passthrough<T>(): StandardSchemaV1<unknown, T> {
+  return {
+    '~standard': {
+      version: 1,
+      vendor: 'ultimate-test',
+      validate: (value: unknown) => ({ value: value as T }),
+    },
+  };
+}
 
 const queue = (name: string, ready: number): QueueStats => ({
   queue: name,
@@ -94,5 +114,90 @@ describe('the worker publishes queue depth', () => {
     // depth still asked for work.
     expect(counting.calls().claim).toBe(1);
     expect(depthOf('default')).toBeUndefined();
+  });
+});
+
+/**
+ * `jobs_total` was declared in `runtime-metrics.ts` and never emitted, so the series existed and
+ * was permanently empty — depth alone cannot tell a drained queue from one nothing ever claimed.
+ */
+describe('the worker counts what it finished', () => {
+  const outcomeOf = (name: string, outcome: string): number | undefined =>
+    collectMetrics()
+      .metrics.find((metric) => metric.descriptor.name === 'jobs_total')
+      ?.points.find(
+        (point) => point.attributes['queue'] === name && point.attributes['outcome'] === outcome,
+      )?.value;
+
+  const reporter = memoryErrorReporter();
+
+  const runOne = async (options: { attempts: number; fail: boolean }): Promise<void> => {
+    resetJobs();
+    const handle = job<{ n: number }>({
+      name: 'countedJob',
+      input: passthrough<{ n: number }>(),
+      idempotencyKey: ({ n }) => `counted:${n}`,
+      retry: { attempts: options.attempts, jitter: false },
+      run: () => {
+        if (options.fail) throw new TypeError('the dependency is down');
+        return Promise.resolve();
+      },
+    });
+    const driver = createMemoryDriver();
+    await driver.enqueue({
+      name: 'countedJob',
+      queue: 'default',
+      input: { n: 1 },
+      idempotencyKey: handle.idempotencyKeyFor({ n: 1 }),
+      maxAttempts: options.attempts,
+    });
+    await createWorker({
+      driver,
+      drainOnShutdown: false,
+      context: () => createContext({ role: 'worker', buildId: 'test' }),
+    }).tick();
+  };
+
+  beforeEach(() => {
+    resetErrorReporting();
+    reporter.reset();
+    configureErrorReporting({ reporter });
+  });
+
+  afterEach(() => {
+    resetJobs();
+    resetErrorReporting();
+  });
+
+  test('a finished job lands in jobs_total, labelled by queue and outcome', async () => {
+    await runOne({ attempts: 3, fail: false });
+
+    expect(outcomeOf('default', 'ok')).toBe(1);
+    // Two labels and no more: a label per job name is unbounded in the app's own vocabulary.
+    const labels = collectMetrics()
+      .metrics.find((metric) => metric.descriptor.name === 'jobs_total')
+      ?.points.flatMap((point) => Object.keys(point.attributes));
+    expect([...new Set(labels)].sort()).toEqual(['outcome', 'queue']);
+  });
+
+  test('an attempt that will be retried counts as failed and reports a warning', async () => {
+    await runOne({ attempts: 3, fail: true });
+
+    expect(outcomeOf('default', 'failed')).toBe(1);
+    expect(outcomeOf('default', 'dead')).toBeUndefined();
+    const event = reporter.events[0] as ErrorReport;
+    expect(event.source).toBe('job');
+    // Recovered from, so not a page: the queue will run it again.
+    expect(event.severity).toBe('warning');
+    expect(event.scope.operation).toBe('countedJob');
+    expect(event.cause).toContain('the dependency is down');
+  });
+
+  test('an exhausted job counts as dead and is reported as an error, not a warning', async () => {
+    await runOne({ attempts: 1, fail: true });
+
+    expect(outcomeOf('default', 'dead')).toBe(1);
+    expect((reporter.events[0] as ErrorReport).severity).toBe('error');
+    expect((reporter.events[0] as ErrorReport).scope.extra?.['retry']).toBe(false);
   });
 });

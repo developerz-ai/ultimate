@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Every role in one process: embedded Postgres, in-process NATS, S3 to a local dir.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec bunx x dev "$@"

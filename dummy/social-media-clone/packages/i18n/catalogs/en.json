@@ -1,0 +1,25 @@
+{
+  "admin": {
+    "home": {
+      "description": "Operations for SocialMediaClone.",
+      "title": "Admin"
+    }
+  },
+  "app": {
+    "dashboard": {
+      "description": "Your workspace.",
+      "title": "Dashboard"
+    },
+    "offline": {
+      "description": "This page will refresh itself when the connection returns.",
+      "title": "You are offline"
+    }
+  },
+  "site": {
+    "home": {
+      "cta": "Open the dashboard",
+      "description": "Everything you need, one command from shippable.",
+      "title": "SocialMediaClone"
+    }
+  }
+}

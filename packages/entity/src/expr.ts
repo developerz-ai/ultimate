@@ -9,6 +9,7 @@
 // does not know this rule — silently pretending it reached Postgres would be worse.
 
 import { invariantViolated } from './errors';
+import type { ColumnMap } from './types';
 
 export type Row = Readonly<Record<string, unknown>>;
 
@@ -48,13 +49,21 @@ export interface ColumnExpr {
 
 type RowPredicate = (...values: never[]) => boolean;
 
-export type InvariantColumns = {
-  readonly [column: string]: ColumnExpr;
+/**
+ * A mapped type over the declared columns, never an index signature: under
+ * `noUncheckedIndexedAccess` an index signature makes `c.title` `ColumnExpr | undefined`, so every
+ * invariant needed a `!`. Mapped, `c.title` is a `ColumnExpr` and `c.titel` is a compile error
+ * that suggests the real name. `entity()` supplies `C` because `invariants` is a callback — a
+ * per-element `invariant(name, build)` call is checked before `C` is fixed, so `K` fell back to
+ * `string` and nothing reached it.
+ */
+export type InvariantColumns<C extends ColumnMap = ColumnMap> = {
+  readonly [K in keyof C]: ColumnExpr;
 } & {
   /** Decided by the database — a single row cannot see a duplicate. */
-  unique(columns: readonly string[]): Expr;
+  unique(columns: readonly (keyof C & string)[]): Expr;
   /** Lifts a domain predicate over several columns. App-only by construction. */
-  satisfies(predicate: RowPredicate, columns: readonly string[]): Expr;
+  satisfies(predicate: RowPredicate, columns: readonly (keyof C & string)[]): Expr;
 };
 
 const terms = new WeakMap<ColumnExpr, Term>();
@@ -205,13 +214,15 @@ const satisfies = (predicate: RowPredicate, columns: readonly string[]): Expr =>
   );
 
 /**
- * The `c` an invariant is written against. A Proxy so a typo in a column name is a
- * declaration-time error naming the columns that do exist, not `undefined is not a function`.
+ * The `c` an invariant is written against. Still a Proxy even though `InvariantColumns<C>` now
+ * catches a typo at compile time: a JS caller, a dynamically built rule and a `satisfies()` column
+ * list all reach it untyped, and the thrown message names the columns that do exist rather than
+ * failing later as `undefined is not a function`.
  */
-export const invariantColumns = (
+export const invariantColumns = <C extends ColumnMap>(
   entity: string,
   properties: readonly string[],
-): InvariantColumns => {
+): InvariantColumns<C> => {
   const known = new Set(properties);
   const helpers = { unique, satisfies };
   return new Proxy(helpers, {
@@ -227,5 +238,5 @@ export const invariantColumns = (
       }
       return expr(columnTerm(property));
     },
-  }) as InvariantColumns;
+  }) as unknown as InvariantColumns<C>;
 };

@@ -63,6 +63,20 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `$view`, never `view`; no free `view(entity, keys)` either — one way to write a projection.
 - **Invariants run twice**: in the app on write AND as a Postgres CHECK/UNIQUE via `toSql()`. An
   untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a pretend CHECK.
+- **`invariants` is ONE callback, and `InvariantColumns<C>` is a mapped type.** `invariants: (c) =>
+  [invariant(name, expr)]`, never an array of `(c) => …` builders: a per-element builder is a call
+  TypeScript checks before `entity()`'s `C` is fixed, so `C` fell back to its constraint and `c`
+  stayed open-keyed. Open-keyed means an index signature, and under `noUncheckedIndexedAccess` that
+  made every `c.title` a `ColumnExpr | undefined` — every generated entity red until the author
+  added `!`. The Proxy in `invariantColumns()` stays regardless: a JS caller and a dynamically
+  built rule never see the compile error, and its message names the columns that do exist.
+- **`Invariant<T>.holds` is a method, never `readonly holds: (row: T) => boolean`.** A
+  function-typed property is contravariant, so `Invariant<Post>` stopped being assignable to
+  `Invariant<unknown>`, `Entity<Post, C>` stopped satisfying `EntityCore`, and every
+  `database({ … })` degraded to `Table<unknown>` — one position, 36 cascading errors downstream.
+- **`type-pins.ts` is where both of those are enforced.** Source, not a test: `tsconfig.json`
+  excludes `src/**/*.test.ts`, so `tsc` never reads a test file and a type-level assertion written
+  in one can never fail. It emits nothing and exports nothing anybody imports.
 - **Row types are derived, never re-declared.** No `as unknown as` to fake the derivation.
 - **`src/index.ts` re-exports `t` from `@ultimat3/schema` verbatim**, so an entity file that also
   hand-writes a view schema imports one package. Never wrap, spread or re-declare it: `t` delegates
@@ -78,7 +92,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 |---|---|
 | `types.ts` | `Column`, `RowOf`, `Insertable` — the type derivation |
 | `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders |
-| `expr.ts` / `invariants.ts` | the `(c) => …` rule language; bind + `toSql()` DDL |
+| `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
@@ -87,6 +101,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection + `describeEntities()` for the manifest |
+| `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy and `Invariant` variance |
 
 ## Commands
 

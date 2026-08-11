@@ -49,6 +49,8 @@ export type { DividerProps } from './components/Divider';
 export { Divider } from './components/Divider';
 export type { DrawerProps, DrawerSide } from './components/Drawer';
 export { Drawer } from './components/Drawer';
+export type { DropzoneProps } from './components/Dropzone';
+export { Dropzone } from './components/Dropzone';
 export type {
   DateStyle,
   DateTimeFormatter,
@@ -63,8 +65,23 @@ export type { ErrorStateProps } from './components/ErrorState';
 export { ErrorState, errorParts } from './components/ErrorState';
 export type { FieldControl, FieldProps } from './components/Field';
 export { Field } from './components/Field';
+export type { FileInputProps } from './components/FileInput';
+export { FileInput } from './components/FileInput';
 export type { FormProps } from './components/Form';
 export { Form } from './components/Form';
+export type {
+  FileCandidate,
+  FileRejection,
+  FileRejectionReason,
+  FileSelection,
+  FileSelectionLimits,
+} from './components/file-input-view';
+export {
+  acceptMatches,
+  formatBytes,
+  progressPercent,
+  selectFiles,
+} from './components/file-input-view';
 export type { GridProps } from './components/Grid';
 export { Grid } from './components/Grid';
 export type { HeadingLevel, HeadingTag } from './components/heading-level';
