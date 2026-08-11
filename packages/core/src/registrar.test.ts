@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   hasPrimitiveRegistrar,
   type ModuleRegistrar,
+  PRIMITIVE_KINDS,
   primitiveRegistrar,
   type RegisteredPrimitive,
   registerPrimitiveRegistrar,
@@ -48,6 +49,37 @@ describe('registerPrimitiveRegistrar', () => {
   test('kinds are independent', () => {
     registerPrimitiveRegistrar('query', noop);
     expect(hasPrimitiveRegistrar('action')).toBe(false);
+  });
+});
+
+describe('the eight primitives', () => {
+  /**
+   * The rule that says "don't invent a ninth" is documented in four places and, until this
+   * assertion, enforced in none — a ninth member of the union compiled like any other. This is
+   * the build error. If a capability seems to need a new kind, it arrives as a factory over an
+   * existing primitive instead: `llm()` returns an `action`, which is why a model call carries
+   * every action projection without a ninth entry here.
+   */
+  test('are exactly these eight — a ninth is a design error, not a feature', () => {
+    expect([...PRIMITIVE_KINDS]).toEqual([
+      'action',
+      'entity',
+      'job',
+      'mutator',
+      'policy',
+      'query',
+      'route',
+      'task',
+    ]);
+  });
+
+  test('every one of them is a registrable kind, and each resolves only its own', () => {
+    for (const kind of PRIMITIVE_KINDS) {
+      resetPrimitiveRegistrars();
+      registerPrimitiveRegistrar(kind, noop);
+      const resolved = PRIMITIVE_KINDS.filter(hasPrimitiveRegistrar);
+      expect(resolved).toEqual([kind]);
+    }
   });
 });
 

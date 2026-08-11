@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, isAction, t } from '@ultimat3/action';
+import { PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { createGateway } from './gateway';
 import { llm } from './llm';
@@ -96,9 +97,31 @@ describe('llm() is an action factory, not a ninth primitive', () => {
     expect(typeof summarize).toBe('function');
     expect(summarize.tool().name).toBe('summarize_post');
     expect(summarize.openapi().operationId).toBe('summarizePost');
-    expect(summarize.describe().kind).toBe('action');
     expect(summarize.contract().length).toBeGreaterThan(0);
     expect(summarize.job().name).toBe('action:summarizePost');
+    // The typed client is named in the ruling alongside the other four, so it is pinned
+    // alongside them: a projection the ruling promises but nothing exercises is a promise.
+    expect(typeof summarize.client({ baseUrl: 'https://example.test' })).toBe('function');
+    expect(typeof summarize.as).toBe('function');
+  });
+
+  /**
+   * The ruling's other half. `llm()` adds no ninth kind, so what it returns must declare
+   * itself as one of the eight the framework already has — read from core's canonical list,
+   * not a string literal, so adding a ninth kind cannot quietly make this pass.
+   */
+  test('it declares itself as one of the eight primitives, and that one is `action`', () => {
+    const summarize = llm({
+      input: Input,
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ postId: input.postId }),
+      policy: allow(),
+    }).named('kindLlm');
+
+    const { kind } = summarize.describe();
+    expect(PRIMITIVE_KINDS).toContain(kind);
+    expect(kind).toBe('action');
   });
 
   test('the declared policy is the action policy — one authz object, not a copy', () => {

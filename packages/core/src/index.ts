@@ -213,6 +213,7 @@ export {
 export type { ModuleRegistrar, PrimitiveKind, RegisteredPrimitive } from './registrar';
 export {
   hasPrimitiveRegistrar,
+  PRIMITIVE_KINDS,
   primitiveRegistrar,
   registerPrimitiveRegistrar,
   resetPrimitiveRegistrars,
