@@ -7,8 +7,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { resetEvals, resetPrompts } from '@ultimat3/ai';
-import { checkEvalCoverage } from './app-evals';
+import { RECORD_ENV, resetEvals, resetPrompts } from '@ultimat3/ai';
+import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { resetAppLoad } from './app-load';
 import type { VerifyContext } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
@@ -53,6 +53,15 @@ const FIXTURES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     'apps/web/app/posts/prompts/summarize.ts': promptModule('bare.summarize'),
   },
 };
+
+/** The baseline the COVERED fixture's eval declares — written and removed by the tests below. */
+const COVERED_BASELINE = join(COVERED, 'apps/web/app/posts/prompts/summarize.baseline.json');
+
+const RECORDED = `${JSON.stringify(
+  { eval: 'summarize', prompt: 'posts.summarize@3', promptHash: 'abc123', score: 1, cases: {} },
+  null,
+  2,
+)}\n`;
 
 const reset = (): void => {
   resetPrompts();
@@ -135,5 +144,90 @@ describe('unit · a prompt with no eval fails the gate', () => {
 
   test('outside an app with no eval suite the step is skipped, never silently passed', async () => {
     expect(await evalStep?.applies?.(ctxFor(import.meta.dir))).toBe(false);
+  });
+});
+
+// A `defineEval` proves a prompt is named, never that anything measured it. The COVERED fixture
+// declares one and records nothing, which is exactly the state the gate has to call red.
+describe('unit · an eval with no baseline gates on nothing', () => {
+  const forSummarize = (findings: readonly { readonly at?: string }[]) =>
+    findings.filter((finding) => finding.at === 'summarize');
+
+  test('a declared eval whose baseline was never recorded fails the gate', async () => {
+    const findings = forSummarize(await checkEvalBaselines(COVERED));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ code: 'X_EVAL_BASELINE_MISSING' });
+  });
+
+  test('a recorded baseline satisfies it', async () => {
+    await Bun.write(COVERED_BASELINE, RECORDED);
+    try {
+      expect(forSummarize(await checkEvalBaselines(COVERED))).toEqual([]);
+    } finally {
+      await rm(COVERED_BASELINE, { force: true });
+    }
+  });
+
+  test('a baseline that cannot be read is not treated as absent', async () => {
+    await Bun.write(COVERED_BASELINE, '{ "eval": "summarize" }\n');
+    try {
+      const findings = forSummarize(await checkEvalBaselines(COVERED));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({ code: 'X_EVAL_BASELINE_INVALID' });
+    } finally {
+      await rm(COVERED_BASELINE, { force: true });
+    }
+  });
+});
+
+// Recording is the one flag that makes every eval pass by definition. A gate run that inherited
+// it would be green over numbers it wrote itself — and would leave the rewritten baselines behind.
+describe('unit · the gate refuses to run while recording', () => {
+  const recordingCtx = (): { ctx: VerifyContext; ran: string[][] } => {
+    const ran: string[][] = [];
+    return {
+      ran,
+      ctx: {
+        root: COVERED,
+        runner: async (command) => {
+          ran.push([...command]);
+          return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 0 };
+        },
+      },
+    };
+  };
+
+  const whileRecording = async <T>(run: () => Promise<T>): Promise<T> => {
+    // Restore, never delete: the variable is process-global, so a helper that clears a value the
+    // caller set would silently disarm recording for every test that runs after this one.
+    const previous = Bun.env[RECORD_ENV];
+    Bun.env[RECORD_ENV] = '1';
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) delete Bun.env[RECORD_ENV];
+      else Bun.env[RECORD_ENV] = previous;
+    }
+  };
+
+  test('recording off is not a finding', () => {
+    expect(checkEvalRecording()).toEqual([]);
+  });
+
+  test('recording names the variable and the command that gates instead', async () => {
+    const findings = await whileRecording(async () => checkEvalRecording());
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe('X_EVAL_RECORDING');
+    expect(findings[0]?.cause).toContain(RECORD_ENV);
+    expect(findings[0]?.fix).toBe(`env -u ${RECORD_ENV} x verify`);
+  });
+
+  test('the step fails and never runs the suite, so no baseline is rewritten', async () => {
+    const { ctx, ran } = recordingCtx();
+    const outcome = await whileRecording(async () => evalStep?.run(ctx));
+    expect(outcome?.ok).toBe(false);
+    expect(outcome?.findings.map((finding) => finding.code)).toEqual(['X_EVAL_RECORDING']);
+    // The rewrite is the half a red step would not undo, so the refusal has to come first.
+    expect(ran).toEqual([]);
   });
 });

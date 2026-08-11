@@ -93,8 +93,10 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 - Tests sit next to their source: `<file>.test.ts` (unit), `.contract.test.ts`, `.live.test.ts`,
   `.job.test.ts`, `.e2e.test.ts`, `.eval.test.ts`.
 - Every prompt carries `<name>.evals.ts` (the cases) and `<name>.vN.baseline.json` (the recorded
-  scores). A prompt with no eval fails `x verify` with `X_EVAL_MISSING`; the gate is the drop from
-  the baseline, so re-record with `ULTIMATE_EVAL_RECORD=1 x test eval` and commit the diff.
+  scores). A prompt with no eval fails `x verify` with `X_EVAL_MISSING`, and an eval with no
+  committed baseline fails it with `X_EVAL_BASELINE_MISSING`; the gate is the drop from the
+  baseline, so re-record with `ULTIMATE_EVAL_RECORD=1 x test eval` and commit the diff — never
+  inside a `x verify`, which refuses to run while recording.
 - Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `seed` and
   `actorFor` are Postly's; everything else is the framework's — `clock`, `mail`, `network`,
   `runJobs` built in-process, and `page`, `budget`, `signIn`, `deploy`, `subscribe` waiting on a

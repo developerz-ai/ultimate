@@ -44,8 +44,11 @@ export {
   EvalBaselineInvalidError,
   EvalBaselineMissingError,
   EvalMissingError,
+  EvalRecordingError,
   EvalThresholdError,
   LlmOutputInvalidError,
+  LlmRefusedError,
+  LlmTruncatedError,
   VectorDimMismatchError,
   VectorScopeWidenedError,
 } from './errors';
@@ -85,6 +88,8 @@ export type {
   LlmVarsArgs,
 } from './llm';
 export { llm } from './llm';
+export type { Effort, ModelId, ModelReasoning, ModelSpec, ThinkingMode } from './models';
+export { DEFAULT_MODEL, EFFORTS, MODEL_IDS, MODELS, reasoningBody } from './models';
 export type { PgVectorStoreInput } from './pg-vector';
 export { PgVectorStore } from './pg-vector';
 export type {
@@ -116,29 +121,25 @@ export type {
   AiMessage,
   AnthropicProviderInput,
   EchoProviderInput,
-  Effort,
   GenerateRequest,
   GenerateResult,
-  ModelId,
-  ModelSpec,
   Provider,
+  StopDetails,
   StopReason,
   StreamChunk,
-  ThinkingMode,
   TokenUsage,
 } from './provider';
 export {
   AnthropicProvider,
   costOf,
-  DEFAULT_MODEL,
   EchoProvider,
   estimateCost,
   estimateInputTokens,
   estimateTextTokens,
   estimateTokens,
-  MODEL_IDS,
-  MODELS,
   parseMessage,
+  requiresStreaming,
+  STREAM_ONLY_MAX_TOKENS,
   totalTokens,
 } from './provider';
 export type {
@@ -182,4 +183,5 @@ export type {
 export { fuse, MemoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
 export { NO_TENANT, narrowScope, scopeAdmits, tenantOf, UNSCOPED } from './vector-scope';
-export { ZERO_USAGE } from './wire';
+export type { StreamState } from './wire';
+export { parseStopDetails, ZERO_USAGE } from './wire';

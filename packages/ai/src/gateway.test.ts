@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { MemoryBudgetStore } from './budget';
 import { createGateway } from './gateway';
+import { MODEL_IDS } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
-import { costOf, EchoProvider, MODEL_IDS } from './provider';
+import { costOf, EchoProvider } from './provider';
 
 const echo = new EchoProvider();
 
@@ -169,5 +170,31 @@ describe('routing and retries', () => {
     await gateway.generate(request);
     await gateway.generate(request);
     expect(calls).toBe(1);
+  });
+
+  test('a refusal is never cached — it is a decision, not an answer', async () => {
+    let calls = 0;
+    const refusing: Provider = {
+      name: 'refusing',
+      models: MODEL_IDS,
+      async generate(request: GenerateRequest) {
+        calls += 1;
+        return { ...(await echo.generate(request)), stopReason: 'refusal' as const };
+      },
+      stream: (request) => echo.stream(request),
+    };
+    const store = new Map<string, string>();
+    const gateway = createGateway({
+      providers: [refusing],
+      cache: { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) },
+    });
+    const request = { messages: [{ role: 'user' as const, content: 'same' }], maxTokens: 16 };
+
+    await gateway.generate(request);
+    await gateway.generate(request);
+
+    // Caching one would keep serving a classifier decision long after the prompt was fixed.
+    expect(store.size).toBe(0);
+    expect(calls).toBe(2);
   });
 });

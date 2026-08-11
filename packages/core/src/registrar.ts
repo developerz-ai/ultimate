@@ -5,16 +5,27 @@
 
 import { UltimateError } from './errors';
 
-/** The eight primitives. A registrar exists only for the kinds registered by module. */
-export type PrimitiveKind =
-  | 'action'
-  | 'entity'
-  | 'job'
-  | 'mutator'
-  | 'policy'
-  | 'query'
-  | 'route'
-  | 'task';
+/**
+ * The eight primitives — the framework's whole vocabulary. A registrar exists only for the
+ * kinds registered by module.
+ *
+ * The runtime list is the source and the type derives from it, so the two cannot drift apart.
+ * A ninth entry is a design error, not a feature: a new capability arrives as a FACTORY over an
+ * existing primitive — `llm()` returns an `action` — never as a new kind of thing. That rule is
+ * only real if something fails when it is broken, so `registrar.test.ts` pins this set.
+ */
+export const PRIMITIVE_KINDS = [
+  'action',
+  'entity',
+  'job',
+  'mutator',
+  'policy',
+  'query',
+  'route',
+  'task',
+] as const;
+
+export type PrimitiveKind = (typeof PRIMITIVE_KINDS)[number];
 
 /**
  * What a registrar hands back: the primitives it actually took, each carrying the name

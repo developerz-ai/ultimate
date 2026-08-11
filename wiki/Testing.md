@@ -90,7 +90,9 @@ export const summarizeEval = defineEval({
 ```
 
 `ULTIMATE_EVAL_RECORD=1 x test eval` re-records every baseline, so accepting a new number is a
-reviewable diff instead of an edited threshold.
+reviewable diff instead of an edited threshold. It is refused inside the gate: `x verify` with that
+variable set is `X_EVAL_RECORDING` and runs no eval suite, because recording passes by definition
+and would overwrite the committed baselines during the run.
 
 ```ts
 // contract test — generated as a scaffold with the action

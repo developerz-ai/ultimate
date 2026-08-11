@@ -11,10 +11,13 @@ export const AI_ERROR_CODES = [
   'X_AI_GATEWAY_MISSING',
   'X_AI_PROMPT_VERSION',
   'X_LLM_OUTPUT_INVALID',
+  'X_LLM_REFUSED',
+  'X_LLM_TRUNCATED',
   'X_EVAL_THRESHOLD',
   'X_EVAL_BASELINE_MISSING',
   'X_EVAL_BASELINE_INVALID',
   'X_EVAL_MISSING',
+  'X_EVAL_RECORDING',
   'X_VECTOR_DIM_MISMATCH',
   'X_VECTOR_SCOPE_WIDENED',
 ] as const;
@@ -29,10 +32,13 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_GATEWAY_MISSING: 'an llm() action ran with no gateway installed',
   X_AI_PROMPT_VERSION: 'prompt version or slots are wrong',
   X_LLM_OUTPUT_INVALID: 'structured output failed its schema on the answer and the repair turn',
+  X_LLM_REFUSED: 'the model declined the request',
+  X_LLM_TRUNCATED: 'the answer hit its maxTokens ceiling before it was complete',
   X_EVAL_THRESHOLD: 'an eval scored below its tolerance',
   X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
   X_EVAL_BASELINE_INVALID: 'a recorded baseline cannot be read',
   X_EVAL_MISSING: 'a prompt has no eval',
+  X_EVAL_RECORDING: 'the gate ran with baseline recording switched on',
   X_VECTOR_DIM_MISMATCH: 'embedding dimensions differ from the store',
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
 };
@@ -114,6 +120,51 @@ export class LlmOutputInvalidError extends UltimateError {
         `${input.attempts} attempts: ${input.issues}`,
       fix: 'describe the output shape in the prompt template and bump its version, or widen `output` in the llm() declaration',
       docs: docsFor('X_LLM_OUTPUT_INVALID'),
+    });
+  }
+}
+
+/**
+ * The provider's safety classifiers declined the request. A refusal is a 200 with no answer in
+ * it, so it has to become an error HERE or it becomes an empty string somewhere downstream that
+ * reads exactly like a model with nothing to say. Distinct from `X_LLM_OUTPUT_INVALID` because
+ * the fix is different: nothing about the schema is wrong, and a repair turn buys a second
+ * refusal at full price.
+ */
+export class LlmRefusedError extends UltimateError {
+  constructor(input: {
+    prompt: string;
+    model: string;
+    /** A blessed model that is NOT the one that refused — the fix has to be pasteable. */
+    alternative: string;
+    category: string | undefined;
+    explanation: string | undefined;
+  }) {
+    super({
+      code: 'X_LLM_REFUSED',
+      cause:
+        `model "${input.model}" declined prompt "${input.prompt}"` +
+        `${input.category === undefined ? '' : ` (${input.category})`}` +
+        `${input.explanation === undefined ? '' : `: ${input.explanation}`}`,
+      fix: `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
+      docs: docsFor('X_LLM_REFUSED'),
+      meta: { model: input.model, category: input.category },
+    });
+  }
+}
+
+/**
+ * The answer was cut off at the enforced ceiling and what arrived does not satisfy the schema.
+ * Thrown instead of the repair turn on purpose: the ceiling does not move between attempts, so
+ * a second answer truncates at exactly the same place and only spends money.
+ */
+export class LlmTruncatedError extends UltimateError {
+  constructor(input: { prompt: string; maxTokens: number }) {
+    super({
+      code: 'X_LLM_TRUNCATED',
+      cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
+      fix: `set maxTokens: ${input.maxTokens * 2} on the llm() declaration, or drop fields from its output schema`,
+      docs: docsFor('X_LLM_TRUNCATED'),
     });
   }
 }
@@ -214,6 +265,23 @@ export class EvalMissingError extends UltimateError {
       cause: `prompt "${input.prompt}" has no eval`,
       fix: `defineEval({ name: '${input.id}', prompt, cases, scorers, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
       docs: docsFor('X_EVAL_MISSING'),
+    });
+  }
+}
+
+/**
+ * The gate ran with baseline recording switched on. Recording makes every eval write the numbers
+ * it just measured and pass, so a `x verify` that inherited the flag reports green over scores
+ * nothing compared — and rewrites the committed baselines on its way through, which is the half
+ * a red step alone would not undo. Recording is a deliberate, reviewable diff, never a gate run.
+ */
+export class EvalRecordingError extends UltimateError {
+  constructor(input: { env: string }) {
+    super({
+      code: 'X_EVAL_RECORDING',
+      cause: `${input.env} is set, so every eval would re-record its baseline instead of gating on it`,
+      fix: `env -u ${input.env} x verify`,
+      docs: docsFor('X_EVAL_RECORDING'),
     });
   }
 }

@@ -10,7 +10,7 @@
 // build error, not a warning.
 
 import { AiPromptRenderError, AiPromptVersionError } from './errors';
-import type { Effort, ModelId, ThinkingMode } from './provider';
+import type { Effort, ModelId, ThinkingMode } from './models';
 import type { JsonSchema } from './tools';
 
 /** Template variables. Values are stringified at render time with no formatting magic. */

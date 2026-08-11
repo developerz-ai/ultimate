@@ -13,7 +13,8 @@ rather than imported. Same contract, two wire formats.
 
 | File | Job |
 |---|---|
-| `provider.ts` | `Provider` interface, model catalogue + prices, the request half, Anthropic + Echo |
+| `models.ts` | the blessed models: limits, prices, and the reasoning controls each one accepts |
+| `provider.ts` | `Provider` interface, the request half, the money arithmetic, Anthropic + Echo |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
 | `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
 | `gateway.ts` | routing, retries, cache, budget wiring |
@@ -25,6 +26,7 @@ rather than imported. Same contract, two wire formats.
 | `eval-baseline.ts` | the recorded scores: path, read/write, what counts as a regression |
 | `scorers.ts` | what a `Scorer` is, the built-in ones, and `llmJudge` |
 | `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid |
+| `pg-vector.live.test.ts` | the same store against a real pgvector — DDL, fusion, scope, plan |
 | `vector-scope.ts` | the tenant + policy envelope, and the tighten-only derive rule |
 | `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
 | `pg-vector.ts` | `PgVectorStore` — the production store |
@@ -72,8 +74,32 @@ rather than imported. Same contract, two wire formats.
   than the declared one is `X_VECTOR_DIM_MISMATCH` before anything reaches a store.
 - A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate.
 - Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
-  `output_config`, `thinking: 'disabled'` only at effort ≤ `high`. All 400s otherwise.
+  `output_config`. All 400s otherwise.
+- **The reasoning half of the body is PER MODEL, and `models.ts` owns which model takes what.**
+  `output_config.effort` and adaptive thinking arrived with 4.6, so one body sent to the whole
+  catalogue is a guaranteed 400 on the oldest entry — which is how `claude-haiku-4-5` shipped
+  blessed and uncallable. A control the caller never asked for is omitted; a control they DID
+  ask for is refused locally with `X_AI_REQUEST_INVALID`, never dropped, because a declaration
+  reading `effort: 'max'` that quietly runs at the default is the failure nobody can see. Adding
+  a model is a row in `MODELS`, never an `if` in the request builder.
 - Model IDs are exact aliases. Never append a date suffix.
+- The introductory price on a model is deliberately not modelled. A price that lapses on a date
+  makes a recorded cost depend on when it was read, and under-reporting spend after the lapse is
+  a budget that is not one. List price over-reserves, which is the safe direction.
+- `generate()` above `STREAM_ONLY_MAX_TOKENS` runs the STREAMING transport and assembles the
+  result, rather than refusing. The ceiling is the transport's, not the model's, and `llm()` has
+  no streaming path — refusing would make a legal `maxTokens` undeclarable instead of awkward.
+- A **refusal is a 200 with no answer in it**, so it becomes `X_LLM_REFUSED` at the `llm()` seam,
+  before the output is parsed. Parsing it first reports a schema disagreement — wrong cause,
+  inapplicable fix — and spends a repair turn buying the same refusal again. A truncated answer
+  that also fails its schema is `X_LLM_TRUNCATED` for the same reason: the ceiling does not move
+  between attempts. `stopDetails.category` is carried, not dropped: it is the only thing that
+  says whether another model would answer.
+- The gateway does not cache a refusal. Caching one keeps serving a classifier decision long
+  after the prompt that provoked it was fixed.
+- Server-side `fallbacks` (beta) are deliberately NOT sent. The provider speaks the stable
+  `2023-06-01` surface, and a 1.0 package that promises semver cannot pin a beta wire contract;
+  the typed refusal plus the gateway's own model routing is the framework's answer instead.
 - `definePrompt` refuses a re-registered version whose hash moved.
 - Every eval result carries the prompt hash. A score without one is not a measurement.
 - An eval gates on the DROP from its recorded baseline, never on an absolute score. An absolute
@@ -90,10 +116,34 @@ rather than imported. Same contract, two wire formats.
   evaluates that lineage.
 - `ULTIMATE_EVAL_RECORD=1` writes baselines instead of gating on them. A test that deliberately
   scores a worse model calls `run`, never `assert` — `assert` would re-record during that pass.
+- **Recording and the gate are mutually exclusive.** `x verify` with that variable set is
+  `X_EVAL_RECORDING` and runs no eval suite at all. Recording passes by definition, so a gate run
+  that inherited the flag is green over numbers it wrote itself — and rewrites every committed
+  baseline on its way through, which is the half a red step would not undo. Hence refuse *before*
+  the suite, never after it.
+- The gate asks whether an eval has a baseline, not only whether one is declared. `defineEval`
+  proves a prompt is named; it proves nothing measured it, and an eval whose numbers were never
+  recorded — one no test asserts, one whose `baseline:` is a cwd-relative string — would otherwise
+  satisfy `X_EVAL_MISSING` while gating on nothing.
 - Retrieval is hybrid by default. Do not add a vector-only convenience path.
 - `PgVectorStore` is the ONLY production vector path — pgvector and Postgres FTS in the app's own
   Postgres, never a second datastore. `MemoryVectorStore` is the dev twin and enforces the same
   envelope; a leak that only reproduces against real Postgres is a leak nobody finds.
+- **It is proved against a real pgvector, not only against a recording client.**
+  `pg-vector.live.test.ts` runs the whole chain — `ddl()` -> a live server -> `upsert` -> cosine,
+  FTS and the RRF fusion -> decoded hit — and REFUSES to skip when `TEST_DATABASE_URL` names a
+  Postgres without the extension, because a suite that stands down reports green for the one
+  store that runs in front of real traffic. CI's service container is `pgvector/pgvector:pg17`
+  for that reason. Asserting statement *text* cannot catch a statement Postgres rejects, nor a
+  filter that compiles cleanly and excludes nothing: that is exactly how metadata shipped bound
+  `::jsonb`. A new operator, read path or scope rule is not done until it round-trips there.
+- The distance ordering lives in a subquery, ascending and raw, because that is the only shape
+  hnsw answers — `order by 1 - (…) desc` is a sequential scan. Both halves are pinned by a plan
+  assertion in the live suite, since only a planner can say which one shipped.
+- hnsw applies the scope AFTER the index scan, so an approximate index can return fewer rows
+  than asked for once a tenant filter is selective. The planner takes the exact path instead
+  when it has stats — which is why a bulk backfill that skips `analyze` is how a search that
+  used the index yesterday scans today. Assert the rows a scoped read returns, never the node.
 - Tenant and policy filters go **in SQL**, on every statement, through `conditionsSql` — and on
   BOTH halves of the fusion. Filtering after the rows are loaded is not filtering.
 - `(tenant, id)` is the primary key. A cross-tenant overwrite is impossible at the storage layer
@@ -108,4 +158,9 @@ rather than imported. Same contract, two wire formats.
 ```
 bun test packages/ai
 bun run --filter @ultimat3/ai typecheck
+
+# the live vector suite — needs the extension, not just a Postgres
+docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17
+TEST_DATABASE_URL=postgres://postgres:ultimate@localhost:5432/postgres \
+  bun test packages/ai/src/pg-vector.live.test.ts
 ```

@@ -81,9 +81,14 @@ jobs:
     # off it per worker, so client.ts/introspect.ts/branch.ts get exercised against a live server
     # instead of a recording client. No admin URL means those tests skip, so `bun test` still
     # passes on a laptop with nothing installed.
+    #
+    # pgvector/pgvector:pg17 rather than stock postgres:17: @ultimat3/ai's PgVectorStore is the
+    # only production vector path, and pg-vector.live.test.ts REFUSES to skip when the extension
+    # is missing. Asserting the statement text a store compiles to cannot catch a statement
+    # Postgres rejects — this image is what makes that suite a measurement instead of a skip.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: ultimate
           POSTGRES_PASSWORD: ultimate
@@ -148,10 +153,11 @@ jobs:
     timeout-minutes: 12
     needs: [lint, typecheck, boundaries, test]
     # Same live Postgres as the `test` job — the gate's own unit step sweeps up the live-Postgres
-    # tests too, and it should exercise them for real rather than silently skip.
+    # tests too, and it should exercise them for real rather than silently skip. Same
+    # pgvector image, for the same reason: PgVectorStore's live suite refuses to skip.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: ultimate
           POSTGRES_PASSWORD: ultimate

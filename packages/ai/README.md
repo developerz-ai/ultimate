@@ -34,14 +34,22 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 | Cost rounds **up** | a rounded-away fraction is money the framework absorbs and a budget under-reports |
 | `temperature` / `top_p` / `top_k` are never sent | rejected with a 400 on every current model — steer with the prompt |
 | `effort` goes in `output_config` | a top-level `effort` is silently ignored |
+| The reasoning half of the body is **per model** | `effort` and adaptive thinking arrived with 4.6; sending them to an older model is a 400 on every request |
+| A control the model lacks is **refused**, never dropped | a declaration reading `effort: 'max'` that quietly runs at the default is the failure nobody can see |
+| A control nobody asked for is **omitted**, never defaulted | a default sent as a request is indistinguishable on the wire from one that was declared |
+| A refusal is `X_LLM_REFUSED`, not a schema failure | it is a 200 with no answer in it, and a repair turn buys the same refusal again |
+| A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
 | Retries use **full jitter** | synchronised retries from N workers reproduce the rate limit |
 | A 4xx is never retried | the same body gets the same rejection and burns the budget |
 
 ## Streaming
 
 `stream()` yields as the model writes and ends with one `done` chunk carrying the assembled
-result — so a consumer that only wants the answer can ignore everything before it. Mandatory
-above ~16k `maxTokens`: a non-streaming request that large hits the HTTP timeout first.
+result — so a consumer that only wants the answer can ignore everything before it. Required
+above `STREAM_ONLY_MAX_TOKENS` (16k): a non-streaming request that large hits the HTTP timeout
+after the completion has already been generated and billed. `generate()` switches to this
+transport by itself above the ceiling and returns the assembled result — the limit belongs to
+the transport, so it is not one the caller has to change API for.
 
 ```ts
 for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {
@@ -74,11 +82,14 @@ half-written at the wrong width has no error to report, only worse answers.
 
 Models, `As of 2026-08`:
 
-| Model | Context | Max output | Input / MTok | Output / MTok |
-|---|---|---|---|---|
-| `claude-opus-5` (default) | 1M | 128K | $5 | $25 |
-| `claude-sonnet-5` | 1M | 128K | $3 | $15 |
-| `claude-haiku-4-5` | 200K | 64K | $1 | $5 |
+| Model | Context | Max output | Input / MTok | Output / MTok | `effort` | adaptive thinking |
+|---|---|---|---|---|---|---|
+| `claude-opus-5` (default) | 1M | 128K | $5 | $25 | yes | yes, off only at `effort ≤ high` |
+| `claude-sonnet-5` | 1M | 128K | $3 | $15 | yes | yes |
+| `claude-haiku-4-5` | 200K | 64K | $1 | $5 | no — a 400 | no — a 400 |
+
+The last two columns are data on the spec, not prose: `body()` builds the reasoning half from
+them, so a downgrade for price cannot become a request the provider rejects.
 
 ## `llm()` — a model call, declared as an action
 
@@ -161,7 +172,12 @@ test('summarize holds its recorded scores', async () => {
 
 `ULTIMATE_EVAL_RECORD=1 x test eval` writes the baselines instead of gating on them, so
 accepting a new number is a reviewable diff. An eval that has never been recorded fails with
-`X_EVAL_BASELINE_MISSING` — gating on nothing is not passing.
+`X_EVAL_BASELINE_MISSING` — gating on nothing is not passing — and `x verify` asks that question
+itself, so an eval no test happens to assert is still red.
+
+Recording and the gate are mutually exclusive: `x verify` with `ULTIMATE_EVAL_RECORD` set is
+`X_EVAL_RECORDING` and runs no suite. Recording passes by definition, and a gate that inherited
+the flag would report green over numbers it had just written over the committed ones.
 
 A failure names the score, what it fell from, the exact prompt hash, and every case that moved:
 

@@ -21,7 +21,11 @@ Every fact the CLI reports comes from a framework package: the manifest from
 `@ultimat3/ai`. A check that reimplements one of those here is the bug, not the fix.
 
 `app-evals.ts` is why the `eval` step can apply with no eval suite at all: a prompt no eval
-names is `X_EVAL_MISSING`, and a skipped step would read as a green gate over untested code.
+names is `X_EVAL_MISSING`, an eval whose baseline was never recorded is `X_EVAL_BASELINE_MISSING`,
+and a skipped step would read as a green gate over untested code. Its third rule runs *before* the
+suite rather than beside it — `ULTIMATE_EVAL_RECORD` makes every eval write its own numbers and
+pass, so a gate that inherited the flag would rewrite the committed baselines during the run, and
+a finding after the fact does not put them back.
 
 `app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
 a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
