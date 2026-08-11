@@ -109,6 +109,9 @@ describe('unit · a package that will not load', () => {
     ]);
   });
 
+  // The bare Errors below are the subject: a module that will not import throws whatever the
+  // runtime threw — a syntax error, a missing native — and never an `X_*` code. Coding them would
+  // test the branch two cases above this one, which is the one that already covers coded failures.
   test('an unstructured throw still names the package that broke', async () => {
     const catalog = await buildErrorCatalog(loaderFailing('@ultimat3/mail', new Error('boom')));
     const [finding] = catalog.failed;

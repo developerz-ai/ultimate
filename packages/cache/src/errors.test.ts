@@ -11,12 +11,11 @@ import {
   resetErrorCodes,
 } from '@ultimat3/core';
 import {
-  CACHE_BORROWED_ERROR_CODES,
   CACHE_ERROR_CODES,
   CACHE_ERROR_TITLES,
   CACHE_OWNED_ERROR_CODES,
   CacheDriverUnavailableError,
-  CacheNotImplementedError,
+  CachePurgeFailedError,
   CacheTagUnknownError,
   CacheTooLargeError,
 } from './errors';
@@ -40,12 +39,10 @@ describe('CACHE_ERROR_CODES', () => {
     expect(new Set(CACHE_ERROR_CODES).size).toBe(CACHE_ERROR_CODES.length);
   });
 
-  test('owned and borrowed are disjoint and together are every code cache throws', () => {
-    const owned = new Set<string>(CACHE_OWNED_ERROR_CODES);
-    for (const code of CACHE_BORROWED_ERROR_CODES) expect(owned.has(code)).toBe(false);
-    expect([...CACHE_ERROR_CODES].sort()).toEqual(
-      [...CACHE_OWNED_ERROR_CODES, ...CACHE_BORROWED_ERROR_CODES].sort(),
-    );
+  // Cache borrows nothing: it owns every code it throws, because both remote purge drivers are
+  // implemented. A `CACHE_BORROWED_ERROR_CODES` reappearing here means a stub came back with it.
+  test('every code cache throws is a code cache owns', () => {
+    expect([...CACHE_ERROR_CODES].sort()).toEqual([...CACHE_OWNED_ERROR_CODES].sort());
   });
 });
 
@@ -101,17 +98,49 @@ describe('CacheTooLargeError', () => {
   });
 });
 
-describe('CacheNotImplementedError', () => {
-  test('embeds the missing feature', () => {
-    const err = new CacheNotImplementedError({
-      feature: 'redis cluster mode',
-      fix: 'use a single-node redis client until clustering lands',
+describe('CachePurgeFailedError', () => {
+  test('names the driver, the status and the detail, and carries the given fix', () => {
+    const err = new CachePurgeFailedError({
+      driver: 'fastly',
+      detail: 'Provided credentials are missing or invalid',
+      status: 401,
+      retryable: false,
+      fix: 'set FASTLY_API_TOKEN in .env.production',
     });
 
-    expect(err.code).toBe('X_NOT_IMPLEMENTED');
-    expect(err.cause).toContain('redis cluster mode');
-    expect(err.fix).toBe('use a single-node redis client until clustering lands');
+    expect(err.code).toBe('X_CACHE_PURGE_FAILED');
+    expect(err.cause).toContain('fastly');
+    expect(err.cause).toContain('HTTP 401');
+    expect(err.cause).toContain('Provided credentials are missing or invalid');
+    expect(err.fix).toBe('set FASTLY_API_TOKEN in .env.production');
+    expect(err.docs).toBe('https://ultimate.dev/errors/X_CACHE_PURGE_FAILED');
     expect(EVERY_CODE).toContain(err.code);
+  });
+
+  // The fan-out catches this error and reports it; `retryable` is the only thing that tells a
+  // caller whether the identical purge is worth sending again, so it must survive on `meta`.
+  test('meta carries the retry verdict a caller branches on', () => {
+    const err = new CachePurgeFailedError({
+      driver: 'cloudflare',
+      detail: 'rate limited',
+      status: 429,
+      retryable: true,
+      fix: 'bust fewer tags per write',
+    });
+
+    expect(err.meta).toEqual({ driver: 'cloudflare', retryable: true, status: 429 });
+  });
+
+  test('a failure with no status omits it rather than inventing one', () => {
+    const err = new CachePurgeFailedError({
+      driver: 'fastly',
+      detail: 'connection refused',
+      retryable: true,
+      fix: 'curl -sS -m 5 -o /dev/null https://api.fastly.com',
+    });
+
+    expect(err.cause).not.toContain('HTTP');
+    expect(err.meta).toEqual({ driver: 'fastly', retryable: true });
   });
 });
 
@@ -134,11 +163,12 @@ describe('registration', () => {
     }
   });
 
-  test('X_NOT_IMPLEMENTED is borrowed from core, not re-registered by cache', () => {
-    // cache declares no title for it, so the string below can only have come from core.
-    expect(describeErrorCode('X_NOT_IMPLEMENTED').title).toBe(
-      'this driver does not implement the requested feature',
-    );
+  // The stub this package used to ship: `X_NOT_IMPLEMENTED` was cache's only borrowed code, and
+  // the CDN purge drivers were its only throw site. Both remote drivers are real now, so cache
+  // must not be reachable through that code at all — a title here again means a stub came back.
+  test('cache no longer throws X_NOT_IMPLEMENTED for anything', () => {
+    expect(EVERY_CODE).not.toContain('X_NOT_IMPLEMENTED');
+    for (const code of CACHE_ERROR_CODES) expect(code.startsWith('X_CACHE_')).toBe(true);
   });
 
   // The regression this file exists for. Behind a `hasErrorCode()` guard, a foreign package that

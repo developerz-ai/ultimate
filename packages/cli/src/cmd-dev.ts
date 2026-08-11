@@ -16,13 +16,14 @@ import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
+import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels } from './dev-dashboard';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
-import { startServices } from './dev-runtime';
+import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
@@ -98,7 +99,7 @@ const envOf = (env: StartDevOptions['env']): { env?: string } => {
  */
 export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const services = resolveServices(options.root, options.env);
-  const runtime: RunningServices = await startServices(services);
+  const runtime: RunningServices = await startServices(services, options.env);
   // Installed before the app loads, so a span opened during registration is already recorded.
   // Tracing is always on in the framework and free until an exporter is configured; `x dev` is
   // what configures one, which is the whole reason `/_x/timeline` has anything to draw.
@@ -138,6 +139,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const routes: readonly Route[] = [
     ...devDashboardRoutes(dashboard),
     ...listActions().map(toRoute),
+    // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
+    // variants every `srcset` promises. Mounted before the app's own routes so a page route can
+    // never shadow `/icons` or `/media`.
+    ...assetRoutes({ root: options.root, storage: runtime.storage }),
     ...appRoutes({ buildId }),
   ];
 
@@ -232,7 +237,9 @@ export const devCommand: CliCommand = {
       summary: msg('cli.dev.ready', {
         url: server.url,
         panels: server.panels.length,
-        services: describeServices(server.services),
+        // Rendered text, so the mail and CDN halves come from the catalog; `data` below carries the
+        // status values a script parses, which is why the two are different calls and not one.
+        services: `${describeServices(server.services)} ${mailLabel(server.runtime)} ${cdnLabel(server.runtime)}`,
       }),
       findings: server.findings,
       // Every fact `lines` prints is a fact `--json` carries, `manifest` included — or the two
@@ -245,6 +252,10 @@ export const devCommand: CliCommand = {
         db: server.services.db.url,
         events: server.services.events.url,
         storage: server.services.storage.url,
+        // The selecting env key, never the credential behind it: `SMTP_URL` carries a password
+        // and this line is printed, logged and scraped.
+        mail: describeMail(server.runtime),
+        cdn: describeCdn(server.runtime),
         buildId: server.buildId,
         manifest: join(root, MANIFEST_FILENAME),
         introspect: `${server.url}/_x`,

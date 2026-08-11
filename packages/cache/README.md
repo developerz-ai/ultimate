@@ -102,8 +102,30 @@ cacheHeaders({ sMaxAge: 300, staleWhileRevalidate: 86_400, tags: [tag('post', id
 //      'Surrogate-Key': 'post:1' }
 ```
 
-`purge()` drivers: `noop` (default), `fastly` and `cloudflare` are interface-complete and
-throw `X_NOT_IMPLEMENTED` with the fix line.
+The surrogate keys **are** the tags, byte for byte, so an edge purge and an app-level
+invalidation can never mean different things. Three `PurgeDriver`s ship:
+
+| Driver | Purge | Purge all | Batch |
+|---|---|---|---|
+| `noopPurgeDriver()` | echoes the keys back | resolves | — |
+| `fastlyPurgeDriver({ apiToken, serviceId })` | `POST /service/<id>/purge` with `surrogate_keys` | `POST /service/<id>/purge_all` | 256 keys |
+| `cloudflarePurgeDriver({ apiToken, zoneId })` | `POST /zones/<id>/purge_cache` with `tags` | same call, `purge_everything` | 30 tags |
+
+Which one a process installs comes from the environment, never from `app.config.ts` —
+nothing loads that file's contents at runtime:
+
+| Set | Selects |
+|---|---|
+| `FASTLY_API_TOKEN` + `FASTLY_SERVICE_ID` | Fastly |
+| `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare |
+| neither | nothing is purged, and `x dev` prints `cdn=none` |
+
+Both pairs at once is `X_CONFIG_INVALID`: one process purges exactly one edge. Half a pair
+is refused the same way — treating it as "no CDN" is how a deployment ships believing it
+purges. Either refusal names the keys that are actually set, in `cause` and in
+`meta.configured`, so the diagnostic can never point at a variable nobody set. A refused
+purge is `X_CACHE_PURGE_FAILED` carrying `meta.retryable`, and it lands in `report.errors`
+rather than failing the write that triggered it.
 
 ## Semantic cache
 
@@ -119,10 +141,10 @@ cache).
 
 | Code | Cause |
 |---|---|
-| `X_CACHE_DRIVER_UNAVAILABLE` | `Bun.redis` missing, or no CDN token |
+| `X_CACHE_DRIVER_UNAVAILABLE` | `Bun.redis` missing, a purge driver built without its token, or a batch size that is not a positive integer |
+| `X_CACHE_PURGE_FAILED` | the CDN refused a purge, or a key it would split on whitespace |
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |
-| `X_NOT_IMPLEMENTED` | remote CDN purge driver |
 
 ## Boundary
 

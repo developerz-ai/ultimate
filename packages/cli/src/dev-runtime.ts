@@ -5,17 +5,26 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PurgeDriver } from '@ultimat3/cache';
+import {
+  createCdnTier,
+  isNoopPurgeDriver,
+  registerTier,
+  resetTiers,
+  selectPurgeDriver,
+} from '@ultimat3/cache';
 import type { EventBus, JobDriver } from '@ultimat3/jobs';
 import { createMemoryEventBus, setEventBus } from '@ultimat3/jobs';
-import type { MemoryMailDriver } from '@ultimat3/mail';
-import { createMemoryDriver, resetMailDriver, setMailDriver } from '@ultimat3/mail';
+import type { MailDriver } from '@ultimat3/mail';
+import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from '@ultimat3/mail';
 import type { Transport } from '@ultimat3/realtime';
 import { InProcessTransport, NatsTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { DevDbClient } from './dev-queue';
 import { startQueue } from './dev-queue';
-import type { DevServices } from './dev-services';
+import type { DevServices, Env } from './dev-services';
+import { msg } from './messages';
 
 export interface RunningServices {
   readonly services: DevServices;
@@ -24,8 +33,59 @@ export interface RunningServices {
   readonly events: EventBus;
   readonly transport: Transport;
   readonly storage: Storage;
-  readonly mail: MemoryMailDriver;
+  readonly mail: MailDriver;
+  /**
+   * Which env key selected the transport, or why nothing was selected. The credential itself is
+   * never carried: `SMTP_URL` holds a password, and this string reaches the boot line and `--json`.
+   */
+  readonly mailDetail: string;
+  readonly purge: PurgeDriver;
+  /** Same rule as `mailDetail`: the env key that selected the CDN, never the token behind it. */
+  readonly purgeDetail: string;
   stop(): Promise<void>;
+}
+
+/**
+ * `mail=embedded` is the honest report for a process that caught the message instead of sending
+ * it — the same vocabulary the other three bindings use, so an operator reading a boot line sees
+ * at a glance that this replica delivers nothing. This is the machine half: `x dev --json` carries
+ * it verbatim and `wiki/Configuration.md` documents it, so it is a fixed status value and NOT a
+ * catalog lookup — a translated boot line must never move a field a script parses. `mailLabel` is
+ * the human half.
+ */
+export function describeMail(runtime: RunningServices): string {
+  return isMemoryDriver(runtime.mail)
+    ? 'mail=embedded'
+    : `mail=external(${runtime.mail.name} via ${runtime.mailDetail})`;
+}
+
+/**
+ * `cdn=none` rather than `cdn=embedded`: there is no embedded CDN, and a process with no edge in
+ * front of it purges nothing. Saying "embedded" would read as a fifth service this boot started.
+ * Machine half, same rule as `describeMail`; `cdnLabel` is what a human reads.
+ */
+export function describeCdn(runtime: RunningServices): string {
+  return isNoopPurgeDriver(runtime.purge)
+    ? 'cdn=none'
+    : `cdn=external(${runtime.purge.name} via ${runtime.purgeDetail})`;
+}
+
+/**
+ * The boot line's mail label. Same fact as `describeMail`, through the catalog, because this string
+ * is rendered to a person and every rendered string in the CLI is a `messages.ts` key — the status
+ * value stays where `--json` can depend on it.
+ */
+export function mailLabel(runtime: RunningServices): string {
+  return isMemoryDriver(runtime.mail)
+    ? msg('cli.dev.mail.embedded')
+    : msg('cli.dev.mail.external', { driver: runtime.mail.name, detail: runtime.mailDetail });
+}
+
+/** The boot line's CDN label, for the reason `mailLabel` gives. */
+export function cdnLabel(runtime: RunningServices): string {
+  return isNoopPurgeDriver(runtime.purge)
+    ? msg('cli.dev.cdn.none')
+    : msg('cli.dev.cdn.external', { driver: runtime.purge.name, detail: runtime.purgeDetail });
 }
 
 const FILE_SCHEME = 'file://';
@@ -53,18 +113,32 @@ async function startTransport(services: DevServices): Promise<Transport> {
   return transport;
 }
 
-/** Undo what has already started, newest first. A failure here must not hide the boot failure. */
-async function unwind(steps: readonly (() => void | Promise<void>)[]): Promise<void> {
+/**
+ * Release what has already started, newest first, and return every failure instead of throwing on
+ * the first: a step that rejects must not skip the ones after it, or one transport that will not
+ * close strands the CDN tier, the ambient mail driver and the queue in the next boot of this
+ * process. The two callers differ only in what they do with the failures.
+ */
+async function release(steps: readonly (() => void | Promise<void>)[]): Promise<unknown[]> {
+  const failures: unknown[] = [];
   for (const step of [...steps].reverse()) {
     try {
       await step();
-    } catch {
-      // The rejection that started the unwind is the one worth reporting; this one is noise.
+    } catch (error) {
+      failures.push(error);
     }
   }
+  return failures;
 }
 
-export async function startServices(services: DevServices): Promise<RunningServices> {
+export async function startServices(services: DevServices, env: Env): Promise<RunningServices> {
+  // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
+  // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
+  // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
+  const selection = selectMailDriver(env);
+  // Same reason, same place: building a purge driver reads env and dials nothing, so a half-set
+  // `FASTLY_API_TOKEN` without its service id fails here rather than on the first stale page.
+  const cdn = selectPurgeDriver(env);
   const queue = await startQueue(services);
   const { db, jobs } = queue;
   // Boot is a sequence of external resources, and every step after the first can reject — the
@@ -76,12 +150,23 @@ export async function startServices(services: DevServices): Promise<RunningServi
     const transport = await startTransport(services);
     started.push(() => transport.close());
     const storage = startStorage(services);
-    // Caught, not sent: the `/_x` mail panel reads this outbox, so the local loop can check what a
-    // template renders in every locale without a mailbox, an API key, or a message escaping to a
-    // real address.
-    const mail = createMemoryDriver();
+    // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
+    // show what a template renders in every locale without a mailbox or a message escaping to a
+    // real address. `SMTP_URL` or `RESEND_API_KEY` makes it a real transport instead — the same
+    // "an unset variable means the embedded default" law the other three bindings follow.
+    const mail = selection.driver;
     setMailDriver(mail);
     started.push(() => resetMailDriver());
+    // Registered only when a credential named a real edge. A noop tier would put a `cdn` line in
+    // every invalidation report claiming keys an edge that does not exist had accepted — and the
+    // `/_x` cache panel renders those reports, so the lie would be the thing an agent reads.
+    // Released with `resetTiers()`, which drops the whole registry: this boot is the only thing
+    // that registers one, and a tier left behind would purge for a process that has stopped.
+    const purging = !isNoopPurgeDriver(cdn.driver);
+    if (purging) {
+      registerTier(createCdnTier({ purge: cdn.driver }));
+      started.push(() => resetTiers());
+    }
 
     return {
       services,
@@ -91,16 +176,23 @@ export async function startServices(services: DevServices): Promise<RunningServi
       transport,
       storage,
       mail,
-      // Reverse boot order, and a stop that fails says so — only the unwind after a failed boot
-      // is allowed to swallow, because there the boot error is the one worth reporting.
+      mailDetail: selection.detail,
+      purge: cdn.driver,
+      purgeDetail: cdn.detail,
+      // The same list the boot unwind uses, in the same reverse order, so a service added to the
+      // boot is released by both paths — a second copy of these steps is how one of them came to
+      // release three things and the other four. A stop that fails says so, unlike that unwind:
+      // the FIRST failure is rethrown because it is the cause and the rest are its consequences,
+      // and every step still runs, so a refused shutdown never leaks into the next boot.
       async stop() {
-        await transport.close();
-        resetMailDriver();
-        await queue.stop();
+        const failures = await release(started);
+        if (failures.length > 0) throw failures[0];
       },
     };
   } catch (error) {
-    await unwind(started);
+    // The rejection that started the unwind is the one worth reporting; a cleanup failure under it
+    // is noise, so these are collected and dropped rather than allowed to replace the cause.
+    await release(started);
     throw error;
   }
 }

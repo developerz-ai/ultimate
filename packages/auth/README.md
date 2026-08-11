@@ -60,15 +60,53 @@ Two calls: one to leave, one to come back. Provider configs are pure data — im
 `oauth.ts` performs no network I/O and reads no env.
 
 ```ts
-// GET /auth/oauth/:provider — store the handshake in a short-lived signed cookie
-const handshake = beginOAuth({ provider: 'github', clientId, redirectUri });
-
-// GET /auth/oauth/:provider/callback — exchange, identify, sign in
-const { actor, cookie } = await completeOAuthLogin(auth, {
-  handshake,
-  callback: { state: url.searchParams.get('state') ?? '', code },
-});
+// GET /auth/oauth/:provider — redirect, keeping nothing on the server
+export async function GET(request: Request): Promise<Response> {
+  const handshake = beginOAuth({ provider: 'github', clientId, redirectUri });
+  return new Response(null, {
+    status: 302,
+    headers: { location: handshake.authorizeUrl, 'set-cookie': handshakeCookie(handshake) },
+  });
+}
 ```
+
+```ts
+// GET /auth/oauth/:provider/callback — a separate request; the cookie is all that crossed
+export async function GET(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const { cookie } = await completeOAuthLogin(auth, {
+    handshake: readHandshakeCookie(request, 'github'),
+    callback: { state: url.searchParams.get('state') ?? '', code: url.searchParams.get('code') ?? '' },
+  });
+  const headers = new Headers({ location: '/' });
+  // Both, always: a code is single-use, so the handshake that authorised it must not outlive it.
+  headers.append('set-cookie', cookie);
+  headers.append('set-cookie', clearHandshakeCookie('github'));
+  return new Response(null, { status: 302, headers });
+}
+```
+
+The handshake carries `state`, `nonce` and the PKCE verifier across two requests, so it needs a
+home. `handshakeCookie` is that home — sealed with `SESSION_SECRET`, `HttpOnly; Secure;
+SameSite=Lax` under a `__Host-` name, and expired against the server's clock rather than the
+client's copy of `Max-Age`. `sealHandshake` / `openHandshake` are the same codec without the
+cookie, for an app that would rather keep it server-side.
+
+**One cookie per provider:** `handshakeCookieName(provider)` → `__Host-x_oauth_github`. A browser
+is one cookie jar and a user is allowed two tabs, so a single shared name means the `google`
+redirect overwrites a `github` handshake still in flight — and the github callback then opens
+google's and fails `X_OAUTH_STATE_INVALID` for a reason no restart clears. `handshakeCookie` takes
+the name off `handshake.provider`, `clearHandshakeCookie(provider)` clears only that provider's,
+and `readHandshakeCookie(request, provider)` reads only that provider's. Pass `{ name }` to
+override all three at once.
+
+| Refused | Because |
+|---|---|
+| a handshake with no signature, or one signed with another secret | a browser that can mint a handshake can pair its own code with someone else's session |
+| a `github` handshake opened on the `google` callback | `openHandshake(sealed, provider)` requires the provider, so it cannot be forgotten |
+| a handshake older than `DEFAULT_HANDSHAKE_TTL_MS` (10 min) | a client may ignore `Max-Age`; the server's clock decides |
+| a callback with no handshake cookie | there is nothing to check `state` against |
+| a cookie value that is not valid percent-encoding | the header is the client's; the raw value reaches the signature check and fails it, never a bare `URIError` |
 
 | Provider | PKCE | id token | Env |
 |---|---|---|---|
@@ -81,6 +119,7 @@ JWT signed with the `.p8` key, which Apple expires every six months.
 
 | Step | Does | Fails with |
 |---|---|---|
+| `handshakeCookie` / `readHandshakeCookie` | seals the handshake onto the redirect, opens it on the callback | `X_OAUTH_STATE_INVALID`, `X_ENV_MISSING` |
 | `exchangeOAuthCode` | POSTs the code + PKCE verifier, verifies the id token | `X_OAUTH_EXCHANGE_FAILED`, `X_OAUTH_TOKEN_INVALID` |
 | `oauthProfile` | id-token claims, else userinfo → one normalised identity | `X_OAUTH_EXCHANGE_FAILED` |
 | `signInWithOAuth` | links the account, applies MFA, mints the session | `X_UNAUTHENTICATED`, `X_MFA_REQUIRED` |

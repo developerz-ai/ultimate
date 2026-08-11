@@ -22,6 +22,15 @@ Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - PKCE is not provider-dependent. `usesPkce: false` is not a valid provider config.
 - The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`
   checks an echoed one when present and never requires it; `verifyIdToken` is the real gate.
+- The handshake crosses two requests, so it is sealed (`sealHandshake`), never handed over in a
+  variable. `openHandshake` takes the provider as an argument for the reason `decodeCursor` takes
+  a scope: an optional check is one a call site forgets. Expiry is the server's clock, not `Max-Age`.
+- One handshake cookie **per provider** (`handshakeCookieName`), never one shared slot. Two tabs
+  are two handshakes in one jar, and a shared name makes the second redirect overwrite the first.
+  `clearHandshakeCookie(provider)` for the same reason: clearing all of them cancels the other tab.
+- `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
+  `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
+  package — the raw value goes to the signature or hash check, which is the readable refusal.
 - A token endpoint's HTTP 200 is not success — GitHub reports a dead code that way. Read `error`.
 - Link by address only when the provider **and** the local account both verified it.
 - id token signatures are not checked: it is read only where it arrived over TLS straight from
@@ -39,6 +48,7 @@ Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
 | `rate-limit.ts` | per-ip + per-account buckets, lockout, `loginFailed()` |
 | `oauth.ts` | provider data, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
+| `oauth-cookie.ts` | the handshake's home between the two legs: seal, open, the cookie |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
 | `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |

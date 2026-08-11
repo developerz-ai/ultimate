@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "eb137ad0893091cac0c94a348bbfb44d4ef027e362a5d36855fd8a37fc1c36d0",
+  "buildId": "095b6e043bc54393088bc85a0fa1f6801cefb0c8a5a08c474487492423b9281a",
   "tiers": {
     "0": [
       "core",
@@ -294,6 +294,11 @@
       "at": "packages/ai/src/errors.ts"
     },
     {
+      "code": "X_AI_EMBEDDER_INVALID",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
       "code": "X_AI_GATEWAY_MISSING",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
@@ -410,6 +415,11 @@
     },
     {
       "code": "X_CACHE_DRIVER_UNAVAILABLE",
+      "owner": "cache",
+      "at": "packages/cache/src/errors.ts"
+    },
+    {
+      "code": "X_CACHE_PURGE_FAILED",
       "owner": "cache",
       "at": "packages/cache/src/errors.ts"
     },
@@ -662,6 +672,11 @@
       "code": "X_IMAGE_DECODE_FAILED",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_IMAGE_QUERY_INVALID",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
     },
     {
       "code": "X_IMAGE_TOO_LARGE",
@@ -994,6 +1009,21 @@
       "at": "packages/pwa/src/errors.ts"
     },
     {
+      "code": "X_PWA_STRATEGY_EXHAUSTED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_SYNC_FLUSH_FAILED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_SYNC_INCOMPLETE",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_DUPLICATE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -1284,6 +1314,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_EVAL_THRESHOLD",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/errors.ts"
@@ -1299,7 +1334,17 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_JOB_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_NETWORK_OFFLINE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_NETWORK_RACE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
@@ -1315,6 +1360,11 @@
     },
     {
       "code": "X_TEST_NONDETERMINISTIC",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_SCHEMA_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

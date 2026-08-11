@@ -5,6 +5,8 @@
 // queried with another is a silent relevance collapse, and the only place to catch it is
 // where the two meet. `VectorStore` compares the declared dimension and refuses.
 
+import { AiEmbedderInvalidError } from './errors';
+
 export interface Embedder {
   readonly name: string;
   /** Declared once, checked everywhere. */
@@ -16,7 +18,7 @@ export interface Embedder {
 /** Embed one text without building an array at the call site. */
 export async function embedOne(embedder: Embedder, text: string): Promise<Float32Array> {
   const [vector] = await embedder.embed([text]);
-  if (vector === undefined) throw new Error(`embedder ${embedder.name} returned no vector`);
+  if (vector === undefined) throw new AiEmbedderInvalidError({ embedder: embedder.name });
   return vector;
 }
 

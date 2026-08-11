@@ -18,6 +18,8 @@ import { recentInvalidations } from '@ultimat3/cache';
 import type { Role } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { json as jsonResponse } from '@ultimat3/http';
+import type { MemoryMailDriver } from '@ultimat3/mail';
+import { isMemoryDriver } from '@ultimat3/mail';
 import type { Manifest } from '@ultimat3/manifest';
 import { checkAppBoundaries } from './app-boundaries';
 import { appManifest, readAppManifest } from './app-manifest';
@@ -65,8 +67,8 @@ async function runSql(input: DevDashboardInput, sql: string): Promise<SqlResult>
 }
 
 /** `MailMessage.locale` is non-optional in `@ultimat3/mail`, so the panel never has to guess. */
-function mailFacts(input: DevDashboardInput): readonly MailFact[] {
-  return input.runtime.mail.outbox().map((entry) => ({
+function mailFacts(outbox: MemoryMailDriver): readonly MailFact[] {
+  return outbox.outbox().map((entry) => ({
     id: entry.result.id,
     to: entry.message.to.join(', '),
     subject: entry.message.subject,
@@ -125,10 +127,16 @@ const invalidationFacts = (): readonly InvalidationFact[] =>
  */
 export function devSources(input: DevDashboardInput): DevSources {
   const traces = input.traces;
+  // Only the memory driver retains what it accepted. Once a credential selects a real transport
+  // the messages are at the provider, so the hook is omitted rather than answered with `[]` —
+  // an empty outbox claims nobody was mailed, which is a different and unearned answer.
+  const outbox = isMemoryDriver(input.runtime.mail) ? input.runtime.mail : undefined;
   return defaultDevSources({
     hooks: {
       runSql: (sql: string): Promise<SqlResult> => runSql(input, sql),
-      mail: (): Promise<readonly MailFact[]> => Promise.resolve(mailFacts(input)),
+      ...(outbox === undefined
+        ? {}
+        : { mail: (): Promise<readonly MailFact[]> => Promise.resolve(mailFacts(outbox)) }),
       manifest: (): Promise<ManifestFact> => manifestFact(input.root),
       invalidations: (): Promise<readonly InvalidationFact[]> =>
         Promise.resolve(invalidationFacts()),

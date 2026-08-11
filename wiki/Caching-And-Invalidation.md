@@ -76,7 +76,7 @@ export const publishPost = action({
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
 | Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, transactional with the outbox |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
-| CDN | purge-by-URL for the affected route set, via the configured purge webhook | seconds; `stale-while-revalidate` covers the gap |
+| CDN | purge by surrogate key — the same tag strings — through the configured `PurgeDriver` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication | **independent path** — realtime does not depend on cache invalidation |
 
 Fanout is enqueued in the **same transaction** as the write — the transactional outbox from [Jobs and workflows](Jobs-And-Workflows). A rolled-back write never purges; a committed write always does.
@@ -97,6 +97,28 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Silent typo | `invalidates: [tag.pots]` | `X_CACHE_TAG_UNKNOWN`, or a compile error against the generated registry |
 
 Agents are measurably bad at *distant* invariants — "edit here, remember to also edit there" is where LLM-written code regresses most. Declaring `invalidates` at the write site is local, checkable, and typed.
+
+## The CDN leg
+
+The CDN is the one tier Ultimate never reads back from, so the emitted header and the purge call
+are the whole contract. `cacheHeaders()` writes the surrogate keys, and they are the tag strings
+unchanged — `post`, `post:1` — which is what keeps an edge purge from ever meaning something
+different than an `invalidates: [tag.post]`.
+
+| Driver | Purge | Purge all | Per call |
+|---|---|---|---|
+| `noopPurgeDriver()` | echoes the keys back | resolves | — |
+| `fastlyPurgeDriver({ apiToken, serviceId })` | `POST /service/<id>/purge` with `surrogate_keys` | `POST /service/<id>/purge_all` | 256 keys |
+| `cloudflarePurgeDriver({ apiToken, zoneId })` | `POST /zones/<id>/purge_cache` with `tags` | same call with `purge_everything` | 30 tags |
+
+Which one a process installs is decided from the environment — `FASTLY_API_TOKEN` +
+`FASTLY_SERVICE_ID`, or `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID`. See
+[Configuration → CDN purge](Configuration#cdn-purge). With neither pair set, nothing is purged and
+no `cdn` line appears in the invalidation report: a tier that reported keys an edge that does not
+exist had accepted would be worse than no tier at all.
+
+A refusal is `X_CACHE_PURGE_FAILED` with `meta.retryable`, collected into `report.errors` — a dead
+CDN never fails the write that triggered the bust, and the entry expires by TTL instead.
 
 ## Semantic cache for LLM calls
 
@@ -142,7 +164,8 @@ Also cached exactly (tier 3, not semantic): embeddings themselves, keyed by cont
 | `X_CACHE_UNTAGGED_QUERY` | **reserved, nothing raises it** `As of 2026-08` — a query's tables are covered by no tag, so it could never be invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) | declare the entity tag, then `x manifest` |
 | `X_CACHE_TAG_UNKNOWN` | `tag "<name>" is not declared by any entity` | `x manifest` |
 | `X_CACHE_TOO_LARGE` | `entry "<key>" is <n>B, over the <tier> budget of <m>B` | `raise cache.<tier>.maxBytes in app.config.ts, or cache a projection instead of the row` |
-| `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — no Redis binding, no CDN token | the error carries the exact config or command to fix |
+| `X_CACHE_DRIVER_UNAVAILABLE` | `cache tier "<driver>" is unavailable` — no Redis binding, or a purge driver built without its token | the error carries the exact config or command to fix |
+| `X_CACHE_PURGE_FAILED` | `<driver> refused the purge (HTTP <status>)` — a wrong token, a zone without tag purge, a throttle, or a key a CDN would split | `meta.retryable === true` → the identical purge can land again; otherwise set the env key the `fix` names |
 
 Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cache/src/errors.ts). Full index: [Error codes](Error-Codes).
 

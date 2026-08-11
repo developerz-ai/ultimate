@@ -10,7 +10,7 @@ import type { DevPanel } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
 import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
 import { configureTelemetry, resetTelemetry, withSpan } from '@ultimat3/core';
-import type { MailMessage, SendResult, SentMail } from '@ultimat3/mail';
+import type { MailMessage, MemoryMailDriver, SendResult, SentMail } from '@ultimat3/mail';
 import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
@@ -59,6 +59,39 @@ interface FakeRuntime {
   readonly outbox?: readonly SentMail[];
   /** Every statement the dashboard sent, so a test can prove it was not rewritten. */
   readonly seen?: string[];
+  /** A credential-selected transport, which retains nothing and so has no outbox to project. */
+  readonly transport?: 'smtp' | 'resend';
+}
+
+/**
+ * A caught outbox with the fixture's own ids and timestamps. Not `createMemoryDriver()` fed through
+ * `send()`: that mints a `mem_<nanoid>` and a `new Date()`, and the projection those two fields land
+ * in is exactly what the case below asserts. Every member `MemoryMailDriver` declares is real,
+ * because `isMemoryDriver` checks all of them — a look-alike carrying `name` and `outbox()` alone
+ * makes `sent`, `lastTo()` and `clear()` a promise the object cannot keep, and the panel degrades
+ * to its refusal instead of projecting anything.
+ */
+function caughtOutbox(fixture: readonly SentMail[]): MemoryMailDriver {
+  const sent: SentMail[] = [...fixture];
+  return {
+    name: 'memory',
+    sent,
+    // The panel narrows on the driver and reads `outbox()`; nothing here delivers. Coded for
+    // `panelFor`'s reason: a throw with no code and no fix is not an instruction.
+    send: (): Promise<never> =>
+      Promise.reject(
+        new CliNotImplementedError({
+          feature: 'sending through the caught-outbox fixture',
+          fix: 'x dev   # boots the memory driver that does catch mail',
+        }),
+      ),
+    // Fixtures are written newest-first, the order the real driver hands back.
+    outbox: () => sent,
+    lastTo: (address) => sent.find((entry) => entry.message.to.includes(address)),
+    clear: () => {
+      sent.length = 0;
+    },
+  };
 }
 
 /** Only the two members the hooks touch; a PGlite boot proves nothing about the projection. */
@@ -70,7 +103,25 @@ const fakeRuntime = (fake: FakeRuntime = {}): RunningServices =>
         return Promise.resolve(fake.rows ?? []);
       },
     },
-    mail: { outbox: (): readonly SentMail[] => fake.outbox ?? [] },
+    // `name` is load-bearing, not decoration: `isMemoryDriver` narrows on it before the panel
+    // reads an outbox, which is the whole reason a real transport degrades instead of throwing.
+    mail:
+      fake.transport === undefined
+        ? caughtOutbox(fake.outbox ?? [])
+        : {
+            name: fake.transport,
+            // `send` exists only to satisfy `MailDriver` — the panel narrows on `name` and never
+            // calls it. Coded even so, for `panelFor`'s reason: a throw with no code and no fix is
+            // not an instruction to whoever does reach it.
+            send: (): Promise<never> =>
+              Promise.reject(
+                new CliNotImplementedError({
+                  feature: `sending through the ${fake.transport} fixture transport`,
+                  fix: 'x dev   # boots the transport the credential selects, which does send',
+                }),
+              ),
+          },
+    mailDetail: fake.transport === undefined ? 'caught in memory' : 'SMTP_URL',
   }) as unknown as RunningServices;
 
 const inputFor = (
@@ -211,6 +262,16 @@ describe('unit · x dev mounts the dashboard', () => {
         sentAt: '2026-08-09T10:11:12.000Z',
       },
     ]);
+  });
+
+  // An empty outbox would read as "nothing was mailed". The messages went to the provider, so
+  // the only honest answer is that this process cannot see them.
+  test('a credential-selected transport refuses the mail source instead of claiming an empty outbox', async () => {
+    const caught = (await devSources(inputFor({ transport: 'smtp' }))
+      .mail()
+      .catch((error: unknown) => error)) as { code?: string; cause?: string };
+    expect(caught.code).toBe('X_NOT_IMPLEMENTED');
+    expect(caught.cause).toContain('mail');
   });
 
   test('a host that installed no exporter answers with the wiring line, not an empty timeline', async () => {

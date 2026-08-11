@@ -3,7 +3,6 @@
 // the response, and purging by surrogate key when a tag changes. Surrogate keys ARE the
 // tags — same strings, so a CDN purge cannot drift from an app-level invalidation.
 
-import { CacheNotImplementedError } from './errors';
 import type { CacheTag } from './tags';
 import { serializeTags } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
@@ -66,26 +65,13 @@ export function noopPurgeDriver(): PurgeDriver {
   };
 }
 
-const remoteDriver = (name: string): PurgeDriver => {
-  const unimplemented = (): never => {
-    throw new CacheNotImplementedError({
-      feature: `CDN purge driver "${name}"`,
-      fix: `use cdn: { purge: 'noop' } in app.config.ts, or implement PurgeDriver — see docs/caching/cdn.md#${name}`,
-    });
-  };
-  return {
-    name,
-    purge: unimplemented,
-    purgeAll: unimplemented,
-  };
-};
-
-export const fastlyPurgeDriver = (): PurgeDriver => remoteDriver('fastly');
-export const cloudflarePurgeDriver = (): PurgeDriver => remoteDriver('cloudflare');
-
 export interface CdnTierOptions {
   readonly purge?: PurgeDriver;
-  /** Maps a cache key to the CDN path(s) it renders, for key-level purges. */
+  /**
+   * Maps a cache key to the CDN path(s) it renders, for key-level purges. Those paths are
+   * purged **as surrogate keys** — `PurgeDriver.purge` has one currency and this is it — so a
+   * host using this must tag those responses with their own path.
+   */
   readonly pathsForKey?: (key: string) => readonly string[];
 }
 

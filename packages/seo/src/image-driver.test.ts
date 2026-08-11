@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createRaster, encodeImage, probeImage, type Raster } from '@ultimat3/core';
 import { notImplementedDriver } from './errors';
-import { builtinImageDriver } from './image-driver';
+import { builtinImageDriver, type TransformedImage } from './image-driver';
+import { IMAGE_QUERY_KEYS, parseImageQuery } from './images';
 
 /** A flat 64x48 PNG. `alpha: 255` is opaque; anything less makes the raster alpha-bearing. */
 function pngSource(alpha: number): Uint8Array {
@@ -97,6 +98,36 @@ describe('builtinImageDriver', () => {
     expect(
       probeImage(Uint8Array.from(atob(uri.split(',')[1] ?? ''), (c) => c.charCodeAt(0))),
     ).toMatchObject({ format: 'png', width: 16 });
+  });
+
+  /**
+   * The README's route example, verbatim in shape: `parseImageQuery` → `transform`. It lives here
+   * because a snippet nothing compiles is a snippet that drifts — this one dropped `quality`, so a
+   * route copied from the docs answered `?q=40` with the default encode and no error anywhere.
+   */
+  test('the documented route shape forwards every key parseImageQuery returns', async () => {
+    const driver = builtinImageDriver({ read: reader(OPAQUE).read });
+    const encode = async (search: string): Promise<TransformedImage> => {
+      const query = parseImageQuery(new URL(`https://x.test/media/hero.png${search}`).searchParams);
+      if (query === null) return expect.unreachable('the URL carries a transform');
+      return await driver.transform({
+        src: '/img/hero.png',
+        width: query.width ?? 64,
+        ...(query.format === undefined ? {} : { format: query.format }),
+        ...(query.quality === undefined ? {} : { quality: query.quality }),
+      });
+    };
+
+    const coarse = await encode(
+      `?${IMAGE_QUERY_KEYS.width}=64&${IMAGE_QUERY_KEYS.format}=jpeg&${IMAGE_QUERY_KEYS.quality}=20`,
+    );
+    const fine = await encode(
+      `?${IMAGE_QUERY_KEYS.width}=64&${IMAGE_QUERY_KEYS.format}=jpeg&${IMAGE_QUERY_KEYS.quality}=95`,
+    );
+    expect(coarse.contentType).toBe('image/jpeg');
+    expect(coarse.width).toBe(64);
+    // A dropped `quality` makes these two identical, which is the failure the docs example had.
+    expect(coarse.bytes.length).toBeLessThan(fine.bytes.length);
   });
 
   test('reads once per call, with the exact src it was handed', async () => {

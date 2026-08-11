@@ -113,6 +113,25 @@ export function createMemoryDriver(): MemoryMailDriver {
 }
 
 /**
+ * Whether this driver caught the message instead of sending it. A host asks before reading
+ * `outbox()` — the `/_x` mail panel exists only when nothing was actually delivered, and a real
+ * transport has no record to show. Every member the interface promises is checked, not just the
+ * one a caller happens to reach first: the predicate hands back a `MemoryMailDriver`, so a
+ * look-alike that passed on `name` + `outbox()` alone would make `sent`, `lastTo()` and `clear()`
+ * a compile-time promise the object cannot keep.
+ */
+export function isMemoryDriver(driver: MailDriver): driver is MemoryMailDriver {
+  if (driver.name !== 'memory') return false;
+  const candidate = driver as MemoryMailDriver;
+  return (
+    Array.isArray(candidate.sent) &&
+    typeof candidate.outbox === 'function' &&
+    typeof candidate.lastTo === 'function' &&
+    typeof candidate.clear === 'function'
+  );
+}
+
+/**
  * Structured log line per message through core's `logger` — the default for a worker that
  * has no credentials yet. Bodies are never logged; a mail body is user data.
  */

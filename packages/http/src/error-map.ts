@@ -29,7 +29,12 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
   X_PERMISSION_UNKNOWN: 500,
+  // @ultimat3/seo — a transform query the caller wrote, so the caller is the one who can fix it.
+  X_IMAGE_QUERY_INVALID: 400,
   // @ultimat3/core
+  // The caller asked for a format the pipeline cannot produce (`?f=avif`): the request names an
+  // unsupported representation, which is 415 — not a 500, which would blame the server for it.
+  X_IMAGE_UNSUPPORTED: 415,
   X_NOT_IMPLEMENTED: 501,
   X_TIMEOUT: 504,
   X_ABORTED: 499,

@@ -60,7 +60,7 @@ export const publishPost = action({
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
 | Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, transactional with the outbox |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
-| CDN | purge-by-URL for the affected route set, via the configured purge webhook | seconds; `stale-while-revalidate` covers the gap |
+| CDN | purge by surrogate key — the same tag strings — through the configured `PurgeDriver` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication ([`03-realtime.md`](./03-realtime.md)) | independent path — realtime does not depend on cache invalidation |
 
 Fanout is enqueued in the **same transaction** as the write (the outbox from [`04-jobs.md`](./04-jobs.md)). A rolled-back write never purges; a committed write always does.

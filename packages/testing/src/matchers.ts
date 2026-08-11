@@ -3,6 +3,7 @@
 // a test ends up asserting on the wrong branch.
 
 import { expect } from 'bun:test';
+import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
 import type { OpenApiLike } from './test-types';
 
 export interface MatcherResult {
@@ -31,9 +32,7 @@ const isStandardSchema = (value: unknown): value is StandardSchema =>
 
 async function hasIssues(schema: unknown, input: unknown): Promise<boolean> {
   if (!isStandardSchema(schema)) {
-    throw new TypeError(
-      'toRejectInput expects a Standard Schema (`t`) — pass action.input, not the action',
-    );
+    throw new TestSchemaExpectedError();
   }
   const result = await schema['~standard'].validate(input);
   const issues = result.issues;
@@ -88,7 +87,7 @@ const isJob = (value: unknown): value is JobLike =>
 
 /** Runs the job with a recording step API, so the assertion is on the sequence, not the effects. */
 export async function recordSteps(job: unknown, input: unknown = {}): Promise<readonly string[]> {
-  if (!isJob(job)) throw new TypeError('toEmitSteps expects a job declaration');
+  if (!isJob(job)) throw new TestJobExpectedError();
   const names: string[] = [];
   const step: StepRecorder = {
     run: async (name, body) => {

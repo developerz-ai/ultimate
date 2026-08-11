@@ -12,6 +12,9 @@ export const PWA_OWNED_ERROR_CODES = [
   'X_PWA_MANIFEST_INVALID',
   'X_BUILD_ID_MISSING',
   'X_SW_SCOPE_INVALID',
+  'X_PWA_STRATEGY_EXHAUSTED',
+  'X_PWA_SYNC_FLUSH_FAILED',
+  'X_PWA_SYNC_INCOMPLETE',
 ] as const;
 
 /**
@@ -32,6 +35,9 @@ export const PWA_ERROR_TITLES: Readonly<Record<PwaOwnedErrorCode, string>> = {
   X_PWA_MANIFEST_INVALID: 'the generated web manifest failed validation',
   X_BUILD_ID_MISSING: 'no immutable build ID',
   X_SW_SCOPE_INVALID: 'the service-worker scope cannot serve the routes it precaches',
+  X_PWA_STRATEGY_EXHAUSTED: 'a caching strategy had no cache, no network and no fallback',
+  X_PWA_SYNC_FLUSH_FAILED: 'the background-sync outbox flush was rejected',
+  X_PWA_SYNC_INCOMPLETE: 'the background-sync outbox flush left mutations queued',
 };
 
 // One unconditional call, so a second package claiming one of pwa's codes throws
@@ -103,6 +109,55 @@ export class SwScopeInvalidError extends UltimateError {
       cause,
       fix,
       docs: docsFor(SwScopeInvalidError.code),
+    });
+  }
+}
+
+/**
+ * A strategy exhausted the cache, the network, and any declared fallback. Runs in-process (the
+ * `STRATEGY_FNS` half of `strategies.ts`, tested for parity with the `STRATEGY_SOURCE` emitted
+ * into `sw.js`), so it can import core the way the generated bundle below cannot.
+ */
+export class PwaStrategyExhaustedError extends UltimateError {
+  static readonly code = 'X_PWA_STRATEGY_EXHAUSTED' as const;
+  constructor(input: { cacheName: string }) {
+    super({
+      code: PwaStrategyExhaustedError.code,
+      cause: `no cached response and the network failed for "${input.cacheName}"`,
+      fix: 'pass options.fallback to staleWhileRevalidate(request, env, options), or set pwa.offline.fallback in app.config.ts',
+      docs: docsFor(PwaStrategyExhaustedError.code),
+    });
+  }
+}
+
+/**
+ * Titles one of the two failures `backgroundSyncSource()` emits into `sw.js`, and owns the `code`
+ * the emitted source throws. The generated code runs in the browser's service-worker realm, which
+ * has no bundler and no `@ultimat3/core` to import — so it defines a local `PwaSyncError` carrying
+ * this same code, cause, fix and docs rather than constructing this class. This class is what gives
+ * the code one title and one wiki row, the same as every other code in this file.
+ */
+export class PwaSyncFlushFailedError extends UltimateError {
+  static readonly code = 'X_PWA_SYNC_FLUSH_FAILED' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: PwaSyncFlushFailedError.code,
+      cause,
+      fix,
+      docs: docsFor(PwaSyncFlushFailedError.code),
+    });
+  }
+}
+
+/** Documented for the same reason as {@link PwaSyncFlushFailedError} — see its comment. */
+export class PwaSyncIncompleteError extends UltimateError {
+  static readonly code = 'X_PWA_SYNC_INCOMPLETE' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: PwaSyncIncompleteError.code,
+      cause,
+      fix,
+      docs: docsFor(PwaSyncIncompleteError.code),
     });
   }
 }

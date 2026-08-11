@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { drain, onShutdown, resetLifecycle } from '@ultimat3/core';
+import { dbUnavailable } from '@ultimat3/db';
 import { holdUntilShutdown } from './hold';
 
 afterEach(() => {
@@ -84,11 +85,15 @@ describe('holdUntilShutdown', () => {
   test('a release that fails rejects the hold rather than exiting 0 over it', async () => {
     // `dispatch` awaits the hold inside its own try, so a database that would not close is a
     // finding on the way out. Swallowing it would report a clean shutdown of a process that
-    // still holds the PGlite directory.
-    const hold = holdUntilShutdown('probe', () => Promise.reject(new Error('db would not close')));
+    // still holds the PGlite directory. Coded, like the real release: `RunningServices.stop()`
+    // rethrows the first failure it hit, and a bare Error would reach `dispatch` with no fix.
+    const hold = holdUntilShutdown('probe', () =>
+      Promise.reject(dbUnavailable('the embedded PGlite would not close')),
+    );
     const held = hold();
     void drain('SIGINT');
 
-    expect(held).rejects.toThrow('db would not close');
+    // Awaited: an unawaited `.rejects` is an assertion the runner never sees fail.
+    await expect(held).rejects.toBeUltimateError('X_DB_UNAVAILABLE');
   });
 });

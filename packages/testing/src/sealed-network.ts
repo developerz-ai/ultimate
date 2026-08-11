@@ -3,7 +3,7 @@
 // for reasons nobody can reproduce — so the default is "nothing gets out".
 
 import { isSelfOrigin } from '@ultimat3/core';
-import { NetworkOfflineError, NetworkSealedError } from './errors';
+import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './errors';
 
 export type FetchLike = typeof globalThis.fetch;
 
@@ -79,7 +79,7 @@ export function sealNetwork(): void {
     const host = safeHost(url);
     if (isSelfOrigin(url) || (host !== undefined && state.allowed.has(host))) {
       const original = state.original;
-      if (original === undefined) throw new TypeError('sealed network lost its original fetch');
+      if (original === undefined) throw new NetworkRaceError();
       return original(input, init);
     }
     throw new NetworkSealedError({

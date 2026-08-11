@@ -3,6 +3,7 @@
 // so the browser reserves the box before the bytes arrive, keeping CLS at 0. Producing those
 // bytes is `image-driver.ts`; nothing here decodes a pixel.
 
+import { imageQueryInvalid } from './errors';
 import { attributes, escapeAttribute } from './xml';
 
 /** Ordered widest-first is wrong for `srcset`; browsers want ascending. */
@@ -64,7 +65,7 @@ export interface ResponsiveImage {
 export interface ResponsiveImageOptions {
   widths?: readonly number[];
   formats?: readonly ModernFormat[];
-  /** Builds the URL for one variant. Defaults to `?w=&f=` query parameters. */
+  /** Builds the URL for one variant. Defaults to `IMAGE_QUERY_KEYS` query parameters (`?w=&f=`). */
   urlFor?: (src: string, width: number, format?: string) => string;
 }
 
@@ -72,9 +73,80 @@ export function extensionOf(src: string): string {
   return (src.split('?')[0]?.split('.').pop() ?? '').toLowerCase();
 }
 
+/**
+ * The one spelling of the transform query keys. `defaultUrlFor` writes them and
+ * `parseImageQuery` reads them back — a literal `'w'` in one place and a literal `'w'` in the
+ * other is how a rename of one silently stops answering the other's URLs.
+ */
+export const IMAGE_QUERY_KEYS = { width: 'w', format: 'f', quality: 'q' } as const;
+
 function defaultUrlFor(src: string, width: number, format?: string): string {
   const separator = src.includes('?') ? '&' : '?';
-  return `${src}${separator}w=${width}${format === undefined ? '' : `&f=${format}`}`;
+  // Both keys read from IMAGE_QUERY_KEYS, never a literal 'w'/'f' — see the constant above.
+  const widthParam = `${IMAGE_QUERY_KEYS.width}=${width}`;
+  const formatParam = format === undefined ? '' : `&${IMAGE_QUERY_KEYS.format}=${format}`;
+  return `${src}${separator}${widthParam}${formatParam}`;
+}
+
+export interface ImageQuery {
+  readonly width?: number | undefined;
+  readonly format?: string | undefined;
+  readonly quality?: number | undefined;
+}
+
+/**
+ * `w` and `q` share one shape: digits only, so `/^[1-9]\d*$/` rejects an empty string, `"0"`, a
+ * negative sign and a fractional point in a single test instead of four checks that could each
+ * drift out of sync with the others.
+ *
+ * Digits alone are still not a number, which is why the range gate is here and not only in
+ * `parseQuality`: 400 of them parse to `Infinity`, and `Infinity > 0` passes every positive-integer
+ * test there is, so `?w=999…9` used to reach the driver as a width nothing can allocate.
+ */
+function parsePositiveInt(param: string, raw: string): number {
+  if (!/^[1-9]\d*$/.test(raw)) throw imageQueryInvalid(param, raw, 'must be a positive integer');
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(value)) {
+    throw imageQueryInvalid(param, raw, 'is past the largest integer a pixel count can hold');
+  }
+  return value;
+}
+
+function parseQuality(raw: string): number {
+  const quality = parsePositiveInt(IMAGE_QUERY_KEYS.quality, raw);
+  if (quality > 100) throw imageQueryInvalid(IMAGE_QUERY_KEYS.quality, raw, 'must be 100 or less');
+  return quality;
+}
+
+/**
+ * Naming no *real* format is deliberately not refused here: `image-driver.ts`'s
+ * `requestedFormat` already owns "is this an encodable format", and throwing in two places
+ * would give one bad URL two different error codes depending on which module ran first. This
+ * only refuses the one thing that is unambiguously this module's fact — the key was present and
+ * empty.
+ */
+function parseFormat(raw: string): string {
+  if (raw === '')
+    throw imageQueryInvalid(IMAGE_QUERY_KEYS.format, raw, 'must be a non-empty string');
+  return raw;
+}
+
+/**
+ * `null` means no transform was asked for — a plain asset read, not a bad request. An
+ * asked-for-but-unusable value throws instead, because silently serving the full-size
+ * original against a `?w=320` URL is the layout shift this contract exists to prevent.
+ */
+export function parseImageQuery(params: URLSearchParams): ImageQuery | null {
+  const rawWidth = params.get(IMAGE_QUERY_KEYS.width);
+  const rawFormat = params.get(IMAGE_QUERY_KEYS.format);
+  const rawQuality = params.get(IMAGE_QUERY_KEYS.quality);
+  if (rawWidth === null && rawFormat === null && rawQuality === null) return null;
+
+  return {
+    ...(rawWidth === null ? {} : { width: parsePositiveInt(IMAGE_QUERY_KEYS.width, rawWidth) }),
+    ...(rawFormat === null ? {} : { format: parseFormat(rawFormat) }),
+    ...(rawQuality === null ? {} : { quality: parseQuality(rawQuality) }),
+  };
 }
 
 /** Never upscale: drop candidate widths above the intrinsic width. */

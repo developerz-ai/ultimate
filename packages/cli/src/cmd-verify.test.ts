@@ -216,6 +216,10 @@ describe('unit · x verify', () => {
         name: 'boundaries',
         summary: 'imports',
         run: async () => {
+          // Deliberately a bare Error, and the only shape that tests this: the subject is a step
+          // that fails with something the framework never coded — a transpiler, a driver, an OOM.
+          // Coding it here would assert that `runVerify` re-reports codes, which is a different
+          // claim than "an unstructured throw still lands as X_VERIFY_FAILED with a fix".
           throw new Error('transpiler exploded');
         },
       },

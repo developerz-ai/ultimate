@@ -5,27 +5,20 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 /** Codes this package declares and owns. */
 export const CACHE_OWNED_ERROR_CODES = [
   'X_CACHE_DRIVER_UNAVAILABLE',
+  'X_CACHE_PURGE_FAILED',
   'X_CACHE_TAG_UNKNOWN',
   'X_CACHE_TOO_LARGE',
 ] as const;
 
-/**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `CacheNotImplementedError` throws it; this package
- * neither titles nor registers it, because the owner's title is the only one that may exist.
- */
-export const CACHE_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
-
-/** Every code cache can throw: the ones it owns plus the one it borrows. */
-export const CACHE_ERROR_CODES = [
-  ...CACHE_OWNED_ERROR_CODES,
-  ...CACHE_BORROWED_ERROR_CODES,
-] as const;
+/** Every code cache can throw. It borrows none: every remote driver here is implemented. */
+export const CACHE_ERROR_CODES = [...CACHE_OWNED_ERROR_CODES] as const;
 
 export type CacheOwnedErrorCode = (typeof CACHE_OWNED_ERROR_CODES)[number];
 export type CacheErrorCode = (typeof CACHE_ERROR_CODES)[number];
 
 export const CACHE_ERROR_TITLES: Readonly<Record<CacheOwnedErrorCode, string>> = {
   X_CACHE_DRIVER_UNAVAILABLE: "a tier's backing store is missing",
+  X_CACHE_PURGE_FAILED: 'the CDN refused a purge',
   X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
   X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
 };
@@ -79,14 +72,31 @@ export class CacheTooLargeError extends UltimateError {
   }
 }
 
-/** An interface-complete driver whose remote half is not written yet. */
-export class CacheNotImplementedError extends UltimateError {
-  constructor(input: { feature: string; fix: string }) {
+/**
+ * A remote purge did not happen. Never fatal on its own — `invalidateTags` collects it into
+ * `report.errors` so a dead CDN cannot fail the write that triggered the bust — which is exactly
+ * why `retryable` is carried rather than guessed: the caller decides whether the same purge,
+ * unchanged, is worth sending again, and a stale edge until TTL is the cost of getting it wrong.
+ */
+export class CachePurgeFailedError extends UltimateError {
+  constructor(input: {
+    driver: string;
+    detail: string;
+    status?: number | undefined;
+    retryable: boolean;
+    fix: string;
+  }) {
+    const status = input.status === undefined ? '' : ` (HTTP ${input.status})`;
     super({
-      code: 'X_NOT_IMPLEMENTED',
-      cause: `${input.feature} is declared but not implemented in @ultimat3/cache`,
+      code: 'X_CACHE_PURGE_FAILED',
+      cause: `${input.driver} refused the purge${status}: ${input.detail}`,
       fix: input.fix,
-      docs: docsFor('X_NOT_IMPLEMENTED'),
+      docs: docsFor('X_CACHE_PURGE_FAILED'),
+      meta: {
+        driver: input.driver,
+        retryable: input.retryable,
+        ...(input.status === undefined ? {} : { status: input.status }),
+      },
     });
   }
 }

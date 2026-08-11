@@ -2,6 +2,11 @@
 // are build errors, so every one names the exact route file and the exact fix.
 
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+// errors.ts <-> images.ts: images.ts throws imageQueryInvalid() and this file spells its fix
+// using images.ts's IMAGE_QUERY_KEYS. Safe like core's errors.ts <-> error-codes.ts cycle:
+// nothing at this module's top level reads the import, only the factory body below does, and by
+// the time that runs both modules have finished loading.
+import { IMAGE_QUERY_KEYS } from './images';
 
 export const SEO_ERROR_CODES = {
   metaMissing: 'X_SEO_META_MISSING',
@@ -11,6 +16,7 @@ export const SEO_ERROR_CODES = {
   ldInvalid: 'X_LD_INVALID',
   budgetExceeded: 'X_SEO_BUDGET_EXCEEDED',
   sitemapTooLarge: 'X_SITEMAP_TOO_LARGE',
+  imageQueryInvalid: 'X_IMAGE_QUERY_INVALID',
 } as const;
 
 export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES];
@@ -30,6 +36,7 @@ registerErrorCodes({
   X_LD_INVALID: { title: 'JSON-LD node is missing a required schema.org field' },
   X_SEO_BUDGET_EXCEEDED: { title: 'route exceeded its performance budget' },
   X_SITEMAP_TOO_LARGE: { title: 'sitemap exceeds the 50,000-entry protocol limit' },
+  X_IMAGE_QUERY_INVALID: { title: 'an image transform query parameter is present but unusable' },
 });
 
 export interface SeoErrorInit {
@@ -121,6 +128,31 @@ export function sitemapTooLarge(count: number, max: number): SeoError {
     cause: `sitemap index would hold ${count} sitemaps; the protocol limit is ${max}`,
     fix: 'exclude non-indexable routes with noindex, or shard the site across hostnames',
     meta: { count, max },
+  });
+}
+
+/**
+ * `parseImageQuery`'s only refusal: a `?w=`/`?q=`/`?f=` value present but not usable — serving
+ * the untransformed original against a URL that asked for a size would be the layout shift this
+ * contract exists to prevent, so an unusable value throws instead of falling back silently. A
+ * format string naming no *real* encoder is a different failure (`image-driver.ts`'s
+ * `X_IMAGE_UNSUPPORTED`); this code never covers it.
+ *
+ * The `fix` is written as an inline ternary, not a helper call, so the `errors` gate step can
+ * still read each branch as a literal — a `fix` computed behind a function call has nothing for
+ * a static scan to check, and the gate would silently wave the whole thing through.
+ */
+export function imageQueryInvalid(param: string, value: string, reason: string): SeoError {
+  return new SeoError({
+    code: SEO_ERROR_CODES.imageQueryInvalid,
+    cause: `?${param}=${value} is not usable: ${reason}`,
+    fix:
+      param === IMAGE_QUERY_KEYS.quality
+        ? `request ?${IMAGE_QUERY_KEYS.quality}=75 — a whole number from 1 to 100`
+        : param === IMAGE_QUERY_KEYS.format
+          ? `request ?${IMAGE_QUERY_KEYS.format}=webp — a non-empty format name`
+          : `request ?${IMAGE_QUERY_KEYS.width}=640 with a positive integer width`,
+    meta: { param, value, reason },
   });
 }
 

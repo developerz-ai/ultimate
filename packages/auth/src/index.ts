@@ -122,6 +122,18 @@ export {
   OAUTH_PROVIDERS,
   pkceChallenge,
 } from './oauth';
+export type { HandshakeCookieOptions, HandshakeSealOptions } from './oauth-cookie';
+export {
+  clearHandshakeCookie,
+  DEFAULT_HANDSHAKE_TTL_MS,
+  handshakeCookie,
+  handshakeCookieName,
+  handshakeSecret,
+  OAUTH_HANDSHAKE_COOKIE_PREFIX,
+  openHandshake,
+  readHandshakeCookie,
+  sealHandshake,
+} from './oauth-cookie';
 export type {
   OAuthClientCredentials,
   OAuthExchangeOptions,
@@ -186,6 +198,7 @@ export {
   DEFAULT_SESSION_POLICY,
   listDevices,
   parseSessionToken,
+  readCookie,
   readSessionCookie,
   revokeOtherSessions,
   revokeSession,

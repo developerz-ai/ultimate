@@ -7,6 +7,7 @@ export {
   budgetExceeded,
   canonicalMismatch,
   duplicateMeta,
+  imageQueryInvalid,
   ldInvalid,
   metaMissing,
   metaTooLong,
@@ -24,6 +25,7 @@ export type {
 export { builtinImageDriver } from './image-driver';
 export type {
   ImageInput,
+  ImageQuery,
   ImageSourceSet,
   ModernFormat,
   ResponsiveImage,
@@ -33,8 +35,10 @@ export {
   DEFAULT_WIDTHS,
   extensionOf,
   FORMAT_ORDER,
+  IMAGE_QUERY_KEYS,
   inlineBlur,
   MIME_TYPES,
+  parseImageQuery,
   renderPicture,
   responsiveImage,
   srcsetFor,

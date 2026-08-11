@@ -1,14 +1,39 @@
 // Name derivation for generators. One place, because `x g resource post` has to agree with itself
 // across eight emitted files — a second casing helper is how `Post`/`post`/`posts` drift apart.
 
-export interface GeneratedFile {
+/**
+ * A catalog is one file per locale that many generators contribute keys to; a whole-file write
+ * would delete every key already in it, so a `'json'` file merges instead of overwriting. Always
+ * text: `cmd-generate.ts`'s `dedupe`/`mergeJsonFile` parse and merge `contents` as a JSON object,
+ * a step that only ever runs against this variant.
+ */
+export interface GeneratedJsonFile {
   /** POSIX path relative to the app root. */
   readonly path: string;
   readonly contents: string;
-  /** A catalog is one file per locale that many generators contribute keys to; a whole-file write
-   * would delete every key already in it, so a `'json'` file merges instead of overwriting. */
-  readonly merge?: 'json';
+  readonly merge: 'json';
 }
+
+/**
+ * Every other generated file. Text in almost every case, but the scaffolded app icon is bytes,
+ * not prose: a PNG cannot survive a UTF-8 string round-trip (every byte above 0x7F comes back
+ * mangled), so `contents` has to admit raw bytes too — `Bun.write` already accepts either, so
+ * nothing downstream needs a second write path.
+ */
+export interface GeneratedSourceFile {
+  /** POSIX path relative to the app root. */
+  readonly path: string;
+  readonly contents: string | Uint8Array;
+  readonly merge?: undefined;
+}
+
+/**
+ * Split on `merge` rather than widening one shape's `contents` in place, so the split is
+ * load-bearing, not cosmetic: a `merge: 'json'` file's `contents` stays a plain `string` at the
+ * type level, which is what stops a byte-carrying file from ever reaching
+ * `cmd-generate.ts`'s JSON parser — the compiler refuses the call before the code can run.
+ */
+export type GeneratedFile = GeneratedJsonFile | GeneratedSourceFile;
 
 const words = (input: string): readonly string[] =>
   input

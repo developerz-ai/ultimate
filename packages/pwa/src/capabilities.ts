@@ -53,11 +53,15 @@ export const CAPABILITY_MANIFEST_KEYS: Readonly<Record<Capability, readonly stri
     protocolHandlers: ['protocol_handlers'],
   });
 
-/** The SW listener each capability emits. Used to assert nothing leaks when disabled. */
+/**
+ * The service-worker code each capability emits — its listener, and anything that listener alone
+ * needs. Used to assert nothing leaks when disabled: `PwaSyncError` is the background-sync
+ * handler's own error class, so it ships with the handler and never without it.
+ */
 export const CAPABILITY_SW_MARKERS: Readonly<Record<Capability, readonly string[]>> = Object.freeze(
   {
     push: ["addEventListener('push'", "addEventListener('notificationclick'"],
-    backgroundSync: ["addEventListener('sync'"],
+    backgroundSync: ["addEventListener('sync'", 'class PwaSyncError'],
     badging: ['navigator.setAppBadge'],
     shareTarget: ['/_x/share-target'],
     fileHandlers: [],

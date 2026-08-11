@@ -1,6 +1,6 @@
 # @ultimat3/mail — agent notes
 
-**Tier 3.** May import `core`, `schema`, `i18n`, `time`, `money`, `jobs`; never `auth`, `http`, `ui`, `render`. **Zero external deps** — no nodemailer, no MJML, no CSS library.
+**Tier 4** (`scripts/lib/tiers.ts`). May import `core`, `schema`, `i18n`, `time`, `money`, `jobs`; never `auth`, `http`, `ui`, `render`. **Zero external deps** — no nodemailer, no MJML, no CSS library.
 
 ## Boundary
 
@@ -12,6 +12,7 @@
 | `render.ts` | blocks → HTML **and** text, plus the layout call and the footer slots |
 | `layout.ts` | `MAIL_TOKENS` (light + dark), the 600px table shell, layout registry |
 | `driver.ts` | `MailDriver` + memory/log + `resultFor` + the `setMailDriver` seam |
+| `driver-env.ts` | `selectMailDriver`: which transport an environment installs, and nothing else |
 | `driver-smtp.ts` | `createSmtpDriver`: `SMTP_URL` parsing, the pool ceiling, one send |
 | `driver-resend.ts` | `createResendDriver`: one `POST /emails`, status → retryable |
 | `smtp-client.ts` | the conversation: greeting → EHLO → STARTTLS → AUTH → envelope → DATA |
@@ -40,6 +41,10 @@
   never a `retryable` guess. `stage` is the `SendStage` union in `errors.ts`; a new step goes there
   first. The transient set is 4xx over SMTP, and 408/409/425/429 + 5xx over HTTP — that HTTP set
   lives in `RETRYABLE_STATUSES` (`driver-resend.ts`) and is edited there, never restated.
+- A transport is selected from the environment by `selectMailDriver`, never from an `app.config.ts`
+  field — nothing loads that file's contents at runtime, so a `mail:` config block would be a
+  setting no boot could read. Two credentials at once is refused, not resolved: mail leaving by
+  the wrong provider is not a failure anyone sees. The credential never reaches a printed string.
 - `Bcc` is an envelope field. It reaches `RCPT TO` and Resend's body, never a header.
 - Recipient addresses stay out of logs and out of error text we write ourselves; the server's own
   reply is passed through verbatim, and that is where the refused address comes from.

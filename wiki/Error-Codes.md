@@ -60,7 +60,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_CONFIG_INVALID` | `app.config.ts` is invalid | a field failed its schema, or a required field is missing | `x config show --json` and fix the named field; see [Configuration](Configuration) |
+| `X_CONFIG_INVALID` | a configuration this process cannot boot on — env **or** `app.config.ts` | a field failed its schema, a required field is missing, or two keys that each parse contradict each other (`selectMailDriver`, `selectPurgeDriver`) | `x doctor --json` and fix the named key; see [Configuration](Configuration) |
 | `X_ENV_MISSING` | required environment variables are missing or invalid | a key absent at boot; validation runs before the server listens | `x env check --fix`, then set the keys it names |
 | `X_BUN_VERSION` | Bun is older than the framework floor | Bun < 1.3 | `bun upgrade` |
 | `X_NOT_IN_APP` | command must run inside an Ultimate app | no `app.config.ts` at or above the cwd | `x new myapp && cd myapp` |
@@ -186,7 +186,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 |---|---|---|---|
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared | typo in `invalidates: [tag.pots]` | `x manifest` to regenerate the tag graph, then fix the tag |
 | `X_CACHE_TOO_LARGE` | one entry exceeds the tier's byte budget | caching a whole row set | raise `cache.<tier>.maxBytes`, or cache a projection |
-| `X_CACHE_DRIVER_UNAVAILABLE` | a tier's backing store is missing | no Redis binding, no CDN token | provision the tier, or drop it from `app.config.ts` |
+| `X_CACHE_DRIVER_UNAVAILABLE` | a tier's backing store is missing | no Redis binding, or a purge driver built without `FASTLY_API_TOKEN` / `CLOUDFLARE_API_TOKEN` | provision the tier, or drop it from `app.config.ts` |
+| `X_CACHE_PURGE_FAILED` | the CDN refused a purge | a wrong or unscoped API token, a zone without tag purge, a throttle, a key carrying whitespace or a comma | `meta.retryable === true` → the identical purge can land again; `false` → set the env key the `fix` names, then `x dev` |
 
 ## Storage
 
@@ -231,6 +232,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_LD_INVALID` | JSON-LD node is missing a required schema.org field | an `ld.*` helper called with a partial object | supply the field named in `cause` |
 | `X_SEO_BUDGET_EXCEEDED` | route exceeded its performance budget | a `js`/`css`/`lcp`/`cls`/`inp` budget broken in the SEO report | `x routes --json` for the route's budget, then cut the regression `cause` names |
 | `X_SITEMAP_TOO_LARGE` | sitemap exceeds the 50,000-entry limit | too many prerendered URLs in one file | enable sitemap index splitting in `app.config.ts` |
+| `X_IMAGE_QUERY_INVALID` | a minted image URL's `?w=`/`?q=` value is present but unusable | `?w=0`, `?w=-5`, `?q=150` on a URL `responsiveImage()` minted | request a positive integer, e.g. `?w=640` (quality is `1`-`100`, e.g. `?q=75`) |
 
 ## PWA and build skew
 
@@ -241,6 +243,9 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_PWA_MANIFEST_INVALID` | the generated web manifest failed validation | a bad `start_url` or `scope` | fix the `pwa` block; `cause` names the field |
 | `X_SW_SCOPE_INVALID` | the service-worker scope cannot serve the routes it precaches | a scope narrower than the app | serve `sw.js` from the app root |
 | `X_BUILD_ID_MISSING` | no immutable build ID | a build produced outside `x build` | build with `x build`; never use a timestamp or `latest` |
+| `X_PWA_STRATEGY_EXHAUSTED` | a caching strategy had no cache, no network and no fallback | `staleWhileRevalidate` with no `StrategyOptions.fallback` and the network failed | pass `fallback` to the strategy, or set `pwa.offline.fallback` |
+| `X_PWA_SYNC_FLUSH_FAILED` | the background-sync outbox flush was rejected | `POST /_x/outbox/flush` returned a non-2xx | confirm `@ultimat3/realtime` mounts the flush endpoint and it returns 2xx on success |
+| `X_PWA_SYNC_INCOMPLETE` | the background-sync outbox flush left mutations queued | the flush endpoint reported `remaining > 0` | check the realtime outbox worker is draining, or raise the sync retry ceiling |
 
 ## i18n, money, time
 
@@ -306,6 +311,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_EVAL_RECORDING` | the gate ran with baseline recording switched on | `ULTIMATE_EVAL_RECORD` was exported in the shell, or set on the CI job, that ran `x verify` | `env -u ULTIMATE_EVAL_RECORD x verify` — record with `ULTIMATE_EVAL_RECORD=1 x test eval` instead |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave its tenant | a handler re-scoped the store it was handed | derive from the unscoped store: `vectorStore.scoped({ tenant })` |
+| `X_AI_EMBEDDER_INVALID` | an `Embedder` returned fewer vectors than texts it was given | `embedOne` got an empty batch back from `embed([text])` | return one vector per input text from `embed()`, in the order the texts arrived |
 
 ## Admin and manifest
 
@@ -334,6 +340,10 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_TEST_NETWORK_OFFLINE` | the test network is offline | a request made after `network.offline()` or `network.drop()` | `network.online()` before the call — or assert the offline path instead of the request |
 | `X_TEST_NETWORK_SEALED` | a test tried to reach the network | an unmocked external call | `mockFetch('<url>', …)`, or `allowHost('<host>')` if it must be real |
 | `X_TEST_NONDETERMINISTIC` | a test read wall-clock time or unseeded randomness | `Date.now()` in the code under test | wrap in `frozenClock()` / `seededRandom()`, or remove the read |
+| `X_TEST_EVAL_THRESHOLD` | an `evalTest()` score fell below its threshold | a prompt or output regressed against `options.threshold` | improve the prompt under test, or lower the threshold passed to `evalTest()` |
+| `X_TEST_SCHEMA_EXPECTED` | a matcher expected a Standard Schema and got something else | `toRejectInput`/`toAcceptInput` called on an action instead of `action.input` | `call toRejectInput(action.input)` — the schema, not the action or the query |
+| `X_TEST_JOB_EXPECTED` | a matcher expected a job declaration and got something else | `toEmitSteps`/`recordSteps` called on `job.run` or an unrelated value | `call toEmitSteps(myJob)` with the job export, not `toEmitSteps(myJob.run)` |
+| `X_TEST_NETWORK_RACE` | a request raced `unsealNetwork()` and lost the patched fetch | `unsealNetwork()` called while a request from the same seal was still in flight | do not call `unsealNetwork()` while a request from the same test is still pending |
 
 ## UI
 

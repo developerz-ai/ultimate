@@ -2,6 +2,11 @@
 // output capture and the "command not found" failure mode are identical everywhere, and so a
 // test can substitute a fake runner instead of spawning anything.
 
+// `UltimateError` straight from core rather than a class in `./errors`: this module is imported by
+// every command, and `./errors` runs `registerErrorCodes` on import — a subprocess boundary must
+// not decide when the CLI's registry is populated. `X_CLI_UNEXPECTED` is owned there all the same.
+import { UltimateError } from '@ultimat3/core';
+
 export interface ExecResult {
   readonly command: readonly string[];
   readonly code: number;
@@ -25,7 +30,16 @@ const now = (): number => performance.now();
 export const exec: Runner = async (command, options) => {
   const started = now();
   const [head, ...rest] = command;
-  if (head === undefined) throw new RangeError('exec requires at least one argument');
+  // A caller bug, never a user's: an empty argv reaches `Bun.spawn` as "spawn nothing" and there is
+  // no shell-out to report on. Coded like every other CLI failure, because a bare Error here would
+  // surface as an unexplained crash from the one boundary every command goes through.
+  if (head === undefined) {
+    throw new UltimateError({
+      code: 'X_CLI_UNEXPECTED',
+      cause: 'exec() was called with an empty command, so there is no program to spawn',
+      fix: 'pass the program as the first element: exec(["bun", "test"], { cwd })',
+    });
+  }
   const proc = Bun.spawn([head, ...rest], {
     cwd: options.cwd,
     env: options.env === undefined ? Bun.env : { ...Bun.env, ...options.env },

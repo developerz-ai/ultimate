@@ -31,13 +31,7 @@ export { deployCommand, planDeploy } from './cmd-deploy';
 export type { DevServer, StartDevOptions } from './cmd-dev';
 export { devCommand, startDev } from './cmd-dev';
 export type { DoctorProbe } from './cmd-doctor';
-export {
-  doctorCommand,
-  ICON_SOURCE,
-  OFFLINE_FALLBACK,
-  probeFor,
-  runDoctor,
-} from './cmd-doctor';
+export { doctorCommand, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
 export { ERRORS_SUBCOMMANDS, errorsCommand } from './cmd-errors';
 export { FIX_SUBCOMMANDS, fixCommand } from './cmd-fix';
 export type { GenerateOptions, Generator } from './cmd-generate';
@@ -57,6 +51,13 @@ export { availableCpus, testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
+export type { AssetRoutesOptions } from './dev-assets';
+export {
+  assetRoutes,
+  ICON_BASE_PATH,
+  ICON_SOURCE,
+  MEDIA_BASE_PATH,
+} from './dev-assets';
 export type { DevDashboardInput, DevStatus } from './dev-dashboard';
 export { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 export { devHooks } from './dev-hooks';

@@ -4,14 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PurgeDriver } from './cdn';
-import {
-  cacheHeaders,
-  cloudflarePurgeDriver,
-  createCdnTier,
-  fastlyPurgeDriver,
-  noopPurgeDriver,
-} from './cdn';
-import { CacheNotImplementedError } from './errors';
+import { cacheHeaders, createCdnTier, noopPurgeDriver } from './cdn';
 import { tag } from './tags';
 
 describe('cacheHeaders', () => {
@@ -72,22 +65,6 @@ describe('noopPurgeDriver', () => {
 
   test('purgeAll resolves without throwing', async () => {
     await expect(noopPurgeDriver().purgeAll()).resolves.toBeUndefined();
-  });
-});
-
-describe('remote purge drivers', () => {
-  test('fastlyPurgeDriver is named "fastly" and throws synchronously, unimplemented', () => {
-    const driver = fastlyPurgeDriver();
-    expect(driver.name).toBe('fastly');
-    expect(() => driver.purge(['post'])).toThrow(CacheNotImplementedError);
-    expect(() => driver.purgeAll()).toThrow(CacheNotImplementedError);
-  });
-
-  test('cloudflarePurgeDriver is named "cloudflare" and throws synchronously, unimplemented', () => {
-    const driver = cloudflarePurgeDriver();
-    expect(driver.name).toBe('cloudflare');
-    expect(() => driver.purge(['post'])).toThrow(CacheNotImplementedError);
-    expect(() => driver.purgeAll()).toThrow(CacheNotImplementedError);
   });
 });
 

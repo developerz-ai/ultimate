@@ -4,6 +4,8 @@
  * its bytes have to be, so the mapping is derived and the override is the exception.
  */
 
+import { PwaStrategyExhaustedError } from './errors';
+
 export type StrategyName =
   | 'cache-first'
   | 'network-first'
@@ -167,7 +169,7 @@ async function fetchAndStore(
 
 async function fallbackOrThrow(options: StrategyOptions): Promise<Response> {
   if (options.fallback !== undefined) return options.fallback();
-  throw new TypeError(`no cached response and the network failed for ${options.cacheName}`);
+  throw new PwaStrategyExhaustedError({ cacheName: options.cacheName });
 }
 
 /**

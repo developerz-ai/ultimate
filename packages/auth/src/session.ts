@@ -217,14 +217,37 @@ export function clearSessionCookie(policy: SessionPolicy, name?: string): string
   return `${name ?? policy.cookieName}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
-export function readSessionCookie(request: RequestLike, policy: SessionPolicy): string | null {
+/**
+ * The one `Cookie:` parser in this package — the oauth handshake reads through it too, so it never
+ * throws: a missing or unreadable cookie is `null` or the raw value, never an exception.
+ */
+export function readCookie(request: RequestLike, name: string): string | null {
   const header = request.headers.get('cookie');
   if (header === null) return null;
   for (const part of header.split(';')) {
     const equals = part.indexOf('=');
     if (equals < 0) continue;
-    if (part.slice(0, equals).trim() !== policy.cookieName) continue;
-    return decodeURIComponent(part.slice(equals + 1).trim());
+    if (part.slice(0, equals).trim() !== name) continue;
+    return decodeCookieValue(part.slice(equals + 1).trim());
   }
   return null;
+}
+
+/**
+ * A `Cookie:` header is attacker-controlled, and `decodeURIComponent('%')` throws a bare
+ * `URIError` — which escapes every coded path that reads through here: an OAuth callback would
+ * answer 500 instead of `X_OAUTH_STATE_INVALID`. The raw value is returned instead, so the
+ * caller's own rejection stays the readable failure. Nothing is loosened by it: a raw value is
+ * still checked against a signature or a stored hash, and neither matches a mangled one.
+ */
+function decodeCookieValue(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export function readSessionCookie(request: RequestLike, policy: SessionPolicy): string | null {
+  return readCookie(request, policy.cookieName);
 }

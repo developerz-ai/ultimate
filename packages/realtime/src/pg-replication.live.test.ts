@@ -19,7 +19,12 @@ const url =
   Bun.env['TEST_REPLICATION_URL'] ?? Bun.env['TEST_DATABASE_URL'] ?? Bun.env['DATABASE_URL'];
 
 const TABLE = 'x_live_posts';
+// One slot per case. A slot carries the previous case's position, and a feed started with no
+// cursor resumes from it — so the decode case's last transaction, delivered but not yet confirmed
+// when its feed stopped, is legitimately re-sent to whoever opens that slot next. Sharing one slot
+// made the resume case assert "exactly two" against a stream that owes it three.
 const SLOT = 'x_live_slot';
+const RESUME_SLOT = 'x_live_resume_slot';
 const PUBLICATION = 'x_live_pub';
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
@@ -73,12 +78,18 @@ const ready = url !== undefined && url !== '' && (await bounded(logicalWal()));
 describe.skipIf(!ready)('live · postgres logical replication', () => {
   let sql: PgConnection;
 
+  /** Both slots, dropped by one statement so neither case inherits the other's position. */
+  const dropSlots = async (): Promise<void> => {
+    await sql.query(
+      `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots ` +
+        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}')`,
+    );
+  };
+
   beforeAll(async () => {
     sql = await admin();
     await sql.query(`DROP PUBLICATION IF EXISTS ${PUBLICATION}`);
-    await sql.query(
-      `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = '${SLOT}'`,
-    );
+    await dropSlots();
     await sql.query(`DROP TABLE IF EXISTS ${TABLE}`);
     await sql.query(
       `CREATE TABLE ${TABLE} (
@@ -100,9 +111,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
   afterAll(async () => {
     if (sql === undefined) return;
     await sql.query(`DROP PUBLICATION IF EXISTS ${PUBLICATION}`);
-    await sql.query(
-      `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = '${SLOT}'`,
-    );
+    await dropSlots();
     await sql.query(`DROP TABLE IF EXISTS ${TABLE}`);
     await sql.close();
   });
@@ -172,19 +181,34 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
 
     await feed.stop();
 
+    // `active` flips when the *server's* walsender exits, which it does after this process closed
+    // the socket — so the slot is released eventually, never synchronously with `stop()`. Polled
+    // rather than read once: a single read turns a loaded runner into a failing assertion.
+    const slotRow = async (): Promise<readonly (string | null)[] | undefined> => {
+      const [row] = await sql.query(
+        `SELECT confirmed_flush_lsn <> '0/0', active FROM pg_replication_slots WHERE slot_name = '${SLOT}'`,
+      );
+      return row;
+    };
+    let slot = await slotRow();
+    for (let poll = 0; poll < 200 && slot?.[1] !== 'f'; poll += 1) {
+      await Bun.sleep(50);
+      slot = await slotRow();
+    }
+
     // The slot moved, which is what stops the WAL from growing without bound.
-    const [slot] = await sql.query(
-      `SELECT confirmed_flush_lsn <> '0/0', active FROM pg_replication_slots WHERE slot_name = '${SLOT}'`,
-    );
     expect(slot?.[0]).toBe('t');
+    // And it was released: a slot still held is one the next replicator cannot claim.
     expect(slot?.[1]).toBe('f');
   }, 60_000);
 
   test('a resume delivers each change exactly once across a restart', async () => {
     const first: ChangeEvent[] = [];
+    // Its own slot, created by this `start`: what a resume drops must be what *this* feed already
+    // delivered, not whatever the previous case left unconfirmed on a shared one.
     const one = new PgLogicalReplicationFeed({
       url: url ?? '',
-      slot: SLOT,
+      slot: RESUME_SLOT,
       publication: PUBLICATION,
       entities: [TABLE],
       statusIntervalMs: 250,
@@ -201,7 +225,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     const second: ChangeEvent[] = [];
     const two = new PgLogicalReplicationFeed({
       url: url ?? '',
-      slot: SLOT,
+      slot: RESUME_SLOT,
       publication: PUBLICATION,
       entities: [TABLE],
       statusIntervalMs: 250,
