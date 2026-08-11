@@ -23,7 +23,7 @@ import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
-import { describeMail, startServices } from './dev-runtime';
+import { describeCdn, describeMail, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
@@ -237,7 +237,7 @@ export const devCommand: CliCommand = {
       summary: msg('cli.dev.ready', {
         url: server.url,
         panels: server.panels.length,
-        services: `${describeServices(server.services)} ${describeMail(server.runtime)}`,
+        services: `${describeServices(server.services)} ${describeMail(server.runtime)} ${describeCdn(server.runtime)}`,
       }),
       findings: server.findings,
       // Every fact `lines` prints is a fact `--json` carries, `manifest` included — or the two
@@ -253,6 +253,7 @@ export const devCommand: CliCommand = {
         // The selecting env key, never the credential behind it: `SMTP_URL` carries a password
         // and this line is printed, logged and scraped.
         mail: describeMail(server.runtime),
+        cdn: describeCdn(server.runtime),
         buildId: server.buildId,
         manifest: join(root, MANIFEST_FILENAME),
         introspect: `${server.url}/_x`,

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6159eace958173766a4fe69b9263ce6c38eda2c32f57897cfee9fb1edf83e169",
+  "buildId": "d1c31dea89670c3f2d90f5ba8c4457ca5e662d816b5d557fc3eccfe1f9071d4c",
   "tiers": {
     "0": [
       "core",
@@ -410,6 +410,11 @@
     },
     {
       "code": "X_CACHE_DRIVER_UNAVAILABLE",
+      "owner": "cache",
+      "at": "packages/cache/src/errors.ts"
+    },
+    {
+      "code": "X_CACHE_PURGE_FAILED",
       "owner": "cache",
       "at": "packages/cache/src/errors.ts"
     },

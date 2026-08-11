@@ -112,8 +112,26 @@ Tiers are read in fixed order `memo → lru → redis → cdn → origin`. See [
 | `cache.ttl.lru` | duration | `'60s'` | |
 | `cache.ttl.redis` | duration | `'15m'` | |
 | `cache.ttl.cdn` | duration | `'1h'` | emitted as `Cache-Control` + `stale-while-revalidate` |
-| `cache.cdn.purge.webhook` | `string` | — | the only CDN coupling. Tag-driven purge-by-URL |
-| `cache.cdn.purge.secretEnv` | `string` | — | env key holding the signing secret |
+
+### CDN purge
+
+The purge driver is selected from the **environment**, not from a config field — the same law the
+mail transports follow, and for the same reason: nothing loads `app.config.ts`'s contents at
+runtime, so one image deploys to every environment.
+
+| Key | Selects | Notes |
+|---|---|---|
+| `FASTLY_API_TOKEN` + `FASTLY_SERVICE_ID` | Fastly | batch surrogate-key purge, 256 keys per call |
+| `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare | cache-tag purge, 30 tags per call, Enterprise zones |
+
+The surrogate keys are the tags — `post`, `post:1` — so the edge purges exactly what
+`invalidates: [tag.post]` busts. Setting both pairs is `X_CONFIG_INVALID`: one process purges one
+edge. Half a pair is refused the same way, because "no CDN" is the one wrong reading — a
+deployment then ships believing it purges. A refusal at the provider is `X_CACHE_PURGE_FAILED` and
+lands in the invalidation report, never on the write.
+
+`x dev` prints which one it installed — `cdn=none`, or `cdn=external(fastly via
+FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ## `pwa`
 

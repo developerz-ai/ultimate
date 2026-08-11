@@ -186,7 +186,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 |---|---|---|---|
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared | typo in `invalidates: [tag.pots]` | `x manifest` to regenerate the tag graph, then fix the tag |
 | `X_CACHE_TOO_LARGE` | one entry exceeds the tier's byte budget | caching a whole row set | raise `cache.<tier>.maxBytes`, or cache a projection |
-| `X_CACHE_DRIVER_UNAVAILABLE` | a tier's backing store is missing | no Redis binding, no CDN token | provision the tier, or drop it from `app.config.ts` |
+| `X_CACHE_DRIVER_UNAVAILABLE` | a tier's backing store is missing | no Redis binding, or a purge driver built without `FASTLY_API_TOKEN` / `CLOUDFLARE_API_TOKEN` | provision the tier, or drop it from `app.config.ts` |
+| `X_CACHE_PURGE_FAILED` | the CDN refused a purge | a wrong or unscoped API token, a zone without tag purge, a throttle, a key carrying whitespace or a comma | `meta.retryable === true` → the identical purge can land again; `false` → set the env key the `fix` names, then `x dev` |
 
 ## Storage
 

@@ -5,6 +5,14 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PurgeDriver } from '@ultimat3/cache';
+import {
+  createCdnTier,
+  isNoopPurgeDriver,
+  registerTier,
+  resetTiers,
+  selectPurgeDriver,
+} from '@ultimat3/cache';
 import type { EventBus, JobDriver } from '@ultimat3/jobs';
 import { createMemoryEventBus, setEventBus } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
@@ -30,6 +38,9 @@ export interface RunningServices {
    * never carried: `SMTP_URL` holds a password, and this string reaches the boot line and `--json`.
    */
   readonly mailDetail: string;
+  readonly purge: PurgeDriver;
+  /** Same rule as `mailDetail`: the env key that selected the CDN, never the token behind it. */
+  readonly purgeDetail: string;
   stop(): Promise<void>;
 }
 
@@ -42,6 +53,16 @@ export function describeMail(runtime: RunningServices): string {
   return isMemoryDriver(runtime.mail)
     ? 'mail=embedded'
     : `mail=external(${runtime.mail.name} via ${runtime.mailDetail})`;
+}
+
+/**
+ * `cdn=none` rather than `cdn=embedded`: there is no embedded CDN, and a process with no edge in
+ * front of it purges nothing. Saying "embedded" would read as a fifth service this boot started.
+ */
+export function describeCdn(runtime: RunningServices): string {
+  return isNoopPurgeDriver(runtime.purge)
+    ? 'cdn=none'
+    : `cdn=external(${runtime.purge.name} via ${runtime.purgeDetail})`;
 }
 
 const FILE_SCHEME = 'file://';
@@ -85,6 +106,9 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
   // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
   // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
   const selection = selectMailDriver(env);
+  // Same reason, same place: building a purge driver reads env and dials nothing, so a half-set
+  // `FASTLY_API_TOKEN` without its service id fails here rather than on the first stale page.
+  const cdn = selectPurgeDriver(env);
   const queue = await startQueue(services);
   const { db, jobs } = queue;
   // Boot is a sequence of external resources, and every step after the first can reject — the
@@ -103,6 +127,16 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
     const mail = selection.driver;
     setMailDriver(mail);
     started.push(() => resetMailDriver());
+    // Registered only when a credential named a real edge. A noop tier would put a `cdn` line in
+    // every invalidation report claiming keys an edge that does not exist had accepted — and the
+    // `/_x` cache panel renders those reports, so the lie would be the thing an agent reads.
+    // Released with `resetTiers()`, which drops the whole registry: this boot is the only thing
+    // that registers one, and a tier left behind would purge for a process that has stopped.
+    const purging = !isNoopPurgeDriver(cdn.driver);
+    if (purging) {
+      registerTier(createCdnTier({ purge: cdn.driver }));
+      started.push(() => resetTiers());
+    }
 
     return {
       services,
@@ -113,10 +147,13 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
       storage,
       mail,
       mailDetail: selection.detail,
+      purge: cdn.driver,
+      purgeDetail: cdn.detail,
       // Reverse boot order, and a stop that fails says so — only the unwind after a failed boot
       // is allowed to swallow, because there the boot error is the one worth reporting.
       async stop() {
         await transport.close();
+        if (purging) resetTiers();
         resetMailDriver();
         await queue.stop();
       },
