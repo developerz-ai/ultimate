@@ -9,7 +9,20 @@
 
 import { defineSeed } from '@ultimat3/entity';
 import { driver } from './client';
-import { blocks, comments, friendships, likes, media, posts, users } from './schema';
+import {
+  blocks,
+  comments,
+  conversations,
+  credentials,
+  friendships,
+  likes,
+  media,
+  messages,
+  notifications,
+  participants,
+  posts,
+  users,
+} from './schema';
 
 /** The two demo logins, said out loud so a reader does not have to infer them from a hash. */
 export const DEMO_LOGINS = [
@@ -224,6 +237,107 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
     { postId: id('post:tenancy'), userId: id('user:user'), createdAt: at('2026-03-02T14:00:00Z') },
     { postId: id('post:tenancy'), userId: id('user:bruno'), createdAt: at('2026-03-03T01:10:00Z') },
     { postId: id('post:timezones'), userId: id('user:ada'), createdAt: at('2026-03-09T12:00:00Z') },
+  ]);
+
+  // Bun's own password hashing, not a hand-rolled one: `Bun.password` picks argon2id and encodes
+  // the parameters into the hash, so a verify never has to be told which algorithm produced it.
+  // Awaited at seed time rather than precomputed, because a committed hash is a committed secret
+  // even when the password is "user".
+  await insert(credentials, [
+    { userId: id('user:user'), passwordHash: await Bun.password.hash('user') },
+    { userId: id('user:admin'), passwordHash: await Bun.password.hash('admin') },
+  ]);
+
+  // One direct thread the demo user is in, and one they are NOT — the second exists so a
+  // non-participant being refused is a case the screens can actually show.
+  await insert(conversations, [
+    { id: id('conv:user-ada'), kind: 'direct', createdAt: at('2026-03-04T09:00:00Z') },
+    { id: id('conv:ada-bruno'), kind: 'direct', createdAt: at('2026-03-05T09:00:00Z') },
+  ]);
+
+  await insert(participants, [
+    {
+      conversationId: id('conv:user-ada'),
+      userId: id('user:user'),
+      lastReadAt: at('2026-03-04T09:05:00Z'),
+      joinedAt: at('2026-03-04T09:00:00Z'),
+    },
+    {
+      conversationId: id('conv:user-ada'),
+      userId: id('user:ada'),
+      joinedAt: at('2026-03-04T09:00:00Z'),
+    },
+    {
+      conversationId: id('conv:ada-bruno'),
+      userId: id('user:ada'),
+      joinedAt: at('2026-03-05T09:00:00Z'),
+    },
+    {
+      conversationId: id('conv:ada-bruno'),
+      userId: id('user:bruno'),
+      joinedAt: at('2026-03-05T09:00:00Z'),
+    },
+  ]);
+
+  await insert(messages, [
+    {
+      id: id('msg:1'),
+      conversationId: id('conv:user-ada'),
+      authorId: id('user:ada'),
+      body: 'Did the visibility rule end up in the policy or in the query?',
+      createdAt: at('2026-03-04T09:01:00Z'),
+    },
+    {
+      id: id('msg:2'),
+      conversationId: id('conv:user-ada'),
+      authorId: id('user:user'),
+      body: 'The policy. A WHERE clause would be a second copy of it.',
+      createdAt: at('2026-03-04T09:02:00Z'),
+    },
+    {
+      // After the demo user's lastReadAt, so the unread badge has something to count.
+      id: id('msg:3'),
+      conversationId: id('conv:user-ada'),
+      authorId: id('user:ada'),
+      body: 'Good. Then blocking someone hides their posts everywhere at once.',
+      createdAt: at('2026-03-06T18:00:00Z'),
+    },
+    {
+      id: id('msg:4'),
+      conversationId: id('conv:ada-bruno'),
+      authorId: id('user:bruno'),
+      body: 'Este hilo no es visible para el usuario de la demo.',
+      createdAt: at('2026-03-05T09:10:00Z'),
+    },
+  ]);
+
+  // One of each kind that matters, one already read, so the badge counts something real.
+  await insert(notifications, [
+    {
+      id: id('notif:like'),
+      userId: id('user:user'),
+      kind: 'post-liked',
+      actorId: id('user:bruno'),
+      subjectId: id('post:tenancy'),
+      createdAt: at('2026-03-03T01:10:00Z'),
+    },
+    {
+      id: id('notif:request'),
+      userId: id('user:user'),
+      kind: 'friend-request',
+      actorId: id('user:kenji'),
+      subjectId: null,
+      createdAt: at('2026-02-01T03:00:00Z'),
+    },
+    {
+      id: id('notif:message'),
+      userId: id('user:user'),
+      kind: 'message',
+      actorId: id('user:ada'),
+      subjectId: id('conv:user-ada'),
+      readAt: at('2026-03-06T18:05:00Z'),
+      createdAt: at('2026-03-06T18:00:00Z'),
+    },
   ]);
 
   // One attached image, one orphan the hourly sweep must collect. Keys, never URLs — the bucket

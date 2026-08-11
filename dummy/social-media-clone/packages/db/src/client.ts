@@ -8,10 +8,16 @@
 import { database, memoryDriver } from '@ultimat3/entity';
 import { blocks } from './schema/blocks';
 import { comments } from './schema/comments';
+import { conversations } from './schema/conversations';
+import { credentials } from './schema/credentials';
 import { friendships } from './schema/friendships';
 import { likes } from './schema/likes';
 import { media } from './schema/media';
+import { messages } from './schema/messages';
+import { notifications } from './schema/notifications';
+import { participants } from './schema/participants';
 import { posts } from './schema/posts';
+import { sessions } from './schema/sessions';
 import { users } from './schema/users';
 
 /**
@@ -27,10 +33,16 @@ export const db = database(
   {
     blocks,
     comments,
+    conversations,
+    credentials,
     friendships,
     likes,
     media,
+    messages,
+    notifications,
+    participants,
     posts,
+    sessions,
     users,
   },
   { driver },
