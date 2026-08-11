@@ -21,13 +21,23 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   test that passes against memory says something about Postgres. A guard, an operator or a sort
   rule added to one and not the other is the bug this split exists to prevent — `pg-driver.test.ts`
   pins the parity.
+- **The Postgres driver is proved against a real Postgres, not only against a recording client.**
+  `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
+  `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
+  `TEST_DATABASE_URL` is set. Asserting statement *text* cannot catch a statement Postgres refuses:
+  that is how a `unique()` column shipped a migration failing on `42P07` and money's currency
+  shipped as `char(1)`. A new operator, column kind or write path is not done until it round-trips
+  there.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
   total. The cursor carries the sort **values**, not just an id — seeking by an id that was
   deleted between two requests would restart pagination at the top.
 - **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
-  `cursorFor(plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. This package owns only
+  `cursorFor(entity, plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. Both call
+  `assertSeekable`, so an ordering that cannot carry a position — a nullable key, an undeclared
+  column, a money property named without `.minor`/`.currency` — is refused when the cursor is
+  *minted*, not one page later where the page size decides whether anyone finds out. This package owns only
   what a cursor is *bound* to — `planScope(plan)`: the entity, its filters and its sort order,
   hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
   cannot move a row). A cursor that fails either the signature or the scope is `X_CURSOR_INVALID`;

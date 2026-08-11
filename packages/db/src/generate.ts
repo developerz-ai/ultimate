@@ -37,7 +37,10 @@ export interface EntityDescriptionLike {
 const SQL_TYPES: Readonly<Record<string, string>> = {
   uuid: 'uuid',
   text: 'text',
-  char: 'char',
+  // Bare `char` is `char(1)` in Postgres, and the only column carrying this kind is money's
+  // currency — a three-letter ISO 4217 code whose CHECK the entity emits on the same line.
+  // Without the length no currency ever fits the constraint the same statement demands.
+  char: 'char(3)',
   boolean: 'boolean',
   integer: 'integer',
   bigint: 'bigint',
@@ -80,6 +83,24 @@ export interface ParsedIndex {
   readonly name: string;
   readonly columns: readonly string[];
   readonly unique: boolean;
+}
+
+/**
+ * A `unique` column clause already creates an index, and Postgres names it exactly what the
+ * entity's own convention names it — `<table>_<column>_key`. Emitting `create unique index` for
+ * it too is the same index twice: `42P07`, and a migration that cannot be applied at all.
+ * Mirrors the rule `entity()` already applies to a foreign key indexing its own column.
+ */
+function impliedByColumnClause(
+  entity: EntityDescriptionLike,
+  index: ParsedIndex,
+  added: ReadonlySet<string>,
+): boolean {
+  const [only] = index.columns;
+  if (!index.unique || index.columns.length !== 1 || only === undefined) return false;
+  const column = entity.columns.find((each) => each.column === only);
+  // `columnClause` writes `unique` under exactly this condition — keep the two in step.
+  return column !== undefined && column.unique && !column.primaryKey && added.has(only);
 }
 
 /** Entity only records index names; the convention is what makes the columns recoverable. */
@@ -125,9 +146,11 @@ function createTable(entity: EntityDescriptionLike): readonly string[] {
     clauses.push(`primary key (${entity.primaryKey.map((key) => `"${key}"`).join(', ')})`);
   }
   const statements = [`create table "${entity.table}" (\n  ${clauses.join(',\n  ')}\n);`];
+  // Every column of a new table carries its own clause, so every `unique` one brings its index.
+  const added = new Set(entity.columns.map((column) => column.column));
   for (const name of entity.indexes) {
     const index = parseIndexName(entity.table, name);
-    if (index.columns.length === 0) continue;
+    if (index.columns.length === 0 || impliedByColumnClause(entity, index, added)) continue;
     statements.push(createIndex(entity.table, index));
   }
   return statements;
@@ -144,10 +167,38 @@ interface Plan {
   readonly down: string[];
 }
 
+/**
+ * Skipping an existing column by name alone missed the type moving under it: a table created
+ * while money's currency was bare `char` keeps `char(1)` and rejects every ISO 4217 code, yet the
+ * snapshot this run records claims `char(3)` — two claims with no statement between them. Both
+ * sides are generated spellings (`current` is a previous migration's own snapshot), so any
+ * difference is a real kind change, not a catalog alias.
+ */
+function retypeColumn(
+  table: string,
+  column: ColumnDescriptionLike,
+  recorded: ColumnDescription,
+  plan: Plan,
+): void {
+  const wanted = sqlType(column.kind);
+  if (recorded.dataType === wanted) return;
+  const alter = (type: string): string =>
+    `alter table "${table}" alter column "${column.column}" type ${type} ` +
+    `using "${column.column}"::${type};`;
+  plan.up.push(alter(wanted));
+  plan.down.push(alter(recorded.dataType));
+}
+
 function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: Plan): void {
-  const existing = new Set(live.columns.map((column) => column.name));
+  const existing = new Map(live.columns.map((column) => [column.name, column]));
+  const added = new Set<string>();
   for (const column of entity.columns) {
-    if (existing.has(column.column)) continue;
+    const recorded = existing.get(column.column);
+    if (recorded !== undefined) {
+      retypeColumn(entity.table, column, recorded, plan);
+      continue;
+    }
+    added.add(column.column);
     // A NOT NULL add with no default cannot succeed on a populated table; emit it nullable and
     // leave the agent the exact follow-up rather than a migration that fails at 3am.
     const nullable = column.notNull && defaultExpression(column) === null;
@@ -166,7 +217,9 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
   for (const name of entity.indexes) {
     if (indexed.has(name)) continue;
     const index = parseIndexName(entity.table, name);
-    if (index.columns.length === 0) continue;
+    // `added` only: an index over a column that was already there is implied by no clause this
+    // migration emits, so it still needs a statement of its own.
+    if (index.columns.length === 0 || impliedByColumnClause(entity, index, added)) continue;
     plan.up.push(createIndex(entity.table, index));
     plan.down.push(`drop index "${name}";`);
   }

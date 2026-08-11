@@ -6,6 +6,7 @@ import {
   generateMigration,
   snapshotOf,
 } from './generate';
+import type { SchemaDescription } from './introspect';
 
 const column = (
   name: string,
@@ -31,6 +32,35 @@ const posts = (columns: readonly ColumnDescriptionLike[]): EntityDescriptionLike
   indexes: ['posts_slug_key'],
 });
 
+const priced: EntityDescriptionLike = {
+  ...posts([
+    column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+    column('price_currency', {
+      kind: 'char',
+      notNull: true,
+      check: "price_currency ~ '^[A-Z]{3}$'",
+    }),
+  ]),
+  indexes: [],
+};
+
+/** The snapshot an earlier generated migration recorded — `dataType` is that run's `sqlType()`. */
+const recorded = (currency: string): SchemaDescription => ({
+  tables: [
+    {
+      schema: 'public',
+      name: 'posts',
+      columns: [
+        { name: 'id', dataType: 'uuid', nullable: false, default: null, position: 1 },
+        { name: 'price_currency', dataType: currency, nullable: false, default: null, position: 2 },
+      ],
+      primaryKey: ['id'],
+      indexes: [],
+      foreignKeys: [],
+    },
+  ],
+});
+
 const at = new Date('2026-07-26T12:00:00.000Z');
 
 describe('generateMigration', () => {
@@ -52,8 +82,106 @@ describe('generateMigration', () => {
     expect(migration.up).toContain('"id" uuid default gen_random_uuid() not null');
     expect(migration.up).toContain('"slug" text not null unique');
     expect(migration.up).toContain('primary key ("id")');
-    expect(migration.up).toContain('create unique index "posts_slug_key" on "posts" ("slug")');
+    // The `unique` clause above already creates `posts_slug_key`; naming it again is `42P07`.
+    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
     expect(migration.down).toContain('drop table "posts";');
+  });
+
+  test('an index a column clause does not imply still gets its own statement', () => {
+    const migration = generateMigration({
+      entities: [
+        {
+          ...posts([
+            column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+            column('slug', { notNull: true, unique: true }),
+            column('org_id', { kind: 'uuid', notNull: true }),
+          ]),
+          indexes: ['posts_slug_key', 'posts_org_id_idx'],
+        },
+      ],
+      name: 'create posts',
+      now: at,
+    });
+
+    // Only the one Postgres makes for free is skipped — a plain index is nobody else's job.
+    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
+    expect(migration.up).toContain('create index "posts_org_id_idx" on "posts" ("org_id")');
+  });
+
+  test('a unique column added later does not also emit its implied index', () => {
+    const before = snapshotOf([posts([column('id', { kind: 'uuid', primaryKey: true })])]);
+    const migration = generateMigration({
+      entities: [
+        posts([
+          column('id', { kind: 'uuid', primaryKey: true }),
+          column('slug', { notNull: true, unique: true }),
+        ]),
+      ],
+      current: before,
+      name: 'add slug',
+      now: at,
+    });
+
+    // ALTER TABLE ADD COLUMN carries the same `unique` clause, so it creates the same index.
+    expect(migration.up).toContain('add column "slug" text unique');
+    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
+  });
+
+  test("money's currency carries its length, so the CHECK beside it can be satisfied", () => {
+    // Bare `char` is `char(1)` in Postgres and no three-letter code fits it — the generated
+    // table would reject every money row the framework can write.
+    const migration = generateMigration({
+      entities: [
+        {
+          ...posts([
+            column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+            column('price_minor', { kind: 'bigint', notNull: true }),
+            column('price_currency', {
+              kind: 'char',
+              notNull: true,
+              check: "price_currency ~ '^[A-Z]{3}$'",
+            }),
+          ]),
+          indexes: [],
+        },
+      ],
+      name: 'create posts',
+      now: at,
+    });
+
+    expect(migration.up).toContain('"price_currency" char(3) not null');
+    expect(migration.up).not.toContain('"price_currency" char not null');
+  });
+
+  test('a column whose SQL type changed is retyped, and the down restores the old one', () => {
+    // The table was created when `char` meant `char(1)`; skipping it by name left the database
+    // rejecting every currency while the new snapshot claimed `char(3)`.
+    const migration = generateMigration({
+      entities: [priced],
+      current: recorded('char'),
+      name: 'widen currency',
+      now: at,
+    });
+
+    expect(migration.up).toBe(
+      'alter table "posts" alter column "price_currency" type char(3) ' +
+        'using "price_currency"::char(3);',
+    );
+    expect(migration.down).toBe(
+      'alter table "posts" alter column "price_currency" type char using "price_currency"::char;',
+    );
+  });
+
+  test('an unchanged column type is not retyped, so a settled schema generates nothing', () => {
+    const migration = generateMigration({
+      entities: [priced],
+      current: recorded('char(3)'),
+      name: 'no change',
+      now: at,
+    });
+
+    expect(migration.up).toBe('');
+    expect(migration.down).toBe('');
   });
 
   test('a new column becomes ALTER TABLE ADD COLUMN with a DROP COLUMN down', () => {

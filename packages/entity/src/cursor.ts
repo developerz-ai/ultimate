@@ -32,7 +32,18 @@ const columnAt = <Row>(entity: EntityCore<Row>, path: string): AnyColumn => {
 const kindAt = <Row>(entity: EntityCore<Row>, path: string): ColumnKind => {
   const { part } = partsOf(path);
   const kind = columnAt(entity, path).$meta.kind;
-  if (part === undefined) return kind;
+  if (part === undefined) {
+    // Money is two physical columns, so the property alone names no single sort value: the
+    // cursor would carry `String({ minor, currency })` and the next page would fail parsing it
+    // as a bare `SyntaxError` from `BigInt`, with no code and no fix. `entity()` refuses the
+    // same path in `resolve()`; refusing it here keeps one answer for one mistake.
+    if (kind !== 'money') return kind;
+    throw invariantViolated(
+      entity.$name,
+      'orderBy',
+      `${path} is money: order by ${path}.minor or ${path}.currency`,
+    );
+  }
   const money = kind === 'money' ? MONEY_PARTS[part] : undefined;
   if (money === undefined) {
     throw invariantViolated(entity.$name, 'orderBy', `${path} names no column part`);
@@ -57,12 +68,14 @@ const serializeSortValue = (value: unknown): string => {
   return String(value);
 };
 
+// No `money` case: `kindAt` resolves a money sort key to the kind of the part being ordered by
+// (`minor` is bigint, `currency` is char) and refuses the bare property, so the composite kind
+// never reaches here. A case for it could only ever revive "[object Object]".
 const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
   switch (kind) {
     case 'timestamptz':
       return new Date(text);
     case 'bigint':
-    case 'money':
       return BigInt(text);
     case 'integer':
       return Number(text);
@@ -76,12 +89,19 @@ const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
 /**
  * A keyset seek only has a total order when every sort column is present on every row —
  * `null > 'x'` is unknown in SQL and would drop rows from the middle of a listing.
+ *
+ * Checked when a cursor is minted as well as when one is decoded: an ordering that cannot carry
+ * a position is the author's mistake, and reporting it on the *second* page hides it behind
+ * whatever page size the caller happened to use.
  */
 export const assertSeekable = <Row>(
   entity: EntityCore<Row>,
   orderBy: readonly { readonly column: string }[],
 ): void => {
   for (const key of orderBy) {
+    // Resolving the kind is the other half: it refuses a column the entity never declared and a
+    // money property named without its part — both mint a cursor nothing can decode.
+    kindAt(entity, key.column);
     if (columnAt(entity, key.column).$meta.notNull) continue;
     throw invariantViolated(
       entity.$name,
@@ -128,12 +148,19 @@ export const planScope = (plan: QueryPlan): string => {
 };
 
 /** The cursor that continues this plan after `row`. Signed by core, scoped by the plan. */
-export const cursorFor = (plan: QueryPlan, row: unknown, id: string): string =>
-  encodeCursor({
+export const cursorFor = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  row: unknown,
+  id: string,
+): string => {
+  assertSeekable(entity, plan.orderBy);
+  return encodeCursor({
     scope: planScope(plan),
     key: plan.orderBy.map((entry) => serializeSortValue(valueAt(row, entry.column))),
     id,
   });
+};
 
 /**
  * The keyset position a plan resumes from, revived to the types its columns hold — `undefined`

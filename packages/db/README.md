@@ -124,6 +124,24 @@ close the source first, and expect `X_NOT_IMPLEMENTED` on `memory://`, which has
 copy. Branch names go through the same `assertBranchName()` as the Postgres path: here the name
 lands in a filesystem path, so an unvalidated one is traversal rather than a typo.
 
+### One session, so callers take turns
+
+Embedded Postgres is a single session, not a pool. `createPgliteClient()` is therefore
+`ReservableClient`: `withTransaction()` and `readOnlyQuery()` pin it, and every other statement
+waits for its turn. Without that pin two concurrent units of work each run `BEGIN` on the same
+connection — the second `COMMIT` commits the first's rows and the first `ROLLBACK` finds no
+transaction left to undo.
+
+| On a pooled server | Embedded, on one session |
+|---|---|
+| concurrent transactions run side by side | they run consecutively; throughput is one at a time |
+| a statement outside a transaction gets its own connection | it waits for the open transaction to finish |
+| `enqueue(input, { outbox: false })` inside a transaction survives its rollback | it joins that transaction, and rolls back with it |
+
+The last row is the one divergence a second connection would remove and PGlite cannot: a statement
+issued *inside* an open transaction's scope runs immediately rather than waiting for a turn that
+scope is already holding, because waiting would be a deadlock with no error to explain it.
+
 ## Pool sizing by role
 
 `ROLE` picks the profile — a `worker` draining a queue must not size like a `web` process.

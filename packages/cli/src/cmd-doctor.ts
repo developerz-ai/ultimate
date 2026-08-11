@@ -4,6 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { usesDevCursorSecret } from '@ultimat3/core';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { checkDrift } from './drift';
@@ -11,11 +12,21 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagString } from './parse';
 
+/**
+ * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
+ * `wiki/Upgrading.md` covers `X_*` codes, the eight primitive shapes, the `x` CLI surface, the
+ * tier table and `app.config.ts` fields, and not this — so a new fact the probe must report is a
+ * REQUIRED field: an optional one lets an implementation skip the check and still typecheck.
+ */
 export interface DoctorProbe {
   readonly bunVersion: string;
   /** App root, or undefined when the command runs outside an app. */
   readonly root: string | undefined;
   readonly port: number;
+  /** True while cursors are signed with the key shipped in the published package. */
+  readonly devCursorSecret: boolean;
+  /** True when this process believes it is serving real clients. */
+  readonly production: boolean;
   exists(relativePath: string): boolean;
   portFree(port: number): Promise<boolean>;
   drift(): Promise<readonly Finding[]>;
@@ -59,6 +70,21 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
         '.env.development is missing, so committed defaults cannot be read',
         'x new --force to restore the committed defaults, or create .env.development',
         '.env.development',
+      ),
+    );
+  }
+  // Production only, and the gate is the point: every development environment signs with the
+  // shipped key on purpose — that is what lets `x dev` page with no configuration — so an
+  // unconditional finding would make `x doctor` red for every developer on day one and teach the
+  // reader to skim past the report. The key is a defect only where cursors reach real clients,
+  // who can read it out of the published package and forge a page position.
+  // Sits here because it costs two env reads and a comparison — cheaper than binding a port.
+  if (probe.production && probe.devCursorSecret) {
+    findings.push(
+      finding(
+        'X_CURSOR_SECRET_DEV',
+        'cursors are signed with the shipped development key, so a client can forge a page position',
+        'export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"',
       ),
     );
   }
@@ -115,6 +141,10 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     bunVersion,
     root,
     port,
+    devCursorSecret: usesDevCursorSecret(),
+    // `X_ENV` first, then `NODE_ENV`: the order `@ultimat3/admin`'s dev-server guard already
+    // reads them in, and a second order would be a second convention.
+    production: (Bun.env['X_ENV'] ?? Bun.env['NODE_ENV']) === 'production',
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     drift: async () => (root === undefined ? [] : checkDrift(root)),

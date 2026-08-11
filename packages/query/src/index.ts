@@ -34,6 +34,7 @@ export {
   QueryDuplicateError,
   QueryForeignError,
   QueryInputInvalidError,
+  QueryNotPageableError,
   QueryPolicyMissingError,
   QueryRequestFailedError,
   QueryUnregisteredError,
@@ -45,9 +46,13 @@ export { assertMatchable, match, positionFor } from './matcher';
 export type { QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
 export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
 export { derivePath, toKebabCase, toToolName } from './naming';
+/**
+ * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
+ * deliberately unexported: a page is the read's own answer, and a second, importable way to ask
+ * for one is a second way to do the thing `.page()` already does. The codec is
+ * `@ultimat3/core`'s — one place to encode, decode or re-key a cursor.
+ */
 export type { Page, PaginateArgs } from './pagination';
-/** The codec itself is `@ultimat3/core`'s — one place to encode, decode or re-key a cursor. */
-export { paginate } from './pagination';
 export type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
 export { actorOf, guard, policyCapability } from './policy-gate';
 export type {
@@ -75,6 +80,7 @@ export {
 export type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
 export { compareRows, compareValues, matchesFilter, matchesFilters, seekKeyOf } from './shape';
 export type { RowProvider, SqlSource, SqlText } from './source';
-export { Builder, from } from './source';
+/** `isAfterKey` is the one definition of "after this position" — both seek paths use it. */
+export { Builder, from, isAfterKey } from './source';
 export type { ExplainResult, QuerySqlInfo } from './sql';
 export { describeSql, explain } from './sql';

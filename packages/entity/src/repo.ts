@@ -232,7 +232,7 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
       const more = start + page.length < found.length;
       return {
         rows: page,
-        nextCursor: more && last !== undefined ? cursorFor(plan, last, keyOf(last)) : null,
+        nextCursor: more && last !== undefined ? cursorFor(entity, plan, last, keyOf(last)) : null,
       };
     },
 

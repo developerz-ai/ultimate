@@ -12,6 +12,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
   X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
+  X_QUERY_NOT_PAGEABLE: 'a read returned rows with no id, so a cursor cannot name a position',
   X_QUERY_POLICY_MISSING: 'a query was registered without a policy',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
 };
@@ -124,6 +125,23 @@ export class QueryPolicyMissingError extends UltimateError {
       cause: `query "${name}" was registered without a policy`,
       fix: `add \`policy: can('${name}')\` to the query definition in the file that exports it`,
       docs: docs('X_QUERY_POLICY_MISSING'),
+    });
+  }
+}
+
+/**
+ * Thrown when a paged or live read hands back a row with no `id`. The id is the tiebreak that
+ * makes the sort order total, so without one the position a cursor names is ambiguous — and the
+ * old behaviour, `String(undefined)`, signed `"undefined"` into every cursor the read issued.
+ */
+export class QueryNotPageableError extends UltimateError {
+  constructor(entity: string | undefined) {
+    const subject = entity === undefined ? 'this read' : `"${entity}"`;
+    super({
+      code: 'X_QUERY_NOT_PAGEABLE',
+      cause: `a row from ${subject} has no "id", so a cursor cannot name its position`,
+      fix: `return the primary key from the query's sql: db.${entity ?? 'rows'}.select({ id: true, … })`,
+      docs: docs('X_QUERY_NOT_PAGEABLE'),
     });
   }
 }

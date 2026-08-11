@@ -2,6 +2,7 @@
  * The read vocabulary shared by the matcher, the SQL sources, pagination and the
  * live descriptor. Types only plus two pure predicates — no I/O lives here.
  */
+import { QueryNotPageableError } from './errors';
 import { columnOf } from './stable';
 
 export type FilterOp = '=' | '!=' | 'in' | '>' | '>=' | '<' | '<=';
@@ -36,9 +37,20 @@ export interface SeekKey {
   readonly id: string;
 }
 
-/** Sort-key values of a row under an ordering, with its id as the final tiebreak. */
-export function seekKeyOf(row: object, shape: { readonly orderBy: readonly OrderKey[] }): SeekKey {
+/**
+ * Sort-key values of a row under an ordering, with its id as the final tiebreak.
+ *
+ * A row with no `id` is refused rather than stringified: `String(undefined)` is `"undefined"`,
+ * which every row in the result set then matches, so the cursor names a position that is both
+ * signed and meaningless. The tiebreak is what makes the order total — without it two rows
+ * sharing a sort value straddle a page boundary and one of them is lost.
+ */
+export function seekKeyOf(
+  row: object,
+  shape: { readonly orderBy: readonly OrderKey[]; readonly entity?: string },
+): SeekKey {
   const id = columnOf(row, 'id');
+  if (id === undefined || id === null) throw new QueryNotPageableError(shape.entity);
   return {
     key: shape.orderBy.map((order) => columnOf(row, order.column)),
     id: typeof id === 'string' ? id : String(id),

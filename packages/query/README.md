@@ -27,6 +27,7 @@ Every projection is a method on the query itself. A query has no `.def`.
 |---|---|
 | `liveFeed({ orgId })` | the rows, policy enforced, through the cache tiers |
 | `liveFeed.as(actor, { orgId })` | the same read as another actor — the surrounding context is untouched, `null` is signed out |
+| `liveFeed.page({ orgId }, { first: 20, after })` | one bounded page plus the signed cursor that continues it. There is no `offset` |
 | `liveFeed.live({ orgId })` | the `LiveQuery` `@ultimat3/realtime` subscribes to, carrying the same policy object |
 | `liveFeed.tool()` | the MCP read tool. `tool().policy === liveFeed.policy`, and it reads fresh |
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
@@ -94,11 +95,31 @@ shifts every later page, so users see duplicates and holes. Cursors are opaque,
 HMAC-signed, and bound to one query + arguments — a cursor from another query is
 `X_CURSOR_INVALID`.
 
+`query.page(input, { first, after })` is the only way to ask for one — `paginate` backs it and is
+not exported, because a page is the read's own answer rather than an imported helper.
+
 The codec lives in `@ultimat3/core`, not here: `encodeCursor`, `decodeCursor`,
 `configureCursorSigning` (set the signing secret once at boot; rotating it invalidates every
-open cursor) and `usesDevCursorSecret` are all imported from there. `paginate()` supplies the
-only thing that is this package's business — the scope, `queryHash(name, input)` — and
-re-exports `CursorInvalidError` so the failure keeps its name on this surface.
+open cursor) and `usesDevCursorSecret` are all imported from there. `As of 2026-08`, `x doctor`
+reports `X_CURSOR_SECRET_DEV` when a production process is still signing with the key shipped in
+the package, and rotating the secret is what invalidates every open cursor. This package supplies
+the only thing that is its business — the scope, `queryHash(name, input)` — and re-exports
+`CursorInvalidError` so the failure keeps its name on this surface.
+
+A cursor names a **position in the ordering**, never a row and never a count. Both seek paths
+answer "is this row after that position?" through the one predicate, `isAfterKey`: `Builder.seek()`
+compiles it to SQL — spelled out per key, so a mixed `createdAt desc, id asc` listing is a real
+predicate rather than an id tiebreak — and `paginate()` applies the same comparison when a source
+has no `seek()`. Filtering by position is what makes a delete between two pages harmless; locating
+the cursor's row by id and slicing after it silently restarts the listing the moment that row is
+gone. A row with no `id` cannot name a position at all: that is `X_QUERY_NOT_PAGEABLE`, not a
+cursor signed over `"undefined"`.
+
+Because the predicate always carries that id, the ordering carries it too: a paged read is served
+`order by <declared keys>, "id" asc`, and the in-memory path sorts by the same list. Ordering by
+the declared keys alone leaves rows with equal sort values in whatever order the database chose,
+while the cursor reads them as if id had decided — so one of a tied pair comes back on both pages
+and the other on neither.
 
 ## Caching
 
@@ -115,6 +136,7 @@ Request memo (same read twice in one render ⇒ one round trip), then the tier b
 | `X_QUERY_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_MATCHER_UNSUPPORTED` | live query the matcher cannot patch | reshape it, or `live: false` |
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
+| `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x queries describe <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
 | `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |

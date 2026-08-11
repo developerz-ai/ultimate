@@ -3,9 +3,11 @@
 // The module is resolved at first query and never at import: it is an OPTIONAL peer, and an image
 // that only ever talks to a managed Postgres must not carry 26 MB of WASM it will never load.
 
-import type { DbClient } from './client';
+import type { DbConnection, ReservableClient } from './client';
 import { DbError, dbUnavailable } from './errors';
+import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
+import { currentTx } from './transaction';
 
 /** What PGlite answers with. `rows` is empty for a write, which is why the count is separate. */
 export interface PgliteResult {
@@ -93,7 +95,12 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   }
 }
 
-export interface PgliteClient extends DbClient {
+/**
+ * Reservable, and that is the whole point of the binding: `withTransaction` and `readOnlyQuery`
+ * both pin a connection before they `BEGIN`, and a client that cannot be pinned silently gets a
+ * shared one — which on a single-session database is every concurrent transaction at once.
+ */
+export interface PgliteClient extends ReservableClient {
   /** Pay the boot up front. `x dev` calls it so the first request is not the slow one. */
   ping(): Promise<void>;
   close(): Promise<void>;
@@ -104,6 +111,7 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
   // One in-flight boot, shared. PGlite takes seconds to start, so two concurrent first queries
   // would otherwise build two instances over the same data directory and orphan one of them.
   let booting: Promise<PgliteDriver> | undefined;
+  const turns = createTurnQueue();
 
   function connect(): Promise<PgliteDriver> {
     booting ??= loadPgliteDriver(options).catch((error: unknown) => {
@@ -114,14 +122,32 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     return booting;
   }
 
-  async function run(fragment: SqlFragment): Promise<PgliteResult> {
-    const driver = await connect();
+  async function statement(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
     try {
       return await driver.query(fragment.text, fragment.values);
     } catch (error) {
       throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
     }
   }
+
+  async function run(fragment: SqlFragment): Promise<PgliteResult> {
+    const driver = await connect();
+    // A statement issued inside an open transaction is already inside it — there is one
+    // connection and that transaction is holding the turn, so waiting for a turn we are already
+    // inside of would hang. `handle.enqueue(input, { outbox: false })` within `withTransaction`
+    // is the shape that reaches this line; on a pooled server it would get its own connection,
+    // and here it joins the caller's transaction because a second connection does not exist.
+    if (currentTx() !== undefined) return statement(driver, fragment);
+    return turns.run(() => statement(driver, fragment));
+  }
+
+  // PGlite counts MODIFIED rows, so a SELECT that returned rows still reports `affectedRows: 0` —
+  // `??` would answer 0 for every read and disagree with `PostgresClient.execute`. A write that
+  // modified nothing returned no rows either, so falling back to the row count stays 0 there.
+  const rowsOf = (result: PgliteResult): number =>
+    result.affectedRows !== undefined && result.affectedRows > 0
+      ? result.affectedRows
+      : result.rows.length;
 
   return {
     async query<T>(fragment: SqlFragment): Promise<readonly T[]> {
@@ -132,8 +158,30 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       return (rows[0] as T | undefined) ?? null;
     },
     async execute(fragment: SqlFragment): Promise<number> {
-      const result = await run(fragment);
-      return result.affectedRows ?? result.rows.length;
+      return rowsOf(await run(fragment));
+    },
+    async reserve(): Promise<DbConnection> {
+      const driver = await connect();
+      // Held until `release()`, so every statement between `BEGIN` and `COMMIT` is this caller's
+      // and no other unit of work can interleave one of its own.
+      const turn = await turns.take();
+      let held = true;
+      // Direct only while the turn is held — re-queueing behind ourselves would deadlock. Once
+      // released the handle has no claim on the connection, and a leaked `tx` writing straight to
+      // it would land inside whatever transaction holds it now, with no error to read; so a late
+      // statement queues like any other caller and waits for its own turn.
+      const on = (fragment: SqlFragment): Promise<PgliteResult> =>
+        held ? statement(driver, fragment) : turns.run(() => statement(driver, fragment));
+      return {
+        query: async <T>(fragment: SqlFragment) => (await on(fragment)).rows as readonly T[],
+        one: async <T>(fragment: SqlFragment) =>
+          ((await on(fragment)).rows[0] as T | undefined) ?? null,
+        execute: async (fragment: SqlFragment) => rowsOf(await on(fragment)),
+        release: () => {
+          held = false;
+          turn();
+        },
+      };
     },
     async ping(): Promise<void> {
       await connect();

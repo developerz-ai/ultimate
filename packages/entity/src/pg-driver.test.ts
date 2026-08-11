@@ -244,9 +244,11 @@ describe('keyset pagination', () => {
       includeDeleted: true,
       orderBy: [{ column: 'deletedAt', direction: 'asc' as const }],
     };
+    // Refused where the cursor would be minted — on the page that has a next page — rather than
+    // on the request that tries to use it. The ordering is the author's mistake either way, and
+    // deferring it makes the page size decide whether anyone ever sees it.
     client.on('select', { rows: page(4) });
-    const first = await repo().findMany(byDeletedAt);
-    await expect(repo().findMany({ ...byDeletedAt, cursor: first.nextCursor })).rejects.toThrow(
+    await expect(repo().findMany(byDeletedAt)).rejects.toThrow(
       /deletedAt is nullable and cannot carry a cursor/,
     );
   });

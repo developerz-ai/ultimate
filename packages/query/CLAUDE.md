@@ -53,7 +53,22 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
-- `paginate` has no `offset` parameter and must never grow one.
+- `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as
+  `query.page(input, { first, after })` — a page is the read's own answer, not an imported helper.
+  `src/index.ts` exports `Page` and `PaginateArgs` and not the function: re-exporting it would be
+  a second way to ask for the thing `.page()` already does.
+- **A cursor is a position, not a row.** `isAfterKey` in `source.ts` is the one definition of
+  "after this position": `Builder.seek()` compiles it to SQL and `paginate()` applies it when a
+  source cannot push the seek down. The fallback used to find the cursor's row by id and slice
+  after it — which restarts the listing from the top the moment that row is deleted, the exact
+  failure keyset pagination exists to prevent. Never reintroduce a row lookup here.
+- The seek predicate is spelled out per key (`(a < $1) or (a = $2 and id > $3)`), the way
+  `@ultimat3/entity`'s `seekSql` spells it. A row-value comparison cannot express a mixed
+  `createdAt desc, id asc` ordering, and the id-tiebreak-only fallback it replaced returned rows
+  the ordering was already past — with `execute()` disagreeing with the SQL it printed.
+- **The id is the tiebreak that makes the order total.** A row without one is
+  `X_QUERY_NOT_PAGEABLE` at `seekKeyOf`, never `String(undefined)`: `"undefined"` is a position
+  every row matches, signed and opaque, so page two would be page one forever.
 - The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown

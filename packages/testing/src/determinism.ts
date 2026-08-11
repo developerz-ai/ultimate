@@ -9,6 +9,9 @@ export const DEFAULT_NOW = '2026-01-01T00:00:00.000Z';
 
 const RealDate = Date;
 const realRandom = Math.random;
+// Captured up front: the brand check below is only unforgeable while this is the engine's own
+// `getTime` and not whatever a later assignment to `Date.prototype.getTime` left there.
+const dateGetTime = RealDate.prototype.getTime;
 
 let frozenAt = new RealDate(DEFAULT_NOW).getTime();
 let installed = false;
@@ -45,6 +48,29 @@ class FrozenDate extends RealDate {
 
   static override now(): number {
     return frozenAt;
+  }
+
+  /**
+   * While the harness is installed `globalThis.Date` is this subclass, so `value instanceof Date`
+   * asks "is it a FrozenDate" — and a Date the runtime built for itself is not one: a timestamptz
+   * off a Postgres socket, a `structuredClone`, anything from another realm. Every
+   * `value instanceof Date` guard in the framework would then reject a real Date under test and
+   * nowhere else, which is the worst place a difference can be. Freezing the clock must not change
+   * what a Date *is*, so answer for the internal slot rather than for a prototype chain.
+   *
+   * `value instanceof RealDate` is not that answer: `instanceof` is per-realm, so a Date built in
+   * a `node:vm` context or a worker — the "another realm" case above — still comes back false. A
+   * `[object Date]` from `Object.prototype.toString` is not it either: any object carrying
+   * `Symbol.toStringTag: 'Date'` passes that. `getTime` throws for anything without a
+   * `[[DateValue]]` slot, and that slot is the one thing neither a fake nor a realm can hide.
+   */
+  static override [Symbol.hasInstance](value: unknown): boolean {
+    try {
+      dateGetTime.call(value);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

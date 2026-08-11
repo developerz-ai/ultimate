@@ -95,6 +95,14 @@ describe('the one cursor codec', () => {
     expect(usesDevCursorSecret()).toBe(false);
   });
 
+  // What `x doctor` reads to decide whether a deploy can be paged by a forged cursor. The
+  // detector has to recognise the exact literal the published package ships — "not rotated" is
+  // not the same question, and an app that never calls `configureCursorSigning` inherits it.
+  test('the shipped dev key is detectable by the literal an unconfigured app inherits', () => {
+    configureCursorSigning('ultimate-dev-cursor-secret');
+    expect(usesDevCursorSecret()).toBe(true);
+  });
+
   test('the failure names the fix, in three lines', () => {
     const error = new CursorInvalidError('signature does not match');
     expect(error.format()).toBe(
