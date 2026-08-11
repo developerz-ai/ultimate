@@ -1,5 +1,23 @@
 # social-media-clone — the stress-test demo
 
+> **What the build actually found.** Everything below was written before the work. This box is what
+> using the framework taught us, and it is the point of the exercise.
+>
+> | Found by | Defect |
+> |---|---|
+> | booting a scaffolded app | **it rendered nothing.** The route table had no component slot, `jsx: "preserve"` made Bun emit `React.createElement` for all 73 `.tsx` files, and no toolchain compiled SCSS. Three independent breaks, invisible because each one alone still returned 200 |
+> | reading the pinned dependency | **`solid-js@2.0.0-experimental.16` publishes no renderer at all** — no `solid-js/web`, no `renderToString`, no jsx-runtime values. The framework declared Solid and never rendered through it |
+> | `x new` → `x dev` | the scaffold shipped a **duplicate `/` route**, a `render:'stream'` route the pinned Solid can never satisfy, and **every** stylesheet referencing `$variables` that do not exist |
+> | writing one entity file | `Invariant.holds` was a function-typed **property** → contravariant → no real entity satisfied `EntitySet`. 277 errors, blamed in our own notes on other work |
+> | writing one `invariants:` block | index-signature typing made every generated entity fail typecheck. The note said "needs a major"; measured, only the *array form* cannot infer |
+> | choosing relational visibility | **`Actor` is closed.** An app cannot carry a friend set into a policy, and predicates are synchronous so they cannot fetch one |
+> | integrating | `errorReport` mixed a caller's `traceId` with an **ambient** `spanId` — the wrong span in the right trace. And no `X_STORAGE_*` code had a status row, so a missing image answered **500** |
+> | CI | `x verify` reports "one or more unit tests failed" and **never says which** |
+>
+> The pattern worth naming: **every one of these was invisible until an app used the feature.** The
+> gate was green throughout, because a gate tests what it knows to test.
+
+
 A real social network built on Ultimate, to find out where the framework fails an agent.
 Hosted at **`social-media.ultimate.demo.developerz.ai`**. `As of 2026-08-11`.
 
