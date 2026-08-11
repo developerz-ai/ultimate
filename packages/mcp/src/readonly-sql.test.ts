@@ -140,6 +140,32 @@ describe('assertReadOnlyQuery refuses', () => {
     }
   });
 
+  test('a quoted function name is the same call, not a way past the family', () => {
+    // `SELECT "pg_advisory_lock"(1)` is valid Postgres and calls the function. Blanking quoted
+    // identifiers before the scan — which the keyword pass still does, so `select "update"` stays
+    // a column — hid exactly the call whose lock outlives layer 2's ROLLBACK.
+    for (const sql of [
+      'select "pg_advisory_lock"(918273)',
+      'select pg_catalog."pg_sleep"(10)',
+      'select"pg_read_file"(\'/etc/passwd\')',
+      'select "pg_advisory_lock" (918273)',
+    ]) {
+      expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+    }
+  });
+
+  test('a column sharing a family prefix is a column, because only a call is checked', () => {
+    // The family is a prefix of the CALLED function. Scanning every word refused this row —
+    // fail-closed must not mean refusing a table an agent has every right to read.
+    for (const sql of [
+      'select pg_sleep_for_seconds from readings',
+      'select lo_rate from billing',
+      'select pg_read_ahead, pg_advisory_notes from metrics',
+    ]) {
+      expect(assertReadOnlyQuery(sql)).toBe(sql);
+    }
+  });
+
   test('the cause names the call the author wrote and the family that refused it', () => {
     expect(() => assertReadOnlyQuery("select pg_sleep_for('1 hour')")).toThrowError(
       expect.objectContaining({ cause: expect.stringContaining('pg_sleep_for()') }),

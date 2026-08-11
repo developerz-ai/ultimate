@@ -28,7 +28,7 @@ Neither adapter may parse, authorize, or handle on its own. Both go through `inv
 
 | MCP requirement | Source | Notes |
 |---|---|---|
-| tool name | action name, kebab-cased | `publish-post` |
+| tool name | the action's export name, verbatim | `publishPost` — the name `scopes:` and `tools/call` address, and the one an author greps for |
 | input JSON Schema | the action's `input` via Standard Schema → JSON Schema | the same schema HTTP parses |
 | output schema | `output` | same |
 | description | `mcp.description` | required when `expose: true` |

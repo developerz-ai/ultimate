@@ -181,8 +181,14 @@ export class McpScopeUnknownError extends UltimateError {
  * overwrite the first or be dropped — decided by object key order, which is not a security
  * model. Refused at boot rather than resolved, because either resolution is a guess about
  * which capability the author meant a token to need.
+ *
+ * The two claimants travel with it, as `McpScopeUnknownError` carries the projected catalog: the
+ * reader is usually an agent holding `--json`, and a sentence is not a field.
  */
 export class McpScopeConflictError extends UltimateError {
+  /** The two scopes that claimed the tool, in the order the map declared them. */
+  readonly scopes: readonly [string, string];
+
   constructor(input: { name: string; scopes: readonly [string, string] }) {
     super({
       code: 'X_MCP_SCOPE_CONFLICT',
@@ -190,6 +196,7 @@ export class McpScopeConflictError extends UltimateError {
       fix: `in defineAppMcp, keep "${input.name}" under the single scope a token must hold for it, and remove the other entry`,
       docs: docsFor('X_MCP_SCOPE_CONFLICT'),
     });
+    this.scopes = input.scopes;
   }
 }
 

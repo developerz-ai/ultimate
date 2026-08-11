@@ -65,7 +65,7 @@ const WRITE_KEYWORDS = new Set([
 ]);
 
 /**
- * Function families a read may not call, matched as a PREFIX of a whole token.
+ * Function families a read may not call, matched as a PREFIX of a CALLED function name.
  *
  * The family is the unit, never the name. Refusing `pg_sleep` while admitting `pg_sleep_for` is a
  * distinction only this parser draws, and an exact-name list admits by default: every spelling
@@ -83,8 +83,10 @@ const WRITE_KEYWORDS = new Set([
  *    (single-threaded WASM), which is the database `x dev` runs, so this ban is the only one
  *    that holds there.
  *
- * A column that shares a prefix is reachable as a quoted identifier (`"lo_rate"`), which is
- * blanked before any of this runs.
+ * The prefix is applied to a CALL — a name followed by `(` — and never to a bare word, so a
+ * column called `pg_sleep_for_seconds` stays readable. Quoting does not evade it: the scan reads
+ * a form where a quoted identifier keeps its content, because `"pg_advisory_lock"(1)` is the same
+ * call as `pg_advisory_lock(1)`.
  */
 const FORBIDDEN_FUNCTIONS = [
   'dblink',
@@ -101,9 +103,25 @@ const FORBIDDEN_FUNCTIONS = [
   'set_config',
 ];
 
-/** The family refusing `word`, or `undefined`. A prefix, so a new member is refused by default. */
-function forbiddenFamily(word: string): string | undefined {
-  return FORBIDDEN_FUNCTIONS.find((family) => word.startsWith(family));
+/** The family refusing `called`, or `undefined`. A prefix, so a new member is refused by default. */
+function forbiddenFamily(called: string): string | undefined {
+  return FORBIDDEN_FUNCTIONS.find((family) => called.startsWith(family));
+}
+
+/**
+ * A call: an identifier immediately before `(`. Schema qualification falls out of the scan —
+ * `pg_catalog.set_config(` matches on the last segment, which is the function being called.
+ */
+const CALL_PATTERN = /([a-z_][a-z0-9_$]*)\s*\(/g;
+
+/** Every function `sql` calls, lowercased. Read from the identifier-preserving strip. */
+function calledFunctions(sql: string): readonly string[] {
+  const names: string[] = [];
+  for (const match of sql.toLowerCase().matchAll(CALL_PATTERN)) {
+    const name = match[1];
+    if (name !== undefined) names.push(name);
+  }
+  return names;
 }
 
 /**
@@ -149,14 +167,19 @@ export function assertReadOnlyQuery(sql: string): string {
           'mcp: { expose: true }, and change schema with db.migrate after x db branch <name>',
       );
     }
-    const family = forbiddenFamily(word);
+  }
+  // A family refuses a CALL, never a bare word: scanning every word rejected a column named
+  // `pg_sleep_for_seconds`, and scanning the blanked form missed `"pg_advisory_lock"(1)`, which
+  // is the same call wearing quotes. So this pass reads the form that keeps identifier content.
+  for (const called of calledFunctions(stripLiteralsAndComments(sql, 'keep'))) {
+    const family = forbiddenFamily(called);
     if (family !== undefined) {
       // The cause names what the author wrote AND the family it belongs to: the second half is
       // the rule, and without it the next spelling looks like a different, arguable refusal.
       throw rejected(
-        family === word
-          ? `the statement calls ${word}(), which db.query may not call`
-          : `the statement calls ${word}(), one of the ${family}* functions db.query may not call`,
+        family === called
+          ? `the statement calls ${called}(), which db.query may not call`
+          : `the statement calls ${called}(), one of the ${family}* functions db.query may not call`,
         'query tables only: no file access, no locks, no session settings, no sleeps',
       );
     }
@@ -225,8 +248,12 @@ function notBranch(cause: string, fix: string): McpNotBranchDbError {
  * fooled by `SELECT 'delete'` (a harmless literal that looks like a write) and cannot be
  * evaded by hiding a second statement behind a block comment. Only word boundaries matter
  * downstream, so collapsing each run to one space is enough.
+ *
+ * `identifiers: 'keep'` unwraps a double-quoted identifier to its content instead — the call
+ * scan needs it, because `"pg_advisory_lock"(1)` calls the function the blanked form hides.
+ * String and dollar-quoted literals are blanked in both modes: a literal is never a call.
  */
-function stripLiteralsAndComments(sql: string): string {
+function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = 'blank'): string {
   let out = '';
   let i = 0;
   while (i < sql.length) {
@@ -245,8 +272,11 @@ function stripLiteralsAndComments(sql: string): string {
     }
     const char = sql[i];
     if (char === "'" || char === '"') {
-      i = skipQuoted(sql, i, char);
-      out += ' ';
+      const end = skipQuoted(sql, i, char);
+      // Padded, never spliced in place: `select"pg_advisory_lock"(1)` must not fuse into one
+      // token, or the call the quotes were hiding stays hidden behind the leading keyword.
+      out += char === '"' && identifiers === 'keep' ? ` ${inner(sql.slice(i, end))} ` : ' ';
+      i = end;
       continue;
     }
     if (char === '$') {
@@ -263,6 +293,12 @@ function stripLiteralsAndComments(sql: string): string {
     i += 1;
   }
   return out;
+}
+
+/** A quoted run's content: the delimiters dropped, SQL's doubled-quote escape collapsed. */
+function inner(run: string): string {
+  const closed = run.length > 1 && run.endsWith(run[0] ?? '');
+  return run.slice(1, closed ? -1 : undefined).replaceAll('""', '"');
 }
 
 /** Advance past a quoted run, honouring SQL's doubled-quote escape (`'it''s'`). */

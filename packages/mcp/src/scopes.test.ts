@@ -19,12 +19,14 @@ const tool = (name: string, scope?: string): AnyMcpTool => ({
   },
 });
 
-const thrown = (fn: () => unknown): { code?: string; cause?: string; fix?: string } => {
+const thrown = (
+  fn: () => unknown,
+): { code?: string; cause?: string; fix?: string; scopes?: readonly string[] } => {
   try {
     fn();
     return {};
   } catch (error) {
-    return error as { code: string; cause: string; fix: string };
+    return error as { code: string; cause: string; fix: string; scopes?: readonly string[] };
   }
 };
 
@@ -104,6 +106,9 @@ describe('withScopes', () => {
     expect(error.code).toBe('X_MCP_SCOPE_CONFLICT');
     expect(error.cause).toContain('orders:write');
     expect(error.cause).toContain('billing:admin');
+    // Structured, not only prose: the reader is an agent holding `--json`, and making it
+    // re-parse the sentence to learn which two scopes collided is a field it should have had.
+    expect(error.scopes).toEqual(['orders:write', 'billing:admin']);
   });
 
   test('a tool that already declares a scope is claimed too — two sources is the same ambiguity', () => {

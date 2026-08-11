@@ -97,10 +97,13 @@ import. The CLI wires it.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).
-- Banned SQL functions are matched as a **prefix of a whole token**, so the family is the unit and
-  a spelling nobody wrote down is refused rather than admitted — an exact-name list let
+- Banned SQL functions are matched as a **prefix of a CALLED function name**, so the family is the
+  unit and a spelling nobody wrote down is refused rather than admitted — an exact-name list let
   `pg_sleep_for` past a ban on `pg_sleep`, and `set_config` past `SET`, which is already a write
-  keyword. Add a family, never a name. Two of the families exist because the same ban is already
+  keyword. Add a family, never a name. The unit is the call (`name` before `(`), never a bare word:
+  a word scan refused a column named `pg_sleep_for_seconds`. The call scan reads a strip that KEEPS
+  quoted-identifier content, because `"pg_advisory_lock"(1)` is the same call as the bare spelling —
+  the keyword scan still reads the blanked form, so `select "update" from t` stays a column. Two of the families exist because the same ban is already
   made elsewhere in another spelling: `pg_advisory_*` is `FOR UPDATE`'s ban and the worse breach
   (a session lock survives layer 2's `ROLLBACK`, so it outlives the read on a pooled connection —
   proved live in `packages/testing/src/db-integration.test.ts`), and `pg_sleep*` is the one ban

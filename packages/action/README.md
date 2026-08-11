@@ -107,13 +107,14 @@ a page's module graph free of any edge to a feature's implementation.
 ## Path derivation
 
 First camelCase word is the verb; the rest is the resource, last word pluralized,
-kebab-cased.
+kebab-cased. The **MCP tool name is not derived** — it is the export name verbatim, because
+that is what `defineAppMcp`'s `scopes:` and a `tools/call` have to spell.
 
 | Action | Route | MCP tool |
 |---|---|---|
-| `publishPost` | `POST /api/posts/publish` | `publish_post` |
-| `updateUserProfile` | `POST /api/user-profiles/update` | `update_user_profile` |
-| `likePost` | `POST /api/posts/like` | `like_post` |
+| `publishPost` | `POST /api/posts/publish` | `publishPost` |
+| `updateUserProfile` | `POST /api/user-profiles/update` | `updateUserProfile` |
+| `likePost` | `POST /api/posts/like` | `likePost` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
 ## One invocation core

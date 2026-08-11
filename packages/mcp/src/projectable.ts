@@ -1,9 +1,7 @@
 // A real `action` or `query` → the `ProjectablePrimitive` this package projects.
 //
-// ONE adapter, two callers: `exposed.ts` sweeps the registries for `include: 'exposed'`, and
-// `app-tools.ts` adapts the list an author wrote out in `actions:`/`queries:`. Both land on the
-// same `run` — `invoke` for an action, `sourceFor` for a query — so writing a primitive out by
-// hand is a different way to NAME a tool, never a second way to run one.
+// ONE adapter, two callers — the registry sweep and the written-out list — so writing a
+// primitive out is a different way to NAME a tool, never a second way to run one.
 
 import type { AnyAction } from '@ultimat3/action';
 import { actionName, invoke, isAction } from '@ultimat3/action';
