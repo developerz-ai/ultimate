@@ -94,7 +94,7 @@ export function lazyServices(input: DevHostInput): LazyServices {
           fix: 'x mcp serve --transport stdio   # keep the host open for the whole session',
         });
       }
-      started ??= startServices(services);
+      started ??= startServices(services, input.env);
       return started;
     },
     async close(): Promise<void> {

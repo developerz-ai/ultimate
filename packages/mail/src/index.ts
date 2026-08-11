@@ -19,12 +19,15 @@ export {
   createLogDriver,
   createMemoryDriver,
   envelopeRecipients,
+  isMemoryDriver,
   mailDriver,
   messageHeaders,
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
 } from './driver';
+export type { MailEnvironment, MailSelection } from './driver-env';
+export { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
 export type { MailFetch, ResendDriverOptions } from './driver-resend';
 export { createResendDriver, RESEND_BASE_URL } from './driver-resend';
 export type { SmtpDriverOptions } from './driver-smtp';

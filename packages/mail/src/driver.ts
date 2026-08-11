@@ -113,6 +113,16 @@ export function createMemoryDriver(): MemoryMailDriver {
 }
 
 /**
+ * Whether this driver caught the message instead of sending it. A host asks before reading
+ * `outbox()` — the `/_x` mail panel exists only when nothing was actually delivered, and a real
+ * transport has no record to show. Narrowed on the retained list rather than on `name`, so a
+ * driver that merely calls itself `memory` cannot pass.
+ */
+export function isMemoryDriver(driver: MailDriver): driver is MemoryMailDriver {
+  return driver.name === 'memory' && typeof (driver as MemoryMailDriver).outbox === 'function';
+}
+
+/**
  * Structured log line per message through core's `logger` — the default for a worker that
  * has no credentials yet. Bodies are never logged; a mail body is user data.
  */

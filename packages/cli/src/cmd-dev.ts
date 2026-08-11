@@ -22,7 +22,7 @@ import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
-import { startServices } from './dev-runtime';
+import { describeMail, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
@@ -98,7 +98,7 @@ const envOf = (env: StartDevOptions['env']): { env?: string } => {
  */
 export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const services = resolveServices(options.root, options.env);
-  const runtime: RunningServices = await startServices(services);
+  const runtime: RunningServices = await startServices(services, options.env);
   // Installed before the app loads, so a span opened during registration is already recorded.
   // Tracing is always on in the framework and free until an exporter is configured; `x dev` is
   // what configures one, which is the whole reason `/_x/timeline` has anything to draw.
@@ -232,7 +232,7 @@ export const devCommand: CliCommand = {
       summary: msg('cli.dev.ready', {
         url: server.url,
         panels: server.panels.length,
-        services: describeServices(server.services),
+        services: `${describeServices(server.services)} ${describeMail(server.runtime)}`,
       }),
       findings: server.findings,
       // Every fact `lines` prints is a fact `--json` carries, `manifest` included — or the two
@@ -245,6 +245,9 @@ export const devCommand: CliCommand = {
         db: server.services.db.url,
         events: server.services.events.url,
         storage: server.services.storage.url,
+        // The selecting env key, never the credential behind it: `SMTP_URL` carries a password
+        // and this line is printed, logged and scraped.
+        mail: describeMail(server.runtime),
         buildId: server.buildId,
         manifest: join(root, MANIFEST_FILENAME),
         introspect: `${server.url}/_x`,

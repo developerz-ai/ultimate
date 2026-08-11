@@ -7,15 +7,15 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EventBus, JobDriver } from '@ultimat3/jobs';
 import { createMemoryEventBus, setEventBus } from '@ultimat3/jobs';
-import type { MemoryMailDriver } from '@ultimat3/mail';
-import { createMemoryDriver, resetMailDriver, setMailDriver } from '@ultimat3/mail';
+import type { MailDriver } from '@ultimat3/mail';
+import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from '@ultimat3/mail';
 import type { Transport } from '@ultimat3/realtime';
 import { InProcessTransport, NatsTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { DevDbClient } from './dev-queue';
 import { startQueue } from './dev-queue';
-import type { DevServices } from './dev-services';
+import type { DevServices, Env } from './dev-services';
 
 export interface RunningServices {
   readonly services: DevServices;
@@ -24,8 +24,24 @@ export interface RunningServices {
   readonly events: EventBus;
   readonly transport: Transport;
   readonly storage: Storage;
-  readonly mail: MemoryMailDriver;
+  readonly mail: MailDriver;
+  /**
+   * Which env key selected the transport, or why nothing was selected. The credential itself is
+   * never carried: `SMTP_URL` holds a password, and this string reaches the boot line and `--json`.
+   */
+  readonly mailDetail: string;
   stop(): Promise<void>;
+}
+
+/**
+ * `mail=embedded` is the honest report for a process that caught the message instead of sending
+ * it — the same vocabulary the other three bindings use, so an operator reading a boot line sees
+ * at a glance that this replica delivers nothing.
+ */
+export function describeMail(runtime: RunningServices): string {
+  return isMemoryDriver(runtime.mail)
+    ? 'mail=embedded'
+    : `mail=external(${runtime.mail.name} via ${runtime.mailDetail})`;
 }
 
 const FILE_SCHEME = 'file://';
@@ -64,7 +80,11 @@ async function unwind(steps: readonly (() => void | Promise<void>)[]): Promise<v
   }
 }
 
-export async function startServices(services: DevServices): Promise<RunningServices> {
+export async function startServices(services: DevServices, env: Env): Promise<RunningServices> {
+  // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
+  // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
+  // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
+  const selection = selectMailDriver(env);
   const queue = await startQueue(services);
   const { db, jobs } = queue;
   // Boot is a sequence of external resources, and every step after the first can reject — the
@@ -76,10 +96,11 @@ export async function startServices(services: DevServices): Promise<RunningServi
     const transport = await startTransport(services);
     started.push(() => transport.close());
     const storage = startStorage(services);
-    // Caught, not sent: the `/_x` mail panel reads this outbox, so the local loop can check what a
-    // template renders in every locale without a mailbox, an API key, or a message escaping to a
-    // real address.
-    const mail = createMemoryDriver();
+    // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
+    // show what a template renders in every locale without a mailbox or a message escaping to a
+    // real address. `SMTP_URL` or `RESEND_API_KEY` makes it a real transport instead — the same
+    // "an unset variable means the embedded default" law the other three bindings follow.
+    const mail = selection.driver;
     setMailDriver(mail);
     started.push(() => resetMailDriver());
 
@@ -91,6 +112,7 @@ export async function startServices(services: DevServices): Promise<RunningServi
       transport,
       storage,
       mail,
+      mailDetail: selection.detail,
       // Reverse boot order, and a stop that fails says so — only the unwind after a failed boot
       // is allowed to swallow, because there the boot error is the one worth reporting.
       async stop() {

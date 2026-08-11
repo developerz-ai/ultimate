@@ -158,13 +158,31 @@ Per surface, overridable per route via `budget` on `defineRoute`.
 | `budgets.app.cls` | number | `0.1` | |
 | `budgets.precache` | size | `'3mb'` | mirrors `pwa.precache.maxBytes` |
 
-## `mail`, `storage`, `otel`
+## `mail`
+
+Not an `app.config.ts` block. The transport is selected by **environment**, like every other
+external service — an unset variable means the embedded default, so the same image deploys
+everywhere and no credential is ever committed.
+
+| env key | selects | notes |
+|---|---|---|
+| *(none set)* | memory | caught, never sent; the `/_x` mail panel reads this outbox |
+| `SMTP_URL` | SMTP | `smtps://user:pass@host:465`, or `smtp://host:587` for STARTTLS |
+| `RESEND_API_KEY` | Resend | one `POST /emails` per message, with an `Idempotency-Key` |
+| `MAIL_FROM` | — | required by both transports. `Name <addr>`; also the envelope sender and the `Message-ID` domain |
+| `MAIL_POOL_SIZE` | — | SMTP connections open at once. Default `4`, whole number ≥ 1 |
+
+Setting `SMTP_URL` **and** `RESEND_API_KEY` is `X_CONFIG_INVALID`: a process delivers through
+exactly one transport, and picking a winner would send half of an operator's mail the wrong way.
+A transport without `MAIL_FROM` is refused at boot rather than on the first send.
+
+`x dev` prints which one it installed — `mail=embedded`, or `mail=external(smtp via SMTP_URL)`.
+The env **key** is reported, never its value, because `SMTP_URL` carries a password.
+
+## `storage`, `otel`
 
 | field | type | default | notes |
 |---|---|---|---|
-| `mail.from` | `string` | required if mail is used | `Name <addr>`; also the envelope sender and the `Message-ID` domain |
-| `mail.driver` | `'smtp' \| 'resend' \| 'log' \| 'memory'` | `'log'` in dev, `'smtp'` otherwise | sends are always a `job` |
-| `mail.url` | `string` | — | `SMTP_URL` from env: `smtps://user:pass@host:465`, or `smtp://host:587` for STARTTLS |
 | `storage.driver` | `'s3' \| 'local'` | `'local'` in dev, `'s3'` otherwise | `s3` is `Bun.s3`; `local` is a directory |
 | `storage.bucket` | `string` | — | required for `s3`; `local` uses `storage.dir`, default `'.x/storage'` |
 | `otel.endpoint` | `string` | — | OTLP collector. Absent = spans still recorded, exported nowhere |

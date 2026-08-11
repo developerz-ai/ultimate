@@ -47,6 +47,23 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 | `createSmtpDriver({ url, from })` | prod | real ESMTP over `Bun.connect`: STARTTLS, `AUTH PLAIN`/`LOGIN`, quoted-printable MIME |
 | `createResendDriver({ apiKey, from })` | prod | one `POST /emails`, `Idempotency-Key` on every request |
 
+### Which one a boot installs
+
+`selectMailDriver(env)` is the one answer, and `x dev` calls it — an unset variable means the
+embedded default, the same law the database, event bus and storage bindings follow. Nothing about
+the app changes between environments; the credential does.
+
+| env | driver |
+|---|---|
+| *(nothing set)* | `createMemoryDriver()` — caught, never sent |
+| `SMTP_URL` + `MAIL_FROM` | `createSmtpDriver(...)`, `MAIL_POOL_SIZE` optional |
+| `RESEND_API_KEY` + `MAIL_FROM` | `createResendDriver(...)` |
+
+Both credentials at once is `X_CONFIG_INVALID` rather than a winner picked for you, and a
+transport with no `MAIL_FROM` is refused at boot instead of on the first send. A host that is not
+`x dev` calls `selectMailDriver` itself, or constructs a driver directly — `setMailDriver` is the
+only seam either way.
+
 ### SMTP
 
 `smtps://user:pass@host:465` is implicit TLS; `smtp://host:587` starts in the clear and upgrades

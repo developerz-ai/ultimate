@@ -59,6 +59,8 @@ interface FakeRuntime {
   readonly outbox?: readonly SentMail[];
   /** Every statement the dashboard sent, so a test can prove it was not rewritten. */
   readonly seen?: string[];
+  /** A credential-selected transport, which retains nothing and so has no outbox to project. */
+  readonly transport?: 'smtp' | 'resend';
 }
 
 /** Only the two members the hooks touch; a PGlite boot proves nothing about the projection. */
@@ -70,7 +72,13 @@ const fakeRuntime = (fake: FakeRuntime = {}): RunningServices =>
         return Promise.resolve(fake.rows ?? []);
       },
     },
-    mail: { outbox: (): readonly SentMail[] => fake.outbox ?? [] },
+    // `name` is load-bearing, not decoration: `isMemoryDriver` narrows on it before the panel
+    // reads an outbox, which is the whole reason a real transport degrades instead of throwing.
+    mail:
+      fake.transport === undefined
+        ? { name: 'memory', outbox: (): readonly SentMail[] => fake.outbox ?? [] }
+        : { name: fake.transport, send: (): Promise<never> => Promise.reject(new Error('unused')) },
+    mailDetail: fake.transport === undefined ? 'caught in memory' : 'SMTP_URL',
   }) as unknown as RunningServices;
 
 const inputFor = (
@@ -211,6 +219,16 @@ describe('unit · x dev mounts the dashboard', () => {
         sentAt: '2026-08-09T10:11:12.000Z',
       },
     ]);
+  });
+
+  // An empty outbox would read as "nothing was mailed". The messages went to the provider, so
+  // the only honest answer is that this process cannot see them.
+  test('a credential-selected transport refuses the mail source instead of claiming an empty outbox', async () => {
+    const caught = (await devSources(inputFor({ transport: 'smtp' }))
+      .mail()
+      .catch((error: unknown) => error)) as { code?: string; cause?: string };
+    expect(caught.code).toBe('X_NOT_IMPLEMENTED');
+    expect(caught.cause).toContain('mail');
   });
 
   test('a host that installed no exporter answers with the wiring line, not an empty timeline', async () => {
