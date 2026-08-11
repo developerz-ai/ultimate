@@ -97,6 +97,19 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
       updatedAt: at('2026-01-09T02:05:00Z'),
     },
     {
+      // The one person with no prior relationship, so an OUTGOING pending request has a target
+      // that does not collide with the incoming one from Kenji — a pair may hold one row, not two.
+      id: id('user:noa'),
+      handle: 'noa',
+      email: 'noa@demo.example',
+      displayName: 'Noa Klein',
+      role: 'member',
+      tz: 'UTC',
+      locale: 'en',
+      createdAt: at('2026-02-12T08:45:00Z'),
+      updatedAt: at('2026-02-12T08:45:00Z'),
+    },
+    {
       // Southern hemisphere: DST runs the opposite way round from Madrid. Also the blocked party.
       id: id('user:mara'),
       handle: 'mara',
@@ -135,6 +148,16 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
       status: 'pending',
       respondedAt: null,
       createdAt: at('2026-02-01T03:00:00Z'),
+    },
+    {
+      // OUTGOING and pending: the outbox is a different screen from the inbox, and a rule that
+      // only handles one direction is a rule with a hole in it. My comment above claimed this row
+      // existed before it did — the friends screen rendering an empty outbox is what caught it.
+      requesterId: id('user:user'),
+      addresseeId: id('user:noa'),
+      status: 'pending',
+      respondedAt: null,
+      createdAt: at('2026-02-02T09:00:00Z'),
     },
     {
       requesterId: id('user:user'),

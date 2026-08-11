@@ -7,9 +7,9 @@
 // round trip per row per connected client. A rule therefore decides on two things only — the actor
 // (which carries the resolved friend and block sets) and facts the caller already had.
 
-import { type Audience, isVisibleAudience } from '@social-media-clone/domain';
 import { can, definePermissions } from '@ultimat3/policy';
-import { currentViewer, isAdmin, isBlocked, isFriend, isSelf } from '../../shared/actor';
+import { currentViewer, isAdmin, isSelf } from '../../shared/actor';
+import { canSeePost, type PostRow } from '../../shared/visibility';
 
 /**
  * Declared rather than assumed. The augmentation narrows `can()` to these strings, so a typo is a
@@ -35,29 +35,6 @@ export const postPermissions = definePermissions([
   'post:comment',
   'feed:read',
 ]);
-
-/** The row facts every post rule decides about. Loaded by the surface, never fetched in a rule. */
-export interface PostRow {
-  readonly authorId: string;
-  readonly audience: Audience;
-  readonly deletedAt: Date | null;
-}
-
-/**
- * The one rule everything else is built on, in the order the checks must happen.
- *
- * Blocks come FIRST and are checked in both directions. Putting the audience ladder first would
- * make a `public` post visible to someone who blocked its author — the ladder answers "is this
- * post for people like you", and a block says "not you specifically", so the specific rule has to
- * win. A deleted post is invisible to everyone including its author; the author reads it back
- * through the moderation path, not this one.
- */
-export const canSeePost = (actor: Parameters<typeof isBlocked>[0], post: PostRow): boolean => {
-  if (post.deletedAt !== null) return false;
-  if (isBlocked(actor, post.authorId)) return false;
-  if (isSelf(actor, post.authorId)) return true;
-  return isVisibleAudience(post.audience, isFriend(actor, post.authorId));
-};
 
 /**
  * `row === null` is a DENIAL, never a pass. An absent fact is not a satisfied one: treating it as
@@ -98,3 +75,5 @@ export const postComment = can<Record<string, never>, PostRow>(
 export const feedRead = can<Record<string, never>, PostRow>('feed:read', ({ actor, row }) =>
   row === null ? actor !== null : canSeePost(currentViewer(), row),
 );
+export type { PostRow } from '../../shared/visibility';
+export { canSeePost } from '../../shared/visibility';
