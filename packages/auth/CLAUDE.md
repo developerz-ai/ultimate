@@ -1,6 +1,6 @@
 # @ultimat3/auth — agent notes
 
-Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3/policy`'s job.
+Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3/policy`'s job.
 
 | Rule | |
 |---|---|

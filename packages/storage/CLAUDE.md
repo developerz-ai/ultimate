@@ -1,6 +1,6 @@
 # @ultimat3/storage — agent notes
 
-Tier 2. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
+Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 
 - May import: `@ultimat3/core`, `@ultimat3/schema`. Nothing else. No npm dependencies.
 - Must NOT know about HTTP, entities, actions, render — a route calls `verifySignedUrl()`,
