@@ -6,7 +6,7 @@
 > | Found by | Defect |
 > |---|---|
 > | booting a scaffolded app | **it rendered nothing.** The route table had no component slot, `jsx: "preserve"` made Bun emit `React.createElement` for all 73 `.tsx` files, and no toolchain compiled SCSS. Three independent breaks, invisible because each one alone still returned 200 |
-> | reading the pinned dependency | **`solid-js@2.0.0-experimental.16` publishes no renderer at all** — no `solid-js/web`, no `renderToString`, no jsx-runtime values. The framework declared Solid and never rendered through it |
+> | reading the pinned dependency | **`solid-js@2.0.0-experimental.16` publishes no renderer at all** — no `solid-js/web`, no `renderToString`, no jsx-runtime values. The framework declared Solid and never rendered through it. *Resolved: repinned to `solid-js@1.9.14`, the stable line — Solid 2 had moved on to `2.0.0-beta.N` and split the DOM half into `@solidjs/web`, stranding that pin on an abandoned prerelease line* |
 > | `x new` → `x dev` | the scaffold shipped a **duplicate `/` route**, a `render:'stream'` route the pinned Solid can never satisfy, and **every** stylesheet referencing `$variables` that do not exist |
 > | writing one entity file | `Invariant.holds` was a function-typed **property** → contravariant → no real entity satisfied `EntitySet`. 277 errors, blamed in our own notes on other work |
 > | writing one `invariants:` block | index-signature typing made every generated entity fail typecheck. The note said "needs a major"; measured, only the *array form* cannot infer |
@@ -108,7 +108,7 @@ Verdicts measured against the code, not the docs.
 | 4 | DB insights (pghero-like) | thin | `pg_stat_statements`, index suggestions, bloat. Note the MCP read-only guard currently *denies* the functions such a panel needs |
 | 5 | Error monitoring | seam only | `http`'s `onError` hook exists and **nothing ever supplies one**. Needs an `ErrorReporter` in `core`, a Glitchtip/Sentry-envelope transport, and wiring from `serve.ts` — plus jobs and realtime, which have no hook at all |
 | 6 | Metrics | partly wired | `recordJob` is declared and never called, so `jobs_total` is always empty; Helm declares no metrics port and ships no `ServiceMonitor`, so HPAs read `<unknown>` |
-| 7 | Loading skeletons | EXISTS | `<Skeleton>`, `<Spinner>`, `DataTable.skeletonRows`, streaming SSR by default. Caveat: the pinned `solid-js@2.0.0-experimental.16` does not export `Suspense` from its server build |
+| 7 | Loading skeletons | EXISTS | `<Skeleton>`, `<Spinner>`, `DataTable.skeletonRows`, streaming SSR by default. Caveat: there is no Suspense-style hole marker, and Solid's `<Suspense>` cannot be one — it throws outside a Solid renderer. Async data is `await`ed in the component instead |
 | 8 | **Asset pipeline** | MISSING | **zero `Bun.build` calls in the repo.** No client bundling, no code splitting, no minification (except `--target binary`), no chunk hashing. `renderSpaShell` consumes `input.chunks` that nothing produces; byte budgets are checked against a *declared* graph and `.x/build-stats.json` is never written, so the `budgets` gate passes vacuously |
 | 9 | PWA service worker | EXISTS, unwired | `generateServiceWorker` is never called by `x build`; no `sw.js` is emitted. Cache namespacing by build id is already correct |
 | 10 | Parallel tests | opt-in, unmeasured | `x test --workers` shards (LPT bin-packing, real). But `x verify` bypasses it, scaffolds get `"test": "bun test"`, and `--parallel` measured *slower* (isolate re-runs the preload). No published suite wall-clock |

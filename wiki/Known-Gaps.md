@@ -30,7 +30,7 @@ Every row below was hit by actually running the command against a 1.1.0 scaffold
 | Jobs and tasks register anonymously | a fresh scaffold has no `apps/web/api/index.ts`, so they register as `anonymous-job-2` / `anonymous-task-1` | add `defineApi` — [4 · Jobs and realtime](Tutorial-04-Jobs-And-Realtime) |
 | Generated tests land in the wrong step | `contractTest` / `liveTest` / `jobTest` inside a plain `*.test.ts` run under `unit`, and `x test contract` answers `X_TEST_NO_FILES` | rename to `<name>.contract.test.ts` etc. — the filename is the type |
 | Three standing route findings | a fresh scaffold reports `X_ROUTE_MODE_INVALID` ×2 and `X_ROUTE_DUPLICATE` (`apps/admin/app/page.tsx` claims `/` against the site landing page). `x routes` is not a gate step, so `x verify` never sees them | `x routes` after scaffolding, then fix |
-| `X_ROUTE_MODE_INVALID`'s fix line is wrong | it says wrap in `<Suspense>`; the pinned `solid-js@2.0.0-experimental.16` does not export `Suspense` from its server build | set `render: 'ssr'` on the route instead |
+| `X_ROUTE_MODE_INVALID`'s fix line is wrong | it says wrap in `<Suspense>`. Solid's `<Suspense>` throws `getContextId cannot be used under non-hydrating context` under this renderer, at any Solid version — the server JSX factory is inert by design and is not a Solid renderer | set `render: 'ssr'` on the route instead. Async data needs no boundary: `renderToHtml` awaits async components and promise children |
 | `.env.development` ships in the image | `.dockerignore` excludes `.env` and `.env.*.local`, not `.env.development` | harmless as generated (all values empty, a real env var wins) — but add it to `.dockerignore` before you put anything in it |
 
 ## Still open from 1.0.0

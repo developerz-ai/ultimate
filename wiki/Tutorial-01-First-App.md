@@ -184,7 +184,7 @@ bunx x routes
 
 | Finding | Fix that works | Fix that does not |
 |---|---|---|
-| `X_ROUTE_MODE_INVALID` ×2 | set `render: 'ssr'` in the page **and** in its `page.test.ts`, which pins the mode | adding `<Suspense>`: the pinned `solid-js@2.0.0-experimental.16` does not export it from its server build |
+| `X_ROUTE_MODE_INVALID` ×2 | set `render: 'ssr'` in the page **and** in its `page.test.ts`, which pins the mode | adding `<Suspense>`: Solid's throws under this renderer at any version, and async data needs no boundary — `await` it in the component |
 | `X_ROUTE_DUPLICATE` | `mv apps/admin/app/page.tsx apps/admin/app/admin/page.tsx` — the directory is the URL | deleting the site landing page |
 
 After both:

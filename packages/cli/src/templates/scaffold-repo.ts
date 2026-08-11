@@ -53,7 +53,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/query": "^${version}",
     "@ultimat3/render": "^${version}",
     "@ultimat3/ui": "^${version}",
-    "solid-js": "2.0.0-experimental.16"
+    "solid-js": "1.9.14"
   },
   "engines": {
     "bun": ">=1.3.0"

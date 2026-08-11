@@ -25,14 +25,14 @@ Realistically: logical replication decoding, an incremental query matcher, a cha
 
 ## 2. Solid ecosystem thinness
 
-`As of 2026-07`, **Solid 2 is still beta.** There is no mature router with the properties this framework needs, no component library at the level of the React ecosystem's, and far fewer battle-tested integrations. Practical consequence: **you will write your own UI kit and your own router**, and that is framework work, not a weekend.
+`As of 2026-08`, the pin is **Solid `1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, with the DOM half split into a separate `@solidjs/web`). Either way there is no mature router with the properties this framework needs, no component library at the level of the React ecosystem's, and far fewer battle-tested integrations. Practical consequence: **you will write your own UI kit and your own router**, and that is framework work, not a weekend.
 
 | Cost | Reality |
 |---|---|
 | Router | must own render mode, hydration timing, offline strategy, and the route table that generates sitemap/`sw.js`/budgets. A third-party router could not carry those fields anyway — so this cost is partly unavoidable and partly a feature |
 | UI kit | `@ultimat3/ui` needs the boring 30: button, input, select, combobox, dialog, popover, table, toast, tabs, date picker… each with a11y and both themes |
 | Ecosystem gaps | charting, rich text, maps — mostly framework-agnostic libraries wrapped in a thin Solid shell |
-| Beta churn | Solid 2 APIs may move. Pin exactly; treat upgrades as framework work with codemods (`x upgrade`) |
+| Major churn | Solid 2 renamed its prerelease line and moved the DOM renderer to `@solidjs/web`; an exact pin on `2.0.0-experimental.16` still went stale and stranded. Pin exactly **and** stay on the stable line; treat a major as framework work with codemods (`x upgrade`) |
 | Hiring/familiarity | fewer developers know Solid than React. Mitigated by the fact that agents write most of the code and Solid's model is smaller to learn |
 
 Mitigation: budget the UI kit as a milestone deliverable (M10) rather than assuming it appears; keep component count deliberately small and token-driven so it stays maintainable; and accept that "we control the router" is what makes axioms 3 and 6 enforceable at all.

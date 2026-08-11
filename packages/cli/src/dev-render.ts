@@ -109,9 +109,11 @@ async function resultFor(
         lang: LANG,
       });
     case 'stream': {
-      // The shell IS the component: `solid-js@2.0.0-experimental.16` ships no `Suspense` and no
-      // server renderer, so there is nothing yet that can mark a subtree as a hole. Until one
-      // exists the first flush carries the whole body — correct output, no streaming benefit.
+      // The shell IS the component: nothing can yet mark a subtree as a hole. Solid's `Suspense`
+      // is not the missing piece and never will be here — it calls `getContextId()`, which throws
+      // outside a Solid renderer, and this package's JSX factory is inert by design. A hole marker
+      // has to be the framework's own. Until it exists the first flush carries the whole body —
+      // correct output, no streaming benefit.
       const [head, shell] = await Promise.all([headFor(entry, data), routeBody(entry, data)]);
       return streamResult(
         {

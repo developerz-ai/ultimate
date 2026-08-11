@@ -69,9 +69,10 @@ export function ${feature.pascal}List(props: ${feature.pascal}ListProps) {
   return (
     <ul class={styles.list}>
       <For each={props.rows} fallback={<li>{t('app.${feature.kebab}.empty')}</li>}>
-        {/* The item arrives as an accessor: reading it inside the row is what keeps the update
-            surgical instead of re-rendering the list. */}
-        {(row) => <li class={styles.item}>{row().title}</li>}
+        {/* <For> is keyed by value identity, so the item arrives directly and a row is only
+            re-created when its value changes. <Index> is the accessor-shaped one — reach for it
+            when the list is a fixed set of slots whose contents mutate. */}
+        {(row) => <li class={styles.item}>{row.title}</li>}
       </For>
     </ul>
   );
