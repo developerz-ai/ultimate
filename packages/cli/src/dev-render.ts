@@ -43,7 +43,11 @@ const headFor = async (entry: RouteEntry, data: DevRouteData): Promise<string> =
     headFromMeta(await entry.config.meta(data), seoRenderers({ path: new URL(data.url).pathname })),
   );
 
-async function documentFor(entry: RouteEntry, data: DevRouteData): Promise<string> {
+/**
+ * Head + shell for one route render. Exported because the build's prerenderer must emit the same
+ * document `x dev` serves — two document builders is how a page that works in dev ships broken.
+ */
+export async function routeDocument(entry: RouteEntry, data: DevRouteData): Promise<string> {
   return shellFor(await headFor(entry, data));
 }
 
@@ -63,11 +67,11 @@ async function resultFor(
     case 'static': {
       // Not `renderStatic`: that enumerates every prerendered path for the build. A request
       // names exactly one, and it earns the same content-hashed headers.
-      const body = await documentFor(entry, data);
+      const body = await routeDocument(entry, data);
       return { status: 200, headers: staticHeaders(contentHash(body), options.buildId), body };
     }
     case 'isr': {
-      const served = await isr.serve(url.pathname, () => documentFor(entry, data));
+      const served = await isr.serve(url.pathname, () => routeDocument(entry, data));
       return served.result;
     }
     case 'spa':
@@ -90,7 +94,7 @@ async function resultFor(
       );
     }
     default:
-      return renderSsr({ entry, params: data.params, url, ctx }, () => documentFor(entry, data), {
+      return renderSsr({ entry, params: data.params, url, ctx }, () => routeDocument(entry, data), {
         buildId: options.buildId,
       });
   }

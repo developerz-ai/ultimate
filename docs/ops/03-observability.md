@@ -1,0 +1,197 @@
+# Observability
+
+Alert on what a user feels. Page only on what a human must act on **now**. Everything else is a
+dashboard.
+
+## What Ultimate emits today
+
+`As of 2026-08`, verified against this repo — not assumed.
+
+| Signal | State | Consequence |
+|---|---|---|
+| Structured JSON logs, one line per event | **shipped** — [`packages/core/src/logger.ts`](../../packages/core/src/logger.ts) | works today: collect stdout, no app change |
+| `/healthz` and `/readyz`, both returning a JSON body with named checks | **shipped** — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) | works today: probes and blackbox checks |
+| OTel-shaped spans, trace context propagated as `traceparent` | **shipped as a seam** — [`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts) | the default exporter is a no-op; `noopExporter` and `memoryExporter` are the only ones that ship |
+| An OTLP span exporter | **not yet implemented** | to get traces off the box you must implement `SpanExporter` and register it |
+| A `/metrics` endpoint on any role | **not yet implemented** at the time of writing — a metrics seam is landing in `packages/core` | check what your build exposes; the scrape and alert design below holds either way |
+| `x logs` | listed **planned** in `x --help` | — |
+
+**Read this before enabling autoscaling.** [`docker/helm/values.yaml`](../../docker/helm/values.yaml)
+declares per-role HPAs targeting custom pod metrics named `rps`, `connections` and `queue_depth`. A
+`Pods`-type HPA metric needs both an emitter **and** a custom metrics adapter installed in the
+cluster; the chart ships neither. Left enabled with no source, those HPAs sit at `<unknown>` and
+never scale. Either wire both first, or set `roles.<role>.autoscaling.enabled: false` and pin
+`replicas`.
+
+## What you get with zero app changes
+
+Cluster-level exporters see everything that matters for the failure modes that actually happen. None
+of the alerts in the baseline table below need a line of app instrumentation.
+
+| Source | Gives you |
+|---|---|
+| kube-state-metrics | pod waiting reasons, deployment replica counts, node readiness, CronJob success times |
+| node-exporter | node CPU, memory, disk, load |
+| kubelet volume stats | PVC fullness |
+| your ingress controller | request rate and status-code ratios per service |
+| cert-manager | certificate expiry timestamps |
+| a log shipper (DaemonSet) | every pod's stdout, labelled with namespace, pod, container |
+
+Ultimate's logs are already JSON, so the log store parses them into queryable fields without a
+parsing stage.
+
+## Signal paths
+
+| Signal | Path | Retention (real production values) |
+|---|---|---|
+| Metrics | pod → `ServiceMonitor` → Prometheus scrape | 15d, size-capped at 15GiB on a 20Gi volume |
+| Logs | pod stdout → shipper DaemonSet → log store | 30d, in S3-compatible object storage |
+| Traces | app OTLP → collector `:4318` / `:4317` → trace store | 7d, same object store, different prefix |
+| Alerts | Prometheus evaluates a rule → Alertmanager routes → chat/pager | n/a |
+
+Size the metrics volume **above** the retention cap. A busy period fills the disk before the
+time-based GC ever runs; `retentionSize` below the volume size is what stops that.
+
+Two things about OTLP that cost people an afternoon: the endpoint port does not switch the wire
+protocol — most SDKs default to OTLP/HTTP, so `:4317` also needs
+`OTEL_EXPORTER_OTLP_PROTOCOL=grpc` — and in-cluster collector endpoints are plaintext, so gRPC also
+needs the insecure flag.
+
+## Scrape config
+
+Discover `ServiceMonitor` objects cluster-wide rather than by a release label; a monitor that
+silently does not match its operator's selector looks identical to one that works.
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: <app>-web
+  namespace: <app>
+  labels: { app.kubernetes.io/name: <app>, app.kubernetes.io/component: web }
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: <app>, app.kubernetes.io/component: web }
+  endpoints:
+    - port: metrics        # the Service port NAME, never the integer
+      path: /metrics
+```
+
+The Service must carry matching labels and expose the metrics port **by name**. This is inert until
+the framework serves `/metrics`.
+
+## The baseline alert set
+
+Every expression below is running in production. The `for:` durations are the ones that survived
+contact with real deploys — they are not round numbers picked for looks.
+
+| Alert | Expression | For | Severity |
+|---|---|---|---|
+| NodeNotReady | `kube_node_status_condition{condition="Ready",status!="true"} == 1` | 5m | critical |
+| NodeReadinessMetricsMissing | `absent(kube_node_status_condition{condition="Ready"})` | 15m | critical |
+| PodCrashLoopBackOff | `max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]) == 1` | 10m | warning |
+| PodImagePullFailing | `max_over_time(kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff\|ErrImagePull"}[5m]) == 1` | 10m | critical |
+| DeploymentNoAvailableReplicas | `(kube_deployment_status_replicas_available == 0) and (kube_deployment_spec_replicas > 0)` | 10m | critical |
+| PVCFillingUp | `kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15` | 10m | warning |
+| ScrapeTargetDown | `up == 0` | 30m | warning |
+| CertificateExpiringSoon | `cert_expiry_seconds > 0 and cert_expiry_seconds - time() < 7*24*3600` | 1h | warning |
+| Ingress5xxSpike | `sum(rate(<ingress>_requests_total{code=~"5.."}[5m])) / sum(rate(<ingress>_requests_total[5m])) > 0.01` | 5m | warning |
+| BackupCronJobStale | `time() - kube_cronjob_status_last_successful_time{cronjob=~"..."} > 26*3600` | — | warning |
+| BackupCronJobNeverSucceeded | `(kube_cronjob_created{...} < time() - 26*3600) unless on (namespace, cronjob) kube_cronjob_status_last_successful_time{...}` | 1h | critical |
+| AlertsSuppressedTooLong | `max(alertmanager_alerts{state="suppressed"}) > 0` | 2h | critical |
+| AlertmanagerFailedNotifications | `rate(alertmanager_notifications_failed_total[5m]) > 0` | 10m | critical |
+
+### Why each of those is shaped the way it is
+
+Each row below is a rule that used to be simpler and cost an outage.
+
+**Name the thing you actually measure.** "Node down" sourced from `up{job="node-exporter"} == 0`
+proves only *"Prometheus failed to scrape node-exporter"*. A default-deny network policy blocked
+Prometheus egress; no node was ever down, but the alert fired, **could not self-clear**, and its
+cluster-wide inhibition rule silently muted a critical zero-replicas alert for **seven days**. Source
+node readiness from kube-state-metrics, which is scraped over the API server — a genuinely
+independent path. The kubelet's own metrics are not independent: same egress, same policy, same
+blindness.
+
+**Smooth flickering series or the `for` clock never advances.** The kubelet's restart backoff gives a
+crash-looping pod a brief `Running` window every few minutes, and a 30s scrape catches the
+`CrashLoopBackOff` reason only about a tenth of the time. Each missed scrape drops the series and
+**resets the `for` clock from zero**. Observed: a real crashloop, ten replicas, forty-five minutes,
+never fired. `max_over_time(...[5m])` holds the series true across the flicker.
+
+**Then double the `for`.** The `[5m]` smoothing holds the series true for five minutes *past* the last
+bad sample. At `for: 5m` the effective grace collapses to about one scrape interval, which pages on a
+pod that has already been healthy for four minutes. `for: 10m` is what represents five minutes of
+real sustained fault.
+
+**Guard the trivially-true case.** Zero available replicas pages forever on a deployment deliberately
+scaled to zero — hence `and kube_deployment_spec_replicas > 0`. A never-issued certificate exports an
+expiry timestamp of `0`, and `0 - time()` is enormously negative, so it false-fires until it first
+issues — hence `> 0`.
+
+**Aggregate churning labels out of the alert's identity.** If a rule's output labels include something
+that flips during the incident — `health_status` cycling Degraded → Progressing → Degraded on each
+retry — the series *fingerprint* changes, the pending alert resolves, and the `for` clock restarts.
+The alert can run indefinitely on an actively-failing app without ever firing. `max_over_time` does
+not help: it is evaluated per series, so a churned-away series still resets. `max by (name, namespace)`
+collapses the variants into one stable series.
+
+**Add an `absent()` companion to any alert whose source metric can vanish.** If kube-state-metrics
+stops being scraped, the node-readiness series goes absent and the node alert cannot fire *at all* —
+a real outage would page nobody. Make the blind spot explicit and page on it. Rate it `critical`,
+because a broad node-level inhibition would mute it at `warning`.
+
+**`strategy: Recreate` spends your entire noise budget on every deploy.** Recreate terminates all pods
+before starting new ones, so available replicas is zero for the whole rollout and the zero-replicas
+alert goes `pending` on every single deploy. It stays silent only because rollouts finish inside the
+`for` window — an assumption, not a guarantee, and the margin is thinnest exactly where a migration
+runs inside the rollout. Ultimate's chart uses `RollingUpdate` with `maxUnavailable: 0` and runs
+migrations in a pre-deploy hook, so this does not bite it. It will bite anything you set to Recreate.
+
+**Verify every metric name against a live scrape.** A wrong metric name is not an error; it is an
+alert that silently never fires. Internal collector telemetry in particular may or may not carry a
+`_total` suffix depending on a compatibility default, and guessing wrong produces a rule that looks
+correct in review and does nothing forever.
+
+## Alerts about alerting
+
+The failure nobody plans for is the alerting path itself.
+
+| Failure | What it looks like | Countermeasure |
+|---|---|---|
+| The chat relay pod crash-loops | Every webhook delivery fails, silently. Nobody is paged, about anything. | alert on `alertmanager_notifications_failed_total`, and route **that one alert** through an independent delivery path — a native integration rather than the relay |
+| A routing config object references a secret that cannot resolve | The operator validates each config object **as a unit** and drops the **whole object** — every receiver in it — leaving only the null receiver. One placeholder in an unused receiver took the main channel down with it. | give any channel you cannot afford to lose its **own** config object; accept that the shared catch-all also matches and the alert posts twice. A duplicate post is cheaper than a silent drop |
+| An inhibition rule that cannot clear | A broad "while X fires, suppress all warnings" rule becomes a permanent cluster-wide mute when X is stuck. | alert on suppression itself — `alertmanager_alerts{state="suppressed"}` for 2h. Nothing else watches it; delivery monitoring does not see a mute |
+| The whole cluster is down | Nothing in-cluster can page anyone. | an off-cluster dead-man: write a freshness object to shared storage every minute *only while* the alerting brain answers healthy; an off-cluster watcher pages when that object goes stale |
+| A dead-man's-switch job whose designed state is "failing" | Reusing a generic backup-freshness rule for it produced a **critical** page reading "backup has never succeeded" for twelve days while every real backup ran fine. | give it its own rule, its own wording, and a severity that matches the actual risk |
+
+## Backup freshness needs two rules, not one
+
+`kube_cronjob_status_last_successful_time` **does not exist until the first success**. A staleness
+rule built on it is blind to a job that has never succeeded — never fired, or failing since creation.
+The companion rule keys off metric *absence* (`unless on (namespace, cronjob)`) and detects it about
+a day later. Slow, but it is the difference between "we have no backups" being noticed and not.
+
+## Alerts to add once Ultimate emits metrics
+
+Marked **not yet implemented** — these are the app-level signals the role model implies, and they are
+what the chart's HPAs need anyway.
+
+| Role | Alert on | Because |
+|---|---|---|
+| `worker` | oldest unclaimed job age, not queue length | length says nothing about whether anything is draining |
+| `sync` | connections per pod against the per-pod ceiling | a websocket costs memory while idle; request rate is blind to it |
+| `scheduler` | leader lock unheld for longer than one tick interval | a standby that never promotes looks identical to a healthy cluster |
+| `replicator` | replication slot lag, and slot inactive | an inactive slot silently accumulates WAL until the database's disk fills |
+| `web` | `/readyz` check failures by check name | the body already names each check; do not collapse it to a boolean |
+| all | build-ID skew across live pods | a half-finished rollout serving two versions is the shape most version-skew bugs take |
+
+## Routing
+
+| Setting | Value | Why |
+|---|---|---|
+| Group by | `alertname`, `namespace`, `severity` | one crash-looping deployment collapses into one message, not one per pod |
+| Group wait | 30s | let the fan-out arrive before posting |
+| Group interval | 5m | — |
+| Repeat interval | 12h | long enough not to nag, short enough not to be forgotten |
+| The always-firing canary | route to a null receiver | it exists to prove the pipeline, not to notify |

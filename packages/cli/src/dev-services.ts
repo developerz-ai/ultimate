@@ -33,10 +33,15 @@ const nonEmpty = (value: string | undefined): string | undefined =>
  */
 export function resolveServices(root: string, env: Env): DevServices {
   const stateDir = join(root, '.x');
-  mkdirSync(stateDir, { recursive: true });
   const databaseUrl = nonEmpty(env['DATABASE_URL']);
   const natsUrl = nonEmpty(env['NATS_URL']);
   const s3Endpoint = nonEmpty(env['S3_ENDPOINT']);
+  // Created only when something will actually live in it. A container whose bindings are all
+  // external runs non-root over a read-only app directory, and an unconditional mkdir there is an
+  // EACCES at boot for a directory that would have stayed empty.
+  if (databaseUrl === undefined || natsUrl === undefined || s3Endpoint === undefined) {
+    mkdirSync(stateDir, { recursive: true });
+  }
   return {
     stateDir,
     db:

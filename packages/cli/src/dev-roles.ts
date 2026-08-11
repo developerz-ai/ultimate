@@ -49,7 +49,23 @@ export interface StartRolesOptions {
   readonly routes: readonly Route[];
   /** The process environment, for the roles that resolve a driver from it. */
   readonly env: Env;
+  /**
+   * How the web role binds and what it admits about itself. `x dev` keeps the default —
+   * loopback, `dev: true`, so a laptop on a café network is not serving the app to the café. A
+   * container passes `{ dev: false, hostname: '0.0.0.0' }`: a process bound to `localhost` inside
+   * a container is unreachable from the port mapping, the load balancer and every PaaS health
+   * probe, which is the same failure in four costumes.
+   */
+  readonly http?: WebBinding;
 }
+
+export interface WebBinding {
+  readonly dev: boolean;
+  readonly hostname: string;
+}
+
+/** Loopback and dev-mode. What `x dev` means, and what a container must override. */
+export const DEV_BINDING: WebBinding = { dev: true, hostname: 'localhost' };
 
 export interface RunningRoles {
   readonly roles: readonly Role[];
@@ -99,15 +115,16 @@ export function selectRoles(flag: string | undefined): readonly Role[] {
 }
 
 function startWeb(options: StartRolesOptions): ServerHandle {
+  const binding = options.http ?? DEV_BINDING;
   return createServer({
     routes: options.routes,
     role: 'web',
     hooks: devHooks(),
     config: defineHttpConfig({
       port: options.port,
-      dev: true,
+      dev: binding.dev,
       buildId: options.buildId,
-      hostname: 'localhost',
+      hostname: binding.hostname,
     }),
   }).start();
 }

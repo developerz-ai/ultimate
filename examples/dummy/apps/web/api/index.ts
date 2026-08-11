@@ -14,11 +14,10 @@
  * `x.manifest.json` and in every dead-letter trace, a name that appears nowhere in this source.
  *
  * Importing this module IS the boot — the call below runs on import, and nothing else registers
- * anything. The only importer today is the framework's own module scan, which dynamic-imports
- * every file under an app's surface directories; that is what backs `x manifest`, `x routes`,
- * `x dev` and `x verify`. No long-running process imports it, because the entry that would —
- * `apps/web/server.ts`, what `x build --target binary` compiles and what the image starts as
- * `dist/server.js` — has not been written yet.
+ * anything. Its importer is the framework's own module scan, which dynamic-imports every file
+ * under an app's surface directories; that is what backs `x manifest`, `x routes`, `x dev`,
+ * `x verify` and `apps/web/server.ts` — the production entry the image starts, which runs the
+ * same scan rather than keeping a second import list that could disagree with this one.
  */
 
 import { defineApi } from '@ultimat3/action';

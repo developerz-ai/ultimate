@@ -47,7 +47,13 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_MANIFEST_STALE: 'x manifest --json',
   X_BUDGET_UNMEASURED: 'x build --json && x verify --json',
   X_BUILD_FAILED: 'x build --json   # the finding names the failing step',
+  X_BUILD_ENTRY_MISSING:
+    'x new <name> --dry-run --json   # the file list names every entry a build needs',
   X_DEPLOY_FAILED: 'x deploy --json   # the finding carries the command to re-run directly',
+  // The container's own environment, so the answer is the run that sets it — never an `x` command,
+  // which is not what is running when a `ROLE=wroker` pod refuses to boot.
+  X_ROLE_UNKNOWN: 'docker run -e ROLE=web <image>',
+  X_PORT_INVALID: 'docker run -e PORT=3000 <image>',
   X_GENERATE_CONFLICT: 'x g <kind> <name> --force --json',
   X_PORT_IN_USE: 'x dev --port 3001 --json',
   // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),

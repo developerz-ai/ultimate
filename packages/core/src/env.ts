@@ -3,7 +3,7 @@
 // discover six missing variables.
 
 import { EnvMissingError } from './errors';
-import { redactKeys } from './logger';
+import { REDACTED, redactKeys } from './logger';
 import { type Role, resolveRole } from './roles';
 
 export type EnvVarType = 'string' | 'url' | 'number' | 'integer' | 'port' | 'boolean' | 'enum';
@@ -229,6 +229,23 @@ export function defineEnv<const S extends EnvSchema>(schema: S, options?: EnvOpt
   }
 
   return Object.freeze(report.values) as Env<S>;
+}
+
+/**
+ * The resolved values with every `secret: true` key replaced. `checkEnv().values` carries the REAL
+ * values because `defineEnv()` has to return them — so anything that PRINTS a report (`x env check
+ * --json`, a doctor line, a log field) renders this instead, and the masking lives in one place
+ * rather than at each printer.
+ */
+export function maskedEnvValues(
+  schema: EnvSchema,
+  values: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    out[key] = schema[key]?.secret === true && value !== undefined ? REDACTED : value;
+  }
+  return Object.freeze(out);
 }
 
 export interface EnvVarSummary {

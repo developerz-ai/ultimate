@@ -18,7 +18,26 @@ Deliberate cycles (safe — nothing is referenced at module-evaluation time):
 `error-codes.ts`.
 
 `logger.ts` must not import `context.ts`. `context.ts` injects the ids via
-`setLoggerContextFields()`.
+`setLoggerContextFields()`. It **does** import `secret.ts`, one way only: `secret.ts` owns
+`REDACTED` so a `Secret` can render it without importing the logger, and `logger.ts` re-exports
+the constant so there is still one definition and one public path.
+
+| Concept | Owner | Note |
+|---|---|---|
+| which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never declare a second env var for it |
+| what this process does | `roles.ts` (`ROLE`) | |
+| the values | `env.ts` | `checkEnv().values` holds REAL secrets — anything that prints goes through `maskedEnvValues()` |
+| `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
+| loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |
+| a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one way out, on purpose greppable |
+
+Metrics mirror tracing exactly — `metrics.ts` is to `telemetry.ts` what a counter is to a span:
+always on, no-op exporter by default, driver on the wire. `runtime-metrics.ts` is the only place
+that names a series the deploy chart reads (`http_requests_total`, `connections`, `queue_depth`);
+`SCALING_METRICS` keys them by `ScalingSignal` so `roles.ts` and `docker/helm` cannot drift.
+Core declares the instruments and never calls them for another package's events — `http`,
+`jobs` and `realtime` each own one call site (`recordRequest`, `recordQueueDepth`,
+`recordConnection`).
 
 ```bash
 bun test                      # from packages/core

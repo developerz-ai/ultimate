@@ -1,8 +1,10 @@
 // The human-authored half of what `x new` writes: the READMEs, the agent-facing convention files,
-// the bin/ shims and the docker directory. Separated from the config half so neither file has to
-// be scrolled to find the other — one file, one job applies to templates too.
+// the bin/ shims and the optional dev compose. Separated from the config half so neither file has
+// to be scrolled to find the other — one file, one job applies to templates too. The image, its
+// ignore file, the production topology and the deploy page are `scaffold-container.ts`.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { containerFiles } from './scaffold-container';
 
 const agents = (app: NameSet): string => `# AGENTS.md
 
@@ -114,30 +116,6 @@ services:
     ports: ['9000:9000']
 `;
 
-const dockerfile = (
-  app: NameSet,
-): string => `# One image, all roles. ROLE selects behaviour at start; nothing else differs between processes.
-FROM oven/bun:1.3-alpine AS deps
-WORKDIR /src
-COPY package.json bun.lock ./
-COPY apps ./apps
-COPY packages ./packages
-RUN bun install --frozen-lockfile --production
-
-FROM oven/bun:1.3-alpine AS build
-WORKDIR /src
-COPY --from=deps /src/node_modules ./node_modules
-COPY . .
-RUN bunx x build --target binary --out /out/${app.kebab}
-
-FROM gcr.io/distroless/base-debian12 AS runtime
-COPY --from=build /out/${app.kebab} /app/${app.kebab}
-ENV ROLE=web PORT=3000
-EXPOSE 3000
-USER 65532:65532
-ENTRYPOINT ["/app/${app.kebab}"]
-`;
-
 /** Docs, shims and container files for a new app, in the order a reader meets them. */
 export function docsFiles(app: NameSet): readonly GeneratedFile[] {
   return [
@@ -147,8 +125,8 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'bin/setup', contents: binSetup() },
     { path: 'bin/dev', contents: binDev() },
     { path: 'bin/check', contents: binCheck() },
-    { path: 'docker/Dockerfile', contents: dockerfile(app) },
     { path: 'docker/docker-compose.dev.yml', contents: composeDev(app) },
+    ...containerFiles(app),
   ];
 }
 

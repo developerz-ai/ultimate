@@ -74,7 +74,28 @@ export type {
   EnvVarSummary,
   EnvVarType,
 } from './env';
-export { checkEnv, defineEnv, describeEnv } from './env';
+export { checkEnv, defineEnv, describeEnv, maskedEnvValues } from './env';
+export type { EnvExampleOptions, EnvExampleReport } from './env-example';
+export {
+  assertEnvExample,
+  checkEnvExample,
+  ENV_EXAMPLE_PATH,
+  EnvExampleDriftError,
+  envFileCandidates,
+  parseEnvKeys,
+  renderEnvExample,
+} from './env-example';
+export type { Environment, ResolveEnvironmentOptions } from './environment';
+export {
+  DEFAULT_ENVIRONMENT,
+  ENVIRONMENT_KEY,
+  ENVIRONMENTS,
+  EnvironmentInvalidError,
+  isEnvironment,
+  isLocal,
+  isProduction,
+  resolveEnvironment,
+} from './environment';
 export type {
   CoreErrorCode,
   ErrorCodeDeclaration,
@@ -210,6 +231,41 @@ export {
   redactKeys,
   setLoggerContextFields,
 } from './logger';
+export type {
+  Counter,
+  Gauge,
+  GaugeOptions,
+  Histogram,
+  HistogramOptions,
+  HistogramPoint,
+  InstrumentOptions,
+  MemoryMetricExporter,
+  MetricAttributes,
+  MetricAttributeValue,
+  MetricCollection,
+  MetricDescriptor,
+  MetricExporter,
+  MetricKind,
+  MetricPoint,
+  MetricsOptions,
+  ReadableMetric,
+} from './metrics';
+export {
+  collectMetrics,
+  configureMetrics,
+  counter,
+  DEFAULT_HISTOGRAM_BOUNDS,
+  exportMetrics,
+  gauge,
+  histogram,
+  MetricNameInvalidError,
+  MetricValueInvalidError,
+  memoryMetricExporter,
+  noopMetricExporter,
+  resetMetrics,
+  startMetricExport,
+} from './metrics';
+export { METRICS_CONTENT_TYPE, METRICS_PATH, metricsText } from './metrics-text';
 export type { ModuleRegistrar, PrimitiveKind, RegisteredPrimitive } from './registrar';
 export {
   hasPrimitiveRegistrar,
@@ -222,6 +278,27 @@ export type { Err, Ok, Result } from './result';
 export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export type { RequestSample } from './runtime-metrics';
+export {
+  connections,
+  jobs,
+  queueDepth,
+  recordConnection,
+  recordJob,
+  recordQueueDepth,
+  recordRequest,
+  requestDuration,
+  requests,
+  SCALING_METRICS,
+} from './runtime-metrics';
+export type { Secret } from './secret';
+export {
+  isSecret,
+  revealOptionalSecret,
+  revealSecret,
+  SECRET_BRAND,
+  secret,
+} from './secret';
 export type { ServiceFactory } from './service';
 export { defineService, resetServices } from './service';
 export type {
@@ -248,6 +325,7 @@ export {
   noopExporter,
   parseTraceparent,
   resetTelemetry,
+  serviceResource,
   startSpan,
   traceparent,
   withSpan,

@@ -280,6 +280,59 @@ export function AdminHome() {
 }
 `;
 
+// The two entry files a deploy needs. Both are deliberately thin: which role a container is, which
+// port it binds, how it drains and what a static build enumerates are the framework's answers, so
+// an upgrade moves them without a codemod in every app that ever shipped.
+
+const server =
+  (): string => `// The production entry. \`docker/Dockerfile\` starts this, and \`x build --target binary\` compiles it.
+// ROLE selects what this process is — web, sync, worker, scheduler, replicator, or migrate, which
+// applies the migrations and exits. PORT is bound on every interface, because a container bound to
+// localhost is unreachable through its own port mapping.
+
+import { join } from 'node:path';
+import { runRole } from '@ultimat3/cli';
+
+/**
+ * Where the app is. From this file normally — the image's WORKDIR is not the app root's business.
+ * A \`--compile\` binary is the exception: its \`import.meta.dir\` is Bun's virtual filesystem, which
+ * holds this module's bundled imports and none of the app's source, and the framework's registries
+ * are filled by scanning that source at boot. So a binary reads its root from the directory it is
+ * started in — it is a launcher for an app tree, not a self-contained copy of one.
+ */
+const root = import.meta.dir.startsWith('/$bunfs')
+  ? process.cwd()
+  : join(import.meta.dir, '..', '..');
+
+// Guarded, because the framework's module scan imports every file under apps/*/ to fill its
+// registries — an unguarded boot would start a server inside \`x verify\`.
+if (import.meta.main) {
+  await runRole({ root, env: Bun.env });
+}
+`;
+
+const prerender =
+  (): string => `// The static entry. \`x build --target static\` runs this with \`--out <dir>\` and it writes one HTML
+// file per \`render: 'static'\` route — a CDN or an object store then serves site/ with no process
+// behind it. Every other render mode needs a running app and is reported as skipped, never emitted.
+
+import { join } from 'node:path';
+import { prerenderSite } from '@ultimat3/cli';
+
+const root = join(import.meta.dir, '..', '..');
+const flag = Bun.argv.indexOf('--out');
+const out = (flag === -1 ? undefined : Bun.argv[flag + 1]) ?? join(root, '.x', 'static');
+// SITE_ORIGIN is what canonical and og:url are built from; the default is only ever a local build.
+const origin = Bun.env['SITE_ORIGIN'];
+
+if (import.meta.main) {
+  const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });
+  await Bun.stdout.write(
+    \`\${JSON.stringify({ ok: true, out: report.out, pages: report.pages.length, skipped: report.skipped })}\\n\`,
+  );
+}
+`;
+
 const placeholder = (surface: string, app: NameSet): string => `# ${surface}
 
 Placeholder. The monorepo shape exists now so adding ${surface} later is a new directory, not a
@@ -297,6 +350,8 @@ export function appFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: 'apps/web/package.json', contents: webPackage(app) },
     { path: 'apps/web/tsconfig.json', contents: tsconfig() },
+    { path: 'apps/web/server.ts', contents: server() },
+    { path: 'apps/web/prerender.ts', contents: prerender() },
     { path: 'apps/web/site/icon.png', contents: icon() },
     { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
     { path: 'apps/web/site/page.module.scss', contents: siteStyle() },

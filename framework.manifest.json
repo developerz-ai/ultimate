@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6d2a43bf8a7018445b0aacb9a26e9db3171a8b45de3154df1cf22e74bd12fdb0",
+  "buildId": "7cf7acdba448fa65ef18d97339ab0103ea275f289e249f3e370ca8eaf3d782a1",
   "tiers": {
     "0": [
       "core",
@@ -394,6 +394,11 @@
       "at": "packages/cli/src/errors.ts"
     },
     {
+      "code": "X_BUILD_ENTRY_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/errors.ts"
+    },
+    {
       "code": "X_BUILD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/errors.ts"
@@ -574,7 +579,17 @@
       "at": "packages/entity/src/errors.ts"
     },
     {
+      "code": "X_ENV_EXAMPLE_DRIFT",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
       "code": "X_ENV_MISSING",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_ENVIRONMENT_INVALID",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
     },
@@ -894,6 +909,16 @@
       "at": "packages/http/src/errors.ts"
     },
     {
+      "code": "X_METRIC_NAME_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_METRIC_VALUE_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
       "code": "X_MFA_REQUIRED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
@@ -985,6 +1010,11 @@
     },
     {
       "code": "X_PORT_IN_USE",
+      "owner": "cli",
+      "at": "packages/cli/src/errors.ts"
+    },
+    {
+      "code": "X_PORT_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/errors.ts"
     },
@@ -1137,6 +1167,11 @@
       "code": "X_ROLE_INVALID",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_ROLE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/errors.ts"
     },
     {
       "code": "X_ROUTE_CONFLICT",
