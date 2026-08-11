@@ -44,7 +44,8 @@ What `x new` writes, and who owns it afterwards:
 
 | Artifact | Author | Rule |
 |---|---|---|
-| `.env` | generated, **complete and valid** | dev secrets carry a loud `dev-only-` prefix. No `.env.example` to diff |
+| `.env` | generated, **complete and valid** | dev secrets carry a loud `dev-only-` prefix |
+| `.env.example` | generated from `envSchema` | never hand-edited — it is a projection of the declaration, and drift fails `x verify`. Regenerate with `x env example` |
 | `app.config.ts` | yours | the one config file; validated at boot ([Configuration](Configuration)) |
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |

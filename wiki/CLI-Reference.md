@@ -31,7 +31,8 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, studio, branch | shipped |
-| `x verify` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap | shipped |
+| `x verify [--workers N]` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap | shipped |
+| `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -51,7 +52,6 @@ x version              # CLI version
 | `x branch` | copy-on-write branch environments | planned |
 | `x status` | connected-client build-ID distribution, role health | planned |
 | `x upgrade` | move every `@ultimat3/*` in lockstep, with codemods | planned |
-| `x env check` | validate the typed env, `--fix` writes the missing keys | planned |
 | `x logs tail` | structured logs + OTel spans | planned |
 | `x token` | create and grant MCP scopes | planned |
 | `x ai` | eval, cache stats, reindex | planned |
@@ -217,13 +217,19 @@ Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAI
 ## x verify
 
 ```bash
-x verify [--json]
+x verify [--workers N] [--json]
 ```
 
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
 with the framework repo's own `bun run verify` — there is no `--only` and no `--skip`, because
 "green" has to mean the same thing for everyone. A step with nothing to check in this project
 reports as skipped (`-`), never as passed.
+
+`--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` shard across worker
+processes, each with its own database; `live` and `e2e` are serial by declaration and say so in the
+output. The default oversubscribes the cores — `clamp(round(cpus * 1.5), 2, 8)` — because leaving a
+core spare measured *slower than not sharding at all* on a 4-core runner, where sharding's own cost
+is not covered by three workers.
 
 | Step | Checks |
 |---|---|
@@ -595,14 +601,13 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 | `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch <name>` |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
 | `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
-| `x env check [--fix]` | validate the typed env; `--fix` writes the missing keys | `x doctor --json` |
 | `x logs tail` | structured logs and spans, filterable | `x dev` → the `/_x` timeline panel |
 | `x token [create --scopes <s>\|grant <scope>]` | MCP tokens and scopes | `x mcp serve --help` |
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
 | `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x manifest --json` |
 | `x config show` | the resolved configuration, defaults included | `x manifest --json` |
 
-**Call them flagless.** A planned command's spec declares no command-specific flags, so `x env check --fix` and `x money add-currency USD --exponent 2` fail at the *parser* with `X_CLI_BAD_FLAG` — an unknown flag — instead of the honest `X_NOT_IMPLEMENTED`. Only the bare form reaches the real message. [Known gaps](Known-Gaps).
+**Call them flagless.** A planned command's spec declares no command-specific flags, so `x money add-currency USD --exponent 2` and `x upgrade --dry-run` fail at the *parser* with `X_CLI_BAD_FLAG` — an unknown flag — instead of the honest `X_NOT_IMPLEMENTED`. Only the bare form reaches the real message. [Known gaps](Known-Gaps).
 
 ## Names that moved
 
