@@ -30,7 +30,7 @@ reads only the catalog still knows what it is holding.
 |---|---|---|
 | 1. Role | `ultimate_readonly` — `NOLOGIN`, `SELECT` on every table present and future, nothing on sequences; assumed with `SET LOCAL ROLE` inside the transaction, never via a second connection string | `@ultimat3/db` |
 | 2. Transaction | `BEGIN READ ONLY` … `ROLLBACK` on one reserved connection — Postgres refuses the write even if a grant is wrong | `@ultimat3/db` |
-| 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock, no `pg_read_file`-class call — on a form with literals and comments blanked | `readonly-sql.ts` |
+| 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock — clause **or** `pg_advisory_*` call — and no banned function family, matched by prefix so a new spelling is refused by default; on a form with literals and comments blanked | `readonly-sql.ts` |
 | 4. Limits | `SET LOCAL statement_timeout`, a hard 1000-row ceiling (`limit` clamps into it, never past it) and a 256 KiB byte cap | `query-limits.ts` |
 
 The answer carries `guards` — the layers that actually engaged — plus `truncatedBy` and `bytes`.

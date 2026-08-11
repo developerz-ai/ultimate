@@ -64,18 +64,47 @@ const WRITE_KEYWORDS = new Set([
   'vacuum',
 ]);
 
-/** `pg_read_file`-class functions that read outside the database. */
+/**
+ * Function families a read may not call, matched as a PREFIX of a whole token.
+ *
+ * The family is the unit, never the name. Refusing `pg_sleep` while admitting `pg_sleep_for` is a
+ * distinction only this parser draws, and an exact-name list admits by default: every spelling
+ * nobody thought to write down passes. A prefix refuses by default instead, so a member Postgres
+ * adds next release is covered on the day it ships.
+ *
+ * Each family is a ban this file already makes in some other spelling:
+ *  - reach outside the database — the original list (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`);
+ *  - hold a lock, which `FOR UPDATE` is refused for below. The call is the worse of the two: a
+ *    SESSION advisory lock is not released by the `ROLLBACK` layer 2 always runs, so it outlives
+ *    the read on a pooled connection the app's own writers use;
+ *  - mutate the server or the session — `set_config` is `SET` spelled as a call, and `SET` is a
+ *    write keyword above;
+ *  - burn the wall clock — layer 2's `statement_timeout` cannot interrupt embedded PGlite
+ *    (single-threaded WASM), which is the database `x dev` runs, so this ban is the only one
+ *    that holds there.
+ *
+ * A column that shares a prefix is reachable as a quoted identifier (`"lo_rate"`), which is
+ * blanked before any of this runs.
+ */
 const FORBIDDEN_FUNCTIONS = [
-  'pg_read_file',
-  'pg_read_binary_file',
-  'pg_ls_dir',
-  'pg_sleep',
-  'lo_import',
-  'lo_export',
   'dblink',
-  'pg_terminate_backend',
+  'lo_',
+  'pg_advisory_',
   'pg_cancel_backend',
+  'pg_ls_',
+  'pg_read_',
+  'pg_sleep',
+  'pg_stat_file',
+  'pg_stat_reset',
+  'pg_terminate_backend',
+  'pg_try_advisory_',
+  'set_config',
 ];
+
+/** The family refusing `word`, or `undefined`. A prefix, so a new member is refused by default. */
+function forbiddenFamily(word: string): string | undefined {
+  return FORBIDDEN_FUNCTIONS.find((family) => word.startsWith(family));
+}
 
 /**
  * Throw unless `sql` is a single read-only statement. Every check runs on the *stripped* form
@@ -120,6 +149,17 @@ export function assertReadOnlyQuery(sql: string): string {
           'mcp: { expose: true }, and change schema with db.migrate after x db branch <name>',
       );
     }
+    const family = forbiddenFamily(word);
+    if (family !== undefined) {
+      // The cause names what the author wrote AND the family it belongs to: the second half is
+      // the rule, and without it the next spelling looks like a different, arguable refusal.
+      throw rejected(
+        family === word
+          ? `the statement calls ${word}(), which db.query may not call`
+          : `the statement calls ${word}(), one of the ${family}* functions db.query may not call`,
+        'query tables only: no file access, no locks, no session settings, no sleeps',
+      );
+    }
   }
   // `SELECT ... FOR UPDATE` takes row locks — a read that blocks other writers.
   if (/\bfor\s+(update|no\s+key\s+update|share|key\s+share)\b/i.test(statement)) {
@@ -127,14 +167,6 @@ export function assertReadOnlyQuery(sql: string): string {
       'the statement takes row locks (FOR UPDATE/SHARE)',
       'drop the locking clause; db.query may not hold locks',
     );
-  }
-  for (const fn of FORBIDDEN_FUNCTIONS) {
-    if (words.includes(fn)) {
-      throw rejected(
-        `the statement calls ${fn}(), which reaches outside the database`,
-        'query tables only',
-      );
-    }
   }
   return verbatim(sql);
 }

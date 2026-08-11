@@ -22,7 +22,7 @@ The differentiator. Not a chat widget, not an "AI SDK integration" — the frame
 
 Read tools are unrestricted in dev. Write tools (`db.migrate`, `tests.run` with fixtures) are scoped to branch environments. The dev server is never exposed in `ROLE=web`.
 
-`db.query` refuses structurally, before the host sees the string (`X_MCP_QUERY_REJECTED`): a batch, a non-read leading keyword, any statement-level write keyword — a data-modifying CTE included — a locking clause, `EXPLAIN ANALYZE`, or a function that reaches outside the database. Its Postgres role layer is conditional on the connection's own rights, so the answer's `guards` array names the defences that actually engaged.
+`db.query` refuses structurally, before the host sees the string (`X_MCP_QUERY_REJECTED`): a batch, a non-read leading keyword, any statement-level write keyword — a data-modifying CTE included — a locking clause, `EXPLAIN ANALYZE`, or a call from a banned function family — reaching outside the database, taking a lock, changing a session setting or sleeping — matched by prefix, so the family is the unit and a spelling nobody wrote down is refused rather than admitted. Its Postgres role layer is conditional on the connection's own rights, so the answer's `guards` array names the defences that actually engaged.
 
 ## Generated facts, hand-written conventions
 

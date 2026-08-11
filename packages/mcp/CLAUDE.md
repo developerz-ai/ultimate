@@ -83,6 +83,14 @@ import. The CLI wires it.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).
+- Banned SQL functions are matched as a **prefix of a whole token**, so the family is the unit and
+  a spelling nobody wrote down is refused rather than admitted — an exact-name list let
+  `pg_sleep_for` past a ban on `pg_sleep`, and `set_config` past `SET`, which is already a write
+  keyword. Add a family, never a name. Two of the families exist because the same ban is already
+  made elsewhere in another spelling: `pg_advisory_*` is `FOR UPDATE`'s ban and the worse breach
+  (a session lock survives layer 2's `ROLLBACK`, so it outlives the read on a pooled connection —
+  proved live in `packages/testing/src/db-integration.test.ts`), and `pg_sleep*` is the one ban
+  that still holds on embedded PGlite, whose single WASM thread cannot honour a statement timeout.
 - `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
   (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
   `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
