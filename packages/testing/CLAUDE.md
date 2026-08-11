@@ -29,7 +29,7 @@ factories only**, so a test that never destructures `mail` never loads the mail 
 | One write seam | `usePersister` is the only place `create()` writes. A factory that took a repo argument would put the seam at every call site |
 | Factory seeds | derived from the table name unless given, so two entities never draw the same uuid stream. `reset()` cascades into associated parents — a half-reset row is worse than none |
 | Shared examples | `behavesLike` calls `describe`, so it goes at declaration scope; bun rejects a `describe` inside a test body |
-| Parallelism is opt-in | `bun test` is one process on one database. N databases need `bun test --parallel` or `x test --workers N`. Say which one a claim is about |
+| Which command shards | `bun test` is one process on one database, and that is still what a scaffolded app's `test` script runs. `x verify` DOES shard its parallel test steps, over `ULTIMATE_TEST_WORKER` and one database per worker; `live` and `e2e` stay serial because a replication slot is cluster-scoped and `e2e` has one built `dist/`. Say which command a claim is about |
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 

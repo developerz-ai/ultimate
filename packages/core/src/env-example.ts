@@ -64,7 +64,8 @@ export interface EnvExampleOptions {
 /** Deterministic: declaration order in, declaration order out, so a rewrite diffs to nothing. */
 export function renderEnvExample(schema: EnvSchema, options?: EnvExampleOptions): string {
   const lines = [
-    '# Generated from defineEnv() — regenerate with renderEnvExample() from @ultimat3/core.',
+    '# Generated from defineEnv() — regenerate with `x env example`. Never hand-edited: drift',
+    '# fails `x verify`.',
     '# Commit this file. Never commit .env: Bun loads .env, .env.<mode> and .env.local for you.',
   ];
   for (const [key, decl] of Object.entries(schema)) {

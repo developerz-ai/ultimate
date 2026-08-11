@@ -161,11 +161,12 @@ The first worker creates the template under a Postgres advisory lock and migrate
 worker then clones it copy-on-write. With no Postgres configured it falls back to PGlite, so
 `bun test` works on a laptop with nothing installed.
 
-**Parallelism is opt-in, not the default.** `As of 2026-08`:
+**The gate shards; a bare `bun test` does not.** `As of 2026-08`:
 
 | Command | Processes | Worker ids | Databases |
 |---|---|---|---|
-| `bun test` (what a scaffolded app's `test` script runs, and what every `x verify` test step runs) | 1 | `0` | one |
+| `bun test` (what a scaffolded app's `test` script still runs) | 1 | `0` | one |
+| `x verify` (`unit`, `contract`, `job`, `eval`; `live` and `e2e` stay serial) | `clamp(round(cpus * 1.5), 2, 8)` | `0..N-1`, from `ULTIMATE_TEST_WORKER` | N |
 | `bun test --parallel[=N]` | N (default: CPU count) | `1..N`, from Bun's own `BUN_TEST_WORKER_ID` | N |
 | `x test --workers N` | N | `0..N-1`, from `ULTIMATE_TEST_WORKER` | N |
 

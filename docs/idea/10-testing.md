@@ -23,18 +23,29 @@ Which process a test runs in decides which database it gets. `workerId` reads `U
 
 Not shipped, and not implied: per-file truncation, a `readonly` savepoint mode, and a `--keep-db` flag to inspect a failure. A worker's database is cloned fresh and dropped; that is the whole lifecycle today.
 
-### Parallel is opt-in, and not on the default path
+### The gate shards; a scaffolded app still does not
 
 `As of 2026-08`, stated because the paragraph above is easy to read as more than it is:
 
 | Claim | Reality |
 |---|---|
-| `x verify` shards tests | **no.** It runs `bun test` **once per test type**, in one process, against one database — `testStepCommand` in [`packages/cli/src/verify-tests.ts`](../../packages/cli/src/verify-tests.ts) builds `['bun','test',…]` and never invokes `x test` |
-| a scaffolded app tests in parallel | **no.** `x new` writes `"test": "bun test"` ([`templates/scaffold-repo.ts`](../../packages/cli/src/templates/scaffold-repo.ts)) |
-| parallel is faster here | **not measured to be.** `bun test --parallel` implies `--isolate`, which re-runs the preload per file: `examples/dummy` 2.85s → 3.92s, `packages/testing` 0.187s → 0.314s |
+| `x verify` shards tests | **yes**, since the gate was routed through the same shard machinery `x test` uses. `unit`, `contract`, `job` and `eval` run N `bun test` children over an LPT bin-packed split; `--workers N` overrides the default |
+| every step shards | **no.** `live` and `e2e` are serial by declaration (`SERIAL_TYPES`). A logical replication slot is named at the Postgres **cluster** level, not inside a database, so a per-worker database does not isolate it and two workers race `pg_create_logical_replication_slot`. `e2e` runs against one built `dist/` and one browser profile |
+| a scaffolded app tests in parallel | **still no.** `x new` writes `"test": "bun test"` ([`templates/scaffold-repo.ts`](../../packages/cli/src/templates/scaffold-repo.ts)) |
+| parallel is faster here | **measured, and it depends on the machine.** On this 12-core box `unit` went 63s → 24s. On a free 4-core `ubuntu-latest`: serial 43.2s, 3 workers 44.8s, 6 workers 34.8s — which is why the default oversubscribes rather than leaving a core spare |
 | `[test] parallel = N` in `bunfig.toml` turns it on | **no.** The flag is CLI-only; the config key is ignored |
 
-So parallel database cloning is a capability the harness has and the default path does not use. Parallel-by-default is **intent, not shipped** — until it is, a claim about test speed has to say which command it is about.
+**Sharding is not free, and one line of the cost is a bug we are paying to hide.** Each worker
+reloads the framework's module graph, and the shards run with `--isolate` — a fresh module registry
+per *file* — which costs 2.65× on its own (454 files: 49.9s plain, 132.1s isolated).
+
+`--isolate` is there because process-global state leaks between test files. `@ultimat3/policy` keeps
+its declared permission set in a module global and treats an empty set as "allow anything", so the
+first file to call `definePermissions` flips the whole process strict and every later file using an
+undeclared permission fails. Serial passes **by accident of glob order**: `packages/query`'s tests
+free-ride on a permission `packages/cli`'s tests happen to declare first. An 8-way split surfaced
+36 failures from that one cause. Tests that pass by accident are not tests, and the fix is for each
+file to declare and clear its own permissions — not to keep paying `--isolate` to hide it.
 
 Why not the usual approaches:
 
