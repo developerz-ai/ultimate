@@ -194,6 +194,13 @@ process cannot drift apart:
 | `ws-connections` | `connections` | gauge, `+1`/`-1` |
 | `queue-depth` | `queue_depth` | gauge, by `queue` label |
 
+`As of 2026-08` all three are emitted and scraped. One call site per package — `recordRequest`
+from `@ultimat3/http`'s pipeline, `recordConnection` from `@ultimat3/realtime`'s socket table,
+`recordQueueDepth` from `@ultimat3/jobs`' worker loop — and `@ultimat3/cli` serves `metricsText()`
+at `METRICS_PATH` on `METRICS_PORT` (9090), for every role rather than only the ones that open an
+HTTP socket. Labels are route **patterns**, status **classes** and queue names: nothing
+per-user, per-id or attacker-chosen ever becomes a series.
+
 ## One cursor, everywhere
 
 ```ts

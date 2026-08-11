@@ -12,11 +12,12 @@ One choice per layer. No alternatives, no adapters, no `driver:` config for thin
 | Validation | Standard Schema interface; **our dependency-free builtin validators** blessed, exposed as `t` | one schema drives runtime parse + TS type + OpenAPI + MCP tool schema; Standard Schema is the seam, so ArkType/Zod/Valibot swap in behind `configureSchemaProvider()` with a ~40-line adapter you write — none ships |
 | Auth | Better Auth, wrapped, with our `policy` layer on top | sessions/OAuth/passkeys are solved; authorization is ours because it must be identical in HTTP, WS, jobs, and MCP |
 | Frontend | SolidJS 2 + our own minimal router | fine-grained reactivity → streaming shells cost ~0 hydration; the router must own render mode + offline strategy, so it can't be a dependency |
-| Styling | **SCSS modules + design tokens** | build-time only, zero runtime, dark theme is a token flip. No Tailwind, no CSS-in-JS |
+| Styling | **SCSS modules + design tokens**, one brand seam (`defineTheme()`) | build-time only, zero runtime, dark theme is a token flip. `defineTheme()` validates values rather than escaping them — a `;` or a `</style>` is a refusal, not an injection. No Tailwind, no CSS-in-JS |
+| Page structure | `AppShell` / `PageHeader` / `Section` / `Toolbar` from `@ultimat3/ui`, on top of 46 catalogued components | a page an agent assembles from named composites is a page whose skip link, landmarks and heading order are already right |
 | Jobs | Postgres queue default; redis / nats drivers behind one interface | the outbox needs the same transaction as the write — only possible in-DB |
 | Realtime | 3 tiers: channels → live queries → local-first. Own protocol, Zero-shaped mutators | one mutator shape at every rung; see [`03-realtime.md`](./03-realtime.md) |
 | Transport | NATS (or Redis streams) for fanout; sync nodes stateless | no sticky sessions, so `sync` scales on connection count alone |
-| Observability | OpenTelemetry, always on | not a flag. An agent debugging production needs traces that already exist |
+| Observability | the OpenTelemetry **data model**, always on: spans, `traceparent`, counters, gauges, histograms, each behind an exporter seam | not a flag — an agent debugging production needs traces that already exist. `As of 2026-08` the shipped exporters are a no-op and an in-memory one: there is no OTLP exporter, and `/metrics` is a renderer that no role mounts ([`11-topology.md`](./11-topology.md#autoscaling-signals-honestly)) |
 | Money | integer minor units + ISO currency code, `Intl.NumberFormat` at the edge | `Money = { minor: number; currency: string }`. Never a float |
 | Time | store UTC, format with `Intl.DateTimeFormat` + explicit IANA tz | a date formatted without a `timeZone` is a bug waiting for a user in Auckland |
 | i18n | flat key catalog, loud misses (`⟦key⟧`), `Intl` for numbers/dates/money | a missing key must be visible in dev and a `x verify` failure, not silently English |

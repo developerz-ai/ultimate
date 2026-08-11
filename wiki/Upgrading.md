@@ -1,6 +1,6 @@
 # Upgrading
 
-**v1.0.0 `As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
+**v1.1.0 `As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
 ## What semver covers
 
@@ -83,7 +83,7 @@ A client running build `A` requesting an asset from build `B` is the failure mod
 | N-deploy asset retention | old builds' assets stay served for **10 deploys or 7d, whichever is longer** (`pwa.retention` in [Configuration](Configuration)) |
 | `AppUpdateAvailable` signal | a Solid signal flips when the server reports a newer build. Your app renders its own "Update available — reload". No forced navigation, no lost form state |
 | `x deploy --critical` | sets a forced-reload deadline. Client shows a countdown, drains in-flight state through the mutator queue, then reloads. Grace default 30m |
-| Skew is observable | `x status --json` reports the build-ID distribution of connected clients |
+| Skew is observable | the `/_x` live panel reports the build-ID distribution of connected clients. `x status --json` is **planned**, not shipped |
 
 Server behavior on a stale build ID:
 

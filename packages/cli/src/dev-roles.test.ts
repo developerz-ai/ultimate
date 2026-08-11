@@ -3,6 +3,7 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
+import { METRICS_PATH } from '@ultimat3/core';
 import {
   createMemoryDriver,
   createMemoryEventBus,
@@ -115,6 +116,13 @@ describe('unit · x dev --role', () => {
     expect(running.server).toBeNull();
     expect((await running.worker?.stats())?.state).toBe('running');
     expect(running.scheduler).not.toBeNull();
+
+    // …and is still scrapable. `worker` opens no HTTP socket at all, so without the metrics
+    // listener the `queue_depth` HPA in `docker/helm` has nowhere to read from and sits at
+    // `<unknown>` forever — which is what it did.
+    const scrape = await fetch(`${running.metricsUrl}${METRICS_PATH}`);
+    expect(scrape.status).toBe(200);
+    expect(await scrape.text()).toContain('# TYPE queue_depth gauge');
   });
 
   test('the web role serves the routes it was handed, and nothing else starts', async () => {
@@ -167,6 +175,9 @@ describe('unit · x dev --role', () => {
       startRoles({
         roles: selectRoles('web,sync'),
         port: blocker.port - 1,
+        // Explicit, because `port` is not 0 here: the fixed 9090 would make this test fail on
+        // whichever machine already runs a Prometheus, for a reason that is not the one under test.
+        metricsPort: 0,
         buildId: 'test',
         runtime: fakeRuntime(),
         env: {},

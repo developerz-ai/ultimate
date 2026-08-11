@@ -35,9 +35,22 @@ Metrics mirror tracing exactly — `metrics.ts` is to `telemetry.ts` what a coun
 always on, no-op exporter by default, driver on the wire. `runtime-metrics.ts` is the only place
 that names a series the deploy chart reads (`http_requests_total`, `connections`, `queue_depth`);
 `SCALING_METRICS` keys them by `ScalingSignal` so `roles.ts` and `docker/helm` cannot drift.
-Core declares the instruments and never calls them for another package's events — `http`,
-`jobs` and `realtime` each own one call site (`recordRequest`, `recordQueueDepth`,
-`recordConnection`).
+Core declares the instruments and never calls them for another package's events. `As of 2026-08`
+the recorders are wired, and there is exactly one call site per package — a second one anywhere is
+the bug:
+
+| Recorder | The one caller | Why that seam |
+|---|---|---|
+| `recordRequest` | `@ultimat3/http` `pipeline.ts`, the `finally` around `execute` | every request passes it once, error paths included |
+| `recordConnection` | `@ultimat3/realtime` `socket.ts`, `SocketRegistry.add`/`remove` | the only definition of a live connection; close, idle sweep and drain all pass through it, so the gauge cannot leak |
+| `recordQueueDepth` | `@ultimat3/jobs` `worker.ts`, throttled inside `tick()` | the worker is the only process that reads its own queue |
+
+`recordJob` has no caller yet — `jobs_total` is declared and not emitted.
+
+`METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts`, on `METRICS_PORT` (9090) and
+**not** on the role's HTTP port: the chart's ingress routes `/` to `web`, so `/metrics` beside
+`/healthz` would be the app's route patterns and error rates on the internet. Every role opens it,
+including the three that open no other socket — `queue_depth` belongs to one of them.
 
 ```bash
 bun test                      # from packages/core

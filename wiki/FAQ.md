@@ -6,13 +6,13 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**v1.0.0 `As of 2026-08`.** Stable API, semver from here, 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — published to npm in lockstep. That is exactly what 1.0.0 claims — a stable API under semver, not a promise about your infrastructure.
+**v1.1.0 `As of 2026-08`.** Stable API, semver from here, 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — published to npm in lockstep, and 1.1.0 is the first release the workflow published over OIDC trusted publishing. That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 
 What it does **not** claim:
 
 | Not claimed | Detail |
 |---|---|
-| A realtime benchmark | none published. The 50k-socket forced-restart number is still unmeasured, and per-node socket capacity is a target, not a result ([Realtime](Realtime)) |
+| A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
 | The two-platform deploy proof | all three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
 | The v2 set | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
@@ -20,9 +20,9 @@ What it does **not** claim:
 
 All 28 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
 
-### What is left after 1.0.0?
+### What is left after 1.1.0?
 
-Two things, both listed under *Open at 1.0.0* in the roadmap: milestone 11's two-platform deploy proof, and the **50k-socket forced-restart benchmark**. The benchmark belongs to no milestone number — realtime tiers 1–2 shipped in milestone 6 and the number was never measured, so it is named as open rather than marked ✅. Both land when they are measured, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets).
+**One thing: milestone 11's two-platform deploy proof** — the demo app on Compose **and** K8s from one image, with a rolling restart invisible to connected clients. The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, time-to-consistent p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Milestone 11 lands when it is demonstrated, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects 1.1.0 shipped with are listed on [Known gaps](Known-Gaps).
 
 ## The stack
 
@@ -94,7 +94,7 @@ No, by design. Containers only. Edge runtimes, function-per-route, and vendor KV
 
 ### How much infrastructure does a small app need?
 
-One container running `ROLE=all` and one Postgres. Split roles when a signal tells you to: RPS for `web`, connection count for `sync`, queue depth for `worker`. `scheduler` and `replicator` are fixed at one replica — a second is a warm standby, not throughput.
+One container running `ROLE=web` and one Postgres — there is **no** `ROLE=all`, and `x dev` is what co-locates roles locally. Split roles when a signal tells you to: RPS for `web`, connection count for `sync`, queue depth for `worker`. `scheduler` and `replicator` are fixed at one replica — a second is a warm standby, not throughput.
 
 ### Can I use it without the realtime tiers?
 
@@ -104,7 +104,7 @@ Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is v2. What did not ship is the reconnect benchmark — 50k sockets, a forced `sync` restart, measured time-to-consistent and DB load. **That number has never been measured**, which is why the roadmap lists it under *Open at 1.0.0* instead of marking it ✅, and why **topology is not frozen**. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is v2. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, time-to-consistent and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 consistent, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). It was run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -144,7 +144,7 @@ Nothing here is novel in isolation. See [Home](Home) for the full "steal explici
 
 ### Where do I report a bug?
 
-Run `x verify --json` and `x status --json`, attach both, and open an issue. The JSON is the report. Security issues go through [`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md), never a public issue.
+Run `x verify --json` and `x doctor --json`, attach both, and open an issue. The JSON is the report. Security issues go through [`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md), never a public issue.
 
 ### An error code is unclear — where do I look?
 

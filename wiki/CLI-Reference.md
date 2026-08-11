@@ -14,8 +14,12 @@ x version              # CLI version
 | `--json` | every command accepts it and prints a single machine-readable object on stdout. Human output goes to stdout too, but never mixed with JSON |
 | Exit codes | `0` success · `1` the command failed (a typed `X_*` error is printed) · `2` usage error (`X_CLI_BAD_FLAG`, `X_CLI_UNKNOWN_COMMAND`) |
 | Errors | always `code` + `cause` + `fix`. See [Error codes](Error-Codes) |
-| App detection | every command except `new`, `help` and `version` walks up for `app.config.ts` and fails with `X_NOT_IN_APP` if there is none |
+| App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `help`, `version` |
 | Flags | long form only, `--flag value` or `--flag=value`. Booleans negate as `--no-<flag>` |
+| Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command |
+| Subcommands | when a command has them and none is given, **the first is the default**: `x actions` is `x actions list` |
+| Passthrough | a bare `--` sends everything after it to the underlying tool untouched |
+| `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at? }` |
 
 ## Command index
 
@@ -69,10 +73,27 @@ x new <name> [--dir path] [--no-example] [--dry-run] [--force] [--json]
 
 ```bash
 $ x new myapp --dry-run --json
-{"ok":true,"app":"myapp","dir":"/home/me/myapp","files":142,"wrote":false}
+{"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-`bunx create-ultimate myapp` is the same generator without a global install. Errors: `X_GENERATE_CONFLICT` (directory exists), `X_BUN_VERSION`.
+**99 files** with the example slice, **76** with `--no-example`. `--dry-run --json` lists every one, which is also how you check what a build target expects to find.
+
+Deployment artifacts are part of the scaffold — an app is deployable the moment it is generated:
+
+| Path | Why |
+|---|---|
+| `apps/web/server.ts` | the production entry: `runRole({ root, env: Bun.env })`. Also `--target binary`'s entry |
+| `apps/web/prerender.ts` | `--target static`'s entry |
+| `docker/Dockerfile` | `--target docker`'s entry. Defaults `ROLE=web`, `PORT=3000`, health-checks `/readyz` |
+| `docker/Dockerfile.dockerignore` | **this exact name** — not a root `.dockerignore` |
+| `docker/docker-compose.prod.yml` | one service per role: migrate, web, sync, worker, scheduler |
+| `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
+| `docker/README.md` | how the two compose files differ |
+| `bin/setup`, `bin/dev`, `bin/check` | written executable (`0755`) |
+
+There is **no** `docker/helm` in the scaffold, which is why `x deploy --method helm` throws there.
+
+`bunx create-ultimate myapp` is the same generator without a global install. Errors: `X_GENERATE_CONFLICT` (the directory exists — `fix` is the same command with `--force`), `X_CLI_BAD_FLAG` (no name given), `X_BUN_VERSION`.
 
 ## x dev
 
@@ -263,7 +284,21 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
 
-Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. On success, execs exactly one command per target: `docker build -f docker/Dockerfile` for `docker`, `bun build --compile` over `apps/web/server.ts` for `binary`, `apps/web/prerender.ts` for `static`. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND`.
+### Every target has one entry file
+
+`BUILD_ENTRY` is the whole mapping. The entry is checked **before** the verify gate runs and before the builder is spawned, because `bun build`'s own "module not found" names no owner.
+
+| `--target` | Entry file | Command it execs | Output |
+|---|---|---|---|
+| `docker` | `docker/Dockerfile` | `docker build -f <root>/docker/Dockerfile -t <tag> <root>` | one OCI image, `ROLE` selects behaviour |
+| `binary` | `apps/web/server.ts` | `bun build --compile --minify <root>/apps/web/server.ts --outfile <out>` | a single executable |
+| `static` | `apps/web/prerender.ts` | `bun run <root>/apps/web/prerender.ts --out <out>` | prerendered `site/` |
+
+All three are written by `x new`. A missing one is `X_BUILD_ENTRY_MISSING`, whose `fix` names the file and points at a fresh scaffold — the usual cause is an app scaffolded before 1.1.0 wrote `server.ts` and `prerender.ts`, or a deleted `docker/Dockerfile`.
+
+Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_ENTRY_MISSING`, `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND` with `build --target docker` as the suggestion.
+
+> `--target binary` compiles and then **crashes at import** `As of 2026-08` — `FRAMEWORK_VERSION` reads `package.json` at module scope and a single-file executable has none. [Known gaps](Known-Gaps).
 
 ## x deploy
 
@@ -279,11 +314,43 @@ x deploy --image repo/app:tag [--method compose|helm] [--dry-run] [--critical] [
 | `--critical` | boolean | `false` | security deploy: clients are forced to reload after the grace period |
 
 `compose` is five ordered steps against `docker/docker-compose.prod.yml` — `run --rm migrate` to
-completion, then `up -d` for `web`, `sync`, `worker`, `scheduler`. `helm` is one
-`helm upgrade --install app docker/helm --set image=<ref>`; the chart is **committed** at
-`docker/helm`, there is no `--helm` flag and nothing generates it. `--method helm` in an app with
-no `docker/helm` exits `X_NOT_IMPLEMENTED` naming `x deploy --method compose`. Errors:
-`X_DEPLOY_FAILED`, `X_NOT_IMPLEMENTED`, `X_MIGRATE_CONCURRENT`.
+completion, then `up -d` for `web`, `sync`, `worker`, `scheduler`. Steps run sequentially and stop
+at the first non-zero exit; the `fix` is that step's command, so you can rerun it directly for full
+output. `helm` is one `helm upgrade --install app docker/helm --set image=<ref>`; the chart is
+**committed** at `docker/helm` in the framework repo, there is no `--helm` flag and nothing
+generates it. Because `x new` never writes `docker/helm`, `--method helm` in a scaffolded app exits
+`X_NOT_IMPLEMENTED` naming `x deploy --method compose`. Any `--method` value other than the literal
+`helm` is treated as `compose`. `--critical` is carried into `--json` output and nothing else acts
+on it today. Errors: `X_DEPLOY_FAILED`, `X_NOT_IMPLEMENTED`.
+
+`X_MIGRATE_CONCURRENT` is **reserved and never thrown** — `ROLE=migrate` takes no advisory lock, so
+two overlapping deploys both migrate. Serialise them in the pipeline → [Known gaps](Known-Gaps).
+
+## Serving in production — `ROLE` and `PORT`
+
+There is no `x serve` command. A container runs the scaffolded `apps/web/server.ts`, which calls
+`runRole({ root, env: Bun.env })` — the production boot path, with no dev watcher, no `/_x`, and
+`dev: false`. It binds `0.0.0.0`, because a process bound to `localhost` inside a container is
+unreachable from the port mapping, the load balancer and every health probe at once.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `ROLE` | `web` | one of `web`, `sync`, `worker`, `scheduler`, `migrate`, `replicator`. **There is no `all`** |
+| `PORT` | `3000` | empty or whitespace falls back to the default; anything else must be an integer in 0–65535 (`0` is legal — an ephemeral port) |
+
+| Failure | Code | Fix as printed |
+|---|---|---|
+| `ROLE` names something else | `X_ROLE_UNKNOWN` | `docker run -e ROLE=web <image>` |
+| `PORT` is not a TCP port | `X_PORT_INVALID` | `docker run -e PORT=3000 <image>` |
+
+**`ROLE=migrate` is the release phase.** It starts only the db/queue pair, applies the app's
+migrations through the ledger — carrying `APP_VERSION` when set — logs `{ applied, available,
+appVersion }`, and **exits**. It never holds a port and never serves. Every other role loads the
+app's modules (importing them *is* registration), resolves the build id from `BUILD_ID` or the
+manifest, assembles its routes, and holds until SIGTERM → [Deployment](Deployment).
+
+The scaffolded `docker/Dockerfile` defaults `NODE_ENV=production ROLE=web PORT=3000`, exposes 3000,
+and health-checks `/readyz`.
 
 ## x manifest
 
@@ -534,6 +601,8 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
 | `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x manifest --json` |
 | `x config show` | the resolved configuration, defaults included | `x manifest --json` |
+
+**Call them flagless.** A planned command's spec declares no command-specific flags, so `x env check --fix` and `x money add-currency USD --exponent 2` fail at the *parser* with `X_CLI_BAD_FLAG` — an unknown flag — instead of the honest `X_NOT_IMPLEMENTED`. Only the bare form reaches the real message. [Known gaps](Known-Gaps).
 
 ## Names that moved
 

@@ -6,8 +6,7 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 
 ## Docs
 
-- [Site](https://ultimate.developerz.ai/): the pitch, the quickstart, and the guides, at a 0kb JS baseline.
-- [Quickstart](https://ultimate.developerz.ai/quickstart/): zero to a running app, one action, one green `x verify`.
+- [Wiki](https://github.com/developerz-ai/ultimate/wiki): the reference manual and the tutorials — the single public documentation surface. There is no separate marketing site.
 - [README](https://raw.githubusercontent.com/developerz-ai/ultimate/main/README.md): what Ultimate is, in one page.
 - [AGENTS.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/AGENTS.md): short, human-authored conventions an agent cannot infer. Never generated.
 - [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/CLAUDE.md): boundaries, dependencies and commands for agents working in this repo.

@@ -6,6 +6,15 @@
 - [Installation](Installation)
 - [Project layout](Project-Layout)
 
+**Tutorials**
+
+- [1 · First app](Tutorial-01-First-App)
+- [2 · First feature](Tutorial-02-First-Feature)
+- [3 · Auth and admin](Tutorial-03-Auth-And-Admin)
+- [4 · Jobs and realtime](Tutorial-04-Jobs-And-Realtime)
+- [5 · Deploy free](Tutorial-05-Deploy-Free)
+- [6 · Growing up](Tutorial-06-Growing-Up)
+
 **Primitives**
 
 - [The eight primitives](The-Eight-Primitives)
@@ -29,6 +38,7 @@
 
 - [I18n](I18n)
 - [Theming](Theming)
+- [UI components](UI-Components)
 - [Timezones and dates](Timezones-And-Dates)
 - [Money](Money)
 - [Testing](Testing)
@@ -39,7 +49,9 @@
 - [Error codes](Error-Codes)
 - [Configuration](Configuration)
 - [Deployment](Deployment)
+- [Observability](Observability)
 - [Upgrading](Upgrading)
 - [Troubleshooting](Troubleshooting)
+- [Known gaps](Known-Gaps)
 - [FAQ](FAQ)
 - [Contributing](Contributing)

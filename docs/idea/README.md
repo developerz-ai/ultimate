@@ -14,7 +14,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`07-rendering-seo.md`](./07-rendering-seo.md) | Five render modes; `stream` is the app default. SEO is enforced, not documented. |
 | [`08-pwa-offline.md`](./08-pwa-offline.md) | `sw.js` is emitted, never hand-edited. Version skew is what actually breaks PWAs. |
 | [`09-ai-first.md`](./09-ai-first.md) | The differentiator: MCP dev server, generated facts, and apps whose own dashboards expose MCP. |
-| [`10-testing.md`](./10-testing.md) | N workers, N cloned Postgres databases, sealed network. No rollback hacks, no shared-state flakes. |
+| [`10-testing.md`](./10-testing.md) | One cloned Postgres database per worker, sealed network, frozen clock. Parallel is opt-in, and says so. |
 | [`11-topology.md`](./11-topology.md) | One image, six roles, graceful drain that redistributes sockets instead of stampeding. |
 | [`12-build-deploy.md`](./12-build-deploy.md) | `x build --target docker\|binary\|static`. Deploy target = "runs containers". Nothing else. |
 | [`13-dx.md`](./13-dx.md) | First 60 seconds: no Docker, no env scavenger hunt, sub-second HMR that keeps state. |
@@ -32,6 +32,8 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | Judging shippability | `14` → `10` → `12` |
 | Here for the AI story | `09` → `02` → `13` |
 | Operating it | `11` → `12` → `08` |
+| **Deploying and scaling** | `17` → `12` → `11`, then [`docs/ops/`](../ops/README.md) for the runbooks. Start at rung 0: a free PaaS plan, no card |
+| **Building for mobile or desktop** | `16` → `02` → `06`. Design only — no package, no build target, no gate step exists yet |
 
 ## The one-paragraph version
 

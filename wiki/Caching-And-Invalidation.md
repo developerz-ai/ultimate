@@ -2,7 +2,7 @@
 
 Four tiers, one invalidation graph. You declare what a write touches; the framework decides what to evict.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The four tiers
 
@@ -80,6 +80,8 @@ export const publishPost = action({
 | Live queries | the same commit already flows through logical replication | **independent path** — realtime does not depend on cache invalidation |
 
 Fanout is enqueued in the **same transaction** as the write — the transactional outbox from [Jobs and workflows](Jobs-And-Workflows). A rolled-back write never purges; a committed write always does.
+
+> **Tier 3 invalidation needs single-node Redis `As of 2026-08`.** The Lua script `DEL`s keys it never declared in `KEYS`, which single-node Redis tolerates and **Dragonfly and Redis Cluster reject** — a cluster cannot route a key it was not told about. On those, tier-3 invalidation fails and entries live until their TTL. Use single-node Redis, or drop the shared tier → [Known gaps](Known-Gaps).
 
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 

@@ -2,9 +2,11 @@
 
 A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
 
-**v1.0.0 `As of 2026-08`.** 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish at 1.0.0 in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). Milestones 0–10 are ✅; milestone 11 is 🚧, open on its two-platform deploy proof. No benchmark numbers exist yet — the **50k-socket forced-restart number is unmeasured**, so every capacity figure in this wiki is a target, not a result. The marketing site is [ultimate.developerz.ai](https://ultimate.developerz.ai/); this wiki is the deeper reference.
+**v1.1.0 `As of 2026-08`.** 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). 1.1.0 is the **first release published by the workflow**, over OIDC trusted publishing with no `NPM_TOKEN` and provenance attached; 1.0.0 was the manual bootstrap. Milestones 0–10 are ✅; milestone 11 is 🚧, still open on the two-platform deploy proof — 1.1.0 gave a scaffolded app a real deployable artifact, which is progress toward it, not the proof.
 
-Those facts are repeated on several pages because the wiki is plain markdown with no build step. Change them at the source first, then here: [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) owns milestone status, [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) owns the version, and `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts) owns the `x verify` step list.
+The realtime restart number is now **measured and committed** ([`scripts/bench/results/50k-restart.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/50k-restart.json)): 50,000 real WebSocket clients against a **single** `sync` node over `InProcessTransport`, `SIGKILL`ed with no drain — all 50,000 reconnected, 49,981 received a channel patch inside the window, time-to-consistent p50 **54.0s** / p90 **105.5s** / max **145.7s**, and 156,851 connect attempts shed by the `AcceptBudget` before any query path. It is **per-node recovery**: the run never crossed NATS, so it is not a multi-node result and not a throughput figure → [Realtime](Realtime). This wiki is the only public documentation surface; there is no separate site.
+
+Those facts are repeated on several pages because the wiki is plain markdown with no build step. Change them at the source first, then here: [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) owns milestone status, [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) owns the version, `scripts/bench/results/` owns the benchmark, and `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts) owns the `x verify` step list.
 
 ```bash
 bunx create-ultimate myapp && cd myapp && x dev
@@ -15,7 +17,8 @@ bunx create-ultimate myapp && cd myapp && x dev
 | Evaluating it | [Getting started](Getting-Started) → [The eight primitives](The-Eight-Primitives) → [FAQ](FAQ) |
 | Building an app | [Installation](Installation) → [Project layout](Project-Layout) → [Actions](Actions) → [Testing](Testing) |
 | An agent driving the framework | [CLI reference](CLI-Reference) → [Error codes](Error-Codes) → [MCP and AI](MCP-And-AI) |
-| Operating it | [Configuration](Configuration) → [Deployment](Deployment) → [Troubleshooting](Troubleshooting) |
+| Operating it | [Configuration](Configuration) → [Deployment](Deployment) → [Observability](Observability) → [Troubleshooting](Troubleshooting) |
+| Deciding whether to trust it | [Known gaps](Known-Gaps) → [FAQ](FAQ) → [Upgrading](Upgrading) |
 | Contributing | [Contributing](Contributing) → [Project layout](Project-Layout) → [Testing](Testing) |
 
 ## Start
@@ -25,6 +28,19 @@ bunx create-ultimate myapp && cd myapp && x dev
 | [Getting started](Getting-Started) | zero to a running app, one action, one green `x verify` |
 | [Installation](Installation) | prerequisites, `x new`, typed env, editor and MCP client setup |
 | [Project layout](Project-Layout) | the generated monorepo, the four surfaces, feature slices, the hard boundaries |
+
+## Tutorials
+
+Follow in order. Every command and every output was executed against the published 1.1.0 packages, and each page names the gaps it hits and the workaround.
+
+| Page | You end with |
+|---|---|
+| [1 · First app](Tutorial-01-First-App) | a scaffolded app running on `x dev`, green gate, no Docker |
+| [2 · First feature](Tutorial-02-First-Feature) | one `action` projected into five surfaces, with tests |
+| [3 · Auth and admin](Tutorial-03-Auth-And-Admin) | roles, policies and a real login flow |
+| [4 · Jobs and realtime](Tutorial-04-Jobs-And-Realtime) | a durable job, a cron task, a live query |
+| [5 · Deploy free](Tutorial-05-Deploy-Free) | the image running on a free PaaS tier, migrations on release |
+| [6 · Growing up](Tutorial-06-Growing-Up) | the rung you should be on, and the signal to climb |
 
 ## The primitives
 
@@ -54,7 +70,8 @@ bunx create-ultimate myapp && cd myapp && x dev
 | Page | What it covers |
 |---|---|
 | [I18n](I18n) | flat catalogs, loud misses, locale routing, `hreflang` |
-| [Theming](Theming) | semantic tokens as RGB channels, light + dark, no raw hex anywhere |
+| [Theming](Theming) | 24 semantic colour roles as RGB channels, every token scale, `defineTheme()`, what contrast is gated |
+| [UI components](UI-Components) | the four page composites, and the generated 46-component catalog |
 | [Timezones and dates](Timezones-And-Dates) | store UTC, format with an explicit IANA zone, frozen clocks in tests |
 | [Money](Money) | `Money = { minor, currency }`, never a float |
 | [Testing](Testing) | six test types, cloned databases, sealed network, `x verify` |
@@ -66,7 +83,9 @@ bunx create-ultimate myapp && cd myapp && x dev
 | [CLI reference](CLI-Reference) | every `x` command and flag, with `--json` examples |
 | [Error codes](Error-Codes) | every `X_*` code: meaning, cause, exact fix |
 | [Configuration](Configuration) | every `app.config.ts` field and every env var |
-| [Deployment](Deployment) | one image, six roles, drain, compose, Helm, targets |
+| [Deployment](Deployment) | one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, `docs/ops/` |
+| [Observability](Observability) | counters, gauges, histograms, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |
+| [Known gaps](Known-Gaps) | every defect and unfinished seam that shipped in 1.1.0, named |
 | [Upgrading](Upgrading) | `x upgrade`, breaking-change detection, version skew |
 | [Troubleshooting](Troubleshooting) | symptom → cause → fix |
 | [FAQ](FAQ) | why Bun only, why no GraphQL, is it production ready |
@@ -84,4 +103,15 @@ bunx create-ultimate myapp && cd myapp && x dev
 | The static path never pays for the app path | `site/` cannot import `app/`; 0kb JS is structural |
 | Deploy anywhere = containers only | zero platform primitives |
 
-Source docs live in the repo: [the idea](https://github.com/developerz-ai/ultimate/tree/main/docs/idea) (why) and [the architecture](https://github.com/developerz-ai/ultimate/tree/main/docs/architecture) (how). The machine-readable map for agents is [llms.txt](https://github.com/developerz-ai/ultimate/blob/main/llms.txt).
+## Source docs in the repo
+
+| Where | What it is |
+|---|---|
+| [`docs/idea/`](https://github.com/developerz-ai/ultimate/tree/main/docs/idea) | **why** — the design spec |
+| [`docs/architecture/`](https://github.com/developerz-ai/ultimate/tree/main/docs/architecture) | **how** — the internals |
+| [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops) | running an app for real: the PaaS → Compose → Kubernetes ladder, secrets, observability, datastore sizing, disaster recovery, runbooks. **Recommendations only** — the framework depends on none of it |
+| [`docs/idea/16-app-targets.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/16-app-targets.md) | three targets, one backend, two view layers — **design only, not shipped behaviour** |
+| [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md) | why the app code is identical at rung 0 and rung 4 — **design only, not shipped behaviour** |
+| [`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md) | all 46 components with every prop, generated from source and drift-tested |
+| [`framework.manifest.json`](https://github.com/developerz-ai/ultimate/blob/main/framework.manifest.json) | every package, tier, and `X_*` code with its owner — generated |
+| [llms.txt](https://github.com/developerz-ai/ultimate/blob/main/llms.txt) | the machine-readable repo map for agents |

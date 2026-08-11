@@ -2,7 +2,7 @@
 
 One image, N roles. Build once; the `ROLE` env var selects behavior. No role-specific Dockerfile, no per-role dependency set, no drift between what you tested and what runs.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
 
 ```
 docker build -t myapp .          # once
@@ -22,12 +22,14 @@ ROLE=replicator myapp
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
 | `scheduler` | cron dispatch → enqueue only | **fixed 1** | Postgres advisory-lock leader election; a second instance is a warm standby, not a duplicate |
-| `migrate` | run-once, pre-deploy | n/a | refuses to run if another version's migration is in flight (`X_MIGRATE_CONCURRENT`) |
+| `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. `X_MIGRATE_CONCURRENT` is reserved and **not thrown** — no advisory lock is taken, so serialise overlapping deploys yourself ([Known gaps](Known-Gaps)) |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
 - A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
-- `ROLE=all` co-locates every role in one process for dev — role isolation is simulated, not skipped.
+- **There is no `ROLE=all`.** Those six names are the whole set; anything else is `X_ROLE_UNKNOWN` at boot. For dev, `x dev` co-locates `web`, `sync`, `worker` and `scheduler` in one process — role isolation is simulated, not skipped, and `--role` opts the `replicator` in.
+
+`PORT` selects the bind port, default `3000`. Empty or whitespace falls back to the default; anything else must be an integer in 0–65535 or the process refuses with `X_PORT_INVALID` rather than quietly binding 3000 and failing the platform's health probe with nothing in the log that names the cause. The production entry is the scaffolded `apps/web/server.ts` → [CLI reference](CLI-Reference).
 
 ## Health endpoints
 
@@ -86,7 +88,7 @@ Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubsc
 | Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
 | Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter |
 
-Tune with `realtime.drain` in [Configuration](Configuration). Topology is **not frozen** until the reconnect benchmark exists — 50k sockets, forced `sync` restart, measured time-to-consistent and DB load. That number has never been measured; the roadmap lists it under *Open at 1.0.0*, pinned to no milestone ([Realtime](Realtime)).
+Tune with `realtime.drain` in [Configuration](Configuration). The reconnect benchmark that gated topology now exists: 50,000 sockets, a `SIGKILL`ed `sync` node with **no** drain and no `reconnect` frame — all 50,000 reconnected on their own backoff, 49,981 consistent, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path. That is the floor this section's frame is meant to beat, and it was measured on **one** node ([Realtime](Realtime)).
 
 ## `x build`
 
@@ -99,8 +101,8 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 | Target | Output | Use |
 |---|---|---|
 | `docker` | one OCI image, `ROLE` selects behavior | the normal path |
-| `binary` | `dist/myapp` — `bun build --compile`, all roles inside | VMs, systemd, air-gapped, a CLI-shaped product |
-| `static` | `dist/static/` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
+| `binary` | `.x/app` — `bun build --compile`, all roles inside. **Crashes at import `As of 2026-08`** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
+| `static` | `.x/static` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
 
 All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `sw.js`, and `x.manifest.json`.
 
@@ -112,14 +114,14 @@ $ x build --target docker
   ✓ image  myapp:8f2a1c9  118MB      build id 8f2a1c9
 ```
 
-`x build` runs `x verify`'s static checks (typecheck, lint, boundaries, budgets, SEO, manifest freshness). A build that would fail `x verify` does not produce an artifact.
+`x build` runs six of `x verify`'s steps first — `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors` — and produces no artifact if any fail. It also refuses before spawning the builder when the target's entry file is missing (`X_BUILD_ENTRY_MISSING`) → [CLI reference](CLI-Reference).
 
 ## Dev compose
 
 ```yaml
-# docker/compose.dev.yml — only needed for parity checks; `x dev` needs none of this
+# docker/docker-compose.dev.yml — only needed for parity checks; `x dev` needs none of this
 services:
-  app:      { build: ., environment: { ROLE: all }, ports: ['3000:3000'] }
+  app:      { build: ., environment: { ROLE: web }, ports: ['3000:3000'] }
   postgres: { image: postgres:17, ports: ['5432:5432'] }
   nats:     { image: nats:2, command: '-js', ports: ['4222:4222'] }
   minio:    { image: minio/minio, command: 'server /data', ports: ['9000:9000'] }
@@ -154,11 +156,13 @@ services:
 | `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
 
-`x deploy compose` generates and applies this; it is a plain compose file you can read, diff, and run by hand.
+`x deploy --method compose` applies this against the committed `docker/docker-compose.prod.yml`; it is a plain compose file you can read, diff, and run by hand.
+
+> **The shipped file cannot scale `web` past 1.** It declares `ports: ['3000:3000']` **and** `replicas: 3` — two processes cannot bind one host port. Drop `ports:` and put a reverse proxy in front, or set `replicas: 1`. This is the rung-1 ceiling, and climbing off it is what the Helm chart below is for → [Known gaps](Known-Gaps), [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
 
 ## Helm
 
-Generated by `x build --target docker --helm`, one `Deployment` per role.
+Committed at `docker/helm` in the framework repo, one `Deployment` per role. Nothing generates it — there is no `--helm` flag on `x build`.
 
 | Role | HPA metric | Typical range | Notes |
 |---|---|---|---|
@@ -169,12 +173,14 @@ Generated by `x build --target docker --helm`, one `Deployment` per role.
 | `replicator` | none — `replicas: 1` | 1 | `StatefulSet`-shaped for stable identity; owns the slot |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
 
-CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. Both metrics are exported as OTel metrics by the framework, so wiring an HPA is configuration, not instrumentation work.
+CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_depth`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. What the chart still lacks is a way to reach them: no role declares a metrics container port and the chart ships no scrape target, so an HPA needs both added before it reads anything → [Observability](Observability).
+
+The chart is committed at `docker/helm` in the framework repo and **is not part of the scaffold**, which is why `x deploy --method helm` throws `X_NOT_IMPLEMENTED` in a fresh app. Copy it in, or deploy with `--method compose`.
 
 ## Static deploys independently
 
 ```
-x build --target static && x deploy static --to <cdn>
+x build --target static        # dist in .x/static — upload it with your CDN's own tool
 ```
 
 | Property | Consequence |
@@ -208,8 +214,24 @@ x build --target docker
 ROLE=migrate <image>           # pre-deploy, must exit 0
 <roll web + sync>              # drain-aware; clients reconnect with backoff
 x build --target static        # independently, whenever copy changes
-x status --json                # build-ID distribution of connected clients
+x doctor --json                # env, versions, drift, ports
 ```
+
+## Running it for real — `docs/ops/`
+
+The framework depends on none of this; it is the operations manual for the app you deploy with it. **Recommendations, not contracts** — nothing in `packages/` reads a word of it.
+
+| Doc | Answers |
+|---|---|
+| [`docs/ops/README.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/README.md) | the PaaS → Compose → Kubernetes ladder, and which rung you are on |
+| [`docs/ops/01-kubernetes.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md) | the chart, one Deployment per role, probes, PDBs, HPAs |
+| [`docs/ops/02-secrets.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/02-secrets.md) | env or a mounted file, and nothing vendor-shaped |
+| [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md) | what to scrape, what to alert on, what is not implemented yet → [Observability](Observability) |
+| [`docs/ops/04-datastores.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/04-datastores.md) | sizing Postgres, NATS and object storage for a given rung |
+| [`docs/ops/05-disaster-recovery.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/05-disaster-recovery.md) | backups, PITR, restore drills, replication-slot recovery |
+| [`docs/ops/06-runbooks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/06-runbooks.md) | symptom → page → action, per role |
+
+Two design-only companions — **specification, not shipped behaviour**: [`docs/idea/16-app-targets.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/16-app-targets.md) (three targets, one backend, two view layers) and [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md) (why the app code is identical at rung 0 and rung 4).
 
 ## Rollback
 

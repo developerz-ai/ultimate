@@ -2,7 +2,9 @@
 
 **The app code is identical at rung 0 and rung 4.** Climbing is a driver swap, an env var and someone else's infrastructure — never a rewrite. A small idea reaches a big output by changing where the rows and the messages live, not by changing what an `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route` or `task` says.
 
-Each rung below states what you run, what forces the next one, and what the app code change is. Where the invariant does not hold today, it is named as a break, not softened.
+**Rung 0 is free**, not merely cheap: a free or hobby PaaS instance and a free managed Postgres, no credit card, no ops. That is the entry point the whole ladder is arranged around — the framework is the thing that is already ready when the app grows, so growing costs configuration instead of a rewrite ([`00-thesis.md`](./00-thesis.md#pre-mvp-to-planet-scale-without-a-rewrite)).
+
+Each rung below states what you run, what forces the next one, and what the app code change is. The **App code change** column is the claim under test: where the invariant does not hold today, it is named as a break, not softened.
 
 ## What may change on the way up
 
@@ -18,7 +20,7 @@ Each rung below states what you run, what forces the next one, and what the app 
 
 | Rung | You run | Rough footprint `As of 2026-08` | What breaks to force the next rung | App code change |
 |---|---|---|---|---|
-| **0 — PaaS, one process** | Heroku / Render / Fly / Railway: one web service, their managed Postgres | 1 × 512MB–1GB instance + smallest managed PG. Tens of $/mo | you need a second process type — a job that must not run in a request, or a cron | **none** |
+| **0 — PaaS, one process, free tier** | Render / Railway / Fly / Heroku: one web service on a free or hobby plan, their free managed Postgres | 1 × 512MB instance + a free PG. **$0**, rising to tens of $/mo when the free plan's caps bite | the instance sleeps and you need a `scheduler` or `worker` that cannot; or the free Postgres connection cap; or a free database that expires | **none** — but a sleeping instance cannot host every role, see below |
 | **1 — PaaS, roles split, shared cache** | same platform, one service per `ROLE`, managed Postgres, managed Redis-protocol cache | 2–4 small instances + PG + 256MB–1GB cache. Low hundreds of $/mo | >1 `sync` replica needed, or the platform's networking/socket limits bite, or per-service pricing exceeds a box | **none, plus config** — `ROLE` per service, `cache.tiers` gains `shared`, `REDIS_URL` set |
 | **2 — one box, Compose, every role** | a single 6-vCPU / 12-GiB server: Postgres, a Redis-protocol cache, NATS, all six roles | 1 dedicated/VPS host. Tens of $/mo, plus backups | one host is a single point of failure you can no longer accept, or one host cannot hold the load | **none, plus config** — `docker-compose.prod.yml`, `NATS_URL` set |
 | **3 — Kubernetes, replicated roles** | k8s, per-role Deployments + HPAs, NATS JetStream for fanout and presence, a shared cache tier, Postgres with logical replication for the change feed | 3 control + 2–3 workers, one DB-tainted node. Hundreds of $/mo | Postgres write throughput, a region you must serve from, or a zone failure you must survive | **none, plus config** — Helm values, `REPLICATION_*` set, `replicator` role enabled |
@@ -28,38 +30,46 @@ Costs are order-of-magnitude, not quotes. No price in this table is verified aga
 
 ---
 
-## Rung 0 — a PaaS, not a container you operate
+## Rung 0 — a free PaaS plan, not a container you operate
 
-The bottom rung is `git push`. No Kubernetes, no Compose, no ops.
+The bottom rung is `git push` on a plan that costs nothing. No Kubernetes, no Compose, no ops, no card.
 
 | Concern | What the framework already does |
 |---|---|
 | Port | `packages/http/src/config.ts` reads `env('PORT')`, default 3000 — a platform-assigned port works with no change |
 | Health | every role serves `/healthz` and `/readyz` from `packages/http/src/server.ts`; `/readyz` flips to 503 on SIGTERM before the socket closes |
-| Release-phase migrations | `ROLE=migrate` runs to completion and exits; map it to Heroku's release phase or Render's pre-deploy command |
+| Release-phase migrations | `ROLE=migrate` runs to completion and exits ([`packages/cli/src/serve.ts`](../../packages/cli/src/serve.ts)); map it to Heroku's release phase or Render's pre-deploy command |
 | Drain | SIGTERM drain is framework behaviour, not a deployment guide ([`11-topology.md`](./11-topology.md)) |
-| Image | Heroku and Render both accept a `Dockerfile`; `x new` writes one at `docker/Dockerfile` |
-| Secrets | env keys only. `app.config.ts` names `urlEnv`, never a value — one image, every environment |
+| Image | Heroku and Render both accept a `Dockerfile`; `x new` writes one at `docker/Dockerfile`, entrypoint `bun apps/web/server.ts` |
+| Which deploy this is | `resolveEnvironment()` reads `ULTIMATE_ENV` → `development \| test \| staging \| production`, the twin of `ROLE`. One variable, not a second convention per platform |
+| Secrets | env keys only. `app.config.ts` names `urlEnv`, never a value — one image, every environment. A value typed `Secret` redacts itself in `toString`, `toJSON` and the logger at any depth, so a free-tier log drain is not where the DSN leaks |
 
-**Blocked today.** A freshly scaffolded app cannot produce a deployable artifact:
+**Unblocked since 1.1.0.** A scaffolded app now produces a deployable artifact: `x new` writes `apps/web/server.ts` (three lines calling `runRole`), `apps/web/prerender.ts`, `docker/Dockerfile`, its `.dockerignore` and `docker/docker-compose.prod.yml` ([`templates/scaffold-app.ts`](../../packages/cli/src/templates/scaffold-app.ts), [`templates/scaffold-container.ts`](../../packages/cli/src/templates/scaffold-container.ts)), and the Dockerfile has no build stage at all — `x verify` is the gate, so the image never needs the devDependencies its `--production` install leaves out.
 
-- `x build --target binary` compiles `<root>/apps/web/server.ts`; `--target static` runs `<root>/apps/web/prerender.ts` (`binaryArgs` / `staticArgs`, [`packages/cli/src/cmd-build.ts`](../../packages/cli/src/cmd-build.ts)).
-- `x new` writes neither. Enumerating every path `repoFiles` + `appFiles` emit ([`packages/cli/src/cmd-new.ts`](../../packages/cli/src/cmd-new.ts)) yields no `apps/web/server.ts` and no `apps/web/prerender.ts`. `examples/dummy` has neither either.
-- the scaffolded `docker/Dockerfile` runs `bunx x build --target binary`, so `--target docker` fails through the same missing file.
-- that Dockerfile also runs `bun install --frozen-lockfile --production` before `x build`, and `x build` runs `typecheck` and `lint` first — both need `typescript` and `@biomejs/biome`, which the scaffolded `package.json` lists under `devDependencies`.
+`--target docker` and `--target static` work. **`--target binary` still does not**: it compiles, then throws at import because `FRAMEWORK_VERSION` reads `@ultimat3/core`'s `package.json` at module scope and a single-file executable has none. Rung 0 does not need it; the bare-VM row in [`12-build-deploy.md`](./12-build-deploy.md) does.
 
-Fix shape: an app-owned `apps/web/server.ts` (and `prerender.ts`) in the `x new` output, and a build stage that installs dev dependencies. Neither is app code the author writes — it is scaffold output, which is the framework's job.
+### What a free tier actually constrains
 
-**When rung 0 is enough:** almost always, for longer than feels right. One process, one managed Postgres, `cache.tiers: ['memo', 'lru']`, `jobs.driver: 'postgres'`, `realtime.transport: 'memory'` — the `x new` defaults — serve a real product with real users.
+The framework does not hide these, and three of them touch a seam it owns. `As of 2026-08`:
+
+| Free-tier constraint | What it hits | Answer today |
+|---|---|---|
+| **The instance sleeps** when idle and cold-starts on the next request | `web` tolerates it — a cold start is a slow first request. `scheduler` and `worker` **do not**: a cron that fires while the process is asleep does not fire, and a sleeping worker claims nothing | **Stated plainly: a free single-service deploy cannot run the `scheduler` role.** A durable job still runs — the queue is Postgres, so work waits — but it waits until something wakes the instance. Cron on a free tier needs either a paid always-on service or an external pinger, and neither is the framework's to supply ([axiom 7](./00-thesis.md)) |
+| **Low connection cap** on free Postgres, often 20 or fewer | `POOL_PROFILES` defaults `web` to `max: 20` ([`packages/db/src/client.ts`](../../packages/db/src/client.ts)), which alone can consume the whole cap and starve the `migrate` release step | Override the profile at `createPostgresClient({ profile })`. **`app.config.ts`'s `database.poolSize` is validated and never read by the client** — a real instance of [break 4](#where-the-invariant-breaks-today), and it bites hardest exactly here |
+| **Ephemeral filesystem** — the disk is gone on every restart | `@ultimat3/storage`'s `driver-local` writes under a directory; PGlite, if `DATABASE_URL` is unset, does the same | The storage seam is the point: set `S3_ENDPOINT` and `S3_*` for `driver-s3` and nothing in the app changes. Never ship a free tier with the local driver holding user uploads, and always set `DATABASE_URL` |
+| **Memory ceiling**, typically 512MB | one process running every role at once | Rung 0 is one `web` service. Live queries at any size want their own process — that is rung 1, and the reason the ladder exists |
+| **A free database that expires** after a fixed window on some platforms | everything | A migration ledger and `x db` are the same on a paid instance; changing `DATABASE_URL` is the whole migration |
+
+**When rung 0 is enough:** almost always, for longer than feels right. One process, one managed Postgres, `cache.tiers: ['memo', 'lru']`, `jobs.driver: 'postgres'`, `realtime.transport: 'memory'` — the `x new` defaults — serve a real product with real users, and every one of those defaults is what an unset variable already means.
 
 ## Rung 1 — one service per role, one shared cache
 
-Same platform. The change is `ROLE` and two env vars.
+Same platform. The change is `ROLE` and two env vars. This is also the rung a free tier's sleeping instance forces, whether or not traffic did.
 
 | Role | Why it leaves the web service |
 |---|---|
 | `worker` | a job that must survive the request that queued it, and must not compete with it for CPU |
-| `scheduler` | cron dispatch, fixed at one — leader election is an advisory lock, so a second instance is an idle standby |
+| `scheduler` | cron dispatch, fixed at one — leader election is an advisory lock, so a second instance is an idle standby. **Must be always-on**: a plan that sleeps it drops the cron |
 | `migrate` | run-once, before anything serves the new schema |
 
 Add the shared cache tier when there is more than one web replica **and** a measured cross-replica miss. `cache.tiers: ['memo', 'lru', 'shared']` plus `REDIS_URL`. Redis or Valkey today — **not Dragonfly**, whose Lua key-declaration rule breaks tag invalidation ([below](#dragonfly-honestly)).
@@ -72,7 +82,9 @@ Add the shared cache tier when there is more than one web replica **and** a meas
 
 An operator running this stack in production sizes one 6-vCPU / 12-GiB host to hold Postgres (4 GiB request, 6 GiB limit, `shared_buffers` 3 GB, `max_connections` 450), three cache instances and a pooler — `As of 2026-08`. That is the shape of a rung-2 box.
 
-**`x new` does not ship this file.** It writes `docker/Dockerfile` and `docker/docker-compose.dev.yml` only; `docker-compose.prod.yml` and `docker/helm/` live in the framework repo and are copied.
+**`x new` ships this file now** — `docker/docker-compose.prod.yml`, alongside `docker/Dockerfile` and its `.dockerignore`. `docker/helm/` still lives only in the framework repo and must be copied to reach rung 3.
+
+**The compose ceiling is one replica per role**, `As of 2026-08`: both the framework file and the scaffolded one declare a host port **and** `replicas` > 1 on `web`, and two containers cannot bind one host port. Scale a role on this rung by putting a proxy in front, not by raising the number ([`12-build-deploy.md`](./12-build-deploy.md)).
 
 **App code change: none, plus config.**
 
@@ -135,7 +147,10 @@ Every scale component, and exactly what to swap.
 | Mail | `@ultimat3/mail` · `Driver` | `driver-smtp` \| `driver-resend` | — | mail env | shipped |
 | Vector search | `@ultimat3/ai` · `PgVectorStore` | pgvector: `hnsw` on `vector_cosine_ops`, two `gin` indexes, generated `tsvector` | — | `DATABASE_URL` | shipped, Postgres-only — see below |
 | Tracing | `@ultimat3/core` · `SpanExporter`, `configureTelemetry()` | `noopExporter` (default) \| `memoryExporter` | — | — | shipped, **no OTLP exporter** |
-| Metrics | — | — | — | — | **does not exist** |
+| Metrics | `@ultimat3/core` · `Counter`/`Gauge`/`Histogram`, `MetricExporter`, `metricsText()` | no-op exporter by default, memory exporter for tests; Prometheus text with no dependency | — | `METRICS_PORT` (default 9090) | shipped and wired — every role serves `METRICS_PATH`; `http`/`realtime`/`jobs` each hold one call site. The chart still cannot reach it — see below |
+| Secrets in logs | `@ultimat3/core` · `Secret`, `revealSecret()` | redacts by value at any depth, frozen so a spread cannot unwrap it | env declared `secret: true` | — | shipped |
+| Which deploy this is | `@ultimat3/core` · `resolveEnvironment()` | `development \| test \| staging \| production` | — | `ULTIMATE_ENV` | shipped |
+| `.env.example` | `@ultimat3/core` · `renderEnvExample()`, `assertEnvExample()` | projected from the `defineEnv` declaration | — | — | shipped |
 | Admission control | `@ultimat3/realtime` · `AcceptBudget` | token bucket, 500/s default, burst 2000 | — | — | shipped |
 
 Rule that survives every rung: **an unset variable means the embedded default.** No `NATS_URL` means in-process fanout. No `DATABASE_URL` means PGlite. No `REDIS_URL` means the shared tier is absent, not broken.
@@ -146,15 +161,17 @@ Rule that survives every rung: **an unset variable means the embedded default.**
 
 `As of 2026-08`, verified against the code, not the docs.
 
-1. **A scaffolded app has no deployable artifact.** `x build`'s `binary` and `static` targets point at `apps/web/server.ts` and `apps/web/prerender.ts`, which neither `x new` nor `examples/dummy` contains; the scaffolded `docker/Dockerfile` routes `--target docker` through the same missing file. Rung 0 is blocked on scaffold output, not on app code.
-2. **`x new` ships no production topology.** No `docker-compose.prod.yml`, no Helm chart. Both exist in the framework repo and must be copied by hand to climb from rung 1 to rung 2 or 3.
-3. **There are no metrics.** [`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts) is tracing only: spans, `traceparent` propagation across HTTP → job → live query, a no-op exporter and a memory exporter. There is no counter, gauge or histogram API, no OTLP exporter, and no `/metrics` endpoint in any package. Consequences that are live today: `docker/helm/values.yaml` sets `OTEL_EXPORTER_OTLP_ENDPOINT`, which nothing reads; `docker/helm/templates/hpa.yaml` scales on pod metrics named `rps`, `connections` and `queue_depth`, which nothing emits. [`11-topology.md`](./11-topology.md)'s "exported as OTel metrics, wired to per-role HPAs" is intention. Until an exporter and a metric API land, rung 3's autoscaling needs metrics supplied from outside the framework (ingress RPS, an exporter scraping `x jobs` depth), and rung 4's monitoring story is entirely yours.
-4. **Two config values are accepted and ignored.** `realtime.transport: 'redis'` type-checks and validates, and then `selectTransport` builds in-process or NATS — never Redis. `jobs.driver: 'redis' | 'nats'` type-checks, and every method of both drivers throws. Honest stubs beat silent drops, but a config field that cannot take effect is still a config field an agent will set.
+1. **`x build --target binary` produces an artifact that cannot start.** It compiles, then throws at import: `FRAMEWORK_VERSION` reads `@ultimat3/core`'s own `package.json` at module scope ([`packages/core/src/version.ts`](../../packages/core/src/version.ts)) and a single-file executable carries none. The `docker` and `static` targets work, and the scaffold now writes their entry files — this is the one target still broken. (Fixed since the previous revision of this list: a scaffolded app had no deployable artifact at all.)
+2. **The compose topology is capped at one replica per role.** `docker-compose.prod.yml`, framework and scaffolded alike, declares a host port together with `replicas` > 1 on `web`. The second container cannot bind the port. The Helm chart is still not emitted by `x new` either, so climbing from rung 2 to rung 3 means copying `docker/helm/` by hand.
+3. **Metrics are wired; the chart still cannot scrape them.** [`packages/core/src/metrics.ts`](../../packages/core/src/metrics.ts) ships counters, gauges, histograms, a `MetricExporter` seam and a Prometheus-text renderer, [`runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts) declares the chart's three series keyed by `ScalingSignal`, and `As of 2026-08` the call sites exist: `pipeline.ts` counts every request in a `finally`, `SocketRegistry.add`/`remove` moves the connection gauge, `worker.ts` publishes queue depth every 15s. Every role serves `METRICS_PATH` on `METRICS_PORT` (default 9090) — a separate port, because the Helm ingress routes `/` with no path exclusion and metrics on the app port would be public. **What is still missing is on the chart side**: no role in `values.yaml` declares a metrics container port, `_helpers.tpl` emits one only inside `{{ if $cfg.port }}` (so `worker`, `scheduler` and `replicator` get none), and nothing ships a scrape target. So `hpa.yaml` still reads `<unknown>` until an operator adds those three. `OTEL_EXPORTER_OTLP_ENDPOINT` remains read by nothing — no OTLP exporter ships, by design; the seam is there and the driver is yours. Tracing is one step behind: spans and `traceparent` propagate with nowhere to send them ([`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts), [`docs/ops/03-observability.md`](../ops/03-observability.md)).
+4. **Three config values are accepted and ignored.** `realtime.transport: 'redis'` type-checks and validates, and then `selectTransport` builds in-process or NATS — never Redis. `jobs.driver: 'redis' | 'nats'` type-checks, and every method of both drivers throws. `database.poolSize` is validated at boot and never read: the pool comes from `POOL_PROFILES[role]`, so the one knob a free-tier connection cap needs is the one that does nothing. Honest stubs beat silent drops, but a config field that cannot take effect is still a config field an agent will set.
 5. **The runtime switch is env, not `app.config.ts`.** Nothing at boot reads `config.realtime.transport`; `selectTransport(env)` reads `NATS_URL` and `selectChangeFeed(env)` reads `DATABASE_URL`/`REPLICATION_URL`. This is correct for one-image-everywhere, and it means the ladder is climbed with env vars while the config field documents intent.
 6. **Assembling the cache stack is app-side.** `createRedisTier` is real and complete; no framework code reads `config.cache.driver` and builds the stack for you.
 7. **A transaction-pooling proxy in front of Postgres breaks three things.** Session-level advisory locks are the migration lock, the scheduler leader and the replicator singleton — all three assume one session holds the lock for its lifetime. An operator running this stack records the second half too: transaction pooling breaks server-side prepared statements (`SQLSTATE 26000`), and clients that cannot disable them connect direct. Route every role to the primary directly, or to a session-pooling mode.
 
-None of the seven is app code. That is the point — and also why they are worth fixing, because every one of them is a rung the framework should have paid for on the author's behalf.
+8. **The shared cache tier's invalidation is Redis/Valkey-only.** `invalidateTags`' one `EVAL` deletes value keys it never declares in `KEYS`, which Dragonfly refuses outright and Redis Cluster cannot slot ([`05-caching.md`](./05-caching.md#tier-3-runs-on-redis-or-valkey-and-nothing-else-today)). Rung 1's "add a shared cache" is therefore "add Redis or Valkey", not "add a Redis-protocol cache".
+
+None of the eight is app code. That is the point — the **App code change: none** in every rung above survives all eight — and also why they are worth fixing, because every one of them is a rung the framework should have paid for on the author's behalf.
 
 ---
 
@@ -301,6 +318,7 @@ The most valuable advice on this page.
 
 | Do not climb to | Until |
 |---|---|
+| a paid plan at all (off rung 0) | the free instance's sleep costs you a cron you need, or a cold start your users notice, or the free Postgres refuses a connection. Free is a real rung, not a demo |
 | a second process type (rung 1) | you have a job that must outlive its request, or a cron. Not before |
 | a shared cache tier (rung 1) | you run more than one web replica **and** have measured a cross-replica miss that costs you. `memo` + `lru` serve most read-heavy apps from one process |
 | your own box (rung 2) | the PaaS bill exceeds a server plus the hours to run it, or a platform limit actually blocks you |
@@ -327,10 +345,14 @@ Two rules underneath all of them:
 | NATS fanout and JetStream KV presence | **true** — `packages/realtime/src/nats-transport.ts`, selected by `NATS_URL` |
 | Postgres logical replication change feed, `pgoutput`, own wire client | **true** — `packages/realtime/src/pg-replication.ts` |
 | 50k sockets, forced restart, p50 54.0s to consistent | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json` |
-| Compose prod topology and a Helm chart with per-role HPAs | **true in the framework repo**, not emitted by `x new` |
+| Compose prod topology | **true, and emitted by `x new`** — capped at one replica per role while it declares a host port |
+| A Helm chart with per-role HPAs | **true in the framework repo**, not emitted by `x new` |
 | tracing with `traceparent` across HTTP → job → live query | **true**, with a no-op exporter and no OTLP exporter |
-| metrics, `/metrics`, HPA signals emitted by the app | **does not exist** |
-| `x build --target binary\|static\|docker` producing an artifact from `x new` output | **broken** — the entry files are not scaffolded |
+| a metric API, a `MetricExporter` seam, Prometheus text | **true** — `packages/core/src/metrics.ts`, new in 1.1.0 |
+| `/metrics` served, and HPA signals emitted by the app | shipped — every role on `METRICS_PORT`, three call sites. The chart cannot reach it yet: no metrics container port, no scrape target |
+| `x build --target docker\|static` producing an artifact from `x new` output | **true** — the scaffold writes `apps/web/server.ts` and `prerender.ts` |
+| `x build --target binary` producing a runnable artifact | **broken** — compiles, throws at import on `FRAMEWORK_VERSION` |
+| a value that must not be printed staying out of the log | **true** — `Secret` redacts by value, at any depth |
 | the demo app on Compose **and** Kubernetes from one image, rolling restart invisible | **open** — roadmap milestone 11 ([`14-roadmap.md`](./14-roadmap.md)) |
 | YugabyteDB as a target | **untested, with four known blockers** — advisory locks below v2025.1, `USING gin`, replica identity `CHANGE`, non-transactional DDL |
 | Redis / Valkey as the shared tier | **true** — five core commands and one declared-keys `EVAL` |

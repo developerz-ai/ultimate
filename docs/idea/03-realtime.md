@@ -95,7 +95,7 @@ Mitigation, in order:
 
 | # | Mitigation | Detail |
 |---|---|---|
-| 1 | **Prototype before locking topology** | done `As of 2026-08`: 50k sockets, forced `sync` restart, time-to-consistent p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([`14-roadmap.md`](./14-roadmap.md), [`scripts/bench/restart-bench.ts`](../../scripts/bench/restart-bench.ts)). Recovery is bounded by the `AcceptBudget`, not the matcher, so the topology below is frozen on a measured number |
+| 1 | **Prototype before locking topology** | done `As of 2026-08`, on **one node over `InProcessTransport`**: 50k sockets, forced `sync` restart, all 50,000 reconnected, 49,981 of them consistent inside the window at p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([`14-roadmap.md`](./14-roadmap.md), [`scripts/bench/restart-bench.ts`](../../scripts/bench/restart-bench.ts)). Recovery is bounded by the `AcceptBudget`, not the matcher, so the topology below is frozen on a measured number — a **per-node** one. NATS fanout was not in the path |
 | 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
 | 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding ([`11-topology.md`](./11-topology.md)) |

@@ -103,9 +103,11 @@ Result: a rolling restart is invisible to users and produces a wide, flat load c
 | Backpressure exposed | a slow client is detectable and sheddable rather than an unbounded queue |
 | Zero-copy message paths | broadcast cost scales with payload, not with JS object churn |
 
-Practical consequence: **hundreds of thousands of concurrent live-query subscribers per node is a plausible target rather than an aspiration**, and "realtime by default" stops being a hosting-cost argument. A commodity node holding 100k+ sockets changes the shape of the whole product — tier 2 realtime can be on for every app because it is not the line item that decides your infra bill.
+Measured, not assumed, `As of 2026-08`: **50,000 sockets on one `sync` node, survived a `SIGKILL` restart** — all 50,000 reconnected, 49,981 of them consistent inside the window, p50 54.0s / p90 105.5s, and 156,851 connect attempts shed by the `AcceptBudget` before reaching any query path ([`14-roadmap.md`](./14-roadmap.md#closed-the-50k-socket-forced-restart-benchmark)). That run was one node over `InProcessTransport`; NATS fanout was not in the path.
 
-Caveats, stated: this is per-node capacity, not free. Live-query *matching* and fanout still cost CPU on the `replicator`, and memory per subscriber grows with subscribed-result size. `As of 2026-07`, long-running Bun processes are less battle-proven than Node's — memory profiling under sustained socket load is explicit roadmap work ([`15-risks.md`](./15-risks.md)).
+**Hundreds of thousands of concurrent subscribers per node remains a target**, not a result — 50k is the number this repo can show. What the measurement does settle is the shape of the cost: recovery is bounded by admission control, not by the matcher, so "realtime by default" is not the line item that decides your infra bill.
+
+Caveats, stated: this is per-node capacity, not free. Live-query *matching* and fanout still cost CPU on the `replicator`, and memory per subscriber grows with subscribed-result size. `As of 2026-08`, long-running Bun processes are less battle-proven than Node's, and sustained-load memory profiling over hours — as opposed to one restart benchmark — has still not been done ([`15-risks.md`](./15-risks.md)).
 
 ## Deployment shape
 
@@ -115,5 +117,21 @@ Caveats, stated: this is per-node capacity, not free. Live-query *matching* and 
 | Config | env only, validated against a typed schema at boot — a missing key fails in ~40ms |
 | Secrets | env or mounted file; the framework never talks to a vendor secret API |
 | Migration | `ROLE=migrate` as a pre-deploy hook, must exit 0 before new `web`/`sync` start |
-| Autoscaling signals | RPS (`web`), connection count (`sync`), queue depth (`worker`) — exported as OTel metrics, wired to per-role HPAs |
+| Autoscaling signals | RPS (`web`), connection count (`sync`), queue depth (`worker`) — **partly wired**, see below |
 | Platform primitives | none. Containers only ([axiom 7](./00-thesis.md)) |
+
+### Autoscaling signals, honestly
+
+`As of 2026-08`, the three signals above are **named but not emitted end to end**:
+
+| Piece | State |
+|---|---|
+| A metric API — counter, gauge, histogram on the OTel data model, a `MetricExporter` seam, and a Prometheus-text renderer | shipped — [`packages/core/src/metrics.ts`](../../packages/core/src/metrics.ts), [`metrics-text.ts`](../../packages/core/src/metrics-text.ts) |
+| The three series the chart scales on, declared once so `roles.ts` and `docker/helm` cannot drift | shipped — `SCALING_METRICS` in [`packages/core/src/runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts): `http_requests_total`, `connections`, `queue_depth` |
+| `recordRequest` / `recordConnection` / `recordQueueDepth` called from `http`, `realtime`, `jobs` | shipped — one call site each: `pipeline.ts`'s `finally`, `SocketRegistry.add`/`remove`, `worker.ts`'s `tick()`. `recordJob` is still uncalled |
+| `METRICS_PATH` served by any role | shipped — every role, on `METRICS_PORT` (default 9090), not the role's HTTP port: the Helm ingress routes `/` with no path exclusion, so a metrics endpoint on 3000 would be public |
+| A custom-metrics adapter in the cluster | never the framework's, and the chart does not ship one |
+
+Until the call sites and the route land, [`docker/helm/templates/hpa.yaml`](../../docker/helm/templates/hpa.yaml)'s `rps`, `connections` and `queue_depth` have no emitter, and an HPA pointed at an absent `Pods` metric sits at `<unknown>` and never scales. Before 1.1.0 there was no metric API at all — the seam is the new part, not the wiring. Turn the HPAs off and pin `replicas`, or supply the signals from outside the app; [`docs/ops/03-observability.md`](../ops/03-observability.md) is the operational half, and this doc does not repeat it.
+
+Running an Ultimate app for real — Kubernetes, secrets, datastore sizing, disaster recovery, runbooks — is [`docs/ops/`](../ops/README.md). Recommendations, not framework dependencies.

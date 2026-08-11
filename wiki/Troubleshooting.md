@@ -11,8 +11,9 @@ Run these first, in this order. All support `--json`.
 | `x doctor --json` | Bun version, env schema, DB/transport/storage reachability, port conflicts |
 | `x verify --json` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
 | `x errors explain <CODE> --json` | cause, fix command, docs URL for any `X_*` code |
-| `x status --json` | roles up, build IDs, client build-ID distribution, queue depth, socket counts |
-| `x logs tail --json` | structured logs + OTel spans, filterable by role, trace, or code |
+| `x doctor --json` | environment, versions, drift, ports, PWA prerequisites — each with a fix |
+| `x dev` then `/_x` | the live panels: routes, timeline, jobs, db, mail, cache, policy, manifest |
+| `x status --json` · `x logs tail --json` | **planned**, not shipped — both throw `X_NOT_IMPLEMENTED` naming the two rows above ([CLI reference](CLI-Reference)) |
 
 The `--json` form is the same content as the terminal form. Paste the JSON into a bug report; do not paraphrase the terminal.
 
@@ -35,7 +36,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | `X_MIGRATE_CONCURRENT` | another version's `ROLE=migrate` holds the advisory lock | wait for it to exit 0; never run two deploys' migrations at once |
 | `ROLE=migrate` exits non-zero, deploy blocked | migration failure — correct, the roll is supposed to stop | read the SQL error, fix the migration, re-run. Do not start `web` on the old schema |
 | `X_TIMEOUT` on one query | past `db.statementTimeout` (default `'10s'`) | add the index the plan wants, or narrow the query. Raising the timeout hides it |
-| Connection exhaustion under load | `db.pool` × replicas × roles exceeds Postgres `max_connections` | lower `db.pool`, or a pooler in front. `x status --json` reports per-role pool use |
+| Connection exhaustion under load | `db.pool` × replicas × roles exceeds Postgres `max_connections` | lower `db.pool`, or a pooler in front |
 | Every test suddenly slow | the template DB is being rebuilt per worker | `x test --json` reports template build time; check migrations that are not idempotent |
 
 ## Import boundaries
@@ -76,7 +77,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | Job in dead-letter | `retry.attempts` exhausted | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` — it replays from the failed step |
 | Nothing is processing | no `worker` for that queue name | check `WORKER_QUEUES` against `jobs.queues` |
 | A job ran but the row it needs doesn't exist | enqueued outside the transaction | enqueue via `<job>.enqueue` inside the action's `handle`; `X_OUTBOX_NO_TX` catches the rest |
-| Cron never fires | no `scheduler`, or the standby is holding | `scheduler` is fixed at 1 active; a standby reports not-ready by design. `x status --json` |
+| Cron never fires | no `scheduler`, or the standby is holding | `scheduler` is fixed at 1 active; a standby reports not-ready by design — check `/readyz` |
 
 ## Realtime
 
@@ -107,7 +108,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_SW_UNCACHEABLE` | `offline: 'precache'` on an `ssr` route | caching a per-request render is a correctness bug. Use `runtime` or `network-only` |
 | Precache budget failure | too many `precache` routes or oversized assets | `x build --json` reports the set; drop routes to `runtime` |
 | Offline shows the browser dinosaur | `pwa.offline.fallback` missing — normally a compile error | add `offline: { fallback: '/offline' }` |
-| Preview build poisoned a cache | impossible via the framework — build ID scopes the SW cache namespace and scope | confirm the branch build ID in `x status --json` |
+| Preview build poisoned a cache | impossible via the framework — build ID scopes the SW cache namespace and scope | confirm the branch build ID in `x manifest --json` |
 
 ## Tests
 
@@ -141,7 +142,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 ```
 x verify --json > verify.json
-x status --json > status.json
+x doctor --json > doctor.json
 ```
 
 Open an issue with both files attached, plus your Bun version, your `@ultimat3/*` pin, and the `x errors explain <CODE> --json` output for any code you hit. Security issues go through [`SECURITY.md`](https://github.com/developerz-ai/ultimate/blob/main/SECURITY.md), never a public issue.

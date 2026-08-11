@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test';
-import { CONTAINER_BINDING, DEFAULT_PORT, portFromEnv, roleFromEnv, runRole } from './serve';
+import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
+import {
+  CONTAINER_BINDING,
+  DEFAULT_PORT,
+  metricsPortFromEnv,
+  portFromEnv,
+  roleFromEnv,
+  runRole,
+} from './serve';
 import type { ThrownShape } from './thrown-by';
 import { thrownBy } from './thrown-by';
 
@@ -34,6 +42,19 @@ test('a PORT that is not a port fails the boot instead of silently becoming 3000
     expect(thrown.code).toBe('X_PORT_INVALID');
     expect(thrown.cause).toContain(value);
   }
+});
+
+test('METRICS_PORT is its own knob, so moving the app port does not move the scrape', () => {
+  expect(metricsPortFromEnv({})).toBe(DEFAULT_METRICS_PORT);
+  expect(metricsPortFromEnv({ PORT: '8080' })).toBe(DEFAULT_METRICS_PORT);
+  expect(metricsPortFromEnv({ METRICS_PORT: '9464' })).toBe(9464);
+});
+
+test('a METRICS_PORT that is not a port names ITSELF, or the fix line edits the wrong var', () => {
+  const thrown: ThrownShape = thrownBy(() => metricsPortFromEnv({ METRICS_PORT: 'auto' }));
+  expect(thrown.code).toBe('X_PORT_INVALID');
+  expect(thrown.cause).toContain('METRICS_PORT="auto"');
+  expect(thrown.fix).toContain('METRICS_PORT=9090');
 });
 
 test('a container binds every interface, and dev does not', () => {

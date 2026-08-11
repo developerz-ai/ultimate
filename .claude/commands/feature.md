@@ -105,7 +105,7 @@ There is no `test:changed`-style command here, and there should not be: a comman
 
    Then `claudetm merge-pr <pr>` — it waits for CI, fixes failures, addresses review comments (CodeRabbit included) and merges when green. It operates on the **current directory**, so at most one PR is in flight: parallel *building* is fine, parallel *merging* is not. **When every check already passes, prefer `gh pr merge --squash`** — `claudetm` can hang on an already-green PR. Gotcha: **0 registered checks reads as "pass"** — wait until the count is plausible *and* nothing is pending, or you merge RED right after a rebase.
 
-10. **Release + close.** Nothing deploys — this is a framework. `pages.yml` republishes `site/` and `wiki.yml` syncs `wiki/` on merge, so confirm those ran if you touched them. An npm release is deliberate and only when asked or when the change is user-facing and complete: publishing goes through **OIDC trusted publishing**, no `NPM_TOKEN` — follow [`PUBLISHING.md`](../../PUBLISHING.md), then confirm the published version matches. Otherwise say so and stop at merged. Verify each `Fixes #NNN` actually closed, and close any straggler with a link to the merged PR.
+10. **Release + close.** Nothing deploys — this is a framework. `wiki.yml` syncs `wiki/` on merge, so confirm it ran if you touched the wiki. An npm release is deliberate and only when asked or when the change is user-facing and complete: publishing goes through **OIDC trusted publishing**, no `NPM_TOKEN` — follow [`PUBLISHING.md`](../../PUBLISHING.md), then confirm the published version matches. Otherwise say so and stop at merged. Verify each `Fixes #NNN` actually closed, and close any straggler with a link to the merged PR.
 
 ## Hard rules (from CLAUDE.md — non-negotiable)
 

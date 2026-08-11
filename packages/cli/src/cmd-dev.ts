@@ -8,7 +8,7 @@ import { watch } from 'node:fs';
 import { join } from 'node:path';
 import { listActions, toRoute } from '@ultimat3/action';
 import type { Role } from '@ultimat3/core';
-import { configureTelemetry, noopExporter } from '@ultimat3/core';
+import { configureTelemetry, METRICS_PATH, noopExporter } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
@@ -249,6 +249,9 @@ export const devCommand: CliCommand = {
         url: server.url,
         roles: [...server.roles],
         sync: server.running.syncUrl,
+        // The scrape target, on its own port for every role: what an operator points a Prometheus
+        // at, and the one url here that must NOT be behind the ingress the app's own url is.
+        metrics: `${server.running.metricsUrl}${METRICS_PATH}`,
         stateDir: server.services.stateDir,
         db: server.services.db.url,
         events: server.services.events.url,

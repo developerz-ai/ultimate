@@ -2,7 +2,7 @@
 
 A `query` is a read. `live: true` makes it subscribable. Never writes, never enqueues, never sends mail.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship in v1; `persist: true` (tier 3, local-first) lands in v2.
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship in v1; `persist: true` (tier 3, local-first) lands in v2.
 
 ## The canonical shape
 

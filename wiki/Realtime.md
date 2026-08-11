@@ -2,7 +2,7 @@
 
 Three tiers, one ladder. Same mutator shape at every rung — climbing is a config change, never a rewrite.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship in v1. Tier 3 (local-first) ships in v2.
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship in v1. Tier 3 (local-first) ships in v2.
 
 ## The ladder
 
@@ -129,14 +129,43 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 
 | # | Mitigation | Detail |
 |---|---|---|
-| 1 | **Prototype before locking topology** | the reconnect benchmark: 50k sockets, forced `sync` restart, measure time-to-consistent and DB load. **That number does not exist yet** — the roadmap lists it under *Open at 1.0.0*, pinned to no milestone, because tiers 1–2 shipped in milestone 6 without it. Topology is not frozen until it does |
+| 1 | **Prototype before locking topology** | the reconnect benchmark: 50k sockets, forced `sync` restart, time-to-consistent and DB load. **Measured `As of 2026-08`** — the numbers are below, and the result is committed |
 | 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
 | 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding |
 | 5 | **Per-tenant subscription caps** | a registered-query explosion is a load-shedding decision, made with a limit and a typed `X_LIVE_QUERY_LIMIT`, not by falling over |
 | 6 | **Consider wrapping an existing protocol** | if the benchmark says our matcher is the bottleneck, adopting Zero's protocol beats inventing one |
 
-No throughput or latency figure is published for the realtime path. `As of 2026-08` there is no measured reconnect number, and per-node socket capacity is a plausible target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
+## The 50k forced-restart benchmark
+
+Measured, committed, and reproducible: [`scripts/bench/restart-bench.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/restart-bench.ts) wrote [`scripts/bench/results/50k-restart.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/50k-restart.json) and its own transcript beside it.
+
+```bash
+bun run scripts/bench/restart-bench.ts --clients 50000 \
+  --out scripts/bench/results/50k-restart.json
+```
+
+| Setup | Value |
+|---|---|
+| Clients | 50,000 real WebSocket connections, split across 10 client-shard OS processes |
+| Server | **one** `sync` node (the shipped `createSyncNode`) in its own process, over `InProcessTransport` |
+| Admission | the shipped `AcceptBudget` at its defaults — 500/s, burst 2000 |
+| Kill | `SIGKILL`, no drain, **no `reconnect` frame** — recovery is driven only by each client's own `backoffDelay` |
+| Readiness | read from the server's own socket count, never the load generator's self-report |
+| Time-to-consistent | per client, first receipt of a channel patch after the kill — reconnect **and** resubscribe **and** delivery |
+
+| Restart-phase result | Value |
+|---|---|
+| Reconnected | **50,000 / 50,000** |
+| Received a channel patch inside the window | **49,981** |
+| Time-to-consistent p50 | **54.0s** |
+| Time-to-consistent p90 | **105.5s** |
+| Time-to-consistent p99 | 127.8s |
+| Time-to-consistent max | **145.7s** |
+| Connect attempts shed before any query path | **156,851** — the DB-load proxy: none of them reached a query or snapshot |
+| New server accepting | 2.3s after the kill |
+
+What it is **not**: a multi-node result — the run never crossed NATS, so this is **per-node recovery**, not fanout. Not a throughput figure either: no requests/sec, no message rate, no sustained-load number. Per-node socket capacity in the tables above this section is still a target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
 
 ## `sync` drain
 

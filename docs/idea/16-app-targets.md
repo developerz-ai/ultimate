@@ -5,10 +5,15 @@ Three targets, one backend, **two view layers** — and the second one is admitt
 Web is SolidJS + SCSS modules. Desktop is that same build inside a Tauri window. Mobile is React
 Native, which shares no component with either. Everything *below* the view is shared on all three.
 
-Planned for **1.1.0**, `As of 2026-08`. Every change here is additive — two new packages, two new
-`x build --target` values, one optional field on `route` — so no major. This lifts
-[`14-roadmap.md`](./14-roadmap.md)'s "mobile/desktop app targets beyond placeholders" out of the
-deferred column.
+**Design only, `As of 2026-08` — none of it exists.** No `@ultimat3/tokens`, no `@ultimat3/native`,
+no `desktop` or `native` build target (`BUILD_TARGETS` is still `docker | binary | static`), no
+`route.targets`, no `screen.tsx`, no gate step. 1.1.0 shipped without any of it; the target is a
+future minor, because every change here is additive — two new packages, two new `x build --target`
+values, one optional field on `route` — so no major.
+
+What this document does today is lift [`14-roadmap.md`](./14-roadmap.md)'s "mobile/desktop app
+targets beyond placeholders" out of the deferred column and into the *designed* column, as
+milestones 12–14. Designed is not started.
 
 ## What is shared, and what is not
 
@@ -118,7 +123,7 @@ earning its line: `ui ✗ native`.
 | Not created | Instead |
 |---|---|
 | `@ultimat3/desktop` | Tauri is packaging, not a product. A build target plus a scaffold template in `cli`. Zero runtime code |
-| `@ultimat3/native-ui` | the framework ships **no native component kit** in 1.1. See *Risks* — this is the scope cut that decides whether this ships at all |
+| `@ultimat3/native-ui` | the design ships **no native component kit** at any point. See *Risks* — this is the scope cut that decides whether this ships at all |
 | `@ultimat3/push` | APNs/FCM is a transport seam inside `native`, driven by a `job`, symmetric with `mail` |
 | `@ultimat3/ota` | the protocol server is 300 lines over `storage` + `http`; a package for it is a second place to look for one update |
 
@@ -126,7 +131,7 @@ earning its line: `ui ✗ native`.
 
 `@ultimat3/ui` re-exports `@ultimat3/tokens` **verbatim** — the precedent is `action` re-exporting
 `t` from `schema`, with an identity assertion in `index.test.ts`. Existing imports keep working, so
-1.1.0 holds.
+a minor holds — the move would need no major.
 
 ## CLI
 
@@ -309,7 +314,7 @@ can be packaging rather than a second product — before anything spends effort 
 
 | Risk | Honest size |
 |---|---|
-| **A second view layer is a permanent tax** | `@ultimat3/ui` is 41 components. A matching native kit is 41 more, forever, and every future component is two. The 1.1 answer to "give me a Button on both" is **no** — tokens and a runtime, not a kit. That cut is the difference between this shipping and not |
+| **A second view layer is a permanent tax** | `@ultimat3/ui` is **46** components ([`packages/ui/CATALOG.md`](../../packages/ui/CATALOG.md), generated and drift-tested). A matching native kit is 46 more, forever, and every future component is two. The design's answer to "give me a Button on both" is **no** — tokens and a runtime, not a kit. That cut is the difference between this shipping and not |
 | **Two screens, one behaviour, no check** | `screens` catches a *missing* file. Nothing catches a mobile screen that quietly does something different. An agent asked to "fix the dashboard" will fix one of them. Unsolved |
 | **React inside a Solid framework** | [`01-stack.md`](./01-stack.md) locks one choice per layer; this is the first second choice. Defensible — no Solid renderer for iOS/Android has adoption — but agents now have to know which target they are in, and `X_VIEW_RUNTIME_MIXED` is the only thing stopping that from being a guess |
 | **Metro is Node** | the first Node dependency in a build path in a Bun-only repo. `x dev --target native` and `x build --target native` shell out to it. A written exception, not a quiet one |

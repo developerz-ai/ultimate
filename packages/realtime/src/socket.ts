@@ -4,7 +4,7 @@
 // the transport or the change buffer, never here. `sync` is stateless: nothing on this object
 // survives a restart, and nothing needs to.
 
-import { type Actor, type Clock, systemClock, uuid } from '@ultimat3/core';
+import { type Actor, type Clock, recordConnection, systemClock, uuid } from '@ultimat3/core';
 import { encode, type Frame } from './sync-protocol';
 
 export const CLOSE = {
@@ -162,12 +162,24 @@ export class SocketRegistry {
     this.#idleTimeoutMs = options.idleTimeoutMs ?? 120_000;
   }
 
+  /**
+   * This package's ONE metrics call site, and it is here rather than in `sync-node.ts` because
+   * this map is the only definition of "a live connection on this node": a socket ends on the WS
+   * close callback, on the idle sweep, on the drain and on a duplicate id, and every one of those
+   * paths already had to come through `add`/`remove`. A gauge moved from the callers instead would
+   * leak on whichever path a later change forgets — and a connections gauge that only counts up is
+   * an HPA that only scales up.
+   */
   add(socket: SyncSocket): void {
+    const replacing = this.#sockets.has(socket.id);
     this.#sockets.set(socket.id, socket);
+    // A re-added id replaces one connection with another; the count did not change.
+    if (!replacing) recordConnection(1);
   }
 
   remove(id: string): void {
-    this.#sockets.delete(id);
+    // `Map.delete` answers "was it actually there", so a double close cannot decrement twice.
+    if (this.#sockets.delete(id)) recordConnection(-1);
   }
 
   get(id: string): SyncSocket | undefined {
@@ -189,7 +201,8 @@ export class SocketRegistry {
     for (const socket of this.#sockets.values()) {
       if (socket.idleFor(now) > this.#idleTimeoutMs) {
         socket.close(CLOSE.idle, 'idle timeout');
-        this.#sockets.delete(socket.id);
+        // Through `remove`, not the map: the sweep is exactly the abnormal close a gauge leaks on.
+        this.remove(socket.id);
         closed.push(socket);
       }
     }

@@ -2,7 +2,7 @@
 
 One file: `app.config.ts` at the repo root. There is no per-environment config directory, no `config/production.ts`, no `.env.local` cascade. Environment differences are **env vars**, validated once at boot.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and `x upgrade` codemods it.
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and `x upgrade` codemods it.
 
 ```ts
 import { defineConfig, defineEnv } from '@ultimat3/core';
@@ -234,7 +234,9 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 
 | var | roles | required | notes |
 |---|---|---|---|
-| `ROLE` | all | no — default `web` | `web \| sync \| worker \| scheduler \| migrate \| replicator \| all`. Invalid → `X_ROLE_INVALID` |
+| `ROLE` | all | no — default `web` | exactly `web \| sync \| worker \| scheduler \| migrate \| replicator`. There is no `all`. Invalid → `X_ROLE_UNKNOWN` from the production boot path, `X_ROLE_INVALID` from `assertRole()` inside the framework |
+| `PORT` | `web`, `sync` | no — default `3000` | the TCP port the role binds. Empty, non-numeric or outside 0–65535 → `X_PORT_INVALID`, refused rather than defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause |
+| `ULTIMATE_ENV` | all | no — default `development` | `development \| test \| staging \| production`, read by `resolveEnvironment()`. `NODE_ENV` is a fallback only, and is never policed |
 | `DATABASE_URL` | all | yes | |
 | `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
@@ -261,10 +263,87 @@ Rules:
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |
 
+## The environment — `resolveEnvironment()`
+
+Four names, one env var, and a spelling the framework does not use is a refusal rather than a guess.
+
+```ts
+import { isLocal, isProduction, resolveEnvironment } from '@ultimat3/core';
+
+resolveEnvironment();                          // 'development' | 'test' | 'staging' | 'production'
+resolveEnvironment({ fallback: 'production' });
+resolveEnvironment({ env: someRecord });
 ```
-x config show --json      # resolved config, defaults applied
+
+| Concern | Behaviour |
+|---|---|
+| Precedence | `ULTIMATE_ENV` if set and non-empty → `NODE_ENV` **only if it is one of the four** → `fallback` → `'development'` |
+| Invalid `ULTIMATE_ENV` | throws `X_ENVIRONMENT_INVALID` — `prod`, `dev` and `preview` are all refusals |
+| Invalid `NODE_ENV` | never throws. CI images legitimately set it to anything, so it is a fallback that is silently ignored, not a second gate |
+| `isProduction()` | `=== 'production'` |
+| `isLocal()` | `development` or `test`. **`staging` is deliberately excluded** — staging is a real rehearsal |
+
+> **Name collision.** `@ultimat3/seo` exports a *different* `resolveEnvironment`. Import one with an alias.
+>
+> | | `@ultimat3/core` | `@ultimat3/seo` |
+> |---|---|---|
+> | Parameter | an options object `{ env, fallback }` | the env record itself, positional, defaulting to `process.env` |
+> | Returns | `development \| test \| staging \| production` | `production \| preview \| development \| test` |
+> | Unknown value | **throws** `X_ENVIRONMENT_INVALID` | fails closed to `'preview'`, never throws |
+> | `ULTIMATE_ENV=staging` | `'staging'` | `'preview'` — so a staging deploy is non-indexable, which is the point |
+>
+> Listed in [Known gaps](Known-Gaps).
+
+## `.env.example` — a projection, never a second list
+
+```ts
+import { renderEnvExample, assertEnvExample, ENV_EXAMPLE_PATH } from '@ultimat3/core';
+
+await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.example'
+assertEnvExample(schema, await Bun.file(ENV_EXAMPLE_PATH).text()); // throws X_ENV_EXAMPLE_DRIFT
+```
+
+`renderEnvExample(schema, { extras })` returns the whole file, deterministic in declaration order. Per key it writes the description, then an annotation line — `required|optional · <type or enum values> · secret · role a/b` — then `KEY=<example>`. **A `secret: true` key's example is always empty**, even when the declaration has a default. `extras` are appended as commented `# NAME=` lines.
+
+`assertEnvExample` throws `X_ENV_EXAMPLE_DRIFT` when the file is missing a declared key. Extra keys are reported but never fatal — an example may document more than the schema requires.
+
+**Nothing calls it for you.** There is no verify step, CLI command or boot hook that checks the example; call it from a test of your own → [Known gaps](Known-Gaps).
+
+Which files are read at boot: `.env` and `.env.<mode>` always, plus `.env.local` unless the mode is `test`. Mode is `production` or `test` verbatim, otherwise `development` — there is no `.env.staging`.
+
+## Secrets in memory — `Secret`
+
+A value that redacts **by value**, so it stays redacted under a key nobody thought to add to a deny-list.
+
+```ts
+import { secret, revealSecret, isSecret } from '@ultimat3/core';
+
+const token = secret(process.env.API_TOKEN, 'API_TOKEN');
+
+`${token}`;                    // '[redacted]'
+JSON.stringify({ token });     // '{"token":"[redacted]"}'
+logger.info('boot', { token }); // token=[redacted]
+revealSecret(token);           // the real string — the one call that unwraps
+```
+
+| Surface | Redacted |
+|---|---|
+| `toString()` | ✅ |
+| `toJSON()` | ✅ |
+| `Symbol.toPrimitive` | ✅ — template literals and coercion |
+| the Node inspect symbol | ✅ — `console.log`, `util.inspect` |
+| the framework logger | ✅ — checked **before** every other branch, at any depth, under any key |
+| spread / `Object.entries` / structured clone | ✅ — only `label` is enumerable, so the value cannot ride out |
+
+Frozen and non-configurable. `revealSecret(value)` and `revealOptionalSecret(value)` are the only ways out; `isSecret(value)` is a structural brand check, so it survives two copies of `@ultimat3/core` in one tree.
+
+Key-name redaction still exists and is separate: `defineEnv()` registers every `secret: true` key with the logger unless you pass `{ redact: false }`. And `checkEnv()` returns **real** values in `report.values` — anything that *prints* a report must pass them through `maskedEnvValues(schema, values)` first. That is the bug 1.1.0 fixed: `{ dsn: 'postgres://user:pw@host/db' }` printed the credential, because redaction was by key name and `dsn` was not on the list.
+
+```
 x doctor --json           # env + connectivity + version checks
 x verify --json           # the gate
 ```
 
-Error shapes: [Error codes](Error-Codes). Symptom-first fixes: [Troubleshooting](Troubleshooting).
+`x config show` is **planned**, not shipped — it throws `X_NOT_IMPLEMENTED` naming `x manifest --json` as the closest thing today → [CLI reference](CLI-Reference).
+
+Error shapes: [Error codes](Error-Codes). Symptom-first fixes: [Troubleshooting](Troubleshooting). Metrics, spans and logs: [Observability](Observability).

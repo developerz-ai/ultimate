@@ -9,19 +9,31 @@
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
 
 </div>
 
-> **Status: 1.0.0**, `As of 2026-08`. 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish to npm in lockstep: one version, one commit, one tag. Semver applies from here — a breaking change to a documented API needs a major. That is what 1.0.0 means: a stable API under semver, not a promise about your infrastructure.
+> **Status: 1.1.0**, `As of 2026-08`. 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — on npm in lockstep: one version, one commit, one tag. 1.1.0 is the **first release published by the workflow**, over OIDC trusted publishing with no `NPM_TOKEN` and provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
 
-**Not claimed at 1.0.0:**
+**Measured, and only this much:**
+
+| What was measured | The result |
+|---|---|
+| **Realtime restart recovery** | 50,000 real WebSocket clients against **one** `sync` node, `SIGKILL`ed with no drain — no `reconnect` frame sent, so every client recovers on its own backoff. All 50,000 reconnected; **49,981** received a channel patch inside the window. Time-to-consistent p50 **54.0s**, p90 **105.5s**, max 145.7s |
+| **The DB-load half** | **156,851** connect attempts shed by the shipped `AcceptBudget` (500/s, burst 2000) before reaching any query or snapshot path. Recovery is bounded by admission control, not by the matcher |
+| **What it is not** | one node, in-process transport — the run never crossed NATS. Per-node recovery, **not** a multi-node result, and not a throughput or latency-under-load figure |
+
+Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 50000` — the committed report and the run's own transcript are in [`scripts/bench/results/`](scripts/bench/results/).
+
+**Not claimed at 1.1.0:**
 
 | Open | Where it stands |
 |---|---|
-| **Realtime capacity** | no published benchmark. The 50k-socket forced-restart number is unmeasured; the capacity figures in the docs are targets, not results |
-| **Two-platform deploy proof** | `x build --target docker\|binary\|static`, the dev/prod compose files and the Helm chart all ship. The demo app on Compose **and** K8s from one image, with an invisible rolling restart, is [milestone 11](docs/idea/14-roadmap.md) and is not yet demonstrated |
+| **Two-platform deploy proof** | 1.1.0 gave a scaffolded app a real deployable artifact — `x new` writes `apps/web/server.ts`, `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`, and `ROLE=migrate` runs release-phase migrations. The **proof** is still open: the demo app on Compose **and** K8s from one image, with an invisible rolling restart, is [milestone 11](docs/idea/14-roadmap.md) and has not been demonstrated |
+| **Known gaps shipped in 1.1.0** | `x build --target binary` compiles and then crashes at import (`FRAMEWORK_VERSION` reads a `package.json` a single-file executable has none of) · `docker-compose.prod.yml` pairs a published host port with `replicas: 3`, which cannot work · the shared cache tier's Lua invalidation `DEL`s keys it never declares in `KEYS`, so it fails on Dragonfly and Redis Cluster · `resolveEnvironment` now exists in both `core` and `seo` with different return types. All four are in [CHANGELOG.md](CHANGELOG.md) |
 | **Deferred to v2** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+
+**Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
 
 ---
 
@@ -44,6 +56,22 @@ That single change of audience rewrites every default:
 | errors are the feedback loop | **errors are instructions** — stable code + cause + the exact fix command |
 | "is it done?" needs a machine answer | **`x verify`** — green means shippable, and it's the whole contract |
 | output must be machine-readable | **`--json` on everything**, end to end |
+
+## Wrap, don't reinvent
+
+The framework wraps libraries so you don't have to. Your app wraps the framework so your agent doesn't have to. Two layers, one goal: **the least app code that can express the app** — more generated code is more bugs, so the unit of progress is lines *not* written.
+
+| Layer | Wraps | So that |
+|---|---|---|
+| Bun natives | Postgres, Redis, S3, WS, the bundler, the test runner | a whole class of dependency never enters the lockfile — see the stack table below |
+| **Ultimate** | those natives, behind eight primitives | an agent writes `entity` / `action` / `job` — never a connection pool, a queue, or a cache-key scheme |
+| **Your app** | those primitives, behind your own domain vocabulary | a feature is a declaration, not an integration |
+
+The rule that stops this becoming an abstraction tower: **a wrapper must delete a decision, not rename one.** Reinvention is reserved for the places where wrapping would leak the thing being avoided — which is why there is no ORM, and why the router is ours.
+
+The framework makes the big decisions so the agent spends its budget on your product. Breadth is not the enemy of control; undeclared coupling is. Every capability arrives as an interface with one shipped implementation — assemble like Lego, and drop to the seam when Lego runs out.
+
+→ [The thesis, in full](docs/idea/00-thesis.md)
 
 ## 60 seconds
 
@@ -119,10 +147,24 @@ Not "supported". Not "documented". **Enforced, and impossible to get wrong.**
 | **Offline** | `sw.js` generated from the route table | the offline fallback route is required *by the type* |
 | **Admin** | Django-grade CRUD derived from the entity registry | `defineAdmin()` — 20 lines to a working dashboard |
 | **MCP** | every action is a tool | and **your app's** dashboards expose their own MCP surface |
+| **Metrics** | counters, gauges and histograms on the OpenTelemetry data model; `/metrics` in Prometheus text | no dependency, and the Helm chart's HPA metrics are the ones the framework already emits |
+| **Secrets** | `Secret` redacts **by value** — `toString`, `toJSON`, the logger, at any depth, under any key | frozen, so a spread cannot unwrap it; `.env.example` is generated from the typed env declaration |
+
+## Rendering — SSR only where it pays
+
+Render mode is a route-level property, not a global one. A landing page is static or ISR at a 0kb JS baseline; a dashboard streams. The `site/` surface **cannot** import from `app/` — a build error, not a lint warning — so the marketing path can never grow the app's bundle through a shared component.
+
+| Surface | Default mode | JS baseline |
+|---|---|---|
+| `site/` | `static` / `isr` | **0kb**, enforced |
+| `app/` | `stream` | a per-route budget that fails the build when blown |
+| `api/` | none | n/a |
+
+→ [Surfaces](docs/idea/06-surfaces.md) · [Rendering and SEO](docs/idea/07-rendering-seo.md)
 
 ## Realtime — a ladder, not a cliff
 
-Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship in 1.0.0; tier 3 lands in v2, behind the interfaces that are already here.
+Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship today; tier 3 lands in v2, behind the interfaces that are already here.
 
 | Tier | What | Covers |
 |---|---|---|
@@ -131,6 +173,22 @@ Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config
 | 3 · **Local-first** *(v2)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
 
 → [Realtime design and its honest limits](docs/idea/03-realtime.md)
+
+## From pre-MVP to planet-scale
+
+The same app code on one PaaS dyno and on a replicated cluster. Climbing is a driver swap, an env var, and someone else's infrastructure — the eight primitives, their shapes, their authz, the manifest, the OpenAPI and the typed client never move.
+
+| Rung | You run | App code change |
+|---|---|---|
+| 0 | one process on a PaaS, their managed Postgres | **none** |
+| 1 | one service per `ROLE`, managed Postgres + a shared cache tier | none, plus config |
+| 2 | one box, Compose, all six roles, NATS beside them | none, plus config |
+| 3 | Kubernetes, per-role HPAs, logical replication for the change feed | none, plus config |
+| 4 | distributed SQL (YugabyteDB), JetStream R3, metrics and traces wired end to end | none for the datastore swap — with named incompatibilities |
+
+**This is the design, not a demonstration.** `As of 2026-08` exactly one point on it is measured — the 50k restart above, at one node. Rung 4 has never been run. [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) states rung by rung what is real today and what is intent, and names the places the invariant currently breaks. Fintech, agent platforms, multi-tenant dashboards: that is what the architecture is *for*, and nobody's production traffic has tested the claim yet.
+
+→ [The scale ladder](docs/idea/17-scale-ladder.md) · [Running it for real](docs/ops/README.md) · [Mobile and desktop targets](docs/idea/16-app-targets.md)
 
 ## Stack — locked, deliberately
 
@@ -211,15 +269,31 @@ x doctor                                                 # env, versions, drift,
 
 Every command takes `--json`. → [CLI reference](wiki/CLI-Reference.md)
 
+## New in 1.1.0
+
+| Landed | What it is |
+|---|---|
+| **`x` serves in production** | `serve.ts` boots a role with no dev watcher and no `/_x`; `ROLE=migrate` applies migrations and exits — the release phase a PaaS asks for. `x new` writes `apps/web/server.ts`, `prerender.ts`, a Dockerfile and `docker-compose.prod.yml` |
+| **Metrics** | counter / gauge / histogram on the OTel data model, a `MetricExporter` seam, and `/metrics` in Prometheus text with no dependency |
+| **`Secret`** | redaction by value, at any depth, under any key, frozen against a spread |
+| **`resolveEnvironment()`** | `development \| test \| staging \| production` from `ULTIMATE_ENV`, plus `renderEnvExample()` so `.env.example` cannot drift from the typed declaration |
+| **Page-level UI** | `AppShell` (with a working skip link), `PageHeader`, `Section`, `Toolbar`, `defineTheme()` as the one brand-override seam, and a generated [`CATALOG.md`](packages/ui/CATALOG.md) |
+| **Test harness** | factory traits, associations and `create()`, plus `sharedExamples` / `behavesLike` |
+| **[`docs/ops/`](docs/ops/README.md)** | the operations manual — rungs, secrets, observability, datastore sizing, disaster recovery, runbooks |
+| **Design, not code** | [`16-app-targets.md`](docs/idea/16-app-targets.md) (mobile + desktop) and [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) are specs, with nothing shipped behind them yet |
+
+Full detail, including the four known gaps: [CHANGELOG.md](CHANGELOG.md).
+
 ## Documentation
 
 | Where | What |
 |---|---|
 | [docs/idea/](docs/idea/README.md) | **what and why** — the design spec, primitive by primitive |
 | [docs/architecture/](docs/architecture/README.md) | **how it's built** — internals, for changing the framework itself |
-| [wiki/](wiki/Home.md) | the reference manual — every field, flag, and error code |
-| [site/](site/README.md) | the public site (GitHub Pages) |
+| [docs/ops/](docs/ops/README.md) | **how to run it** — PaaS → Compose → Kubernetes, secrets, observability, datastore sizing, runbooks. Recommendations; the framework depends on none of it |
+| [the wiki](https://github.com/developerz-ai/ultimate/wiki) | the reference manual and the one public documentation surface — every field, flag, and error code. Source in [`wiki/`](wiki/Home.md) |
 | [llms.txt](llms.txt) | the machine-readable map — start here if you're an agent |
+| [packages/ui/CATALOG.md](packages/ui/CATALOG.md) | 46 components with every prop and the token vocabulary, generated from source and drift-tested |
 | [examples/dummy/](examples/dummy/README.md) | the reference app: every primitive, once, idiomatically |
 
 **Start here:** [the thesis](docs/idea/00-thesis.md) → [the primitives](docs/idea/02-primitives.md) → [adding a feature](docs/architecture/15-adding-a-feature.md).
@@ -235,7 +309,9 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture/00-conventions.md
 
 ## Roadmap
 
-Twelve milestones, each ending in a working demo app and a green `x verify`. **Milestones 0–10 are shipped.** Milestone 11 — deploy, docs, 1.0 — is open on one thing: the demo app proven on Compose **and** K8s from a single image, rolling restart invisible. The status markers in that table are enforced by `x verify`'s `roadmap` step, so they cannot quietly rot.
+Twelve milestones, each ending in a working demo app and a green `x verify`. **Milestones 0–10 are shipped.** Milestone 11 — deploy and docs — is open on one thing: the demo app proven on Compose **and** K8s from a single image, rolling restart invisible. Its artifacts all ship, and 1.1.0 closed the gap that made the proof impossible to attempt — a scaffolded app now produces a deployable image — but the proof itself needs real infrastructure and has not been run. The status markers in that table are enforced by `x verify`'s `roadmap` step, so they cannot quietly rot.
+
+The realtime kill criterion that 1.0.0 **waived** is now met: milestone 6 gated tier-2 realtime on a measured 50k-socket forced-restart benchmark, and that number is measured and committed — at one node, which is the scope stated above.
 
 → [The full roadmap](docs/idea/14-roadmap.md) · [The risks, stated plainly](docs/idea/15-risks.md)
 

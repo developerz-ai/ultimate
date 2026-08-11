@@ -4,7 +4,7 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { logger, onShutdown, uuid, withSpan } from '@ultimat3/core';
+import { logger, onShutdown, recordQueueDepth, uuid, withSpan } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
@@ -17,6 +17,14 @@ import { createLimiter } from './limits';
 import { nextRetry } from './retry';
 import type { EventLookup, StepRecord } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
+
+/**
+ * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
+ * `driver.stats()` is an aggregate over the whole jobs table and a scrape reads the gauge every
+ * ~15s, so publishing at the poll rate would multiply the queue's read load by sixty to write the
+ * same number sixty times.
+ */
+const QUEUE_DEPTH_INTERVAL_MS = 15_000;
 
 export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered';
 
@@ -205,6 +213,29 @@ export function createWorker(options: WorkerOptions): Worker {
   let failed = 0;
   let suspended = 0;
   let deadLettered = 0;
+  let depthPublishedAt = Number.NEGATIVE_INFINITY;
+
+  /**
+   * This package's ONE metrics call site: the `queue_depth` series `docker/helm`'s worker HPA
+   * scales on. `ready` and not `ready + delayed` — the gauge means "waiting to be picked up", and
+   * a job parked until Tuesday is not backlog no matter how many workers are added. Every queue
+   * the driver reports, not only the ones this process serves, because depth is the queue's fact
+   * and a queue no pod published is a queue no autoscaler can see.
+   */
+  const publishQueueDepth = async (): Promise<void> => {
+    const now = nowMs(options.clock);
+    if (now - depthPublishedAt < QUEUE_DEPTH_INTERVAL_MS) return;
+    depthPublishedAt = now;
+    try {
+      for (const stat of await options.driver.stats()) recordQueueDepth(stat.queue, stat.ready);
+    } catch (error) {
+      // Instrumentation never costs a tick: a queue that cannot be measured must still be worked.
+      logger.warn('jobs.worker.depth-failed', {
+        workerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   const runClaimed = async (claimed: ClaimedJob): Promise<JobExecution> => {
     const handle = getJob(claimed.name);
@@ -249,6 +280,7 @@ export function createWorker(options: WorkerOptions): Worker {
 
   const tick = async (): Promise<readonly JobExecution[]> => {
     if (state === 'draining' || state === 'stopped') return [];
+    await publishQueueDepth();
     const results: JobExecution[] = [];
 
     for (const queue of queues) {

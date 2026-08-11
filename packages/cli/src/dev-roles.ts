@@ -29,6 +29,7 @@ import { startReplicator } from './dev-replicator';
 import type { RunningServices } from './dev-runtime';
 import type { Env } from './dev-services';
 import { BadFlagError } from './errors';
+import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
 
 /** The roles `x dev` starts when `--role` names none, in boot order. */
 export const DEV_ROLES: readonly Role[] = ['web', 'sync', 'worker', 'scheduler'];
@@ -57,6 +58,12 @@ export interface StartRolesOptions {
    * probe, which is the same failure in four costumes.
    */
   readonly http?: WebBinding;
+  /**
+   * Where the scrape listener binds. Defaults to `DEFAULT_METRICS_PORT`, except when `port` is 0
+   * — a caller asking the kernel for an ephemeral HTTP port is a test, and a test that grabbed
+   * 9090 would fail the next one to run beside it.
+   */
+  readonly metricsPort?: number;
 }
 
 export interface WebBinding {
@@ -73,6 +80,8 @@ export interface RunningRoles {
   readonly url: string | null;
   /** Where the sync role accepts websockets; null when it was not selected. */
   readonly syncUrl: string | null;
+  /** `http://…` — the scrape base. Never null: every role publishes a signal worth scaling on. */
+  readonly metricsUrl: string;
   readonly server: ServerHandle | null;
   readonly worker: Worker | null;
   readonly scheduler: Scheduler | null;
@@ -203,6 +212,15 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
   // Without this a failed `sync` leaves the web server bound and unreachable by any caller.
   const started: (() => Promise<void>)[] = [];
   try {
+    // First, and for every role rather than only the two that open an HTTP socket: `worker` and
+    // `sync` are precisely the roles whose HPAs read a series the process itself has to publish,
+    // and a `worker` container with no listener is an HPA pinned at `<unknown>` forever.
+    const metrics = startMetricsEndpoint({
+      port: options.metricsPort ?? (options.port === 0 ? 0 : DEFAULT_METRICS_PORT),
+      ...(options.http === undefined ? {} : { hostname: options.http.hostname }),
+    });
+    started.push(async () => metrics.stop());
+
     const server = selected.includes('web') ? startWeb(options) : null;
     if (server !== null) started.push(() => server.stop());
 
@@ -240,6 +258,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       roles: selected,
       url: server === null ? null : server.url(),
       syncUrl: sync?.url ?? null,
+      metricsUrl: metrics.url,
       server,
       worker,
       scheduler,
@@ -251,6 +270,8 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         await worker?.stop('x dev stopped');
         await sync?.stop();
         await server?.stop();
+        // Last: a scrape taken while the roles above drain is the one that explains the drain.
+        metrics.stop();
       },
     };
   } catch (error) {

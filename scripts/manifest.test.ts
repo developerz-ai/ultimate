@@ -142,7 +142,7 @@ describe('unit · every code, not the ones in one filename per package', () => {
     expect(ownerOf('packages/core/src/roles.ts')).toBe('core');
     expect(ownerOf('packages/cli/src/templates/deep/thing.ts')).toBe('cli');
     expect(ownerOf('scripts/boundaries.ts')).toBe('scripts');
-    expect(ownerOf('site/build.ts')).toBe('site');
+    expect(ownerOf('docker/entrypoint.ts')).toBe('docker');
   });
 
   /**

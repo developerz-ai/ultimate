@@ -9,6 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { METRICS_PATH } from '@ultimat3/core';
 // Relative, not '@ultimat3/testing': cli is tier 5 and so is testing, so the package specifier is
 // a sideways import the boundary check refuses. Same precedent as scripts/test-setup.ts. This is
 // test-only — nothing in cli's shipped surface reaches the harness.
@@ -74,10 +75,17 @@ describe('the scaffolded production entry is a runnable artifact', () => {
     async () => {
       await writeFixture();
       const port = freePort();
+      const metricsPort = freePort();
       const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
         cwd: ROOT,
-        // Exactly what a PaaS supplies: the port it routes to, and the role it wants.
-        env: { ...process.env, PORT: String(port), ROLE: 'web' },
+        // Exactly what a PaaS supplies: the port it routes to, and the role it wants. METRICS_PORT
+        // is the operator's, not the platform's — the scrape lives off the routed port on purpose.
+        env: {
+          ...process.env,
+          PORT: String(port),
+          ROLE: 'web',
+          METRICS_PORT: String(metricsPort),
+        },
         stdout: 'pipe',
         stderr: 'pipe',
       });
@@ -95,6 +103,20 @@ describe('the scaffolded production entry is a runnable artifact', () => {
         expect(ready.status).toBe(200);
         expect(((await ready.json()) as { role?: string }).role).toBe('web');
         expect((await fetch(`http://127.0.0.1:${port}/healthz`)).status).toBe(200);
+
+        // The scrape a Kubernetes metric adapter takes, from a real deployed process — and NOT
+        // from the port the ingress fronts: `/metrics` on the routed port would publish route
+        // patterns, request volumes and error rates to the internet.
+        expect((await fetch(`http://127.0.0.1:${port}${METRICS_PATH}`)).status).toBe(404);
+        allowHost(`127.0.0.1:${metricsPort}`);
+        const scrape = await fetch(`http://127.0.0.1:${metricsPort}${METRICS_PATH}`);
+        expect(scrape.status).toBe(200);
+        const body = await scrape.text();
+        // The two probes above are already requests this process served, so the counter the `rps`
+        // adapter differentiates has to be non-zero — an endpoint that renders an empty registry
+        // would pass a "does /metrics answer" test and still leave every HPA at `<unknown>`.
+        expect(body).toContain('# TYPE http_requests_total counter');
+        expect(body).toContain('http_requests_total{method="GET",route="unmatched",status="4xx"}');
 
         child.kill('SIGTERM');
         expect(await child.exited).toBe(0);
