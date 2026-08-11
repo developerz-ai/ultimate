@@ -6,6 +6,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 |---|---|
 | Entry | `src/bin.ts` (`#!/usr/bin/env bun`) — argv, stdout, exit code only |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
+| Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
 | Errors | `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
 | Subprocesses | only through `exec.ts`, so a test can inject a fake `Runner` |
@@ -21,6 +22,12 @@ Every fact the CLI reports comes from a framework package: the manifest from
 
 `app-evals.ts` is why the `eval` step can apply with no eval suite at all: a prompt no eval
 names is `X_EVAL_MISSING`, and a skipped step would read as a green gate over untested code.
+
+`app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
+a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
+gate runs in — so the step always has a question to answer, and gating both halves on the file
+that only the first one needs is how `X_AGENTS_MD_MISSING` stayed unreachable while its wiki row
+said it fails builds.
 
 ## What goes in `messages.ts`, and what does not
 
@@ -62,8 +69,16 @@ and the step says so rather than guessing.
 
 `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
 dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
-holds — a SQL runner, the committed manifest, the process's own services — supplied as
-`defaultDevSources({ hooks })`.
+holds — a SQL runner, the caught outbox, the committed manifest, the process's own services, the
+spans it recorded — supplied as `defaultDevSources({ hooks })`.
+
+Wired means answerable: all eleven panels answer in a `x dev` process, and a hook the CLI does
+not supply is a panel that refuses with a wiring line, never one that renders empty. `timeline`
+is core's tracer (`x dev` is what calls `configureTelemetry`), `cache` is
+`recentInvalidations()`, `policy` is `@ultimat3/policy`'s own `policyMatrix()` over the app's
+roles — a verdict re-derived here would be the second authz the framework exists to prevent.
+`subscribers` is the one source left unwired: `@ultimat3/realtime` retains no matcher trace, and
+that trace is the live panel's question, so the panel degrades to its own note instead.
 
 ## `x dev` boots the app; it does not simulate one
 
@@ -76,7 +91,9 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
-| `cmd-dev.ts` | boot order, mounting `/_x`, the file watcher |
+| `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |
+| `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
+| `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
 | `mcp-db-target.ts` | which database the host is pointed at, and whether it is a branch |
 | `mcp-errors.ts` | `errors.explain`: one runnable command per code, typed over `CliErrorCode` |
@@ -87,6 +104,21 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.
+
+### `hold.ts` is why a long-running command outlives its own result
+
+`dispatch` renders a `CommandResult` and `bin.ts` exits on the code — so a command whose server is
+still listening when `run` resolves is a command the exit code takes down, between the line that
+announced the url and the first request to it. `x dev` and `x mcp serve --transport http` both did.
+
+The one answer is `CommandResult.hold`: report first, then `dispatch` awaits the hold before the
+exit code. `holdUntilShutdown` installs core's signal handlers (`installSignalHandlers` — until
+this it had no callers anywhere, which is why `cmd-mcp.ts`'s `onShutdown` registration was never
+reached), waits on the **drain's first phase** rather than on a signal list of its own, and
+releases what core's lifecycle never learned about — the embedded Postgres, the worker, the
+watcher — *after* the drain, so an in-flight request still has the database it opened against.
+Ctrl-C is therefore the same three phases production runs, not a kill that leaves `.x/pgdata`
+locked by a process that no longer exists.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 

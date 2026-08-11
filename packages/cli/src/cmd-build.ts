@@ -3,6 +3,7 @@
 
 import { join } from 'node:path';
 import { requireAppRoot } from './app-root';
+import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
 import { UnknownCommandError } from './errors';
 import { execOutput } from './exec';
@@ -70,6 +71,17 @@ export const buildCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('build', ctx.cwd).dir;
     const target = readTarget(flagString(ctx.args, 'target'));
+
+    // Run static verify steps before building.
+    const staticSteps = ['typecheck', 'lint', 'boundaries', 'filesize', 'package-shape', 'errors'];
+    const verifySteps = (await import('./cmd-verify')).VERIFY_STEPS.filter((step) =>
+      staticSteps.includes(step.name),
+    );
+    const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner });
+    if (!verifyResult.ok) {
+      return verifyResult;
+    }
+
     const out =
       flagString(ctx.args, 'out') ?? join(root, '.x', target === 'static' ? 'static' : 'app');
     const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';

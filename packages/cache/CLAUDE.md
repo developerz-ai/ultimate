@@ -11,7 +11,9 @@ Tier 1. Tagged caching + THE invalidation graph.
 ## Rules
 
 - `invalidateTags()` in `invalidate.ts` is the ONLY fan-out path. Never call
-  `tier.invalidateTags()` from outside it.
+  `tier.invalidateTags()` from outside it. It is also the only place the log is written:
+  `recentInvalidations()` is a read of what that one path already reported, never a second
+  recorder a caller has to remember to call.
 - One graph. `graph.ts` exports functions over module state and **no constructor** — do not
   add one, do not add a second registry anywhere else.
 - Tag order is `TIER_ORDER`, never registration order. `sortTiers()` enforces it.
@@ -30,7 +32,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `redis.ts` | `Bun.redis` tier, one-`EVAL` tag invalidation |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission + purge drivers |
-| `invalidate.ts` | the single entry point + `InvalidationReport` |
+| `invalidate.ts` | the single entry point, `InvalidationReport`, and the bounded log `/_x` renders |
 | `semantic.ts` | embedding cache for LLM calls |
 
 ## Commands

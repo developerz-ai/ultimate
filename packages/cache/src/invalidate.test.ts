@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { systemClock, withSpan } from '@ultimat3/core';
 import { CacheTagUnknownError } from './errors';
 import { registerDependent, resetGraph } from './graph';
+import type { InvalidationEvent } from './invalidate';
 import {
   invalidateTags,
   invalidateWireTags,
+  recentInvalidations,
   registerRevalidator,
   registerTier,
   resetTiers,
@@ -173,5 +176,144 @@ describe('invalidateTags fan-out', () => {
     declareTags(['post', 'user']);
     await expect(invalidateWireTags(['pots'])).rejects.toThrow(CacheTagUnknownError);
     await expect(invalidateWireTags(['post:1'])).resolves.toBeDefined();
+  });
+});
+
+describe('recentInvalidations log', () => {
+  test('an invalidation is recorded with its wire tags, its duration and the keys every tier reported', async () => {
+    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 0 });
+    registerTier(lru);
+    await lru.set('feed', ['a'], { tags: [tag('post')] });
+
+    const report = await invalidateTags([tag('post')]);
+
+    const [event] = recentInvalidations();
+    expect(event?.tags).toEqual(report.tags);
+    expect(event?.durationMs).toBe(report.durationMs);
+    expect(event?.busted).toContain('feed');
+  });
+
+  test('busted includes ISR paths, CDN paths and live queries, not just tier keys, and has no duplicates', async () => {
+    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 0 });
+    const cdn = cdnSpy();
+    registerTier(lru);
+    registerTier(cdn);
+    registerDependent([tag('post')], { kind: 'isr-route', id: '/blog' });
+    registerDependent([tag('post')], { kind: 'cdn-path', id: '/feed.xml' });
+    registerDependent([tag('post')], { kind: 'live-query', id: 'live:post-list' });
+    // Same key the cdn tier itself reports for this tag — exercises the de-dup, not just the union.
+    await lru.set('post', ['a'], { tags: [tag('post')] });
+
+    await invalidateTags([tag('post')]);
+
+    const [event] = recentInvalidations();
+    expect(event?.busted).toEqual(['post', '/blog', '/feed.xml', 'live:post-list']);
+  });
+
+  test('newest first, and the log never grows past the cap (drive it past 100)', async () => {
+    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 0 });
+    registerTier(lru);
+
+    for (let i = 0; i < 105; i += 1) {
+      await invalidateTags([tag('post', String(i))]);
+    }
+
+    const log = recentInvalidations();
+    expect(log.length).toBe(100);
+    expect(log[0]?.tags).toEqual(['post:104']);
+    expect(log[99]?.tags).toEqual(['post:5']);
+  });
+
+  test('source is the calling span name when invalidateTags runs inside a withSpan call', async () => {
+    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
+    registerTier(lru);
+
+    await withSpan('job.reindex', () => invalidateTags([tag('post')]));
+
+    const [event] = recentInvalidations();
+    expect(event?.source).toBe('job.reindex');
+  });
+
+  test('source falls back to the literal invalidateTags when there is no active span', async () => {
+    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
+    registerTier(lru);
+
+    await invalidateTags([tag('post')]);
+
+    const [event] = recentInvalidations();
+    expect(event?.source).toBe('invalidateTags');
+  });
+
+  test('a tier that throws still records an event, and its errors names the tier', async () => {
+    const broken: CacheTier = {
+      name: 'redis',
+      get() {
+        return Promise.resolve(undefined);
+      },
+      set() {
+        return Promise.resolve();
+      },
+      del() {
+        return Promise.resolve();
+      },
+      invalidateTags() {
+        return Promise.reject(new Error('ECONNREFUSED'));
+      },
+    };
+    registerTier(broken);
+
+    await invalidateTags([tag('post')]);
+
+    const [event] = recentInvalidations();
+    expect(event?.errors).toEqual([{ tier: 'redis', message: 'ECONNREFUSED' }]);
+  });
+
+  test('recentInvalidations hands back a copy: mutating it does not change the next answer', async () => {
+    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
+    registerTier(lru);
+    await invalidateTags([tag('post')]);
+
+    const first = recentInvalidations() as InvalidationEvent[];
+    first.push({
+      at: 'bogus',
+      tags: [],
+      busted: [],
+      source: 'test',
+      durationMs: 0,
+      errors: [],
+    });
+
+    expect(recentInvalidations().length).toBe(1);
+  });
+
+  test('resetTiers clears the log', async () => {
+    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
+    registerTier(lru);
+    await invalidateTags([tag('post')]);
+    expect(recentInvalidations().length).toBe(1);
+
+    resetTiers();
+
+    expect(recentInvalidations()).toEqual([]);
+  });
+
+  test('invalidateWireTags records exactly one event, not two', async () => {
+    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
+    registerTier(lru);
+
+    await invalidateWireTags(['post']);
+
+    expect(recentInvalidations().length).toBe(1);
+  });
+
+  test('at is an ISO-8601 timestamp from the frozen system clock', async () => {
+    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
+    registerTier(lru);
+    const before = systemClock.now().toISOString();
+
+    await invalidateTags([tag('post')]);
+
+    const [event] = recentInvalidations();
+    expect(event?.at).toBe(before);
   });
 });

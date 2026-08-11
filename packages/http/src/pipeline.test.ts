@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import type { ReadableSpan } from '@ultimat3/core';
+import { configureTelemetry, memoryExporter, resetTelemetry } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
 import { createPipeline, PIPELINE_STAGES } from './pipeline';
@@ -250,5 +252,55 @@ describe('lifecycle', () => {
     const body = (await response.json()) as Record<string, unknown>;
     expect(body['code']).toBe('X_BUILD_SKEW');
     expect(body['fix']).toContain('reload');
+  });
+});
+
+describe('the request span', () => {
+  // The root span of a request is the only span a host can hang a timeline off, and it carried
+  // no attributes at all — an exporter got a name and a duration with nothing to correlate.
+  const spansOf = async (run: () => Promise<Response>): Promise<readonly ReadableSpan[]> => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter });
+    try {
+      await run();
+    } finally {
+      resetTelemetry();
+    }
+    return exporter.spans;
+  };
+
+  test('is a server span naming the request id, method, route and status the client saw', async () => {
+    const pipeline = pipelineWith({});
+    const spans = await spansOf(() => pipeline.handle(get('/public'), { role: 'web' }));
+
+    const root = spans.find((span) => span.parentSpanId === undefined);
+    expect(root?.name).toBe('GET /public');
+    expect(root?.kind).toBe('server');
+    expect(root?.attributes['http.method']).toBe('GET');
+    expect(root?.attributes['http.route']).toBe('/public');
+    expect(root?.attributes['http.status_code']).toBe(200);
+    expect(typeof root?.attributes['http.request_id']).toBe('string');
+  });
+
+  test('the id on the span is the id on the response, or the two cannot be joined', async () => {
+    const pipeline = pipelineWith({});
+    let response: Response | undefined;
+    const spans = await spansOf(async () => {
+      response = await pipeline.handle(get('/public'), { role: 'web' });
+      return response;
+    });
+
+    const root = spans.find((span) => span.parentSpanId === undefined);
+    expect(root?.attributes['http.request_id']).toBe(response?.headers.get('x-request-id'));
+  });
+
+  test('a refused request still reports the status it answered with', async () => {
+    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
+    const spans = await spansOf(() => pipeline.handle(get('/guarded'), { role: 'web' }));
+
+    const root = spans.find((span) => span.parentSpanId === undefined);
+    // The refusal is the outcome worth finding in a timeline; a span that stopped at the throw
+    // would report no status at all.
+    expect(root?.attributes['http.status_code']).toBe(403);
   });
 });

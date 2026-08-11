@@ -89,6 +89,11 @@ One function. Returns the report the `/_x` cache panel and `x cache bust --json`
 A dead tier lands in `errors` and never throws — a Redis outage must not fail the write
 that triggered the bust. Entries there expire by TTL instead.
 
+Every report is also kept: `recentInvalidations()` hands back the last 100, newest first, each
+one naming the span that triggered it. That is the log the `/_x` cache panel renders — "did it
+actually clear?" is answerable without a log dive because the one fan-out path retained the
+answer, not because a second recorder was wired next to it.
+
 ## CDN
 
 ```ts

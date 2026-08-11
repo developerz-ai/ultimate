@@ -80,7 +80,12 @@ the code. So the split is fixed:
 - **conventions are human-authored** → `AGENTS.md`, short enough to be read every time.
 
 The checker warns (never fails) when `AGENTS.md` starts tabulating schema or route facts, runs
-past 200 lines, or claims to be generated.
+past 200 lines, or claims to be generated. Those warnings ride in the step's `output`, so
+`x verify --json` carries them for a human to judge.
+
+`x verify` runs `assertAgentsMd()` inside its `manifest` step — the same step that checks the
+generated half — and unlike the drift check it applies everywhere, including a repo that has
+never run `x manifest`. Enforced, not documented: both codes below can actually fail a build.
 
 ## Errors
 

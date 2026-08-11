@@ -27,10 +27,11 @@ export {
   resetGraph,
   unregisterDependent,
 } from './graph';
-export type { InvalidationReport, Revalidator } from './invalidate';
+export type { InvalidationEvent, InvalidationReport, Revalidator } from './invalidate';
 export {
   invalidateTags,
   invalidateWireTags,
+  recentInvalidations,
   registeredTiers,
   registerRevalidator,
   registerTier,

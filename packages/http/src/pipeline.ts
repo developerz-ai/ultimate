@@ -391,7 +391,24 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
       // The ALS scope is entered here, before stage 1, so every stage — and everything
       // a handler calls — sees the same context object without threading it by hand.
       return await runWithContext(asCtx(ctx), () =>
-        withSpan(`${ctx.method} ${url.pathname}`, () => execute(request, ctx)),
+        withSpan(
+          `${ctx.method} ${url.pathname}`,
+          async (span) => {
+            const response = await execute(request, ctx);
+            // The root span of every request carried no attributes at all, so an exporter got a
+            // name and a duration and nothing to correlate: which request, which outcome. These
+            // four are what a reader joins on — `x-request-id` off the response, the status the
+            // client saw, and the method/path split out of the span name.
+            span.setAttributes({
+              'http.request_id': ctx.requestId,
+              'http.method': ctx.method,
+              'http.route': url.pathname,
+              'http.status_code': response.status,
+            });
+            return response;
+          },
+          { kind: 'server' },
+        ),
       );
     },
   };

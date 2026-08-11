@@ -6,7 +6,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Manifest } from '@ultimat3/manifest';
-import { assertNoDrift, MANIFEST_FILENAME, verifyContract } from '@ultimat3/manifest';
+import {
+  AGENTS_MD_FILENAME,
+  assertNoDrift,
+  MANIFEST_FILENAME,
+  verifyContract,
+} from '@ultimat3/manifest';
+import { checkAgentsMd } from './app-agents-md';
 import { checkAppBoundaries } from './app-boundaries';
 import { appManifest, readAppManifest } from './app-manifest';
 import { OPENAPI_FILE, openApiJson } from './app-openapi';
@@ -116,14 +122,25 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'manifest',
-    summary: 'the generated manifest matches the code',
-    applies: async (ctx) =>
-      existsSync(join(ctx.root, MANIFEST_FILENAME)) || ctx.hostChecks?.manifest !== undefined,
+    summary: 'the two files an agent reads: generated facts, hand-written conventions',
+    // No `applies`. The drift half has nothing to compare against until `x manifest` has run
+    // once, and says so by finding nothing — but `AGENTS.md` is required of every repo the gate
+    // runs in, so the step always has a question to answer and must never report as skipped.
     async run(ctx) {
-      return fromFindings([
+      const agents = await checkAgentsMd(ctx.root);
+      const findings = [
         ...(await driftFindings(ctx.root)),
+        ...agents.findings,
         ...(await hostFindings(ctx, 'manifest')),
-      ]);
+      ];
+      // Warnings are not findings: `AGENTS.md` tabulating a route table is a smell a human
+      // judges, not a build error. They ride in `output`, which `--json` carries verbatim.
+      const output = agents.warnings.map((warning) => `${AGENTS_MD_FILENAME}: ${warning}`);
+      return {
+        ok: findings.length === 0,
+        findings,
+        ...(output.length === 0 ? {} : { output: output.join('\n') }),
+      };
     },
   },
   {

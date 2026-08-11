@@ -18,6 +18,9 @@
       "path": "../ai"
     },
     {
+      "path": "../cache"
+    },
+    {
       "path": "../core"
     },
     {

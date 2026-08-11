@@ -12,7 +12,12 @@ export interface RouteFact {
   readonly hasMeta: boolean;
 }
 
-export type SpanKind = 'sql' | 'cache' | 'action' | 'policy' | 'job' | 'render';
+/**
+ * `http` is the request span itself — the root every other span hangs off. Without it the flame
+ * has no depth-0 row to nest under, and a host would have to file the request under one of the
+ * things it contains.
+ */
+export type SpanKind = 'http' | 'sql' | 'cache' | 'action' | 'policy' | 'job' | 'render';
 
 export interface TimelineSpan {
   readonly id: string;

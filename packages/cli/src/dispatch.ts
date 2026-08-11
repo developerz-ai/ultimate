@@ -85,6 +85,10 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
   try {
     const result = await target.run(ctx);
     options.write(render(result, args.json, args.flags.get('verbose') === true));
+    // `x dev` and `x mcp serve --transport http` are still listening here: report first, so the
+    // url is on stdout the moment it is reachable, then stay in the process until the drain that
+    // stops them. Without this the exit code below is what takes the server down.
+    await result.hold?.();
     return exitCodeFor(result);
   } catch (error) {
     const result = errorResult(args.command, error);

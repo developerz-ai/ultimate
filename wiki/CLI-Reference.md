@@ -101,6 +101,11 @@ importing them IS the registration. What those modules registered is then served
 A module that will not import becomes a finding on the result rather than a dead process, so the
 dev loop stays reachable while something is broken.
 
+Without `--once` the process stays up until it is signalled. `Ctrl-C` runs the same three-phase
+drain a production `SIGTERM` runs — stop accepting, finish in-flight, close — and only then
+releases the embedded Postgres, the worker and the file watcher, so `.x/pgdata` is never left
+locked by a process that has gone. `x mcp serve --transport http` behaves identically.
+
 `/_x/<panel>` is one tab per panel; `?json=1` (or `accept: application/json`) returns exactly what
 the tab draws. Eleven panels — the nine `@ultimat3/admin` ships plus the two only the CLI can
 answer:
@@ -119,8 +124,20 @@ answer:
 | `services` | which database/events/storage this process is talking to, and its reload count |
 | `boundaries` | which import crosses a surface or a layer |
 
-A panel whose source is not wired in this process answers `ok: false` with the exact wiring line
-rather than an empty tab.
+Every one of the eleven answers in a `x dev` process. Three of them read facts only this process
+holds, so nothing else can serve them: `timeline` is core's own spans, recorded by the exporter
+`x dev` installs at boot (tracing is always on and free until one is configured); `cache` is the
+report `invalidateTags()` already built, kept by `@ultimat3/cache`; `policy` is
+`@ultimat3/policy`'s own `policyMatrix()` run over every capability an action or query gates,
+against one actor per role the app declared with `defineRoles` plus the anonymous caller — never
+a second reading of the actor. The matrix is evaluated with no row, and each cell's trace says so:
+a row-level rule decides again on the real request.
+
+`live` lists the registered live queries and notes that no subscriber list is attached —
+`@ultimat3/realtime` does not retain a subscriber's matcher trace, which is the rest of that
+panel's question. A panel whose source a host has not wired answers `ok: false` with the exact
+wiring line rather than an empty tab, and a panel that can degrade says which half is missing
+rather than rendering an empty one as an answer.
 
 | Env | Unset means | Set means |
 |---|---|---|
@@ -199,7 +216,7 @@ reports as skipped (`-`), never as passed.
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |
 | `budgets` | per-route JS bytes and LCP |
-| `manifest` | `x.manifest.json` freshness |
+| `manifest` | the two files an agent reads: `x.manifest.json` freshness, and a hand-written `AGENTS.md` that exists and is under 12kB |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
 A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,
@@ -235,7 +252,7 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
 
-Execs exactly one command per target and nothing else: `docker build -f docker/Dockerfile` for `docker`, `bun build --compile` over `apps/web/server.ts` for `binary`, `apps/web/prerender.ts` for `static`. It does **not** run `x verify` or any part of it — run the gate yourself first, because a build of code that fails the gate still produces an artifact. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND`.
+Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. On success, execs exactly one command per target: `docker build -f docker/Dockerfile` for `docker`, `bun build --compile` over `apps/web/server.ts` for `binary`, `apps/web/prerender.ts` for `static`. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND`.
 
 ## x deploy
 

@@ -1,0 +1,159 @@
+// The recorder is asserted against core's REAL tracer, never a hand-built `ReadableSpan`: the
+// bug it exists to prevent is a CLI that assembles a shape the framework does not actually emit.
+// Every span below arrives through `withSpan`, exactly as `x dev` receives them.
+
+import { afterEach, describe, expect, test } from 'bun:test';
+import type { FrozenClock } from '@ultimat3/core';
+import { configureTelemetry, frozenClock, resetTelemetry, withSpan } from '@ultimat3/core';
+import { createTraceRecorder } from './dev-traces';
+
+const install = (
+  limit?: number,
+): { recorder: ReturnType<typeof createTraceRecorder>; clock: FrozenClock } => {
+  const recorder = createTraceRecorder(limit === undefined ? {} : { limit });
+  const clock = frozenClock('2026-08-10T00:00:00.000Z');
+  configureTelemetry({ exporter: recorder.exporter, clock });
+  return { recorder, clock };
+};
+
+/** One request, exactly as the HTTP pipeline opens it: root span, `http.*` attributes, children. */
+function request(
+  clock: FrozenClock,
+  facts: { id: string; method?: string; path: string; status?: number },
+  children: readonly string[] = [],
+): void {
+  withSpan(
+    `${facts.method ?? 'GET'} ${facts.path}`,
+    (span) => {
+      for (const name of children) {
+        withSpan(name, () => {
+          clock.advance(5);
+        });
+      }
+      clock.advance(1);
+      span.setAttributes({
+        'http.request_id': facts.id,
+        'http.method': facts.method ?? 'GET',
+        'http.route': facts.path,
+        'http.status_code': facts.status ?? 200,
+      });
+    },
+    { kind: 'server' },
+  );
+}
+
+afterEach(() => {
+  resetTelemetry();
+});
+
+describe('unit · the /_x timeline source', () => {
+  test('a request becomes one trace, identified by the id the pipeline stamped', () => {
+    const { recorder, clock } = install();
+    request(clock, { id: 'req_1', method: 'POST', path: '/api/posts/publish', status: 201 });
+
+    const [trace] = recorder.traces();
+    expect(recorder.traces()).toHaveLength(1);
+    expect(trace?.requestId).toBe('req_1');
+    expect(trace?.method).toBe('POST');
+    expect(trace?.path).toBe('/api/posts/publish');
+    expect(trace?.status).toBe(201);
+    expect(trace?.startedAt).toBe('2026-08-10T00:00:00.000Z');
+  });
+
+  test('the root anchors the flame at depth 0 and its children hang off its span id', () => {
+    const { recorder, clock } = install();
+    request(clock, { id: 'req_1', path: '/feed' }, ['query.feed', 'cache.invalidate']);
+
+    const trace = recorder.traces()[0];
+    const root = trace?.spans.find((span) => span.parentId === null);
+    expect(root?.kind).toBe('http');
+    // Every non-root span names the root as its parent, or `flatten` renders an empty flame.
+    const children = trace?.spans.filter((span) => span !== root) ?? [];
+    expect(children).toHaveLength(2);
+    expect(children.every((span) => span.parentId === root?.id)).toBe(true);
+  });
+
+  test('the span-name prefix is the kind, so the panel can total by subsystem', () => {
+    const { recorder, clock } = install();
+    request(clock, { id: 'req_1', path: '/feed' }, [
+      'query.feed',
+      'cache.invalidate',
+      'action.publishPost',
+      'job.sendDigest',
+      'render.page',
+      'somethingAppSpecific',
+    ]);
+
+    const kinds = new Map(
+      (recorder.traces()[0]?.spans ?? []).map((span) => [span.name, span.kind] as const),
+    );
+    expect(kinds.get('query.feed')).toBe('sql');
+    expect(kinds.get('cache.invalidate')).toBe('cache');
+    expect(kinds.get('action.publishPost')).toBe('action');
+    expect(kinds.get('job.sendDigest')).toBe('job');
+    expect(kinds.get('render.page')).toBe('render');
+    // App code carries no prefix; it is still work the request did, not a span to drop.
+    expect(kinds.get('somethingAppSpecific')).toBe('action');
+  });
+
+  test('startMs is relative to the request, so the flame starts at zero', () => {
+    const { recorder, clock } = install();
+    clock.advance(10_000);
+    request(clock, { id: 'req_1', path: '/feed' }, ['query.feed']);
+
+    const spans = recorder.traces()[0]?.spans ?? [];
+    expect(spans[0]?.startMs).toBe(0);
+    expect(spans.every((span) => span.startMs >= 0)).toBe(true);
+  });
+
+  test('spans that never got an http root are not reported as requests', () => {
+    const { recorder, clock } = install();
+    // A worker's job trace: same tracer, no request. The timeline panel would otherwise show a
+    // row whose method and status were invented.
+    withSpan('job.sendDigest', () => {
+      clock.advance(3);
+    });
+    expect(recorder.traces()).toHaveLength(0);
+  });
+
+  test('the newest request is first, and the buffer is bounded by trace', () => {
+    const { recorder, clock } = install(2);
+    request(clock, { id: 'req_1', path: '/a' });
+    clock.advance(1000);
+    request(clock, { id: 'req_2', path: '/b' });
+    clock.advance(1000);
+    request(clock, { id: 'req_3', path: '/c' });
+
+    const ids = recorder.traces().map((trace) => trace.requestId);
+    expect(ids).toEqual(['req_3', 'req_2']);
+  });
+
+  test('a bounded buffer never drops half a request', () => {
+    const { recorder, clock } = install(1);
+    request(clock, { id: 'req_1', path: '/a' }, ['query.a', 'query.b']);
+    clock.advance(1000);
+    request(clock, { id: 'req_2', path: '/b' }, ['query.c']);
+
+    const traces = recorder.traces();
+    expect(traces).toHaveLength(1);
+    // Root plus its one child: eviction is per trace id, so a surviving trace is whole.
+    expect(traces[0]?.spans).toHaveLength(2);
+  });
+
+  test('reset drops the buffer, so a restarted dev server starts empty', () => {
+    const { recorder, clock } = install();
+    request(clock, { id: 'req_1', path: '/a' });
+    recorder.reset();
+    expect(recorder.traces()).toEqual([]);
+  });
+
+  test('a repeated query keeps its own detail, which is how the N+1 is counted', () => {
+    const { recorder, clock } = install();
+    request(clock, { id: 'req_1', path: '/feed' }, ['query.feed', 'query.feed', 'query.author']);
+
+    const details = (recorder.traces()[0]?.spans ?? [])
+      .filter((span) => span.kind === 'sql')
+      .map((span) => span.detail);
+    expect(details).toEqual(['query.feed', 'query.feed', 'query.author']);
+  });
+});

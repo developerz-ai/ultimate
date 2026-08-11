@@ -36,6 +36,7 @@
     "@ultimat3/action": "1.0.0",
     "@ultimat3/admin": "1.0.0",
     "@ultimat3/ai": "1.0.0",
+    "@ultimat3/cache": "1.0.0",
     "@ultimat3/core": "1.0.0",
     "@ultimat3/db": "1.0.0",
     "@ultimat3/entity": "1.0.0",

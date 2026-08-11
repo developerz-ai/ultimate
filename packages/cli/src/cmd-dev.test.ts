@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
+import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
@@ -27,8 +28,12 @@ const ROOT = join(import.meta.dir, '..', '.dev-fixture');
 const FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'dev-fixture', version: '1.4.0' }),
 
-  'apps/web/app/posts/policy.ts': `import { allow, can, definePermissions } from '@ultimat3/policy';
+  'apps/web/app/posts/policy.ts': `import { allow, can, definePermissions, defineRoles } from '@ultimat3/policy';
 export const permissions = definePermissions(['post:publish'] as const);
+export const roles = defineRoles({
+  author: { grants: ['post:publish'] },
+  reader: { grants: [] },
+});
 export const canPostWrite = can('post:publish');
 export const anyone = allow();
 `,
@@ -81,6 +86,14 @@ const resetRegistries = (): void => {
 
 let server: DevServer;
 
+/**
+ * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
+ * default hook budget is 5s — close enough to this boot that a loaded machine decided whether the
+ * file passed. Every timeout in this file is explicit and generous for that reason: a hang should
+ * be reported as a hang, never as a boot that was 300ms slower than the runner's default.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
+
 beforeAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
   for (const [path, contents] of Object.entries(FILES)) {
@@ -89,13 +102,13 @@ beforeAll(async () => {
   resetRegistries();
   // Port 0 asks the OS for a free one, so this suite never collides with a running `x dev`.
   server = await startDev({ root: ROOT, port: 0, env: {}, roles: ['web', 'worker', 'scheduler'] });
-});
+}, BOOT_TIMEOUT_MS);
 
 afterAll(async () => {
   await server?.stop();
   await rm(ROOT, { recursive: true, force: true });
   resetRegistries();
-});
+}, BOOT_TIMEOUT_MS);
 
 const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {
   const handle = server.running.server;
@@ -220,6 +233,97 @@ describe('unit · x dev boots the app', () => {
     expect(payload.data.added).toContain('app');
   });
 
+  test('/_x/timeline is the request this process just served, not a refusal', async () => {
+    await fetchDev('/api/posts/echo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ word: 'traced' }),
+    });
+
+    const payload = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
+      ok: boolean;
+      data: {
+        requests: { requestId: string; path: string }[];
+        selected: { status: number; spans: { kind: string; name: string }[] } | null;
+        totalsByKind: Record<string, number>;
+      };
+    };
+    expect(payload.ok).toBe(true);
+    // The action's own route, recorded through core's tracer — the panel was `X_NOT_IMPLEMENTED`
+    // until `x dev` installed an exporter, because tracing is free and off until one is configured.
+    const served = payload.data.requests.find((entry) => entry.path === '/api/posts/echo');
+    expect(served).toBeDefined();
+    expect(served?.requestId.length).toBeGreaterThan(0);
+    expect(payload.data.selected?.spans.some((span) => span.kind === 'http')).toBe(true);
+    expect(Object.keys(payload.data.totalsByKind)).toContain('http');
+  });
+
+  test("/_x/policy is the app's real matrix: one column per declared role", async () => {
+    const payload = (await (await fetchDev('/_x/policy?json=1')).json()) as {
+      ok: boolean;
+      data: {
+        actors: string[];
+        permissions: string[];
+        matrix: { permission: string; byActor: Record<string, boolean> }[];
+        unreachable: string[];
+      };
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.data.actors).toEqual(['anonymous', 'author', 'reader']);
+    expect(payload.data.permissions).toContain('post:publish');
+
+    const publish = payload.data.matrix.find((row) => row.permission === 'post:publish');
+    // The grant the fixture's `defineRoles` actually made, decided by the fixture's own policy.
+    expect(publish?.byActor['author']).toBe(true);
+    expect(publish?.byActor['reader']).toBe(false);
+    expect(publish?.byActor['anonymous']).toBe(false);
+    expect(payload.data.unreachable).not.toContain('post:publish');
+  });
+
+  test('/_x/cache is the invalidation log, instead of a 500 where the tab should be', async () => {
+    declareTags(['devfixture']);
+    await invalidateTags([tag('devfixture', 'p_1')]);
+
+    const response = await fetchDev('/_x/cache?json=1');
+    // Before the log existed this panel could not answer at all: the unwired source threw
+    // synchronously, past the panel's own `.catch`, and the whole tab was a 500.
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      ok: boolean;
+      data: { invalidations: { tags: string[] }[]; note: string | null };
+    };
+    expect(payload.ok).toBe(true);
+    // The log is process-global, so this asserts the bust is present rather than that it is alone.
+    expect(payload.data.invalidations.some((event) => event.tags.includes('devfixture:p_1'))).toBe(
+      true,
+    );
+    expect(payload.data.note).toBeNull();
+  });
+
+  test('every mounted panel answers — no tab is a dead end', async () => {
+    const refused: string[] = [];
+    for (const key of server.panels) {
+      const body = (await (await fetchDev(`/_x/${key}?json=1`)).json()) as { ok: boolean };
+      if (!body.ok) refused.push(key);
+    }
+    // Four of these eleven refused before this wiring: timeline, cache and policy had no source
+    // at all, and the refusal threw past the panels' own degradation on the way out.
+    expect(refused).toEqual([]);
+  });
+
+  test('/_x/live says there is no sync node rather than claiming no subscribers', async () => {
+    const payload = (await (await fetchDev('/_x/live?json=1')).json()) as {
+      ok: boolean;
+      data: { subscribers: unknown[]; note: string | null };
+    };
+    // `subscribers` is the one source still unwired — `@ultimat3/realtime` records no matcher
+    // trace, and that trace is the panel's whole question. The panel degrades to its note; an
+    // empty list with no note would read as "nobody is subscribed", which is a different claim.
+    expect(payload.ok).toBe(true);
+    expect(payload.data.subscribers).toEqual([]);
+    expect(payload.data.note).toBe('dev.live.no-sync-node');
+  });
+
   test('an unknown /_x path 404s with a code, a cause and a fix', async () => {
     const response = await fetchDev('/_x/nope');
     expect(response.status).toBe(404);
@@ -241,4 +345,81 @@ describe('unit · x dev boots the app', () => {
     const role = devCommand.spec.flags?.find((flag) => flag.name === 'role');
     expect(role?.summary).toContain('web,sync,worker,scheduler');
   });
+});
+
+// Everything above proves the app is served. This proves it is still being served a moment later.
+// `dispatch` renders a `CommandResult` and `bin.ts` exits on it, so a dev server that only lives
+// inside the promise `run` resolves is a dev server the exit code takes down between the line
+// announcing the url and the first request to it — which is what `x dev` did. Only a real process
+// can show that, so this one is spawned rather than called.
+const HOLD_ROOT = join(import.meta.dir, '..', '.dev-hold-fixture');
+const BIN = join(import.meta.dir, 'bin.ts');
+
+/**
+ * One pump per stream, into one buffer. Reading the stream twice is what a naive version does,
+ * and abandoning a `for await` closes the underlying reader — the second read then waits forever
+ * on a stream nothing will ever write to again.
+ */
+function pump(stream: ReadableStream<Uint8Array>): { seen: () => string } {
+  const decoder = new TextDecoder();
+  let seen = '';
+  void (async () => {
+    for await (const chunk of stream) seen += decoder.decode(chunk, { stream: true });
+  })();
+  return { seen: () => seen };
+}
+
+/** Poll the buffer until `marker` shows up. The caller's own timeout is the deadline. */
+async function waitFor(output: { seen: () => string }, marker: string): Promise<string> {
+  for (;;) {
+    const seen = output.seen();
+    if (seen.includes(marker)) return seen;
+    await Bun.sleep(25);
+  }
+}
+
+describe('live · x dev stays up until it is signalled', () => {
+  test(
+    'boots, keeps serving, and drains on SIGINT instead of being killed',
+    async () => {
+      await rm(HOLD_ROOT, { recursive: true, force: true });
+      await Bun.write(
+        join(HOLD_ROOT, 'package.json'),
+        JSON.stringify({ name: 'dev-hold-fixture', version: '1.0.0' }),
+      );
+      await Bun.write(
+        join(HOLD_ROOT, 'app.config.ts'),
+        `import { defineConfig } from '@ultimat3/core';\nexport default defineConfig({ name: 'dev-hold-fixture' });\n`,
+      );
+
+      const child = Bun.spawn(['bun', BIN, 'dev', '--port', '0', '--json'], {
+        cwd: HOLD_ROOT,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const output = pump(child.stdout);
+      try {
+        expect(await waitFor(output, '"command":"dev"')).toContain('"ok":true');
+
+        // The regression: the process used to be gone by now, having exited on the code for the
+        // line it had just printed.
+        await Bun.sleep(500);
+        expect(child.exitCode).toBeNull();
+
+        child.kill('SIGINT');
+        const drained = await waitFor(output, '"msg":"stopped"');
+        const code = await child.exited;
+
+        // Drained, not killed: a hard kill leaves the embedded Postgres directory locked and never
+        // reaches core's phases, so this line is the whole difference.
+        expect(drained).toContain('"msg":"stopped"');
+        expect(code).toBe(0);
+      } finally {
+        child.kill('SIGKILL');
+        await child.exited;
+        await rm(HOLD_ROOT, { recursive: true, force: true });
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
 });
