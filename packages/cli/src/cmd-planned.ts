@@ -24,32 +24,11 @@ export interface PlannedCommand {
  */
 export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
   {
-    name: 'policy',
-    summary: 'which clause decided a permission, and why',
-    usage: 'x policy [list|explain <permission>] [--json]',
-    subcommands: ['list', 'explain'],
-    fix: 'x manifest --json   # every permission, and the actions and queries that enforce it',
-  },
-  {
-    name: 'tasks',
-    summary: 'cron tasks, their timezone and their next run',
-    usage: 'x tasks [list|show <name>] [--json]',
-    subcommands: ['list', 'show'],
-    fix: 'x manifest --json   # every task, its cron expression and its timezone',
-  },
-  {
     name: 'cache',
     summary: 'the tag graph, targeted eviction, hit stats',
     usage: 'x cache [graph|bust <tag>|clear|stats] [--json]',
     subcommands: ['graph', 'bust', 'clear', 'stats'],
     fix: 'x dev   # then the cache panel at /_x',
-  },
-  {
-    name: 'i18n',
-    summary: 'catalogs: add a locale, sync keys, check for gaps',
-    usage: 'x i18n [add <locale>|sync <locale>|check] [--json]',
-    subcommands: ['check', 'add', 'sync'],
-    fix: 'x g resource <name>   # scaffolds a resource with its catalog keys',
   },
   {
     name: 'branch',

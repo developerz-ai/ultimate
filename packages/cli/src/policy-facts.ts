@@ -1,0 +1,172 @@
+// Pure fact-gathering behind `x policy`: every declared permission projected against the roles
+// that grant it and the declarations that enforce it, plus the per-role allow/deny matrix behind
+// `explain`. No CLI shapes, no `msg()` — testable with real registries and no app to load.
+
+import type { AnyAction } from '@ultimat3/action';
+import { describeActions, getAction } from '@ultimat3/action';
+import type { MatrixRow, Policy } from '@ultimat3/policy';
+import { knownPermissions, policyMatrix, roleDefinitions, rolesGranting } from '@ultimat3/policy';
+import type { AnyQuery } from '@ultimat3/query';
+import { describeQueries, getQuery } from '@ultimat3/query';
+import { devActors } from './dev-policy';
+
+const isDefined = <T>(value: T | undefined): value is T => value !== undefined;
+
+/** Descriptor names whose `capability` is exactly this permission — shared by list and explain. */
+const namesEnforcing = <D extends { readonly name: string; readonly capability: string }>(
+  descriptors: readonly D[],
+  permission: string,
+): readonly string[] =>
+  descriptors.filter((descriptor) => descriptor.capability === permission).map((d) => d.name);
+
+// ── list ──────────────────────────────────────────────────────────────────
+
+export interface PermissionRow {
+  readonly permission: string;
+  readonly roles: readonly string[];
+  readonly actions: readonly string[];
+  readonly queries: readonly string[];
+}
+
+export interface PolicyListFacts {
+  readonly rows: readonly PermissionRow[];
+  readonly roleCount: number;
+  readonly enforcedCount: number;
+  /** Permissions no action or query enforces — a grant that does nothing. */
+  readonly unenforced: readonly string[];
+}
+
+export function listPolicy(): PolicyListFacts {
+  const actionDescriptors = describeActions();
+  const queryDescriptors = describeQueries();
+  const rows = knownPermissions().map(
+    (permission): PermissionRow => ({
+      permission,
+      roles: rolesGranting(permission),
+      actions: namesEnforcing(actionDescriptors, permission),
+      queries: namesEnforcing(queryDescriptors, permission),
+    }),
+  );
+  const unenforced = rows
+    .filter((row) => row.actions.length === 0 && row.queries.length === 0)
+    .map((row) => row.permission);
+  return {
+    rows,
+    roleCount: Object.keys(roleDefinitions()).length,
+    enforcedCount: rows.length - unenforced.length,
+    unenforced,
+  };
+}
+
+// ── explain ───────────────────────────────────────────────────────────────
+
+export type DeclarationKind = 'action' | 'query';
+export type SubjectKind = 'permission' | DeclarationKind;
+
+export interface DeclarationExplanation {
+  readonly name: string;
+  readonly kind: DeclarationKind;
+  readonly capability: string;
+  readonly label: string;
+  readonly rows: readonly MatrixRow[];
+}
+
+export interface SubjectExplanation {
+  readonly subject: string;
+  readonly kind: SubjectKind;
+  readonly grantingRoles: readonly string[];
+  readonly declarations: readonly DeclarationExplanation[];
+}
+
+/**
+ * One `testActor` per declared role plus the anonymous caller — the same actor set the `/_x`
+ * policy panel asks about (`devActors`, `dev-policy.ts`). Reusing it is the point: a second
+ * "every role plus anonymous" builder here is the duplicate axiom 1 bans, and it would drift
+ * from the panel's own set the first time a role is renamed.
+ */
+const matrixRowsFor = (policy: Policy): readonly MatrixRow[] =>
+  policyMatrix(policy, { actors: devActors(), input: {} }).rows;
+
+const explainAction = (action: AnyAction): DeclarationExplanation => {
+  const descriptor = action.describe();
+  return {
+    name: descriptor.name,
+    kind: 'action',
+    capability: descriptor.capability,
+    label: action.policy.label,
+    rows: matrixRowsFor(action.policy),
+  };
+};
+
+const explainQuery = (query: AnyQuery): DeclarationExplanation => {
+  const descriptor = query.describe();
+  return {
+    name: descriptor.name,
+    kind: 'query',
+    capability: descriptor.capability,
+    label: query.policy.label,
+    rows: matrixRowsFor(query.policy),
+  };
+};
+
+type Resolved =
+  | { readonly kind: 'permission'; readonly permission: string }
+  | { readonly kind: 'action'; readonly action: AnyAction }
+  | { readonly kind: 'query'; readonly query: AnyQuery };
+
+/** Priority order from the brief: a known permission, then an action, a query, an action path. */
+function resolveSubject(name: string): Resolved | undefined {
+  if (knownPermissions().includes(name)) return { kind: 'permission', permission: name };
+  const action = getAction(name);
+  if (action !== undefined) return { kind: 'action', action };
+  const query = getQuery(name);
+  if (query !== undefined) return { kind: 'query', query };
+  const byPath = describeActions().find((descriptor) => descriptor.path === name);
+  const pathAction = byPath === undefined ? undefined : getAction(byPath.name);
+  return pathAction === undefined ? undefined : { kind: 'action', action: pathAction };
+}
+
+/** Every string `x policy explain` accepts — permissions, then action/query names, then paths. */
+export function knownPolicySubjects(): readonly string[] {
+  const actions = describeActions();
+  return [
+    ...knownPermissions(),
+    ...actions.map((descriptor) => descriptor.name),
+    ...describeQueries().map((descriptor) => descriptor.name),
+    ...actions.map((descriptor) => descriptor.path),
+  ];
+}
+
+export function explainPolicy(name: string): SubjectExplanation | undefined {
+  const resolved = resolveSubject(name);
+  if (resolved === undefined) return undefined;
+  if (resolved.kind === 'permission') {
+    const { permission } = resolved;
+    const declarations = [
+      ...describeActions()
+        .filter((descriptor) => descriptor.capability === permission)
+        .map((descriptor) => getAction(descriptor.name))
+        .filter(isDefined)
+        .map(explainAction),
+      ...describeQueries()
+        .filter((descriptor) => descriptor.capability === permission)
+        .map((descriptor) => getQuery(descriptor.name))
+        .filter(isDefined)
+        .map(explainQuery),
+    ];
+    return {
+      subject: name,
+      kind: 'permission',
+      grantingRoles: rolesGranting(permission),
+      declarations,
+    };
+  }
+  const declaration =
+    resolved.kind === 'action' ? explainAction(resolved.action) : explainQuery(resolved.query);
+  return {
+    subject: name,
+    kind: resolved.kind,
+    grantingRoles: rolesGranting(declaration.capability),
+    declarations: [declaration],
+  };
+}

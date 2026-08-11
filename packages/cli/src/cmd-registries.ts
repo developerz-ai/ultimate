@@ -18,25 +18,13 @@ import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import type { CommandSpec } from './parse';
 import { nearest } from './parse';
+import { renderTable } from './table';
 
 /**
  * A descriptor is plain JSON by construction; only its `unknown`-typed schema fields need this
  * cast to satisfy `JsonValue` — same idiom as `@ultimat3/manifest`'s `asJson`.
  */
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
-
-/** Fixed-width columns so output diffs cleanly between runs — the padding idiom `cmd-routes.ts`'s `renderRouteTable` uses, generalised over an arbitrary header/row shape. */
-function renderTable(
-  header: readonly string[],
-  rows: readonly (readonly string[])[],
-): readonly string[] {
-  const widths = header.map((title, index) =>
-    Math.max(title.length, ...rows.map((row) => (row[index] ?? '').length)),
-  );
-  const line = (cells: readonly string[]): string =>
-    cells.map((value, index) => value.padEnd(widths[index] ?? 0)).join('  ');
-  return [line(header), ...rows.map(line)];
-}
 
 const formatValue = (value: JsonValue): string =>
   typeof value === 'string' ? value : JSON.stringify(value);

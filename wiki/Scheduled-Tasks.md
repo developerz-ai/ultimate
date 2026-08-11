@@ -112,9 +112,8 @@ Role table and drain sequence: [Deployment](Deployment).
 
 | Command / tool | Output |
 |---|---|
-| `x tasks list --json` | `name`, `cron`, `tz` and `enqueues` off the descriptor, plus the scheduler's last-tick state — `lastRun`, `lastStatus`, **`nextRun`** (ISO 8601, UTC + the zone-local rendering). Those three are run state, read from the scheduler's Postgres row and its next-occurrence resolution, never declared fields |
-| `x tasks show <name> --json` | the next N fire times, the jobs it enqueues, the resolved queue |
-| `x tasks run <name>` | fires one tick immediately, out of band, for verification. Dispatch only — the job still runs on a worker |
+| `x tasks list --json` | the descriptor — `name`, `cron`, `tz`, `catchUp`, `maxCatchUp`, `jobs` — plus the resolved **`next`** occurrence, rendered in the task's own `tz`, and its `nextMs` epoch instant. Those last two are derived, never declared fields |
+| `x tasks show <name> --json` | the same, plus the cron in words (`describe`) and the next N occurrences (`--count`, default 5) |
 | MCP `tasks.list` | same content as `x tasks list --json`, same authz |
 | `/_x` dev panel | schedule table with next-run countdown and last-tick outcome |
 | `x.manifest.json` | generated `tasks` section — the build-time source of truth |
@@ -123,10 +122,13 @@ Role table and drain sequence: [Deployment](Deployment).
 
 ```
 $ x tasks list --json
-{"tasks":[{"name":"nightlyDigest","cron":"0 3 * * *","tz":"UTC",
-  "lastRun":"2026-07-26T03:00:00Z","lastStatus":"enqueued",
-  "nextRun":"2026-07-27T03:00:00Z","enqueues":["sendDigest"]}]}
+{"ok":true,"command":"tasks","summary":"1 task(s)","findings":[],"data":[
+  {"kind":"task","name":"nightlyDigest","cron":"0 3 * * *","tz":"UTC","catchUp":"skip",
+   "maxCatchUp":10,"jobs":["sendDigest"],
+   "nextMs":1786503600000,"next":"2026-08-12T03:00:00Z"}]}
 ```
+
+`next` carries the task's own zone offset, never a machine-local one: the same `0 3 * * *` in `America/New_York` reads `2026-03-06T03:00:00-05:00` before the spring-forward and `2026-03-09T03:00:00-04:00` after it.
 
 ## Testing
 

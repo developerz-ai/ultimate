@@ -2,6 +2,7 @@
 // The generated test pins metadata presence and the offline fallback: a route with no title is an
 // SEO regression and a route with no fallback is a blank screen on a train.
 
+import { catalogJson } from './catalog-json';
 import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { kebab, pascal, titleKey } from './naming';
@@ -108,11 +109,11 @@ e2eTest('/${path} renders offline from its fallback', async ({ page, offline }) 
 });
 `;
 
-const catalogSource = (path: string): string => `{
-  "${titleKey(path)}": "${pascal(path.split('/').at(-1) ?? 'Page')}",
-  "${titleKey(path).replace('.title', '.description')}": "Describe this page for search results."
-}
-`;
+const catalogSource = (path: string): string =>
+  catalogJson({
+    [titleKey(path)]: pascal(path.split('/').at(-1) ?? 'Page'),
+    [titleKey(path).replace('.title', '.description')]: 'Describe this page for search results.',
+  });
 
 export interface RouteOptions {
   readonly surface: Surface;

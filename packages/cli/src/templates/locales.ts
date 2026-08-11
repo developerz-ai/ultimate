@@ -43,7 +43,13 @@ const canonicalTag = (tag: string): string | undefined => {
  * default when the caller names none. Loud rather than lenient — a typo silently resolved to `en`
  * writes a catalog the app never reads, and a traversal silently dropped writes one it never sees.
  */
-export function resolveLocales(requested?: readonly string[]): readonly string[] {
+export function resolveLocales(
+  requested?: readonly string[],
+  // `x i18n add <locale>` reaches the same validator through a different flag, so the rejection
+  // has to name the caller's own command — a fix line telling an `x i18n` user to run `x g` is
+  // the kind of misdirection axiom 4 exists to refuse.
+  fix: string = LOCALES_FIX,
+): readonly string[] {
   if (requested === undefined) return DEFAULT_LOCALES;
   const resolved: string[] = [];
   for (const raw of requested) {
@@ -51,11 +57,7 @@ export function resolveLocales(requested?: readonly string[]): readonly string[]
     // `--locales=en,,es` is a typing artefact, not a request for a nameless catalog.
     if (tag.length === 0) continue;
     if (escapesCatalogRoot(tag)) {
-      throw new ScaffoldPathEscapeError({
-        path: `${CATALOG_ROOT}/${tag}`,
-        dir: CATALOG_ROOT,
-        fix: LOCALES_FIX,
-      });
+      throw new ScaffoldPathEscapeError({ path: `${CATALOG_ROOT}/${tag}`, dir: CATALOG_ROOT, fix });
     }
     const canonical = canonicalTag(tag);
     if (canonical === undefined) {
@@ -63,7 +65,7 @@ export function resolveLocales(requested?: readonly string[]): readonly string[]
         flag: 'locales',
         command: 'g',
         reason: `"${tag}" is not a BCP-47 locale`,
-        fix: LOCALES_FIX,
+        fix,
       });
     }
     // Lowercase, because the tag is a file stem: `en-US.json` and `en-us.json` are one file on a

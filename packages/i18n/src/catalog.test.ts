@@ -1,6 +1,37 @@
 import { describe, expect, test } from 'bun:test';
-import { catalogKeys, flattenCatalog, loadCatalog, mergeCatalogs, missingFrom } from './catalog';
+import {
+  catalogKeys,
+  flattenCatalog,
+  loadCatalog,
+  mergeCatalogs,
+  missingFrom,
+  nestCatalog,
+} from './catalog';
 import { FRAMEWORK_CATALOG } from './framework';
+
+describe('nestCatalog', () => {
+  test('is flattenCatalog inverted — a dot-key catalog becomes the authored shape', () => {
+    const flat = { 'nav.home': 'Home', 'nav.deep.deeper': 'Deep', top: 'Top' };
+    expect(nestCatalog(flat)).toEqual({
+      nav: { deep: { deeper: 'Deep' }, home: 'Home' },
+      top: 'Top',
+    });
+    expect(flattenCatalog(nestCatalog(flat))).toEqual(flat);
+  });
+
+  test('what it produces is what parseNestedCatalog accepts — the round-trip that matters', () => {
+    expect(loadCatalog(nestCatalog({ 'a.b.c': 'x' }))).toEqual({ 'a.b.c': 'x' });
+  });
+
+  test('a branch that collides with a leaf is X_CATALOG_INVALID, not a silent overwrite', () => {
+    expect(codeOf(() => nestCatalog({ nav: 'Home', 'nav.home': 'Home' }))).toBe(
+      'X_CATALOG_INVALID',
+    );
+    expect(codeOf(() => nestCatalog({ 'nav.home': 'Home', nav: 'Home' }))).toBe(
+      'X_CATALOG_INVALID',
+    );
+  });
+});
 
 describe('flattenCatalog', () => {
   test('nested authoring becomes dot-key lookup', () => {

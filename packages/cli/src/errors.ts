@@ -289,6 +289,8 @@ export class DeclarationUnknownError extends UltimateError {
     name: string;
     known: readonly string[];
     suggestion?: string;
+    /** The subcommand that takes one name. `describe` for the registries, `show` for `x tasks`. */
+    verb?: string;
   }) {
     super({
       code: 'X_DECLARATION_UNKNOWN',
@@ -296,7 +298,7 @@ export class DeclarationUnknownError extends UltimateError {
       fix:
         input.suggestion === undefined
           ? `x ${input.kind} list --json`
-          : `x ${input.kind} describe ${input.suggestion}`,
+          : `x ${input.kind} ${input.verb ?? 'describe'} ${input.suggestion}`,
       docs: docsFor('X_DECLARATION_UNKNOWN'),
     });
   }

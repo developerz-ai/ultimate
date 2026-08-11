@@ -1,0 +1,290 @@
+// `x policy list|explain` against real registrations — same reasoning `cmd-registries.test.ts`
+// gives for actions/queries/entities: a fixture that only pretended to declare a permission would
+// prove nothing about whether the command reads the app's own policy objects. Registries are
+// process-global, so every test resets them.
+
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
+import {
+  and,
+  can,
+  clearPermissions,
+  clearRoles,
+  definePermissions,
+  defineRoles,
+} from '@ultimat3/policy';
+import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { policyCommand } from './cmd-policy';
+import type { CommandContext } from './command';
+import { msg } from './messages';
+import type { FlagValue } from './parse';
+import { parseArgs } from './parse';
+import type { ThrownShape } from './thrown-by';
+
+const ROOT = join(import.meta.dir, '..', '.policy-fixture');
+const BROKEN = join(import.meta.dir, '..', '.policy-broken-fixture');
+const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
+
+/** Same shape as `policy-facts.test.ts`'s fixture — see that file for why each fact is there. */
+function registerFixtures(): void {
+  definePermissions(['post:publish', 'post:read', 'feed:read'] as const);
+  defineRoles({
+    admin: { grants: ['post:publish', 'post:read', 'feed:read'] },
+    editor: { grants: ['post:publish', 'post:read'] },
+    reader: { grants: ['post:read', 'feed:read'] },
+  });
+  registerActions({
+    publishPost: action({
+      input: t.object({}),
+      output: t.object({}),
+      policy: can('post:publish'),
+      async handle() {
+        return {};
+      },
+    }),
+    archivePost: action({
+      input: t.object({}),
+      output: t.object({}),
+      policy: and(
+        can('post:publish'),
+        can('post:read', ({ actor }) => actor?.id === 'admin'),
+      ),
+      async handle() {
+        return {};
+      },
+    }),
+  });
+  registerQuery(
+    'postFeed',
+    query({
+      input: t.object({}),
+      policy: can('feed:read'),
+      sql: () => from('posts').select({ id: 'id' }).limit(10),
+    }),
+  );
+  registerQuery(
+    'publishedPosts',
+    query({
+      input: t.object({}),
+      policy: can('post:publish'),
+      sql: () => from('posts').select({ id: 'id' }).limit(10),
+    }),
+  );
+}
+
+const contextFor = (
+  subcommand: string | undefined,
+  positionals: readonly string[] = [],
+  cwd: string = ROOT,
+): CommandContext => ({
+  args: {
+    command: 'policy',
+    subcommand,
+    positionals,
+    flags: new Map<string, FlagValue>(),
+    json: false,
+    help: false,
+    passthrough: [],
+  },
+  cwd,
+  runner: async () => ({
+    command: ['true'],
+    code: 0,
+    ok: true,
+    stdout: '',
+    stderr: '',
+    durationMs: 0,
+  }),
+  env: {},
+  bunVersion: '1.3.0',
+});
+
+/** The thrown value, so a test can assert on `code`/`fix` — `run()` rejects, it never returns an
+ * `ok: false` result for a bad flag or an unknown declaration. */
+async function rejectedBy(call: () => Promise<unknown>): Promise<ThrownShape> {
+  try {
+    await call();
+  } catch (error) {
+    return error as ThrownShape;
+  }
+  return expect.unreachable('expected a rejection');
+}
+
+beforeAll(async () => {
+  await Bun.write(join(ROOT, 'app.config.ts'), APP_CONFIG);
+  await Bun.write(join(BROKEN, 'app.config.ts'), APP_CONFIG);
+  await Bun.write(
+    join(BROKEN, 'apps/web/app/broken.ts'),
+    `export { nope } from './does-not-exist';\n`,
+  );
+});
+
+afterAll(async () => {
+  await rm(ROOT, { recursive: true, force: true });
+  await rm(BROKEN, { recursive: true, force: true });
+});
+
+/**
+ * Reset BEFORE registering, not only after. The declaration registries are process-global and
+ * `bun test` runs every file in one process, so whatever ran first — the reference app registers
+ * its own `publishPost` — is still seated when the first `registerFixtures()` lands and the name
+ * collides with `X_ACTION_DUPLICATE`. Clearing first is what makes this file order-independent
+ * instead of passing alone and failing in the full suite.
+ */
+beforeEach(() => {
+  resetActions();
+  resetQueries();
+  clearRoles();
+  clearPermissions();
+  registerFixtures();
+});
+
+afterEach(() => {
+  resetActions();
+  resetQueries();
+  clearRoles();
+  clearPermissions();
+});
+
+describe('unit · x policy · spec', () => {
+  test('names both subcommands, list first, requires an app', () => {
+    expect(policyCommand.spec.name).toBe('policy');
+    expect(policyCommand.spec.subcommands).toEqual(['list', 'explain']);
+    expect(policyCommand.spec.requiresApp).toBe(true);
+    expect(policyCommand.spec.summary).toBe('which clause decided a permission, and why');
+    expect(policyCommand.spec.usage).toBe('x policy [list|explain <subject>] [--json]');
+  });
+
+  test('the default subcommand is list — for the parser, and for run() given no subcommand', async () => {
+    const parsed = parseArgs(['policy'], [policyCommand.spec]);
+    expect(parsed.subcommand).toBe('list');
+
+    const viaParser = await policyCommand.run(contextFor(parsed.subcommand, parsed.positionals));
+    const viaUndefined = await policyCommand.run(contextFor(undefined));
+    expect(viaParser.summary).toBe(viaUndefined.summary);
+  });
+});
+
+describe('unit · x policy list', () => {
+  test('a row per permission — roles, actions and queries joined, "-" when none', async () => {
+    const result = await policyCommand.run(contextFor('list'));
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(msg('cli.policy.count', { permissions: 3, roles: 3, enforced: 2 }));
+    expect(result.lines?.[0]).toContain('permission');
+
+    const publishLine = result.lines?.find((line) => line.trim().startsWith('post:publish'));
+    expect(publishLine).toContain('publishPost');
+    expect(publishLine).toContain('publishedPosts');
+
+    const readLine = result.lines?.find((line) => line.trim().startsWith('post:read'));
+    expect(readLine).toBeDefined();
+    expect(readLine).not.toContain('publishPost');
+
+    expect(result.data).toEqual([
+      { permission: 'feed:read', roles: ['admin', 'reader'], actions: [], queries: ['postFeed'] },
+      {
+        permission: 'post:publish',
+        roles: ['admin', 'editor'],
+        actions: ['publishPost'],
+        queries: ['publishedPosts'],
+      },
+      { permission: 'post:read', roles: ['admin', 'editor', 'reader'], actions: [], queries: [] },
+    ]);
+  });
+
+  test('an unenforced permission gets its own summary line and the very next line names it', async () => {
+    const result = await policyCommand.run(contextFor('list'));
+    const lines = result.lines ?? [];
+    const at = lines.findIndex((line) => line.includes(msg('cli.policy.unenforced', { count: 1 })));
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(lines[at + 1]?.trim()).toBe('post:read');
+  });
+});
+
+describe('unit · x policy explain', () => {
+  test('a permission aggregates every enforcing declaration into one summary and one table each', async () => {
+    const result = await policyCommand.run(contextFor('explain', ['post:publish']));
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(
+      msg('cli.policy.explained', { subject: 'post:publish', allowed: 4, roles: 8 }),
+    );
+    const rendered = (result.lines ?? []).join('\n');
+    expect(rendered).toContain('action publishPost — policy post:publish');
+    expect(rendered).toContain('query publishedPosts — policy post:publish');
+
+    const data = result.data as {
+      kind: string;
+      grantingRoles: readonly string[];
+      declarations: readonly unknown[];
+    };
+    expect(data.kind).toBe('permission');
+    expect(data.grantingRoles).toEqual(['admin', 'editor']);
+    expect(data.declarations).toHaveLength(2);
+  });
+
+  test('a compound policy names the SPECIFIC deciding clause per actor, not the and() wrapper', async () => {
+    const result = await policyCommand.run(contextFor('explain', ['archivePost']));
+    expect(result.ok).toBe(true);
+    const rendered = (result.lines ?? []).join('\n');
+    expect(rendered).toContain('action archivePost — policy and(post:publish, post:read)');
+
+    const editorLine = result.lines?.find((line) => line.trim().startsWith('editor'));
+    expect(editorLine).toContain('deny');
+    expect(editorLine).toContain('post:read');
+
+    const readerLine = result.lines?.find((line) => line.trim().startsWith('reader'));
+    expect(readerLine).toContain('deny');
+    expect(readerLine).toContain('post:publish');
+  });
+
+  test('resolves an action by its HTTP path', async () => {
+    const result = await policyCommand.run(contextFor('explain', ['/api/posts/publish']));
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(
+      msg('cli.policy.explained', { subject: '/api/posts/publish', allowed: 2, roles: 4 }),
+    );
+    expect((result.data as { kind: string }).kind).toBe('action');
+  });
+
+  test('resolves a query by name', async () => {
+    const result = await policyCommand.run(contextFor('explain', ['postFeed']));
+    expect(result.summary).toBe(
+      msg('cli.policy.explained', { subject: 'postFeed', allowed: 2, roles: 4 }),
+    );
+    expect((result.data as { kind: string }).kind).toBe('query');
+  });
+});
+
+describe('unit · x policy errors', () => {
+  test('explain with no positional names the working invocation', async () => {
+    const thrown = await rejectedBy(() => policyCommand.run(contextFor('explain', [])));
+    expect(thrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect(thrown.fix).toBe('x policy list --json');
+  });
+
+  test('explain <typo> suggests the nearest known subject', async () => {
+    const thrown = await rejectedBy(() => policyCommand.run(contextFor('explain', ['archivPost'])));
+    expect(thrown).toBeUltimateError('X_DECLARATION_UNKNOWN');
+    expect(thrown.cause).toContain('archivPost');
+    expect(thrown.fix).toBe('x policy explain archivePost');
+  });
+
+  test('explain <unrelated> falls back to list --json when nothing is close enough to suggest', async () => {
+    const thrown = await rejectedBy(() =>
+      policyCommand.run(contextFor('explain', ['completely-unrelated-name'])),
+    );
+    expect(thrown).toBeUltimateError('X_DECLARATION_UNKNOWN');
+    expect(thrown.fix).toBe('x policy list --json');
+  });
+});
+
+describe('unit · x policy findings', () => {
+  test('a module that will not import is a finding, and ok is false', async () => {
+    const result = await policyCommand.run(contextFor('list', [], BROKEN));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.length).toBeGreaterThan(0);
+    expect(result.findings?.[0]?.at).toBe('apps/web/app/broken.ts');
+  });
+});

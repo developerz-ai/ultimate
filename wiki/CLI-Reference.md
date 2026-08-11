@@ -37,13 +37,13 @@ x version              # CLI version
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
 | `x jobs` | list, show, retry, drain the queue | shipped |
+| `x tasks` | cron tasks, their timezone and their next run | shipped |
+| `x policy` | which clause decided a permission, and why | shipped |
+| `x i18n` | add, sync, check catalogs | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x fix boundary <file>` | the minimal cut for an import that crossed a surface boundary | shipped |
-| `x policy explain` | why a policy allowed or denied | planned |
-| `x tasks` | list cron tasks and their next run | planned |
 | `x cache` | tag graph, bust, clear, stats | planned |
-| `x i18n` | add, sync, check catalogs | planned |
 | `x branch` | copy-on-write branch environments | planned |
 | `x status` | connected-client build-ID distribution, role health | planned |
 | `x upgrade` | move every `@ultimat3/*` in lockstep, with codemods | planned |
@@ -411,6 +411,63 @@ x jobs [ls|show <id>|retry <id>|drain --to <driver>] [--queue q] [--state s] [--
 Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it.
 
 Errors: `X_JOB_UNKNOWN`, `X_CLI_BAD_FLAG`, and `X_NOT_IMPLEMENTED` from a driver with no introspection.
+
+## x tasks
+
+```bash
+x tasks [list|show <name>] [--count n] [--json]
+```
+
+| Subcommand | Does |
+|---|---|
+| `list` | every registered `task`: cron, timezone, catch-up policy, the jobs it enqueues, and its next occurrence |
+| `show <name>` | the same plus the cron in words and the next `--count` occurrences (default 5, max 50) |
+
+Every instant is rendered in the task's **own** `tz`, never a machine-local default: a `0 3 * * *` in `America/New_York` reads `2026-03-06T03:00:00-05:00` before the spring-forward and `2026-03-09T03:00:00-04:00` after it. Same wall clock, different instant — the ambiguity the required `tz` exists to remove.
+
+Errors: `X_DECLARATION_UNKNOWN` (with the nearest name as its fix), `X_CLI_BAD_FLAG`.
+
+## x policy
+
+```bash
+x policy [list|explain <subject>] [--json]
+```
+
+| Subcommand | Does |
+|---|---|
+| `list` | every permission, the roles that grant it, and the actions and queries that enforce it — plus the permissions **nothing** enforces, which are grants that do nothing |
+| `explain <subject>` | the allow/deny matrix, one row per declared role plus `anonymous`, naming the clause that decided and its reason |
+
+`<subject>` resolves in order against a permission (`post:publish`), an action name (`publishPost`), a query name (`postFeed`), then an action's HTTP path (`/api/posts/publish`) — so the `fix:` line printed by an `X_FORBIDDEN` is runnable whichever of the four the throwing surface had to hand.
+
+```bash
+$ x policy explain publishPost
+  action publishPost — policy post:publish
+  actor      verdict  deciding      reason
+  anonymous  deny     post:publish  no actor for post:publish
+  author     deny     post:publish  post:publish predicate returned false
+  reader     deny     post:publish  actor lacks post:publish
+```
+
+The verdict comes from `@ultimat3/policy`'s own `policyMatrix()` over the app's real `Policy` objects — the same evaluation the request path runs, never a second one.
+
+Errors: `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`.
+
+## x i18n
+
+```bash
+x i18n [check|add <locale>|sync <locale>] [--json]
+```
+
+| Subcommand | Does |
+|---|---|
+| `check` | scan every `t('…')` in the app's source, audit it against every catalog on disk, and **fail** on a missing key |
+| `add <locale>` | write `packages/i18n/catalogs/<locale>.json` seeded with the default locale's keys and values |
+| `sync <locale>` | add the keys that locale is missing; a key it already has is never overwritten, translated or not |
+
+Catalogs are one flat file per locale under `packages/i18n/catalogs/`. `check` reports three things separately: `missing` (a gap, and an exit code), `unused` (defined and never called), and `dynamic` — a `t(`plans.${plan}.name`)` the extractor cannot resolve. A dynamic call contributes its static head as a runtime-key prefix, so a key only ever reached that way is never listed unused; an expression with no static head contributes nothing, because a guessed prefix would suppress real gaps.
+
+Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`, `X_GENERATE_CONFLICT` (`add` over an existing catalog), `X_CLI_BAD_FLAG`, `X_SCAFFOLD_PATH_ESCAPE`.
 
 ## x test
 
