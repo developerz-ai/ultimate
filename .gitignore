@@ -46,6 +46,9 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+# ...except a published benchmark's own transcript: the docs quote its numbers as a measured
+# result, and the run that produced them is the evidence for that claim.
+!scripts/bench/results/*.log
 
 # IDE — editor config is operator-local, never committed
 .idea/

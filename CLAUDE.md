@@ -16,12 +16,13 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 28 in all — publish to npm at 1.0.0 in lockstep: one version, one commit, one tag, through OIDC
 trusted publishing. Semver applies from here — a breaking change to a documented API needs a major,
 and the eight primitive shapes, the `x` CLI surface and the tier table are now as stable as the
-`X_*` codes already were. Two things stay open: the realtime capacity benchmark (the 50k-socket
-forced-restart number is unmeasured — every capacity figure in the docs is a target, not a result),
-and roadmap milestone 11's two-platform deploy proof (`x build --target docker|binary|static`, the
-dev/prod compose files and the Helm chart all ship; the demo app running on Compose **and** K8s
-from one image with an invisible rolling restart is not yet demonstrated). See
-[`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) for the milestone detail.
+`X_*` codes already were. The realtime capacity benchmark is now **measured**: 50k sockets, forced
+`sync` restart, time-to-consistent p50 54.0s / p90 105.5s, all 50,000 recovered, 156,851 connect
+attempts shed before any query path — `scripts/bench/restart-bench.ts`, result committed under
+`scripts/bench/results/`. One thing stays open: roadmap milestone 11's two-platform deploy proof
+(`x build --target docker|binary|static`, the dev/prod compose files and the Helm chart all ship;
+the demo app running on Compose **and** K8s from one image with an invisible rolling restart is not
+yet demonstrated). See [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md) for the milestone detail.
 
 ## Design axioms (override any instinct that conflicts)
 

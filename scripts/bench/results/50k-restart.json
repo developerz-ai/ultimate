@@ -1,0 +1,62 @@
+{
+  "measuredAt": "2026-08-11T10:07:12.810Z",
+  "clients": 50000,
+  "workers": 10,
+  "acceptBudget": {
+    "perSecond": 500,
+    "burst": 2000
+  },
+  "restartGapMs": 500,
+  "ramp": {
+    "requested": 50000,
+    "succeeded": 50000,
+    "shedAttempts": 228191,
+    "durationMs": 282855,
+    "reconnect": {
+      "count": 50000,
+      "minMs": 19259,
+      "p50Ms": 63769,
+      "p90Ms": 114898,
+      "p99Ms": 158868,
+      "maxMs": 282219
+    },
+    "consistent": {
+      "count": 0,
+      "minMs": null,
+      "p50Ms": null,
+      "p90Ms": null,
+      "p99Ms": null,
+      "maxMs": null
+    }
+  },
+  "restart": {
+    "requested": 50000,
+    "succeeded": 50000,
+    "shedAttempts": 156851,
+    "durationMs": 143373,
+    "reconnect": {
+      "count": 50000,
+      "minMs": 5031,
+      "p50Ms": 53367,
+      "p90Ms": 101646,
+      "p99Ms": 128729,
+      "maxMs": 145694
+    },
+    "consistent": {
+      "count": 49981,
+      "minMs": 5668,
+      "p50Ms": 53951,
+      "p90Ms": 105540,
+      "p99Ms": 127750,
+      "maxMs": 145681
+    }
+  },
+  "notes": [
+    "ramp is throttled by the same AcceptBudget the restart recovery is measured under",
+    "readiness (ramp done / restart consistent) is read from the server’s own socket count, not the load generator’s self-report",
+    "time-to-consistent = first channel patch received after the kill (reconnect + resubscribe + delivery)",
+    "the consistency probe only publishes after the kill, so ramp.consistent is empty by construction — the ramp measures acceptance, the restart measures recovery",
+    "DB load proxy: shedAttempts is the count of connect attempts the AcceptBudget refused before accepting in that phase — every one of those never reached a query/snapshot path",
+    "client swarm split across 10 OS processes so the load generator's own event loop is never the bottleneck being measured"
+  ]
+}
