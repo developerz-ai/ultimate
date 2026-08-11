@@ -23,7 +23,7 @@ import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
-import { describeCdn, describeMail, startServices } from './dev-runtime';
+import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
@@ -237,7 +237,9 @@ export const devCommand: CliCommand = {
       summary: msg('cli.dev.ready', {
         url: server.url,
         panels: server.panels.length,
-        services: `${describeServices(server.services)} ${describeMail(server.runtime)} ${describeCdn(server.runtime)}`,
+        // Rendered text, so the mail and CDN halves come from the catalog; `data` below carries the
+        // status values a script parses, which is why the two are different calls and not one.
+        services: `${describeServices(server.services)} ${mailLabel(server.runtime)} ${cdnLabel(server.runtime)}`,
       }),
       findings: server.findings,
       // Every fact `lines` prints is a fact `--json` carries, `manifest` included — or the two

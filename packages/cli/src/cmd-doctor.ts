@@ -106,7 +106,10 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       finding(
         'X_PWA_ICON_MISSING',
         `${ICON_SOURCE} is missing, so install icons and og images cannot be generated`,
-        `create a 1024x1024 square PNG at ${ICON_SOURCE}, or run x new to scaffold one`,
+        // An edit naming the file, in `@ultimat3/pwa`'s own words (`requireSourceIcon`). Not
+        // `x new`: it takes an app name and refuses to run inside the app that is missing the icon,
+        // so offering it here hands the reader a command that cannot work where they are standing.
+        `add a 1024x1024 square PNG at ${ICON_SOURCE}`,
         ICON_SOURCE,
       ),
     );

@@ -4,6 +4,8 @@
 // in two packages and answered by neither is what this whole path exists to close.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove — and each
+// case needs its own root, or a leftover `apps/web/site/icon.png` decides the next one's answer.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,16 +19,13 @@ import { assetRoutes, ICON_SOURCE, MEDIA_BASE_PATH } from './dev-assets';
 
 const SOURCE_KEY = 'covers/hero.png';
 
-/** A real PNG, so the pipeline decodes rather than refuses — the point of the whole change. */
+/**
+ * A real PNG, so the pipeline decodes rather than refuses — the point of the whole change. The
+ * raster keeps `createRaster`'s own bytes: every assertion below is about format and size, so
+ * painting channel values would only claim a colour the tests never read.
+ */
 function png(width: number, height: number): Uint8Array {
-  const raster = createRaster(width, height, 'fixture');
-  for (let i = 0; i < raster.pixels.length; i += 4) {
-    raster.pixels[i] = 200;
-    raster.pixels[i + 1] = 120;
-    raster.pixels[i + 2] = 40;
-    raster.pixels[i + 3] = 255;
-  }
-  return encodeImage(raster, 'png');
+  return encodeImage(createRaster(width, height, 'fixture'), 'png');
 }
 
 let root = '';

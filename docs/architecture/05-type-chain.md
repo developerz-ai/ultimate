@@ -178,6 +178,8 @@ export const config = defineConfig({
 `defineEnv` is a purpose-built declarative record, not the `@ultimat3/schema` `t` used by actions and
 entities — env vars are always strings on the wire and need coercion (`number`/`port`/`boolean`/`enum`),
 a `role` gate, and `secret` redaction a generic object schema has no vocabulary for. `X_ENV_MISSING` is
-the one code for this gate; `X_CONFIG_INVALID` is the unrelated failure of `app.config.ts` itself
-failing its own schema (bad `defaultLocale`, `db.pool < 1`, a non-IANA `timeZone`) — see
+the one code for a key this gate finds absent or unparseable; `X_CONFIG_INVALID` is the separate
+failure of a configuration that parses and still cannot boot — `app.config.ts` against its own schema
+(bad `defaultLocale`, `db.pool < 1`, a non-IANA `timeZone`), or two env keys that each parse and
+contradict each other (`SMTP_URL` with `RESEND_API_KEY`, `FASTLY_*` with `CLOUDFLARE_*`) — see
 [Configuration](../../wiki/Configuration.md).

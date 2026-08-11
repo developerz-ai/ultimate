@@ -32,6 +32,15 @@ export interface PurgeSelection {
 const nonEmpty = (value: string | undefined): string | undefined =>
   value === undefined || value.trim().length === 0 ? undefined : value.trim();
 
+/**
+ * The keys this environment actually set, in declaration order. Read rather than assumed, because
+ * the refusal below reaches a JSON diagnostic: a hardcoded token pair sends an operator who set
+ * only `FASTLY_SERVICE_ID` and `CLOUDFLARE_ZONE_ID` to look at two variables they never set.
+ * Names only — every one of these four keys may hold a credential.
+ */
+const configuredKeys = (env: PurgeEnvironment): readonly string[] =>
+  CDN_PURGE_ENV_KEYS.filter((key) => nonEmpty(env[key]) !== undefined);
+
 /** A driver that reaches no CDN, so a caller can report "purges nothing" without a name match. */
 export const isNoopPurgeDriver = (driver: PurgeDriver): boolean => driver.name === 'noop';
 
@@ -64,10 +73,11 @@ export function selectPurgeDriver(env: PurgeEnvironment): PurgeSelection {
     nonEmpty(env['CLOUDFLARE_API_TOKEN']) ?? nonEmpty(env['CLOUDFLARE_ZONE_ID']);
 
   if (fastlyKey !== undefined && cloudflareKey !== undefined) {
+    const configured = configuredKeys(env);
     throw new ConfigInvalidError({
-      cause: 'FASTLY_* and CLOUDFLARE_* are both set — two CDNs claim the same purge',
+      cause: `two CDNs claim the same purge: ${configured.join(', ')} are set`,
       fix: 'unset one pair in .env.production: a process purges exactly one edge',
-      meta: { selected: ['FASTLY_API_TOKEN', 'CLOUDFLARE_API_TOKEN'] },
+      meta: { configured },
     });
   }
 

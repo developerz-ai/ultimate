@@ -122,8 +122,10 @@ nothing loads that file's contents at runtime:
 
 Both pairs at once is `X_CONFIG_INVALID`: one process purges exactly one edge. Half a pair
 is refused the same way — treating it as "no CDN" is how a deployment ships believing it
-purges. A refused purge is `X_CACHE_PURGE_FAILED` carrying `meta.retryable`, and it lands in
-`report.errors` rather than failing the write that triggered it.
+purges. Either refusal names the keys that are actually set, in `cause` and in
+`meta.configured`, so the diagnostic can never point at a variable nobody set. A refused
+purge is `X_CACHE_PURGE_FAILED` carrying `meta.retryable`, and it lands in `report.errors`
+rather than failing the write that triggered it.
 
 ## Semantic cache
 
@@ -139,7 +141,7 @@ cache).
 
 | Code | Cause |
 |---|---|
-| `X_CACHE_DRIVER_UNAVAILABLE` | `Bun.redis` missing, or a purge driver built without its token |
+| `X_CACHE_DRIVER_UNAVAILABLE` | `Bun.redis` missing, a purge driver built without its token, or a batch size that is not a positive integer |
 | `X_CACHE_PURGE_FAILED` | the CDN refused a purge, or a key it would split on whitespace |
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |

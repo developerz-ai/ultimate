@@ -6,6 +6,7 @@ import {
   createSession,
   DEFAULT_SESSION_POLICY,
   listDevices,
+  readSessionCookie,
   revokeSession,
   type SessionPolicy,
   type SessionRuntime,
@@ -108,5 +109,34 @@ describe('session', () => {
       expect(cookie).toContain(attribute);
     }
     expect(cookie).not.toContain('Domain=');
+  });
+
+  test('a percent-escaped cookie value is decoded on the way back in', () => {
+    const request = new Request('https://app.test/', {
+      headers: { cookie: `${POLICY.cookieName}=a%20b` },
+    });
+    expect(readSessionCookie(request, POLICY)).toBe('a b');
+  });
+
+  /**
+   * The header is whatever the client sent. `decodeURIComponent('%')` throws a bare `URIError`,
+   * which every caller of this parser would have propagated as a 500 — a request carrying a
+   * malformed cookie must fail as "no valid session", the same as one carrying junk.
+   */
+  test('a malformed percent-escape reads back raw instead of throwing', () => {
+    const request = new Request('https://app.test/', {
+      headers: { cookie: `${POLICY.cookieName}=%` },
+    });
+    expect(readSessionCookie(request, POLICY)).toBe('%');
+  });
+
+  test('a malformed cookie value never verifies as a session', async () => {
+    const rt = runtime();
+    await createSession(rt, { userId: 'user-1' });
+    const request = new Request('https://app.test/', {
+      headers: { cookie: `${POLICY.cookieName}=%` },
+    });
+    const raw = readSessionCookie(request, POLICY) ?? '';
+    expect((await caught(() => verifySession(rt, raw))).code).toBe('X_UNAUTHENTICATED');
   });
 });

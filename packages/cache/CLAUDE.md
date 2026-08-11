@@ -29,6 +29,15 @@ Tier 1. Tagged caching + THE invalidation graph.
   and clears nothing, which is the one CDN failure no later read can catch.
 - `retryable` on `X_CACHE_PURGE_FAILED` is derived, never guessed: 408/409/425/429 and 5xx, plus
   any request that never got a status. That table lives in `purge-http.ts` and is edited there.
+- `X_CACHE_PURGE_FAILED` means a provider refused. A batch size that is not a positive integer is
+  this package miswired, so `chunked()` raises `X_CACHE_DRIVER_UNAVAILABLE` instead — and it raises
+  it *before* the loop, because a `0` spins forever and a `NaN` yields one empty batch, a purge that
+  reports success having cleared nothing.
+- Every `fixFor()` branch names a command, an env key or a call. The gate's `fix:` scanner reads
+  `fix:` properties, not the `return` literals in those functions, so the colocated
+  "every failure fix names a command" tests are the only thing enforcing it.
+- A refusal's diagnostic reads the environment, never a hardcoded pair: `meta.configured` and the
+  cause name the keys that are actually set. Names only — all four keys can hold a credential.
 - A remote driver takes an injected `fetch` so a test never unseals the network; the loopback
   proof in `purge-fastly.test.ts` is the only place the default one runs.
 

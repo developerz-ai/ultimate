@@ -26,8 +26,27 @@ export const isRetryableStatus = (status: number): boolean =>
  */
 export const defaultPurgeFetch: PurgeFetch = (input, init) => globalThis.fetch(input, init);
 
-/** Providers cap keys per request. A bust of 300 tags is still one purge — several requests. */
-export function chunked<T>(values: readonly T[], size: number): readonly (readonly T[])[] {
+/**
+ * Providers cap keys per request. A bust of 300 tags is still one purge — several requests.
+ *
+ * The size is refused before the loop, not trusted: a `0` or a negative never advances `index`, so
+ * the fan-out hangs holding the write's invalidation open, and a `NaN` ends the loop after one pass
+ * that slices to nothing — an empty key list posted to a CDN that answers 200 and clears nothing.
+ * `X_CACHE_DRIVER_UNAVAILABLE` rather than `X_CACHE_PURGE_FAILED`: the only sizes this ever sees
+ * are the drivers' own caps, so a bad one is this package miswired, and no CDN refused anything.
+ */
+export function chunked<T>(
+  driver: string,
+  values: readonly T[],
+  size: number,
+): readonly (readonly T[])[] {
+  if (!Number.isSafeInteger(size) || size < 1) {
+    throw new CacheDriverUnavailableError({
+      driver,
+      cause: `batch size ${String(size)} is not a positive integer, so ${values.length} keys cannot be split into requests`,
+      fix: 'pass a positive integer batch size to chunked(), as FASTLY_MAX_KEYS_PER_REQUEST does',
+    });
+  }
   const batches: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
     batches.push(values.slice(index, index + size));

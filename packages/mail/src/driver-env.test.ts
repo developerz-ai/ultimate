@@ -3,21 +3,44 @@
 // reachable from a boot at all — everything else in the package tests them once constructed.
 
 import { describe, expect, test } from 'bun:test';
-import type { MailDriver } from './driver';
+import { UltimateError } from '@ultimat3/core';
+import type { MailDriver, MemoryMailDriver } from './driver';
 import { createMemoryDriver, isMemoryDriver } from './driver';
 import { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
+import { driverUnavailable } from './errors';
 
 const FROM = 'Postly <no-reply@postly.test>';
 const SMTP_URL = 'smtps://user:pass@mail.postly.test:465';
 
-const thrown = (run: () => unknown): { code?: string; cause?: string; fix?: string } => {
+/** The thrown error itself, so a test can assert on `code`, `cause` and `fix` together. */
+const thrown = (run: () => unknown): UltimateError => {
   try {
     run();
   } catch (error) {
-    return error as { code?: string; cause?: string; fix?: string };
+    if (error instanceof UltimateError) return error;
   }
-  throw new Error('expected selectMailDriver to throw');
+  // `expect.unreachable` fails through the runner, so the caller sees its own assertion rather
+  // than a stack from inside this helper — and a bare throw here would carry no code and no fix.
+  return expect.unreachable('expected selectMailDriver to refuse with an UltimateError');
 };
+
+/** Every `MemoryMailDriver` member, optional and removable, so a case can drop exactly one. */
+type MemoryMembers = { -readonly [K in keyof MemoryMailDriver]?: MemoryMailDriver[K] };
+
+/**
+ * A driver that answers to `memory` and holds exactly the members a case grants it. The refusal
+ * it sends is coded like any other driver refusal: nothing calls it, and a bare `Error` here would
+ * still be the one shape this package forbids.
+ */
+function memoryLike(members: MemoryMembers): MailDriver {
+  const driver: MailDriver & MemoryMembers = {
+    name: 'memory',
+    send: () =>
+      Promise.reject(driverUnavailable('a look-alike driver in this test cannot deliver')),
+    ...members,
+  };
+  return driver;
+}
 
 describe('selectMailDriver', () => {
   test('SMTP_URL selects the smtp transport', () => {
@@ -110,12 +133,24 @@ describe('isMemoryDriver', () => {
   // The guard decides whether a host reads `outbox()`. Narrowing on the name alone would let a
   // transport that happens to be called "memory" reach a method it does not have.
   test('a look-alike without an outbox is not a memory driver', () => {
-    const impostor: MailDriver = {
-      name: 'memory',
-      send: () => Promise.reject(new Error('unused')),
-    };
-    expect(isMemoryDriver(impostor)).toBe(false);
+    expect(isMemoryDriver(memoryLike({}))).toBe(false);
   });
+
+  // The predicate promises the whole `MemoryMailDriver` interface, so it has to check the whole
+  // interface: `outbox()` is what the `/_x` panel reaches first, not all it reaches. A partial
+  // look-alike that passed here would type-check its way into `sent`, `lastTo()` and `clear()`.
+  test('a look-alike with an outbox and nothing else is refused', () => {
+    expect(isMemoryDriver(memoryLike({ outbox: () => [] }))).toBe(false);
+  });
+
+  test.each(['sent', 'outbox', 'lastTo', 'clear'] as const)(
+    'a memory driver missing only %s is refused',
+    (missing) => {
+      const members: MemoryMembers = { ...createMemoryDriver() };
+      delete members[missing];
+      expect(isMemoryDriver(memoryLike(members))).toBe(false);
+    },
+  );
 
   test('the real one is', () => {
     expect(isMemoryDriver(createMemoryDriver())).toBe(true);

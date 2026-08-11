@@ -7,8 +7,8 @@ import {
   clearHandshakeCookie,
   DEFAULT_HANDSHAKE_TTL_MS,
   handshakeCookie,
+  handshakeCookieName,
   handshakeSecret,
-  OAUTH_HANDSHAKE_COOKIE,
   openHandshake,
   readHandshakeCookie,
   sealHandshake,
@@ -24,10 +24,13 @@ const options = { secret: SECRET, clock };
 const start = (provider: 'github' | 'google' = 'github'): OAuthHandshake =>
   beginOAuth({ provider, clientId: 'client-id', redirectUri: 'https://app.test/auth/callback' });
 
+/** What a browser keeps out of a `set-cookie`: the name=value pair, none of the attributes. */
+const kept = (setCookie: string): string => setCookie.slice(0, setCookie.indexOf(';'));
+
 /** The callback leg as it really arrives: a fresh request carrying only what the browser kept. */
 const callbackRequest = (setCookie: string): Request =>
   new Request('https://app.test/auth/oauth/github/callback?code=the-code', {
-    headers: { cookie: setCookie.slice(0, setCookie.indexOf(';')) },
+    headers: { cookie: kept(setCookie) },
   });
 
 const codeOf = (run: () => unknown): string => {
@@ -108,7 +111,8 @@ describe('the handshake seal', () => {
 describe('the handshake cookie', () => {
   test('every attribute the browser is trusted to enforce is set', () => {
     const cookie = handshakeCookie(start(), options);
-    expect(cookie.startsWith(`${OAUTH_HANDSHAKE_COOKIE}=`)).toBe(true);
+    expect(cookie.startsWith(`${handshakeCookieName('github')}=`)).toBe(true);
+    expect(handshakeCookieName('github').startsWith('__Host-')).toBe(true);
     // `__Host-` is only honoured with Path=/ and no Domain; Lax is what a top-level cross-site
     // GET back from the provider still carries, and HttpOnly keeps an XSS off the verifier.
     for (const attribute of ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax', 'Max-Age=600']) {
@@ -121,12 +125,15 @@ describe('the handshake cookie', () => {
     expect(handshakeCookie(start(), { ...options, ttlMs: 120_000 })).toContain('Max-Age=120');
   });
 
-  test('clearing it matches the attribute set that set it', () => {
-    const cleared = clearHandshakeCookie();
+  test('clearing it names the provider it is clearing, with the attributes that set it', () => {
+    const cleared = clearHandshakeCookie('github');
+    expect(cleared.startsWith(`${handshakeCookieName('github')}=;`)).toBe(true);
     expect(cleared).toContain('Max-Age=0');
     for (const attribute of ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax']) {
       expect(cleared).toContain(attribute);
     }
+    // A github callback must not cancel a google login the same browser has in another tab.
+    expect(clearHandshakeCookie('google')).not.toContain(handshakeCookieName('github'));
   });
 
   test('a callback with no handshake cookie is refused', () => {
@@ -140,9 +147,45 @@ describe('the handshake cookie', () => {
     const handshake = start();
     const sealed = sealHandshake(handshake, options);
     const request = new Request('https://app.test/auth/oauth/github/callback', {
-      headers: { cookie: `theme=dark; ${OAUTH_HANDSHAKE_COOKIE}=${sealed}; __Host-x_session=abc` },
+      headers: {
+        cookie: `theme=dark; ${handshakeCookieName('github')}=${sealed}; __Host-x_session=abc`,
+      },
     });
     expect(readHandshakeCookie(request, 'github', options)).toEqual(handshake);
+  });
+
+  /**
+   * Two tabs, two providers, one cookie jar. Under a single shared name the second redirect's
+   * `set-cookie` replaces the first, and the earlier callback opens the later handshake — a
+   * login that fails for a reason the user cannot see and cannot avoid by restarting.
+   */
+  test('a second provider handshake does not clobber the first', () => {
+    const github = start('github');
+    const google = start('google');
+    const request = new Request('https://app.test/auth/oauth/github/callback', {
+      headers: {
+        cookie: [
+          kept(handshakeCookie(github, options)),
+          kept(handshakeCookie(google, options)),
+        ].join('; '),
+      },
+    });
+    expect(readHandshakeCookie(request, 'github', options)).toEqual(github);
+    expect(readHandshakeCookie(request, 'google', options)).toEqual(google);
+  });
+
+  /**
+   * A `Cookie:` header is whatever the client sent, and `%` alone is not a valid escape. The
+   * parser used to hand that straight to `decodeURIComponent`, so a bare `URIError` escaped the
+   * whole coded callback path and the leg answered 500 instead of naming the real refusal.
+   */
+  test('a malformed percent-escape is the coded refusal, never a URIError', () => {
+    const request = new Request('https://app.test/auth/oauth/github/callback?code=the-code', {
+      headers: { cookie: `${handshakeCookieName('github')}=%` },
+    });
+    expect(codeOf(() => readHandshakeCookie(request, 'github', options))).toBe(
+      'X_OAUTH_STATE_INVALID',
+    );
   });
 });
 

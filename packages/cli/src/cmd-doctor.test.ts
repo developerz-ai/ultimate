@@ -34,9 +34,12 @@ describe('unit · x doctor', () => {
   });
 
   test('a missing source icon is reported separately from the fallback', async () => {
-    expect(await codes(probe({ exists: (path) => path !== ICON_SOURCE }))).toEqual([
-      'X_PWA_ICON_MISSING',
-    ]);
+    const findings = await runDoctor(probe({ exists: (path) => path !== ICON_SOURCE }));
+    expect(findings.map((finding) => finding.code)).toEqual(['X_PWA_ICON_MISSING']);
+    // An edit naming the file, pinned verbatim. `x new` was here and could never run: it takes an
+    // app name, so it is not an instruction anyone inside the broken app can follow.
+    expect(findings[0]?.fix).toBe(`add a 1024x1024 square PNG at ${ICON_SOURCE}`);
+    expect(findings[0]?.fix).not.toContain('x new');
   });
 
   test('an occupied port suggests the next one', async () => {

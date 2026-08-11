@@ -22,7 +22,8 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 - **One spelling of the transform query keys.** `IMAGE_QUERY_KEYS` in `images.ts` is the only
   place `w`/`f`/`q` are spelled; `defaultUrlFor` writes them and `parseImageQuery` is the only
   reader — never hand-roll either half against a literal. A present-but-unusable `w` or `q`
-  (`?w=0`, `?q=150`, empty, negative, fractional) throws `X_IMAGE_QUERY_INVALID` instead of
+  (`?w=0`, `?q=150`, empty, negative, fractional, or so many digits that `parseInt` returns
+  `Infinity`) throws `X_IMAGE_QUERY_INVALID` instead of
   falling back to the untransformed original — that silent fallback is the layout shift this
   whole contract exists to prevent. `parseImageQuery` never validates `f` against real format
   names; that refusal stays `image-driver.ts`'s `X_IMAGE_UNSUPPORTED`, so one bad URL never

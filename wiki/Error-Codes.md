@@ -60,7 +60,7 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_CONFIG_INVALID` | `app.config.ts` is invalid | a field failed its schema, or a required field is missing | `x config show --json` and fix the named field; see [Configuration](Configuration) |
+| `X_CONFIG_INVALID` | a configuration this process cannot boot on — env **or** `app.config.ts` | a field failed its schema, a required field is missing, or two keys that each parse contradict each other (`selectMailDriver`, `selectPurgeDriver`) | `x doctor --json` and fix the named key; see [Configuration](Configuration) |
 | `X_ENV_MISSING` | required environment variables are missing or invalid | a key absent at boot; validation runs before the server listens | `x env check --fix`, then set the keys it names |
 | `X_BUN_VERSION` | Bun is older than the framework floor | Bun < 1.3 | `bun upgrade` |
 | `X_NOT_IN_APP` | command must run inside an Ultimate app | no `app.config.ts` at or above the cwd | `x new myapp && cd myapp` |
@@ -311,7 +311,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_EVAL_RECORDING` | the gate ran with baseline recording switched on | `ULTIMATE_EVAL_RECORD` was exported in the shell, or set on the CI job, that ran `x verify` | `env -u ULTIMATE_EVAL_RECORD x verify` — record with `ULTIMATE_EVAL_RECORD=1 x test eval` instead |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave its tenant | a handler re-scoped the store it was handed | derive from the unscoped store: `vectorStore.scoped({ tenant })` |
-| `X_AI_EMBEDDER_INVALID` | an `Embedder` returned fewer vectors than texts it was given | `embedOne` got an empty batch back from `embed([text])` | fix the embedder's `embed()` to return exactly one vector per input text |
+| `X_AI_EMBEDDER_INVALID` | an `Embedder` returned fewer vectors than texts it was given | `embedOne` got an empty batch back from `embed([text])` | return one vector per input text from `embed()`, in the order the texts arrived |
 
 ## Admin and manifest
 
@@ -341,8 +341,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_TEST_NETWORK_SEALED` | a test tried to reach the network | an unmocked external call | `mockFetch('<url>', …)`, or `allowHost('<host>')` if it must be real |
 | `X_TEST_NONDETERMINISTIC` | a test read wall-clock time or unseeded randomness | `Date.now()` in the code under test | wrap in `frozenClock()` / `seededRandom()`, or remove the read |
 | `X_TEST_EVAL_THRESHOLD` | an `evalTest()` score fell below its threshold | a prompt or output regressed against `options.threshold` | improve the prompt under test, or lower the threshold passed to `evalTest()` |
-| `X_TEST_SCHEMA_EXPECTED` | a matcher expected a Standard Schema and got something else | `toRejectInput`/`toAcceptInput` called on an action instead of `action.input` | assert against `action.input` (or `query.input`), not the action/query object itself |
-| `X_TEST_JOB_EXPECTED` | a matcher expected a job declaration and got something else | `toEmitSteps`/`recordSteps` called on `job.run` or an unrelated value | pass the job export itself, not its `.run` method |
+| `X_TEST_SCHEMA_EXPECTED` | a matcher expected a Standard Schema and got something else | `toRejectInput`/`toAcceptInput` called on an action instead of `action.input` | `call toRejectInput(action.input)` — the schema, not the action or the query |
+| `X_TEST_JOB_EXPECTED` | a matcher expected a job declaration and got something else | `toEmitSteps`/`recordSteps` called on `job.run` or an unrelated value | `call toEmitSteps(myJob)` with the job export, not `toEmitSteps(myJob.run)` |
 | `X_TEST_NETWORK_RACE` | a request raced `unsealNetwork()` and lost the patched fetch | `unsealNetwork()` called while a request from the same seal was still in flight | do not call `unsealNetwork()` while a request from the same test is still pending |
 
 ## UI

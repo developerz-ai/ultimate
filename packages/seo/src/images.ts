@@ -98,10 +98,18 @@ export interface ImageQuery {
  * `w` and `q` share one shape: digits only, so `/^[1-9]\d*$/` rejects an empty string, `"0"`, a
  * negative sign and a fractional point in a single test instead of four checks that could each
  * drift out of sync with the others.
+ *
+ * Digits alone are still not a number, which is why the range gate is here and not only in
+ * `parseQuality`: 400 of them parse to `Infinity`, and `Infinity > 0` passes every positive-integer
+ * test there is, so `?w=999…9` used to reach the driver as a width nothing can allocate.
  */
 function parsePositiveInt(param: string, raw: string): number {
   if (!/^[1-9]\d*$/.test(raw)) throw imageQueryInvalid(param, raw, 'must be a positive integer');
-  return Number.parseInt(raw, 10);
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(value)) {
+    throw imageQueryInvalid(param, raw, 'is past the largest integer a pixel count can hold');
+  }
+  return value;
 }
 
 function parseQuality(raw: string): number {

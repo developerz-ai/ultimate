@@ -125,10 +125,20 @@ runtime, so one image deploys to every environment.
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare | cache-tag purge, 30 tags per call, Enterprise zones |
 
 The surrogate keys are the tags — `post`, `post:1` — so the edge purges exactly what
-`invalidates: [tag.post]` busts. Setting both pairs is `X_CONFIG_INVALID`: one process purges one
-edge. Half a pair is refused the same way, because "no CDN" is the one wrong reading — a
-deployment then ships believing it purges. A refusal at the provider is `X_CACHE_PURGE_FAILED` and
-lands in the invalidation report, never on the write.
+`invalidates: [tag.post]` busts.
+
+| Failure | Code | Raised by | Lands |
+|---|---|---|---|
+| both pairs set — two CDNs claim one purge | `X_CONFIG_INVALID` | `selectPurgeDriver` | boot |
+| half a pair — a token with no id, or an id with no token | `X_CONFIG_INVALID` | `selectPurgeDriver` | boot |
+| the provider refused — 401, 429, `success: false` | `X_CACHE_PURGE_FAILED` | the purge driver | `report.errors`, never the write |
+
+Half a pair is refused because "no CDN" is the one wrong reading — a deployment then ships
+believing it purges. Both refusals name the keys that are actually set, never their values.
+
+`X_CONFIG_INVALID` covers a configuration that cannot boot, env **or** `app.config.ts`
+([Env vars](#env-vars)). `X_CACHE_PURGE_FAILED` is provider refusal only — never a configuration
+problem, and never fatal to the write that triggered the bust.
 
 `x dev` prints which one it installed — `cdn=none`, or `cdn=external(fastly via
 FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
@@ -242,7 +252,8 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is `app.config.ts` only | it is what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `poolSize < 1`. Env failures never carry it |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `poolSize < 1` — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`) |
+| `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |
 

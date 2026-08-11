@@ -24,6 +24,7 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Icon source | a **PNG** (core decodes PNG and JPEG only). `x new` scaffolds one; `@ultimat3/cli`'s `dev-assets.ts` reads it at `ICON_SOURCE` and serves every entry at its `outputPath`. This package renders bytes and mounts nothing. |
 | Icon background | `IconSourceConfig.background`, hex or `transparent` — core's grammar has no named colours. Default transparent. |
 | Errors | `errors.ts` subclasses only. `X_NOT_IMPLEMENTED` must carry a real `fix:`. |
+| Errors in `sw.js` | no bundler there, so no `UltimateError` import — the generated source defines its own class (`SYNC_ERROR_CLASS`) carrying `code`, `cause`, `fix`, `docs`. Never emit a bare `throw new Error`; the code stays owned by `errors.ts`. |
 
 ```
 bun test                          # from packages/pwa

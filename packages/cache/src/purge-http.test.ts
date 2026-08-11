@@ -3,6 +3,9 @@
 // which status is worth sending the identical request for again.
 
 import { describe, expect, test } from 'bun:test';
+import type { UltimateError } from '@ultimat3/core';
+import { isUltimateError } from '@ultimat3/core';
+import { CacheDriverUnavailableError } from './errors';
 import {
   assertPurgeableKeys,
   chunked,
@@ -14,20 +17,64 @@ import {
   purgePost,
 } from './purge-http';
 
+/**
+ * The thrown error itself, so a test asserts on `code` and `cause` together. Anything else — no
+ * throw, or a throw carrying neither — fails through the runner with `expect.unreachable` rather
+ * than a bare `Error`, which would report a stack from inside this helper and no code at all.
+ */
+function refusalOf(call: () => unknown): UltimateError {
+  try {
+    call();
+  } catch (error) {
+    if (isUltimateError(error)) return error;
+  }
+  return expect.unreachable('expected a typed cache refusal');
+}
+
 describe('chunked', () => {
   test('splits into batches of at most size, in order', () => {
-    expect(chunked([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(chunked('fastly', [1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
   });
 
   test('an exact multiple leaves no trailing empty batch', () => {
-    expect(chunked([1, 2, 3, 4], 2)).toEqual([
+    expect(chunked('fastly', [1, 2, 3, 4], 2)).toEqual([
       [1, 2],
       [3, 4],
     ]);
   });
 
   test('an empty list is no batches, so a caller sends no request', () => {
-    expect(chunked([], 30)).toEqual([]);
+    expect(chunked('cloudflare', [], 30)).toEqual([]);
+  });
+
+  // A size of 0 or less never advances the index: the loop spins forever, holding open the write's
+  // own invalidation. Refused before the first iteration, so there is no loop to hang in.
+  test('a batch size of 0 or -1 is refused instead of looping forever', () => {
+    for (const size of [0, -1]) {
+      const failure = refusalOf(() => chunked('fastly', ['post', 'feed'], size));
+      expect(failure.code).toBe('X_CACHE_DRIVER_UNAVAILABLE');
+      expect(failure.cause).toContain(`batch size ${size}`);
+      expect(failure.fix).toContain('chunked(');
+    }
+  });
+
+  // NaN fails every comparison, so `index += NaN` ends the loop after one pass and that pass slices
+  // to NaN: one empty batch. The driver posts an empty key list, the CDN answers 200, and the purge
+  // reports having cleared nothing — the one CDN failure no later read can catch.
+  test('a NaN batch size is refused rather than silently purging nothing', () => {
+    const failure = refusalOf(() => chunked('cloudflare', ['post', 'feed'], Number.NaN));
+    expect(failure.code).toBe('X_CACHE_DRIVER_UNAVAILABLE');
+    expect(failure.cause).toContain('NaN');
+    expect(failure.cause).toContain('cloudflare');
+  });
+
+  test('a fractional or infinite size is refused too — no provider caps keys at either', () => {
+    expect(refusalOf(() => chunked('fastly', ['post'], 2.5)).code).toBe(
+      'X_CACHE_DRIVER_UNAVAILABLE',
+    );
+    expect(refusalOf(() => chunked('fastly', ['post'], Number.POSITIVE_INFINITY)).code).toBe(
+      'X_CACHE_DRIVER_UNAVAILABLE',
+    );
   });
 });
 
@@ -67,12 +114,11 @@ describe('assertPurgeableKeys', () => {
   });
 
   test('the refusal is not retryable — the same key would fail identically', () => {
-    try {
+    const failure = refusalOf(() => {
       assertPurgeableKeys('fastly', ['post 1']);
-      throw new Error('expected assertPurgeableKeys to refuse');
-    } catch (error) {
-      expect((error as { meta?: { retryable?: boolean } }).meta?.retryable).toBe(false);
-    }
+    });
+    expect(failure.code).toBe('X_CACHE_PURGE_FAILED');
+    expect(failure.meta?.['retryable']).toBe(false);
   });
 });
 
@@ -144,15 +190,26 @@ describe('purgePost', () => {
       headers: {},
       body: {},
       timeoutMs: 10,
-      fetch: () => Promise.reject(new Error('ECONNREFUSED')),
+      // A coded transport failure, not a bare `Error`: `purgePost` reads `error.message` for its
+      // own cause, so the code and the reason both have to survive into the reported detail.
+      fetch: () =>
+        Promise.reject(
+          new CacheDriverUnavailableError({
+            driver: 'cloudflare',
+            cause: 'ECONNREFUSED reaching api.cloudflare.test from this host',
+            fix: 'curl -sS -m 5 -o /dev/null https://api.cloudflare.com/client/v4',
+          }),
+        ),
     }).then(
       () => undefined,
-      (error: unknown) => error as { code?: string; fix?: string; meta?: { retryable?: boolean } },
+      (error: unknown) =>
+        error as { code?: string; cause?: string; fix?: string; meta?: { retryable?: boolean } },
     );
 
     expect(failure?.code).toBe('X_CACHE_PURGE_FAILED');
     expect(failure?.meta?.retryable).toBe(true);
     expect(failure?.fix).toBe('curl -sS -m 5 -o /dev/null https://cdn.test/purge');
+    expect(failure?.cause).toContain('ECONNREFUSED');
   });
 });
 

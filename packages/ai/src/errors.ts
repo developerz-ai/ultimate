@@ -346,8 +346,12 @@ export class AiEmbedderInvalidError extends UltimateError {
     super({
       code: 'X_AI_EMBEDDER_INVALID',
       cause: `embedder "${input.embedder}" returned no vector for a batch of one text`,
-      fix: `fix the "${input.embedder}" Embedder's embed() to return exactly one vector per input text`,
+      // The `${…}` the fix used to carry is unreadable to the `errors` gate, which blanks every
+      // interpolation — so the literal half alone has to name the call. Which embedder broke the
+      // invariant is a fact of the failure, and the cause and `meta` are where facts live.
+      fix: 'return one vector per input text from embed(), in the order the texts arrived',
       docs: docsFor('X_AI_EMBEDDER_INVALID'),
+      meta: { embedder: input.embedder },
     });
   }
 }

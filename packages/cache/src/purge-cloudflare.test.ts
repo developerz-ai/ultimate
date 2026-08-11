@@ -48,7 +48,9 @@ const failureOf = async (
       (error: unknown) =>
         error as { code?: string; cause?: string; meta?: Record<string, unknown> },
     );
-  if (failure === undefined) throw new Error('expected the purge to be refused');
+  // `expect.unreachable`, never a bare `Error`: a purge that was accepted when the test expected a
+  // refusal is reported as the assertion failure it is, with no code-less throw in the way.
+  if (failure === undefined) return expect.unreachable('expected the purge to be refused');
   return failure;
 };
 
@@ -156,6 +158,20 @@ describe('cloudflarePurgeDriver failures', () => {
   test('a throttle and a 5xx are retryable', async () => {
     expect((await failureOf(json({}, 429))).meta?.['retryable']).toBe(true);
     expect((await failureOf(json({}, 502))).meta?.['retryable']).toBe(true);
+  });
+
+  // The gate's `fix:` scanner reads `fix:` properties, so it never sees the literals `fixFor`
+  // returns — this test is the whole enforcement. The 429 was "bust fewer tags per write", which
+  // names nothing to open: the zone ceiling is not raisable from here, so the fix names the one
+  // lever that exists, the `invalidates` list deciding how many 30-tag requests a write sends.
+  test('every failure fix names a command, an env key or the call to narrow', async () => {
+    for (const status of [400, 401, 403, 404, 429, 502]) {
+      const fix = (await failureOf(json({}, status))).fix ?? '';
+      expect(fix).toMatch(/^curl -sS |\.env\.production|\btag\(/);
+    }
+    const throttled = (await failureOf(json({}, 429))).fix ?? '';
+    expect(throttled).toContain('cache.invalidates');
+    expect(throttled).toContain('tag(');
   });
 
   test('an html error page is reported as text rather than swallowed', async () => {

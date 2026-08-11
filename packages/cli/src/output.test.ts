@@ -86,6 +86,8 @@ describe('unit · output', () => {
   });
 
   test('an unknown throw still produces a finding with a fix command', () => {
+    // The bare Error is the subject, not an oversight: `findingFrom` exists for throws no package
+    // coded, so a coded input here would test the branch above this one instead.
     const finding = findingFrom(new Error('boom'));
     expect(finding.code).toBe('X_CLI_UNEXPECTED');
     expect(finding.fix).toBe('x doctor --json');

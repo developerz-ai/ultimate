@@ -81,7 +81,7 @@ export async function GET(request: Request): Promise<Response> {
   const headers = new Headers({ location: '/' });
   // Both, always: a code is single-use, so the handshake that authorised it must not outlive it.
   headers.append('set-cookie', cookie);
-  headers.append('set-cookie', clearHandshakeCookie());
+  headers.append('set-cookie', clearHandshakeCookie('github'));
   return new Response(null, { status: 302, headers });
 }
 ```
@@ -92,12 +92,21 @@ SameSite=Lax` under a `__Host-` name, and expired against the server's clock rat
 client's copy of `Max-Age`. `sealHandshake` / `openHandshake` are the same codec without the
 cookie, for an app that would rather keep it server-side.
 
+**One cookie per provider:** `handshakeCookieName(provider)` → `__Host-x_oauth_github`. A browser
+is one cookie jar and a user is allowed two tabs, so a single shared name means the `google`
+redirect overwrites a `github` handshake still in flight — and the github callback then opens
+google's and fails `X_OAUTH_STATE_INVALID` for a reason no restart clears. `handshakeCookie` takes
+the name off `handshake.provider`, `clearHandshakeCookie(provider)` clears only that provider's,
+and `readHandshakeCookie(request, provider)` reads only that provider's. Pass `{ name }` to
+override all three at once.
+
 | Refused | Because |
 |---|---|
 | a handshake with no signature, or one signed with another secret | a browser that can mint a handshake can pair its own code with someone else's session |
 | a `github` handshake opened on the `google` callback | `openHandshake(sealed, provider)` requires the provider, so it cannot be forgotten |
 | a handshake older than `DEFAULT_HANDSHAKE_TTL_MS` (10 min) | a client may ignore `Max-Age`; the server's clock decides |
 | a callback with no handshake cookie | there is nothing to check `state` against |
+| a cookie value that is not valid percent-encoding | the header is the client's; the raw value reaches the signature check and fails it, never a bare `URIError` |
 
 | Provider | PKCE | id token | Env |
 |---|---|---|---|

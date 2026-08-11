@@ -24,6 +24,7 @@ import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { DevDbClient } from './dev-queue';
 import { startQueue } from './dev-queue';
 import type { DevServices, Env } from './dev-services';
+import { msg } from './messages';
 
 export interface RunningServices {
   readonly services: DevServices;
@@ -47,7 +48,10 @@ export interface RunningServices {
 /**
  * `mail=embedded` is the honest report for a process that caught the message instead of sending
  * it — the same vocabulary the other three bindings use, so an operator reading a boot line sees
- * at a glance that this replica delivers nothing.
+ * at a glance that this replica delivers nothing. This is the machine half: `x dev --json` carries
+ * it verbatim and `wiki/Configuration.md` documents it, so it is a fixed status value and NOT a
+ * catalog lookup — a translated boot line must never move a field a script parses. `mailLabel` is
+ * the human half.
  */
 export function describeMail(runtime: RunningServices): string {
   return isMemoryDriver(runtime.mail)
@@ -58,11 +62,30 @@ export function describeMail(runtime: RunningServices): string {
 /**
  * `cdn=none` rather than `cdn=embedded`: there is no embedded CDN, and a process with no edge in
  * front of it purges nothing. Saying "embedded" would read as a fifth service this boot started.
+ * Machine half, same rule as `describeMail`; `cdnLabel` is what a human reads.
  */
 export function describeCdn(runtime: RunningServices): string {
   return isNoopPurgeDriver(runtime.purge)
     ? 'cdn=none'
     : `cdn=external(${runtime.purge.name} via ${runtime.purgeDetail})`;
+}
+
+/**
+ * The boot line's mail label. Same fact as `describeMail`, through the catalog, because this string
+ * is rendered to a person and every rendered string in the CLI is a `messages.ts` key — the status
+ * value stays where `--json` can depend on it.
+ */
+export function mailLabel(runtime: RunningServices): string {
+  return isMemoryDriver(runtime.mail)
+    ? msg('cli.dev.mail.embedded')
+    : msg('cli.dev.mail.external', { driver: runtime.mail.name, detail: runtime.mailDetail });
+}
+
+/** The boot line's CDN label, for the reason `mailLabel` gives. */
+export function cdnLabel(runtime: RunningServices): string {
+  return isNoopPurgeDriver(runtime.purge)
+    ? msg('cli.dev.cdn.none')
+    : msg('cli.dev.cdn.external', { driver: runtime.purge.name, detail: runtime.purgeDetail });
 }
 
 const FILE_SCHEME = 'file://';
@@ -90,15 +113,22 @@ async function startTransport(services: DevServices): Promise<Transport> {
   return transport;
 }
 
-/** Undo what has already started, newest first. A failure here must not hide the boot failure. */
-async function unwind(steps: readonly (() => void | Promise<void>)[]): Promise<void> {
+/**
+ * Release what has already started, newest first, and return every failure instead of throwing on
+ * the first: a step that rejects must not skip the ones after it, or one transport that will not
+ * close strands the CDN tier, the ambient mail driver and the queue in the next boot of this
+ * process. The two callers differ only in what they do with the failures.
+ */
+async function release(steps: readonly (() => void | Promise<void>)[]): Promise<unknown[]> {
+  const failures: unknown[] = [];
   for (const step of [...steps].reverse()) {
     try {
       await step();
-    } catch {
-      // The rejection that started the unwind is the one worth reporting; this one is noise.
+    } catch (error) {
+      failures.push(error);
     }
   }
+  return failures;
 }
 
 export async function startServices(services: DevServices, env: Env): Promise<RunningServices> {
@@ -149,17 +179,20 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
       mailDetail: selection.detail,
       purge: cdn.driver,
       purgeDetail: cdn.detail,
-      // Reverse boot order, and a stop that fails says so — only the unwind after a failed boot
-      // is allowed to swallow, because there the boot error is the one worth reporting.
+      // The same list the boot unwind uses, in the same reverse order, so a service added to the
+      // boot is released by both paths — a second copy of these steps is how one of them came to
+      // release three things and the other four. A stop that fails says so, unlike that unwind:
+      // the FIRST failure is rethrown because it is the cause and the rest are its consequences,
+      // and every step still runs, so a refused shutdown never leaks into the next boot.
       async stop() {
-        await transport.close();
-        if (purging) resetTiers();
-        resetMailDriver();
-        await queue.stop();
+        const failures = await release(started);
+        if (failures.length > 0) throw failures[0];
       },
     };
   } catch (error) {
-    await unwind(started);
+    // The rejection that started the unwind is the one worth reporting; a cleanup failure under it
+    // is noise, so these are collected and dropped rather than allowed to replace the cause.
+    await release(started);
     throw error;
   }
 }

@@ -36,18 +36,22 @@ export interface CloudflarePurgeOptions {
   readonly fetch?: PurgeFetch | undefined;
 }
 
+// Every branch names the env key to edit, the call to narrow, or a command to run. The 429 named
+// none of them: the ceiling is per zone and not raisable from here, so the only lever is the
+// `invalidates` list that decides how many 30-tag requests one write sends. `retryable` already
+// says the same purge can land — the fix is what stops the next write hitting the wall again.
 const fixFor = (status: number): string => {
   if (status === 401 || status === 403) {
-    return 'set CLOUDFLARE_API_TOKEN to a token holding the zone "Cache Purge" permission';
+    return 'set CLOUDFLARE_API_TOKEN in .env.production to a token holding the zone "Cache Purge" permission';
   }
   if (status === 400) {
-    return 'purge by cache tag needs an Enterprise zone — unset CLOUDFLARE_API_TOKEN to purge nothing, or upgrade the zone';
+    return 'unset CLOUDFLARE_API_TOKEN in .env.production to purge nothing — purge by cache tag needs an Enterprise zone';
   }
   if (status === 404) {
-    return 'set CLOUDFLARE_ZONE_ID to the zone id on the Cloudflare dashboard overview page';
+    return 'set CLOUDFLARE_ZONE_ID in .env.production to the zone id on the Cloudflare dashboard overview page';
   }
   if (status === 429) {
-    return 'the zone allows 1000 purge calls per minute — bust fewer tags per write';
+    return "narrow the action's cache.invalidates to fewer tag(...) entries — the zone allows 1000 purge calls per minute";
   }
   return 'curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID';
 };
@@ -120,7 +124,7 @@ export function cloudflarePurgeDriver(options: CloudflarePurgeOptions): PurgeDri
       const accepted: string[] = [];
       // Sequential on purpose: the zone rate-limits purges, and nothing downstream reads a
       // purge before it lands, so parallelism would buy latency the caller never waits on.
-      for (const batch of chunked(keys, CLOUDFLARE_MAX_TAGS_PER_REQUEST)) {
+      for (const batch of chunked('cloudflare', keys, CLOUDFLARE_MAX_TAGS_PER_REQUEST)) {
         await settle(await post({ tags: batch }));
         accepted.push(...batch);
       }

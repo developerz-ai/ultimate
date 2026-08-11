@@ -148,6 +148,18 @@ describe('fastlyPurgeDriver failures', () => {
     expect((await failureOf(json({}, 503)))?.meta?.['retryable']).toBe(true);
   });
 
+  // The gate's `fix:` scanner reads `fix:` properties, so it never sees the literals `fixFor`
+  // returns — this test is the whole enforcement. The 429 was "raise the purge rate limit on the
+  // Fastly account", which is advice no agent can run; Fastly answers with `Fastly-RateLimit-*`,
+  // so the remaining budget is readable and that is what the fix hands over.
+  test('every failure fix names a command to run or an env key to edit', async () => {
+    for (const status of [401, 403, 404, 429, 500, 503]) {
+      const fix = (await failureOf(json({}, status)))?.fix ?? '';
+      expect(fix).toMatch(/^curl -sS |\.env\.production/);
+    }
+    expect((await failureOf(json({}, 429)))?.fix).toContain('fastly-ratelimit');
+  });
+
   test('purgeAll posts purge_all, and its failure is reported the same way', async () => {
     const { calls, fetch } = recorder();
     await driverWith(fetch).purgeAll();

@@ -100,14 +100,24 @@ back, so a server route never hand-rolls its own parsing of what `responsiveImag
 const query = parseImageQuery(new URL(req.url).searchParams);
 // null: none of w/f/q was present — a plain asset read, not a transform.
 if (query !== null) {
-  await images.transform({ src, width: query.width ?? intrinsicWidth, format: query.format });
+  await images.transform({
+    src,
+    // `?f=webp` alone still needs a width, and the source's own is the only one that resizes
+    // nothing the caller did not ask to resize.
+    width: query.width ?? intrinsicWidth,
+    // Spread, not `format: query.format`: `TransformRequest` declares both keys optional and
+    // `exactOptionalPropertyTypes` refuses an explicit `undefined`. Forward all three or `?q=75`
+    // parses and is then silently dropped.
+    ...(query.format === undefined ? {} : { format: query.format }),
+    ...(query.quality === undefined ? {} : { quality: query.quality }),
+  });
 }
 ```
 
 - **`null`** means no transform was asked for. A present-but-unusable `w` or `q` — empty, `0`,
-  negative, fractional, or `q` over 100 — throws `X_IMAGE_QUERY_INVALID` instead: serving the
-  untransformed original against a `?w=320` URL is the layout shift this contract exists to
-  prevent.
+  negative, fractional, longer than an exact integer, or `q` over 100 — throws
+  `X_IMAGE_QUERY_INVALID` instead: serving the untransformed original against a `?w=320` URL is
+  the layout shift this contract exists to prevent.
 - **`f` is not checked against real format names here.** `?f=potato` parses fine; `transform()`
   is what refuses an unencodable format, with `X_IMAGE_UNSUPPORTED`.
 - **`IMAGE_QUERY_KEYS`** (`{ width: 'w', format: 'f', quality: 'q' }`) is the one spelling of the

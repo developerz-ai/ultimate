@@ -8,13 +8,21 @@ import { CDN_PURGE_ENV_KEYS, isNoopPurgeDriver, selectPurgeDriver } from './purg
 const FASTLY = { FASTLY_API_TOKEN: 'fastly-token', FASTLY_SERVICE_ID: 'svc_1' };
 const CLOUDFLARE = { CLOUDFLARE_API_TOKEN: 'cf-token', CLOUDFLARE_ZONE_ID: 'zone_1' };
 
-const refusal = (env: Record<string, string | undefined>): { code?: string; cause?: string } => {
+interface Refusal {
+  readonly code?: string;
+  readonly cause?: string;
+  readonly meta?: Record<string, unknown>;
+}
+
+const refusal = (env: Record<string, string | undefined>): Refusal => {
   try {
     selectPurgeDriver(env);
   } catch (error) {
-    return error as { code?: string; cause?: string };
+    return error as Refusal;
   }
-  throw new Error('expected selectPurgeDriver to refuse');
+  // `expect.unreachable`, never a bare `Error`: a selection that succeeded where the test expected
+  // a refusal is the assertion, and a code-less throw would report a stack from in here instead.
+  return expect.unreachable('expected selectPurgeDriver to refuse');
 };
 
 describe('CDN_PURGE_ENV_KEYS', () => {
@@ -75,6 +83,32 @@ describe('selectPurgeDriver', () => {
 
   test('a stray key from the other provider still refuses', () => {
     expect(refusal({ ...FASTLY, CLOUDFLARE_ZONE_ID: 'zone_1' }).code).toBe('X_CONFIG_INVALID');
+  });
+
+  // The diagnostic named a fixed token pair, so an operator who set only the two ids was sent to
+  // look at two variables they had never set — a false diagnostic is worse than none.
+  test('the refusal names the keys actually set, not a hardcoded token pair', () => {
+    const failure = refusal({ FASTLY_SERVICE_ID: 'svc_1', CLOUDFLARE_ZONE_ID: 'zone_1' });
+
+    expect(failure.meta?.['configured']).toEqual(['FASTLY_SERVICE_ID', 'CLOUDFLARE_ZONE_ID']);
+    expect(failure.cause).toContain('FASTLY_SERVICE_ID');
+    expect(failure.cause).toContain('CLOUDFLARE_ZONE_ID');
+    expect(failure.cause).not.toContain('FASTLY_API_TOKEN');
+    expect(failure.cause).not.toContain('CLOUDFLARE_API_TOKEN');
+  });
+
+  test('all four keys set reports all four, in the order this module reads them', () => {
+    expect(refusal({ ...FASTLY, ...CLOUDFLARE }).meta?.['configured']).toEqual([
+      ...CDN_PURGE_ENV_KEYS,
+    ]);
+  });
+
+  // Every one of the four keys can hold a credential, and the refusal reaches a log.
+  test('the refusal carries key names, never the values behind them', () => {
+    const failure = refusal({ ...FASTLY, ...CLOUDFLARE });
+    expect(failure.cause).not.toContain('fastly-token');
+    expect(failure.cause).not.toContain('cf-token');
+    expect(JSON.stringify(failure.meta)).not.toContain('fastly-token');
   });
 
   // The detail reaches a boot line and a log. `FASTLY_API_TOKEN` holds a credential.

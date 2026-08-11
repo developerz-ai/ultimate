@@ -18,9 +18,10 @@ const ICON_SIZE = 1024;
 const MASKABLE_PADDING = 0.1;
 
 /**
- * Neutral grey. This package cannot reach `@ultimat3/ui`'s tokens — both are tier 5 and no
- * `cli -> ui` sideways edge is declared — and a placeholder a user is expected to replace should
- * not invent a brand colour anyway.
+ * Neutral grey, and a copy of nothing: it deliberately matches no role in `@ultimat3/ui`'s token
+ * set, which this package cannot reach anyway — both are tier 5 and only `admin -> ui` is a
+ * declared sideways edge, so `cli -> ui` is a boundary error and `cli -> admin -> ui` does not
+ * transit. A placeholder the user is expected to replace must not claim a brand colour either.
  */
 const MARK_RGBA: readonly [number, number, number, number] = [113, 113, 122, 255];
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { systemClock, withSpan } from '@ultimat3/core';
-import { CacheTagUnknownError } from './errors';
+import { CacheDriverUnavailableError, CacheTagUnknownError } from './errors';
 import { registerDependent, resetGraph } from './graph';
 import type { InvalidationEvent } from './invalidate';
 import {
@@ -90,6 +90,33 @@ const cdnSpy = (): CacheTier & { readonly purged: string[] } => {
   };
 };
 
+/**
+ * A tier whose store is gone. It rejects with the coded error a real dead Redis raises rather than
+ * a bare `Error`, which is what pins the useful half of `report.errors`: the code survives the hop
+ * into the report, so "which tier, and why" is answerable from the `/_x` panel alone.
+ */
+const brokenRedisTier = (): CacheTier => ({
+  name: 'redis',
+  get() {
+    return Promise.resolve(undefined);
+  },
+  set() {
+    return Promise.resolve();
+  },
+  del() {
+    return Promise.resolve();
+  },
+  invalidateTags() {
+    return Promise.reject(
+      new CacheDriverUnavailableError({
+        driver: 'redis',
+        cause: 'ECONNREFUSED',
+        fix: 'x doctor --json',
+      }),
+    );
+  },
+});
+
 beforeEach(() => {
   resetTiers();
   resetGraph();
@@ -128,29 +155,17 @@ describe('invalidateTags fan-out', () => {
   });
 
   test('a failing tier is reported, never thrown — the write that triggered it must not fail', async () => {
-    const broken: CacheTier = {
-      name: 'redis',
-      get() {
-        return Promise.resolve(undefined);
-      },
-      set() {
-        return Promise.resolve();
-      },
-      del() {
-        return Promise.resolve();
-      },
-      invalidateTags() {
-        return Promise.reject(new Error('ECONNREFUSED'));
-      },
-    };
     const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 0 });
     registerTier(lru);
-    registerTier(broken);
+    registerTier(brokenRedisTier());
     await lru.set('k', 1, { tags: [tag('post')] });
 
     const report = await invalidateTags([tag('post')]);
 
-    expect(report.errors).toEqual([{ tier: 'redis', message: 'ECONNREFUSED' }]);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]?.tier).toBe('redis');
+    expect(report.errors[0]?.message).toContain('X_CACHE_DRIVER_UNAVAILABLE');
+    expect(report.errors[0]?.message).toContain('ECONNREFUSED');
     expect(report.tiers.map((entry) => entry.tier)).toEqual(['lru']);
     expect(await lru.get('k')).toBeUndefined();
   });
@@ -245,27 +260,14 @@ describe('recentInvalidations log', () => {
   });
 
   test('a tier that throws still records an event, and its errors names the tier', async () => {
-    const broken: CacheTier = {
-      name: 'redis',
-      get() {
-        return Promise.resolve(undefined);
-      },
-      set() {
-        return Promise.resolve();
-      },
-      del() {
-        return Promise.resolve();
-      },
-      invalidateTags() {
-        return Promise.reject(new Error('ECONNREFUSED'));
-      },
-    };
-    registerTier(broken);
+    registerTier(brokenRedisTier());
 
     await invalidateTags([tag('post')]);
 
     const [event] = recentInvalidations();
-    expect(event?.errors).toEqual([{ tier: 'redis', message: 'ECONNREFUSED' }]);
+    expect(event?.errors).toHaveLength(1);
+    expect(event?.errors[0]?.tier).toBe('redis');
+    expect(event?.errors[0]?.message).toContain('ECONNREFUSED');
   });
 
   test('recentInvalidations hands back a copy: mutating it does not change the next answer', async () => {

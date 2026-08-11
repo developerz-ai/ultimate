@@ -20,8 +20,8 @@ describe('responsiveImage', () => {
   test('offers AVIF before WebP before the original', () => {
     const image = responsiveImage(INPUT);
     expect(image.sources.map((source) => source.type)).toEqual(['image/avif', 'image/webp']);
-    expect(image.sources[0]?.srcset).toContain('f=avif');
-    expect(image.img.srcset).not.toContain('f=');
+    expect(image.sources[0]?.srcset).toContain(`${IMAGE_QUERY_KEYS.format}=avif`);
+    expect(image.img.srcset).not.toContain(`${IMAGE_QUERY_KEYS.format}=`);
   });
 
   test('never upscales past the intrinsic width', () => {
@@ -84,33 +84,58 @@ describe('parseImageQuery', () => {
 
   test('an empty, non-numeric, zero, negative or fractional width throws', () => {
     for (const bad of ['', 'abc', '0', '-5', '12.5']) {
-      const error = caught(() => parseImageQuery(new URLSearchParams({ w: bad })));
+      const error = caught(() =>
+        parseImageQuery(new URLSearchParams({ [IMAGE_QUERY_KEYS.width]: bad })),
+      );
       expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
+    }
+  });
+
+  /**
+   * Digits all the way down still parse: `Number.parseInt('9'.repeat(400))` is `Infinity`, which
+   * satisfies every "is it a positive integer" test and then reaches the driver as a width no
+   * pipeline can allocate. The refusal has to be a range check, not a shape check.
+   */
+  test('a width too long to be a number throws instead of parsing to Infinity', () => {
+    for (const key of [IMAGE_QUERY_KEYS.width, IMAGE_QUERY_KEYS.quality]) {
+      const error = caught(() =>
+        parseImageQuery(new URLSearchParams({ [key]: '9'.repeat(400) })),
+      ) as { code?: string; meta?: Record<string, unknown> };
+      expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
+      expect(error.meta?.['param']).toBe(key);
     }
   });
 
   test('a quality above 100, or otherwise unusable, throws the same code', () => {
     for (const bad of ['101', '1000', 'abc', '0', '-5']) {
-      const error = caught(() => parseImageQuery(new URLSearchParams({ q: bad })));
+      const error = caught(() =>
+        parseImageQuery(new URLSearchParams({ [IMAGE_QUERY_KEYS.quality]: bad })),
+      );
       expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
     }
   });
 
   test('a present but empty format throws', () => {
-    const error = caught(() => parseImageQuery(new URLSearchParams({ f: '' })));
+    const error = caught(() =>
+      parseImageQuery(new URLSearchParams({ [IMAGE_QUERY_KEYS.format]: '' })),
+    );
     expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
   });
 
   test('the fix line names a usable value, not just the code', () => {
-    const error = caught(() => parseImageQuery(new URLSearchParams({ w: '0' }))) as {
+    const error = caught(() =>
+      parseImageQuery(new URLSearchParams({ [IMAGE_QUERY_KEYS.width]: '0' })),
+    ) as {
       fix?: string;
       cause?: string;
     };
-    expect(error.cause).toContain('w=0');
+    expect(error.cause).toContain(`${IMAGE_QUERY_KEYS.width}=0`);
     expect(error.fix).toContain(`${IMAGE_QUERY_KEYS.width}=640`);
   });
 
   test('a format naming no real format is not rejected here — the driver owns that refusal', () => {
-    expect(parseImageQuery(new URLSearchParams({ f: 'potato' }))).toEqual({ format: 'potato' });
+    expect(parseImageQuery(new URLSearchParams({ [IMAGE_QUERY_KEYS.format]: 'potato' }))).toEqual({
+      format: 'potato',
+    });
   });
 });

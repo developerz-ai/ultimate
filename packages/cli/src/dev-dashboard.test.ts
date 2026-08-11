@@ -10,7 +10,7 @@ import type { DevPanel } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
 import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
 import { configureTelemetry, resetTelemetry, withSpan } from '@ultimat3/core';
-import type { MailMessage, SendResult, SentMail } from '@ultimat3/mail';
+import type { MailMessage, MemoryMailDriver, SendResult, SentMail } from '@ultimat3/mail';
 import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
@@ -63,6 +63,37 @@ interface FakeRuntime {
   readonly transport?: 'smtp' | 'resend';
 }
 
+/**
+ * A caught outbox with the fixture's own ids and timestamps. Not `createMemoryDriver()` fed through
+ * `send()`: that mints a `mem_<nanoid>` and a `new Date()`, and the projection those two fields land
+ * in is exactly what the case below asserts. Every member `MemoryMailDriver` declares is real,
+ * because `isMemoryDriver` checks all of them — a look-alike carrying `name` and `outbox()` alone
+ * makes `sent`, `lastTo()` and `clear()` a promise the object cannot keep, and the panel degrades
+ * to its refusal instead of projecting anything.
+ */
+function caughtOutbox(fixture: readonly SentMail[]): MemoryMailDriver {
+  const sent: SentMail[] = [...fixture];
+  return {
+    name: 'memory',
+    sent,
+    // The panel narrows on the driver and reads `outbox()`; nothing here delivers. Coded for
+    // `panelFor`'s reason: a throw with no code and no fix is not an instruction.
+    send: (): Promise<never> =>
+      Promise.reject(
+        new CliNotImplementedError({
+          feature: 'sending through the caught-outbox fixture',
+          fix: 'x dev   # boots the memory driver that does catch mail',
+        }),
+      ),
+    // Fixtures are written newest-first, the order the real driver hands back.
+    outbox: () => sent,
+    lastTo: (address) => sent.find((entry) => entry.message.to.includes(address)),
+    clear: () => {
+      sent.length = 0;
+    },
+  };
+}
+
 /** Only the two members the hooks touch; a PGlite boot proves nothing about the projection. */
 const fakeRuntime = (fake: FakeRuntime = {}): RunningServices =>
   ({
@@ -76,8 +107,20 @@ const fakeRuntime = (fake: FakeRuntime = {}): RunningServices =>
     // reads an outbox, which is the whole reason a real transport degrades instead of throwing.
     mail:
       fake.transport === undefined
-        ? { name: 'memory', outbox: (): readonly SentMail[] => fake.outbox ?? [] }
-        : { name: fake.transport, send: (): Promise<never> => Promise.reject(new Error('unused')) },
+        ? caughtOutbox(fake.outbox ?? [])
+        : {
+            name: fake.transport,
+            // `send` exists only to satisfy `MailDriver` — the panel narrows on `name` and never
+            // calls it. Coded even so, for `panelFor`'s reason: a throw with no code and no fix is
+            // not an instruction to whoever does reach it.
+            send: (): Promise<never> =>
+              Promise.reject(
+                new CliNotImplementedError({
+                  feature: `sending through the ${fake.transport} fixture transport`,
+                  fix: 'x dev   # boots the transport the credential selects, which does send',
+                }),
+              ),
+          },
     mailDetail: fake.transport === undefined ? 'caught in memory' : 'SMTP_URL',
   }) as unknown as RunningServices;
 

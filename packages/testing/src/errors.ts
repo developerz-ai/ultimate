@@ -164,7 +164,9 @@ export class TestSchemaExpectedError extends UltimateError {
     super({
       code: 'X_TEST_SCHEMA_EXPECTED',
       cause: 'toRejectInput/toAcceptInput expect a Standard Schema (`t`), not the action',
-      fix: 'assert against action.input (or query.input), not the action/query object itself',
+      // Names the call, not the intent: "assert against action.input" left the reader to work out
+      // which call to edit, and a fix is only executable if it can be pasted over the failing line.
+      fix: 'call toRejectInput(action.input) — the schema, not toRejectInput(action) or the query',
       docs: docsFor('X_TEST_SCHEMA_EXPECTED'),
     });
   }
@@ -176,7 +178,8 @@ export class TestJobExpectedError extends UltimateError {
     super({
       code: 'X_TEST_JOB_EXPECTED',
       cause: 'toEmitSteps expects a job declaration built with job(...)',
-      fix: 'pass the job export itself to toEmitSteps, not its .run method or an unrelated value',
+      // Same rule as X_TEST_SCHEMA_EXPECTED's: the paste-able call, not a description of it.
+      fix: 'call toEmitSteps(myJob) with the job export, not toEmitSteps(myJob.run)',
       docs: docsFor('X_TEST_JOB_EXPECTED'),
     });
   }

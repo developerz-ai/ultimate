@@ -1,9 +1,10 @@
 // Projecting the framework's one image pipeline onto the routes `x dev` serves. Three packages
-// declare what an image is — `@ultimat3/seo` what a variant URL means, `@ultimat3/storage` what a
-// variant is called and where it is cached, `@ultimat3/pwa` which icons a web manifest promises —
-// and `@ultimat3/core`'s pipeline is the only thing that touches a pixel. This file picks the two
-// base paths those declarations hang off and decides nothing else.
+// declare what an image is — `@ultimat3/seo` a variant URL, `@ultimat3/storage` a variant key,
+// `@ultimat3/pwa` the icons a web manifest promises — and `@ultimat3/core`'s pipeline owns every
+// pixel, so this file picks the two base paths they hang off and decides nothing else.
 
+// `join` is `node:`-only by necessity: Bun exposes no path-join primitive, and `ICON_SOURCE` is
+// app-root-relative, so resolving it against the root is string work no `Bun.file` overload does.
 import { join } from 'node:path';
 import { probeImage } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
@@ -115,7 +116,9 @@ function iconRenderer(root: string): (plan: IconPlan, path: string) => Promise<U
       throw new PwaIconMissingError(
         `${ICON_SOURCE} does not exist, so every icon the web manifest declares is unbacked and ` +
           'the app is not installable',
-        `create a 1024x1024 square PNG at ${ICON_SOURCE}, or run x new to scaffold one`,
+        // The same edit `x doctor` reports for the same condition, in `@ultimat3/pwa`'s own words.
+        // `x new` was here and takes an app name, so it could never run inside the broken app.
+        `add a 1024x1024 square PNG at ${ICON_SOURCE}`,
       );
     }
     return file.bytes();

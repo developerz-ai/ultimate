@@ -18,6 +18,7 @@ import {
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { devHooks } from './dev-hooks';
 import { appRoutes } from './dev-render';
+import { CliNotImplementedError } from './errors';
 
 const context = (path: string): RequestContext =>
   createRequestContext({
@@ -30,7 +31,13 @@ const context = (path: string): RequestContext =>
 /** The hook takes a request only to pass it to app code; nothing in `authorize` reads it. */
 const decide = async (route: Route, ctx: RequestContext): Promise<AuthzDecision> => {
   const authorize = devHooks().authorize;
-  if (authorize === undefined) throw new Error('x dev must wire an authorizer');
+  // Never a bare Error, tests included: a throw without a code and a fix is not an instruction.
+  if (authorize === undefined) {
+    throw new CliNotImplementedError({
+      feature: 'an authorize hook on devHooks()',
+      fix: 'return authorize from devHooks() in packages/cli/src/dev-hooks.ts',
+    });
+  }
   return authorize(route, undefined as unknown as UltimateRequest, ctx);
 };
 
@@ -94,7 +101,12 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
       }),
     });
     const route = appRoutes({ buildId: 'test' })[0];
-    if (route === undefined) throw new Error('the settings route did not register');
+    if (route === undefined) {
+      throw new CliNotImplementedError({
+        feature: 'a route table for the registered settings page',
+        fix: 'x routes --json   # every route registerRoute() holds',
+      });
+    }
 
     expect((await decide(route, context('/settings'))).allowed).toBe(false);
   });

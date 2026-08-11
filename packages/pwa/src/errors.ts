@@ -124,18 +124,18 @@ export class PwaStrategyExhaustedError extends UltimateError {
     super({
       code: PwaStrategyExhaustedError.code,
       cause: `no cached response and the network failed for "${input.cacheName}"`,
-      fix: 'pass StrategyOptions.fallback to staleWhileRevalidate, or set pwa.offline.fallback so requireOfflineFallback wires one in',
+      fix: 'pass options.fallback to staleWhileRevalidate(request, env, options), or set pwa.offline.fallback in app.config.ts',
       docs: docsFor(PwaStrategyExhaustedError.code),
     });
   }
 }
 
 /**
- * Documents the two failures `backgroundSyncSource()` emits into `sw.js`. The generated code runs
- * in the browser's service-worker realm, which has no bundler and no `@ultimat3/core` to import —
- * so the emitted `throw new Error(...)` there carries the code as text (`X_PWA_SYNC_FLUSH_FAILED: …`)
- * instead of constructing this class. It exists so the code has one title, one fix and one wiki
- * row, the same as every other code in this file, even though nothing in this package throws it.
+ * Titles one of the two failures `backgroundSyncSource()` emits into `sw.js`, and owns the `code`
+ * the emitted source throws. The generated code runs in the browser's service-worker realm, which
+ * has no bundler and no `@ultimat3/core` to import — so it defines a local `PwaSyncError` carrying
+ * this same code, cause, fix and docs rather than constructing this class. This class is what gives
+ * the code one title and one wiki row, the same as every other code in this file.
  */
 export class PwaSyncFlushFailedError extends UltimateError {
   static readonly code = 'X_PWA_SYNC_FLUSH_FAILED' as const;

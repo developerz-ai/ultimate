@@ -37,15 +37,19 @@ export interface FastlyPurgeOptions {
   readonly fetch?: PurgeFetch | undefined;
 }
 
+// Every branch names the env key to edit or a command to run. "raise the rate limit, or bust fewer
+// tags" was the one that named neither: Fastly answers every API call with `Fastly-RateLimit-*`,
+// so the remaining budget and its reset are readable — which is the half an agent can act on.
 const fixFor = (status: number): string => {
   if (status === 401 || status === 403) {
-    return 'set FASTLY_API_TOKEN to a token with the purge scope from https://manage.fastly.com/account/personal/tokens';
+    return 'set FASTLY_API_TOKEN in .env.production to a token with the purge scope from https://manage.fastly.com/account/personal/tokens';
   }
   if (status === 404) {
-    return 'set FASTLY_SERVICE_ID to the id at https://manage.fastly.com/configure/services';
+    return 'set FASTLY_SERVICE_ID in .env.production to the id at https://manage.fastly.com/configure/services';
   }
-  if (status === 429)
-    return 'raise the purge rate limit on the Fastly account, or bust fewer tags per write';
+  if (status === 429) {
+    return 'curl -sS -D - -o /dev/null -H "Fastly-Key: $FASTLY_API_TOKEN" https://api.fastly.com/service/$FASTLY_SERVICE_ID | grep -i fastly-ratelimit';
+  }
   return 'curl -sS -H "Fastly-Key: $FASTLY_API_TOKEN" https://api.fastly.com/service/$FASTLY_SERVICE_ID';
 };
 
@@ -101,7 +105,7 @@ export function fastlyPurgeDriver(options: FastlyPurgeOptions): PurgeDriver {
       const accepted: string[] = [];
       // Sequential on purpose: a bust of thousands of keys must not open thousands of sockets
       // against an API that rate-limits, and nothing downstream reads a purge before it lands.
-      for (const batch of chunked(keys, FASTLY_MAX_KEYS_PER_REQUEST)) {
+      for (const batch of chunked('fastly', keys, FASTLY_MAX_KEYS_PER_REQUEST)) {
         const body = await settle(await post('/purge', { surrogate_keys: batch }));
         accepted.push(...acceptedFrom(body, batch));
       }

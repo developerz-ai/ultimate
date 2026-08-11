@@ -25,6 +25,12 @@ Tier 3. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - The handshake crosses two requests, so it is sealed (`sealHandshake`), never handed over in a
   variable. `openHandshake` takes the provider as an argument for the reason `decodeCursor` takes
   a scope: an optional check is one a call site forgets. Expiry is the server's clock, not `Max-Age`.
+- One handshake cookie **per provider** (`handshakeCookieName`), never one shared slot. Two tabs
+  are two handshakes in one jar, and a shared name makes the second redirect overwrite the first.
+  `clearHandshakeCookie(provider)` for the same reason: clearing all of them cancels the other tab.
+- `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
+  `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
+  package — the raw value goes to the signature or hash check, which is the readable refusal.
 - A token endpoint's HTTP 200 is not success — GitHub reports a dead code that way. Read `error`.
 - Link by address only when the provider **and** the local account both verified it.
 - id token signatures are not checked: it is read only where it arrived over TLS straight from
