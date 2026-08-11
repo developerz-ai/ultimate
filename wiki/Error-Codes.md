@@ -301,6 +301,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_EVAL_BASELINE_MISSING` | an eval has no recorded baseline to gate against | a new eval, or a `baseline:` that is not `import.meta.resolve('./…')` | `ULTIMATE_EVAL_RECORD=1 x test eval`, then commit the baseline file |
 | `X_EVAL_BASELINE_INVALID` | a recorded baseline cannot be read | a hand-edited or half-merged baseline file | `ULTIMATE_EVAL_RECORD=1 x test eval` to re-record it |
 | `X_EVAL_MISSING` | a prompt has no eval | a `definePrompt` with no `defineEval` naming it | add `defineEval({ prompt, cases, scorers, tolerance, baseline })` beside the prompt |
+| `X_EVAL_RECORDING` | the gate ran with baseline recording switched on | `ULTIMATE_EVAL_RECORD` was exported in the shell, or set on the CI job, that ran `x verify` | `env -u ULTIMATE_EVAL_RECORD x verify` — record with `ULTIMATE_EVAL_RECORD=1 x test eval` instead |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave its tenant | a handler re-scoped the store it was handed | derive from the unscoped store: `vectorStore.scoped({ tenant })` |
 

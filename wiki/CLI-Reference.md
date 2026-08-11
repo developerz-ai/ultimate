@@ -224,10 +224,16 @@ A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`,
 test can fall between two steps.
 
 `eval` is the one step that applies with no suite of its own: a prompt no `defineEval` names is
-`X_EVAL_MISSING`, because a skipped step would read as a green gate over untested code. It gates on
-the drop from each eval's committed baseline, never on an absolute score —
+`X_EVAL_MISSING`, and an eval whose baseline was never recorded is `X_EVAL_BASELINE_MISSING`,
+because a skipped step — or one gating against nothing — would read as a green gate over untested
+code. It gates on the drop from each eval's committed baseline, never on an absolute score —
 `ULTIMATE_EVAL_RECORD=1 x test eval` re-records those baselines so accepting a new number is a
 reviewable diff.
+
+That flag and this step are mutually exclusive. `x verify` with `ULTIMATE_EVAL_RECORD` set is
+`X_EVAL_RECORDING` and the suite does not run: recording makes every eval write the numbers it
+just measured and pass, so a gate that inherited the flag reports green over scores nothing
+compared — and rewrites the committed baselines on its way through.
 
 ```bash
 $ x verify --json

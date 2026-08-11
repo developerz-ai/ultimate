@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a9c5adc4d69b55951d12319252e20162acd2fb2ed881b3cb7b644ed7b84eb4ef",
+  "buildId": "76243cabaf3f72e1842664660caf434aea9a457d86025c382af90445152d66c8",
   "tiers": {
     "0": [
       "core",
@@ -605,6 +605,11 @@
     },
     {
       "code": "X_EVAL_MISSING",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_EVAL_RECORDING",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },

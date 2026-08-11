@@ -44,6 +44,7 @@ export {
   EvalBaselineInvalidError,
   EvalBaselineMissingError,
   EvalMissingError,
+  EvalRecordingError,
   EvalThresholdError,
   LlmOutputInvalidError,
   LlmRefusedError,

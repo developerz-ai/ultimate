@@ -116,6 +116,15 @@ rather than imported. Same contract, two wire formats.
   evaluates that lineage.
 - `ULTIMATE_EVAL_RECORD=1` writes baselines instead of gating on them. A test that deliberately
   scores a worse model calls `run`, never `assert` — `assert` would re-record during that pass.
+- **Recording and the gate are mutually exclusive.** `x verify` with that variable set is
+  `X_EVAL_RECORDING` and runs no eval suite at all. Recording passes by definition, so a gate run
+  that inherited the flag is green over numbers it wrote itself — and rewrites every committed
+  baseline on its way through, which is the half a red step would not undo. Hence refuse *before*
+  the suite, never after it.
+- The gate asks whether an eval has a baseline, not only whether one is declared. `defineEval`
+  proves a prompt is named; it proves nothing measured it, and an eval whose numbers were never
+  recorded — one no test asserts, one whose `baseline:` is a cwd-relative string — would otherwise
+  satisfy `X_EVAL_MISSING` while gating on nothing.
 - Retrieval is hybrid by default. Do not add a vector-only convenience path.
 - `PgVectorStore` is the ONLY production vector path — pgvector and Postgres FTS in the app's own
   Postgres, never a second datastore. `MemoryVectorStore` is the dev twin and enforces the same

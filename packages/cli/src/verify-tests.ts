@@ -10,7 +10,7 @@
 // and `join` builds the host-separator path to its config file.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { checkEvalCoverage } from './app-evals';
+import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { APP_CONFIG_FILE } from './app-root';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
@@ -116,21 +116,29 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
 const isApp = (root: string): boolean => existsSync(join(root, APP_CONFIG_FILE));
 
 /**
- * The eval step carries one rule beyond "the suite is green": every prompt must have an eval. So
- * it is the one test step that applies with no suite of its own — an app whose only prompt has no
- * eval file would otherwise skip this step and report a green gate over untested code.
+ * The eval step carries rules beyond "the suite is green": every prompt must have an eval, every
+ * eval must have a baseline to gate against, and the run must not be recording. So it is the one
+ * test step that applies with no suite of its own — an app whose only prompt has no eval file
+ * would otherwise skip this step and report a green gate over untested code.
  */
 const evalStep: VerifyStep = {
   name: 'eval',
   summary: SUITES.eval.summary,
   applies: async (ctx) => isApp(ctx.root) || (await exists(ctx.root, SUITES.eval.globs)),
   async run(ctx) {
-    const coverage = isApp(ctx.root) ? await checkEvalCoverage(ctx.root) : [];
-    if (!(await exists(ctx.root, SUITES.eval.globs))) return fromFindings(coverage);
+    // First, and instead of the suite: under recording every eval writes the numbers it just
+    // measured and passes, so running it here would rewrite the committed baselines during the
+    // gate — damage a red step does not undo.
+    const recording = checkEvalRecording();
+    if (recording.length > 0) return fromFindings(recording);
+    const declarations = isApp(ctx.root)
+      ? [...(await checkEvalCoverage(ctx.root)), ...(await checkEvalBaselines(ctx.root))]
+      : [];
+    if (!(await exists(ctx.root, SUITES.eval.globs))) return fromFindings(declarations);
     const suite = await runType(ctx, 'eval');
     return {
-      ok: suite.ok && coverage.length === 0,
-      findings: [...coverage, ...suite.findings],
+      ok: suite.ok && declarations.length === 0,
+      findings: [...declarations, ...suite.findings],
       ...(suite.output === undefined ? {} : { output: suite.output }),
     };
   },

@@ -96,6 +96,7 @@ eval exists to catch.
 | never recorded | `X_EVAL_BASELINE_MISSING` — gating on nothing is not passing |
 | corrupt baseline | `X_EVAL_BASELINE_INVALID` — never read as "absent, so pass" |
 | accepting new numbers | `ULTIMATE_EVAL_RECORD=1 x test eval`, then commit the diff |
+| recording during `x verify` | `X_EVAL_RECORDING`, and the suite does not run — recording passes by definition and would overwrite the committed baselines mid-gate |
 
 ```ts
 // contract test — generated as a scaffold with the action

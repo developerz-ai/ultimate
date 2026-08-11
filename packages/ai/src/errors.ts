@@ -17,6 +17,7 @@ export const AI_ERROR_CODES = [
   'X_EVAL_BASELINE_MISSING',
   'X_EVAL_BASELINE_INVALID',
   'X_EVAL_MISSING',
+  'X_EVAL_RECORDING',
   'X_VECTOR_DIM_MISMATCH',
   'X_VECTOR_SCOPE_WIDENED',
 ] as const;
@@ -37,6 +38,7 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
   X_EVAL_BASELINE_INVALID: 'a recorded baseline cannot be read',
   X_EVAL_MISSING: 'a prompt has no eval',
+  X_EVAL_RECORDING: 'the gate ran with baseline recording switched on',
   X_VECTOR_DIM_MISMATCH: 'embedding dimensions differ from the store',
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
 };
@@ -261,6 +263,23 @@ export class EvalMissingError extends UltimateError {
       cause: `prompt "${input.prompt}" has no eval`,
       fix: `defineEval({ name: '${input.id}', prompt, cases, scorers, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
       docs: docsFor('X_EVAL_MISSING'),
+    });
+  }
+}
+
+/**
+ * The gate ran with baseline recording switched on. Recording makes every eval write the numbers
+ * it just measured and pass, so a `x verify` that inherited the flag reports green over scores
+ * nothing compared — and rewrites the committed baselines on its way through, which is the half
+ * a red step alone would not undo. Recording is a deliberate, reviewable diff, never a gate run.
+ */
+export class EvalRecordingError extends UltimateError {
+  constructor(input: { env: string }) {
+    super({
+      code: 'X_EVAL_RECORDING',
+      cause: `${input.env} is set, so every eval would re-record its baseline instead of gating on it`,
+      fix: `env -u ${input.env} x verify`,
+      docs: docsFor('X_EVAL_RECORDING'),
     });
   }
 }

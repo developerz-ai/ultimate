@@ -171,7 +171,12 @@ test('summarize holds its recorded scores', async () => {
 
 `ULTIMATE_EVAL_RECORD=1 x test eval` writes the baselines instead of gating on them, so
 accepting a new number is a reviewable diff. An eval that has never been recorded fails with
-`X_EVAL_BASELINE_MISSING` — gating on nothing is not passing.
+`X_EVAL_BASELINE_MISSING` — gating on nothing is not passing — and `x verify` asks that question
+itself, so an eval no test happens to assert is still red.
+
+Recording and the gate are mutually exclusive: `x verify` with `ULTIMATE_EVAL_RECORD` set is
+`X_EVAL_RECORDING` and runs no suite. Recording passes by definition, and a gate that inherited
+the flag would report green over numbers it had just written over the committed ones.
 
 A failure names the score, what it fell from, the exact prompt hash, and every case that moved:
 
