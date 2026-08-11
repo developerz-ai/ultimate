@@ -10,6 +10,20 @@ const CATALOG = {
   'cli.flags.heading': 'flags',
   'cli.commands.heading': 'commands',
   'cli.build.done': 'built {target}',
+  // `describeCron`'s vocabulary. `@ultimat3/time` is tier 1 and reaches no i18n runtime, so the
+  // caller supplies the words — and the caller here is a rendered `x tasks show` line, which is
+  // exactly what this catalog holds. `msg()` leaves an un-supplied `{n}`/`{time}`/`{days}`/
+  // `{months}` intact, so each value arrives at `describeCron` as the template it interpolates.
+  'cli.cron.andMore': 'and {n} more',
+  'cli.cron.at': 'at {time}',
+  'cli.cron.everyDay': 'every day',
+  'cli.cron.everyHour': 'every hour',
+  'cli.cron.everyMinute': 'every minute',
+  'cli.cron.everyNHours': 'every {n} hours',
+  'cli.cron.everyNMinutes': 'every {n} minutes',
+  'cli.cron.inMonths': 'in {months}',
+  'cli.cron.onDaysOfMonth': 'on day {days} of the month',
+  'cli.cron.onWeekdays': 'on {days}',
   'cli.db.branch.ready': 'branch {name} ready',
   'cli.dev.ready': 'dev ready on {url} — /_x mounted ({panels} panels), {services}',
   // The mail and CDN halves of that boot line. Rendered text, so it lives here — while
@@ -58,7 +72,17 @@ const CATALOG = {
   'cli.new.done': 'created {name} — next: cd {name} && x dev',
   'cli.policy.count':
     '{permissions} permission(s), {roles} role(s), {enforced} enforced by a declaration',
-  'cli.policy.explained': '{subject} — allowed for {allowed} of {roles} role(s)',
+  // One row per (declaration, actor) pair, never per role: a permission two declarations enforce
+  // evaluates every actor twice, so "of N role(s)" over-counted whenever it had more than one.
+  'cli.policy.explained': '{subject} — allowed for {allowed} of {evaluations} actor evaluation(s)',
+  'cli.policy.allow': 'allow',
+  'cli.policy.deny': 'deny',
+  'cli.policy.declaration': '{kind} {name} — policy {label}',
+  /** The empty cell in a `x policy list` column — a value, not a column key. */
+  'cli.policy.none': '-',
+  'cli.policy.noInput':
+    'evaluated with no request input and no row — a rule reading either decides again on the real request',
+  'cli.policy.undecidable': 'not decidable outside a request — this policy reads request input',
   'cli.policy.unenforced': '{count} permission(s) no action or query enforces:',
   'cli.registry.count': '{count} {kind}',
   'cli.registry.described': '{kind} {name}',

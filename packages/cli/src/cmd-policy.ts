@@ -17,7 +17,7 @@ import { renderTable } from './table';
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
 
 const joinOrDash = (values: readonly string[]): string =>
-  values.length === 0 ? '-' : values.join(',');
+  values.length === 0 ? msg('cli.policy.none') : values.join(',');
 
 function runList(findings: readonly Finding[]): CommandResult {
   const facts = listPolicy();
@@ -50,17 +50,25 @@ function runList(findings: readonly Finding[]): CommandResult {
 
 /** A header naming the declaration and its policy label, then the actor/verdict/deciding table. */
 function declarationLines(declaration: DeclarationExplanation): readonly string[] {
-  const header = `  ${declaration.kind} ${declaration.name} — policy ${declaration.label}`;
+  const header = `  ${msg('cli.policy.declaration', {
+    kind: declaration.kind,
+    name: declaration.name,
+    label: declaration.label,
+  })}`;
+  // Both notes say the same thing `dev-policy.ts` writes into the `/_x` trace: this ran outside a
+  // request. A policy that merely reads input gets its table plus the caveat; one that cannot be
+  // evaluated at all gets the caveat instead of a table, never a synthetic deny dressed as one.
+  if (!declaration.decidable) return [header, `    ${msg('cli.policy.undecidable')}`];
   const rows = declaration.rows.map((row) => [
     row.actor,
-    row.allowed ? 'allow' : 'deny',
-    row.deciding ?? '-',
-    row.reason ?? '-',
+    msg(row.allowed ? 'cli.policy.allow' : 'cli.policy.deny'),
+    row.deciding ?? msg('cli.policy.none'),
+    row.reason ?? msg('cli.policy.none'),
   ]);
   const table = renderTable(['actor', 'verdict', 'deciding', 'reason'], rows).map(
     (line) => `  ${line}`,
   );
-  return [header, ...table];
+  return [header, ...table, `    ${msg('cli.policy.noInput')}`];
 }
 
 function requireSubject(ctx: CommandContext): string {
@@ -88,6 +96,8 @@ function runExplain(ctx: CommandContext, findings: readonly Finding[]): CommandR
         : { kind: 'policy', singular: 'policy subject', name, known, suggestion, verb: 'explain' },
     );
   }
+  // One row per (declaration, actor) pair — a permission two declarations enforce evaluates every
+  // actor twice, so this counts evaluations and never roles.
   const rows = explanation.declarations.flatMap((declaration) => declaration.rows);
   const allowed = rows.filter((row) => row.allowed).length;
   return {
@@ -96,7 +106,7 @@ function runExplain(ctx: CommandContext, findings: readonly Finding[]): CommandR
     summary: msg('cli.policy.explained', {
       subject: explanation.subject,
       allowed,
-      roles: rows.length,
+      evaluations: rows.length,
     }),
     lines: explanation.declarations.flatMap(declarationLines),
     findings,

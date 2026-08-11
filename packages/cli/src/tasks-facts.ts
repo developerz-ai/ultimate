@@ -17,26 +17,6 @@ import { BadFlagError } from './errors';
 const DEFAULT_COUNT = 5;
 const MAX_COUNT = 50;
 
-/**
- * `describeCron`'s vocabulary is normally supplied from the caller's own `t('time.cron.*')` —
- * `@ultimat3/time` is tier 1 and reaches no i18n runtime. The CLI has no general translator of
- * its own either: `messages.ts` is a fixed flat catalog of the strings a command renders, closed
- * to a new key per file. So this is the one hardcoded English vocabulary, same exception
- * `CommandSpec.summary` and `BadFlagError`'s `reason` already carry per `packages/cli/CLAUDE.md`.
- */
-const CRON_PHRASES: CronPhrases = {
-  everyMinute: 'every minute',
-  everyNMinutes: 'every {n} minutes',
-  everyHour: 'every hour',
-  everyNHours: 'every {n} hours',
-  at: 'at {time}',
-  andMore: 'and {n} more',
-  onDaysOfMonth: 'on day {days} of the month',
-  onWeekdays: 'on {days}',
-  inMonths: 'in {months}',
-  everyDay: 'every day',
-};
-
 const pad2 = (value: number): string => String(value).padStart(2, '0');
 
 /**
@@ -111,7 +91,17 @@ export interface TaskShowFacts {
   readonly upcoming: readonly TaskOccurrence[];
 }
 
-export function taskShowFacts(handle: TaskHandle, nowMs: number, count: number): TaskShowFacts {
+/**
+ * `phrases` is a parameter for the same reason `describeCron` demands one: this module owns cron
+ * math, not words, and a vocabulary hardcoded here would be a second catalog the CLI's own
+ * `messages.ts` could never translate. The caller supplies it — `cmd-tasks.ts` from `cli.cron.*`.
+ */
+export function taskShowFacts(
+  handle: TaskHandle,
+  nowMs: number,
+  count: number,
+  phrases: CronPhrases,
+): TaskShowFacts {
   const descriptor = handle.describe();
   const upcoming: TaskOccurrence[] = [];
   let cursor = nowMs;
@@ -119,5 +109,5 @@ export function taskShowFacts(handle: TaskHandle, nowMs: number, count: number):
     cursor = nextCronOccurrenceMs(descriptor.cron, descriptor.tz, cursor);
     upcoming.push({ ms: cursor, at: isoInZone(cursor, descriptor.tz) });
   }
-  return { descriptor, describe: describeCron(descriptor.cron, 'en-US', CRON_PHRASES), upcoming };
+  return { descriptor, describe: describeCron(descriptor.cron, 'en-US', phrases), upcoming };
 }

@@ -68,6 +68,12 @@ export interface DeclarationExplanation {
   readonly kind: DeclarationKind;
   readonly capability: string;
   readonly label: string;
+  /**
+   * Whether this policy can be decided at all outside a request. `false` when evaluating it
+   * with no request input threw — a predicate dereferencing `input.post.id` has nothing to
+   * dereference here — and `rows` is then empty, because a partial matrix reads as a verdict.
+   */
+  readonly decidable: boolean;
   readonly rows: readonly MatrixRow[];
 }
 
@@ -78,14 +84,32 @@ export interface SubjectExplanation {
   readonly declarations: readonly DeclarationExplanation[];
 }
 
+/** The matrix half of a declaration: the rows, and whether they mean anything at all. */
+type DeclarationMatrix = Pick<DeclarationExplanation, 'decidable' | 'rows'>;
+
 /**
  * One `testActor` per declared role plus the anonymous caller — the same actor set the `/_x`
  * policy panel asks about (`devActors`, `dev-policy.ts`). Reusing it is the point: a second
  * "every role plus anonymous" builder here is the duplicate axiom 1 bans, and it would drift
  * from the panel's own set the first time a role is renamed.
+ *
+ * Actor by actor inside a `try`, because there is no request input outside a request and
+ * `policyMatrix` does not catch: a predicate reading `input.post.id` threw a bare `TypeError`
+ * straight out of `x policy explain`. One throw makes the whole declaration undecidable rather
+ * than half-reported — the rows a synthetic `{}` did produce are not the request's verdicts.
+ * `policyMatrix` stays the only decider; nothing here re-derives one.
  */
-const matrixRowsFor = (policy: Policy): readonly MatrixRow[] =>
-  policyMatrix(policy, { actors: devActors(), input: {} }).rows;
+const matrixFor = (policy: Policy): DeclarationMatrix => {
+  const rows: MatrixRow[] = [];
+  for (const actor of devActors()) {
+    try {
+      rows.push(...policyMatrix(policy, { actors: [actor], input: {} }).rows);
+    } catch {
+      return { decidable: false, rows: [] };
+    }
+  }
+  return { decidable: true, rows };
+};
 
 const explainAction = (action: AnyAction): DeclarationExplanation => {
   const descriptor = action.describe();
@@ -94,7 +118,7 @@ const explainAction = (action: AnyAction): DeclarationExplanation => {
     kind: 'action',
     capability: descriptor.capability,
     label: action.policy.label,
-    rows: matrixRowsFor(action.policy),
+    ...matrixFor(action.policy),
   };
 };
 
@@ -105,7 +129,7 @@ const explainQuery = (query: AnyQuery): DeclarationExplanation => {
     kind: 'query',
     capability: descriptor.capability,
     label: query.policy.label,
-    rows: matrixRowsFor(query.policy),
+    ...matrixFor(query.policy),
   };
 };
 

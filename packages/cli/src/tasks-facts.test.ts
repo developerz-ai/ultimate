@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { job, resetJobs, resetTasks, t, task } from '@ultimat3/jobs';
+import type { CronPhrases } from '@ultimat3/time';
 import {
   findTaskHandle,
   knownTaskNames,
@@ -12,6 +13,21 @@ import {
   taskShowFacts,
 } from './tasks-facts';
 import { thrownBy } from './thrown-by';
+
+/** The same words `cmd-tasks.ts` reads out of `cli.cron.*`, spelled out here so this file stays
+ * a test of the cron math and not of the catalog — `cmd-tasks.test.ts` covers that wiring. */
+const EN: CronPhrases = {
+  everyMinute: 'every minute',
+  everyNMinutes: 'every {n} minutes',
+  everyHour: 'every hour',
+  everyNHours: 'every {n} hours',
+  at: 'at {time}',
+  andMore: 'and {n} more',
+  onDaysOfMonth: 'on day {days} of the month',
+  onWeekdays: 'on {days}',
+  inMonths: 'in {months}',
+  everyDay: 'every day',
+};
 
 /** A trivial real job — the point is that `task()` enqueues an actual `JobHandle`, not a stub. */
 function pingJob(name = 'ping') {
@@ -86,7 +102,7 @@ describe('unit · taskShowFacts', () => {
     expect(handle).toBeDefined();
     if (handle === undefined) return;
 
-    const facts = taskShowFacts(handle, Date.parse('2026-03-06T00:00:00Z'), 5);
+    const facts = taskShowFacts(handle, Date.parse('2026-03-06T00:00:00Z'), 5, EN);
     expect(facts.descriptor.name).toBe('nightlyPing');
     expect(facts.upcoming).toHaveLength(5);
     expect(facts.upcoming.map((occurrence) => occurrence.at)).toEqual([
@@ -110,8 +126,16 @@ describe('unit · taskShowFacts', () => {
     task({ name: 'everyMinute', cron: '* * * * *', tz: 'UTC', enqueue: () => [] });
     const handle = findTaskHandle('everyMinute');
     if (handle === undefined) return expect.unreachable('task registered above');
-    expect(taskShowFacts(handle, 0, 1).upcoming).toHaveLength(1);
-    expect(taskShowFacts(handle, 0, 3).upcoming).toHaveLength(3);
+    expect(taskShowFacts(handle, 0, 1, EN).upcoming).toHaveLength(1);
+    expect(taskShowFacts(handle, 0, 3, EN).upcoming).toHaveLength(3);
+  });
+
+  test('the phrase comes from the vocabulary passed in, never from a table in this module', () => {
+    task({ name: 'nightly', cron: '0 3 * * *', tz: 'UTC', enqueue: () => [] });
+    const handle = findTaskHandle('nightly');
+    if (handle === undefined) return expect.unreachable('task registered above');
+    const de: CronPhrases = { ...EN, at: 'um {time}', everyDay: 'täglich' };
+    expect(taskShowFacts(handle, 0, 1, de).describe).toBe('um 03:00 täglich');
   });
 });
 

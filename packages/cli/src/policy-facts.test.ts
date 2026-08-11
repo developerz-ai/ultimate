@@ -4,75 +4,30 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
+import type { Policy } from '@ultimat3/policy';
 import {
-  and,
   can,
   clearPermissions,
   clearRoles,
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { resetRegistry as resetQueries } from '@ultimat3/query';
 import { explainPolicy, knownPolicySubjects, listPolicy } from './policy-facts';
+import { registerPolicyFixture } from './policy-fixture';
 
-/**
- * `post:read` is declared but enforced by nothing: `archivePost`'s policy grants that permission
- * to its second clause, but the compound policy's own capability is `and(post:publish, post:read)`
- * — a different string — so `post:read` alone stays unenforced. `post:publish` is enforced by an
- * action AND a query at once, so the aggregation across declarations has something to aggregate.
- */
-function seed(): void {
-  definePermissions(['post:publish', 'post:read', 'feed:read'] as const);
-  defineRoles({
-    admin: { grants: ['post:publish', 'post:read', 'feed:read'] },
-    editor: { grants: ['post:publish', 'post:read'] },
-    reader: { grants: ['post:read', 'feed:read'] },
-  });
-  registerActions({
-    publishPost: action({
-      input: t.object({}),
-      output: t.object({}),
-      policy: can('post:publish'),
-      async handle() {
-        return {};
-      },
-    }),
-    archivePost: action({
-      input: t.object({}),
-      output: t.object({}),
-      policy: and(
-        can('post:publish'),
-        can('post:read', ({ actor }) => actor?.id === 'admin'),
-      ),
-      async handle() {
-        return {};
-      },
-    }),
-  });
-  registerQuery(
-    'postFeed',
-    query({
-      input: t.object({}),
-      policy: can('feed:read'),
-      sql: () => from('posts').select({ id: 'id' }).limit(10),
-    }),
-  );
-  registerQuery(
-    'publishedPosts',
-    query({
-      input: t.object({}),
-      policy: can('post:publish'),
-      sql: () => from('posts').select({ id: 'id' }).limit(10),
-    }),
-  );
+/** What a policy that reads request input decides on — nothing the CLI can supply. */
+interface PostInput {
+  readonly postId: string;
+  readonly post: { readonly id: string };
 }
 
 /**
- * Reset BEFORE seeding, not only after. The declaration registries are process-global and
- * `bun test` runs every file in one process, so whatever ran first — the reference app registers
- * its own `publishPost` — is still seated when this file's first `seed()` lands and the name
- * collides with `X_ACTION_DUPLICATE`. Clearing first is what makes this file order-independent
- * instead of passing alone and failing in the full suite.
+ * Reset BEFORE registering the fixture, not only after. The declaration registries are
+ * process-global and `bun test` runs every file in one process, so whatever ran first — the
+ * reference app registers its own `publishPost` — is still seated when the first
+ * `registerPolicyFixture()` lands and the name collides with `X_ACTION_DUPLICATE`. Clearing first
+ * is what makes this file order-independent instead of passing alone and failing in the suite.
  */
 beforeEach(() => {
   resetActions();
@@ -90,7 +45,7 @@ afterEach(() => {
 
 describe('unit · x policy · listPolicy', () => {
   test('one row per declared permission — granting roles, and every action/query that enforces it', () => {
-    seed();
+    registerPolicyFixture();
     expect(listPolicy().rows).toEqual([
       { permission: 'feed:read', roles: ['admin', 'reader'], actions: [], queries: ['postFeed'] },
       {
@@ -104,7 +59,7 @@ describe('unit · x policy · listPolicy', () => {
   });
 
   test('counts roles, and permissions at least one declaration enforces', () => {
-    seed();
+    registerPolicyFixture();
     const facts = listPolicy();
     expect(facts.roleCount).toBe(3);
     expect(facts.enforcedCount).toBe(2);
@@ -118,7 +73,7 @@ describe('unit · x policy · listPolicy', () => {
 
 describe('unit · x policy · explainPolicy', () => {
   test('a permission resolves to its granting roles and every enforcing declaration', () => {
-    seed();
+    registerPolicyFixture();
     const explanation = explainPolicy('post:publish');
     expect(explanation?.kind).toBe('permission');
     expect(explanation?.grantingRoles).toEqual(['admin', 'editor']);
@@ -129,14 +84,14 @@ describe('unit · x policy · explainPolicy', () => {
   });
 
   test('every declaration matrix carries one row per role plus anonymous, in that order', () => {
-    seed();
+    registerPolicyFixture();
     const rows = explainPolicy('post:publish')?.declarations[0]?.rows ?? [];
     expect(rows.map((r) => r.actor)).toEqual(['anonymous', 'admin', 'editor', 'reader']);
     expect(rows.map((r) => r.allowed)).toEqual([false, true, true, false]);
   });
 
   test('the deciding clause and reason for a simple can() policy name the permission itself', () => {
-    seed();
+    registerPolicyFixture();
     const rows = explainPolicy('post:publish')?.declarations[0]?.rows ?? [];
     expect(rows.find((r) => r.actor === 'anonymous')).toMatchObject({
       deciding: 'post:publish',
@@ -149,7 +104,7 @@ describe('unit · x policy · explainPolicy', () => {
   });
 
   test('a compound and() policy surfaces the SPECIFIC clause that decided, not the wrapper', () => {
-    seed();
+    registerPolicyFixture();
     const explanation = explainPolicy('archivePost');
     expect(explanation?.kind).toBe('action');
     expect(explanation?.declarations).toHaveLength(1);
@@ -176,7 +131,7 @@ describe('unit · x policy · explainPolicy', () => {
   });
 
   test('resolves by action name, query name, and action path alike', () => {
-    seed();
+    registerPolicyFixture();
     expect(explainPolicy('publishPost')?.kind).toBe('action');
     expect(explainPolicy('postFeed')?.kind).toBe('query');
     const byPath = explainPolicy('/api/posts/publish');
@@ -186,21 +141,73 @@ describe('unit · x policy · explainPolicy', () => {
   });
 
   test('grantingRoles for a single declaration comes from its own capability, not the subject text', () => {
-    seed();
+    registerPolicyFixture();
     expect(explainPolicy('postFeed')?.grantingRoles).toEqual(['admin', 'reader']);
     // no role grants the literal compound label "and(post:publish, post:read)"
     expect(explainPolicy('archivePost')?.grantingRoles).toEqual([]);
   });
 
   test('an unknown subject resolves to undefined, not a throw', () => {
-    seed();
+    registerPolicyFixture();
     expect(explainPolicy('does-not-exist')).toBeUndefined();
+  });
+});
+
+describe('unit · x policy · explainPolicy · policies that read request input', () => {
+  /** One granting role and the anonymous caller — the smallest matrix that runs a predicate. */
+  function seedPermission(): void {
+    definePermissions(['post:publish'] as const);
+    defineRoles({ admin: { grants: ['post:publish'] } });
+  }
+
+  function registerPublishPost(policy: Policy<PostInput>): void {
+    registerActions({
+      publishPost: action({
+        input: t.object({}),
+        output: t.object({}),
+        policy,
+        async handle() {
+          return {};
+        },
+      }),
+    });
+  }
+
+  test('a predicate that READS input still decides — every actor, marked decidable', () => {
+    seedPermission();
+    registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.postId === 'post_1'));
+
+    const declaration = explainPolicy('publishPost')?.declarations[0];
+    expect(declaration?.decidable).toBe(true);
+    expect(declaration?.rows.map((r) => r.actor)).toEqual(['anonymous', 'admin']);
+    // admin holds the grant and is denied anyway, because `undefined !== 'post_1'` outside a
+    // request. That false deny is the whole reason the rendered table carries `cli.policy.noInput`.
+    expect(declaration?.rows.find((r) => r.actor === 'admin')).toMatchObject({
+      allowed: false,
+      deciding: 'post:publish',
+      reason: 'post:publish predicate returned false',
+    });
+  });
+
+  test('a predicate that DEREFERENCES nested input is undecidable — no rows, and no throw', () => {
+    seedPermission();
+    registerPublishPost(can<PostInput>('post:publish', ({ input }) => input.post.id === 'post_1'));
+
+    // `input.post` is undefined with no request, so the predicate throws a bare `TypeError`
+    // through `policyMatrix` — which used to escape `x policy explain` and kill the command.
+    expect(() => explainPolicy('publishPost')).not.toThrow();
+    const declaration = explainPolicy('publishPost')?.declarations[0];
+    expect(declaration?.decidable).toBe(false);
+    // Not even the anonymous row that was decided before the throwing actor: a partial matrix
+    // reads as a verdict on the actors it omits.
+    expect(declaration?.rows).toEqual([]);
+    expect(declaration?.label).toBe('post:publish');
   });
 });
 
 describe('unit · x policy · knownPolicySubjects', () => {
   test('permissions, then action names, query names, and action paths — in that order', () => {
-    seed();
+    registerPolicyFixture();
     expect(knownPolicySubjects()).toEqual([
       'feed:read',
       'post:publish',

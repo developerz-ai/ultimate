@@ -31,7 +31,38 @@ describe('nestCatalog', () => {
       'X_CATALOG_INVALID',
     );
   });
+
+  test('a __proto__ segment nests as an ordinary key and never reaches Object.prototype', () => {
+    const nested = nestCatalog({ '__proto__.polluted': 'owned', 'nav.home': 'Home' });
+
+    // The write landed on the catalog, not on every object in the process.
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
+    // Read through a descriptor, never `nested['__proto__']`: on a normal object that expression
+    // is the deprecated prototype accessor, so it would pass without proving the key is own data.
+    expect(ownValue(nested, '__proto__')).toEqual({ polluted: 'owned' });
+
+    // And it survives the round trip a written catalog file actually takes.
+    const reread: unknown = JSON.parse(JSON.stringify(nested));
+    expect(loadCatalog(reread)).toEqual({ '__proto__.polluted': 'owned', 'nav.home': 'Home' });
+    expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
+  });
+
+  test('a bare __proto__ leaf is a key, not a prototype write', () => {
+    // Built through `JSON.parse`, the way a catalog reaches this function: an object *literal*
+    // spelt `{ __proto__: 'Home' }` sets the prototype instead of declaring the key, so it could
+    // never reproduce what a file on disk carries.
+    const flat = JSON.parse('{"__proto__":"Home"}') as Record<string, string>;
+    const nested = nestCatalog(flat);
+    expect(ownValue(nested, '__proto__')).toBe('Home');
+    expect(Object.getPrototypeOf(nested)).toBeNull();
+  });
 });
+
+/** The own data property under `key`, or `undefined` — never the `__proto__` accessor. */
+function ownValue(node: object, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(node, key)?.value;
+}
 
 describe('flattenCatalog', () => {
   test('nested authoring becomes dot-key lookup', () => {

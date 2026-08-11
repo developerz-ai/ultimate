@@ -1,0 +1,71 @@
+// The one policy declaration set both `x policy` test files run against. Shared rather than
+// copied, for the reason `thrown-by.ts` gives: every count in both files' assertions is read off
+// THIS set, so a second copy drifts and each file keeps passing while they stop agreeing.
+
+import { action, registerActions, t } from '@ultimat3/action';
+import { and, can, definePermissions, defineRoles } from '@ultimat3/policy';
+import { from, query, registerQuery } from '@ultimat3/query';
+
+/**
+ * The row the fixture's two reads return, over an empty source: `x policy` describes a query and
+ * evaluates its policy, it never executes one, so the rows are the one fact that may be missing.
+ */
+interface PostRow {
+  readonly id: string;
+}
+
+/**
+ * Three permissions, three roles, two actions and two queries — each fact earning its place.
+ *
+ * `post:read` is declared but enforced by nothing: `archivePost`'s policy grants that permission
+ * to its second clause, but the compound policy's own capability is `and(post:publish, post:read)`
+ * — a different string — so `post:read` alone stays unenforced. `post:publish` is enforced by an
+ * action AND a query at once, so the aggregation across declarations has something to aggregate.
+ *
+ * Registers only; the registries are process-global, so the caller clears them first.
+ */
+export function registerPolicyFixture(): void {
+  definePermissions(['post:publish', 'post:read', 'feed:read'] as const);
+  defineRoles({
+    admin: { grants: ['post:publish', 'post:read', 'feed:read'] },
+    editor: { grants: ['post:publish', 'post:read'] },
+    reader: { grants: ['post:read', 'feed:read'] },
+  });
+  registerActions({
+    publishPost: action({
+      input: t.object({}),
+      output: t.object({}),
+      policy: can('post:publish'),
+      async handle() {
+        return {};
+      },
+    }),
+    archivePost: action({
+      input: t.object({}),
+      output: t.object({}),
+      policy: and(
+        can('post:publish'),
+        can('post:read', ({ actor }) => actor?.id === 'admin'),
+      ),
+      async handle() {
+        return {};
+      },
+    }),
+  });
+  registerQuery(
+    'postFeed',
+    query({
+      input: t.object({}),
+      policy: can('feed:read'),
+      sql: () => from<PostRow>('posts', []).orderBy('id').limit(10),
+    }),
+  );
+  registerQuery(
+    'publishedPosts',
+    query({
+      input: t.object({}),
+      policy: can('post:publish'),
+      sql: () => from<PostRow>('posts', []).orderBy('id').limit(10),
+    }),
+  );
+}

@@ -4,75 +4,25 @@
 // process-global, so every test resets them.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+// Bun ships no recursive delete and no path API: `rm` tears down the two fixture app roots this
+// suite writes, and `join` is what builds their paths in the first place.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
-import {
-  and,
-  can,
-  clearPermissions,
-  clearRoles,
-  definePermissions,
-  defineRoles,
-} from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import type { Policy } from '@ultimat3/policy';
+import { can, clearPermissions, clearRoles } from '@ultimat3/policy';
+import { resetRegistry as resetQueries } from '@ultimat3/query';
 import { policyCommand } from './cmd-policy';
 import type { CommandContext } from './command';
 import { msg } from './messages';
 import type { FlagValue } from './parse';
 import { parseArgs } from './parse';
+import { registerPolicyFixture } from './policy-fixture';
 import type { ThrownShape } from './thrown-by';
 
 const ROOT = join(import.meta.dir, '..', '.policy-fixture');
 const BROKEN = join(import.meta.dir, '..', '.policy-broken-fixture');
 const APP_CONFIG = `export const config = { name: 'fixture' };\n`;
-
-/** Same shape as `policy-facts.test.ts`'s fixture — see that file for why each fact is there. */
-function registerFixtures(): void {
-  definePermissions(['post:publish', 'post:read', 'feed:read'] as const);
-  defineRoles({
-    admin: { grants: ['post:publish', 'post:read', 'feed:read'] },
-    editor: { grants: ['post:publish', 'post:read'] },
-    reader: { grants: ['post:read', 'feed:read'] },
-  });
-  registerActions({
-    publishPost: action({
-      input: t.object({}),
-      output: t.object({}),
-      policy: can('post:publish'),
-      async handle() {
-        return {};
-      },
-    }),
-    archivePost: action({
-      input: t.object({}),
-      output: t.object({}),
-      policy: and(
-        can('post:publish'),
-        can('post:read', ({ actor }) => actor?.id === 'admin'),
-      ),
-      async handle() {
-        return {};
-      },
-    }),
-  });
-  registerQuery(
-    'postFeed',
-    query({
-      input: t.object({}),
-      policy: can('feed:read'),
-      sql: () => from('posts').select({ id: 'id' }).limit(10),
-    }),
-  );
-  registerQuery(
-    'publishedPosts',
-    query({
-      input: t.object({}),
-      policy: can('post:publish'),
-      sql: () => from('posts').select({ id: 'id' }).limit(10),
-    }),
-  );
-}
 
 const contextFor = (
   subcommand: string | undefined,
@@ -129,16 +79,16 @@ afterAll(async () => {
 /**
  * Reset BEFORE registering, not only after. The declaration registries are process-global and
  * `bun test` runs every file in one process, so whatever ran first — the reference app registers
- * its own `publishPost` — is still seated when the first `registerFixtures()` lands and the name
- * collides with `X_ACTION_DUPLICATE`. Clearing first is what makes this file order-independent
- * instead of passing alone and failing in the full suite.
+ * its own `publishPost` — is still seated when the first `registerPolicyFixture()` lands and the
+ * name collides with `X_ACTION_DUPLICATE`. Clearing first is what makes this file
+ * order-independent instead of passing alone and failing in the full suite.
  */
 beforeEach(() => {
   resetActions();
   resetQueries();
   clearRoles();
   clearPermissions();
-  registerFixtures();
+  registerPolicyFixture();
 });
 
 afterEach(() => {
@@ -207,12 +157,27 @@ describe('unit · x policy explain', () => {
   test('a permission aggregates every enforcing declaration into one summary and one table each', async () => {
     const result = await policyCommand.run(contextFor('explain', ['post:publish']));
     expect(result.ok).toBe(true);
+    // Two declarations × four actors: eight evaluations, not eight roles — the app declares three.
     expect(result.summary).toBe(
-      msg('cli.policy.explained', { subject: 'post:publish', allowed: 4, roles: 8 }),
+      msg('cli.policy.explained', { subject: 'post:publish', allowed: 4, evaluations: 8 }),
     );
     const rendered = (result.lines ?? []).join('\n');
-    expect(rendered).toContain('action publishPost — policy post:publish');
-    expect(rendered).toContain('query publishedPosts — policy post:publish');
+    expect(rendered).toContain(
+      msg('cli.policy.declaration', {
+        kind: 'action',
+        name: 'publishPost',
+        label: 'post:publish',
+      }),
+    );
+    expect(rendered).toContain(
+      msg('cli.policy.declaration', {
+        kind: 'query',
+        name: 'publishedPosts',
+        label: 'post:publish',
+      }),
+    );
+    // Every rendered table says what it was evaluated without.
+    expect(rendered).toContain(msg('cli.policy.noInput'));
 
     const data = result.data as {
       kind: string;
@@ -228,14 +193,20 @@ describe('unit · x policy explain', () => {
     const result = await policyCommand.run(contextFor('explain', ['archivePost']));
     expect(result.ok).toBe(true);
     const rendered = (result.lines ?? []).join('\n');
-    expect(rendered).toContain('action archivePost — policy and(post:publish, post:read)');
+    expect(rendered).toContain(
+      msg('cli.policy.declaration', {
+        kind: 'action',
+        name: 'archivePost',
+        label: 'and(post:publish, post:read)',
+      }),
+    );
 
     const editorLine = result.lines?.find((line) => line.trim().startsWith('editor'));
-    expect(editorLine).toContain('deny');
+    expect(editorLine).toContain(msg('cli.policy.deny'));
     expect(editorLine).toContain('post:read');
 
     const readerLine = result.lines?.find((line) => line.trim().startsWith('reader'));
-    expect(readerLine).toContain('deny');
+    expect(readerLine).toContain(msg('cli.policy.deny'));
     expect(readerLine).toContain('post:publish');
   });
 
@@ -243,7 +214,7 @@ describe('unit · x policy explain', () => {
     const result = await policyCommand.run(contextFor('explain', ['/api/posts/publish']));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(
-      msg('cli.policy.explained', { subject: '/api/posts/publish', allowed: 2, roles: 4 }),
+      msg('cli.policy.explained', { subject: '/api/posts/publish', allowed: 2, evaluations: 4 }),
     );
     expect((result.data as { kind: string }).kind).toBe('action');
   });
@@ -251,9 +222,44 @@ describe('unit · x policy explain', () => {
   test('resolves a query by name', async () => {
     const result = await policyCommand.run(contextFor('explain', ['postFeed']));
     expect(result.summary).toBe(
-      msg('cli.policy.explained', { subject: 'postFeed', allowed: 2, roles: 4 }),
+      msg('cli.policy.explained', { subject: 'postFeed', allowed: 2, evaluations: 4 }),
     );
     expect((result.data as { kind: string }).kind).toBe('query');
+  });
+
+  test('a policy that dereferences request input renders the note instead of crashing', async () => {
+    // Registered on top of the fixture, so only this subject is undecidable: `input.post` is
+    // undefined outside a request and the predicate throws where the matrix used to run.
+    interface PostInput {
+      readonly post: { readonly id: string };
+    }
+    const policy: Policy<PostInput> = can<PostInput>(
+      'post:publish',
+      ({ input }) => input.post.id === 'post_1',
+    );
+    registerActions({
+      restorePost: action({
+        input: t.object({}),
+        output: t.object({}),
+        policy,
+        async handle() {
+          return {};
+        },
+      }),
+    });
+
+    const result = await policyCommand.run(contextFor('explain', ['restorePost']));
+    expect(result.ok).toBe(true);
+    const rendered = (result.lines ?? []).join('\n');
+    expect(rendered).toContain(msg('cli.policy.undecidable'));
+    expect(rendered).not.toContain('anonymous');
+    expect(rendered).not.toContain(msg('cli.policy.noInput'));
+    expect(result.summary).toBe(
+      msg('cli.policy.explained', { subject: 'restorePost', allowed: 0, evaluations: 0 }),
+    );
+    expect(
+      (result.data as { declarations: readonly { decidable: boolean }[] }).declarations,
+    ).toEqual([expect.objectContaining({ decidable: false, rows: [] })]);
   });
 });
 

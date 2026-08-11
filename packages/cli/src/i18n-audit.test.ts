@@ -3,6 +3,9 @@
 // seed/sync key math that must never touch an existing translated value.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+// `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and none
+// for a recursive delete (`rmSync`). `node:path` comes with them — `Bun.write` takes the joined
+// path, but only `node:path` can build one.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,8 +28,8 @@ function tempRoot(prefix: string): string {
   return root;
 }
 
-/** `loadCatalogs`/`resolveDefaultLocale` throw from inside an `async function`, so a bad catalog
- * surfaces as a rejection — never a synchronous throw a plain try/catch around the call would see. */
+/** `loadCatalogs` throws from inside an `async function`, so a bad catalog surfaces as a rejection
+ * — never a synchronous throw a plain try/catch around the call would see. */
 async function rejectedBy(call: () => Promise<unknown>): Promise<{ code?: string }> {
   try {
     await call();
@@ -175,39 +178,30 @@ describe('unit · resolveDefaultLocale', () => {
   const catalogsOf = (...locales: readonly string[]): Record<string, Record<string, string>> =>
     Object.fromEntries(locales.map((locale) => [locale, {}]));
 
-  test('parses defineCatalogs({ default }) from the app index when present', async () => {
-    const dir = tempRoot('x-i18n-default-index-');
-    await Bun.write(
-      join(dir, 'packages/i18n/src/index.ts'),
-      [
-        "import { defineCatalogs } from '@ultimat3/i18n';",
-        'export const catalogs = defineCatalogs({',
-        "  default: 'es',",
-        '  locales: { en, es },',
-        '});',
-        '',
-      ].join('\n'),
-    );
-    expect(await resolveDefaultLocale(dir, catalogsOf('en', 'es'))).toBe('es');
+  // No temp dirs here: the declared fallback arrives from `app-load.ts` (`localeConfig().fallback`),
+  // so every rule is a decision over two plain inputs.
+  test("the app's own declared fallback wins over en when both have a catalog", () => {
+    expect(resolveDefaultLocale('es', catalogsOf('en', 'es'))).toBe('es');
   });
 
-  test('a parsed default with no matching catalog on disk falls through to en', async () => {
-    const dir = tempRoot('x-i18n-default-stale-');
-    await Bun.write(
-      join(dir, 'packages/i18n/src/index.ts'),
-      "export const catalogs = defineCatalogs({ default: 'zz', locales: { en } });\n",
-    );
-    expect(await resolveDefaultLocale(dir, catalogsOf('en', 'fr'))).toBe('en');
+  test('a declared fallback with no catalog on disk falls through to en', () => {
+    expect(resolveDefaultLocale('zz', catalogsOf('en', 'fr'))).toBe('en');
   });
 
-  test('no index and no en falls to the sole catalog on disk', async () => {
-    const dir = tempRoot('x-i18n-default-sole-');
-    expect(await resolveDefaultLocale(dir, catalogsOf('fr'))).toBe('fr');
+  test('nothing declared falls to en when a catalog for it exists', () => {
+    expect(resolveDefaultLocale(undefined, catalogsOf('en', 'fr'))).toBe('en');
   });
 
-  test('no index, no en, and more than one catalog is unresolved', async () => {
-    const dir = tempRoot('x-i18n-default-ambiguous-');
-    expect(await resolveDefaultLocale(dir, catalogsOf('fr', 'de'))).toBeUndefined();
+  test('nothing declared and no en falls to the sole catalog on disk', () => {
+    expect(resolveDefaultLocale(undefined, catalogsOf('fr'))).toBe('fr');
+  });
+
+  test('a declared fallback nothing on disk answers, with no en either, is unresolved', () => {
+    expect(resolveDefaultLocale('zz', catalogsOf('fr', 'de'))).toBeUndefined();
+  });
+
+  test('no catalogs at all is unresolved — a fallback nothing seeds from is not a source', () => {
+    expect(resolveDefaultLocale('en', {})).toBeUndefined();
   });
 });
 

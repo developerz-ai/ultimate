@@ -3,6 +3,9 @@
 // broken table column or a wrong fix line fails here, not just in `tasks-facts.test.ts`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+// Bun ships no temp-directory API and no path API: `mkdtempSync`/`tmpdir`/`join` are the only way
+// to build the throwaway app root `requireAppRoot` has to find on disk. `mkdirSync`/`writeFileSync`
+// stay with them because `Bun.write` is async and these run inside synchronous fixture helpers.
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

@@ -5,6 +5,7 @@
 
 import { systemClock } from '@ultimat3/core';
 import type { TaskHandle } from '@ultimat3/jobs';
+import type { CronPhrases } from '@ultimat3/time';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -23,6 +24,25 @@ import {
 } from './tasks-facts';
 
 const HEADER = ['name', 'cron', 'tz', 'catchUp', 'jobs', 'next'] as const;
+
+/**
+ * The vocabulary `describeCron` interpolates. The cron *math* stays in `tasks-facts.ts` — it is
+ * locale-neutral — but these are words `x tasks show` prints, so they come from the catalog like
+ * every other rendered string. `msg()` leaves an un-supplied `{n}`/`{time}`/`{days}`/`{months}`
+ * intact, which is what makes each value arrive as the template `describeCron` fills in.
+ */
+const cronPhrases = (): CronPhrases => ({
+  everyMinute: msg('cli.cron.everyMinute'),
+  everyNMinutes: msg('cli.cron.everyNMinutes'),
+  everyHour: msg('cli.cron.everyHour'),
+  everyNHours: msg('cli.cron.everyNHours'),
+  at: msg('cli.cron.at'),
+  andMore: msg('cli.cron.andMore'),
+  onDaysOfMonth: msg('cli.cron.onDaysOfMonth'),
+  onWeekdays: msg('cli.cron.onWeekdays'),
+  inMonths: msg('cli.cron.inMonths'),
+  everyDay: msg('cli.cron.everyDay'),
+});
 
 /** A descriptor/fact is plain JSON by construction — same idiom as `cmd-registries.ts`'s `asJson`. */
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
@@ -83,7 +103,7 @@ function requireHandle(ctx: CommandContext): TaskHandle {
 function runShow(ctx: CommandContext, nowMs: number, findings: readonly Finding[]): CommandResult {
   const handle = requireHandle(ctx);
   const count = parseCountFlag(flagString(ctx.args, 'count'));
-  const { descriptor, describe, upcoming } = taskShowFacts(handle, nowMs, count);
+  const { descriptor, describe, upcoming } = taskShowFacts(handle, nowMs, count, cronPhrases());
   const first = upcoming[0];
   const lines = [
     ...detailLines(asJson(descriptor)),

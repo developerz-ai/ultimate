@@ -436,7 +436,7 @@ x policy [list|explain <subject>] [--json]
 | Subcommand | Does |
 |---|---|
 | `list` | every permission, the roles that grant it, and the actions and queries that enforce it — plus the permissions **nothing** enforces, which are grants that do nothing |
-| `explain <subject>` | the allow/deny matrix, one row per declared role plus `anonymous`, naming the clause that decided and its reason |
+| `explain <subject>` | the allow/deny matrix, one row per actor per declaration — every declared role plus `anonymous`, evaluated once for each action or query that enforces the subject — naming the clause that decided and its reason |
 
 `<subject>` resolves in order against a permission (`post:publish`), an action name (`publishPost`), a query name (`postFeed`), then an action's HTTP path (`/api/posts/publish`) — so the `fix:` line printed by an `X_FORBIDDEN` is runnable whichever of the four the throwing surface had to hand.
 
@@ -447,9 +447,10 @@ $ x policy explain publishPost
   anonymous  deny     post:publish  no actor for post:publish
   author     deny     post:publish  post:publish predicate returned false
   reader     deny     post:publish  actor lacks post:publish
+    evaluated with no request input and no row — a rule reading either decides again on the real request
 ```
 
-The verdict comes from `@ultimat3/policy`'s own `policyMatrix()` over the app's real `Policy` objects — the same evaluation the request path runs, never a second one.
+The verdict comes from `@ultimat3/policy`'s own `policyMatrix()` over the app's real `Policy` objects — the same evaluation the request path runs, never a second one. It runs **outside a request**, which is what the last line says: a rule reading input or a row decides again on the real call, so a `predicate returned false` here is a no-input verdict rather than a standing denial. A policy that cannot be evaluated at all outside a request — a predicate dereferencing `input.post.id` has nothing to dereference — reports `decidable: false` and prints that note in place of the table, never a table of invented denials.
 
 Errors: `X_DECLARATION_UNKNOWN`, `X_CLI_BAD_FLAG`.
 

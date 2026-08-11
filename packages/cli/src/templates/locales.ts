@@ -39,18 +39,34 @@ const canonicalTag = (tag: string): string | undefined => {
 };
 
 /**
+ * The invocation a rejection is reported against. `x g --locales=…` is not the only caller —
+ * `x i18n add <locale>` reaches this same validator — and a cause naming a command and a flag the
+ * user never typed is the misdirection axiom 4 exists to refuse.
+ */
+export interface LocaleFlagContext {
+  /** The runnable fix printed on a rejection. Defaults to the `x g` form. */
+  readonly fix?: string;
+  /** The command as typed, without the `x`. */
+  readonly command?: string;
+  /** The flag or argument the locale arrived on. */
+  readonly flag?: string;
+}
+
+/**
  * Every locale a generated catalog ships for: trimmed, validated, lowercased and deduped, or the
  * default when the caller names none. Loud rather than lenient — a typo silently resolved to `en`
  * writes a catalog the app never reads, and a traversal silently dropped writes one it never sees.
  */
 export function resolveLocales(
   requested?: readonly string[],
-  // `x i18n add <locale>` reaches the same validator through a different flag, so the rejection
-  // has to name the caller's own command — a fix line telling an `x i18n` user to run `x g` is
-  // the kind of misdirection axiom 4 exists to refuse.
-  fix: string = LOCALES_FIX,
+  // A bare string is still the fix, so every `x g` call site reads exactly as it did.
+  context: string | LocaleFlagContext = LOCALES_FIX,
 ): readonly string[] {
   if (requested === undefined) return DEFAULT_LOCALES;
+  const options: LocaleFlagContext = typeof context === 'string' ? { fix: context } : context;
+  const fix = options.fix ?? LOCALES_FIX;
+  const command = options.command ?? 'g';
+  const flag = options.flag ?? 'locales';
   const resolved: string[] = [];
   for (const raw of requested) {
     const tag = raw.trim();
@@ -62,8 +78,8 @@ export function resolveLocales(
     const canonical = canonicalTag(tag);
     if (canonical === undefined) {
       throw new BadFlagError({
-        flag: 'locales',
-        command: 'g',
+        flag,
+        command,
         reason: `"${tag}" is not a BCP-47 locale`,
         fix,
       });

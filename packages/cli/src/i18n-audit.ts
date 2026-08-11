@@ -2,6 +2,10 @@
 // key sets. No CLI shapes and no msg() — an app root in, plain data out, so every path here is
 // testable without a ParsedArgs or a rendered message.
 
+// `node:` and not Bun: Bun exposes no existence check (`existsSync`, which is how a missing
+// `catalogs/` directory reads as "nothing shipped" instead of a throw) and no path API at all —
+// `join` builds the absolute path `Bun.file` reads, and `relative`/`sep` turn it back into the
+// root-relative POSIX shape every CLI-reported path is keyed by.
 import { existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
@@ -103,31 +107,23 @@ export async function auditApp(root: string): Promise<AuditFacts> {
   return { report: auditCatalogs({ extraction, catalogs, ignoreUnused }), catalogs };
 }
 
-const INDEX_PATH = 'packages/i18n/src/index.ts';
-const DEFAULT_LOCALE_RE = /defineCatalogs\(\s*\{\s*default:\s*(['"])([^'"]+)\1/;
-
 /**
  * Which locale is the source of truth for seeding (`x i18n add`) and syncing (`x i18n sync`).
- * Three rules, in order:
- *  1. Parse the app's `packages/i18n/src/index.ts` for `defineCatalogs({ default: '…' })` — a
- *     cheap regex rather than an import, which would re-run the app's own `registerCatalog` and
- *     collide with itself. Trusted only when a catalog for that locale actually exists on disk.
- *  2. `en`, when a catalog for it exists — every app scaffolded by `x new` has one from `x new`
- *     scaffold time, so this covers every real app even with no readable index.
+ * `declared` is the app's own `defineCatalogs({ default })`, projected by `app-load.ts` from
+ * `@ultimat3/i18n`'s `localeConfig()` — the framework's answer to its own question, never a parse
+ * of the app's source. Three rules, in order:
+ *  1. `declared`, trusted only when a catalog for it actually exists on disk.
+ *  2. `en`, when a catalog for it exists — every app `x new` scaffolds has one, so this covers
+ *     every real app even when the i18n module would not import.
  *  3. The sole catalog on disk, when there is exactly one.
- * `undefined` when none of the three resolve (no catalogs yet, or more than one with no `en` and
- * no readable index) — callers seed/sync from an empty source rather than guess at one.
+ * `undefined` when none of the three resolve (no catalogs yet, or several with no `en` and nothing
+ * on disk answering `declared`) — callers seed/sync from an empty source rather than guess at one.
  */
-export async function resolveDefaultLocale(
-  root: string,
+export function resolveDefaultLocale(
+  declared: string | undefined,
   catalogs: Readonly<Record<Locale, Catalog>>,
-): Promise<Locale | undefined> {
-  const indexPath = join(root, INDEX_PATH);
-  if (existsSync(indexPath)) {
-    const match = DEFAULT_LOCALE_RE.exec(await Bun.file(indexPath).text());
-    const parsed = match?.[2];
-    if (parsed !== undefined && Object.hasOwn(catalogs, parsed)) return parsed;
-  }
+): Locale | undefined {
+  if (declared !== undefined && Object.hasOwn(catalogs, declared)) return declared;
   if (Object.hasOwn(catalogs, DEFAULT_LOCALE)) return DEFAULT_LOCALE;
   const locales = Object.keys(catalogs);
   return locales.length === 1 ? locales[0] : undefined;

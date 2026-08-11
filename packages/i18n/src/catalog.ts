@@ -52,9 +52,15 @@ export function loadCatalog(value: unknown, prefix = ''): Catalog {
  *
  * A key that would nest under a leaf (`nav` and `nav.home` in the same catalog) is the same
  * branch/leaf collision `flattenCatalog` refuses in the other direction, reported as such.
+ *
+ * Every node is `Object.create(null)`, never `{}`, because a catalog is untrusted input read off
+ * disk: on a normal object `node['__proto__']` resolves to `Object.prototype` instead of reading
+ * as absent, so the key `__proto__.polluted` would walk into the prototype and write to it. A
+ * null-prototype node makes `__proto__` an ordinary segment — it nests and serializes like any
+ * other, and nothing outside this catalog can be reached from a key.
  */
 export function nestCatalog(catalog: Catalog): NestedCatalog {
-  const root: Record<string, unknown> = {};
+  const root = Object.create(null) as Record<string, unknown>;
   for (const key of catalogKeys(catalog)) {
     const value = catalog[key];
     if (value === undefined) continue;
@@ -64,7 +70,7 @@ export function nestCatalog(catalog: Catalog): NestedCatalog {
     let node = root;
     for (const segment of segments) {
       const child = node[segment];
-      if (child === undefined) node[segment] = {};
+      if (child === undefined) node[segment] = Object.create(null);
       else if (typeof child !== 'object') {
         throw catalogInvalid(key, 'duplicate key — a nested branch and a dotted key collide');
       }

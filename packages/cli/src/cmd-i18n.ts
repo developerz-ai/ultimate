@@ -2,13 +2,17 @@
 // X_CATALOG_MISSING_KEYS and X_CATALOG_INVALID fix line already names. CLI wiring only: the
 // facts come from `i18n-audit.ts`, the audit itself from `@ultimat3/i18n`'s own `auditCatalogs`.
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { UltimateError } from '@ultimat3/core';
+// `node:` and not Bun: Bun has no exclusive-create write, and `open(path, 'wx')` is the only one
+// there is — `Bun.write` overwrites, so an existence check before it is a race a second `x i18n
+// add` wins. `mkdir` comes with it because `open` does not create the parent directory `Bun.write`
+// would, and `node:path` because Bun exposes no path API to build what either of them takes.
+import { type FileHandle, mkdir, open } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { catalogKeys, catalogMissingKeys } from '@ultimat3/i18n';
+import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, docsFor } from './errors';
+import { BadFlagError, CatalogExistsError } from './errors';
 import {
   auditApp,
   loadCatalogs,
@@ -28,21 +32,32 @@ export const I18N_SUBCOMMANDS = ['check', 'add', 'sync'] as const;
 /** `ExtractReport` is plain JSON by construction — same idiom as `cmd-registries.ts`'s `asJson`. */
 const asJson = (value: object): Record<string, JsonValue> => value as Record<string, JsonValue>;
 
+/** `open`'s failure when the file is already there — the one errno this command translates. */
+const isAlreadyExists = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST';
+
 /**
- * `x i18n add` refuses to clobber a catalog that already exists — a human translation lost to a
- * second run is unrecoverable. `X_GENERATE_CONFLICT` is already owned by this package
- * (`packages/cli/src/errors.ts`) and used today only as a `Finding` literal inside
- * `cmd-generate.ts`'s `writeFiles`, never thrown; this constructs the same registered code as a
- * real `UltimateError` instead of adding a second class to a file this piece does not own.
+ * The exclusive half of the create: `wx` fails rather than truncates, so an existing catalog is
+ * refused by the write itself. An `existsSync` before a `Bun.write` is the same answer with a
+ * window in it, and what falls through that window is a translator's work.
  */
-class CatalogExistsError extends UltimateError {
-  constructor(locale: string) {
-    super({
-      code: 'X_GENERATE_CONFLICT',
-      cause: `${catalogPath(locale)} already exists`,
-      fix: `x i18n sync ${locale}`,
-      docs: docsFor('X_GENERATE_CONFLICT'),
-    });
+async function openExclusive(absolute: string, locale: string): Promise<FileHandle> {
+  try {
+    return await open(absolute, 'wx');
+  } catch (error) {
+    if (isAlreadyExists(error)) throw new CatalogExistsError({ locale, path: catalogPath(locale) });
+    throw error;
+  }
+}
+
+/** `x i18n add`'s only write. `catalogs/` may not exist yet, and `open` never creates it. */
+async function writeNewCatalog(absolute: string, locale: string, contents: string): Promise<void> {
+  await mkdir(dirname(absolute), { recursive: true });
+  const handle = await openExclusive(absolute, locale);
+  try {
+    await handle.writeFile(contents);
+  } finally {
+    await handle.close();
   }
 }
 
@@ -60,12 +75,16 @@ function requireLocalePositional(ctx: CommandContext, sub: string): string {
 
 /**
  * Validates + canonicalizes the positional locale — `resolveLocales`'s own BCP-47/escape checks
- * do the refusing, with a fix that names this command (`x i18n add es` / `x i18n sync es`)
- * instead of the generic `x g` default.
+ * do the refusing, against this command's context rather than the generic `x g --locales` default:
+ * the cause names `--locale on "x i18n"` and the fix is `x i18n add es` / `x i18n sync es`.
  */
 function resolveOneLocale(ctx: CommandContext, sub: string): string {
   const raw = requireLocalePositional(ctx, sub);
-  const resolved = resolveLocales([raw], `x i18n ${sub} es`);
+  const resolved = resolveLocales([raw], {
+    fix: `x i18n ${sub} es`,
+    command: 'i18n',
+    flag: 'locale',
+  });
   const locale = resolved[0];
   if (locale === undefined) {
     // Unreachable in practice — resolveLocales only returns [] for zero requested entries, and
@@ -125,18 +144,21 @@ async function runCheck(root: string): Promise<CommandResult> {
 async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult> {
   const locale = resolveOneLocale(ctx, 'add');
   const path = catalogPath(locale);
-  if (existsSync(join(root, path))) throw new CatalogExistsError(locale);
-
+  const app = await loadApp(root);
   const catalogs = await loadCatalogs(root);
-  const from = await resolveDefaultLocale(root, catalogs);
+  const from = resolveDefaultLocale(app.defaultLocale, catalogs);
   const seeded = seedCatalog(from === undefined ? {} : (catalogs[from] ?? {}));
-  await Bun.write(join(root, path), serializeCatalog(seeded));
+  await writeNewCatalog(join(root, path), locale, serializeCatalog(seeded));
 
   const keys = catalogKeys(seeded).length;
   return {
+    // The catalog is on disk, so the command did what it was asked. `loadApp`'s findings ride along
+    // rather than flip that: a `packages/i18n/src/index.ts` that would not import is why `from` may
+    // be the framework's `en` instead of the app's own default, and silence there is the bug.
     ok: true,
     command: 'i18n',
     summary: msg('cli.i18n.added', { locale, keys, from: from ?? locale }),
+    findings: app.findings,
     data: { locale, from: from ?? locale, keys, path },
   };
 }
@@ -154,16 +176,20 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
     });
   }
 
-  const from = await resolveDefaultLocale(root, catalogs);
+  const app = await loadApp(root);
+  const from = resolveDefaultLocale(app.defaultLocale, catalogs);
   const source = from === undefined ? {} : (catalogs[from] ?? {});
   const { merged, added } = syncCatalog(target, source);
   if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
 
   const total = catalogKeys(merged).length;
   return {
+    // Same as `runAdd`: the merge landed, and `loadApp`'s findings say whether `from` is the app's
+    // own default or the framework's fallback standing in for an i18n module that would not import.
     ok: true,
     command: 'i18n',
     summary: msg('cli.i18n.synced', { locale, from: from ?? locale, added: added.length, total }),
+    findings: app.findings,
     data: { locale, from: from ?? locale, added, total, path: catalogPath(locale) },
   };
 }
