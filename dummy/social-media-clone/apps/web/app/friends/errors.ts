@@ -1,0 +1,87 @@
+// Every failure the friends feature can raise, one class per stable code. The `fix:` on each is a
+// call or a command a caller can run verbatim — a friendship refusal that says "check the state"
+// sends an agent hunting for a row it already had the id of.
+
+import { UltimateError } from '@ultimat3/core';
+
+const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
+
+/** The graph has no self-edge: a person is neither their own friend nor their own block. */
+export class FriendSelfError extends UltimateError {
+  static readonly code = 'X_FRIEND_SELF';
+  override readonly name = 'FriendSelfError';
+  constructor(verb: string) {
+    super({
+      code: FriendSelfError.code,
+      cause: `${verb} was called with the caller's own id, and the friendship graph has no self-edge`,
+      fix: `${verb}({ userId: "<another user's id, from /u/<handle>>" })`,
+      docs: docs(FriendSelfError.code),
+    });
+  }
+}
+
+/**
+ * The composite key `(requesterId, addresseeId)` makes a repeated request a no-op, but `(a→b)` and
+ * `(b→a)` are different keys — so nothing in the schema stops the mirror row. This is the service
+ * closing that hole, and the fix is the call that answers the row already there instead of adding
+ * a second one for the same pair.
+ */
+export class FriendMirrorExistsError extends UltimateError {
+  static readonly code = 'X_FRIEND_MIRROR_EXISTS';
+  override readonly name = 'FriendMirrorExistsError';
+  constructor(requesterId: string, status: string) {
+    super({
+      code: FriendMirrorExistsError.code,
+      cause:
+        `this pair already has a ${status} friendship in the other direction (${requesterId} asked ` +
+        'first), and a second row would be the mirror the composite key cannot refuse',
+      fix: `respondFriend({ requesterId: "${requesterId}", decision: "accept" })`,
+      docs: docs(FriendMirrorExistsError.code),
+      meta: { requesterId, status },
+    });
+  }
+}
+
+/** Answering a request that is not there, or is not pending any more. */
+export class FriendRequestNotFoundError extends UltimateError {
+  static readonly code = 'X_FRIEND_NOT_FOUND';
+  override readonly name = 'FriendRequestNotFoundError';
+  constructor(requesterId: string) {
+    super({
+      code: FriendRequestNotFoundError.code,
+      cause: `no friend request from ${requesterId} is waiting for this actor to answer`,
+      fix: 'bun run ../../packages/cli/src/bin.ts dev --json   # then open /friends to read the inbox',
+      docs: docs(FriendRequestNotFoundError.code),
+      meta: { requesterId },
+    });
+  }
+}
+
+/**
+ * A block is NOT a code here, deliberately. `canRequestFriendship` refuses a blocked pair before
+ * the handler runs, from the actor's own resolved block set — so a second check in the service
+ * would be a second copy of that rule, and the two would drift the first time either changed.
+ *
+ * What follows is not an app rule at all.
+ *
+ * Not an app rule — a framework hole, reported where it bites rather than swallowed. `Table.delete`
+ * is id-addressed and `singleKeyOf` refuses a composite primary key, so **no row in `blocks` can
+ * ever be removed** through the typed handle. Named loudly so the day the entity package grows a
+ * `deleteWhere`, the pinning test in `repo.test.ts` fails and points here.
+ */
+export class BlockRemoveUnsupportedError extends UltimateError {
+  static readonly code = 'X_BLOCK_REMOVE_UNSUPPORTED';
+  override readonly name = 'BlockRemoveUnsupportedError';
+  constructor(userId: string) {
+    super({
+      code: BlockRemoveUnsupportedError.code,
+      cause:
+        `unblocking ${userId} has to delete the blocks row (blockerId, blockedId), and ` +
+        '@ultimat3/entity has no delete for a composite primary key: Table.delete(id) routes ' +
+        'through singleKeyOf(), which throws X_INVARIANT_VIOLATED for a two-column key',
+      fix: 'add deleteWhere(filter) to packages/entity/src/query.ts and packages/entity/src/repo.ts, then call db.blocks.deleteWhere({ blockerId, blockedId })',
+      docs: docs(BlockRemoveUnsupportedError.code),
+      meta: { userId },
+    });
+  }
+}

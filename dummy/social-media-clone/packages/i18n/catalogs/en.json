@@ -3,12 +3,202 @@
     "home": {
       "description": "Operations for SocialMediaClone.",
       "title": "Admin"
+    },
+    "brand": {
+      "name": "SocialMediaClone admin"
+    },
+    "actor": {
+      "anonymous": "not signed in",
+      "signedIn": "{id} — roles: {roles}"
+    },
+    "group": {
+      "data": "Data"
+    },
+    "matrix": {
+      "operation": "Operation",
+      "permissions": "Permissions required",
+      "verdict": "Verdict",
+      "allowed": "allowed",
+      "deniedBy": "denied —"
+    },
+    "actions": {
+      "none": "No action on this resource is available to you."
+    },
+    "denied": {
+      "body": "Refused. {permission} was not granted to this actor ({reason}). The same decision declines to render the control and refuses the call behind it."
+    },
+    "operation": {
+      "list": "list",
+      "detail": "detail",
+      "search": "search",
+      "create": "create",
+      "update": "update",
+      "delete": "delete"
+    },
+    "action": {
+      "user": {
+        "suspend": "Suspend user"
+      }
+    },
+    "users": {
+      "title": "People",
+      "description": "Every account in the demo, generated from the users entity.",
+      "field": {
+        "id": "Id",
+        "handle": "Handle",
+        "email": "Email",
+        "displayName": "Name",
+        "bio": "Bio",
+        "avatarKey": "Avatar key",
+        "role": "Role",
+        "tz": "Time zone",
+        "locale": "Locale",
+        "deletedAt": "Deleted",
+        "suspended": "Suspended",
+        "createdAt": "Joined",
+        "updatedAt": "Updated"
+      }
+    },
+    "posts": {
+      "title": "Posts",
+      "description": "Published posts. A soft-deleted row is hidden by the entity, not by a filter here.",
+      "field": {
+        "id": "Id",
+        "authorId": "Author",
+        "body": "Body",
+        "audience": "Audience",
+        "likeCount": "Likes",
+        "commentCount": "Comments",
+        "mediaCount": "Media",
+        "publishedAt": "Published",
+        "deletedAt": "Deleted",
+        "createdAt": "Created",
+        "updatedAt": "Updated"
+      }
+    },
+    "media": {
+      "title": "Uploads",
+      "description": "Uploaded bytes and the state the hourly sweep acts on.",
+      "state": {
+        "pending": "Pending",
+        "attached": "Attached",
+        "orphan": "Orphan"
+      },
+      "field": {
+        "id": "Id",
+        "postId": "Post",
+        "ownerId": "Owner",
+        "key": "Storage key",
+        "kind": "Kind",
+        "contentType": "Content type",
+        "bytes": "Bytes",
+        "width": "Width",
+        "height": "Height",
+        "state": "State",
+        "createdAt": "Uploaded"
+      }
+    },
+    "jobs": {
+      "title": "Jobs",
+      "description": "What the queue can run, with the retry policy each job declares.",
+      "name": "Job",
+      "queue": "Queue",
+      "attempts": "Attempts",
+      "backoff": "Backoff"
+    },
+    "ops": {
+      "title": "Operations",
+      "description": "The demo's scheduled work and the uploads it acts on.",
+      "uploads": "Uploads by state",
+      "uploadsHint": "An upload that never gets claimed is collected by the hourly sweep and moved to orphan.",
+      "schedule": "Schedule",
+      "scheduleHint": "Every cron carries an explicit IANA zone. An unzoned cron runs twice or not at all on a DST switch day.",
+      "enqueues": "enqueues {jobs}"
     }
   },
   "app": {
     "dashboard": {
       "description": "Your workspace.",
       "title": "Dashboard"
+    },
+    "friends": {
+      "title": "Friends",
+      "description": "Who asked whom is part of the fact, so a request you sent and a request you received are two different lists.",
+      "accept": "Accept",
+      "decline": "Decline",
+      "unblock": "Unblock",
+      "asked": "Asked {date}",
+      "answered": "Answered {date}",
+      "blockedOn": "Blocked {date}",
+      "incoming": {
+        "title": "Incoming requests",
+        "description": "People who asked to be your friend. Only you can answer these.",
+        "empty": "Nobody is waiting on an answer from you."
+      },
+      "outgoing": {
+        "title": "Sent requests",
+        "description": "People you asked. You cannot answer your own request.",
+        "empty": "You have no requests waiting on an answer."
+      },
+      "current": {
+        "title": "Friends",
+        "description": "Accepted in either direction. A friends-only post is visible to exactly these people.",
+        "empty": "No accepted friendships yet."
+      },
+      "declined": {
+        "title": "Declined",
+        "description": "Answered with a no, in either direction. The row stays so the pair can never grow a second one.",
+        "empty": "Nothing declined."
+      },
+      "blocked": {
+        "title": "Blocked by you",
+        "description": "Neither of you sees the other's posts. A block someone else placed is deliberately not listed here.",
+        "empty": "You have blocked nobody."
+      },
+      "status": {
+        "pending": "Pending",
+        "accepted": "Friends",
+        "declined": "Declined"
+      }
+    },
+    "messages": {
+      "title": "Messages",
+      "description": "A row in participants is permission to read a thread. There is no second grant to keep in step.",
+      "empty": "No conversations yet.",
+      "emptyHelp": "Membership is the only grant, so a thread you were never added to is not listed and not readable — the same answer a conversation that does not exist gives.",
+      "unread": "Unread",
+      "noMessages": "Nothing sent in this thread yet.",
+      "directWith": "{names}",
+      "nobodyElse": "Just you",
+      "you": "You",
+      "them": "Them",
+      "thread": {
+        "title": "Thread",
+        "back": "All conversations",
+        "empty": "Nothing sent yet.",
+        "emptyHelp": "Messages appear newest first, ordered by (createdAt desc, id) — the tail key is what makes the order total."
+      },
+      "compose": {
+        "label": "Write a message",
+        "placeholder": "Say something",
+        "send": "Send"
+      }
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Unread is derived from readAt, never stored and never decremented — which is what makes marking read safe to replay offline.",
+      "unread": "{count} unread",
+      "empty": "Nothing has happened yet.",
+      "emptyHelp": "Sending a message writes one notification per other participant, so this fills up as soon as somebody writes to you.",
+      "stateRead": "Read",
+      "stateUnread": "Unread",
+      "kind": {
+        "friend-request": "Friend request",
+        "friend-accepted": "Friend request accepted",
+        "post-liked": "Someone liked your post",
+        "post-commented": "Someone commented on your post",
+        "message": "New message"
+      }
     },
     "offline": {
       "description": "This page will refresh itself when the connection returns.",
@@ -26,6 +216,54 @@
       "description": "Everything here is seeded and fake. What you can see is decided by a policy, not by a WHERE clause.",
       "likes": "{count} likes",
       "comments": "{count} comments"
+    },
+    "profile": {
+      "title": "{name} (@{handle})",
+      "description": "{name} on SocialMediaClone. Everything here is seeded and fake.",
+      "joined": "Joined {date}",
+      "posts": {
+        "title": "Posts",
+        "empty": "Nothing here that a signed-out reader may see."
+      },
+      "notFound": {
+        "title": "No such profile",
+        "description": "There is no account with that handle. Handles are lowercase, and a URL differing only in case is a different URL."
+      }
+    },
+    "signin": {
+      "title": "Sign in",
+      "description": "Two seeded demo accounts, and a session cookie whose token is stored hashed.",
+      "handle": "Handle",
+      "password": "Password",
+      "submit": "Sign in",
+      "captcha": "Anti-bot check",
+      "captchaOff": "No hCaptcha keys are set, so no challenge is rendered and none is demanded. Set HCAPTCHA_SITE_KEY and HCAPTCHA_SECRET to turn it on.",
+      "captchaAfterFailures": "After {count} refusals for one handle, this form demands the challenge before it checks the password.",
+      "demo": {
+        "title": "The two demo accounts",
+        "user": "user / user — an ordinary member.",
+        "admin": "admin / admin — read-only operator, by permission rather than by hidden buttons."
+      },
+      "signOut": {
+        "title": "Sign out",
+        "description": "Clears the session cookie on this browser.",
+        "submit": "Sign out"
+      },
+      "noAccount": "No account yet?",
+      "createOne": "Create one"
+    },
+    "signup": {
+      "title": "Create an account",
+      "description": "Every sign-up is challenged when hCaptcha keys are configured — account creation is what a bot is here for.",
+      "handle": "Handle",
+      "handleHint": "Lowercase letters, digits and underscores. This is your URL.",
+      "displayName": "Display name",
+      "email": "Email",
+      "password": "Password",
+      "passwordHint": "At least {count} characters.",
+      "submit": "Create account",
+      "haveAccount": "Already have one?",
+      "signIn": "Sign in"
     }
   }
 }

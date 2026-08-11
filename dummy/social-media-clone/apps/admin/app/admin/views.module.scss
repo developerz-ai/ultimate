@@ -1,0 +1,177 @@
+// The dashboard's own layer, on @ultimat3/ui's tokens directly — apps/admin has no shared/tokens
+// of its own and may not reach into a sibling app's. Semantic roles only: a raw colour here would
+// paint one theme correctly and the other one wrong.
+
+@use '@ultimat3/ui/tokens' as t;
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) 1fr;
+  gap: t.space(6);
+  min-height: 100vh;
+  background: t.role('bg');
+  color: t.role('fg');
+}
+
+.side {
+  @include t.surface('surface', 'sm');
+  @include t.padding-block(t.space(6));
+  @include t.padding-inline(t.space(4));
+
+  display: flex;
+  flex-direction: column;
+  gap: t.space(4);
+  border-inline-end: 1px solid t.role('line');
+}
+
+.brand {
+  font-size: t.text('lg');
+  font-weight: t.weight('semibold');
+  color: t.role('fg-strong');
+  text-decoration: none;
+}
+
+.actor {
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+  margin: 0;
+}
+
+.group {
+  display: grid;
+  gap: t.space(2);
+}
+
+.groupTitle {
+  font-size: t.text('xs');
+  font-weight: t.weight('semibold');
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: t.role('fg-muted');
+  margin: 0;
+}
+
+.navList {
+  display: grid;
+  gap: t.space(1);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.navLink {
+  @include t.transition(background-color, color);
+
+  display: block;
+  padding: t.space(2) t.space(3);
+  border-radius: t.radius('md');
+  color: t.role('fg');
+  text-decoration: none;
+
+  &:hover {
+    background: t.role('bg-soft');
+    color: t.role('fg-strong');
+  }
+
+  &:focus-visible {
+    @include t.focus-ring;
+  }
+}
+
+.main {
+  @include t.padding-block(t.space(8));
+  @include t.padding-inline(t.space(6));
+
+  min-width: 0;
+}
+
+.title {
+  margin-block: 0 t.space(6);
+  font-size: t.text('2xl');
+  color: t.role('fg-strong');
+}
+
+.panel {
+  display: grid;
+  gap: t.space(6);
+}
+
+.table,
+.matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: t.text('sm');
+
+  th,
+  td {
+    padding: t.space(2) t.space(3);
+    text-align: start;
+    border-block-end: 1px solid t.role('line');
+    vertical-align: top;
+  }
+
+  th {
+    color: t.role('fg-muted');
+    font-weight: t.weight('semibold');
+  }
+}
+
+// The two verdict rows carry a tone, not a colour: `success` and `danger` both resolve in the
+// light and the dark scale, and the left border is what a forced-colors reader still sees.
+.allowed td:last-child {
+  color: t.role('success');
+}
+
+.denied td:last-child {
+  color: t.role('danger');
+}
+
+// `@ultimat3/ui` exposes no `font()` accessor — only `text`, `weight` and `leading` — so the
+// family token is read as the custom property `_typography.scss` emits, not as a literal stack.
+.mono {
+  font-family: var(--font-mono);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(2);
+  margin: 0;
+}
+
+.button,
+.destructive {
+  @include t.control;
+
+  border-radius: t.radius('md');
+  cursor: pointer;
+}
+
+.button {
+  background: t.role('accent');
+  color: t.role('accent-fg');
+  border: 1px solid t.role('accent');
+}
+
+.destructive {
+  background: t.role('danger');
+  color: t.role('danger-fg');
+  border: 1px solid t.role('danger');
+}
+
+.note,
+.refusal {
+  margin: 0;
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.refusal {
+  @include t.surface('surface-raised', 'sm');
+  @include t.padding-block(t.space(4));
+  @include t.padding-inline(t.space(4));
+
+  border-inline-start: 3px solid t.role('danger');
+  border-radius: t.radius('md');
+  color: t.role('fg');
+}

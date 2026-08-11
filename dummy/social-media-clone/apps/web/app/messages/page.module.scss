@@ -1,0 +1,62 @@
+@use '../../shared/tokens' as t;
+
+.messages {
+  width: min(100% - #{t.space(8)}, 44rem);
+  margin-inline: auto;
+  padding-block: t.space(10);
+  color: t.role('fg');
+}
+
+.lede {
+  color: t.role('fg-muted');
+  margin-block-end: t.space(8);
+}
+
+.list {
+  display: grid;
+  gap: t.space(3);
+  padding: 0;
+  list-style: none;
+}
+
+.thread {
+  @include t.card;
+  @include t.lift;
+}
+
+.link {
+  color: t.role('fg');
+  text-decoration: none;
+
+  &:focus-visible {
+    @include t.focus-ring;
+  }
+}
+
+.head {
+  display: flex;
+  gap: t.space(2);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.when {
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.preview {
+  margin-block: t.space(2) 0;
+  color: t.role('fg-muted');
+  line-height: 1.55;
+}
+
+.unread {
+  color: t.role('accent');
+  font-size: t.text('sm');
+  font-weight: 600;
+}

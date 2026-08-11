@@ -1,0 +1,50 @@
+@use '../../shared/tokens' as t;
+
+.inbox {
+  width: min(100% - #{t.space(8)}, 44rem);
+  margin-inline: auto;
+  padding-block: t.space(10);
+  color: t.role('fg');
+}
+
+.header {
+  display: flex;
+  gap: t.space(3);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.lede {
+  color: t.role('fg-muted');
+  margin-block-end: t.space(8);
+}
+
+.list {
+  display: grid;
+  gap: t.space(3);
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  @include t.card;
+}
+
+/** Unread is carried by a border AND by text, never by colour alone. */
+.new {
+  border-inline-start: 3px solid t.role('accent');
+}
+
+.kind {
+  font-weight: 600;
+}
+
+.when {
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.state {
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}

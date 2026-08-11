@@ -1,0 +1,38 @@
+@use '../../../shared/tokens' as t;
+
+// The API is functions, not `$variables`: `t.space(8)`, never `t.$space-8`. Same measure as the
+// feed, so a reader arriving from `/feed` lands on a page with the same rhythm.
+.profile {
+  width: min(100% - #{t.space(8)}, 44rem);
+  margin-inline: auto;
+  padding-block: t.space(10);
+  color: t.role('fg');
+}
+
+.identity {
+  margin-block: t.space(2) t.space(8);
+}
+
+.list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.when {
+  display: block;
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.body {
+  margin-block: t.space(3);
+  line-height: 1.55;
+}
+
+.counts {
+  display: flex;
+  gap: t.space(4);
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}

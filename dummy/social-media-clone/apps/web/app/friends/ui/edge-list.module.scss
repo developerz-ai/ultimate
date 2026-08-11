@@ -1,0 +1,9 @@
+// The list only has to stop being a bulleted list — `Card` already owns the row's own padding and
+// surface, and `Stack` owns the gap, so restating either here would be a second place the screen's
+// rhythm is decided. No colour is set at all, which is why no token is imported.
+
+.list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}

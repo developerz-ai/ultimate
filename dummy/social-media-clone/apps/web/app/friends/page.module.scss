@@ -1,0 +1,10 @@
+@use '../../shared/tokens' as t;
+
+// The API is functions, not `$variables`: `t.space(8)`, never `t.$space-8`. The measure matches
+// site/feed so the two screens read as one product.
+.screen {
+  width: min(100% - #{t.space(8)}, 48rem);
+  margin-inline: auto;
+  padding-block: t.space(10);
+  color: t.role('fg');
+}

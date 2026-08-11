@@ -2,7 +2,10 @@
 // the reason they are string functions is that everything security-relevant about a session cookie
 // is decided before any I/O happens.
 
+import { userId } from '@social-media-clone/domain';
 import { expect, unitTest } from '@ultimat3/testing';
+import type { Actor } from './actor';
+import { currentViewer, isBlocked, isFriend } from './actor';
 import {
   clearedSessionCookie,
   hashToken,
@@ -14,6 +17,7 @@ import {
   sessionCookie,
   sessionCookieName,
   setResponseCookie,
+  withSession,
 } from './session';
 
 unitTest('the __Host- prefix is chosen by the same flag that makes it legal', () => {
@@ -94,4 +98,31 @@ unitTest('setting a cookie off-request reports failure instead of pretending', (
   const ctx = { headers: new Headers() };
   expect(setResponseCookie(ctx, 'a=b')).toBe(true);
   expect(ctx.headers.get('set-cookie')).toBe('a=b');
+});
+
+const ADA = userId('00000000-0000-4000-8000-00000000000a');
+const MARA = userId('00000000-0000-4000-8000-00000000000c');
+
+const viewer: Actor = {
+  id: ADA,
+  role: 'member',
+  friendIds: new Set([MARA]),
+  blockedIds: new Set([MARA]),
+};
+
+unitTest('withSession installs the viewer that `currentViewer()` reads', () => {
+  // This is the contract `shared/actor.ts` declares and this file implements: a policy predicate
+  // calls `currentViewer()` synchronously, so the actor has to already be on the context.
+  const seen = withSession(viewer, () => {
+    expect(isFriend(currentViewer(), MARA)).toBe(true);
+    expect(isBlocked(currentViewer(), MARA)).toBe(true);
+    return currentViewer();
+  });
+  expect(seen?.id).toBe(ADA);
+});
+
+unitTest('withSession installs "nobody" as a value, never as a missing service', () => {
+  // A signed-out request still has a session service; it answers null. The alternative is
+  // `ctx.session` being undefined, which is a TypeError inside a predicate rather than a denial.
+  expect(withSession(null, () => currentViewer())).toBe(null);
 });
