@@ -37,7 +37,9 @@ export {
   McpNotBranchDbError,
   McpProtocolError,
   McpQueryRejectedError,
+  McpScopeConflictError,
   McpScopeDeniedError,
+  McpScopeUnknownError,
   McpToolDuplicateError,
   McpToolUndeclaredError,
   McpToolUnknownError,
@@ -92,6 +94,8 @@ export {
   toPrompts,
   URI_ARG_SCHEMA,
 } from './resources';
+export type { McpScopes } from './scopes';
+export { withScopes } from './scopes';
 export type { CreateMcpServerInput } from './server';
 export { createMcpServer, McpServer } from './server';
 export type {

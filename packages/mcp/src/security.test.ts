@@ -1,7 +1,9 @@
-// The three-outcome security model as an executable contract.
+// The three-outcome security model as an executable contract, over the REGISTRY: hand-built
+// tools, so each gate is proven in isolation. `app-security.test.ts` is the other half — the
+// same three outcomes as a real app declares them, through `defineAppMcp`.
 //
-// `docs/architecture/11-ai-surface.md` § Security posture is the spec; this file is what makes
-// it enforced rather than documented. Every test here fails loudly if an outcome starts
+// `docs/architecture/11-ai-surface.md` § Security posture is the spec; these two files are what
+// make it enforced rather than documented. Every test here fails loudly if an outcome starts
 // answering like another one — which is precisely how an enumeration oracle is born.
 
 import { describe, expect, spyOn, test } from 'bun:test';

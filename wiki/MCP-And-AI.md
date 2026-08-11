@@ -52,7 +52,7 @@ That line is the entire integration. From the existing declaration:
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |
 | audit trail | the same OTel span and log line as an HTTP call |
 
-The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy runs inside `run`, so there is nothing to keep in sync. A projected tool therefore declares **no** MCP scope: adding one would be a second gate in front of the only gate that matters, and the two would eventually disagree.
+The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy runs inside `run`, so there is nothing to keep in sync. The projection itself adds **no** MCP scope: a second gate hard-coded into the projection would sit in front of the only gate that matters, and the two would eventually disagree. `defineAppMcp`'s `scopes:` map may still attach one from outside — a property of the connection's token, never invented by the projection.
 
 No MCP-specific permission table, no service account with broad rights. Exposure is opt-in; silence exposes nothing.
 
@@ -81,6 +81,13 @@ Hidden means hidden: `Forbidden` on a hidden tool is an enumeration oracle — a
 | Audit lines carry no payload | tool name, outcome and error code only — never call arguments, never row data |
 | No trusted-tool mode | there is no flag that skips policy evaluation, on any MCP surface |
 | The actor cannot exceed the human | the actor is the signed-in user's session; an agent inherits exactly those permissions |
+
+Where the first two outcomes are declared:
+
+| Outcome | Declared | Property |
+|---|---|---|
+| Hidden (role) | `mcp: { visibleTo: [...] }`, on the action or query itself | `readonly string[]` — a role allowlist, never a predicate: a declared fact stays static and serialisable. Fail-closed: a caller whose role is not named — including one carrying no role at all — gets ToolNotFound, never Forbidden. A catalog audience, not an authz rule; the primitive's `policy` still decides every call |
+| Scope | `scopes:` on `defineAppMcp` | `Readonly<Record<string, readonly string[]>>` — scope name → tool names. A capability of the connection's token, so it is declared once per app rather than beside every primitive. A name the catalog does not contain, or one claimed by two scope entries, refuses at boot: `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT` |
 
 Rationale for each: [`docs/architecture/11-ai-surface.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/11-ai-surface.md).
 
@@ -210,6 +217,8 @@ $ x verify --json
 | `X_MCP_TOOL_UNKNOWN` | no visible tool answers that name (role-hidden and absent are indistinguishable) | `tools/list` to read the catalog this caller may use |
 | `X_MCP_ARGS_INVALID` | arguments failed the tool's declared JSON Schema | re-read `inputSchema` from `tools/list` and resend |
 | `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope | `x token grant <scope>`, then reconnect — scopes are fixed for the life of a connection |
+| `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool the server does not project | spell the name as one of the tools the server actually projects, or drop it from that `scopes` entry |
+| `X_MCP_SCOPE_CONFLICT` | two `scopes:` entries claim the same tool | keep the tool under the single scope a token must hold for it, and remove the other entry |
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send exactly one **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | use a branch DB (`x branch <name>`) |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
@@ -222,7 +231,7 @@ Full list: [Error codes](Error-Codes). CLI surface: [CLI reference](CLI-Referenc
 ## Rules
 
 - One authz system. An MCP call and an HTTP call reach the same `policy` with the same actor resolution.
-- Exposure is opt-in per action; a projected tool carries no scope of its own.
+- Exposure is opt-in per action; the projection carries no scope of its own — `defineAppMcp`'s `scopes:` map may still attach one, from outside the primitive.
 - Visibility is fail-closed and computed per connection. A hidden tool answers ToolNotFound, never Forbidden.
 - Gate order is visibility → scope → arguments → policy, and every outcome is audited. There is no trusted-tool mode.
 - Write tools are branch-scoped. The dev server is never reachable in `ROLE=web`.

@@ -3,9 +3,11 @@
 //
 // The whole claim rests on one line in `handle` below: the tool calls `action.run(...)` —
 // the SAME entry point the HTTP route calls. Policy evaluation lives inside `run`, so
-// there is nothing here to keep in sync and no second authz system to drift. A projected
-// tool therefore declares NO `scope`: adding one would be a second gate in front of the
-// only gate that matters, and the two would eventually disagree.
+// there is nothing here to keep in sync and no second authz system to drift. This
+// projection therefore INVENTS no `scope`: a scope is a capability of the connection's
+// token, which a projection cannot know anything about. An app that wants one names the
+// tool in `defineAppMcp`'s `scopes:` map (see `scopes.ts`) — declared once, next to the
+// other tools that same token capability covers, never guessed from the action.
 //
 // `toMcpTool` in @ultimat3/action owns the schema half of the projection (input schema →
 // JSON Schema); this file owns the execution half.
@@ -76,7 +78,7 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
     inputSchema: primitive.inputJsonSchema ?? NO_ARGS,
     destructive: mutates,
     ...(visibleTo !== undefined ? { visibleTo } : {}),
-    // No `scope`: see the header. The action's policy is the only gate.
+    // No `scope` from here: see the header. `defineAppMcp`'s `scopes:` map may add one.
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
       // ONE authz system, TWO surfaces. HTTP does exactly this call with an actor of
       // kind 'user'; MCP does it with kind 'agent'. Same policy, same decision.

@@ -32,6 +32,12 @@ export interface QueryMcp {
   readonly expose: boolean;
   /** Contract text, not UI text — see `ActionMcp.description` for why it stays outside `t()`. */
   readonly description?: string;
+  /**
+   * Roles that may SEE the projected tool — a catalog audience, not an authz rule; the `policy`
+   * still decides every call. A caller whose role is not named gets ToolNotFound, never
+   * Forbidden. See `ActionMcp.visibleTo`, which this mirrors exactly.
+   */
+  readonly visibleTo?: readonly string[];
 }
 
 export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> {

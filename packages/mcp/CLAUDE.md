@@ -24,6 +24,7 @@ import. The CLI wires it.
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
+| `scopes.ts` | the `scopes:` map — outcome 2's declaration surface; boot-time refusal of an unknown or doubly-claimed tool |
 | `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
 | `readonly-sql.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
@@ -41,6 +42,10 @@ import. The CLI wires it.
   predicate that THROWS hides the tool. A predicate takes the caller — never the arguments —
   so existence cannot be probed by varying input. `tools/list` is answered per caller: one
   `McpCaller` per HTTP request, one per stdio connection.
+- `visibleTo` declared in a primitive's `mcp` block is carried through `exposed.ts`'s
+  `exposureOf` to the projected tool — outcome 1's only declaration surface for a projected
+  primitive. Dropping it there silently disables outcome 1 for every projected tool: nothing
+  fails, every caller simply sees every tool.
 - Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
   running the policy first decides a refusal from attacker-supplied input.
 - A framework error rendered into a tool result is **byte-identical to
@@ -48,8 +53,11 @@ import. The CLI wires it.
   terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.
 - Every outcome is audited via `audit.ts`, hidden included, at `warn`. Never log arguments
   or row data — a denial reason naming a row is a leak wearing an audit line's clothes.
-- `security.test.ts` is the executable contract for all of the above. Extend it, never
-  weaken it.
+- `security.test.ts` and `app-security.test.ts` are the executable contract for all of the
+  above — the first over hand-built tools (each gate in isolation), the second over what an app
+  actually declares (`defineAppMcp` projecting real actions and queries). Extend them, never
+  weaken them. A gate can only refuse what a declaration can reach, so a new gate needs a test
+  in BOTH: the registry half passes while the declaration surface silently drops the field.
 - Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
   `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
   a written-out list is a request, so filtering it would ship a catalog missing a tool its
@@ -59,11 +67,19 @@ import. The CLI wires it.
   collects every offender before throwing, so one boot names all of them and one edit closes
   all of them. Two calls would throw on the first array and never examine the second.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
-  throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`. The caller
-  reading them is usually an agent that needs `{ code, cause, fix }`.
-- A projected action tool has **no `scope`**. The action's policy is the only gate. A
-  hand-written app tool is the same: its `policy` reaches `guard()` from `@ultimat3/action`,
-  which is the one authz path — never a second check written for MCP.
+  throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`,
+  `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`. The caller reading them is usually an agent
+  that needs `{ code, cause, fix }`.
+- `scopes:` is refused at boot two ways, both because the alternative ships a tool silently
+  ungated: a name no projected tool answers to is `X_MCP_SCOPE_UNKNOWN` (a typo, a rename, a
+  primitive never listed); one tool claimed by two scopes is `X_MCP_SCOPE_CONFLICT` — a tool
+  carries exactly one, and object key order is not a security model.
+- The **projection** invents no `scope` — `toolFromAction` cannot know what a token means.
+  `defineAppMcp`'s `scopes:` may attach one afterward, as a capability of the CONNECTION; that
+  is not a second authz path, because the scope gate decides before the policy runs and never
+  reads the input. A hand-written app tool is the same: its `policy` reaches `guard()` from
+  `@ultimat3/action`, which is the one authz path that reads the input — never a second check
+  written for MCP.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).

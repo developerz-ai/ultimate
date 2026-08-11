@@ -18,6 +18,8 @@ import { toolsFrom, toolsListed } from './from-action';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
+import type { McpScopes } from './scopes';
+import { withScopes } from './scopes';
 import type { CreateMcpServerInput } from './server';
 import { createMcpServer, type McpServer } from './server';
 import type { McpRouteDescriptor, ResolvedToken } from './transport-http';
@@ -55,6 +57,20 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    * surfaces that build their catalog programmatically (`@ultimat3/admin` does).
    */
   readonly tools?: readonly AnyMcpTool[] | AppTools<TSchemas>;
+  /**
+   * Scope name → the tools that capability covers, by tool name. The connection gate, and the
+   * second of the three outcomes: a caller that may SEE a tool but whose token does not carry
+   * its scope is refused `X_MCP_SCOPE_DENIED` naming the scope, BEFORE the policy runs.
+   *
+   * Declared here rather than on the primitive because a scope is a property of the TOKEN, not
+   * of the operation — `x token grant orders:write` and this map name the same thing, and the
+   * policy beside the action stays the only rule that reads the input.
+   *
+   * ```ts
+   * scopes: { 'orders:write': ['refundOrder'], 'catalog:admin': ['reindexCatalog'] },
+   * ```
+   */
+  readonly scopes?: McpScopes;
   /** Bearer-token resolution. Omit to expose no HTTP route (stdio/embedded only). */
   resolveToken?(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Mount path. Defaults to `/mcp`. */
@@ -105,8 +121,11 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   // so `include` fills the gaps rather than colliding with what the caller already spelled out.
   const included =
     input.include === 'exposed' ? notNamed(toolsFrom(exposedPrimitives()), listed) : [];
-  const projected = [...listed, ...included, ...handWritten(input.tools)];
-  assertUniqueNames(projected);
+  const named = [...listed, ...included, ...handWritten(input.tools)];
+  // Unique names FIRST: the scope map addresses tools by name, so a duplicate would make
+  // "which tool did this scope gate?" unanswerable before the question is worth asking.
+  assertUniqueNames(named);
+  const projected = withScopes(named, input.scopes);
 
   const config: CreateMcpServerInput = {
     tools: projected,

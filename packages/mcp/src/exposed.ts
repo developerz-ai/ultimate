@@ -61,15 +61,22 @@ function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
 }
 
 /**
- * An action and a query declare MCP exposure with the same two fields, so one typed path
- * reads both. Narrow on purpose: only a literal `expose: true` counts, so nothing is
- * exposed by accident — an undeclared `mcp` block yields no exposure at all.
+ * An action and a query declare MCP exposure with the same fields, so one typed path reads
+ * both. Narrow on purpose: only a literal `expose: true` counts, so nothing is exposed by
+ * accident — an undeclared `mcp` block yields no exposure at all.
+ *
+ * `visibleTo` travels with it, and must: it is OUTCOME 1's only declaration surface for a
+ * projected primitive. Dropping it here — which this function did until 2026-08 — left
+ * `ToolRegistry`'s role gate enforcing a field no action or query could ever set, so every
+ * projected tool was visible to every caller and the first outcome existed only for the
+ * hand-written tools that build their own `McpTool`.
  */
 function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined {
   if (declared === undefined) return undefined;
   return {
     expose: declared.expose === true,
     ...(declared.description === undefined ? {} : { description: declared.description }),
+    ...(declared.visibleTo === undefined ? {} : { visibleTo: declared.visibleTo }),
   };
 }
 
@@ -77,4 +84,5 @@ function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined 
 interface DeclaredMcp {
   readonly expose: boolean;
   readonly description?: string;
+  readonly visibleTo?: readonly string[];
 }

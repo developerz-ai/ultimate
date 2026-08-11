@@ -74,6 +74,16 @@ Three distinct outcomes, deliberately different:
 | Actor's role could invoke it, but the **connection's scope** does not include it | explicit refusal: `X_MCP_SCOPE_DENIED`, naming the missing scope + `fix: reconnect with scope <name>` | the caller can legitimately fix this; hiding it would strand a well-behaved client |
 | Tool invoked, but the **policy denies this input** | `X_FORBIDDEN` with the denial reason | identical to the HTTP answer for the same call |
 
+Each outcome is declared in exactly one place:
+
+| Outcome | Declared by |
+|---|---|
+| 1 — hidden (role) | `mcp: { visibleTo: [...] }` on the action or query; an `McpVisibility` predicate for a programmatic surface that derives visibility from something richer than a role name |
+| 2 — scope | `scopes:` on `defineAppMcp` — scope name → the tool names that capability covers, never on the primitive |
+| 3 — policy | the primitive's own `policy`, unchanged |
+
+A projection invents no scope of its own: `toolFromAction` never sets one, because a scope is a capability of the connection's token, not something a projection can infer from the action. `defineAppMcp`'s `scopes:` map is refused at boot when it names a tool the server does not project (`X_MCP_SCOPE_UNKNOWN`) or claims one tool from two scopes (`X_MCP_SCOPE_CONFLICT`).
+
 **Hide, then answer ToolNotFound — never Forbidden.** A `Forbidden` on a hidden tool is an enumeration oracle: an agent (or an attacker driving one) walks a name list and reads the org's feature set, entity names, and internal operations off the difference between "not found" and "forbidden". The visibility decision is computed from the caller, never from the arguments, so it is stable per connection and cannot be probed by varying them.
 
 Rules:
@@ -155,13 +165,12 @@ Ultimate never generates prose documentation at runtime. `x new` scaffolds `AGEN
 The commercial property: **apps built with Ultimate are themselves agent-drivable**, with the user's users' sessions and the user's policies.
 
 ```ts
-// packages/mcp/src/index.ts
+// apps/myapp/src/mcp.ts
 export const appMcp = defineAppMcp({
   name: 'myapp',
-  actions: [publishPost, refundOrder, reindexCatalog],   // must declare mcp.expose
-  queries: [orderById, revenueByDay],
-  scopes: { 'orders:write': [refundOrder], 'catalog:admin': [reindexCatalog] },
-  auth: 'session',                                        // 'session' | 'pat'
+  include: 'exposed',                                     // every mcp.expose primitive, with its policy
+  scopes: { 'orders:write': ['refundOrder'], 'catalog:admin': ['reindexCatalog'] },
+  resolveToken: (token) => sessions.resolveAgentToken(token),
 });
 ```
 
@@ -181,6 +190,8 @@ An action listed in `defineAppMcp` without `mcp.expose` is a build error, so exp
 | Code | Meaning | Fix |
 |---|---|---|
 | `X_MCP_SCOPE_DENIED` | connection scope lacks this tool | reconnect with the named scope |
+| `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project | spell the projected tool name, or drop the entry from `scopes` |
+| `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool | keep the tool under a single scope |
 | `X_MCP_QUERY_REJECTED` | `db.query` got something other than one read-only statement | send exactly one read-only `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a non-branch database | `x branch <name>` |
 | `X_MCP_TOOL_UNDECLARED` | `defineAppMcp` lists an action without `mcp.expose` | add `mcp: { expose: true, description }` |

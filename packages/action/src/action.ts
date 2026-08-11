@@ -40,6 +40,21 @@ export interface ActionMcp {
    * the drift axiom 1 rejects.
    */
   readonly description?: string;
+  /**
+   * Roles that may SEE the projected tool. A CATALOG audience, never an authz rule — the
+   * `policy` above still decides every call, and this list decides nothing about one. Omitted
+   * means every caller may enumerate it.
+   *
+   * Fail-closed where it lands (`@ultimat3/mcp`): a caller whose role is not named — including
+   * one carrying no role at all — gets the answer an ABSENT tool gets, never `Forbidden`.
+   * Forbidden would confirm the tool exists, which turns the catalog into something an agent
+   * can enumerate by probing names.
+   *
+   * A plain role list, never a predicate: a declared fact has to stay static and serialisable.
+   * A surface deriving visibility from something richer (`@ultimat3/admin` derives it from the
+   * actor's admin permissions) hands `@ultimat3/mcp` a predicate instead.
+   */
+  readonly visibleTo?: readonly string[];
 }
 
 export interface ActionRateLimit {
