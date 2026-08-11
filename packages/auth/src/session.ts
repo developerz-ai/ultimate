@@ -217,14 +217,19 @@ export function clearSessionCookie(policy: SessionPolicy, name?: string): string
   return `${name ?? policy.cookieName}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 }
 
-export function readSessionCookie(request: RequestLike, policy: SessionPolicy): string | null {
+/** The one `Cookie:` parser in this package — the oauth handshake reads through it too. */
+export function readCookie(request: RequestLike, name: string): string | null {
   const header = request.headers.get('cookie');
   if (header === null) return null;
   for (const part of header.split(';')) {
     const equals = part.indexOf('=');
     if (equals < 0) continue;
-    if (part.slice(0, equals).trim() !== policy.cookieName) continue;
+    if (part.slice(0, equals).trim() !== name) continue;
     return decodeURIComponent(part.slice(equals + 1).trim());
   }
   return null;
+}
+
+export function readSessionCookie(request: RequestLike, policy: SessionPolicy): string | null {
+  return readCookie(request, policy.cookieName);
 }
