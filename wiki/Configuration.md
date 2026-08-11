@@ -239,7 +239,11 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
 | `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
-| `REALTIME_TRANSPORT_URL` | `sync`, `replicator` | if transport ≠ `memory` | missing → `X_TRANSPORT_UNAVAILABLE` at readiness |
+| `NATS_URL` | `sync`, `replicator` | no — unset is in-process fanout | one node only; a second replica shares nothing. Unreachable → `X_TRANSPORT_UNAVAILABLE` at boot, not at readiness |
+| `NATS_KV_BUCKET` | `sync` | no — default `x_presence` | the JetStream KV bucket presence lives in. `[a-zA-Z0-9_-]+`; anything else is `X_TRANSPORT_PROTOCOL` at boot |
+| `REPLICATION_URL` | `replicator` | no — defaults to `DATABASE_URL` | the connection the WAL is read from; this role must have `REPLICATION` privilege |
+| `REPLICATION_SLOT` | `replicator` | no — default `x_replicator` | logical replication slot name |
+| `REPLICATION_PUBLICATION` | `replicator` | no — default `x_changes` | the `pgoutput` publication the slot decodes |
 | `REDIS_URL` | any tier-3 cache user | if `redis` in `cache.tiers` | |
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
 | `DRAIN_TIMEOUT` | all | no — default `30s` | must be <= the orchestrator's `stop_grace_period` |
@@ -252,7 +256,7 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `poolSize < 1` — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`) |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `poolSize < 1` — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |

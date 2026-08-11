@@ -28,14 +28,26 @@ missing the packages/files its own **Ships** column names. `As of 2026-08`.
 
 ## Open at 1.0.0
 
-1.0.0 shipped the 28 packages, the docs and the three build targets. Two claims this table once made are still unproven, and are named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
+1.0.0 shipped the 28 packages, the docs and the three build targets. One claim this table once made is still unproven, and is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
 
 | Open | Why it is not closed |
 |---|---|
-| **50k-socket forced-restart benchmark** | no number has been measured or published. Realtime tiers 1–2 ship and their API is under semver, but every documented capacity figure is a target derived from Bun's WebSocket implementation, not a result |
 | **Two-platform deploy proof** (milestone 11) | `x build --target docker\|binary\|static`, `docker/docker-compose.{dev,prod}.yml` and `docker/helm` all exist. Running the demo app on Hetzner+Compose **and** a K8s cluster from one image, with an invisible rolling restart, needs real infrastructure and has not been done |
 
-Both are measurements, not code. Neither blocks an app built on 1.0.0; both block the claims above being repeated as fact.
+It is a measurement, not code. It does not block an app built on 1.0.0; it blocks the claim above being repeated as fact.
+
+### Closed: the 50k-socket forced-restart benchmark
+
+Measured `As of 2026-08` by [`scripts/bench/restart-bench.ts`](../../scripts/bench/restart-bench.ts); the run's own report and transcript are committed under [`scripts/bench/results/`](../../scripts/bench/results/). 50,000 real WebSocket clients against one `sync` node, `SIGKILL`ed with no drain — no `reconnect` frame is ever sent, so recovery is each client's own `backoffDelay` alone.
+
+| Measure | p50 | p90 | p99 | max |
+|---|---|---|---|---|
+| Reconnect | 53.4s | 101.6s | 128.7s | 145.7s |
+| Time-to-consistent | 54.0s | 105.5s | 127.8s | 145.7s |
+
+All 50,000 reconnected; 49,981 had received a channel patch before the window closed. **The recovery cost is admission control, not the matcher**: consistency trails reconnect by ~0.6s at p50, and the shipped `AcceptBudget` default of 500/s bounds full recovery of 50k sockets at ~100s, which is what p90 reports. 156,851 connect attempts were shed before reaching any query or snapshot path — the DB-load half of the question, and the reason a forced restart is not a self-inflicted thundering herd.
+
+Raising the ceiling would measure a different framework, so mitigation 6 in [`03-realtime.md`](./03-realtime.md) — adopting another protocol if our matcher were the bottleneck — is not triggered by this result.
 
 ## One demo app, twelve stages
 
@@ -81,7 +93,7 @@ A half-built sync engine is worth nothing. It cannot be shipped partially, it ca
 |---|---|
 | Milestones are strictly ordered; no parallel starts | one demo app grows through all twelve, so regressions surface immediately |
 | Every milestone ends green | `x verify` never carries known failures forward |
-| Realtime was gated on a measured benchmark (M6) — **waived at 1.0.0** | the gate was not met. M6 shipped on API surface and tests alone; the benchmark is tracked under *Open at 1.0.0* and closes only when a 50k-socket forced-restart number is measured **and** published. Until then no capacity figure is quoted as a result |
+| Realtime was gated on a measured benchmark (M6) — waived at 1.0.0, **met after** | M6 shipped on API surface and tests alone. The 50k-socket forced-restart number has since been measured and published (*Open at 1.0.0* above), so realtime capacity is quoted as a result rather than a target |
 | Tier 3 local-first is **out of v1** | it lands in v2 as `persist: true` on an existing query — a flag, not a rewrite |
 | Scope cuts come off the back, never the middle | dropping M11's Helm chart is acceptable; dropping M4's budgets is not |
 | A milestone that grows past its demo gets split | a milestone with no demo is a milestone with no definition of done |

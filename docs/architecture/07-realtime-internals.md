@@ -103,17 +103,25 @@ Two clients can subscribe with **identical** `queryId` and params and still be e
 
 So: fanout is grouped by query shape (that is what makes it scale), and **`policy.evaluate` runs on the `sync` node for every subscriber × every candidate row before the frame is written**. Same `evaluate`, same actor resolution, same denial reason as HTTP and MCP — one authz system ([`../idea/02-primitives.md`](../idea/02-primitives.md)).
 
+`liveQueryDefinition(query, { ctx })` is what makes that reachable from a declared `query({ live: true })`, and the split is in the file: what it caches per query id is the compiled source, the shape and the matcher, and what it never caches is a decision.
+
+| Keyed by | Built | Holds |
+|---|---|---|
+| query id | once, with `enforce: false` — **no subject at all** | source, shape, matcher, the shared pre-policy row window |
+| subscriber | `authorize` at every subscribe, `visible` at every row of every delivery | the decision, and nothing else |
+
+The `enforce: false` is the point rather than a shortcut: building the shared half under the *first* subscriber's authority and then caching it by query id is precisely how that subscriber's entitlements become everyone's. It removes no check — `authorize` is still the subscribe-time decision, and it still runs once per subscriber.
+
 Making that affordable:
 
 | Technique | Detail |
 |---|---|
-| Subscribe-time snapshot check | the initial result set is produced by the normal query path, already policy-filtered in SQL |
-| Per-delivery re-check | the incremental path re-checks each row; a denial drops the row silently and increments a counter |
-| Decision memo | bounded LRU keyed `(actorId, policyId, rowTenant, rowOwnerId)`, TTL seconds. Never keyed by row payload |
+| Subscribe-time snapshot check | the window is read once per subscribe through the query's own source, then filtered per subscriber by `visible` |
+| Per-delivery re-check | the incremental path re-checks each row; a denial drops the row and increments a counter |
 | Pure predicates | policies must not do I/O; a policy needing a lookup declares the repo, and that lookup is memoized per request/subscription |
-| Revocation | an actor's permission change publishes an actor-scoped invalidation that clears memo entries and forces re-evaluation |
+| No decision memo | **nothing caches an allow.** A bounded LRU keyed `(actorId, policyId, rowTenant, rowOwnerId)` is the only shape that could ever be safe here, and it is not shipped: without an actor-scoped invalidation to clear it, a TTL of seconds is a revoked grant that keeps delivering rows for seconds. `@ultimat3/query`'s `policy-gate.ts` says the same thing in one line — *its result is never cached* |
 
-A dropped row is a metric (`live.rows_denied`), never a client-visible error — telling a client "there is a row you may not see" is itself a leak.
+A dropped row is a metric (`live.rows_denied`), never a client-visible error — telling a client "there is a row you may not see" is itself a leak. `LiveQueryRegistry` counts every drop (`rowsDenied`) and reports each one through `onRowDenied`, carrying the query id, the subscription, the actor and the row id — never the row.
 
 ## Cursor and reconnect
 

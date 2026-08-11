@@ -80,6 +80,8 @@ export class PgReplicationStream {
   readonly #options: PgLogicalReplicationOptions;
   readonly #clock: Clock;
   readonly #entities: ReadonlySet<string>;
+  readonly #slot: string;
+  readonly #publication: string;
   readonly #decoder = new PgOutputDecoder();
   #connection: PgConnection | null = null;
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -98,6 +100,11 @@ export class PgReplicationStream {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#entities = new Set(options.entities.map((name) => assertIdentifier('entity', name)));
+    // All three names are checked here rather than in `start()`: a mistyped REPLICATION_SLOT is a
+    // boot-time fact, and refusing it at the first WAL read means a replicator that reported
+    // itself started and then never delivered a change.
+    this.#slot = assertIdentifier('slot', options.slot);
+    this.#publication = assertIdentifier('publication', options.publication);
   }
 
   lastLsn(): string | null {
@@ -116,8 +123,8 @@ export class PgReplicationStream {
   /** Resolves once the stream is live. Delivery continues on the pump until `stop()`. */
   async start(handlers: ReplicationStreamHandlers): Promise<void> {
     if (this.#running) return;
-    const slot = assertIdentifier('slot', this.#options.slot);
-    const publication = assertIdentifier('publication', this.#options.publication);
+    const slot = this.#slot;
+    const publication = this.#publication;
     const target = parsePgUrl(this.#options.url);
     const stream = await (this.#options.stream ?? bunPgStream)(target);
     const connection = await PgConnection.open({

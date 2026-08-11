@@ -1,0 +1,111 @@
+[bench] booting server for 50000 clients on :39399
+[bench] spawning 10 client-shard processes for 50000 clients...
+[bench] ramping clients (throttled by the server's own AcceptBudget)...
+[bench]   4019/50000 connected (server-reported)
+[bench]   6902/50000 connected (server-reported)
+[bench]   9189/50000 connected (server-reported)
+[bench]   12141/50000 connected (server-reported)
+[bench]   14194/50000 connected (server-reported)
+[bench]   16217/50000 connected (server-reported)
+[bench]   18236/50000 connected (server-reported)
+[bench]   20255/50000 connected (server-reported)
+[bench]   22269/50000 connected (server-reported)
+[bench]   24287/50000 connected (server-reported)
+[bench]   26301/50000 connected (server-reported)
+[bench]   28312/50000 connected (server-reported)
+[bench]   30765/50000 connected (server-reported)
+[bench]   32861/50000 connected (server-reported)
+[bench]   35083/50000 connected (server-reported)
+[bench]   37189/50000 connected (server-reported)
+[bench]   39388/50000 connected (server-reported)
+[bench]   41900/50000 connected (server-reported)
+[bench]   43936/50000 connected (server-reported)
+[bench]   46635/50000 connected (server-reported)
+[bench]   48995/50000 connected (server-reported)
+[bench] ramp done: 50000/50000 alive after 282855ms
+[bench] forcing restart (SIGKILL, no drain)...
+[bench] new server ready 2344ms after kill
+[bench] probing for consistency while clients reconnect on their own backoff...
+[bench]   2384/50000 reconnected (server-reported)
+[bench]   4623/50000 reconnected (server-reported)
+[bench]   6798/50000 reconnected (server-reported)
+[bench]   9181/50000 reconnected (server-reported)
+[bench]   11339/50000 reconnected (server-reported)
+[bench]   13583/50000 reconnected (server-reported)
+[bench]   15633/50000 reconnected (server-reported)
+[bench]   17658/50000 reconnected (server-reported)
+[bench]   20340/50000 reconnected (server-reported)
+[bench]   22704/50000 reconnected (server-reported)
+[bench]   24791/50000 reconnected (server-reported)
+[bench]   27008/50000 reconnected (server-reported)
+[bench]   29794/50000 reconnected (server-reported)
+[bench]   31812/50000 reconnected (server-reported)
+[bench]   34628/50000 reconnected (server-reported)
+[bench]   37960/50000 reconnected (server-reported)
+[bench]   41140/50000 reconnected (server-reported)
+[bench]   43151/50000 reconnected (server-reported)
+[bench]   46205/50000 reconnected (server-reported)
+[bench]   49374/50000 reconnected (server-reported)
+[bench] stopping client shards and collecting per-client stats...
+{
+  "measuredAt": "2026-08-11T10:07:12.810Z",
+  "clients": 50000,
+  "workers": 10,
+  "acceptBudget": {
+    "perSecond": 500,
+    "burst": 2000
+  },
+  "restartGapMs": 500,
+  "ramp": {
+    "requested": 50000,
+    "succeeded": 50000,
+    "shedAttempts": 228191,
+    "durationMs": 282855,
+    "reconnect": {
+      "count": 50000,
+      "minMs": 19259,
+      "p50Ms": 63769,
+      "p90Ms": 114898,
+      "p99Ms": 158868,
+      "maxMs": 282219
+    },
+    "consistent": {
+      "count": 0,
+      "minMs": null,
+      "p50Ms": null,
+      "p90Ms": null,
+      "p99Ms": null,
+      "maxMs": null
+    }
+  },
+  "restart": {
+    "requested": 50000,
+    "succeeded": 50000,
+    "shedAttempts": 156851,
+    "durationMs": 143373,
+    "reconnect": {
+      "count": 50000,
+      "minMs": 5031,
+      "p50Ms": 53367,
+      "p90Ms": 101646,
+      "p99Ms": 128729,
+      "maxMs": 145694
+    },
+    "consistent": {
+      "count": 49981,
+      "minMs": 5668,
+      "p50Ms": 53951,
+      "p90Ms": 105540,
+      "p99Ms": 127750,
+      "maxMs": 145681
+    }
+  },
+  "notes": [
+    "ramp is throttled by the same AcceptBudget the restart recovery is measured under",
+    "readiness (ramp done / restart consistent) is read from the server’s own socket count, not the load generator’s self-report",
+    "time-to-consistent = first channel patch received after the kill (reconnect + resubscribe + delivery)",
+    "the consistency probe only publishes after the kill, so ramp.consistent is empty by construction — the ramp measures acceptance, the restart measures recovery",
+    "DB load proxy: shedAttempts is the count of connect attempts the AcceptBudget refused before accepting in that phase — every one of those never reached a query/snapshot path",
+    "client swarm split across 10 OS processes so the load generator's own event loop is never the bottleneck being measured"
+  ]
+}

@@ -173,7 +173,7 @@ A client on build `A` connecting to a `sync` node on build `B` is **accepted**, 
 | `X_PROTOCOL_VERSION` | client and server disagree on the wire format, or a malformed frame | `x build && redeploy the client; the sync node sends 'update-available' before it drains` |
 | `X_CURSOR_STALE` | resume cursor cannot be honoured and no snapshot path was supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
 | `X_REBASE_CONFLICT` | `custom(merge)` returned nothing, or the base row vanished | `set conflict: 'server-wins' on the mutator, or return a row from custom(merge)` |
-| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down | `x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable` |
+| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down | `x doctor — then check NATS_URL points at a reachable nats-server` |
 | `X_TRANSPORT_PROTOCOL` | the bus answers in a protocol this build does not speak | `the bus must be nats-server >= 2.11 with JetStream enabled (nats-server -js)` |
 | `X_BUILD_SKEW` | client build's contract is incompatible with the server's | reload the client; see the fix line on the error |
 | `X_NOT_IMPLEMENTED` | interface-complete tier-3 infrastructure not wired in this build | the error carries the exact next step |

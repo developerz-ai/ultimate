@@ -70,6 +70,15 @@ export interface ToLiveOptions {
   readonly ctx?: Ctx;
   /** Overrides the process epoch. Tests pin it; the server derives it from the build. */
   readonly epoch?: string;
+  /**
+   * `false` builds the descriptor with **no subject at all** — the shape, the SQL text and the
+   * matcher, and nothing that decided about an actor. Only a sync node passes it, and only for
+   * the window it shares across every subscriber of one `(query, input)`: a descriptor built
+   * under the first subscriber's authority and then cached by query id is the first subscriber's
+   * entitlements becoming everyone's. `authorize` below is still the subscribe-time decision and
+   * still runs per subscriber, so this removes no check — it removes a *shared* one.
+   */
+  readonly enforce?: boolean;
 }
 
 /** Changing the build changes the epoch, which forces reconnects to refetch. */
@@ -85,6 +94,7 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   const name = queryName(target);
   const source = await sourceFor(target, input, {
     ...(options.ctx === undefined ? {} : { ctx: options.ctx }),
+    ...(options.enforce === undefined ? {} : { enforce: options.enforce }),
     surface: 'live',
   });
   const shape = source.shape();

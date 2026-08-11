@@ -10,10 +10,10 @@ import {
   resetTasks,
   task,
 } from '@ultimat3/jobs';
-import { InProcessTransport } from '@ultimat3/realtime';
+import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { RunningRoles } from './dev-roles';
-import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+import { DEV_ROLES, SELECTABLE_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
 import { resolveServices } from './dev-services';
 
@@ -29,6 +29,10 @@ function fakeRuntime(): RunningServices {
     jobs: createMemoryDriver(),
     events: createMemoryEventBus(),
     transport,
+    transportDetail: 'in-process fanout',
+    // The sync role reads this to build its `PresenceRegistry`; the default is what a boot with no
+    // `NATS_URL` resolves to, so the fixture is the real number rather than a rounder one.
+    presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
     storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
     stop: async () => transport.close(),
   };
@@ -74,9 +78,19 @@ describe('unit · x dev --role', () => {
     expect((thrown as { fix: string }).fix).toBe('x dev --role web,sync,worker,scheduler');
   });
 
-  test('a real role that dev cannot run is refused rather than silently dropped', () => {
+  test('migrate is refused rather than silently dropped: it is a command, not a process', () => {
     expect(refused('migrate')).toBeUltimateError('X_CLI_BAD_FLAG');
-    expect(refused('replicator')).toBeUltimateError('X_CLI_BAD_FLAG');
+  });
+
+  test('replicator is selectable but never default — it takes the database its own slot', () => {
+    expect(refused('replicator')).toBeUndefined();
+    expect(selectRoles('replicator')).toEqual(['replicator']);
+    expect(SELECTABLE_ROLES).toEqual(['web', 'sync', 'worker', 'scheduler', 'replicator']);
+    expect(DEV_ROLES).not.toContain('replicator');
+  });
+
+  test('the replicator sorts last, after the transport it publishes to', () => {
+    expect(selectRoles('replicator,sync')).toEqual(['sync', 'replicator']);
   });
 
   test('worker and scheduler start without a web server, and drain the queue', async () => {
@@ -91,6 +105,7 @@ describe('unit · x dev --role', () => {
       port: 0,
       buildId: 'test',
       runtime: fakeRuntime(),
+      env: {},
       routes: [],
     });
 
@@ -108,6 +123,7 @@ describe('unit · x dev --role', () => {
       port: 0,
       buildId: 'test',
       runtime: fakeRuntime(),
+      env: {},
       routes: [
         {
           method: 'GET',
@@ -133,6 +149,7 @@ describe('unit · x dev --role', () => {
       port: 0,
       buildId: 'test',
       runtime: fakeRuntime(),
+      env: {},
       routes: [],
     });
 
@@ -152,6 +169,7 @@ describe('unit · x dev --role', () => {
         port: blocker.port - 1,
         buildId: 'test',
         runtime: fakeRuntime(),
+        env: {},
         routes: [],
       }),
     ).rejects.toThrow();

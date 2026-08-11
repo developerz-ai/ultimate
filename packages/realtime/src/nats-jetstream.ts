@@ -40,7 +40,7 @@ export function assertBucket(bucket: string): void {
       transport: 'nats',
       stage: 'bucket',
       detail: `"${bucket}" is not a bucket name: letters, digits, "-" and "_" only`,
-      fix: 'set realtime.transport.bucket in app.config.ts to a name matching [a-zA-Z0-9_-]+',
+      fix: 'set NATS_KV_BUCKET to a name matching [a-zA-Z0-9_-]+, then restart',
     });
   }
 }

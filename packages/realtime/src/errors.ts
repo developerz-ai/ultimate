@@ -14,7 +14,9 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_TRANSPORT_PROTOCOL',
   'X_REPLICATION_PROTOCOL',
   'X_REPLICATION_FAILED',
+  'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
+  'X_LIVE_ROW_UNIDENTIFIED',
 ] as const;
 
 /**
@@ -43,7 +45,9 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_TRANSPORT_PROTOCOL: 'the bus does not speak the protocol this build speaks',
   X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
   X_REPLICATION_FAILED: 'the replication connection was refused',
+  X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
+  X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -134,9 +138,8 @@ export class TransportUnavailableError extends RealtimeError {
     super({
       code: 'X_TRANSPORT_UNAVAILABLE',
       cause: `transport "${args.transport}" is unavailable: ${args.reason}`,
-      fix:
-        args.fix ??
-        'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+      // Names the key `selectTransport` actually reads, and a command that actually exists.
+      fix: args.fix ?? 'x doctor — then check NATS_URL points at a reachable nats-server',
     });
   }
 }
@@ -192,6 +195,24 @@ export class ReplicationFailedError extends RealtimeError {
 }
 
 /**
+ * A second replicator found the advisory lock held. Distinct from `X_REPLICATION_FAILED` because
+ * nothing is wrong with this process: the database already has its one replicator, and a second
+ * one that started anyway would publish every change twice. Terminal for a container whose whole
+ * job is that role — the scheduler is the thing that has to change, not the connection.
+ */
+export class ReplicatorSlotHeldError extends RealtimeError {
+  constructor(args: { key: string; holder?: string | undefined }) {
+    super({
+      code: 'X_REPLICATOR_SLOT_HELD',
+      cause:
+        `advisory lock ${args.key} is held${args.holder === undefined ? '' : ` by ${args.holder}`}` +
+        ' — one database has exactly one replicator',
+      fix: 'scale the replicator to 1 per database: kubectl scale deploy/replicator --replicas=1',
+    });
+  }
+}
+
+/**
  * A hook was called before the app entry registered its client. Never a transient fault: the
  * registration is a single call in the entry, so the fix is the call itself rather than a retry.
  */
@@ -201,6 +222,21 @@ export class LiveClientMissingError extends RealtimeError {
       code: 'X_LIVE_CLIENT_MISSING',
       cause: `${args.hook}() ran before any LiveClient was registered`,
       fix: 'setLiveClient(new LiveClient({ signal: createSignal, connect, buildId })) in the app entry, above the first render',
+    });
+  }
+}
+
+/**
+ * A subscribable read projected a row with no `id`. Patches, cursors and the local store all
+ * address a row by `id`, so such a row cannot be delivered — and delivering it anyway produces a
+ * subscription that looks correct until the first update nobody can apply.
+ */
+export class LiveRowUnidentifiedError extends RealtimeError {
+  constructor(args: { query: string; keys: readonly string[] }) {
+    super({
+      code: 'X_LIVE_ROW_UNIDENTIFIED',
+      cause: `live query "${args.query}" returned a row with no id (columns: ${args.keys.join(', ') || 'none'})`,
+      fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
     });
   }
 }

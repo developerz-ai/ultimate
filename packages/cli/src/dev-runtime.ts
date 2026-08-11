@@ -17,8 +17,8 @@ import type { EventBus, JobDriver } from '@ultimat3/jobs';
 import { createMemoryEventBus, setEventBus } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from '@ultimat3/mail';
-import type { Transport } from '@ultimat3/realtime';
-import { InProcessTransport, NatsTransport } from '@ultimat3/realtime';
+import type { Transport, TransportSelection } from '@ultimat3/realtime';
+import { selectTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { DevDbClient } from './dev-queue';
@@ -39,6 +39,14 @@ export interface RunningServices {
    * never carried: `SMTP_URL` holds a password, and this string reaches the boot line and `--json`.
    */
   readonly mailDetail: string;
+  /** Same rule as `mailDetail`: the env key that selected the bus, never the url behind it. */
+  readonly transportDetail: string;
+  /**
+   * What the sync role must give `PresenceRegistry`. It travels with the transport because the KV
+   * bucket's age limit was derived from it — a registry given a longer TTL than the bucket honours
+   * would show members leaving that never left.
+   */
+  readonly presenceTtlMs: number;
   readonly purge: PurgeDriver;
   /** Same rule as `mailDetail`: the env key that selected the CDN, never the token behind it. */
   readonly purgeDetail: string;
@@ -101,19 +109,6 @@ function startStorage(services: DevServices): Storage {
 }
 
 /**
- * `NATS_URL` selects the NATS transport rather than quietly keeping the in-process one: dev
- * pointed at compose is a parity check, and a parity check that silently ran the embedded driver
- * would be worse than no parity check. The connection and the KV bucket are established here, so
- * an unreachable bus fails at `x dev` rather than on the first change nobody receives.
- */
-async function startTransport(services: DevServices): Promise<Transport> {
-  if (services.events.mode === 'embedded') return new InProcessTransport();
-  const transport = new NatsTransport({ url: services.events.url, bucket: 'x-dev' });
-  await transport.connect();
-  return transport;
-}
-
-/**
  * Release what has already started, newest first, and return every failure instead of throwing on
  * the first: a step that rejects must not skip the ones after it, or one transport that will not
  * close strands the CDN tier, the ambient mail driver and the queue in the next boot of this
@@ -139,6 +134,12 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
   // Same reason, same place: building a purge driver reads env and dials nothing, so a half-set
   // `FASTLY_API_TOKEN` without its service id fails here rather than on the first stale page.
   const cdn = selectPurgeDriver(env);
+  // Third of the same kind. `NATS_URL` selects the bus rather than quietly keeping the in-process
+  // one — dev pointed at compose is a parity check, and a parity check that silently ran the
+  // embedded driver is worse than none. Which transport, which KV bucket and which presence TTL is
+  // `@ultimat3/realtime`'s decision, and it is the same call a `ROLE=sync` container makes, so this
+  // process cannot resolve the bus differently from the container it stands in for.
+  const bus: TransportSelection = selectTransport(env);
   const queue = await startQueue(services);
   const { db, jobs } = queue;
   // Boot is a sequence of external resources, and every step after the first can reject — the
@@ -147,8 +148,10 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
   try {
     const events = createMemoryEventBus();
     setEventBus(events);
-    const transport = await startTransport(services);
-    started.push(() => transport.close());
+    // Dialled here rather than at selection: an unreachable bus must fail at `x dev`, not on the
+    // first change nobody receives, and the socket is a resource the unwind below has to release.
+    await bus.connect();
+    started.push(() => bus.transport.close());
     const storage = startStorage(services);
     // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
     // show what a template renders in every locale without a mailbox or a message escaping to a
@@ -173,10 +176,12 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
       db,
       jobs,
       events,
-      transport,
+      transport: bus.transport,
       storage,
       mail,
       mailDetail: selection.detail,
+      transportDetail: bus.detail,
+      presenceTtlMs: bus.presenceTtlMs,
       purge: cdn.driver,
       purgeDetail: cdn.detail,
       // The same list the boot unwind uses, in the same reverse order, so a service added to the

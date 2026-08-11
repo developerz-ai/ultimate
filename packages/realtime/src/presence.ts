@@ -131,6 +131,27 @@ export class PresenceRegistry {
     return gone;
   }
 
+  /**
+   * Every topic this node has seen, in one pass. Expiry is silent by design — a member whose node
+   * died simply stops heartbeating — so with nothing sweeping, the survivors keep rendering a
+   * cursor that stopped moving until they reconnect. The `sync` node calls this on an interval;
+   * nothing else is in a position to.
+   *
+   * Why an interval and not a call on demand: `sweep` can only report a member it has already
+   * seen, and a member that joined on *another* node is first seen by a sweep. One pass while it
+   * is alive is what makes the next pass able to say it left.
+   */
+  async sweepAll(): Promise<readonly PresenceMember[]> {
+    const gone: PresenceMember[] = [];
+    for (const name of [...this.#seen.keys()] as Topic[]) {
+      gone.push(...(await this.sweep(name)));
+      // A room nobody is in is not a room. Without this the cache keeps one entry per topic ever
+      // subscribed to, for the life of the process, and the sweep walks all of them forever.
+      if ((this.#seen.get(name)?.size ?? 0) === 0) this.#seen.delete(name);
+    }
+    return gone;
+  }
+
   /** Full-set frame for a client that just (re)connected — presence has no delta protocol. */
   async syncFrame(name: Topic): Promise<Frame> {
     return presenceFrame(name, 'sync', await this.list(name));

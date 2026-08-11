@@ -15,6 +15,16 @@ export {
   type PgLogicalReplicationOptions,
   parseLsn,
 } from './changefeed';
+export {
+  type ChangeFeedSelection,
+  DEFAULT_REPLICATION_PUBLICATION,
+  DEFAULT_REPLICATION_SLOT,
+  REPLICATION_ENV_KEYS,
+  type ReplicationEnvironment,
+  replicatorLockKey,
+  type SelectChangeFeedOptions,
+  selectChangeFeed,
+} from './changefeed-env';
 
 // ---- tier 1: channels + presence ---------------------------------------------------------------
 export {
@@ -62,6 +72,7 @@ export {
 export {
   CursorStaleError,
   LiveClientMissingError,
+  LiveRowUnidentifiedError,
   NotImplementedError,
   ProtocolVersionError,
   REALTIME_ERROR_CODES,
@@ -71,6 +82,7 @@ export {
   RebaseConflictError,
   ReplicationFailedError,
   ReplicationProtocolError,
+  ReplicatorSlotHeldError,
   SubscriptionLimitError,
   TopicForbiddenError,
   TransportProtocolError,
@@ -116,12 +128,14 @@ export {
   type RowOp,
   type RowPatch,
 } from './json';
+export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';
 export {
   type LiveQueryDefinition,
   LiveQueryRegistry,
   type LiveQueryRegistryOptions,
   type LiveSubscription,
   qidOf,
+  type RowDenied,
   type SnapshotResult,
 } from './live-query';
 // ---- tier 3: local-first ------------------------------------------------------------------------
@@ -194,6 +208,7 @@ export {
   type QueueState,
   type QueueStore,
 } from './offline-queue';
+export { PgAdvisoryLock, type PgAdvisoryLockOptions } from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------
 export { camel, entityRow } from './pg-entity-row';
 export {
@@ -302,3 +317,12 @@ export {
   type Rng,
   reconnectFrame,
 } from './thundering-herd';
+export {
+  DEFAULT_PRESENCE_BUCKET,
+  DEFAULT_PRESENCE_TTL_MS,
+  type SelectTransportOptions,
+  selectTransport,
+  TRANSPORT_ENV_KEYS,
+  type TransportEnvironment,
+  type TransportSelection,
+} from './transport-env';

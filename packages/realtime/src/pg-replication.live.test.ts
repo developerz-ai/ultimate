@@ -12,8 +12,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { ChangeEvent } from './changefeed';
 import { PgLogicalReplicationFeed } from './changefeed';
+import { selectChangeFeed } from './changefeed-env';
+import { InProcessTransport } from './fanout';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
+import { CHANGE_SUBJECT_PREFIX, createReplicator } from './replicator';
 
 const url =
   Bun.env['TEST_REPLICATION_URL'] ?? Bun.env['TEST_DATABASE_URL'] ?? Bun.env['DATABASE_URL'];
@@ -25,6 +28,7 @@ const TABLE = 'x_live_posts';
 // made the resume case assert "exactly two" against a stream that owes it three.
 const SLOT = 'x_live_slot';
 const RESUME_SLOT = 'x_live_resume_slot';
+const WIRED_SLOT = 'x_live_wired_slot';
 const PUBLICATION = 'x_live_pub';
 
 /** The preload freezes the clock, so waiting is counted in polls rather than in elapsed time. */
@@ -82,7 +86,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
   const dropSlots = async (): Promise<void> => {
     await sql.query(
       `SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots ` +
-        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}')`,
+        `WHERE slot_name IN ('${SLOT}', '${RESUME_SLOT}', '${WIRED_SLOT}')`,
     );
   };
 
@@ -236,5 +240,53 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
 
     // r1/r2 were already delivered; a replay of them must be dropped, not sent twice.
     expect(second.map((event) => event.after?.['id'])).toEqual(['r3']);
+  }, 60_000);
+
+  /**
+   * The reachability proof. Every other case builds the feed by hand, which is exactly how it
+   * shipped with no production caller: nothing in the framework ever constructed one. This case
+   * starts from environment variables — the only input a container gets — and asserts a row
+   * written to Postgres arrives on the bus.
+   */
+  test('environment variables alone reach the bus: env → feed → replicator → transport', async () => {
+    const selection = selectChangeFeed(
+      {
+        DATABASE_URL: url,
+        REPLICATION_SLOT: WIRED_SLOT,
+        REPLICATION_PUBLICATION: PUBLICATION,
+      },
+      { entities: [TABLE] },
+    );
+    expect(selection.mode).toBe('external');
+    expect(selection.detail).toBe('DATABASE_URL');
+
+    const transport = new InProcessTransport();
+    const published: { subject: string; payload: string }[] = [];
+    await transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload, subject) => {
+      published.push({ subject, payload });
+    });
+
+    const replicator = createReplicator({
+      feed: selection.feed,
+      transport,
+      lock: selection.lock,
+    });
+    expect(await replicator.start()).toBe(true);
+    try {
+      await sql.query(`INSERT INTO ${TABLE} (id, title, org_id) VALUES ('w1', 'wired', 'org-1')`);
+      await waitFor(() => published.length >= 1);
+    } finally {
+      await replicator.stop();
+      await transport.close();
+    }
+
+    expect(replicator.stats().published).toBeGreaterThanOrEqual(1);
+    const change = JSON.parse(published[0]?.payload ?? '{}') as ChangeEvent;
+    // The tenant is in the subject, so a fanout filters without parsing the row at all.
+    expect(published[0]?.subject).toBe(`${CHANGE_SUBJECT_PREFIX}.${TABLE}.org-1`);
+    expect(change.entity).toBe(TABLE);
+    expect(change.op).toBe('insert');
+    expect(change.after?.['id']).toBe('w1');
+    expect(change.orgId).toBe('org-1');
   }, 60_000);
 });
