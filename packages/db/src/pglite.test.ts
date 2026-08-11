@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { baseClient, isReservable, setDbClient } from './client';
 import {
   createPgliteClient,
@@ -280,25 +280,38 @@ describe('the real embedded database', () => {
   // slow machine reads as slow rather than as a broken driver; it is a hang detector, not a budget.
   const PGLITE_BOOT_MS = 30_000;
 
+  /**
+   * One session for all four cases, not one each. The boot is the entire cost — four measured
+   * ~2.4s apiece — and `createPgliteClient` is lazy, so the WASM compile still happens inside the
+   * first case that runs a statement rather than at import. Sharing costs these cases nothing they
+   * were asserting: PGlite is a pool of exactly one either way, which is the very thing the
+   * reservation rules below exist for, so a shared client is the shape production runs.
+   */
+  const client = createPgliteClient();
+
+  // Each case owns `posts` outright, so none of them inherits the previous one's table or rows.
+  beforeEach(async () => {
+    await client.execute(sql`drop table if exists posts`);
+  }, PGLITE_BOOT_MS);
+
+  afterAll(async () => {
+    await client.close();
+  });
+
   test(
     'boots from the default loader and runs Postgres, with no server and no Docker',
     async () => {
-      const client = createPgliteClient();
-      try {
-        await client.execute(sql`create table posts (id int primary key, title text)`);
-        expect(await client.execute(sql`insert into posts values (${1}, ${'hello'})`)).toBe(1);
-        expect(await client.execute(sql`insert into posts values (${2}, ${'world'})`)).toBe(1);
-        expect(
-          await client.one<{ title: string }>(sql`select title from posts where id = ${2}`),
-        ).toEqual({ title: 'world' });
-        expect(await client.query(sql`select id from posts order by id`)).toEqual([
-          { id: 1 },
-          { id: 2 },
-        ]);
-        expect(await client.execute(sql`delete from posts`)).toBe(2);
-      } finally {
-        await client.close();
-      }
+      await client.execute(sql`create table posts (id int primary key, title text)`);
+      expect(await client.execute(sql`insert into posts values (${1}, ${'hello'})`)).toBe(1);
+      expect(await client.execute(sql`insert into posts values (${2}, ${'world'})`)).toBe(1);
+      expect(
+        await client.one<{ title: string }>(sql`select title from posts where id = ${2}`),
+      ).toEqual({ title: 'world' });
+      expect(await client.query(sql`select id from posts order by id`)).toEqual([
+        { id: 1 },
+        { id: 2 },
+      ]);
+      expect(await client.execute(sql`delete from posts`)).toBe(2);
     },
     PGLITE_BOOT_MS,
   );
@@ -309,7 +322,6 @@ describe('the real embedded database', () => {
   test(
     'two concurrent transactions do not share one — a rollback still rolls back',
     async () => {
-      const client = createPgliteClient();
       setDbClient(client);
       try {
         await client.execute(sql`create table posts (id int primary key, title text)`);
@@ -331,7 +343,6 @@ describe('the real embedded database', () => {
         ]);
       } finally {
         setDbClient(undefined);
-        await client.close();
       }
     },
     PGLITE_BOOT_MS,
@@ -343,7 +354,6 @@ describe('the real embedded database', () => {
   test(
     'a plain statement issued inside a transaction joins it instead of deadlocking',
     async () => {
-      const client = createPgliteClient();
       setDbClient(client);
       try {
         await client.execute(sql`create table posts (id int primary key)`);
@@ -359,7 +369,6 @@ describe('the real embedded database', () => {
         ]);
       } finally {
         setDbClient(undefined);
-        await client.close();
       }
     },
     PGLITE_BOOT_MS,
@@ -370,7 +379,6 @@ describe('the real embedded database', () => {
   test(
     'an agent read-only query does not make a concurrent write fail',
     async () => {
-      const client = createPgliteClient();
       setDbClient(client);
       try {
         await client.execute(sql`create table posts (id int primary key)`);
@@ -382,7 +390,6 @@ describe('the real embedded database', () => {
         expect(await client.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
       } finally {
         setDbClient(undefined);
-        await client.close();
       }
     },
     PGLITE_BOOT_MS,

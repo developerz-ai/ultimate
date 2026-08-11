@@ -138,7 +138,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 ## CI
 
-Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs lint, typecheck, boundaries, and tests; target under 5 minutes. Releases publish to npm via **OIDC trusted publishing**, no `NPM_TOKEN` — see [`PUBLISHING.md`](PUBLISHING.md).
+Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, no `NPM_TOKEN` — see [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 
