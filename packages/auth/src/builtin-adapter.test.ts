@@ -128,7 +128,7 @@ describe('BuiltinAdapter — users', () => {
     const error = thrown instanceof AuthError ? thrown : null;
     expect(error?.code).toBe('X_AUTH_WRITE_FAILED');
     expect(error?.cause).toContain('x_users');
-    expect(error?.fix).toContain('x db apply');
+    expect(error?.fix).toContain('x db migrate');
   });
 
   test('updateUser sends every patch field as a bound case-when, untouched fields pass through', async () => {

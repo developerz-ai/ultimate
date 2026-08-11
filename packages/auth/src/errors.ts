@@ -216,7 +216,7 @@ export const authWriteFailed = (operation: string, table: string): AuthError =>
   new AuthError({
     code: 'X_AUTH_WRITE_FAILED',
     cause: `${operation} returned no row from ${table}, so the write cannot be confirmed`,
-    fix: `x db apply   # then: x db query "select 1 from ${table} limit 1" --json`,
+    fix: `x db migrate   # then: x db query "select 1 from ${table} limit 1" --json`,
     meta: { operation, table },
   });
 

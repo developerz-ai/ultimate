@@ -2,7 +2,7 @@
 // runs them in one process by starting the same framework objects each container starts, so a
 // job that only works when awaited inline still fails here.
 //
-// `migrate` is absent on purpose: it is run-once (`x db apply`), not a process. `replicator` is
+// `migrate` is absent on purpose: it is run-once (`x db migrate`), not a process. `replicator` is
 // selectable but not default — it takes a replication slot on a shared database, which is not
 // something every `x dev` in a team should do to the same server by simply starting.
 
@@ -89,7 +89,7 @@ export function selectRoles(flag: string | undefined): readonly Role[] {
       throw new BadFlagError({
         flag: 'role',
         command: 'dev',
-        reason: `"${name}" does not run under x dev (it runs once, as \`x db apply\`)`,
+        reason: `"${name}" does not run under x dev (it runs once, as \`x db migrate\`)`,
         fix: `x dev --role ${DEV_ROLES.join(',')}`,
       });
     }

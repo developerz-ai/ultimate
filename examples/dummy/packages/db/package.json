@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test",
     "gen": "x db gen",
-    "apply": "x db apply"
+    "migrate": "x db migrate"
   },
   "dependencies": {
     "@postly/domain": "0.0.1",

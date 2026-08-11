@@ -19,7 +19,7 @@
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
     "db:gen": "x db gen",
-    "db:apply": "x db apply",
+    "db:migrate": "x db migrate",
     "db:seed": "x db seed dev",
     "manifest": "x manifest --json"
   },
