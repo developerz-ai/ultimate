@@ -13,8 +13,9 @@ import type { AnyAppToolDefinition, AppTools } from './app-tool';
 import { appToolPrimitives } from './app-tool';
 import { McpToolDuplicateError } from './errors';
 import { exposedPrimitives } from './exposed';
-import type { ProjectablePrimitive } from './from-action';
 import { toolsFrom, toolsListed } from './from-action';
+import type { ListedPrimitive } from './projectable';
+import { asProjectable } from './projectable';
 import type { AnyMcpTool } from './registry';
 import type { McpPrompt, McpResource } from './resources';
 import { toPrompts } from './resources';
@@ -40,13 +41,14 @@ export interface DefineAppMcpInput<TSchemas extends AppToolSchemas = AppToolSche
    */
   readonly include?: 'exposed';
   /**
-   * Actions to project. Naming one here IS the request to expose it, so a listed action that
-   * never declared `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot rather than a tool
-   * missing from the catalog — exposure stays declared next to the policy, never in this list.
+   * Actions to project, as the app declared them: `actions: [publishPost]`. Naming one here IS
+   * the request to expose it, so a listed action that never declared `mcp: { expose: true }` is
+   * `X_MCP_TOOL_UNDECLARED` at boot rather than a tool missing from the catalog — exposure stays
+   * declared next to the policy, never in this list.
    */
-  readonly actions?: readonly ProjectablePrimitive[];
+  readonly actions?: readonly ListedPrimitive[];
   /** Queries to project. Same rule, same error. */
-  readonly queries?: readonly ProjectablePrimitive[];
+  readonly queries?: readonly ListedPrimitive[];
   /** App-specific readable documents (a catalog export, a report). */
   readonly resources?: readonly McpResource[];
   /** Prompts the app ships: a path to a versioned artifact, or the full descriptor. */
@@ -116,7 +118,9 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   // arrays, because `toolsListed` collects every offender before throwing — calling it twice
   // would throw on the first undeclared action and never look at the queries, so the author
   // fixes one list, re-boots, and meets a second `X_MCP_TOOL_UNDECLARED`.
-  const listed = toolsListed([...(input.actions ?? []), ...(input.queries ?? [])]);
+  const listed = toolsListed(
+    [...(input.actions ?? []), ...(input.queries ?? [])].map(asProjectable),
+  );
   // An explicitly listed primitive is a refinement of the registry's entry, not a rival to it,
   // so `include` fills the gaps rather than colliding with what the caller already spelled out.
   const included =

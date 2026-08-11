@@ -23,6 +23,7 @@ import. The CLI wires it.
 | `transport-stdio.ts` | NDJSON on stdin/stdout for `x mcp serve` |
 | `app-tools.ts` | `defineAppMcp` — a generated app's own MCP surface, one call |
 | `app-tool.ts` | the authored `tools: { name: {...} }` record → `ProjectablePrimitive` |
+| `projectable.ts` | a real `action`/`query` → `ProjectablePrimitive`; the ONE adapter both the sweep and the written-out list use |
 | `exposed.ts` | `include: 'exposed'` — the action/query registries → primitives |
 | `scopes.ts` | the `scopes:` map — outcome 2's declaration surface; boot-time refusal of an unknown or doubly-claimed tool |
 | `input-schema.ts` | Standard Schema → the `JsonSchema` subset `validate-args.ts` enforces |
@@ -66,6 +67,19 @@ import. The CLI wires it.
   `actions:` and `queries:` go through **one** `toolsListed` call over the concatenation: it
   collects every offender before throwing, so one boot names all of them and one edit closes
   all of them. Two calls would throw on the first array and never examine the second.
+- `actions:`/`queries:` take the **real primitives** (`actions: [publishPost]`), adapted by
+  `projectable.ts` into the same `ProjectablePrimitive` the registry sweep builds. They took
+  `ProjectablePrimitive` alone until 2026-08, which no `action()` or `query()` satisfies — they
+  carry `as`/`tool`, never `run` — so listing one was a TS2741 and the only value that could
+  reach `X_MCP_TOOL_UNDECLARED` was a hand-built fake. A gate that no declaration can reach
+  refuses nothing. `ProjectablePrimitive` stays in the union for surfaces that build a catalog
+  programmatically (`@ultimat3/admin`); `isAction`/`isQuery` read each package's private
+  declaration store, so a look-alike falls through instead of borrowing `invoke`.
+- The adapter is **one function with two callers**, never a copy per route: the written-out list
+  and `include: 'exposed'` land on the same `run` — `invoke` for an action, `sourceFor` for a
+  query. Writing a primitive out NAMES a tool; it never re-shapes or re-runs one. An action
+  with no export name is `X_ACTION_UNREGISTERED` rather than a tool called `''`, which no
+  `tools/call` and no `scopes:` entry could ever address.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
   throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`,
   `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`. The caller reading them is usually an agent

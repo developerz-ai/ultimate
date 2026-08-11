@@ -55,6 +55,8 @@ export {
   toolsListed,
 } from './from-action';
 export { toWireSchema } from './input-schema';
+export type { ListedPrimitive } from './projectable';
+export { asProjectable } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
 export {
   capQueryRows,

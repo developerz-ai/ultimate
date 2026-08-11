@@ -128,6 +128,20 @@ the app registered, so one that never opted in is passed over. `actions:`/`queri
 missing from the catalog, and exposure stays declared next to the policy. Two primitives reaching
 one tool name is `X_MCP_TOOL_DUPLICATE`, also at boot.
 
+Both lists take the primitives themselves, exactly as the app declared them:
+
+```ts
+import { publishPost } from '../api/posts';
+
+defineAppMcp({ name: 'postly', actions: [publishPost] });
+// X_MCP_TOOL_UNDECLARED unless publishPost declared mcp: { expose: true }
+```
+
+One adapter serves both routes, so a written-out primitive runs through the same `invoke` (or
+`sourceFor`) the swept one does — the list changes which tools are NAMED, never how one runs.
+An action that was never handed to `defineApi` has no export name, and is
+`X_ACTION_UNREGISTERED` rather than a tool called `''` that nothing could call.
+
 A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an
 HTTP request goes through, so a tool cannot acquire a second authz path. A tool without one
 is `X_MCP_TOOL_UNSAFE` at boot, and an unmarked tool is metered as a write.
