@@ -2,10 +2,8 @@
 // installs, and how it says so. The other services are covered by `cmd-dev.test.ts`, which boots
 // them for real.
 
-import { afterEach, describe, expect, test } from 'bun:test';
-// `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove, and every
-// boot below needs a state directory of its own — a shared one would hand the next case a PGlite
-// data dir the previous one locked.
+import { afterAll, describe, expect, test } from 'bun:test';
+// `node:` by necessity: Bun has no temp-directory, no mkdtemp and no recursive remove.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -53,11 +51,17 @@ const fakeSmtp = (): MailDriver => ({
     ),
 });
 
-/** Every embedded Postgres directory a boot created, removed once the process is done with it. */
-const roots: string[] = [];
+/**
+ * One embedded-Postgres directory for the whole file, not one per boot. Every case below stops its
+ * runtime before the next starts — on the failure path too, since `startServices` unwinds what it
+ * started — so the data dir is never held twice. Reusing it is the difference between paying
+ * `initdb` once and paying it per test: a cold boot measures ~2.6s and a warm one ~0.3s, which was
+ * seven eighths of this file's runtime.
+ */
+const root = mkdtempSync(join(tmpdir(), 'x-dev-boot-'));
 
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+afterAll(() => {
+  rmSync(root, { recursive: true, force: true });
 });
 
 describe('describeMail', () => {
@@ -111,19 +115,13 @@ describe('the rendered label and the machine status', () => {
  * answers are pinned against each other rather than trusted to stay in step.
  */
 describe('the reported binding and the selected transport', () => {
-  const root = (): string => {
-    const created = mkdtempSync(join(tmpdir(), 'x-bus-mode-'));
-    roots.push(created);
-    return created;
-  };
-
   test('agree that no url is embedded', () => {
-    expect(resolveServices(root(), {}).events.mode).toBe(selectTransport({}).mode);
+    expect(resolveServices(root, {}).events.mode).toBe(selectTransport({}).mode);
   });
 
   test('agree that a url — even a padded one — is external', () => {
     const env = { NATS_URL: '  nats://bus.test:4222  ' };
-    expect(resolveServices(root(), env).events.mode).toBe(selectTransport(env).mode);
+    expect(resolveServices(root, env).events.mode).toBe(selectTransport(env).mode);
     expect(selectTransport(env).mode).toBe('external');
   });
 });
@@ -177,8 +175,6 @@ describe('startServices', () => {
   test(
     'a credential in the environment installs the transport as the ambient driver',
     async () => {
-      const root = mkdtempSync(join(tmpdir(), 'x-mail-boot-'));
-      roots.push(root);
       const runtime = await startServices(resolveServices(root, {}), {
         SMTP_URL: 'smtps://user:pass@mail.postly.test:465',
         MAIL_FROM: 'Postly <no-reply@postly.test>',
@@ -200,8 +196,6 @@ describe('startServices', () => {
   test(
     'no credential leaves the caught outbox in place',
     async () => {
-      const root = mkdtempSync(join(tmpdir(), 'x-mail-boot-'));
-      roots.push(root);
       const runtime = await startServices(resolveServices(root, {}), {});
       try {
         expect(tryMailDriver()?.name).toBe('memory');
@@ -222,8 +216,6 @@ describe('startServices', () => {
   test(
     'a CDN credential registers the cdn tier, and stopping releases it',
     async () => {
-      const root = mkdtempSync(join(tmpdir(), 'x-cdn-boot-'));
-      roots.push(root);
       resetTiers();
       const runtime = await startServices(resolveServices(root, {}), {
         FASTLY_API_TOKEN: 'fastly-token',
@@ -248,8 +240,6 @@ describe('startServices', () => {
   test(
     'no CDN credential registers no cdn tier at all',
     async () => {
-      const root = mkdtempSync(join(tmpdir(), 'x-cdn-boot-'));
-      roots.push(root);
       resetTiers();
       const runtime = await startServices(resolveServices(root, {}), {});
       try {
@@ -272,8 +262,6 @@ describe('startServices', () => {
   test(
     'a transport that will not close still releases the tier, the mail driver and the queue',
     async () => {
-      const root = mkdtempSync(join(tmpdir(), 'x-stop-boot-'));
-      roots.push(root);
       resetTiers();
       const runtime = await startServices(resolveServices(root, {}), {
         SMTP_URL: 'smtps://user:pass@mail.postly.test:465',
@@ -323,8 +311,6 @@ describe('startServices', () => {
   test(
     'the embedded bus reports the key that would change it, and the TTL presence gets',
     async () => {
-      const root = mkdtempSync(join(tmpdir(), 'x-bus-boot-'));
-      roots.push(root);
       const runtime = await startServices(resolveServices(root, {}), {});
       try {
         expect(runtime.transportDetail).toContain('NATS_URL');
