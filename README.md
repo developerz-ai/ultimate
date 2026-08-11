@@ -95,13 +95,19 @@ export const publishPost = action({
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
 
-  async handle({ input, ctx }) {
-    const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await ctx.jobs.enqueue(notifySubscribers, { postId: post.id });
+  async handle({ input }) {
+    const post = await publish(input.postId);
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
     return post;
   },
 });
 ```
+
+> **`As of 2026-08`, the handler's `ctx` is not the full `Ctx`.** Over HTTP it is a cast of the
+> request context: it carries `actor`, `locale`, `tz`, `requestId` and `traceId`, and it does **not**
+> carry `logger`, `now()`, `clock`, `signal` or `services`. So `ctx.posts` and `ctx.logger.info(...)`
+> throw on the HTTP path, though both work under a job. Import your service and call the job handle
+> directly, as above. Tracked, with the fix, in [Known gaps](wiki/Known-Gaps.md).
 
 Ultimate generates all of this from it:
 
@@ -231,6 +237,62 @@ X_DB_DRIFT: schema differs from migrations
 ```
 
 Every framework error carries a stable code, a cause, and a command that fixes it. → [The error contract](docs/architecture/04-error-contract.md)
+
+## How much does a feature actually cost?
+
+Measured, not asserted — from the social-network demo in [`dummy/social-media-clone`](dummy/social-media-clone), which was built to find out.
+
+**Adding "block a user" end to end: 3 files.** One entity, one rule, one action.
+
+```ts
+// packages/db/src/schema/blocks.ts — the whole table
+export const blocks = entity('blocks', {
+  columns: {
+    blockerId: uuid().references(() => users.id, { onDelete: 'cascade' }),
+    blockedId: uuid().references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp().defaultNow(),
+  },
+  // The composite key IS the idempotency mechanism: blocking twice is a no-op at the storage
+  // layer, not because a caller remembered to check first.
+  primaryKey: ['blockerId', 'blockedId'],
+  indexes: [{ on: ['blockedId'] }],
+});
+```
+
+```ts
+// apps/web/shared/visibility.ts — one rule, every surface
+export const canSeePost = (actor: Actor | null, post: PostRow): boolean => {
+  if (post.deletedAt !== null) return false;
+  // Blocks come FIRST and both ways. Check the audience ladder first and a `public` post stays
+  // visible to someone who blocked its author — the specific rule has to beat the general one.
+  if (isBlocked(actor, post.authorId)) return false;
+  if (isSelf(actor, post.authorId)) return true;
+  return isVisibleAudience(post.audience, isFriend(actor, post.authorId));
+};
+```
+
+That rule is enforced on the public feed, the profile page, the signed-in feed, the API and the MCP
+tool — because each of them asks the same function. **There is no `WHERE audience = 'public'`
+anywhere in the app.** A `where` clause would be a second, weaker copy that drifts the first time
+either changes.
+
+**No registry to edit.** Registration is the import scan: `defineApi` takes whole modules, so the
+export name *is* the primitive's name. There is no composition root, no DI container, no
+`app.route(...)` list. For comparison, two production codebases were measured while designing this:
+
+| Codebase | Feature | Cost |
+|---|---|---|
+| a TypeScript monorepo | one thumbs-up button | **11 files + 5 edits** in two god-files (469 and 610 LOC) across 4 workspaces |
+| the same | an achievements system | **~50 files**; the entity redeclared **7×** |
+| a Rails monolith | one CRUD resource + one MCP verb | **18 files + 2 frozen-array registry edits** |
+| the same | one real domain entity | **81 files** |
+
+The number that matters is not file count, it is **how many places one shape is declared**. A
+thumbs-up rating was declared **9 times** in that TS monorepo — table, query row, branded id, enum,
+request schema, service interface, wiring impl, route validation, client type — plus 4 registration
+edits carrying no information at all. Here, `entity()` is declared once and the row type, the
+migration, the insert shape, the admin screen, the OpenAPI schema and the client type are all
+projections of it. Rename a column and every one of them fails to compile, which is the point.
 
 ## What your app looks like
 
