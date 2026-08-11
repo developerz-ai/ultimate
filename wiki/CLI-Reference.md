@@ -523,10 +523,7 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 
 | Command | Purpose | `fix:` today |
 |---|---|---|
-| `x policy [list\|explain <permission>]` | which clause decided, and why | `x manifest --json` |
-| `x tasks [list\|show <name>]` | cron expression, tz, next run | `x manifest --json` |
 | `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` → the `/_x` cache panel |
-| `x i18n [check\|add <locale>\|sync <locale>]` | catalogs, missing keys, malformed entries | `x g resource <name>` |
 | `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch <name>` |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
 | `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
