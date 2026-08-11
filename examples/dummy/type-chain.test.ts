@@ -221,6 +221,21 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       expect(before.diagnostics.filter((d) => d.file === file)).toEqual([]);
     }
 
+    /**
+     * Files that already fail today. The diff below ignores them, and that is the same rule the
+     * `touchedFiles` sanity check above states — just enforced instead of assumed.
+     *
+     * `apps/web/app/posts/repo.ts` is the case that forced this: it carries 18 pre-existing errors
+     * (it calls `.join()`, `.returning()` and friends that `@ultimat3/entity` has never had — the
+     * gap `EXPECTED_RED` pins), and the rename REWORDS one of them, because the message quotes the
+     * column list. A reworded message is a new `key`, so a keyed diff reads it as introduced. It
+     * is not: nothing there compiled before and nothing there compiles after.
+     *
+     * Deriving the set from the baseline rather than listing it keeps this honest — a file that
+     * gets repaired drops out on its own, and its next real regression is caught.
+     */
+    const alreadyFailing = new Set(before.diagnostics.map((d) => d.file));
+
     let after: TypecheckRun;
     const release = guardRestore(SCHEMA_FILE, pristine);
     try {
@@ -233,7 +248,9 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     }
 
     expect(harnessFault(after)).toBe('');
-    const introduced = after.diagnostics.filter((d) => !beforeKeys.has(key(d)));
+    const introduced = after.diagnostics.filter(
+      (d) => !beforeKeys.has(key(d)) && !alreadyFailing.has(d.file),
+    );
 
     // The rename must surface as new, attributable failures — not vanish into whatever the app's
     // baseline already looked like.
