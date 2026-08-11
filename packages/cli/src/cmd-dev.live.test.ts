@@ -55,9 +55,13 @@ describe('x dev stays up until it is signalled', () => {
         join(HOLD_ROOT, 'package.json'),
         JSON.stringify({ name: 'dev-hold-fixture', version: '1.0.0' }),
       );
+      // `export const config`, matching `templates/scaffold-repo.ts` and `examples/dummy` — the
+      // CLI and the runtime both import `config` by name, and a default export is the one shape
+      // `x new` can never produce. This fixture is the process's only app, so spelling it the
+      // scaffold's way is what makes the boot below the boot a real app gets.
       await Bun.write(
         join(HOLD_ROOT, 'app.config.ts'),
-        `import { defineConfig } from '@ultimat3/core';\nexport default defineConfig({ name: 'dev-hold-fixture' });\n`,
+        `import { defineConfig } from '@ultimat3/core';\nexport const config = defineConfig({ name: 'dev-hold-fixture' });\n`,
       );
 
       const child = Bun.spawn(['bun', BIN, 'dev', '--port', '0', '--json'], {
