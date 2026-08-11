@@ -49,13 +49,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     fix: 'bun update --latest && x verify',
   },
   {
-    name: 'env',
-    summary: 'validate the typed env; --fix writes the missing keys',
-    usage: 'x env check [--fix] [--json]',
-    subcommands: ['check'],
-    fix: 'x doctor --json   # reports the env problems it can already see',
-  },
-  {
     name: 'logs',
     summary: 'structured logs and OTel spans, filterable',
     usage: 'x logs tail [--json]',

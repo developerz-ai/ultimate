@@ -12,6 +12,7 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
+import type { IdOf } from './types';
 
 export interface Tx {
   readonly id: string;
@@ -43,13 +44,17 @@ export interface Page<T> {
 /**
  * `T` defaults to `unknown` so a row-agnostic consumer (the generated admin, the manifest
  * emitter) can name the shape without knowing the entity.
+ *
+ * The id parameters are `IdOf<T>`, not `string`: an entity that declared `uuid<PostId>()` is
+ * addressed by a `PostId` and by nothing else. `IdOf<unknown>` and `IdOf<{ id: string }>` are
+ * both `string`, so a row-agnostic consumer sees the signature it always saw.
  */
 export interface Repo<T = unknown> {
-  findById(id: string, options?: RepoOptions): Promise<T | null>;
+  findById(id: IdOf<T>, options?: RepoOptions): Promise<T | null>;
   findMany(args?: FindManyArgs): Promise<Page<T>>;
   insert(values: T, options?: RepoOptions): Promise<T>;
-  update(id: string, patch: Partial<T>, options?: RepoOptions): Promise<T>;
-  delete(id: string, options?: RepoOptions): Promise<void>;
+  update(id: IdOf<T>, patch: Partial<T>, options?: RepoOptions): Promise<T>;
+  delete(id: IdOf<T>, options?: RepoOptions): Promise<void>;
   /**
    * Delete by filter, returning how many rows went. The only way to remove a row from an entity
    * with a composite primary key, where `delete(id)` cannot name one. Never `void`: a caller has

@@ -2,6 +2,8 @@
 // and the JSON renderer are projections of it, so `--json` can never drift from the terminal
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
+import { msg } from './messages';
+
 export interface Finding {
   readonly code: string;
   readonly cause: string;
@@ -19,6 +21,8 @@ export interface StepResult {
   readonly findings: readonly Finding[];
   /** Captured stdout/stderr, shown on failure or with --verbose. */
   readonly output?: string;
+  /** Worker processes the step used; `1` means it ran serially. Absent for a non-test step. */
+  readonly workers?: number;
 }
 
 export type JsonValue =
@@ -130,10 +134,20 @@ const mark = (step: StepResult): string => {
   return step.ok ? '✓' : '✗';
 };
 
+/**
+ * How the step was run, when that is a fact about the step rather than about the machine. A gate
+ * that silently went parallel is a gate whose failures a reader would blame on flakiness, so a
+ * serial step says so and a parallel one names its width.
+ */
+const width = (step: StepResult): string => {
+  if (step.workers === undefined || step.skipped === true) return '';
+  return `  ${step.workers === 1 ? msg('cli.verify.serial') : msg('cli.verify.workers', { workers: step.workers })}`;
+};
+
 export function renderHuman(result: CommandResult, verbose = false): string {
   const out: string[] = [];
   for (const step of result.steps ?? []) {
-    out.push(`  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms`);
+    out.push(`  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms${width(step)}`);
     for (const finding of step.findings) out.push(renderFinding(finding, '      '));
     if (step.output !== undefined && step.output.length > 0 && (verbose || !step.ok)) {
       for (const line of step.output.trimEnd().split('\n')) out.push(`      | ${line}`);
@@ -152,6 +166,7 @@ export function renderJson(result: CommandResult): string {
     durationMs: step.durationMs,
     skipped: step.skipped === true,
     findings: step.findings,
+    ...(step.workers === undefined ? {} : { workers: step.workers }),
     // A FAILED step carries its captured stdout, exactly as the human renderer prints it. CI runs
     // `--json`, and without this the log said only "one or more unit tests failed" with a generic
     // fix line — the failing test's name and its assertion diff existed and were thrown away, so

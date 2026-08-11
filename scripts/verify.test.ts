@@ -105,11 +105,15 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(field(options, 'jsxImportSource')).toBe('solid-js');
   });
 
+  // Four full-repo scans, one of them a complete manifest regeneration over 29 packages. Bun's
+  // 5s default was always marginal for that and became a failure the moment `x test` started
+  // sharding across workers, because the shards compete for the same cores. The work is the
+  // point of the test, so the timeout is what moves — not the scan.
   test('this repo has no tier violations and its manifest still generates', async () => {
     const root = repoRoot();
     expect(await tierBoundaries(root)).toEqual([]);
     expect(await frameworkManifest(root)).toEqual([]);
     expect(await errorCodeDocs(root)).toEqual([]);
     expect(await checkRoadmap(root)).toEqual([]);
-  });
+  }, 30_000);
 });

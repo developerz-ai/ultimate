@@ -89,6 +89,19 @@ export function runtimeMissingError(api: string, fix: string): UiError {
   });
 }
 
+/**
+ * `<Icon>` was handed glyph data it refuses to turn into markup. No new code: an unrenderable
+ * glyph is exactly what X_UI_INVALID_VALUE already names, and a code is stable forever once shipped
+ * — a second one for the same meaning is the thing the catalog exists to prevent.
+ */
+export function invalidGlyphError(found: string, expected: string): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.invalidValue,
+    cause: `<Icon> glyph carries ${found}, which is not renderable; expected ${expected}`,
+    fix: 'import the glyph from @ultimat3/ui/icons/<name>, or regenerate the set: bun run --filter @ultimat3/ui icons',
+  });
+}
+
 /** A formatting component was handed a value it cannot render. */
 export function invalidValueError(kind: string, value: unknown, expected: string): UiError {
   return new UiError({

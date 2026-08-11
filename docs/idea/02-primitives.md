@@ -261,9 +261,13 @@ export const config = defineRoute({
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb', lcp: 2000 },
-  meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
-                               og: { image: post.cover }, ld: ld.Article(post) }),
+  load:       ({ params }) => db.posts.bySlug(params.slug),   // once per render
+  meta:       ({ data, url }) => ({ title: data.title, description: data.excerpt,
+                                    og: { image: data.cover }, alternates: { canonical: url },
+                                    ld: ld.Article(data) }),
 });
+
+export function Page(props: { data: Post }) { /* the SAME object meta was given */ }
 ```
 
 | Aspect | Rule |

@@ -1,0 +1,29 @@
+@use '../tokens' as t;
+
+// Lucide's stroke geometry, stated once here instead of on every generated glyph: presentation
+// attributes would repeat 1767 times and could not be themed.
+.icon {
+  display: inline-block;
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: text-bottom;
+}
+
+// The box is one `em`, so sizing is a type step — no icon carries a pixel literal.
+.size-sm {
+  font-size: t.text(sm);
+}
+
+.size-md {
+  font-size: t.text(md);
+}
+
+.size-lg {
+  font-size: t.text(lg);
+}

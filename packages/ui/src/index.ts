@@ -18,13 +18,17 @@ export {
   resetIdCounter,
   useId,
 } from './a11y';
-export type { AlertProps } from './components/Alert';
+export type { AccordionItem, AccordionProps } from './components/Accordion';
 // --- components --------------------------------------------------------------
+export { Accordion } from './components/Accordion';
+export type { AlertProps } from './components/Alert';
 export { Alert } from './components/Alert';
 export type { AppShellProps } from './components/AppShell';
 export { AppShell } from './components/AppShell';
 export type { AvatarProps } from './components/Avatar';
 export { Avatar, initialsOf } from './components/Avatar';
+export type { AccordionSection } from './components/accordion-view';
+export { accordionOpenIds } from './components/accordion-view';
 export type { ShellIds, ShellLandmark, ShellSlots } from './components/app-shell-view';
 export { shellIds, shellLandmarks } from './components/app-shell-view';
 export type { BadgeProps } from './components/Badge';
@@ -37,8 +41,12 @@ export type { CardProps, Elevation } from './components/Card';
 export { Card } from './components/Card';
 export type { CheckboxProps } from './components/Checkbox';
 export { Checkbox } from './components/Checkbox';
+export type { ComboboxProps } from './components/Combobox';
+export { Combobox } from './components/Combobox';
 export type { ContainerProps, ContainerSize } from './components/Container';
 export { Container } from './components/Container';
+export type { ComboboxOption } from './components/combobox-filter';
+export { COMBOBOX_LIMIT, filterOptions, normalizeQuery } from './components/combobox-filter';
 export type { Column, DataTableProps } from './components/DataTable';
 export { DataTable } from './components/DataTable';
 export type { DateTimeProps } from './components/DateTime';
@@ -86,14 +94,23 @@ export type { GridProps } from './components/Grid';
 export { Grid } from './components/Grid';
 export type { HeadingLevel, HeadingTag } from './components/heading-level';
 export { HEADING_LEVELS, headingTag, nextHeadingLevel } from './components/heading-level';
+export type { IconProps } from './components/Icon';
+// --- icons: the glyphs themselves are per-icon modules, `@ultimat3/ui/icons/<name>` ---------
+export { Icon } from './components/Icon';
 export type { IconButtonProps } from './components/IconButton';
 export { IconButton } from './components/IconButton';
 export type { ImageProps } from './components/Image';
 export { Image } from './components/Image';
+export type { InfiniteScrollProps } from './components/InfiniteScroll';
+export { InfiniteScroll } from './components/InfiniteScroll';
 export type { InputProps, InputType } from './components/Input';
 export { Input } from './components/Input';
+export type { IconElement, IconGlyph, IconTag } from './components/icon-glyph';
+export { ICON_TAGS, iconElements, isIconTag } from './components/icon-glyph';
 export type { ImageBox, ImageLoadingHints, ImageVariant } from './components/image-source';
 export { boxFor, loadingHints, srcsetFor } from './components/image-source';
+export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
+export { loadMoreState } from './components/infinite-scroll-view';
 export type { LinkProps } from './components/Link';
 export { Link } from './components/Link';
 export type { LocaleSwitcherProps } from './components/LocaleSwitcher';
@@ -153,9 +170,12 @@ export { BUTTON_VARIANTS, SIZES, TONES } from './components/variants';
 export type { ClassValue } from './cx';
 // --- helpers -----------------------------------------------------------------
 export { cx } from './cx';
+export type { Debounced } from './debounce';
+export { DEBOUNCE_DEFAULT_MS, debounce } from './debounce';
 export type { UiErrorCode } from './errors';
 export {
   invalidBrandTokenError,
+  invalidGlyphError,
   invalidThemeError,
   invalidValueError,
   runtimeMissingError,

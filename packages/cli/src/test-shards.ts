@@ -43,8 +43,26 @@ export function planShards(files: readonly TestFile[], workers: number): readonl
   }));
 }
 
-/** Explicit file list, so the child never re-globs and can never pick up another shard's files. */
-export const shardArgs = (shard: Shard): readonly string[] => ['bun', 'test', ...shard.files];
+/**
+ * Explicit file list, so the child never re-globs and can never pick up another shard's files.
+ *
+ * `--isolate` is what makes an arbitrary partition safe, and it is not optional. Half a dozen
+ * registries in this framework are process-global by design — the permission set, the roles, the
+ * entity/action/query tables, the error-code titles, the fixture bag — and a serial `bun test`
+ * only passes because glob order happens to put every declaring file before every file that reads
+ * what it left behind. Re-partition the same files and that accident is gone: measured on this
+ * repo, an 8-way split turned 0 failures into 36, all of them `X_PERMISSION_UNKNOWN` in
+ * `@ultimat3/query` because the `packages/cli` file that had been declaring `feed:read` for it
+ * landed in another shard. A fresh module registry per FILE removes the channel entirely, so the
+ * split can be any split. The database is isolated per WORKER, not per file — one cloned template
+ * per process, which is `ULTIMATE_TEST_WORKER` below.
+ */
+export const SHARD_COMMAND_PREFIX = ['bun', 'test', '--isolate'] as const;
+
+export const shardArgs = (shard: Shard): readonly string[] => [
+  ...SHARD_COMMAND_PREFIX,
+  ...shard.files,
+];
 
 const SHELL_SAFE = /^[\w@%+=:,./-]+$/;
 

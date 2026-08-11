@@ -12,6 +12,7 @@ is a change to every package.
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | Exports | add to `src/index.ts` explicitly; no `export *` |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
+| Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests, so `tsc` never reads one |
 
 Deliberate cycles (safe — nothing is referenced at module-evaluation time):
 `errors.ts ⇄ error-codes.ts`. Keep it that way: no top-level `UltimateError` use in
@@ -21,6 +22,13 @@ Deliberate cycles (safe — nothing is referenced at module-evaluation time):
 `setLoggerContextFields()`. It **does** import `secret.ts`, one way only: `secret.ts` owns
 `REDACTED` so a `Secret` can render it without importing the logger, and `logger.ts` re-exports
 the constant so there is still one definition and one public path.
+
+`ActorFacts` is the app's extension point on `Actor` — module augmentation, the same trick as
+`CtxServices` and `PermissionRegistry`. Core declares the seam and **never a fact**: augmenting
+`ActorFacts` inside the framework would declare that fact for every app. Every fact reads as
+`T | undefined` through `actorFact()` on purpose — an unresolved fact must deny, and a job, a
+test and an MCP token exchange all mint actors that resolved nothing. `type-pins.ts` pins that
+shape against a locally declared sample interface for exactly that reason.
 
 | Concept | Owner | Note |
 |---|---|---|

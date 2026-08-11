@@ -19,6 +19,8 @@ export {
   RENDER_ERROR_TITLES,
   RouteDuplicateError,
   RouteFileInvalidError,
+  RouteLoadFailedError,
+  RouteLoadInvalidError,
   RouteMetaMissingError,
   RouteModeInvalidError,
   RouteOfflineMissingError,
@@ -146,10 +148,14 @@ export type {
   RevalidateConfig,
   RouteBudget,
   RouteConfig,
+  RouteContext,
   RouteData,
   RouteDefinition,
   RouteGuard,
+  RouteLoadAsyncFn,
+  RouteLoadFn,
   RouteMetaAsyncFn,
+  RouteMetaContext,
   RouteMetaFn,
   RouteParams,
 } from './route';
@@ -162,6 +168,7 @@ export {
 } from './route';
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
+export { metaContextFor, routeDataFor } from './route-data';
 export type {
   NavigateOptions,
   NavigationGuard,

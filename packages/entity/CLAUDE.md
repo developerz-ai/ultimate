@@ -99,7 +99,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   function-typed property is contravariant, so `Invariant<Post>` stopped being assignable to
   `Invariant<unknown>`, `Entity<Post, C>` stopped satisfying `EntityCore`, and every
   `database({ … })` degraded to `Table<unknown>` — one position, 36 cascading errors downstream.
-- **`type-pins.ts` is where both of those are enforced.** Source, not a test: `tsconfig.json`
+- **A branded id survives to the signature, or it does not exist.** `uuid<PostId>()` declares the
+  brand once; the derivation (`TypeOf`/`RowOf`/`Insertable`) always carried it, but the BUILDER
+  hard-coded `Column<string>` so there was nothing to carry, and `Repo`/`Table` then took
+  `id: string`, which erased the rest — two entities' ids were mutually assignable and
+  `posts.update(someUserId, …)` compiled into a query that matched nothing. Both halves are
+  pinned: fixing either alone leaves that call legal. Id parameters are `IdOf<Row>`, which is
+  `string` for every unbranded row and every composite key, so this is additive.
+- **`type-pins.ts` is where all of those are enforced.** Source, not a test: `tsconfig.json`
   excludes `src/**/*.test.ts`, so `tsc` never reads a test file and a type-level assertion written
   in one can never fail. It emits nothing and exports nothing anybody imports.
 - **Row types are derived, never re-declared.** No `as unknown as` to fake the derivation.
@@ -115,7 +122,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 | File | Job |
 |---|---|
-| `types.ts` | `Column`, `RowOf`, `Insertable` — the type derivation |
+| `types.ts` | `Column`, `RowOf`, `Insertable`, `IdOf` — the type derivation |
 | `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
@@ -126,7 +133,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection + `describeEntities()` for the manifest |
-| `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy and `Invariant` variance |
+| `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 
 ## Commands
 

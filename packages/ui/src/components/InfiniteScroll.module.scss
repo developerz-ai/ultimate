@@ -1,0 +1,43 @@
+@use '../tokens' as t;
+
+.scroller {
+  @include t.column(t.space(4));
+}
+
+.foot {
+  @include t.row(t.space(3), center, center);
+  position: relative;
+  padding-block: t.space(4);
+}
+
+.more {
+  @include t.focus-ring;
+  @include t.transition(background, color);
+  padding-block: t.space(2);
+  padding-inline: t.space(4);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(md);
+  background: t.role('surface-raised');
+  color: t.role('fg-strong');
+  text-decoration: none;
+
+  &:hover {
+    background: t.role('bg-soft');
+    color: t.role('accent');
+  }
+}
+
+.end {
+  margin: 0;
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+// The trigger, not a decoration: it sits at the very end of the list and is never painted.
+.sentinel {
+  position: absolute;
+  inset-block-end: 0;
+  inline-size: 1px;
+  block-size: 1px;
+  pointer-events: none;
+}

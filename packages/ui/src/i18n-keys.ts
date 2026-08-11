@@ -30,6 +30,14 @@ export const UI_KEYS = {
   themeDark: 'ui.theme.dark',
   themeSystem: 'ui.theme.system',
   language: 'ui.language',
+  /** Combobox: how many suggestions the datalist currently offers. Takes `{ count }`. */
+  suggestions: 'ui.suggestions',
+  /** Combobox: the query matched nothing. */
+  noResults: 'ui.results.empty',
+  /** InfiniteScroll: the label on the next-page control. */
+  loadMore: 'ui.load.more',
+  /** InfiniteScroll: announced when the last page has arrived. */
+  endOfList: 'ui.load.end',
   errorCode: 'ui.error.code',
   errorCause: 'ui.error.cause',
   errorFix: 'ui.error.fix',

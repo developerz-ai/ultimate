@@ -90,6 +90,36 @@ because it closes over the ctx (actor, clock, tz) it was built for. `withChildCo
 factory-managed name from what it carries forward on purpose: only an ad hoc service nobody
 registered survives an actor swap unrebuilt.
 
+## Actor facts — the app's own authz vocabulary, on the framework's actor
+
+Roles and an org id answer a columnar question ("same tenant?"). They cannot answer a relational
+one ("a friend of the author?"), and a policy predicate is synchronous, so it may not go and
+fetch one. Resolve the graph ONCE per request and hand it to the actor every surface already
+carries:
+
+```ts
+declare module '@ultimat3/core' {
+  interface ActorFacts { readonly viewer: Viewer }   // declared once, app-wide
+}
+
+// at the request boundary, where the await already happens
+const actor = withFacts(userActor({ id: user.id, roles: [user.role] }), { viewer });
+
+// in a predicate, on any surface — HTTP, MCP, admin, a job
+can('post:read', ({ row, actor }) => row !== null && canSee(actorFact(actor, 'viewer'), row));
+```
+
+| Rule | Why |
+|---|---|
+| `actorFact(actor, key)` takes `Actor \| null` | that is exactly what a predicate is handed |
+| every fact is `T \| undefined` | nothing can prove one was resolved — a job, a test and a token exchange mint actors too, so an absent fact is a **denial** the compiler makes you write |
+| `facts` is optional on `Actor` | additive: an actor literal written before the seam is still an `Actor` |
+| the framework declares no fact | `ActorFacts` is the app's; core only owns the seam. `type-pins.ts` pins the machinery against a local sample rather than augmenting the real interface |
+
+Not a second authz path: the facts ride the actor the policy layer already reads, so no surface
+package learns the app's vocabulary and one `Policy` object still answers everywhere. Facts are
+request-scoped and never logged — `actorLabel()` stays id-only.
+
 ## Env fails once, completely
 
 ```ts

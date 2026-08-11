@@ -6,6 +6,7 @@ import { dbCommand } from './cmd-db';
 import { deployCommand } from './cmd-deploy';
 import { devCommand } from './cmd-dev';
 import { doctorCommand } from './cmd-doctor';
+import { envCommand } from './cmd-env';
 import { errorsCommand } from './cmd-errors';
 import { fixCommand } from './cmd-fix';
 import { generateCommand } from './cmd-generate';
@@ -40,6 +41,7 @@ const CORE: readonly CliCommand[] = [
   mcpCommand,
   doctorCommand,
   deployCommand,
+  envCommand,
   manifestCommand,
   routesCommand,
   actionsCommand,

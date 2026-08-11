@@ -82,9 +82,16 @@ export interface Column<T, Optional extends boolean = false> {
   default(value: T): Column<T, true>;
 }
 
-/** A uuid primary key is generated (v7) when omitted, which is why it narrows to `true`. */
-export interface UuidColumn<Optional extends boolean = false> extends Column<string, Optional> {
-  primaryKey(): Column<string, true>;
+/**
+ * A uuid primary key is generated (v7) when omitted, which is why it narrows to `true`.
+ *
+ * `T` is the declared id type: `uuid<PostId>()` carries the brand from here to the row, the
+ * insert and every repository signature, so a `PostId` cannot be passed where a `UserId` is
+ * wanted. It defaults to `string`, so an unbranded declaration reads exactly as it did.
+ */
+export interface UuidColumn<T extends string = string, Optional extends boolean = false>
+  extends Column<T, Optional> {
+  primaryKey(): Column<T, true>;
 }
 
 export interface TimestampColumn<Optional extends boolean = false> extends Column<Date, Optional> {
@@ -97,6 +104,18 @@ export type AnyColumn = Column<unknown, boolean>;
 export type ColumnMap = Readonly<Record<string, AnyColumn>>;
 
 export type TypeOf<C> = C extends Column<infer T, boolean> ? T : never;
+
+/**
+ * How a row is addressed: the type its own `id` column declared, or `string` when the entity is
+ * keyed by something else (a composite key, or an unbranded uuid).
+ *
+ * This is where a brand used to die. `RowOf` and `Insertable` carry it through the derivation
+ * without help, but `Repo.findById(id: string)` and `Table.update(id: string, …)` erased it at
+ * the last hop — so `posts.update(someUserId, …)` type-checked and Postgres returned nothing.
+ * `IdOf<Row>` collapses to `string` for every unbranded entity, so nothing that compiled before
+ * stops compiling.
+ */
+export type IdOf<Row> = Row extends { readonly id: infer I extends string } ? I : string;
 
 /** The row type a column set describes. This derivation is why the package exists. */
 export type RowOf<C extends ColumnMap> = {

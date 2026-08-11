@@ -12,6 +12,8 @@ export const RENDER_ERROR_CODES = [
   'X_ROUTE_UNNORMALIZED',
   'X_ROUTE_DUPLICATE',
   'X_ROUTE_FILE_INVALID',
+  'X_ROUTE_LOAD_INVALID',
+  'X_ROUTE_LOAD_FAILED',
   'X_SURFACE_BOUNDARY',
   'X_BUDGET_EXCEEDED',
   'X_PRERENDER_FAILED',
@@ -26,6 +28,8 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ROUTE_UNNORMALIZED: 'a route was registered without defineRoute',
   X_ROUTE_DUPLICATE: 'two route files resolve to one URL',
   X_ROUTE_FILE_INVALID: 'a route file is not named for its surface',
+  X_ROUTE_LOAD_INVALID: 'a route declared a load that is not a function',
+  X_ROUTE_LOAD_FAILED: "a route's load threw while resolving its data",
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
   X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
@@ -162,6 +166,36 @@ export class PrerenderFailedError extends UltimateError {
       cause,
       fix,
       docs: docsFor(PrerenderFailedError.code),
+    });
+  }
+}
+
+/** `load` is optional, so this catches a value that is present and not callable. */
+export class RouteLoadInvalidError extends UltimateError {
+  static readonly code = 'X_ROUTE_LOAD_INVALID' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: RouteLoadInvalidError.code,
+      cause,
+      fix,
+      docs: docsFor(RouteLoadInvalidError.code),
+    });
+  }
+}
+
+/**
+ * A loader threw. Named separately from whatever it threw because the useful fact is WHICH route
+ * failed to load — a bare rejection surfaces the repo's own stack and not the URL an author has
+ * to go and fix.
+ */
+export class RouteLoadFailedError extends UltimateError {
+  static readonly code = 'X_ROUTE_LOAD_FAILED' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: RouteLoadFailedError.code,
+      cause,
+      fix,
+      docs: docsFor(RouteLoadFailedError.code),
     });
   }
 }

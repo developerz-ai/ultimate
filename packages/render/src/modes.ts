@@ -14,10 +14,15 @@ import { SURFACE_SPECS, surfaceAllows } from './surfaces';
 export const RENDER_MODES = ['static', 'isr', 'ssr', 'stream', 'spa'] as const;
 
 /**
- * Everything about a route except its `meta`. Mode invariants never read metadata, and
- * omitting it keeps these checks free of the route's data generic.
+ * Everything about a route except the two keys carrying its data generic. Mode invariants never
+ * read metadata and never load anything, and omitting both keeps these checks free of `TData`.
+ *
+ * Not a convenience — a requirement. Both are function-typed *properties*, so they are checked
+ * contravariantly: keeping either here makes `RouteConfig<TData>` unassignable to `RouteShape`
+ * for every `TData` other than the default, and `assertModeShape(config)` stops compiling inside
+ * `defineRoute` itself. Same variance trap that `Invariant.holds` hit in `@ultimat3/entity`.
  */
-export type RouteShape = Omit<RouteConfig, 'meta'>;
+export type RouteShape = Omit<RouteConfig, 'meta' | 'load'>;
 
 export interface ModeSpec {
   readonly mode: RenderMode;

@@ -14,6 +14,7 @@ import {
 } from '@ultimat3/manifest';
 import { checkAgentsMd } from './app-agents-md';
 import { checkAppBoundaries } from './app-boundaries';
+import { envExampleFindings } from './app-env';
 import { appManifest, readAppManifest } from './app-manifest';
 import { OPENAPI_FILE, openApiJson } from './app-openapi';
 import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
@@ -21,9 +22,12 @@ import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
 import { checkDrift } from './drift';
 import { checkErrorFixes } from './error-contract';
+import { BadFlagError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
+import type { ParsedArgs } from './parse';
+import { flagString } from './parse';
 import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
 import { fromExec, fromFindings, hostFindings, passed } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
@@ -122,14 +126,19 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'manifest',
-    summary: 'the two files an agent reads: generated facts, hand-written conventions',
+    summary: 'the files an agent reads: generated facts, hand-written conventions, the env example',
     // No `applies`. The drift half has nothing to compare against until `x manifest` has run
     // once, and says so by finding nothing — but `AGENTS.md` is required of every repo the gate
     // runs in, so the step always has a question to answer and must never report as skipped.
+    //
+    // `.env.example` joins this step rather than becoming an eighteenth: the question is the same
+    // one — "does a committed, generated file still describe the code?" — and the step list is the
+    // definition of shippable, so it grows only when a genuinely new question needs asking.
     async run(ctx) {
       const agents = await checkAgentsMd(ctx.root);
       const findings = [
         ...(await driftFindings(ctx.root)),
+        ...(await envExampleFindings(ctx.root)),
         ...agents.findings,
         ...(await hostFindings(ctx, 'manifest')),
       ];
@@ -220,6 +229,7 @@ export async function runVerify(
       durationMs: Math.round(performance.now() - started),
       findings: outcome.findings,
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
+      ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
     });
   }
   const failedSteps = results.filter((step) => !step.ok).map((step) => step.name);
@@ -251,15 +261,45 @@ export const verifyCommand: CliCommand = {
   spec: {
     name: 'verify',
     summary: 'the gate: typecheck, lint, boundaries, all tests, drift, contract, budgets',
-    usage: 'x verify [--json]',
+    usage: 'x verify [--workers N] [--json]',
     requiresApp: true,
-    flags: [],
+    // The only flag, and it is not `--only`/`--skip` in disguise: it changes how wide the test
+    // steps spread, never which steps run. Every step still runs, so "green" still means the
+    // same thing at `--workers 1` as at `--workers 8`.
+    flags: [
+      {
+        name: 'workers',
+        type: 'string',
+        summary: 'test processes per parallel step (default: CPUs - 1, max 8)',
+      },
+    ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('verify', ctx.cwd).dir;
-    return runVerify(VERIFY_STEPS, { root, runner: ctx.runner });
+    const workers = readWorkers(ctx.args);
+    return runVerify(VERIFY_STEPS, {
+      root,
+      runner: ctx.runner,
+      ...(workers === undefined ? {} : { workers }),
+    });
   },
 };
+
+/** `x test --workers` refuses the same values for the same reason; the message names this one. */
+function readWorkers(args: ParsedArgs): number | undefined {
+  const raw = flagString(args, 'workers');
+  if (raw === undefined) return undefined;
+  const value = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new BadFlagError({
+      flag: 'workers',
+      command: 'verify',
+      reason: `expects an integer >= 1, got "${raw}"`,
+      fix: 'x verify --workers 4',
+    });
+  }
+  return value;
+}
 
 export const verifyStepNames = (): readonly VerifyStepName[] =>
   VERIFY_STEPS.map((step) => step.name);

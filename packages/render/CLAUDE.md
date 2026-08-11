@@ -11,8 +11,9 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Rule | Detail |
 |---|---|
 | `offline`, `hydrate`, `meta` | required by `RouteDefinition`. Never make them optional. |
-| `defineRoute` shape | exactly the contract's 8 keys. New route metadata goes inside `meta`. |
-| Descriptor `meta` | always `(data) => Promise<RouteMeta>`. Authors may declare it sync; consumers never branch. |
+| `defineRoute` shape | exactly the contract's 9 keys. New route *metadata* still goes inside `meta` — `load` is not metadata, it is the data `meta` already took a parameter for. |
+| `load` | optional, and the ONE server-side data seam. Resolved once per render by `routeDataFor()` and handed to **both** `meta` and the page component. Two resolutions is a `<title>` describing content the body does not contain. Absent `load`, the context IS the data (`{ params, url }`), which is what `meta` received before the key existed — so no consumer branches on whether a route declared one. |
+| Descriptor `meta` / `load` | always `(x) => Promise<…>`. Authors may declare either sync; consumers never branch. |
 | Descriptor `budget` | always an object, `{}` when undeclared. Its *fields* stay optional — `budget.js === undefined` is the site/ hydration failure. |
 | No `describe()` on a route | `describeRoutes()` is the one route list. A per-route projection would be a second one. |
 | Mode invariants | `modes.ts` only. Never inline a mode check in a render-\* file. |

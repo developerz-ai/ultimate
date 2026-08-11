@@ -13,6 +13,7 @@ import type { CommandContext } from './command';
 import type { Runner } from './exec';
 import { parseArgs } from './parse';
 import { discoverTests } from './test-select';
+import { SHARD_COMMAND_PREFIX } from './test-shards';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
 
@@ -42,7 +43,7 @@ const context = (argv: readonly string[], cwd: string, runner: Runner): CommandC
 });
 
 const filesRun = (calls: readonly (readonly string[])[]): readonly string[] =>
-  [...calls.flatMap((command) => command.slice(2))].sort();
+  [...calls.flatMap((command) => command.slice(SHARD_COMMAND_PREFIX.length))].sort();
 
 describe('unit · x test discovery', () => {
   test('it finds the test files next to it and sizes every one of them', async () => {

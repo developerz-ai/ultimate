@@ -1,0 +1,62 @@
+@use '../tokens' as t;
+
+.combobox {
+  @include t.column(t.space(1));
+  inline-size: 100%;
+}
+
+.control {
+  @include t.control;
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+
+  &:focus-within {
+    border-color: t.role('accent');
+  }
+}
+
+.icon {
+  color: t.role('fg-muted');
+}
+
+.input {
+  flex: 1;
+  min-inline-size: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+
+  // The engine's own picker button duplicates an affordance the field already has.
+  &::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+}
+
+// The count is for assistive tech only; the suggestion list is the sighted answer.
+.status {
+  @include t.visually-hidden;
+}
+
+// …except "nothing matched", which a sighted user has no other way to learn.
+.empty {
+  margin: 0;
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}
+
+.size-sm {
+  padding-block: t.space(1);
+  font-size: t.text(sm);
+}
+
+.size-md {
+  padding-block: t.space(2);
+}
+
+.size-lg {
+  padding-block: t.space(3);
+  font-size: t.text(lg);
+}

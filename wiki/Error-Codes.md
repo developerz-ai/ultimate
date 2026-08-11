@@ -248,6 +248,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ROUTE_UNNORMALIZED` | a route was registered without `defineRoute` | `registerRoute({ config })` was handed the author's own object, so `meta` and `budget` were never normalized and every descriptor reader would read them wrong | wrap it: `registerRoute({ file, config: defineRoute({ … }) })` |
 | `X_ROUTE_DUPLICATE` | two route files resolve to one URL | a copied page directory | delete or rename one |
 | `X_ROUTE_FILE_INVALID` | a route file is not named for its surface | `site/pricing.tsx` or `site/blog/index.tsx` instead of `<dir>/page.tsx` | `mkdir -p <dir> && git mv <file> <dir>/page.tsx` — `route.ts` under `api/` |
+| `X_ROUTE_LOAD_INVALID` | a route declared a `load` that is not a function | `load: someData` instead of `load: () => someData` | make `load` a function of `({ params, url })` returning the page data, or remove it |
+| `X_ROUTE_LOAD_FAILED` | a route's `load` threw while resolving its data | the query, client call or fetch inside `load` failed; the message names the path | fix the `load` for that path, or return a fallback so the page can still render. An `UltimateError` thrown by the loader passes through untouched, with its own code |
 | `X_SURFACE_BOUNDARY` | a surface imported across the hard boundary | `site/` reached `app/`, transitively | `x fix boundary <file>`, or move the shared module out of `shared/ui` |
 | `X_BOUNDARY_SITE_TO_APP` | `site/` imported `app/` | the classic transitive import | the chain is printed in `cause`; break it at the named hop |
 | `X_BOUNDARY_APP_TO_API` | `app/` imported `api/` at runtime | a value import instead of `import type` | use `import type`, and call the typed client |

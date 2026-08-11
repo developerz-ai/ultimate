@@ -78,14 +78,20 @@ const styleSource =
 const routeTest = (
   surface: Surface,
   path: string,
-): string => `import { e2eTest, expect, unitTest } from '@ultimat3/testing';
+): string => `import { metaContextFor, routeDataFor } from '@ultimat3/render';
+import { e2eTest, expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
+
+// What a render gives this route: the URL it matched and the params in it. \`routeDataFor\` is the
+// one resolver — with no \`load\` the context IS the data, and with one the loader decides — so a
+// test asserts on the same object the page component and \`meta\` are handed in production.
+const ctx = { params: {}, url: 'https://example.test/${path}' };
 
 unitTest('/${path} declares metadata', async () => {
   expect(config.kind).toBe('route');
   // meta() takes the route's data and always resolves — awaiting is the one shape, whether the
   // declaration was written sync or async.
-  const meta = await config.meta({});
+  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
   expect(meta.title ?? '').not.toBe('');
   expect(meta.description ?? '').not.toBe('');
 });

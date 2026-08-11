@@ -310,7 +310,12 @@ describe('this repo', () => {
 
   // The other half — every shipped code has a row in wiki/Error-Codes.md — is asserted once, in
   // `scripts/verify.test.ts` through `errorCodeDocs(root)`: the page is the host repo's to name.
+  // Walks every shipped source file in the monorepo. Bun's 5s default covered that while the
+  // suite ran serially and stopped the moment `x test` began sharding across workers, because the
+  // shards compete for the same cores — and WHICH shard this lands in depends on the file count,
+  // so it presents as an intermittent failure rather than a slow test. The scan is the point of
+  // the test, so the timeout is what moves. Same shape as `scripts/verify.test.ts`.
   test('every shipped fix line is runnable', async () => {
     expect(await checkErrorFixes(root)).toEqual([]);
-  });
+  }, 30_000);
 });
