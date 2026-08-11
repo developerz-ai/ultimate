@@ -82,6 +82,7 @@ export type {
   ColumnKind,
   ColumnMap,
   ColumnMeta,
+  IdOf,
   IndexDef,
   Insertable,
   MoneyInput,

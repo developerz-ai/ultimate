@@ -107,11 +107,14 @@ describe('unit · x verify', () => {
     expect(seen).toEqual(['typecheck', 'drift']);
   });
 
+  // `--workers` is a knob on how wide the test steps spread, never on which steps run — so the
+  // rule is not "no flags", it is "no flag that changes what green means". A `--only` or `--skip`
+  // arriving here is the regression this test exists to catch.
   test('there is no way to narrow the run: every step runs, every time', async () => {
     const result = await runVerify(stubs, ctx);
     expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
-    expect(verifyCommand.spec.flags).toEqual([]);
-    expect(verifyCommand.spec.usage).toBe('x verify [--json]');
+    expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual(['workers']);
+    expect(verifyCommand.spec.usage).toBe('x verify [--workers N] [--json]');
   });
 
   test('a host check adds findings to the step it was registered for', async () => {

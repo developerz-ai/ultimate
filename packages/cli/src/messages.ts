@@ -97,6 +97,12 @@ const CATALOG = {
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
+  'cli.verify.serial': 'serial',
+  'cli.verify.workers': '{workers} workers',
+  'cli.env.checked': '{count} declared variable(s), all present and valid',
+  'cli.env.invalid': '{count} of {total} declared variable(s) missing or malformed',
+  'cli.env.wrote': 'wrote {path} — {count} declared variable(s)',
+  'cli.env.fresh': '{path} already matches the declaration',
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

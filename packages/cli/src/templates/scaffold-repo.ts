@@ -3,8 +3,10 @@
 // scavenger hunt. The docs and shims live in scaffold-docs.ts, the container files in
 // scaffold-container.ts.
 
+import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import type { GeneratedFile, NameSet } from './naming';
 import { docsFiles } from './scaffold-docs';
+import { envExampleSource, envSchemaSource } from './scaffold-env';
 import { i18nFiles } from './scaffold-i18n';
 import { packageShapeFiles } from './scaffold-package-shape';
 
@@ -88,12 +90,29 @@ const rootTsconfig = (app: NameSet): string => `{
 }
 `;
 
+/**
+ * The env half of `app.config.ts`, projected from `SCAFFOLD_ENV_SCHEMA` — never typed out here.
+ * `envSchema` is a named export on purpose and not an inline argument: `defineEnv()` returns the
+ * resolved VALUES, so an inline record is unreachable afterwards, and `.env.example`, `x env
+ * check` and the gate's drift check are all projections of the record rather than of the values.
+ */
+const envDeclaration = (): string => `${envSchemaSource()}
+
+/**
+ * Validated once, at module scope, before anything listens: a missing or malformed key fails the
+ * boot in ~40ms naming every offender at once, never as a 500 an hour later.
+ */
+export const env = defineEnv(envSchema);`;
+
 const appConfig = (
   app: NameSet,
 ): string => `// The one config file. Everything the app needs to boot is here, typed and validated at startup —
 // a missing value fails the boot with the exact command that fixes it, never at the first request.
 // A named export, never a default: the CLI and the runtime both import \`config\` by name.
-import { defineConfig } from '@ultimat3/core';
+import type { EnvSchema } from '@ultimat3/core';
+import { defineConfig, defineEnv } from '@ultimat3/core';
+
+${envDeclaration()}
 
 export const config = defineConfig({
   name: '${app.kebab}',
@@ -161,13 +180,16 @@ playwright-report/
 test-results/
 `;
 
+// Values, not declarations — the declaration is `envSchema` and `.env.example` is its projection.
+// Every key here is one `envSchema` declares, plus `ROLE`, which `@ultimat3/core` reads directly
+// (`roles.ts`) and no app schema may redeclare.
 const envDevelopment =
   (): string => `# Committed non-secret defaults. Per-box secrets go in .env.development.local, which wins.
 # Empty DATABASE_URL means "embedded": x dev runs PGlite in-process, no Docker required.
 DATABASE_URL=
 NATS_URL=
-S3_ENDPOINT=
 PORT=3000
+SESSION_SECRET=dev-only-not-a-real-secret
 ROLE=web
 `;
 
@@ -402,6 +424,10 @@ export function repoFiles(
     { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
     { path: '.env.development', contents: envDevelopment() },
+    // Committed, and generated: `x env example` rewrites this file from `envSchema`, and the
+    // gate's `manifest` step fails with X_ENV_EXAMPLE_DRIFT when the two stop agreeing. A
+    // scaffold that shipped a hand-written one would fail its own first `x verify`.
+    { path: ENV_EXAMPLE_PATH, contents: envExampleSource() },
     {
       path: 'packages/domain/package.json',
       contents: domainPackage(app, 'domain', 'Pure types and constants, no I/O'),

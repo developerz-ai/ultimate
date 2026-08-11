@@ -23,6 +23,12 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_NOT_IN_APP: 'x new myapp --json && cd myapp',
   X_BUN_VERSION: 'bun upgrade',
   X_NOT_IMPLEMENTED: 'x doctor --json',
+  // Core's three env codes, answered by the command that covers each. `X_CONFIG_INVALID` gets
+  // `x doctor` rather than `x env check`: its causes are env *and* `app.config.ts` fields, and
+  // `x env check` on a config the app cannot boot on would throw this same code straight back.
+  X_CONFIG_INVALID: 'x doctor --json',
+  X_ENV_MISSING: 'x env check --json',
+  X_ENV_EXAMPLE_DRIFT: 'x env example --json',
   X_TEST_NO_FILES: 'x test --cwd <repo root> --json',
   X_TEST_SHARD_FAILED: 'x test --workers 1 --json',
   X_SCAFFOLD_PATH_ESCAPE: 'x g route <name> --json   # a path with no ".." segment',

@@ -23,8 +23,13 @@ const TEST_GLOB = '**/*.test.ts';
  * suite. `e2e/` is NOT on it: an opt-in suite that the gate runs but `x test` silently drops is
  * a suite nobody runs until CI says so. `examples/` is, because the reference app is a separate
  * project with its own gate — `x verify` there, not `x test` here.
+ *
+ * `dummy/` and `build/` complete the list `verify-tests.ts` already excluded (`NEVER_A_TEST`). The
+ * comment above claimed the two agreed and they did not: `x test unit` discovered 464 files where
+ * the gate's `unit` step ran 441, so the gate's own test steps — which now select through this
+ * function — would have started running a nested demo app's suite on the framework's gate.
  */
-const IGNORED = ['/dist/', '/node_modules/', '/examples/'];
+const IGNORED = ['/dist/', '/build/', '/node_modules/', '/examples/', '/dummy/'];
 
 /**
  * File size stands in for duration: cheap to read, and it correlates far better than file count.
@@ -64,19 +69,32 @@ export function sampleFiles(files: readonly TestFile[], sample: number): readonl
   return [...files].sort(bySizeThenPath).slice(0, sample);
 }
 
+type TypeFilter = readonly [Exclude<TestType, 'unit'>, string];
+
+let cachedFilters: readonly TypeFilter[] | undefined;
+
 /**
  * verify-tests.ts owns the one definition of what a file's test type is; `typeFilterOf` is that
  * table's own accessor. Re-declaring the suffixes here would be a second definition, and the two
  * would drift the first time a suite's naming rule changed.
+ *
+ * Built lazily, and that is load-bearing: verify-tests.ts imports this module (the gate's test
+ * steps select their files through `discoverTests`), so the two form a cycle. A module-scope
+ * `const` reading `TEST_TYPES` evaluates during import, inside the other module's temporal dead
+ * zone, and whichever side is imported first dies with "Cannot access 'TEST_TYPES' before
+ * initialization" — measured by `bun run manifest`, which imports the CLI and took the crash.
  */
-const TYPE_FILTERS: readonly (readonly [Exclude<TestType, 'unit'>, string])[] = TEST_TYPES.filter(
-  (type): type is Exclude<TestType, 'unit'> => type !== 'unit',
-).map((type) => [type, typeFilterOf(type)] as const);
+const typeFilters = (): readonly TypeFilter[] => {
+  cachedFilters ??= TEST_TYPES.filter(
+    (type): type is Exclude<TestType, 'unit'> => type !== 'unit',
+  ).map((type) => [type, typeFilterOf(type)] as const);
+  return cachedFilters;
+};
 
 /** unit is everything the five typed suites do not claim, so no file falls between two types. */
 export function belongsToType(path: string, type: TestType): boolean {
-  if (type === 'unit') return TYPE_FILTERS.every(([, filter]) => !path.includes(filter));
-  return TYPE_FILTERS.some(([typed, filter]) => typed === type && path.includes(filter));
+  if (type === 'unit') return typeFilters().every(([, filter]) => !path.includes(filter));
+  return typeFilters().some(([typed, filter]) => typed === type && path.includes(filter));
 }
 
 /**

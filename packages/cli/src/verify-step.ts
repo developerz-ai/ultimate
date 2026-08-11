@@ -44,12 +44,24 @@ export interface VerifyContext {
   readonly root: string;
   readonly runner: Runner;
   readonly hostChecks?: Partial<Record<VerifyStepName, HostCheck>>;
+  /**
+   * How wide the parallel test steps go. Absent means `defaultWorkers()` — a knob, never a
+   * narrowing: no value of it changes which steps run or what "green" means, which is why this is
+   * the only flag `x verify` accepts beyond the global ones.
+   */
+  readonly workers?: number;
 }
 
 export interface StepOutcome {
   readonly ok: boolean;
   readonly findings: readonly Finding[];
   readonly output?: string;
+  /**
+   * Processes this step actually used. `1` is a step that ran serially, and a reader has to be
+   * able to tell "serial because nothing could isolate it" from "parallel and fast" without
+   * reading the step list's source.
+   */
+  readonly workers?: number;
 }
 
 export interface VerifyStep {

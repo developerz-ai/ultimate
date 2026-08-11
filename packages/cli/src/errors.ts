@@ -65,8 +65,18 @@ export const CLI_OWNED_ERROR_CODES = [
  * throw it, and none of them may declare a title for it. The CLI is the process that imports every
  * package (`error-catalog.ts`), so a title declared twice here is the one that would win by load
  * order rather than by ownership.
+ *
+ * The three env codes are core's for the same reason: `defineEnv`, `checkEnv` and the
+ * `.env.example` projection all live in `@ultimat3/core`, and `x env` is the surface that reports
+ * them. A fourth code meaning "the example is stale" would be this package inventing a second name
+ * for a condition core already named.
  */
-export const CLI_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+export const CLI_BORROWED_ERROR_CODES = [
+  'X_NOT_IMPLEMENTED',
+  'X_CONFIG_INVALID',
+  'X_ENV_MISSING',
+  'X_ENV_EXAMPLE_DRIFT',
+] as const;
 
 /** Every code the CLI can throw: the ones it owns plus the one it borrows. */
 export const CLI_ERROR_CODES = [...CLI_OWNED_ERROR_CODES, ...CLI_BORROWED_ERROR_CODES] as const;
@@ -409,6 +419,26 @@ export class PortInvalidError extends UltimateError {
       cause: `${name}="${input.value}" is not a TCP port number between 0 and 65535`,
       fix: `docker run -e ${name}=${name === 'PORT' ? 3000 : 9090} <image>`,
       docs: docsFor('X_PORT_INVALID'),
+    });
+  }
+}
+
+/**
+ * `x env` was run in an app whose `app.config.ts` exports no `envSchema`. Not a silent success:
+ * writing a `.env.example` with no variables in it, or reporting "0 declared variables, all
+ * present", both read as a working environment declaration to whoever runs the command next.
+ *
+ * `X_CONFIG_INVALID` is core's code for "a configuration this process cannot boot on — env or
+ * `app.config.ts`", which is exactly this; the CLI names it in `CLI_BORROWED_ERROR_CODES` rather
+ * than minting a synonym.
+ */
+export class EnvSchemaMissingError extends UltimateError {
+  constructor(input: { subcommand: string }) {
+    super({
+      code: 'X_CONFIG_INVALID',
+      cause: `x env ${input.subcommand} needs the env declaration, and app.config.ts exports no "envSchema"`,
+      fix: "add to app.config.ts: export const envSchema = { DATABASE_URL: { type: 'url', description: 'Postgres connection URL' } } satisfies EnvSchema; export const env = defineEnv(envSchema);",
+      docs: docsFor('X_CONFIG_INVALID'),
     });
   }
 }

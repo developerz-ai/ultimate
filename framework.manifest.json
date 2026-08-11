@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d26ac832d6cce9548262db07c0debd272f30d262dbef6be9670e15a59aa8115f",
+  "buildId": "b0cb5ec98b75e4c58342492874ee5bee656afb58ca9741fb3bb4b3cad0f2c45e",
   "tiers": {
     "0": [
       "core",
@@ -1237,6 +1237,16 @@
     },
     {
       "code": "X_ROUTE_FILE_INVALID",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ROUTE_LOAD_FAILED",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ROUTE_LOAD_INVALID",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
     },

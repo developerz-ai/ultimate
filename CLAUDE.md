@@ -12,8 +12,8 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 1.1.0, `As of 2026-08`. 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
-28 in all — on npm at 1.1.0 in lockstep: one version, one commit, one tag. 1.1.0 is the first
+**Status:** 1.2.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
+29 in all — on npm in lockstep: one version, one commit, one tag. 1.1.0 was the first
 release published by [`.github/workflows/release.yml`](.github/workflows/release.yml) over OIDC
 trusted publishing, no `NPM_TOKEN`, provenance attached; 1.0.0 was the manual bootstrap. Semver
 applies — a breaking change to a documented API needs a major, and the eight primitive shapes, the
@@ -93,7 +93,7 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | Tier | Packages |
 |---|---|
 | 0 | `core`, `schema` |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage` |
+| 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` |
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` |

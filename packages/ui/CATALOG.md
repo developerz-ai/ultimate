@@ -4,7 +4,7 @@
 
 Every component and every token, projected from source. Import all of it from `@ultimat3/ui`.
 
-48 components: `Alert` · `AppShell` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `IconButton` · `Image` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toolbar` · `Tooltip`
+52 components: `Accordion` · `Alert` · `AppShell` · `Avatar` · `Badge` · `Breadcrumb` · `Button` · `Card` · `Checkbox` · `Combobox` · `Container` · `DataTable` · `DateTime` · `Dialog` · `Divider` · `Drawer` · `Dropzone` · `EmptyState` · `ErrorState` · `Field` · `FileInput` · `Form` · `Grid` · `Icon` · `IconButton` · `Image` · `InfiniteScroll` · `Input` · `Link` · `LocaleSwitcher` · `Menu` · `Money` · `PageHeader` · `Pagination` · `Popover` · `Radio` · `RelativeTime` · `Section` · `Select` · `Skeleton` · `Spinner` · `Stack` · `Switch` · `Table` · `Tabs` · `Text` · `Textarea` · `ThemeToggle` · `ToastRegion` · `Toast` · `Toolbar` · `Tooltip`
 
 ## Vocabulary
 
@@ -18,6 +18,18 @@ One size scale, one tone scale, one variant scale — shared by every component 
 | `SpaceStep` | `0` · `1` · `2` · `3` · `4` · `5` · `6` · `8` · `10` · `12` · `16` |
 
 ## Components
+
+### Accordion
+
+Expandable sections built on `<details>`/`<summary>`: open/close, keyboard, focus and `aria-expanded` are the browser's, so the component works with JavaScript disabled and there is no open-state to hydrate. `exclusive` is the native `name` group, not a listener.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `items` | `readonly AccordionItem[]` | yes |  |
+| `exclusive` | `boolean` | — | One section open at a time, through the native `<details name>` group. |
+| `level` | `HeadingLevel` | — | Wraps each title in a heading of this level, putting the sections in the page outline. Left out, a title is plain text inside the disclosure button — which is what a screen reader announces either way. |
+| `onToggle` | `((id: string, open: boolean) => void)` | — | Fires on every open and close, once the browser has already applied it. |
+| `class` | `string` | — |  |
 
 ### Alert
 
@@ -142,6 +154,28 @@ Native checkbox with a token-drawn indicator. The label element wraps the input,
 | `aria-describedby` | `string` | — |  |
 | `aria-invalid` | `boolean` | — |  |
 | `onChange` | `JSX.EventHandlerUnion<HTMLInputElement, Event>` | — |  |
+
+### Combobox
+
+A searchable text field with suggestions: one `<input list>` plus a `<datalist>`, which is a real combobox in every engine — typing, filtering, keyboard and mobile are the platform's, and the field still works with scripting off. `onFilter` is the debounced enhancement on top.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `options` | `readonly ComboboxOption[]` | yes |  |
+| `value` | `string` | — | The current query. Suggestions are filtered to it before they are rendered. |
+| `onFilter` | `((query: string) => void)` | — | Fires `debounceMs` after typing stops, and immediately when a suggestion is picked. Left out, the field is a plain filtered datalist — still correct, just not live. |
+| `debounceMs` | `number` | — | Debounce window in ms. Read once, when the field mounts. |
+| `limit` | `number` | — | Cap on rendered suggestions. |
+| `id` | `string` | — |  |
+| `name` | `string` | — |  |
+| `placeholder` | `string` | — | Already-translated placeholder. |
+| `size` | `Size` | — |  |
+| `required` | `boolean` | — |  |
+| `disabled` | `boolean` | — |  |
+| `class` | `string` | — |  |
+| `aria-label` | `string` | — |  |
+| `aria-describedby` | `string` | — |  |
+| `aria-invalid` | `boolean` | — |  |
 
 ### Container
 
@@ -351,6 +385,17 @@ Grid layout primitive. The default is an intrinsic responsive grid (`auto-fit` +
 | `as` | `'div' \| 'ul' \| 'ol' \| 'section'` | — |  |
 | `class` | `string` | — |  |
 
+### Icon
+
+Inline SVG from one Lucide glyph. Decorative by default (`aria-hidden`); a `label` promotes it to `role="img"` with a name. Paint is `currentColor` and the box is one `em`, so an icon takes the tone and the type step of whatever it sits inside.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `glyph` | `IconGlyph` | yes | One glyph module: `import { iconSearch } from '@ultimat3/ui/icons/search'`. |
+| `label` | `string` | — | Already-translated accessible name. Omitted means decorative, and a decorative icon is hidden from assistive tech rather than read as a nameless image. |
+| `size` | `Size` | — |  |
+| `class` | `string` | — |  |
+
 ### IconButton
 
 A button whose only content is an icon, so `label` is mandatory: it becomes the accessible name and the tooltip. There is no unlabelled icon button.
@@ -384,6 +429,20 @@ Zero-CLS image primitive: a plain <img>, no JS, no fetch, no client state.  The 
 | `priority` | `boolean` | — | The LCP image, at most one per route: eager, high fetch priority. |
 | `width` | `number` | — | Intrinsic dimensions, from the build step that measured them. Both or neither. |
 | `height` | `number` | — |  |
+| `class` | `string` | — |  |
+
+### InfiniteScroll
+
+An endless list that degrades to pagination: the foot is always a real `rel="next"` link, so the next page is one navigation away with scripting off. With script, a sentinel below the list asks for that page before the reader reaches it, and the link's click is intercepted.
+
+| Prop | Type | Required | Notes |
+|---|---|---|---|
+| `children` | `JSX.Element` | yes | The items rendered so far. This component owns the foot, never the list. |
+| `hasMore` | `boolean` | yes | Another page exists. |
+| `nextHref` | `string` | — | The next page's URL. Required whenever `hasMore` — it is the no-JS path. |
+| `loading` | `boolean` | — | A page is in flight; the control stops inviting a second request. |
+| `onLoadMore` | `(() => void)` | — | The enhancement: called when the sentinel appears, and in place of following the link. |
+| `rootMargin` | `string` | — | How far below the fold loading starts. A CSS length, as IntersectionObserver takes it. |
 | `class` | `string` | — |  |
 
 ### Input

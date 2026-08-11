@@ -103,6 +103,19 @@ describe('the chain', () => {
     expect(text().primaryKey().$optional).toBe(false);
   });
 
+  test('a branded uuid is the same column at runtime — the brand is types only', () => {
+    // `uuid<PostId>()` must not become a second kind of column: same meta, same validation, same
+    // generated key. The brand's own claim is compile-time and lives in `type-pins.ts`.
+    const plain = uuid().primaryKey();
+    const branded = uuid<`${string}-post`>().primaryKey();
+    expect(branded.$meta).toEqual(plain.$meta);
+    expect(branded.$optional).toBe(plain.$optional);
+    expect(() => branded.$parse('not-a-uuid')).toThrow(/expected a uuid/);
+    expect(branded.$parse('018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f')).toBe(
+      '018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f',
+    );
+  });
+
   test('.default() marks the column optional and keeps its type', () => {
     const status = enumerated(['draft', 'published']).default('draft');
     expect(status.$optional).toBe(true);

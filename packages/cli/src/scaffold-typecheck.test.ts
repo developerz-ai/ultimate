@@ -155,7 +155,11 @@ describe('unit · scaffold typecheck harness', () => {
     // First write wins — or merges, for the one shared catalog file — exactly how `x g` resolves
     // a file two generators both produce.
     expect(new Set(paths).size).toBe(paths.length);
-  });
+    // Builds every file `x new` plus all nine generators emit. Bun's 5s default covered that
+    // while the suite ran serially; `x verify` now shards its test steps across worker processes,
+    // so this shares its cores with up to seven other `bun test` children. Same shape as
+    // `error-catalog.test.ts` — the whole-fixture build is the coverage, so the budget moves.
+  }, 30_000);
 
   test('the fixture covers every generator `x g` offers, so none escapes the compiler', () => {
     expect([...new Set(FIXTURE_GENERATORS.map((options) => options.kind))].toSorted()).toEqual(
@@ -173,5 +177,6 @@ describe('unit · scaffold typecheck harness', () => {
     expect(schemaIn(empty)).not.toContain('app/post/entity');
     expect(empty?.files.some((file) => file.path.startsWith('apps/web/app/post/'))).toBe(false);
     for (const variant of scaffoldVariants()) expect(variant.why.length).toBeGreaterThan(20);
-  });
+    // Builds both whole scaffolds; same budget, same reason as the fixture test above.
+  }, 30_000);
 });

@@ -82,6 +82,62 @@ never skips a level.
 </AppShell>
 ```
 
+## Icons
+
+The set is [Lucide](https://lucide.dev) (ISC), wrapped — not redrawn. Every one of its
+**1767 icons** is a module of its own, generated from upstream `lucide-static` node data
+by `bun run icons`, so an import is one glyph and a bundler drops the rest.
+
+```tsx
+import { Icon } from '@ultimat3/ui';
+import { iconSearch } from '@ultimat3/ui/icons/search';       // one module, one icon
+import { iconCircleAlert } from '@ultimat3/ui/icons/circle-alert';
+
+<Icon glyph={iconSearch} />                                    // decorative → aria-hidden
+<Icon glyph={iconCircleAlert} label={t('form.invalid')} />     // meaningful → role="img"
+```
+
+| Rule | How |
+|---|---|
+| Module per icon | `@ultimat3/ui/icons/<kebab-name>`, exporting `icon<PascalName>` — `iconDelete`, not `delete`, so reserved words stay legal |
+| Pay for what you use | one icon **104 B** minified, fifty **8.9 kB**, all 1767 **365 kB** — measured with `bun build --minify` |
+| Colour | `currentColor` only; a glyph carrying a literal colour is refused with `X_UI_INVALID_VALUE` |
+| Size | `sm` / `md` / `lg` map to `--text-*` and the box is `1em` — no icon carries a pixel literal |
+| Accessible name | omitted `label` means `aria-hidden="true"`; a `label` promotes it to `role="img"` with that name |
+| Attributes | only the tags and attributes in `ICON_TAGS` reach the DOM — glyph data never becomes an arbitrary attribute |
+
+Upstream bump: raise `LUCIDE_VERSION` in `src/icons/build-icons.ts`, run `bun run icons`,
+commit the diff. There is no hand-edited icon in the package.
+
+## Works without JavaScript
+
+Three components are interactive without a client runtime, because the platform already
+has the behaviour. Each is correct server-rendered, and the script layer only adds.
+
+| Component | Platform base | The enhancement |
+|---|---|---|
+| `Accordion` | `<details>` / `<summary>`; `exclusive` is the native `name` group | `onToggle` notification, after the browser has applied it |
+| `Combobox` | `<input list>` + `<datalist>` — typing, filtering, keyboard, mobile | `onFilter`, debounced, for a live/server-side query |
+| `InfiniteScroll` | a real `rel="next"` link to the next page | an `IntersectionObserver` sentinel that calls `onLoadMore` and intercepts the click |
+
+```tsx
+<Accordion level={3} exclusive items={[{ id: 'ship', title: t('faq.ship'), panel: <p>…</p> }]} />
+
+<Combobox name="city" value={query()} options={cities} onFilter={setQuery} debounceMs={250} />
+
+<InfiniteScroll hasMore={page.hasNext} nextHref={`?page=${page.next}`} onLoadMore={loadNext}>
+  {rows}
+</InfiniteScroll>
+```
+
+`InfiniteScroll` refuses `hasMore` without a `nextHref` (`X_UI_INVALID_VALUE`): with
+scripting off the control is a link, and a link needs somewhere to go. `Combobox` filters
+what it is given by `value` (`filterOptions` — case- and accent-insensitive, prefix first),
+so the list is right on the first paint and after a form round-trip, not only once JS runs.
+
+`debounce(fn, ms)` is exported on its own: trailing edge, `cancel()`, `flush()`, `pending()`.
+Components cancel theirs on cleanup, so a filter never fires into a tree that is gone.
+
 ## Branding
 
 `defineTheme()` is the **only** seam for restyling. No SCSS `@use ... with ()`
@@ -181,7 +237,7 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 | `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | reactive context or DOM APIs used where they do not exist |
-| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, or a `defineTheme()` value that is not a token value |
+| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, or a negative `debounce` window |
 
 ## Commands
 
@@ -189,4 +245,5 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 bun test                 # token parity, contrast, theme resolution, brand, catalog drift, a11y
 bun run typecheck
 bun run catalog          # regenerate CATALOG.md after changing a component's props
+bun run icons            # regenerate src/icons/glyphs/* from lucide-static (network, dev-only)
 ```

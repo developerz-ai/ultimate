@@ -30,6 +30,7 @@ import {
   sharedLeafFindingFor,
 } from './boundaries';
 import { flagBool, parseScriptArgs } from './lib/args';
+import { writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { checkRoadmap } from './roadmap';
@@ -131,6 +132,9 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const result = await runVerify(VERIFY_STEPS, { root, runner: exec, hostChecks: HOST_CHECKS });
-  process.stdout.write(`${render(result, args.json, flagBool(args, 'verbose'))}\n`);
+  // Through `writeOut`, not `process.stdout.write`: see the note there. A failing gate's JSON
+  // carries each failed step's own output, which is exactly when the payload clears 64KB and
+  // exactly when a developer needs it — so the truncation only ever bit the runs that mattered.
+  writeOut(`${render(result, args.json, flagBool(args, 'verbose'))}\n`);
   process.exit(exitCodeFor(result));
 }

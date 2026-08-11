@@ -308,12 +308,14 @@ describe('unit · errors.explain', () => {
     expect(explainErrorCode('X_NOT_A_REAL_CODE')).toBeUndefined();
   });
 
+  // A code the CLI neither owns nor borrows, so the fix is the generic gate. `X_CONFIG_INVALID`
+  // used to stand here and became a borrowed code when `x env` shipped.
   test('a registered framework code explains with its registered title', () => {
-    expect(explainErrorCode('X_CONFIG_INVALID')).toEqual({
-      code: 'X_CONFIG_INVALID',
-      cause: 'app.config.ts is invalid',
+    expect(explainErrorCode('X_DB_DRIFT')).toEqual({
+      code: 'X_DB_DRIFT',
+      cause: 'schema differs from migrations',
       fix: 'x verify --json',
-      docs: 'https://ultimate.dev/errors/X_CONFIG_INVALID',
+      docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
     });
   });
 

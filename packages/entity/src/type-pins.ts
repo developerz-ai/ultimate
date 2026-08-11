@@ -4,11 +4,15 @@
 // the module emits nothing — and a regression is a build error, which is the only kind of
 // enforcement this repo counts (axiom 3).
 
+import type { Id } from '@ultimat3/core';
+import type { uuid } from './columns';
 import type { EntitySet } from './database';
 import type { Entity, EntityCore, EntityInit } from './entity';
 import type { ColumnExpr, InvariantColumns } from './expr';
 import type { Invariant, InvariantDef } from './invariants';
-import type { AnyColumn, RowOf } from './types';
+import type { Table } from './query';
+import type { Repo } from './repo';
+import type { AnyColumn, IdOf, Insertable, RowOf } from './types';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -107,3 +111,68 @@ type _NullableStillAccepted = Assert<
 
 /** A non-nullable column with no default is still required — the pin must not over-relax. */
 type _RequiredStaysRequired = Assert<{ optionalByNull: null } extends InsertPin ? false : true>;
+
+// --- A branded id survives the whole type chain ------------------------------
+// `uuid<PostId>()` is where the brand is declared, and every hop after it has to carry it. The
+// derivation (`TypeOf`, `RowOf`, `Insertable`) always did; the BUILDER hard-coded `Column<string>`
+// so there was nothing to carry, and `Repo`/`Table` then took `id: string`, which is where the
+// last of it went. Both halves are pinned, because fixing either one alone still lets
+// `posts.update(someUserId, …)` compile.
+
+type PostId = Id<'post'>;
+type UserId = Id<'user'>;
+
+/** The builder's own output, not a hand-written `Column<PostId, true>`. */
+type BrandedKey = ReturnType<ReturnType<typeof uuid<PostId>>['primaryKey']>;
+
+type BrandColumns = {
+  readonly id: BrandedKey;
+  readonly authorId: ReturnType<typeof uuid<UserId>>;
+  readonly title: typeof requiredColumn;
+};
+
+type BrandRow = RowOf<BrandColumns>;
+
+type _BrandSurvivesTheRow = Assert<[BrandRow['id']] extends [PostId] ? true : false>;
+
+/** The half that matters: a plain string is no longer good enough to be a post id. */
+type _RowIdIsNotAPlainString = Assert<[string] extends [BrandRow['id']] ? false : true>;
+
+/** Two entities' ids do not mix, which is the whole reason to declare one. */
+type _BrandsDoNotMix = Assert<[BrandRow['authorId']] extends [PostId] ? false : true>;
+
+/** The write path too — an insert that names the wrong entity's id is a compile error. */
+type _BrandSurvivesTheInsert = Assert<
+  [Insertable<BrandColumns>['authorId']] extends [UserId] ? true : false
+>;
+
+type _InsertRejectsAnotherBrand = Assert<
+  [PostId] extends [Insertable<BrandColumns>['authorId']] ? false : true
+>;
+
+/** `Repo` was the last hop that erased it: `findById(id: string)` accepted any entity's id. */
+type _FindByIdTakesTheBrand = Assert<
+  [Parameters<Repo<BrandRow>['findById']>[0]] extends [PostId] ? true : false
+>;
+
+type _FindByIdRejectsAnotherBrand = Assert<
+  [UserId] extends [Parameters<Repo<BrandRow>['findById']>[0]] ? false : true
+>;
+
+type _TableUpdateTakesTheBrand = Assert<
+  [Parameters<Table<BrandRow>['update']>[0]] extends [PostId] ? true : false
+>;
+
+type _TableDeleteRejectsAnotherBrand = Assert<
+  [UserId] extends [Parameters<Table<BrandRow>['delete']>[0]] ? false : true
+>;
+
+/**
+ * …and an unbranded entity is addressed exactly as it was. `IdOf` collapsing to `string` for
+ * every row that declared no brand is what makes this additive rather than a major version.
+ */
+type _UnbrandedIdStaysAString = Assert<
+  [string] extends [IdOf<{ readonly id: string }>] ? true : false
+>;
+
+type _RowAgnosticIdStaysAString = Assert<[string] extends [IdOf<unknown>] ? true : false>;

@@ -255,6 +255,8 @@ describe('unit · drift names the section that moved', () => {
 });
 
 describe('unit · the gate reads the file, not just the generator', () => {
+  // THREE manifest regenerations over 29 packages, one per assertion. See the note in
+  // `verify.test.ts`: the 5s default cannot cover this once shards share the machine.
   test('freshly written: no drift; hand-edited: the section; deleted: missing', async () => {
     const path = join(dir, 'gate.json');
     await Bun.write(path, frameworkManifestJson(fresh));
@@ -267,5 +269,5 @@ describe('unit · the gate reads the file, not just the generator', () => {
     expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([
       'file is missing or unreadable',
     ]);
-  });
+  }, 30_000);
 });

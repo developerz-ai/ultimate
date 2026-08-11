@@ -81,14 +81,19 @@ const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const sitePageTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
+const sitePageTest = (): string => `import { metaContextFor, routeDataFor } from '@ultimat3/render';
+import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
+
+// The same two objects a render builds: \`routeDataFor\` resolves the route's data once, and
+// \`metaContextFor\` wraps it the way every render mode wraps it before calling \`meta\`.
+const ctx = { params: {}, url: 'https://example.test/' };
 
 unitTest('the landing page ships zero JS and declares metadata', async () => {
   expect(config.render).toBe('static');
   expect(config.hydrate).toBe('never');
   expect(config.budget.js).toBe('0kb');
-  const meta = await config.meta({});
+  const meta = await config.meta(metaContextFor(ctx, await routeDataFor(config, ctx)));
   expect(meta.title ?? '').not.toBe('');
 });
 `;

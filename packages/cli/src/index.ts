@@ -54,7 +54,7 @@ export type { PlannedCommand } from './cmd-planned';
 export { PLANNED_COMMANDS, plannedCommands } from './cmd-planned';
 export { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 export { renderRouteTable, routesCommand } from './cmd-routes';
-export { availableCpus, testCommand } from './cmd-test';
+export { testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
@@ -173,6 +173,7 @@ export type { TestFile } from './test-select';
 export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
 export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
+export { availableCpus, defaultWorkers, WORKER_CEILING } from './test-workers';
 export type { CodeSite, FixSite, SourceSite } from './ts-scan';
 export {
   isCodeRegistry,

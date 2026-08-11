@@ -18,10 +18,29 @@ export const config = defineRoute({
   offline:    'precache',             // precache | runtime | network-only
   hydrate:    'visible',              // idle | visible | interaction | never
   budget:     { js: '40kb', lcp: 2000 },
-  meta:       ({ post }) => ({ title: post.title, description: post.excerpt,
-                               og: { image: post.cover }, ld: ld.Article(post) }),
+  load:       ({ params }) => db.posts.bySlug(params.slug),   // once per render
+  meta:       ({ data, url }) => ({ title: data.title, description: data.excerpt,
+                                    og: { image: data.cover }, alternates: { canonical: url },
+                                    ld: ld.Article(data) }),
 });
+
+export function Page(props: { data: Post }) { /* the SAME object meta was given */ }
 ```
+
+## `load` is the one server-side data seam
+
+Optional, and the only way a page gets data. It runs **once per render** and the result is handed
+to both `meta` and the page component — the same object, never two resolutions, because a `<title>`
+describing content the body does not contain is the failure this seam exists to prevent.
+
+`meta` receives a context, not the bare data: `{ data, params, url, t }`. All four are needed for a
+real `<head>` — the data for the content, `url` for the canonical, `t` because no user-facing
+string may be hardcoded. A route that declares no `load` still gets `params` and `url` under the
+same names it always had, so nothing that shipped has to change.
+
+A loader that throws is `X_ROUTE_LOAD_FAILED`, naming the path to fix — unless it threw an
+`UltimateError` of its own, which passes through untouched: a policy denial or a missing row
+already carries a better code and a better fix than any wrapper could.
 
 ## `offline`, `hydrate` and `meta` are required by the type
 

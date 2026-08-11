@@ -1,9 +1,17 @@
 // Single responsibility: the public API of @ultimat3/core. Explicit named exports only —
 // every other package imports from here, so this list is the tier-0 contract.
 
-export type { Actor, ActorInit, ActorKind } from './actor';
+export type {
+  Actor,
+  ActorFactKey,
+  ActorFactMap,
+  ActorFacts,
+  ActorInit,
+  ActorKind,
+} from './actor';
 export {
   ACTOR_KINDS,
+  actorFact,
   actorLabel,
   agentActor,
   anonymousActor,
@@ -13,6 +21,7 @@ export {
   isAnonymous,
   serviceActor,
   userActor,
+  withFacts,
 } from './actor';
 export type { InvariantOptions } from './assert';
 export { assert, assertNever, invariant } from './assert';

@@ -59,7 +59,7 @@ still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 
 | Builder | Emits | Why it is the only way |
 |---|---|---|
-| `uuid()` | `uuid`; `.primaryKey()` defaults to v7 | time-ordered keys keep the pk index append-friendly |
+| `uuid()`, `uuid<PostId>()` | `uuid`; `.primaryKey()` defaults to v7 | time-ordered keys keep the pk index append-friendly; the optional brand is declared once and survives to every signature |
 | `timestamp()` | `timestamptz` | UTC storage is not a per-table decision; there is no naive variant |
 | `money()` | `<name>_minor bigint` + `<name>_currency char(3)` | never a float, never one implied currency |
 | `enumerated(v)` | `text` + CHECK | a variant is a one-line migration, not `ALTER TYPE` |
@@ -69,6 +69,23 @@ still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
 `.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()`. Physical names are
 derived from the property key (`orgId` → `org_id`); a name is written once, or never.
+
+## Branded ids
+
+```ts
+export const posts = entity('posts', {
+  columns: { id: uuid<PostId>().primaryKey(), authorId: uuid<UserId>().references(() => users.id) },
+});
+
+const post = await db.posts.findById(postId);   // PostId — a UserId here is a compile error
+```
+
+The brand is declared once, on the column, and carried by the whole chain: `RowOf`, `Insertable`,
+`Repo.findById/update/delete` and `Table.update/delete`, whose id parameters are `IdOf<Row>` —
+the type the entity's own `id` column declared. `IdOf` collapses to `string` for a row that
+declared no brand and for a composite key, so an unbranded entity reads exactly as it always did.
+Nothing is checked at runtime: a brand has no witness, `$parse` still validates the uuid, and
+`type-pins.ts` is where the claim is enforced.
 
 ## Invariants run twice
 

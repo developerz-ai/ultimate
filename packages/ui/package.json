@@ -15,6 +15,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./icons/*": "./src/icons/glyphs/*.ts",
     "./tokens": "./src/tokens/_index.scss",
     "./theme.scss": "./src/tokens/theme.scss",
     "./reset.scss": "./src/tokens/reset.scss",
@@ -33,7 +34,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test",
-    "catalog": "bun run src/catalog/build-catalog.ts"
+    "catalog": "bun run src/catalog/build-catalog.ts",
+    "icons": "bun run src/icons/build-icons.ts"
   },
   "dependencies": {
     "@ultimat3/core": "1.2.0",

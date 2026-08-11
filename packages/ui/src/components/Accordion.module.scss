@@ -1,0 +1,59 @@
+@use '../tokens' as t;
+
+.accordion {
+  @include t.column(0);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(lg);
+  background: t.role('surface');
+  overflow: hidden;
+}
+
+.section + .section {
+  border-block-start: 1px solid t.role('line');
+}
+
+.summary {
+  @include t.row(t.space(2));
+  @include t.focus-ring;
+  @include t.transition(background);
+  padding-block: t.space(3);
+  padding-inline: t.space(4);
+  color: t.role('fg-strong');
+  font-weight: t.weight(medium);
+  cursor: pointer;
+
+  // The default triangle is replaced by the chevron, in both engines.
+  list-style: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover {
+    background: t.role('bg-soft');
+  }
+}
+
+// A chevron on the block axis, not the inline one: down/up needs no RTL mirror, so there is
+// no `[dir='rtl']` rule to keep in sync with the glyph.
+.marker {
+  @include t.transition(rotate);
+  color: t.role('fg-muted');
+  rotate: 0deg;
+}
+
+[open] > .summary > .marker {
+  rotate: 180deg;
+}
+
+.title {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.panel {
+  padding-block-end: t.space(4);
+  padding-inline: t.space(4);
+  color: t.role('fg');
+}

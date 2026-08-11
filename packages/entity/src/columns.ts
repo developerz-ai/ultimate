@@ -21,14 +21,26 @@ const parseUuid = (value: unknown): string =>
     ? value
     : reject('format', `expected a uuid, got ${String(value)}`);
 
-export const uuid = (): UuidColumn => ({
-  ...makeColumn<string, false>({ ...BARE, kind: 'uuid' }, parseUuid, false),
+/**
+ * The one place a brand is applied. A brand is a compile-time tag with no runtime witness, so
+ * there is nothing here to check that `parseUuid` has not already checked — same shape as core's
+ * `parseId`, and the reason `uuid<PostId>()` needs no cast at any call site afterwards.
+ */
+const parseBrandedUuid = <T extends string>(value: unknown): T => parseUuid(value) as T;
+
+/**
+ * `uuid()` for a plain id, `uuid<PostId>()` to declare the brand ONCE. The brand then rides the
+ * derivation — row, insert, `findById`, `update`, `delete` — so mixing two entities' ids is a
+ * compile error instead of a query that silently matches nothing.
+ */
+export const uuid = <T extends string = string>(): UuidColumn<T> => ({
+  ...makeColumn<T, false>({ ...BARE, kind: 'uuid' }, parseBrandedUuid, false),
   // Narrower than the generic chain: a uuid key is generated when omitted, so it is the one
   // primary key an insert may leave out.
   primaryKey: () =>
-    makeColumn<string, true>(
+    makeColumn<T, true>(
       { ...BARE, kind: 'uuid', primaryKey: true, default: GENERATED_UUID },
-      parseUuid,
+      parseBrandedUuid,
       true,
     ),
 });

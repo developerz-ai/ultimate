@@ -7,7 +7,7 @@ import type { EntityCore } from './entity';
 import { namedColumns } from './plan';
 import type { Page, Repo, RepoOptions } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
-import type { ColumnMap, Insertable } from './types';
+import type { ColumnMap, IdOf, Insertable } from './types';
 
 export interface ReadBuilder<Row> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
@@ -31,8 +31,9 @@ export interface ReadBuilder<Row> {
 
 export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder<Row> {
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;
-  update(id: string, patch: Partial<Row>, options?: RepoOptions): Promise<Row>;
-  delete(id: string, options?: RepoOptions): Promise<void>;
+  /** `IdOf<Row>`: an entity that declared `uuid<PostId>()` is addressed by a `PostId` only. */
+  update(id: IdOf<Row>, patch: Partial<Row>, options?: RepoOptions): Promise<Row>;
+  delete(id: IdOf<Row>, options?: RepoOptions): Promise<void>;
   /**
    * Delete by equality filter; resolves with the number of rows removed. The only way to remove a
    * row from an entity whose primary key is composite — `likes`, `blocks`, a join table — where

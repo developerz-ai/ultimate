@@ -9,7 +9,17 @@ import { renderJson } from './output';
 import { flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
 import type { Shard } from './test-shards';
-import { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
+import {
+  planShards,
+  quoteArg,
+  reproduceFor,
+  runShards,
+  SHARD_COMMAND_PREFIX,
+  shardArgs,
+} from './test-shards';
+
+/** Where a shard's file list starts in its argv, derived so a new fixed flag needs no edits. */
+const PREFIX = SHARD_COMMAND_PREFIX.length;
 
 interface Call {
   readonly command: readonly string[];
@@ -110,7 +120,17 @@ describe('unit · x test sharding', () => {
 
   test('shardArgs never re-globs in the child: the file list is explicit', () => {
     const shard: Shard = { index: 1, files: ['a.test.ts', 'b.test.ts'], bytes: 2 };
-    expect(shardArgs(shard)).toEqual(['bun', 'test', 'a.test.ts', 'b.test.ts']);
+    expect(shardArgs(shard)).toEqual(['bun', 'test', '--isolate', 'a.test.ts', 'b.test.ts']);
+  });
+
+  // The rule an arbitrary partition depends on. Half the framework's registries are
+  // process-global, and a serial run only passes because glob order happens to put every
+  // declaring file before every file that reads what it left behind; re-partition without
+  // `--isolate` and that accident is gone.
+  test('every shard runs with a fresh module registry per file', () => {
+    const shard: Shard = { index: 0, files: ['a.test.ts'], bytes: 1 };
+    expect(shardArgs(shard)).toContain('--isolate');
+    expect(SHARD_COMMAND_PREFIX).toEqual(['bun', 'test', '--isolate']);
   });
 });
 
@@ -123,11 +143,11 @@ describe('unit · x test execution', () => {
     const workers = calls.map((call) => call.env?.['ULTIMATE_TEST_WORKER']);
     expect([...workers].sort()).toEqual(['0', '1', '2', '3']);
     for (const call of calls) {
-      expect(call.command.slice(0, 2)).toEqual(['bun', 'test']);
-      expect(call.command.length).toBeGreaterThan(2);
+      expect(call.command.slice(0, PREFIX)).toEqual([...SHARD_COMMAND_PREFIX]);
+      expect(call.command.length).toBeGreaterThan(PREFIX);
       expect(call.cwd).toBe('/repo');
     }
-    const passed = calls.flatMap((call) => call.command.slice(2));
+    const passed = calls.flatMap((call) => call.command.slice(PREFIX));
     expect(new Set(passed).size).toBe(files.length);
   });
 
@@ -138,7 +158,7 @@ describe('unit · x test execution', () => {
     await runShards({ root: '/repo', runner, files, workers: 4, only: 2 });
     expect(calls.length).toBe(1);
     expect(calls[0]?.env?.['ULTIMATE_TEST_WORKER']).toBe('2');
-    expect(calls[0]?.command.slice(2)).toEqual([...(expected?.files ?? [])]);
+    expect(calls[0]?.command.slice(PREFIX)).toEqual([...(expected?.files ?? [])]);
   });
 
   test('a failing shard fails the run and names the command that reproduces it', async () => {

@@ -10,8 +10,9 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { serializeTags } from '@ultimat3/cache';
+import type { Translator } from '@ultimat3/i18n';
 import type { RouteMeta } from '@ultimat3/seo';
-import { RouteMetaMissingError, RouteOfflineMissingError } from './errors';
+import { RouteLoadInvalidError, RouteMetaMissingError, RouteOfflineMissingError } from './errors';
 import { assertModeShape } from './modes';
 
 export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
@@ -50,18 +51,65 @@ export interface RouteGuard {
   readonly permission: string;
 }
 
-/** What an author writes. Sync or async, whichever the page's data needs. */
-export type RouteMetaFn<TData = RouteData> = (data: TData) => RouteMeta | Promise<RouteMeta>;
+/**
+ * What a loader and a `meta` function are told about the request. `url` is a string because that
+ * is what `ld.*` embeds and what `meta` already received before `load` existed.
+ */
+export interface RouteContext {
+  readonly params: RouteParams;
+  readonly url: string;
+}
+
+/**
+ * The route's server-side data, resolved ONCE per render and handed to both `meta` and the page.
+ *
+ * This is not a ninth concern bolted onto the contract — it completes the one `meta` already
+ * declares. `RouteMetaFn<TData>` has always taken a `TData`, and until this existed nothing could
+ * ever supply one richer than `{ url, params }`: the page component was passed the same two
+ * fields, so a page that fetched its own data could not share it with `meta`. The consequence was
+ * silent and severe — a `site/` route's `<title>` and `description` could never reflect its
+ * content, on the surface whose entire purpose is SEO, and a page written against `props.data`
+ * rendered an empty list with a 200 rather than an error.
+ *
+ * Sync or async, whichever the page's data needs.
+ */
+export type RouteLoadFn<TData = RouteData> = (ctx: RouteContext) => TData | Promise<TData>;
 
 /** What the descriptor hands back. One shape, so no consumer branches on a thenable. */
-export type RouteMetaAsyncFn<TData = RouteData> = (data: TData) => Promise<RouteMeta>;
+export type RouteLoadAsyncFn<TData = RouteData> = (ctx: RouteContext) => Promise<TData>;
+
+/**
+ * What `meta` is given: the loaded data, the request, and the translator.
+ *
+ * A context rather than the bare data, because a `<title>` needs all three — the data for the
+ * content, `url` for the canonical, and `t` because no user-facing string may be hardcoded. It is
+ * a strict SUPERSET of what `meta` received before `load` existed (`{ params, url }`), and both
+ * keys keep their names, so every route that reads `data.url` or `data.params` keeps working.
+ */
+export interface RouteMetaContext<TData = RouteData> {
+  readonly data: TData;
+  readonly params: RouteParams;
+  readonly url: string;
+  /** The request's own translator. Never a hardcoded string in a `<title>`. */
+  readonly t: Translator;
+}
+
+/** What an author writes. Sync or async, whichever the page's data needs. */
+export type RouteMetaFn<TData = RouteData> = (
+  ctx: RouteMetaContext<TData>,
+) => RouteMeta | Promise<RouteMeta>;
+
+/** What the descriptor hands back. One shape, so no consumer branches on a thenable. */
+export type RouteMetaAsyncFn<TData = RouteData> = (
+  ctx: RouteMetaContext<TData>,
+) => Promise<RouteMeta>;
 
 /** Returns the params to build at deploy time. Bare strings fill a single dynamic param. */
 export type PrerenderFn = () =>
   | readonly (string | RouteParams)[]
   | Promise<readonly (string | RouteParams)[]>;
 
-/** The input shape of `defineRoute` — exactly the contract's eight keys, nothing else. */
+/** The input shape of `defineRoute` — exactly the contract's nine keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {
   readonly render: RenderMode;
   readonly revalidate?: RevalidateConfig;
@@ -69,6 +117,7 @@ export interface RouteDefinition<TData = RouteData> {
   readonly offline: OfflineStrategy;
   readonly hydrate: HydrateStrategy;
   readonly budget?: RouteBudget;
+  readonly load?: RouteLoadFn<TData>;
   readonly meta: RouteMetaFn<TData>;
   readonly policy?: RouteGuard;
 }
@@ -84,6 +133,7 @@ export interface RouteDefinition<TData = RouteData> {
 export interface RouteConfig<TData = RouteData> extends RouteDefinition<TData> {
   readonly kind: 'route';
   readonly meta: RouteMetaAsyncFn<TData>;
+  readonly load?: RouteLoadAsyncFn<TData>;
   readonly budget: RouteBudget;
 }
 
@@ -131,7 +181,15 @@ export function defineRoute<TData = RouteData>(
     );
   }
 
+  if (def.load !== undefined && typeof def.load !== 'function') {
+    throw new RouteLoadInvalidError(
+      `load: ${JSON.stringify(def.load)} is not a function`,
+      'make load a function of ({ params, url }) returning the page data, or remove it',
+    );
+  }
+
   const declaredMeta = def.meta;
+  const declaredLoad = def.load;
   const config: RouteConfig<TData> = {
     kind: 'route',
     render: def.render as RenderMode,
@@ -140,10 +198,13 @@ export function defineRoute<TData = RouteData>(
     // Wrapped rather than stored: the declaration may be sync, the descriptor never is.
     // A meta that throws synchronously becomes a rejection here, so `await config.meta(d)`
     // is the one way to fail as well as the one way to succeed.
-    meta: async (data: TData) => declaredMeta(data),
+    meta: async (metaCtx: RouteMetaContext<TData>) => declaredMeta(metaCtx),
     // Always an object. `budget.js` is the only reach a consumer needs, so an undeclared
     // budget is `{}` instead of a second undefined-check at every call site.
     budget: def.budget ?? {},
+    // Wrapped exactly as `meta` is, and for the same reason: the declaration may be sync, the
+    // descriptor never is, so `await config.load(ctx)` is the one way to fail as well as succeed.
+    ...(declaredLoad ? { load: async (ctx: RouteContext) => declaredLoad(ctx) } : {}),
     ...(def.revalidate ? { revalidate: def.revalidate } : {}),
     ...(def.prerender ? { prerender: def.prerender } : {}),
     ...(def.policy ? { policy: def.policy } : {}),

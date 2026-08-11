@@ -3,8 +3,6 @@
 // spawned is test-shards.ts — this file only turns argv into their inputs, so a parsing bug can
 // never be read as a sharding one.
 
-// Bun ships no CPU-count primitive; `cpus()` is the fallback when navigator cannot answer.
-import { cpus } from 'node:os';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, NoTestFilesError } from './errors';
 import type { CommandResult } from './output';
@@ -12,14 +10,9 @@ import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
 import { discoverTests, missingSelection, readSample, readType, sampleFiles } from './test-select';
 import { quoteArg, runShards } from './test-shards';
+import { defaultWorkers } from './test-workers';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
-
-/** navigator first: it is the runtime's own answer, and it respects a container's CPU limit. */
-export function availableCpus(): number {
-  const hinted = typeof navigator === 'undefined' ? Number.NaN : navigator.hardwareConcurrency;
-  return Math.max(1, Number.isFinite(hinted) && hinted > 0 ? Math.trunc(hinted) : cpus().length);
-}
 
 function readIndex(args: ParsedArgs, name: string, min: number): number | undefined {
   const raw = flagString(args, name);
@@ -60,7 +53,7 @@ export const testCommand: CliCommand = {
       'run one test type — or the whole suite — across N processes, one isolated database per worker',
     usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--workers N] [--worker I] [--json]`,
     flags: [
-      { name: 'workers', type: 'string', summary: 'process count (default: available CPUs)' },
+      { name: 'workers', type: 'string', summary: 'process count (default: CPUs - 1, max 8)' },
       {
         name: 'worker',
         type: 'string',
@@ -84,7 +77,7 @@ export const testCommand: CliCommand = {
       throw new NoTestFilesError({ root: ctx.cwd, ...missingSelection(type, filter) });
     }
     const files = sample === undefined ? discovered : sampleFiles(discovered, sample);
-    const requested = readIndex(ctx.args, 'workers', 1) ?? availableCpus();
+    const requested = readIndex(ctx.args, 'workers', 1) ?? defaultWorkers();
     const workers = Math.max(1, Math.min(requested, files.length));
     const only = readIndex(ctx.args, 'worker', 0);
     if (only !== undefined && only >= workers) {

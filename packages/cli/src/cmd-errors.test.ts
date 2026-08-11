@@ -34,19 +34,23 @@ const rejection = async (argv: readonly string[]): Promise<{ readonly fix: strin
 };
 
 describe('unit · x errors explain', () => {
-  test('a core code answers with its registered title, a runnable fix and a docs URL', async () => {
-    const result = await run(['errors', 'explain', 'X_CONFIG_INVALID']);
+  // `X_DB_DRIFT` and not `X_CONFIG_INVALID`: the exemplar has to be a code the CLI neither owns
+  // nor borrows, or the test stops asserting the fallback it is named for. `X_CONFIG_INVALID`
+  // became a borrowed code when `x env` shipped (`CLI_BORROWED_ERROR_CODES`), so it now answers
+  // with the CLI's own fix — which is the case the next test covers.
+  test('a code the CLI neither owns nor borrows falls back to the gate', async () => {
+    const result = await run(['errors', 'explain', 'X_DB_DRIFT']);
     expect(result.ok).toBe(true);
     expect(record(result.data)).toEqual({
-      code: 'X_CONFIG_INVALID',
-      cause: 'app.config.ts is invalid',
+      code: 'X_DB_DRIFT',
+      cause: 'schema differs from migrations',
       fix: 'x verify --json',
-      docs: 'https://ultimate.dev/errors/X_CONFIG_INVALID',
+      docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
     });
     expect(result.lines).toEqual([
-      '  cause: app.config.ts is invalid',
+      '  cause: schema differs from migrations',
       '  fix:   x verify --json',
-      '  docs:  https://ultimate.dev/errors/X_CONFIG_INVALID',
+      '  docs:  https://ultimate.dev/errors/X_DB_DRIFT',
     ]);
   });
 
