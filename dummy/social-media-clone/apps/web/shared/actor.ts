@@ -8,7 +8,23 @@
 // inside a predicate would be one database round trip per row per connected client.
 
 import { canModerate, type UserId, type UserRole } from '@social-media-clone/domain';
+import { useContext } from '@ultimat3/core';
 
+/**
+ * The viewer rides on the request context as a service, NOT on `@ultimat3/core`'s `Actor`.
+ *
+ * That is a workaround, and worth naming. Core's `Actor` is closed — `{ kind, id, orgId, roles,
+ * scopes }` — with no extension point, and a policy predicate receives exactly that. Roles and an
+ * org id are enough when authorization is columnar ("same tenant?"). They cannot express
+ * "a friend of the author", because a friend set is not derivable from a role. And a predicate is
+ * synchronous by contract, so it cannot go and fetch one either.
+ *
+ * So the graph is resolved once per request into this service and read from memory inside the
+ * predicate. The cost is that a rule reads the viewer from the context instead of from the `actor`
+ * argument it was handed — the argument is real, it is just not the whole story. The framework fix
+ * is a typed extension seam on `Actor`, the same module-augmentation trick `CtxServices` and
+ * `PermissionRegistry` already use.
+ */
 export interface Actor {
   readonly id: UserId;
   readonly role: UserRole;
@@ -43,3 +59,20 @@ export const isBlocked = (actor: Actor | null, userId: UserId): boolean =>
 
 export const isAdmin = (actor: Actor | null): boolean =>
   isSignedIn(actor) && canModerate(actor.role);
+
+/** What `ctx.session` is. Installed once per request, where the request is resolved. */
+export interface SessionService {
+  viewer(): Actor | null;
+}
+
+declare module '@ultimat3/core' {
+  interface CtxServices {
+    readonly session: SessionService;
+  }
+}
+
+/**
+ * The viewer, read synchronously from the request context. This is what a policy predicate calls;
+ * see the note on `Actor` for why it does not use the predicate's own `actor` argument.
+ */
+export const currentViewer = (): Actor | null => useContext().session.viewer();

@@ -9,7 +9,7 @@
 
 import { type Audience, isVisibleAudience, type UserId } from '@social-media-clone/domain';
 import { can, definePermissions } from '@ultimat3/policy';
-import { isAdmin, isBlocked, isFriend, isSelf } from '../../shared/actor';
+import { currentViewer, isAdmin, isBlocked, isFriend, isSelf } from '../../shared/actor';
 
 /**
  * Declared rather than assumed. The augmentation narrows `can()` to these strings, so a typo is a
@@ -66,7 +66,7 @@ export const canSeePost = (actor: Parameters<typeof isBlocked>[0], post: PostRow
  */
 export const postRead = can<Record<string, never>, PostRow>(
   'post:read',
-  ({ actor, row }) => row !== null && canSeePost(actor, row),
+  ({ row }) => row !== null && canSeePost(currentViewer(), row),
 );
 
 /** Anyone signed in may post. There is no per-audience grant — the audience is on the row. */
@@ -75,18 +75,18 @@ export const postCreate = can('post:create');
 /** Your own post, or a moderator's. Checked against the loaded row, never against an id alone. */
 export const postDelete = can<Record<string, never>, PostRow>(
   'post:delete',
-  ({ actor, row }) => row !== null && (isSelf(actor, row.authorId) || isAdmin(actor)),
+  ({ row }) => row !== null && (isSelf(currentViewer(), row.authorId) || isAdmin(currentViewer())),
 );
 
 /** You can only like or comment on what you could read. One rule, reused, so they cannot drift. */
 export const postLike = can<Record<string, never>, PostRow>(
   'post:like',
-  ({ actor, row }) => row !== null && canSeePost(actor, row),
+  ({ row }) => row !== null && canSeePost(currentViewer(), row),
 );
 
 export const postComment = can<Record<string, never>, PostRow>(
   'post:comment',
-  ({ actor, row }) => row !== null && canSeePost(actor, row),
+  ({ row }) => row !== null && canSeePost(currentViewer(), row),
 );
 
 /**
@@ -96,5 +96,5 @@ export const postComment = can<Record<string, never>, PostRow>(
  * in answers in full. The null branch grants nothing the per-row branch would not.
  */
 export const feedRead = can<Record<string, never>, PostRow>('feed:read', ({ actor, row }) =>
-  row === null ? actor !== null : canSeePost(actor, row),
+  row === null ? actor !== null : canSeePost(currentViewer(), row),
 );
