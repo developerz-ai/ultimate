@@ -20,7 +20,7 @@ import { topic as makeTopic } from './channel';
 import type { Transport, TransportSubscription } from './fanout';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
-import type { PresenceRegistry } from './presence';
+import { type PresenceRegistry, presenceFrame } from './presence';
 import { CHANGE_SUBJECT_PREFIX, parseChange } from './replicator';
 import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
@@ -89,8 +89,24 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const clock = options.clock ?? systemClock;
   const accept = options.accept ?? new AcceptBudget({ perSecond: 500, burst: 2000, clock });
   const path = options.path ?? '/_x/sync';
+  const presence = options.presence;
   let ready = false;
   let changes: TransportSubscription | null = null;
+  let sweeping: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Presence work nobody is waiting on — a leave from a synchronous close, a sweep on a timer.
+   * It reaches the bus, so it can fail; failing must not take a socket or the process with it,
+   * and must not be silent either, or "the room still shows someone who left" has nothing to read.
+   */
+  const detach = (work: Promise<unknown>, at: string): void => {
+    void work.catch((error: unknown) => {
+      logger.error('presence failed', {
+        at,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
 
   const routeFrame = async (socket: SyncSocket, frame: Frame): Promise<void> => {
     socket.touch();
@@ -112,10 +128,19 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       case 'subscribe': {
         if (frame.target.kind === 'topic') {
           const name = makeTopic(...frame.target.topic.split('.'));
-          if (frame.op === 'drop') options.hub.unsubscribe(socket, name);
-          else await options.hub.subscribe(socket, name);
-          if (frame.op === 'add' && options.presence) {
-            socket.send(await options.presence.syncFrame(name));
+          if (frame.op === 'drop') {
+            options.hub.unsubscribe(socket, name);
+            if (presence) await presence.leave(name, socket.id);
+            return;
+          }
+          await options.hub.subscribe(socket, name);
+          // Subscribing to a topic IS joining its presence set: presence has no frame of its own,
+          // so a second round trip saying "and I am here" would be a second way to do one thing,
+          // and a client that skipped it would be invisible in a room it is receiving from.
+          // Repeating the frame is therefore also the heartbeat — `join` re-`put`s the member.
+          if (presence) {
+            const members = await presence.join(name, { id: socket.id, actorId: socket.actorId });
+            socket.send(presenceFrame(name, 'sync', members));
           }
           return;
         }
@@ -198,6 +223,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         const change = parseChange(payload);
         if (change) void options.registry.deliver(change);
       });
+      // One pass per heartbeat window: a member is swept only once it has actually missed its
+      // window, and the interval never holds the process open — shutdown is the drain's job.
+      if (presence) {
+        sweeping = setInterval(() => detach(presence.sweepAll(), 'sweep'), presence.heartbeatMs);
+        sweeping.unref();
+      }
       ready = true;
       markReady();
       logger.info('sync node ready', { buildId: options.buildId, path });
@@ -207,6 +238,8 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       ready = false;
       changes?.unsubscribe();
       changes = null;
+      if (sweeping !== null) clearInterval(sweeping);
+      sweeping = null;
     },
 
     fetch(request: Request, server: UpgradeTarget): Response | undefined {
@@ -275,8 +308,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         const socket = sockets.get(ws.data.socketId);
         if (!socket) return;
         options.registry.unsubscribeSocket(socket.id);
-        for (const name of [...socket.topics] as Topic[]) options.hub.unsubscribe(socket, name);
+        const topics = [...socket.topics] as Topic[];
+        for (const name of topics) options.hub.unsubscribe(socket, name);
         sockets.remove(socket.id);
+        // A closed socket is a leave, said now rather than left to TTL: everyone else would
+        // otherwise keep rendering a member who is provably gone for the rest of its window. The
+        // write is on the bus, and this callback is synchronous, so it cannot be awaited here.
+        if (presence) for (const name of topics) detach(presence.leave(name, socket.id), name);
       },
     },
 

@@ -14,7 +14,11 @@ import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
-import { TransportUnavailableError } from '@ultimat3/realtime';
+import {
+  DEFAULT_PRESENCE_TTL_MS,
+  selectTransport,
+  TransportUnavailableError,
+} from '@ultimat3/realtime';
 import {
   cdnLabel,
   describeCdn,
@@ -97,6 +101,30 @@ describe('the rendered label and the machine status', () => {
       'FASTLY_API_TOKEN',
     );
     expect(cdnLabel(fastly)).toBe(describeCdn(fastly));
+  });
+});
+
+/**
+ * Two readers of `NATS_URL`: `resolveServices` for the boot line an operator reads, and
+ * `selectTransport` for the object the process actually fans out on. A boot that printed
+ * `events=external` while running the in-process transport would be the worst of both, so the two
+ * answers are pinned against each other rather than trusted to stay in step.
+ */
+describe('the reported binding and the selected transport', () => {
+  const root = (): string => {
+    const created = mkdtempSync(join(tmpdir(), 'x-bus-mode-'));
+    roots.push(created);
+    return created;
+  };
+
+  test('agree that no url is embedded', () => {
+    expect(resolveServices(root(), {}).events.mode).toBe(selectTransport({}).mode);
+  });
+
+  test('agree that a url — even a padded one — is external', () => {
+    const env = { NATS_URL: '  nats://bus.test:4222  ' };
+    expect(resolveServices(root(), env).events.mode).toBe(selectTransport(env).mode);
+    expect(selectTransport(env).mode).toBe('external');
   });
 });
 
@@ -269,6 +297,43 @@ describe('startServices', () => {
       expect(registeredTiers()).toHaveLength(0);
       expect(tryMailDriver()).toBeUndefined();
       expect(jobDriver()).toBeUndefined();
+    },
+    { timeout: 60_000 },
+  );
+
+  /**
+   * The bus is the third selection that must land before `startQueue`: a bucket name that cannot
+   * be a NATS subject is a boot that reports a healthy transport and then fails every presence
+   * write, and finding that out after PGlite has started and been unwound again helps nobody.
+   */
+  test('an unusable KV bucket refuses before any service starts', async () => {
+    const unusable = { stateDir: '/nonexistent/x-dev-should-never-be-read' } as DevServices;
+    const failure = await startServices(unusable, {
+      NATS_URL: 'nats://bus.test:4222',
+      NATS_KV_BUCKET: 'x.presence',
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string; fix?: string },
+    );
+
+    expect(failure?.code).toBe('X_TRANSPORT_PROTOCOL');
+    expect(failure?.fix).toContain('NATS_KV_BUCKET');
+  });
+
+  test(
+    'the embedded bus reports the key that would change it, and the TTL presence gets',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'x-bus-boot-'));
+      roots.push(root);
+      const runtime = await startServices(resolveServices(root, {}), {});
+      try {
+        expect(runtime.transportDetail).toContain('NATS_URL');
+        // Handed to `PresenceRegistry` by the sync role. It is the transport's number, not the
+        // role's, because the KV bucket's age limit was derived from the same one.
+        expect(runtime.presenceTtlMs).toBe(DEFAULT_PRESENCE_TTL_MS);
+      } finally {
+        await runtime.stop();
+      }
     },
     { timeout: 60_000 },
   );

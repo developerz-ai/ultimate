@@ -18,6 +18,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - The retained change window stores **pre-policy** patches; resume re-filters them per subscriber.
 - Truth is the server. A client is never the merge authority.
 - Presence lives in `transport.shared`, never in a node's heap — it must survive a node loss.
+- The `sync` node is `PresenceRegistry`'s only caller. Subscribing to a topic **is** joining its
+  presence set, repeating the frame is the heartbeat, and dropping the subscription or closing the
+  socket is the leave — presence has no frame of its own in either direction, because a second way
+  to say "I am here" is a client that can be subscribed and invisible at the same time.
+- Expiry is silent by design, so the node sweeps on an interval: without it a member whose node
+  died is never announced as gone, and the survivors render a cursor that stopped moving. It has to
+  be an interval — a sweep only reports members a previous sweep saw, which is how a member that
+  joined on another node becomes leavable here at all.
+- One place reads `NATS_URL`, and it is `selectTransport` — a boot that resolved the bus itself
+  could reach a different one than the container it is standing in for. The KV bucket and the
+  presence TTL come back with the transport for the same reason: they are one decision.
 - `sync` is stateless: no sticky sessions, nothing on a socket survives a restart.
 - Exactly one `replicator` per DB, enforced by a session-level advisory lock.
 - A change lsn is `<16 hex commit position><8 hex row position in that transaction>`. Never order by
@@ -48,7 +59,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 |---|---|
 | `sync-protocol.ts` | the wire: 10 frame kinds, `encode`/`decode`, `PROTOCOL_VERSION` |
 | `channel.ts` / `presence.ts` / `socket.ts` | tier 1 |
-| `live-query.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `matcher-bridge.ts` | tier 2 |
+| `live-query.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `transport-env.ts` / `matcher-bridge.ts` | tier 2 |
 | `pg-bytes.ts` / `pg-wire.ts` / `pg-auth.ts` / `pg-connection.ts` / `pg-socket.ts` | the Postgres v3 client: bytes, frames, SASL, session, socket |
 | `pgoutput.ts` / `pg-entity-row.ts` / `pg-replication.ts` | WAL decode → `ChangeEvent`, and the lsn that orders it |
 | `nats-protocol.ts` / `nats-commands.ts` / `nats-socket.ts` / `nats-connection.ts` | the NATS client: decode, encode, socket, session |

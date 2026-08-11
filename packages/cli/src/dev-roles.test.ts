@@ -10,7 +10,7 @@ import {
   resetTasks,
   task,
 } from '@ultimat3/jobs';
-import { InProcessTransport } from '@ultimat3/realtime';
+import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, SELECTABLE_ROLES, selectRoles, startRoles } from './dev-roles';
@@ -29,6 +29,10 @@ function fakeRuntime(): RunningServices {
     jobs: createMemoryDriver(),
     events: createMemoryEventBus(),
     transport,
+    transportDetail: 'in-process fanout',
+    // The sync role reads this to build its `PresenceRegistry`; the default is what a boot with no
+    // `NATS_URL` resolves to, so the fixture is the real number rather than a rounder one.
+    presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
     storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
     stop: async () => transport.close(),
   };

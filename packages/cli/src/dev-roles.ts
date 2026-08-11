@@ -17,6 +17,7 @@ import {
   createSyncNode,
   LiveQueryRegistry,
   listenSyncNode,
+  PresenceRegistry,
   RingChangeBuffer,
   SocketRegistry,
 } from '@ultimat3/realtime';
@@ -120,12 +121,22 @@ async function startSync(
   options: StartRolesOptions,
 ): Promise<{ url: string; stop: () => Promise<void> }> {
   const sockets = new SocketRegistry();
+  const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
   const node = createSyncNode({
-    hub: new ChannelHub({ transport: options.runtime.transport, sockets }),
+    hub,
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport: options.runtime.transport,
     buildId: options.buildId,
     sockets,
+    // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
+    // list at all — the KV bucket the transport just created would hold nothing and every `sync`
+    // container would run a presence-less protocol. It reads and writes `transport.shared`, so it
+    // is exactly as multi-node as the transport behind it: in-process here, the bucket under NATS.
+    presence: new PresenceRegistry({
+      transport: options.runtime.transport,
+      hub,
+      ttlMs: options.runtime.presenceTtlMs,
+    }),
   });
   await node.start();
   try {

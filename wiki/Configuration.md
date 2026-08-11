@@ -239,7 +239,8 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `APP_URL` | `web`, `sync` | yes | the canonical origin. An app-read key, not a config field — declare it in `defineEnv` |
 | `SESSION_SECRET` | `web`, `sync` | yes | >=32 chars |
 | `WORKER_QUEUES` | `worker` | no — default `default` | comma-separated; one pool per name |
-| `REALTIME_TRANSPORT_URL` | `sync`, `replicator` | if transport ≠ `memory` | missing → `X_TRANSPORT_UNAVAILABLE` at readiness |
+| `NATS_URL` | `sync`, `replicator` | no — unset is in-process fanout | one node only; a second replica shares nothing. Unreachable → `X_TRANSPORT_UNAVAILABLE` at boot, not at readiness |
+| `NATS_KV_BUCKET` | `sync` | no — default `x_presence` | the JetStream KV bucket presence lives in. `[a-zA-Z0-9_-]+`; anything else is `X_TRANSPORT_PROTOCOL` at boot |
 | `REPLICATION_URL` | `replicator` | no — defaults to `DATABASE_URL` | the connection the WAL is read from; this role must have `REPLICATION` privilege |
 | `REPLICATION_SLOT` | `replicator` | no — default `x_replicator` | logical replication slot name |
 | `REPLICATION_PUBLICATION` | `replicator` | no — default `x_changes` | the `pgoutput` publication the slot decodes |

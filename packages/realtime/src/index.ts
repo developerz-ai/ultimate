@@ -314,3 +314,12 @@ export {
   type Rng,
   reconnectFrame,
 } from './thundering-herd';
+export {
+  DEFAULT_PRESENCE_BUCKET,
+  DEFAULT_PRESENCE_TTL_MS,
+  type SelectTransportOptions,
+  selectTransport,
+  TRANSPORT_ENV_KEYS,
+  type TransportEnvironment,
+  type TransportSelection,
+} from './transport-env';

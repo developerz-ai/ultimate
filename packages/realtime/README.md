@@ -51,7 +51,7 @@ frame handler is unchanged between rungs.
 | tier 1 | `topic`, `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
 | tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
 | replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
-| fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `subjectMatches` |
+| fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus client | `NatsConnection`, `NatsProtocolParser`, `NatsKvSet`, `ensureKvBucket`, `parseNatsUrl`, `bunNatsStream`, `FakeNatsServer` |
 | reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `drainPlan`, `AcceptBudget` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
@@ -141,6 +141,14 @@ because refusing without one just moves the herd next door.
   pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
   crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.
   `InMemoryAdvisoryLock` remains the single-process default for `x dev` and tests.
+- **`selectTransport(env)` decides which transport a boot fans out on** — the same law again, and
+  the only place that reads `NATS_URL`. It returns `{ transport, mode, detail, bucket,
+  presenceTtlMs, connect }`: unset → `InProcessTransport` and `mode: 'embedded'`, set → a
+  `NatsTransport` on the KV bucket `NATS_KV_BUCKET` names (default `x_presence`, so two apps on one
+  cluster do not share one presence namespace), validated here rather than on first connect.
+  `presenceTtlMs` comes back with it because the bucket's whole-stream age limit was derived from
+  it — a `PresenceRegistry` given a different number would report members leaving that never left.
+  Selection is pure; `connect()` is the dial, so an unreachable bus fails at boot.
 - **`NatsTransport` speaks NATS itself** — its own protocol codec and session over `Bun.connect`,
   no client dependency. Fanout is core NATS; `shared` is a JetStream KV bucket the transport
   creates on first connect, one key per presence member, expired by the **server's** per-message

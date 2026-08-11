@@ -136,9 +136,8 @@ export class TransportUnavailableError extends RealtimeError {
     super({
       code: 'X_TRANSPORT_UNAVAILABLE',
       cause: `transport "${args.transport}" is unavailable: ${args.reason}`,
-      fix:
-        args.fix ??
-        'x doctor transport — check REALTIME_TRANSPORT_URL and that the bus is reachable',
+      // Names the key `selectTransport` actually reads, and a command that actually exists.
+      fix: args.fix ?? 'x doctor — then check NATS_URL points at a reachable nats-server',
     });
   }
 }

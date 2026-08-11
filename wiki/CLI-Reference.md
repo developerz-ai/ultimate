@@ -143,6 +143,7 @@ rather than rendering an empty one as an answer.
 |---|---|---|
 | `DATABASE_URL` | PGlite in this process | that Postgres |
 | `NATS_URL` | in-process fanout | that NATS server |
+| `NATS_KV_BUCKET` | the KV bucket `x_presence` | that bucket — one per app on a shared cluster |
 | `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
 
 `migrate` is a real role but not a dev role: it runs once, as `x db migrate`; naming it under
