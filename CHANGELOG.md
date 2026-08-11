@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 1.2.0
+
 ### Added
 
 - **`/metrics` is served by every role**, on its own port (`METRICS_PORT`, default 9090) rather than the role's HTTP port â€” the Helm ingress routes `/` with no path exclusion, so mounting it beside `/healthz` would publish route patterns, request volumes and error rates to the internet. `worker`, `scheduler` and `replicator` open no HTTP socket at all, so a separate listener is the only thing they could ever be scraped on.
