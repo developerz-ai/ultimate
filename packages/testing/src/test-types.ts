@@ -3,6 +3,7 @@
 // failure line say which of the six steps it belongs to. See packages/cli/src/verify-tests.ts.
 
 import { test } from 'bun:test';
+import { TestEvalThresholdError } from './errors';
 
 export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as const;
 
@@ -129,9 +130,7 @@ export function evalTest<TInput, TOutput>(
     const failures = scores.filter((entry) => entry.score < options.threshold);
     if (failures.length > 0) {
       const detail = failures.map((entry) => `${entry.name}=${entry.score.toFixed(2)}`).join(', ');
-      throw new Error(
-        `eval "${name}" scored below ${options.threshold}: ${detail} — improve the prompt or lower the declared tolerance`,
-      );
+      throw new TestEvalThresholdError({ name, threshold: options.threshold, detail });
     }
   });
 }

@@ -243,6 +243,9 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_PWA_MANIFEST_INVALID` | the generated web manifest failed validation | a bad `start_url` or `scope` | fix the `pwa` block; `cause` names the field |
 | `X_SW_SCOPE_INVALID` | the service-worker scope cannot serve the routes it precaches | a scope narrower than the app | serve `sw.js` from the app root |
 | `X_BUILD_ID_MISSING` | no immutable build ID | a build produced outside `x build` | build with `x build`; never use a timestamp or `latest` |
+| `X_PWA_STRATEGY_EXHAUSTED` | a caching strategy had no cache, no network and no fallback | `staleWhileRevalidate` with no `StrategyOptions.fallback` and the network failed | pass `fallback` to the strategy, or set `pwa.offline.fallback` |
+| `X_PWA_SYNC_FLUSH_FAILED` | the background-sync outbox flush was rejected | `POST /_x/outbox/flush` returned a non-2xx | confirm `@ultimat3/realtime` mounts the flush endpoint and it returns 2xx on success |
+| `X_PWA_SYNC_INCOMPLETE` | the background-sync outbox flush left mutations queued | the flush endpoint reported `remaining > 0` | check the realtime outbox worker is draining, or raise the sync retry ceiling |
 
 ## i18n, money, time
 
@@ -308,6 +311,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_EVAL_RECORDING` | the gate ran with baseline recording switched on | `ULTIMATE_EVAL_RECORD` was exported in the shell, or set on the CI job, that ran `x verify` | `env -u ULTIMATE_EVAL_RECORD x verify` — record with `ULTIMATE_EVAL_RECORD=1 x test eval` instead |
 | `X_VECTOR_DIM_MISMATCH` | embedding dimensions differ from the store | the embedder model changed | use the original embedder, or `x ai reindex` |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave its tenant | a handler re-scoped the store it was handed | derive from the unscoped store: `vectorStore.scoped({ tenant })` |
+| `X_AI_EMBEDDER_INVALID` | an `Embedder` returned fewer vectors than texts it was given | `embedOne` got an empty batch back from `embed([text])` | fix the embedder's `embed()` to return exactly one vector per input text |
 
 ## Admin and manifest
 
@@ -336,6 +340,10 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_TEST_NETWORK_OFFLINE` | the test network is offline | a request made after `network.offline()` or `network.drop()` | `network.online()` before the call — or assert the offline path instead of the request |
 | `X_TEST_NETWORK_SEALED` | a test tried to reach the network | an unmocked external call | `mockFetch('<url>', …)`, or `allowHost('<host>')` if it must be real |
 | `X_TEST_NONDETERMINISTIC` | a test read wall-clock time or unseeded randomness | `Date.now()` in the code under test | wrap in `frozenClock()` / `seededRandom()`, or remove the read |
+| `X_TEST_EVAL_THRESHOLD` | an `evalTest()` score fell below its threshold | a prompt or output regressed against `options.threshold` | improve the prompt under test, or lower the threshold passed to `evalTest()` |
+| `X_TEST_SCHEMA_EXPECTED` | a matcher expected a Standard Schema and got something else | `toRejectInput`/`toAcceptInput` called on an action instead of `action.input` | assert against `action.input` (or `query.input`), not the action/query object itself |
+| `X_TEST_JOB_EXPECTED` | a matcher expected a job declaration and got something else | `toEmitSteps`/`recordSteps` called on `job.run` or an unrelated value | pass the job export itself, not its `.run` method |
+| `X_TEST_NETWORK_RACE` | a request raced `unsealNetwork()` and lost the patched fetch | `unsealNetwork()` called while a request from the same seal was still in flight | do not call `unsealNetwork()` while a request from the same test is still pending |
 
 ## UI
 

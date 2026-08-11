@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d1c31dea89670c3f2d90f5ba8c4457ca5e662d816b5d557fc3eccfe1f9071d4c",
+  "buildId": "095b6e043bc54393088bc85a0fa1f6801cefb0c8a5a08c474487492423b9281a",
   "tiers": {
     "0": [
       "core",
@@ -290,6 +290,11 @@
     },
     {
       "code": "X_AI_BUDGET_EXCEEDED",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AI_EMBEDDER_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },
@@ -1004,6 +1009,21 @@
       "at": "packages/pwa/src/errors.ts"
     },
     {
+      "code": "X_PWA_STRATEGY_EXHAUSTED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_SYNC_FLUSH_FAILED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_SYNC_INCOMPLETE",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_DUPLICATE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -1294,6 +1314,11 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_EVAL_THRESHOLD",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/errors.ts"
@@ -1309,7 +1334,17 @@
       "at": "packages/testing/src/errors.ts"
     },
     {
+      "code": "X_TEST_JOB_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
       "code": "X_TEST_NETWORK_OFFLINE",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_NETWORK_RACE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },
@@ -1325,6 +1360,11 @@
     },
     {
       "code": "X_TEST_NONDETERMINISTIC",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_SCHEMA_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

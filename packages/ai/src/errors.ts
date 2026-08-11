@@ -20,6 +20,7 @@ export const AI_ERROR_CODES = [
   'X_EVAL_RECORDING',
   'X_VECTOR_DIM_MISMATCH',
   'X_VECTOR_SCOPE_WIDENED',
+  'X_AI_EMBEDDER_INVALID',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -41,6 +42,7 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_EVAL_RECORDING: 'the gate ran with baseline recording switched on',
   X_VECTOR_DIM_MISMATCH: 'embedding dimensions differ from the store',
   X_VECTOR_SCOPE_WIDENED: 'a derived vector scope tried to leave its tenant',
+  X_AI_EMBEDDER_INVALID: 'an Embedder returned fewer vectors than texts it was given',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and
@@ -330,6 +332,22 @@ export class EmbedderDimMismatchError extends UltimateError {
         `provider returned ${input.received}`,
       fix: `set dimension: ${input.received} on the embedder, then x ai reindex to rebuild the store`,
       docs: docsFor('X_VECTOR_DIM_MISMATCH'),
+    });
+  }
+}
+
+/**
+ * `embedOne` asked an `Embedder` for one vector and got none back — a batch-size invariant the
+ * embedder itself broke, not a caller mistake. Distinct from `X_VECTOR_DIM_MISMATCH`: this fires
+ * before there is a vector at all, so there is nothing yet to measure the width of.
+ */
+export class AiEmbedderInvalidError extends UltimateError {
+  constructor(input: { embedder: string }) {
+    super({
+      code: 'X_AI_EMBEDDER_INVALID',
+      cause: `embedder "${input.embedder}" returned no vector for a batch of one text`,
+      fix: `fix the "${input.embedder}" Embedder's embed() to return exactly one vector per input text`,
+      docs: docsFor('X_AI_EMBEDDER_INVALID'),
     });
   }
 }

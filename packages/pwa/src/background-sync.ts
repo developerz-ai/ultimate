@@ -5,6 +5,12 @@
  * belongs to `@ultimat3/realtime`. This file owns only the browser-side trigger: register
  * a sync tag, and when the platform says connectivity is back, ask realtime to flush.
  * Nothing here knows what a mutation is, and it must stay that way.
+ *
+ * The two failures below (`X_PWA_SYNC_FLUSH_FAILED`, `X_PWA_SYNC_INCOMPLETE`, documented in
+ * `./errors.ts`) run inside the string emitted into `sw.js` — the browser's service-worker
+ * realm, which has no bundler and cannot import `@ultimat3/core`. A plain `Error` is the only
+ * throwable there, so the code is carried as text instead of a class, the same convention
+ * `PwaSyncFlushFailedError`'s doc comment names.
  */
 
 import { BUILD_ID_HEADER } from './version-skew';
@@ -62,9 +68,9 @@ const FLUSH_ENDPOINT=${JSON.stringify(endpoint)};
 const SYNC_MAX_ATTEMPTS=${retry.maxAttempts};
 async function flushOutbox(){
   const res=await fetch(FLUSH_ENDPOINT,{method:'POST',headers:{${JSON.stringify(BUILD_ID_HEADER)}:BUILD_ID}});
-  if(!res.ok)throw new Error('outbox flush failed: '+res.status);
+  if(!res.ok)throw new Error('X_PWA_SYNC_FLUSH_FAILED: outbox flush POST '+FLUSH_ENDPOINT+' returned '+res.status+' — see https://ultimate.dev/errors/X_PWA_SYNC_FLUSH_FAILED');
   const body=await res.json().catch(()=>({remaining:0}));
-  if(body.remaining>0)throw new Error('outbox partially flushed');
+  if(body.remaining>0)throw new Error('X_PWA_SYNC_INCOMPLETE: outbox flush at '+FLUSH_ENDPOINT+' left '+body.remaining+' mutation(s) queued — see https://ultimate.dev/errors/X_PWA_SYNC_INCOMPLETE');
 }
 self.addEventListener('sync',(event)=>{
   if(event.tag!==SYNC_TAG)return;

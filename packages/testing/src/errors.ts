@@ -9,6 +9,10 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_NONDETERMINISTIC',
   'X_TEST_FIXTURE_UNKNOWN',
   'X_TEST_FIXTURE_UNAVAILABLE',
+  'X_TEST_EVAL_THRESHOLD',
+  'X_TEST_SCHEMA_EXPECTED',
+  'X_TEST_JOB_EXPECTED',
+  'X_TEST_NETWORK_RACE',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -20,6 +24,10 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_NONDETERMINISTIC: 'a test read wall-clock time or unseeded randomness',
   X_TEST_FIXTURE_UNKNOWN: 'a test requested a fixture nobody registered',
   X_TEST_FIXTURE_UNAVAILABLE: 'a declared fixture has no driver in this process',
+  X_TEST_EVAL_THRESHOLD: 'an evalTest() score fell below its threshold',
+  X_TEST_SCHEMA_EXPECTED: 'a matcher expected a Standard Schema and got something else',
+  X_TEST_JOB_EXPECTED: 'a matcher expected a job declaration and got something else',
+  X_TEST_NETWORK_RACE: 'a request raced unsealNetwork() and lost the patched fetch',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -134,6 +142,58 @@ export class NetworkOfflineError extends UltimateError {
       cause: `${input.method} ${input.url} while the test network is ${input.mode}`,
       fix: 'network.online() before the call — or assert the offline path instead of the request',
       docs: docsFor('X_TEST_NETWORK_OFFLINE'),
+    });
+  }
+}
+
+/** `evalTest()`'s score fell below its declared threshold. A test failure, not a warning. */
+export class TestEvalThresholdError extends UltimateError {
+  constructor(input: { name: string; threshold: number; detail: string }) {
+    super({
+      code: 'X_TEST_EVAL_THRESHOLD',
+      cause: `eval "${input.name}" scored below ${input.threshold}: ${input.detail}`,
+      fix: 'improve the prompt under test, or lower the threshold passed to evalTest()',
+      docs: docsFor('X_TEST_EVAL_THRESHOLD'),
+    });
+  }
+}
+
+/** `toRejectInput`/`toAcceptInput` were handed something other than a Standard Schema. */
+export class TestSchemaExpectedError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_TEST_SCHEMA_EXPECTED',
+      cause: 'toRejectInput/toAcceptInput expect a Standard Schema (`t`), not the action',
+      fix: 'assert against action.input (or query.input), not the action/query object itself',
+      docs: docsFor('X_TEST_SCHEMA_EXPECTED'),
+    });
+  }
+}
+
+/** `toEmitSteps`/`recordSteps` were handed something other than a job declaration. */
+export class TestJobExpectedError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_TEST_JOB_EXPECTED',
+      cause: 'toEmitSteps expects a job declaration built with job(...)',
+      fix: 'pass the job export itself to toEmitSteps, not its .run method or an unrelated value',
+      docs: docsFor('X_TEST_JOB_EXPECTED'),
+    });
+  }
+}
+
+/**
+ * `sealNetwork()` always sets the original `fetch` before installing its patch, so this can only
+ * fire if `unsealNetwork()` ran concurrently with a request from the same seal — a race, not a
+ * reachable steady state.
+ */
+export class NetworkRaceError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_TEST_NETWORK_RACE',
+      cause: 'sealed network lost its original fetch mid-request',
+      fix: 'do not call unsealNetwork() while a request from the same test is still in flight',
+      docs: docsFor('X_TEST_NETWORK_RACE'),
     });
   }
 }
