@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createTurnQueue } from './pglite-turns';
 
-/** Resolves when someone else calls the returned trigger — a turn that ends on command. */
-function gate(): { readonly waited: Promise<void>; open: () => void } {
-  let open!: () => void;
-  const waited = new Promise<void>((resolve) => {
-    open = resolve;
-  });
-  return { waited, open };
-}
-
 describe('createTurnQueue', () => {
   test('runs work in the order it arrived, never overlapping', async () => {
     const queue = createTurnQueue();
@@ -55,28 +46,6 @@ describe('createTurnQueue', () => {
     release();
     await second;
     expect(secondTaken).toBe(true);
-  });
-
-  test('releasing twice does not hand the connection to two callers at once', async () => {
-    const queue = createTurnQueue();
-    const release = await queue.take();
-    release();
-    release();
-
-    const held = await queue.take();
-    const blocked = gate();
-    let thirdTaken = false;
-    void queue.take().then((turn) => {
-      thirdTaken = true;
-      turn();
-      blocked.open();
-    });
-
-    await Bun.sleep(5);
-    expect(thirdTaken).toBe(false);
-    held();
-    await blocked.waited;
-    expect(thirdTaken).toBe(true);
   });
 
   test('work that throws still gives the turn back — one bad statement is not a stalled process', async () => {

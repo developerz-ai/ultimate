@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
+// `node:vm` is the only way to get a second realm in-process; Bun has no native equivalent, and a
+// second realm is the whole point of the cross-realm test below.
+import { runInNewContext } from 'node:vm';
 import {
   advanceClock,
   assertDeterministic,
   frozenClock,
   frozenNow,
   installDeterminism,
+  isDeterminismInstalled,
   seededRandom,
   seededUuid,
   setFrozenClock,
@@ -53,6 +57,25 @@ describe('unit · determinism', () => {
     // Still a real predicate: it must not wave through something that is not a date at all.
     expect(({} as unknown) instanceof Date).toBe(false);
     expect('2020-05-05' instanceof (Date as unknown as new () => object)).toBe(false);
+  });
+
+  test('a Date built in another realm is still a Date', () => {
+    // Prototype chains are per-realm: a Date built in a second realm inherits *that* realm's
+    // `Date.prototype`, so testing it against this realm's constructor answers false however real
+    // the value is. `node:vm` is the reachable case — the doc comment's "another realm" is this.
+    const foreign: unknown = runInNewContext('new Date("2020-05-05T00:00:00.000Z")');
+    expect(isDeterminismInstalled()).toBe(true);
+    expect(foreign instanceof Date).toBe(true);
+    // Guards the guard: if the vm ever shared intrinsics this would just be the test above again.
+    expect(Object.getPrototypeOf(foreign)).not.toBe(Object.getPrototypeOf(new Date()));
+  });
+
+  test('an object that only claims to be a Date is not one', () => {
+    // The cheap brand — `Object.prototype.toString` — is forgeable, and so is an own `getTime`.
+    // The override reads the internal slot instead, which neither of them gives you.
+    const spoof = { [Symbol.toStringTag]: 'Date', getTime: () => 0 };
+    expect(Object.prototype.toString.call(spoof)).toBe('[object Date]');
+    expect(spoof instanceof Date).toBe(false);
   });
 
   test('the seeded RNG produces the same sequence for the same seed', () => {

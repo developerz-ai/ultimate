@@ -12,6 +12,12 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagString } from './parse';
 
+/**
+ * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
+ * `wiki/Upgrading.md` covers `X_*` codes, the eight primitive shapes, the `x` CLI surface, the
+ * tier table and `app.config.ts` fields, and not this — so a new fact the probe must report is a
+ * REQUIRED field: an optional one lets an implementation skip the check and still typecheck.
+ */
 export interface DoctorProbe {
   readonly bunVersion: string;
   /** App root, or undefined when the command runs outside an app. */
@@ -78,7 +84,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       finding(
         'X_CURSOR_SECRET_DEV',
         'cursors are signed with the shipped development key, so a client can forge a page position',
-        'set ULTIMATE_CURSOR_SECRET in the deploy environment: openssl rand -hex 32',
+        'export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"',
       ),
     );
   }

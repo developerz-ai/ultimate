@@ -4,7 +4,10 @@
 // to undo. This queue makes them consecutive instead, which is what a pinned pool connection
 // gives `withTransaction` and `readOnlyQuery` on a real server.
 
-/** Gives the connection back. Idempotent — a double release must not hand out two turns. */
+/**
+ * Gives the connection back. Idempotent for free: it is a settled promise's `resolve`, not a
+ * counter, so a second call cannot hand out a second turn — the next caller is already awake.
+ */
 export type Turn = () => void;
 
 export interface TurnQueue {
@@ -32,12 +35,7 @@ export function createTurnQueue(): TurnQueue {
     // other, not both read the same tail and run at once.
     tail = mine.then(() => held);
     await mine;
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      release();
-    };
+    return release;
   }
 
   async function run<T>(work: () => Promise<T>): Promise<T> {

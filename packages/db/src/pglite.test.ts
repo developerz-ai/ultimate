@@ -148,6 +148,17 @@ describe('createPgliteClient', () => {
     expect(await createPgliteClient({ driver }).execute(sql`select 1`)).toBe(2);
   });
 
+  // PGlite counts MODIFIED rows, so it tags a SELECT `affectedRows: 0` — a count of 0 is "this
+  // statement counted nothing", never "this statement touched nothing", and reading it as the
+  // latter made execute answer 0 for every read while `PostgresClient.execute` answered 2.
+  test('execute counts the rows of a SELECT the driver tagged with affectedRows: 0', async () => {
+    const read = fakeDriver({ rows: [{ id: 1 }, { id: 2 }], affectedRows: 0 });
+    expect(await createPgliteClient({ driver: read }).execute(sql`select id from posts`)).toBe(2);
+
+    const written = fakeDriver({ rows: [], affectedRows: 3 });
+    expect(await createPgliteClient({ driver: written }).execute(sql`delete from posts`)).toBe(3);
+  });
+
   test('query and one read rows, and bind values as parameters', async () => {
     const driver = fakeDriver({ rows: [{ id: 7 }] });
     const client = createPgliteClient({ driver });
@@ -238,6 +249,27 @@ describe('createPgliteClient', () => {
       'commit',
       'insert into t values (1)',
     ]);
+  });
+
+  // `withTransaction` releases in a `finally`, so a caller that kept its `tx` past the callback
+  // holds a handle with no claim on the connection. Writing straight to the shared driver then
+  // lands the statement inside whoever holds the turn now — a stray row in someone else's
+  // transaction, committed or rolled back with it, and no error anywhere to explain it.
+  test('a released reservation waits its turn rather than writing over the holder', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const leaked = await client.reserve();
+    leaked.release();
+
+    const holder = await client.reserve();
+    await holder.execute(sql`begin`);
+    const late = leaked.execute(sql`insert into t values (1)`);
+    await Bun.sleep(5);
+    expect(driver.calls.map((call) => call.text)).toEqual(['begin']);
+
+    holder.release();
+    await late;
+    expect(driver.calls.map((call) => call.text)).toEqual(['begin', 'insert into t values (1)']);
   });
 });
 

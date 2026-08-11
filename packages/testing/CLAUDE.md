@@ -9,7 +9,8 @@ factories only**, so a test that never destructures `mail` never loads the mail 
 |---|---|
 | No mocks of the DB | clone a template database; `template-db.ts` is the only DB path |
 | No wall clock | `frozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
-| Frozen ≠ different | `globalThis.Date` becomes a subclass, so `FrozenDate[Symbol.hasInstance]` answers for the real one. Without it `value instanceof Date` is false for every Date the runtime built itself — a `timestamptz` off a Postgres socket, a `structuredClone` — and the guards that read it fail under test and nowhere else |
+| Frozen ≠ different | `globalThis.Date` becomes a subclass, so `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot — `Date.prototype.getTime.call(value)` throws or it doesn't. Without it `value instanceof Date` is false for every Date the runtime built itself — a `timestamptz` off a Postgres socket, a `structuredClone`, anything from another realm — and the guards that read it fail under test and nowhere else |
+| Slot, not prototype | the brand is cross-realm on purpose: `instanceof RealDate` misses a `node:vm` or worker Date, and `Object.prototype.toString` is spoofable by `Symbol.toStringTag: 'Date'`. Only the slot is both |
 | No unmocked egress | `sealed-network.ts` patches fetch; a miss is `X_TEST_NETWORK_SEALED` |
 | Self is not egress | a port core's `markListening()` announced passes through — a socket test never unseals |
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every request as `X_TEST_NETWORK_OFFLINE`, ahead of the mocks — the app's own offline path runs |

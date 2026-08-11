@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import type { DoctorProbe } from './cmd-doctor';
-import { ICON_SOURCE, OFFLINE_FALLBACK, runDoctor } from './cmd-doctor';
+import { ICON_SOURCE, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
 
 const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: '1.3.14',
@@ -78,9 +78,7 @@ describe('unit · x doctor', () => {
     const cursor = findings.find((finding) => finding.code === 'X_CURSOR_SECRET_DEV');
     expect(cursor?.cause).toContain('forge a page position');
     // Pinned verbatim: this string is copied into a shell, so a paraphrase of it is a broken fix.
-    expect(cursor?.fix).toBe(
-      'set ULTIMATE_CURSOR_SECRET in the deploy environment: openssl rand -hex 32',
-    );
+    expect(cursor?.fix).toBe('export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"');
   });
 
   test('a production deploy with its own cursor secret reports nothing', async () => {
@@ -91,5 +89,49 @@ describe('unit · x doctor', () => {
     const findings = await runDoctor(probe({ exists: () => false, portFree: async () => false }));
     expect(findings.length).toBeGreaterThan(2);
     for (const finding of findings) expect(finding.fix.length).toBeGreaterThan(0);
+  });
+});
+
+// Every case above hands `runDoctor` the `production` boolean, so the one place that derives it
+// from the environment is the half nothing covered — and it decides whether the cursor finding
+// fires at all. Both variables are restored after each case: bun shares one process across test
+// files, and a leaked `X_ENV` would decide a later file's answer by load order.
+describe('unit · x doctor · probeFor', () => {
+  const SAVED_X_ENV = Bun.env['X_ENV'];
+  const SAVED_NODE_ENV = Bun.env['NODE_ENV'];
+
+  const setEnv = (key: 'X_ENV' | 'NODE_ENV', value: string | undefined): void => {
+    if (value === undefined) delete Bun.env[key];
+    else Bun.env[key] = value;
+  };
+
+  afterEach(() => {
+    setEnv('X_ENV', SAVED_X_ENV);
+    setEnv('NODE_ENV', SAVED_NODE_ENV);
+  });
+
+  const production = (xEnv: string | undefined, nodeEnv: string | undefined): boolean => {
+    setEnv('X_ENV', xEnv);
+    setEnv('NODE_ENV', nodeEnv);
+    return probeFor(import.meta.dir, '1.3.14', 3000).production;
+  };
+
+  test('NODE_ENV=production alone is a production process', () => {
+    expect(production(undefined, 'production')).toBe(true);
+  });
+
+  test('X_ENV=production alone is a production process', () => {
+    expect(production('production', undefined)).toBe(true);
+  });
+
+  // The precedence that matters: a base image that bakes in `NODE_ENV=production` would otherwise
+  // make `x doctor` report a forgeable cursor at every `x dev` inside it, and the developer who
+  // set `X_ENV=development` to say so would have been overruled by the image.
+  test('X_ENV overrides NODE_ENV rather than falling back to it', () => {
+    expect(production('development', 'production')).toBe(false);
+  });
+
+  test('neither variable set is not production', () => {
+    expect(production(undefined, undefined)).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import {
   generateMigration,
   snapshotOf,
 } from './generate';
+import type { SchemaDescription } from './introspect';
 
 const column = (
   name: string,
@@ -29,6 +30,35 @@ const posts = (columns: readonly ColumnDescriptionLike[]): EntityDescriptionLike
   primaryKey: ['id'],
   columns,
   indexes: ['posts_slug_key'],
+});
+
+const priced: EntityDescriptionLike = {
+  ...posts([
+    column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+    column('price_currency', {
+      kind: 'char',
+      notNull: true,
+      check: "price_currency ~ '^[A-Z]{3}$'",
+    }),
+  ]),
+  indexes: [],
+};
+
+/** The snapshot an earlier generated migration recorded — `dataType` is that run's `sqlType()`. */
+const recorded = (currency: string): SchemaDescription => ({
+  tables: [
+    {
+      schema: 'public',
+      name: 'posts',
+      columns: [
+        { name: 'id', dataType: 'uuid', nullable: false, default: null, position: 1 },
+        { name: 'price_currency', dataType: currency, nullable: false, default: null, position: 2 },
+      ],
+      primaryKey: ['id'],
+      indexes: [],
+      foreignKeys: [],
+    },
+  ],
 });
 
 const at = new Date('2026-07-26T12:00:00.000Z');
@@ -121,6 +151,37 @@ describe('generateMigration', () => {
 
     expect(migration.up).toContain('"price_currency" char(3) not null');
     expect(migration.up).not.toContain('"price_currency" char not null');
+  });
+
+  test('a column whose SQL type changed is retyped, and the down restores the old one', () => {
+    // The table was created when `char` meant `char(1)`; skipping it by name left the database
+    // rejecting every currency while the new snapshot claimed `char(3)`.
+    const migration = generateMigration({
+      entities: [priced],
+      current: recorded('char'),
+      name: 'widen currency',
+      now: at,
+    });
+
+    expect(migration.up).toBe(
+      'alter table "posts" alter column "price_currency" type char(3) ' +
+        'using "price_currency"::char(3);',
+    );
+    expect(migration.down).toBe(
+      'alter table "posts" alter column "price_currency" type char using "price_currency"::char;',
+    );
+  });
+
+  test('an unchanged column type is not retyped, so a settled schema generates nothing', () => {
+    const migration = generateMigration({
+      entities: [priced],
+      current: recorded('char(3)'),
+      name: 'no change',
+      now: at,
+    });
+
+    expect(migration.up).toBe('');
+    expect(migration.down).toBe('');
   });
 
   test('a new column becomes ALTER TABLE ADD COLUMN with a DROP COLUMN down', () => {

@@ -141,7 +141,13 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     return turns.run(() => statement(driver, fragment));
   }
 
-  const rowsOf = (result: PgliteResult): number => result.affectedRows ?? result.rows.length;
+  // PGlite counts MODIFIED rows, so a SELECT that returned rows still reports `affectedRows: 0` —
+  // `??` would answer 0 for every read and disagree with `PostgresClient.execute`. A write that
+  // modified nothing returned no rows either, so falling back to the row count stays 0 there.
+  const rowsOf = (result: PgliteResult): number =>
+    result.affectedRows !== undefined && result.affectedRows > 0
+      ? result.affectedRows
+      : result.rows.length;
 
   return {
     async query<T>(fragment: SqlFragment): Promise<readonly T[]> {
@@ -159,13 +165,22 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       // Held until `release()`, so every statement between `BEGIN` and `COMMIT` is this caller's
       // and no other unit of work can interleave one of its own.
       const turn = await turns.take();
+      let held = true;
+      // Direct only while the turn is held — re-queueing behind ourselves would deadlock. Once
+      // released the handle has no claim on the connection, and a leaked `tx` writing straight to
+      // it would land inside whatever transaction holds it now, with no error to read; so a late
+      // statement queues like any other caller and waits for its own turn.
+      const on = (fragment: SqlFragment): Promise<PgliteResult> =>
+        held ? statement(driver, fragment) : turns.run(() => statement(driver, fragment));
       return {
-        query: async <T>(fragment: SqlFragment) =>
-          (await statement(driver, fragment)).rows as readonly T[],
+        query: async <T>(fragment: SqlFragment) => (await on(fragment)).rows as readonly T[],
         one: async <T>(fragment: SqlFragment) =>
-          ((await statement(driver, fragment)).rows[0] as T | undefined) ?? null,
-        execute: async (fragment: SqlFragment) => rowsOf(await statement(driver, fragment)),
-        release: turn,
+          ((await on(fragment)).rows[0] as T | undefined) ?? null,
+        execute: async (fragment: SqlFragment) => rowsOf(await on(fragment)),
+        release: () => {
+          held = false;
+          turn();
+        },
       };
     },
     async ping(): Promise<void> {

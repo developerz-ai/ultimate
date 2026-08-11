@@ -167,11 +167,37 @@ interface Plan {
   readonly down: string[];
 }
 
+/**
+ * Skipping an existing column by name alone missed the type moving under it: a table created
+ * while money's currency was bare `char` keeps `char(1)` and rejects every ISO 4217 code, yet the
+ * snapshot this run records claims `char(3)` — two claims with no statement between them. Both
+ * sides are generated spellings (`current` is a previous migration's own snapshot), so any
+ * difference is a real kind change, not a catalog alias.
+ */
+function retypeColumn(
+  table: string,
+  column: ColumnDescriptionLike,
+  recorded: ColumnDescription,
+  plan: Plan,
+): void {
+  const wanted = sqlType(column.kind);
+  if (recorded.dataType === wanted) return;
+  const alter = (type: string): string =>
+    `alter table "${table}" alter column "${column.column}" type ${type} ` +
+    `using "${column.column}"::${type};`;
+  plan.up.push(alter(wanted));
+  plan.down.push(alter(recorded.dataType));
+}
+
 function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: Plan): void {
-  const existing = new Set(live.columns.map((column) => column.name));
+  const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
   for (const column of entity.columns) {
-    if (existing.has(column.column)) continue;
+    const recorded = existing.get(column.column);
+    if (recorded !== undefined) {
+      retypeColumn(entity.table, column, recorded, plan);
+      continue;
+    }
     added.add(column.column);
     // A NOT NULL add with no default cannot succeed on a populated table; emit it nullable and
     // leave the agent the exact follow-up rather than a migration that fails at 3am.

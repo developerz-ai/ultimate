@@ -6,8 +6,8 @@
 // and money's currency generated as bare `char` — `char(1)` — which no three-letter code fits.
 //
 // The whole chain runs here: entity() -> describe() -> generateMigration() -> a live server ->
-// postgresDriver() -> decoded row. Skips when no admin url is configured, the same as
-// `db-integration.test.ts`; CI's `postgres` service container sets `TEST_DATABASE_URL`.
+// postgresDriver() -> decoded row. Skips unless `TEST_DATABASE_URL` is set, the same as
+// `db-integration.test.ts`; CI's `postgres` service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
@@ -25,7 +25,10 @@ import { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 import { clearRegistry } from './registry';
 import type { FindManyArgs, Page } from './repo';
 
-const adminUrl = Bun.env['TEST_DATABASE_URL'] ?? Bun.env['DATABASE_URL'];
+// `TEST_DATABASE_URL` only. `beforeAll`/`afterAll` here run `drop table … cascade`, so falling
+// back to the app's own `DATABASE_URL` would hand this file whatever database a developer had
+// exported — a skip is the right answer, and CI sets the test url anyway.
+const adminUrl = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof adminUrl === 'string' && adminUrl.length > 0;
 
 const orgs = entity('pg_live_orgs', {

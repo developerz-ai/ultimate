@@ -42,6 +42,8 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     private readonly rowLimit: number | null,
     private readonly after: SeekKey | null,
     private readonly unsupported: readonly string[],
+    /** Set by `seek()`. Only a paged read pays for the id tiebreak — see `pageOrder()`. */
+    private readonly paged: boolean = false,
   ) {}
 
   where(equals: Readonly<Record<string, unknown>>): Builder<TRow> {
@@ -69,7 +71,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   }
 
   seek(after: SeekKey | null, limit: number): Builder<TRow> {
-    return this.derive({ after, rowLimit: limit });
+    return this.derive({ after, rowLimit: limit, paged: true });
   }
 
   shape(): QueryShape {
@@ -97,9 +99,10 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     });
     if (this.after !== null) clauses.push(this.seekClause(this.after, params));
     const where = clauses.length > 0 ? ` where ${clauses.join(' and ')}` : '';
+    const keys = this.pageOrder();
     const order =
-      this.order.length > 0
-        ? ` order by ${this.order.map((key) => `"${key.column}" ${key.direction}`).join(', ')}`
+      keys.length > 0
+        ? ` order by ${keys.map((key) => `"${key.column}" ${key.direction}`).join(', ')}`
         : '';
     const limit = this.rowLimit === null ? '' : ` limit ${this.rowLimit}`;
     return { sql: `select * from "${this.entity}"${where}${order}${limit}`, params };
@@ -108,14 +111,37 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   async execute(): Promise<readonly TRow[]> {
     const source = typeof this.rows === 'function' ? await this.rows() : this.rows;
     let result = source.filter((row) => matchesFilters(row, this.filters));
-    if (this.order.length > 0) {
-      result = [...result].sort((a, b) => compareRows(a, b, this.order));
+    const keys = this.pageOrder();
+    if (keys.length > 0) {
+      result = [...result].sort((a, b) => compareRows(a, b, keys));
     }
     if (this.after !== null) {
       const cut = this.after;
       result = result.filter((row) => isAfterKey(row, cut, this.order));
     }
     return this.rowLimit === null ? result : result.slice(0, this.rowLimit);
+  }
+
+  /** True when the ordering already names `id`, so the tiebreak is neither added nor doubled. */
+  private get ordersById(): boolean {
+    return this.order.some((key) => key.column === 'id');
+  }
+
+  /**
+   * The ordering a page is actually served in: the declared keys, then `id` to make it total.
+   *
+   * Without the tiebreak the database is free to return two rows with the same sort value in
+   * either order, while `seekClause()` decides the next page as if they had been ordered by id —
+   * so one of the pair comes back twice and the other never does. `execute()` had the same split,
+   * sorting by the declared keys and then filtering with the id-aware predicate. One order, read
+   * by the SQL, the in-memory sort and the predicate alike, is what closes it.
+   *
+   * Only a paged read pays for it: an unpaginated `from()` over rows that have no `id` must keep
+   * generating exactly the SQL it was asked for.
+   */
+  private pageOrder(): readonly OrderKey[] {
+    if (!this.paged || this.ordersById) return this.order;
+    return [...this.order, { column: 'id', direction: 'asc' }];
   }
 
   /**
@@ -131,14 +157,12 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
       params.push(value);
       return `$${params.length}`;
     };
-    // The id tiebreak is appended only when the ordering has not already named it: a second
-    // `id` term compares the key to itself and can never be true, so it is dead SQL an agent
-    // then has to reason about.
-    const ordered = this.order.some((key) => key.column === 'id');
-    const keys: readonly OrderKey[] = ordered
-      ? this.order
-      : [...this.order, { column: 'id', direction: 'asc' }];
-    const values = ordered ? [...after.key] : [...after.key, after.id];
+    // The same `pageOrder()` the ORDER BY is built from, so the predicate can only ever describe
+    // the order the rows actually arrive in. The tiebreak is absent when the ordering already
+    // named `id`: a second `id` term compares the key to itself, can never be true, and is dead
+    // SQL an agent then has to reason about.
+    const keys = this.pageOrder();
+    const values = this.ordersById ? [...after.key] : [...after.key, after.id];
     const terms = keys.map((key, index) => {
       const equal = keys
         .slice(0, index)
@@ -158,6 +182,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
       patch.rowLimit === undefined ? this.rowLimit : patch.rowLimit,
       patch.after === undefined ? this.after : patch.after,
       patch.unsupported ?? this.unsupported,
+      patch.paged ?? this.paged,
     );
   }
 }
@@ -168,6 +193,7 @@ interface BuilderState {
   readonly rowLimit: number | null;
   readonly after: SeekKey | null;
   readonly unsupported: readonly string[];
+  readonly paged: boolean;
 }
 
 /**

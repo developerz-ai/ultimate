@@ -235,3 +235,65 @@ describe('the keyset predicate', () => {
     expect(rows.map((row) => row.id)).toEqual(['b', 'a']);
   });
 });
+
+/**
+ * The predicate always carries the id tiebreak, so the ordering has to carry it too. When it did
+ * not, the rows came back in one order and were paged as if they had arrived in another.
+ */
+describe('a paged read is ordered totally', () => {
+  // Every row on the same instant, and the source order deliberately not the id order: this is
+  // the shape that separates "sorted by the declared keys" from "sorted the way the cursor reads".
+  const tied: readonly Post[] = [
+    { id: 'd', orgId: ORG, createdAt: 10 },
+    { id: 'b', orgId: ORG, createdAt: 10 },
+    { id: 'c', orgId: ORG, createdAt: 10 },
+    { id: 'a', orgId: ORG, createdAt: 10 },
+  ];
+
+  beforeEach(() => {
+    resetRegistry();
+    configureCursorSigning('test-secret');
+  });
+
+  test('the id tiebreak reaches the ORDER BY, not only the seek predicate', () => {
+    const { sql } = from<Post>('posts', tied).orderBy('createdAt').seek(null, 2).toSQL();
+    expect(sql).toContain('order by "createdAt" asc, "id" asc');
+  });
+
+  test('an ordering that already names id is not given a second one', () => {
+    const { sql } = from<Post>('posts', tied)
+      .orderBy('createdAt', 'desc')
+      .orderBy('id', 'asc')
+      .seek(null, 2)
+      .toSQL();
+    expect(sql).toContain('order by "createdAt" desc, "id" asc');
+  });
+
+  test('an unpaged read keeps generating exactly the SQL it was asked for', () => {
+    // `from()` is also the source for reads that never page, over rows that may have no `id`.
+    const { sql } = from<Post>('posts', tied).orderBy('createdAt').toSQL();
+    expect(sql).toBe('select * from "posts" order by "createdAt" asc');
+  });
+
+  test('rows tied on the sort key are each returned exactly once', async () => {
+    const feed = registerQuery(
+      'tiedFeed',
+      query({
+        input: t.object({ orgId: t.uuid }),
+        policy: can('feed:read'),
+        sql: ({ orgId }) => from<Post>('posts', tied).where({ orgId }).orderBy('createdAt'),
+      }),
+    );
+
+    const first = await paginate(feed, { orgId: ORG }, { first: 2, ctx });
+    const second = await paginate(
+      feed,
+      { orgId: ORG },
+      { first: 2, ctx, after: first.endCursor ?? '' },
+    );
+
+    const seen = [...first.rows, ...second.rows].map((row) => row.id);
+    expect(seen).toEqual(['a', 'b', 'c', 'd']);
+    expect(second.hasNextPage).toBe(false);
+  });
+});

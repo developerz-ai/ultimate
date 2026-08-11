@@ -53,8 +53,10 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.
 - Policy runs per subscriber for live queries. Never cache a decision across actors.
 - The matcher patches from `QueryShape`, never from SQL text.
-- `paginate` has no `offset` parameter and must never grow one, and it is reachable as
+- `paginate` has no `offset` parameter and must never grow one, and it is reachable **only** as
   `query.page(input, { first, after })` — a page is the read's own answer, not an imported helper.
+  `src/index.ts` exports `Page` and `PaginateArgs` and not the function: re-exporting it would be
+  a second way to ask for the thing `.page()` already does.
 - **A cursor is a position, not a row.** `isAfterKey` in `source.ts` is the one definition of
   "after this position": `Builder.seek()` compiles it to SQL and `paginate()` applies it when a
   source cannot push the seek down. The fallback used to find the cursor's row by id and slice
