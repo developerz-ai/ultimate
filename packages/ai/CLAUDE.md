@@ -25,6 +25,7 @@ rather than imported. Same contract, two wire formats.
 | `eval-baseline.ts` | the recorded scores: path, read/write, what counts as a regression |
 | `scorers.ts` | what a `Scorer` is, the built-in ones, and `llmJudge` |
 | `vector.ts` | `VectorStore`, in-memory cosine + BM25, RRF hybrid |
+| `pg-vector.live.test.ts` | the same store against a real pgvector — DDL, fusion, scope, plan |
 | `vector-scope.ts` | the tenant + policy envelope, and the tighten-only derive rule |
 | `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
 | `pg-vector.ts` | `PgVectorStore` — the production store |
@@ -94,6 +95,21 @@ rather than imported. Same contract, two wire formats.
 - `PgVectorStore` is the ONLY production vector path — pgvector and Postgres FTS in the app's own
   Postgres, never a second datastore. `MemoryVectorStore` is the dev twin and enforces the same
   envelope; a leak that only reproduces against real Postgres is a leak nobody finds.
+- **It is proved against a real pgvector, not only against a recording client.**
+  `pg-vector.live.test.ts` runs the whole chain — `ddl()` -> a live server -> `upsert` -> cosine,
+  FTS and the RRF fusion -> decoded hit — and REFUSES to skip when `TEST_DATABASE_URL` names a
+  Postgres without the extension, because a suite that stands down reports green for the one
+  store that runs in front of real traffic. CI's service container is `pgvector/pgvector:pg17`
+  for that reason. Asserting statement *text* cannot catch a statement Postgres rejects, nor a
+  filter that compiles cleanly and excludes nothing: that is exactly how metadata shipped bound
+  `::jsonb`. A new operator, read path or scope rule is not done until it round-trips there.
+- The distance ordering lives in a subquery, ascending and raw, because that is the only shape
+  hnsw answers — `order by 1 - (…) desc` is a sequential scan. Both halves are pinned by a plan
+  assertion in the live suite, since only a planner can say which one shipped.
+- hnsw applies the scope AFTER the index scan, so an approximate index can return fewer rows
+  than asked for once a tenant filter is selective. The planner takes the exact path instead
+  when it has stats — which is why a bulk backfill that skips `analyze` is how a search that
+  used the index yesterday scans today. Assert the rows a scoped read returns, never the node.
 - Tenant and policy filters go **in SQL**, on every statement, through `conditionsSql` — and on
   BOTH halves of the fusion. Filtering after the rows are loaded is not filtering.
 - `(tenant, id)` is the primary key. A cross-tenant overwrite is impossible at the storage layer
@@ -108,4 +124,9 @@ rather than imported. Same contract, two wire formats.
 ```
 bun test packages/ai
 bun run --filter @ultimat3/ai typecheck
+
+# the live vector suite — needs the extension, not just a Postgres
+docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17
+TEST_DATABASE_URL=postgres://postgres:ultimate@localhost:5432/postgres \
+  bun test packages/ai/src/pg-vector.live.test.ts
 ```
