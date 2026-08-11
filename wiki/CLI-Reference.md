@@ -252,7 +252,7 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets |
 
-Execs exactly one command per target and nothing else: `docker build -f docker/Dockerfile` for `docker`, `bun build --compile` over `apps/web/server.ts` for `binary`, `apps/web/prerender.ts` for `static`. It does **not** run `x verify` or any part of it — run the gate yourself first, because a build of code that fails the gate still produces an artifact. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND`.
+Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. On success, execs exactly one command per target: `docker build -f docker/Dockerfile` for `docker`, `bun build --compile` over `apps/web/server.ts` for `binary`, `apps/web/prerender.ts` for `static`. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND`.
 
 ## x deploy
 
