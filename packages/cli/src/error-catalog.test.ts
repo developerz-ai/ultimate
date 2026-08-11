@@ -43,13 +43,19 @@ describe('unit · the catalog list', () => {
 });
 
 describe('unit · loading it', () => {
+  // Imports EVERY `@ultimat3/*` package, which is the point — and the reason Bun's 5s default no
+  // longer covers it. `x verify` shards its test steps across worker processes now, so this test
+  // shares its cores with up to seven other `bun test` children, and which shard it lands in
+  // depends on the file count. Left alone it fails intermittently in CI rather than slowly here.
+  // The load is the coverage, so the timeout is what moves. Same shape as
+  // `error-contract.test.ts` and `scripts/verify.test.ts`.
   test('registers codes the CLI graph never imports on its own', async () => {
     await loadErrorCatalog();
     // auth, pwa and money are reachable from no `x` command, so only the catalog puts them here.
     expect(hasErrorCode('X_UNAUTHENTICATED')).toBe(true);
     expect(hasErrorCode('X_PWA_ICON_MISSING')).toBe(true);
     expect(hasErrorCode('X_CURRENCY_UNKNOWN')).toBe(true);
-  });
+  }, 30_000);
 
   test('reports what it could not import rather than dropping it silently', async () => {
     const catalog = await loadErrorCatalog();
@@ -166,5 +172,7 @@ describe('unit · every code shipped source hands a reader is registered', () =>
       }
     }
     expect([...orphans.entries()]).toEqual([]);
-  });
+    // Loads every package AND walks every shipped source file in the monorepo — the same reason
+    // the test above carries an explicit budget rather than Bun's 5s default.
+  }, 30_000);
 });
