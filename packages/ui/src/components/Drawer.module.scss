@@ -10,9 +10,7 @@
   color: t.role('fg');
   box-shadow: t.shadow(xl);
 
-  &::backdrop {
-    background: t.role('scrim', 0.45);
-  }
+  @include t.scrim-backdrop;
 }
 
 .side-inline-start {

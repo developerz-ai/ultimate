@@ -25,6 +25,11 @@ factories only**, so a test that never destructures `mail` never loads the mail 
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |
 | Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there; `fixtureTest` disposes in reverse build order even when the body throws |
 | Building one by hand | `createRunJobs()` outside `fixtureTest` is not disposed for you — reset the driver in `afterEach`, or the next file in the process inherits your queue |
+| Factory strategy | an association is built with the strategy that asked for it: `build()` never reaches a database, `create()` writes the parent first. Never a third strategy |
+| One write seam | `usePersister` is the only place `create()` writes. A factory that took a repo argument would put the seam at every call site |
+| Factory seeds | derived from the table name unless given, so two entities never draw the same uuid stream. `reset()` cascades into associated parents — a half-reset row is worse than none |
+| Shared examples | `behavesLike` calls `describe`, so it goes at declaration scope; bun rejects a `describe` inside a test body |
+| Parallelism is opt-in | `bun test` is one process on one database. N databases need `bun test --parallel` or `x test --workers N`. Say which one a claim is about |
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 

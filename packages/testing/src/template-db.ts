@@ -32,14 +32,19 @@ export interface WorkerDatabase {
 export const DEFAULT_TEMPLATE = 'ultimate_test_template';
 
 /**
- * Bun exposes the test worker index in the environment; a plain `bun test` run is worker 0. The
- * pid fallback keeps two hand-run processes from colliding on the same database.
+ * Which database this process owns. A plain `bun test` run is one process and worker 0; a
+ * `bun test --parallel=N` run is N processes and workers 1..N; an `x test --workers N` run is N
+ * processes and workers 0..N-1.
+ *
+ * The pid fallback keeps two hand-run processes from colliding on the same database.
  */
 export function workerId(env: Readonly<Record<string, string | undefined>>, pid = 0): number {
   // ULTIMATE_TEST_WORKER is checked FIRST because `x test` assigns it deliberately, one index per
-  // shard. A runner-set value must beat anything the runtime invents: if Bun ever populates
-  // BUN_TEST_WORKER_ID itself, two shards could resolve to the same index and then race on the
-  // same cloned database — a data-dependent failure that would look like a flaky test.
+  // shard, and a runner-set value must beat anything the runtime invents. That precedence is no
+  // longer hypothetical: measured on Bun 1.3.14, `bun test --parallel` populates BOTH
+  // BUN_TEST_WORKER_ID and JEST_WORKER_ID (identically, 1-based). So an `x test` shard that ever
+  // ran its child with --parallel would otherwise resolve to Bun's index instead of its own, two
+  // shards would land on one cloned database, and the failure would read as a flaky test.
   for (const key of ['ULTIMATE_TEST_WORKER', 'BUN_TEST_WORKER_ID', 'JEST_WORKER_ID']) {
     const raw = env[key];
     if (raw === undefined) continue;

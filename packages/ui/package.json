@@ -23,6 +23,7 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
+    "CATALOG.md",
     "README.md",
     "LICENSE"
   ],
@@ -31,7 +32,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test"
+    "test": "bun test",
+    "catalog": "bun run src/catalog/build-catalog.ts"
   },
   "dependencies": {
     "@ultimat3/core": "1.0.0",

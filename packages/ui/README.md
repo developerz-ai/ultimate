@@ -2,6 +2,10 @@
 
 SolidJS design system. Semantic tokens, SCSS modules, dark + RTL by construction.
 
+**[`CATALOG.md`](CATALOG.md) is the reference** — every component, every prop, every
+token, generated from source by `bun run catalog` and drift-checked by
+`catalog.test.ts`. Read it instead of reading `src/`.
+
 ## Token roles
 
 Every colour in every component is one of these, stored as **space-separated RGB
@@ -31,6 +35,85 @@ Scales: `--space-*` (4px base), `--text-*` (fluid `clamp()`), `--radius-*`,
 | No physical directions | `margin-inline`, `inset-inline-start`, `text-align: start` — RTL needs no second stylesheet |
 | No hardcoded strings | labels are props, or `t()` through `UI_KEYS` |
 | One token source | `src/tokens/*.scss` is canonical; `tokens.ts` mirrors it and `x verify` fails on drift |
+| AA contrast, both themes | `contrast.test.ts` measures every pairing a component renders — text, status fills, soft tints, focus rings, borders |
+
+## Contrast
+
+`As of 2026-08` every foreground/background pairing the components render clears
+**WCAG AA (4.5:1)** in light *and* dark, and borders clear a 1.4:1 visible-edge floor.
+It is measured, not asserted: `roleContrast('dark', 'fg-muted', 'surface-raised')`
+returns the number, and the test fails the build on a regression.
+
+```ts
+import { AA_TEXT, contrastRatio, roleContrast } from '@ultimat3/ui';
+
+roleContrast('dark', 'accent', 'bg') >= AA_TEXT;   // true
+contrastRatio('31 110 178', '253 246 240');        // 4.99 — check a brand before shipping it
+```
+
+## Page layout
+
+Four composites cover the frame of an app screen. Below them are `Container`,
+`Stack` and `Grid`; there is no fifth way to build a page.
+
+| Component | Renders | Use for |
+|---|---|---|
+| `AppShell` | skip link + `header` / `nav` / `main` / `footer` landmarks on a CSS grid | the frame every screen sits in — one per document |
+| `PageHeader` | breadcrumbs, the page's one `h1`, description, actions | the top of a screen |
+| `Section` | a labelled `section` with a real heading and `aria-labelledby` | second-level structure inside a page |
+| `Toolbar` | `role="toolbar"` strip, start + end slots, arrow-key roving | filters and actions above a table or list |
+
+`AppShell` holds no state: below `md` the sidebar becomes a band above the content,
+and an off-canvas menu is `Drawer` — the one component that already does that.
+Heading levels are props (`headingTag`, `nextHeadingLevel`), so a nested `Section`
+never skips a level.
+
+```tsx
+<AppShell header={<Toolbar label={t('nav.main')}>{nav}</Toolbar>} sidebar={<SideNav />}>
+  <PageHeader
+    title={t('orders.title')}
+    description={t('orders.subtitle')}
+    breadcrumbs={[{ label: t('nav.home'), href: '/' }, { label: t('orders.title') }]}
+    actions={<Button>{t('orders.new')}</Button>}
+  />
+  <Section title={t('orders.recent')} actions={<Toolbar label={t('orders.filters')}>{filters}</Toolbar>}>
+    <DataTable caption={t('orders.title')} columns={columns} rows={rows} rowKey={(row) => row.id} />
+  </Section>
+</AppShell>
+```
+
+## Branding
+
+`defineTheme()` is the **only** seam for restyling. No SCSS `@use ... with ()`
+override, no forked package, no second entry point — one call, validated, rendered
+as the custom properties that beat `theme.scss` at every specificity level it emits.
+
+```ts
+import { brandStyleTag, defineTheme } from '@ultimat3/ui';
+
+export const brand = defineTheme({
+  colors: {
+    light: { accent: '99 46 210', 'accent-strong': '76 32 168' },
+    dark: { accent: '178 148 255', 'accent-strong': '198 176 255' },
+  },
+  radius: { md: '0.125rem', lg: '0.25rem' },
+  font: { sans: "Inter, system-ui, sans-serif" },
+});
+
+// in <head>, AFTER global.scss
+`${brandStyleTag(brand)}`;
+```
+
+| Slot | Accepts | Refused with |
+|---|---|---|
+| `colors.light` / `colors.dark` | any `ColorRole`, as `R G B` channels | `X_TOKEN_UNKNOWN` for the role, `X_UI_INVALID_VALUE` for the value |
+| `radius` | any `RadiusName`, as a bare CSS length | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
+| `font` | `sans`, `mono`, as a `font-family` list | `X_TOKEN_UNKNOWN` / `X_UI_INVALID_VALUE` |
+
+Values are validated, never escaped: the output goes into a `<style>` element, so
+anything carrying `;`, `}` or `</style>` is a refusal at the app's entry point rather
+than a CSS injection. Every component in the system follows the override — they only
+ever read the roles, never a colour.
 
 ## Example
 
@@ -95,14 +178,15 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 
 | Code | When |
 |---|---|
-| `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define |
+| `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | reactive context or DOM APIs used where they do not exist |
-| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other |
+| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, or a `defineTheme()` value that is not a token value |
 
 ## Commands
 
 ```
-bun test                 # token parity, theme resolution, cx, a11y, formatting cores
+bun test                 # token parity, contrast, theme resolution, brand, catalog drift, a11y
 bun run typecheck
+bun run catalog          # regenerate CATALOG.md after changing a component's props
 ```

@@ -1,0 +1,38 @@
+@use '../tokens' as t;
+
+.section {
+  @include t.column(t.space(4));
+  min-inline-size: 0;
+}
+
+.head {
+  @include t.row(t.space(4), flex-end, space-between);
+  flex-wrap: wrap;
+}
+
+.text {
+  @include t.column(t.space(1));
+  min-inline-size: 0;
+}
+
+.title {
+  color: t.role('fg-strong');
+  font-size: t.text(lg);
+  line-height: t.leading(snug);
+}
+
+.description {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  max-inline-size: 68ch;
+}
+
+.actions {
+  @include t.row(t.space(2), center, flex-end);
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.body {
+  min-inline-size: 0;
+}

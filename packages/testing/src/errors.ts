@@ -13,6 +13,8 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_SCHEMA_EXPECTED',
   'X_TEST_JOB_EXPECTED',
   'X_TEST_NETWORK_RACE',
+  'X_TEST_FACTORY_TRAIT_UNKNOWN',
+  'X_TEST_FACTORY_NOT_PERSISTED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -28,6 +30,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_SCHEMA_EXPECTED: 'a matcher expected a Standard Schema and got something else',
   X_TEST_JOB_EXPECTED: 'a matcher expected a job declaration and got something else',
   X_TEST_NETWORK_RACE: 'a request raced unsealNetwork() and lost the patched fetch',
+  X_TEST_FACTORY_TRAIT_UNKNOWN: 'a factory was asked for a trait it does not declare',
+  X_TEST_FACTORY_NOT_PERSISTED: 'a factory create() had nowhere to write the row',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -181,6 +185,41 @@ export class TestJobExpectedError extends UltimateError {
       // Same rule as X_TEST_SCHEMA_EXPECTED's: the paste-able call, not a description of it.
       fix: 'call toEmitSteps(myJob) with the job export, not toEmitSteps(myJob.run)',
       docs: docsFor('X_TEST_JOB_EXPECTED'),
+    });
+  }
+}
+
+/**
+ * A factory was asked for a trait it does not declare. Listing the declared ones is the whole
+ * value: a typo (`:pubished`) and a trait that was never written are the same symptom and
+ * different fixes, and only the list tells them apart without opening the factory.
+ */
+export class FactoryTraitUnknownError extends UltimateError {
+  constructor(input: { table: string; trait: string; declared: readonly string[] }) {
+    super({
+      code: 'X_TEST_FACTORY_TRAIT_UNKNOWN',
+      cause:
+        input.declared.length === 0
+          ? `factory "${input.table}" was asked for trait "${input.trait}" but declares none`
+          : `factory "${input.table}" has no trait "${input.trait}"; declared: ${input.declared.join(', ')}`,
+      fix: `declare it: defineFactory(${input.table}, { traits: { ${input.trait}: { /* columns */ } } })`,
+      docs: docsFor('X_TEST_FACTORY_TRAIT_UNKNOWN'),
+    });
+  }
+}
+
+/**
+ * `create()` with no persister installed. Distinct from "the insert failed": nothing was attempted,
+ * so the instruction is to install the seam once in the preload — or to stop asking for a row that
+ * outlives the test, which `build()` already gives without a database at all.
+ */
+export class FactoryNotPersistedError extends UltimateError {
+  constructor(input: { table: string }) {
+    super({
+      code: 'X_TEST_FACTORY_NOT_PERSISTED',
+      cause: `factory "${input.table}".create() ran with no persister in this process`,
+      fix: 'usePersister({ insert: (table, row) => repoFor(table).insert(row) }) in the test preload — or build() for an in-memory row',
+      docs: docsFor('X_TEST_FACTORY_NOT_PERSISTED'),
     });
   }
 }

@@ -22,10 +22,7 @@
     animation: ultimate-dialog-in t.duration(base) t.easing(out);
   }
 
-  &::backdrop {
-    background: t.role('scrim', 0.45);
-    backdrop-filter: blur(2px);
-  }
+  @include t.scrim-backdrop($blur: 2px);
 }
 
 .size-sm {
