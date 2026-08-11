@@ -46,9 +46,9 @@ Tailwind plus modules plus CSS-in-JS in one repo is three token systems and thre
 
 Wrong runtime for RSC, and the mental model taxes exactly the audience being optimized for. Solid's fine-grained reactivity makes streaming shells cost ~0 hydration, and `stream` + `<Suspense>` gets the same payoff with no new component dialect.
 
-### Why SolidJS 2 and your own router?
+### Why SolidJS and your own router?
 
-The router must own render mode, offline strategy, and metadata — those are framework concerns, so it cannot be a third-party dependency that disagrees with the build. `As of 2026-08` SolidJS 2 is still pre-release (`2.0.0-experimental.16`) and the ecosystem around it is thin, which is also why the UI kit is ours.
+The router must own render mode, offline strategy, and metadata — those are framework concerns, so it cannot be a third-party dependency that disagrees with the build. `As of 2026-08` the pin is **`solid-js@1.9.14`, the stable line**: Solid 2 is still pre-release (`2.0.0-beta.N`, DOM renderer split out into `@solidjs/web`), and every app inherits whatever reactive core this repo pins, so a beta core is a risk handed downstream. The ecosystem around Solid is thin either way, which is why the UI kit is ours too.
 
 ### Which schema library?
 

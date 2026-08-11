@@ -102,11 +102,11 @@ import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
-  // 'ssr', not 'stream', and this is not a downgrade: 'stream' requires at least one <Suspense>
-  // boundary to stream into, and the pinned solid-js@2.0.0-experimental.16 does not export
-  // Suspense from its SERVER build. So a scaffolded 'stream' route failed x routes with
-  // X_ROUTE_MODE_INVALID on the first run, and the fix line it printed could not be followed.
-  // Ship the mode that works; move to 'stream' when the Solid pin does.
+  // 'ssr', not 'stream', and this is not a downgrade: 'stream' needs a boundary to stream into,
+  // and the framework has no hole marker yet. Solid's <Suspense> is not it — it throws outside a
+  // Solid renderer, and the server JSX factory is inert on purpose. A scaffolded 'stream' route
+  // therefore failed x routes with X_ROUTE_MODE_INVALID on the first run, printing a fix nobody
+  // could follow. Ship the mode that works. Async data needs no boundary: await it in the page.
   render: 'ssr',
   hydrate: 'visible',
   offline: 'runtime',
