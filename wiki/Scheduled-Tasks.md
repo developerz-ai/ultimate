@@ -2,7 +2,7 @@
 
 A `task` is a cron trigger that enqueues jobs. It never does work itself.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The canonical shape
 

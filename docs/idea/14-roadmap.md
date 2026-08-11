@@ -24,28 +24,44 @@ missing the packages/files its own **Ships** column names. `As of 2026-08`.
 | 8 | ✅ | **PWA + offline + version skew** | generated `sw.js`, precache derivation, manifest/icons/splash from one source icon, required offline fallback, immutable build ID, N-deploy retention, `AppUpdateAvailable` | demo: installable app, works offline, and **six deploys with a tab left open never 404s a chunk**; `x status` reports the client build-ID spread |
 | 9 | ✅ | **AI-first surface** | MCP dev server, `x.manifest.json`, every action as an MCP tool, `llm` gateway, versioned prompts + evals, pgvector hybrid search, branch environments | demo: an agent drives the demo app end-to-end through MCP only — migrate in a branch DB, run tests, publish a post — with **identical authz** to the UI; evals run in `x verify` |
 | 10 | ✅ | **Admin + generators + `x new`** | generated admin dashboard (with its own MCP surface), all `x gen` generators, `create-ultimate`, `/_x` dev dashboard complete | `bunx create-ultimate myapp && cd myapp && x dev` is <60s with **no Docker and no env editing**; every generator produces code that passes `x verify` unmodified |
-| 11 | 🚧 | **Deploy + docs + 1.0** | `x build --target docker\|binary\|static`, dev/prod compose, Helm with per-role HPAs, graceful drain everywhere, docs site, error-code pages | the demo app runs on Hetzner+Compose **and** a K8s cluster from one image; a rolling restart is invisible to connected clients; every `X_*` code has a docs page |
+| 11 | 🚧 | **Deploy + docs + 1.0** | `x build --target docker\|binary\|static`, `packages/cli/src/serve.ts`, the scaffolded `apps/web/server.ts` + `prerender.ts` + Dockerfile + `docker-compose.prod.yml`, dev/prod compose, Helm with per-role HPAs, graceful drain everywhere, docs site, error-code pages | the demo app runs on Hetzner+Compose **and** a K8s cluster from one image; a rolling restart is invisible to connected clients; every `X_*` code has a docs page |
+
+Milestones 12–14 exist as a **design, not a plan in progress** — see [Designed, not started](#designed-not-started-milestones-12-to-14) below.
 
 ## Open at 1.0.0
 
-1.0.0 shipped the 28 packages, the docs and the three build targets. One claim this table once made is still unproven, and is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
+1.0.0 shipped the 28 packages, the docs and the three build targets. What this table once claimed and cannot yet prove is named here rather than marked ✅ — a status marker nobody can check is the thing the `roadmap` step exists to prevent.
 
 | Open | Why it is not closed |
 |---|---|
 | **Two-platform deploy proof** (milestone 11) | `x build --target docker\|binary\|static`, `docker/docker-compose.{dev,prod}.yml` and `docker/helm` all exist. Running the demo app on Hetzner+Compose **and** a K8s cluster from one image, with an invisible rolling restart, needs real infrastructure and has not been done |
 
-It is a measurement, not code. It does not block an app built on 1.0.0; it blocks the claim above being repeated as fact.
+**Closed since**: a scaffolded app now has a deployable artifact. [`packages/cli/src/serve.ts`](../../packages/cli/src/serve.ts) boots a role with no dev watcher and no `/_x`, `ROLE=migrate` applies migrations through the db ledger and exits — the release phase a PaaS asks for — and `x new` writes `apps/web/server.ts`, `apps/web/prerender.ts`, `docker/Dockerfile`, its `.dockerignore` and `docker/docker-compose.prod.yml` ([`templates/scaffold-app.ts`](../../packages/cli/src/templates/scaffold-app.ts), [`templates/scaffold-container.ts`](../../packages/cli/src/templates/scaffold-container.ts)). That was the missing half of "one command produces something you can run"; it is **not** the two-platform proof, which is a measurement on real infrastructure and remains open.
+
+Three known gaps sit inside what did ship, `As of 2026-08` ([`CHANGELOG.md`](../../CHANGELOG.md)):
+
+| Gap | Effect |
+|---|---|
+| `x build --target binary` | compiles, then crashes at import — `FRAMEWORK_VERSION` reads its own `package.json` at module scope ([`packages/core/src/version.ts`](../../packages/core/src/version.ts)) and a single-file executable has none |
+| `docker-compose.prod.yml`, framework and scaffolded alike | declares a host port **and** `replicas` > 1; two processes cannot bind one port. Compose without a proxy is a one-replica rung ([`17-scale-ladder.md`](./17-scale-ladder.md)) |
+| the shared cache tier's Lua invalidation | `DEL`s keys it never declared in `KEYS`, so it fails on Dragonfly and on Redis Cluster ([`05-caching.md`](./05-caching.md)) |
+
+The deploy proof is a measurement, not code. It does not block an app built on 1.0.0; it blocks the claim above being repeated as fact.
 
 ### Closed: the 50k-socket forced-restart benchmark
 
-Measured `As of 2026-08` by [`scripts/bench/restart-bench.ts`](../../scripts/bench/restart-bench.ts); the run's own report and transcript are committed under [`scripts/bench/results/`](../../scripts/bench/results/). 50,000 real WebSocket clients against one `sync` node, `SIGKILL`ed with no drain — no `reconnect` frame is ever sent, so recovery is each client's own `backoffDelay` alone.
+Measured `As of 2026-08` by [`scripts/bench/restart-bench.ts`](../../scripts/bench/restart-bench.ts); the run's own report and transcript are committed under [`scripts/bench/results/`](../../scripts/bench/results/), and every number below is read off [`50k-restart.json`](../../scripts/bench/results/50k-restart.json).
 
-| Measure | p50 | p90 | p99 | max |
-|---|---|---|---|---|
-| Reconnect | 53.4s | 101.6s | 128.7s | 145.7s |
-| Time-to-consistent | 54.0s | 105.5s | 127.8s | 145.7s |
+**What was measured: one `sync` node, over `InProcessTransport`, `SIGKILL`ed with no drain.** 50,000 real WebSocket clients, no `reconnect` frame ever sent, so recovery is each client's own `backoffDelay` alone. This is **per-node capacity**. It is not a NATS result and not a multi-node result — cross-node fanout was not in the path ([`17-scale-ladder.md`](./17-scale-ladder.md)).
 
-All 50,000 reconnected; 49,981 had received a channel patch before the window closed. **The recovery cost is admission control, not the matcher**: consistency trails reconnect by ~0.6s at p50, and the shipped `AcceptBudget` default of 500/s bounds full recovery of 50k sockets at ~100s, which is what p90 reports. 156,851 connect attempts were shed before reaching any query or snapshot path — the DB-load half of the question, and the reason a forced restart is not a self-inflicted thundering herd.
+| Measure | Count | p50 | p90 | p99 | max |
+|---|---|---|---|---|---|
+| Reconnect | 50,000 of 50,000 | 53.4s | 101.6s | 128.7s | 145.7s |
+| Time-to-consistent | **49,981 of 50,000** | 54.0s | 105.5s | 127.8s | 145.7s |
+
+Every client reconnected. **19 never received a channel patch before the window closed**, so the consistency percentiles are over 49,981 clients, not 50,000 — "all 50,000 recovered" overstates the file.
+
+**The recovery cost is admission control, not the matcher**: consistency trails reconnect by ~0.6s at p50, and the shipped `AcceptBudget` default of 500/s bounds full recovery of 50k sockets at ~100s, which is what p90 reports. 156,851 connect attempts were shed before reaching any query or snapshot path — the DB-load half of the question, and the reason a forced restart is not a self-inflicted thundering herd.
 
 Raising the ceiling would measure a different framework, so mitigation 6 in [`03-realtime.md`](./03-realtime.md) — adopting another protocol if our matcher were the bottleneck — is not triggered by this result.
 
@@ -93,7 +109,7 @@ A half-built sync engine is worth nothing. It cannot be shipped partially, it ca
 |---|---|
 | Milestones are strictly ordered; no parallel starts | one demo app grows through all twelve, so regressions surface immediately |
 | Every milestone ends green | `x verify` never carries known failures forward |
-| Realtime was gated on a measured benchmark (M6) — waived at 1.0.0, **met after** | M6 shipped on API surface and tests alone. The 50k-socket forced-restart number has since been measured and published (*Open at 1.0.0* above), so realtime capacity is quoted as a result rather than a target |
+| Realtime was gated on a measured benchmark (M6) — waived at 1.0.0, **met after** | M6 shipped on API surface and tests alone. The 50k-socket forced-restart number has since been measured and published (*Open at 1.0.0* above), so **per-node** realtime capacity is quoted as a result rather than a target. Multi-node capacity is still a target |
 | Tier 3 local-first is **out of v1** | it lands in v2 as `persist: true` on an existing query — a flag, not a rewrite |
 | Scope cuts come off the back, never the middle | dropping M11's Helm chart is acceptable; dropping M4's budgets is not |
 | A milestone that grows past its demo gets split | a milestone with no demo is a milestone with no definition of done |
@@ -105,6 +121,28 @@ A half-built sync engine is worth nothing. It cannot be shipped partially, it ca
 | Milestones 0–11 | tier 3 local-first (`persist: true`) |
 | Realtime tiers 1–2 | plugin API |
 | `pg` job driver (redis/nats behind the interface) | multi-region replication |
-| Postgres + pgvector | mobile/desktop app targets beyond placeholders |
+| Postgres + pgvector | mobile/desktop app targets — **now designed**, see below |
 | One admin dashboard | theming marketplace, template gallery |
 | Docker / binary / static targets | vendor-specific deploy adapters (never, per [axiom 7](./00-thesis.md)) |
+
+## Designed, not started: milestones 12 to 14
+
+Mobile and desktop left the deferred column and entered the **design** column. Nothing below exists in code — no package, no `x build` target, no gate step. The full design, including what it deliberately refuses to build, is [`16-app-targets.md`](./16-app-targets.md).
+
+These rows carry no ✅ / 🚧 marker and are not read by the `roadmap` step, because neither marker is true of them: nothing has shipped and nothing is in progress.
+
+| # | Milestone | Design proposes | State |
+|---|---|---|---|
+| 12 | **Desktop** | `x build --target desktop` over Tauri: the same `app/` bundle in a window, keychain session, updater wiring | design only |
+| 13 | **Shared core + mobile runtime** | `@ultimat3/tokens` at tier 1 and `@ultimat3/native` at tier 4, React Native as the second view layer, `route.targets`, `screen.tsx`, two new gate steps | design only |
+| 14 | **OTA + native code** | the Expo Updates protocol served by the app's own `storage`, `x ota publish/rollback/status`, a runtime-version fingerprint that refuses a mismatched bundle | design only |
+
+Three load-bearing decisions the design makes, so they are not re-litigated per milestone:
+
+| Decision | Consequence |
+|---|---|
+| **A screen is a `route`**, not a ninth primitive | the eight-primitive rule survives a second view layer; a native capability the server must trust is an `action`, as it already was |
+| **Tokens move down to tier 1**, `ui` re-exports them verbatim | a tier-4 native runtime cannot import upward into tier-5 `ui`; the move is additive, so no major |
+| **No native component kit** | 46 components mirrored is 46 forever. Tokens and a runtime, not a kit — the scope cut that decides whether this ships at all |
+
+Desktop is staged first because it is packaging rather than a second product, which is the claim the whole design rests on.

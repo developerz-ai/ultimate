@@ -132,6 +132,8 @@ export { renderJobTable } from './jobs-table';
 export type { CliMcpServer, DevHostInput } from './mcp-host';
 export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
+export type { MetricsEndpoint, MetricsEndpointOptions } from './metrics-endpoint';
+export { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
 export { MIGRATIONS_DIR, migrationName, parseMigrationSql, readMigrations } from './migrations';
 export type { CommandResult, Finding, JsonValue, StepResult } from './output';
 export {
@@ -153,6 +155,7 @@ export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve';
 export {
   CONTAINER_BINDING,
   DEFAULT_PORT,
+  metricsPortFromEnv,
   portFromEnv,
   roleFromEnv,
   runMigrations,

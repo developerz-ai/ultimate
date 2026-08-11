@@ -146,6 +146,85 @@ defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 
 `network.offline()` fails every request ahead of the mocks, so the app's own offline path runs instead of a branch written for the test; `drop()` is the same for a request but tells a subscriber its connection was cut rather than closed, which is what separates a resume from a resubscribe.
 
+## Factories
+
+One row shape per entity, deterministic, with named variations. `defineFactory` is the only entry point — there is no bare `factory()`.
+
+```ts
+import { associate, defineFactory } from '@ultimat3/testing';
+
+const orgFactory = defineFactory(org, {
+  defaults: (index, ids) => ({ id: ids.uuid(), name: `org-${index}` }),
+});
+
+const postFactory = defineFactory(post, {
+  defaults: (index, ids) => ({ id: ids.uuid(), title: `post-${index}`, published: false, views: 0 }),
+  traits: {
+    published: { published: true },
+    popular: (index) => ({ views: index * 100 }),
+  },
+  associations: { orgId: associate(orgFactory, (row) => row.id) },
+});
+```
+
+| Member | Does |
+|---|---|
+| `build(over?)` | an in-memory row. Pure — no database, no persister |
+| `buildMany(count, over?)` | the same, `count` times |
+| `create(over?)` | builds, creates its association parents, then persists. Returns the row |
+| `createMany(count, over?)` | the same, `count` times |
+| `with(...traits)` | a view with those traits applied |
+| `traits` | the declared trait names, sorted |
+| `table` | the entity's table |
+| `reset()` | restarts the sequence and both generators, and **cascades to every association** |
+
+### Traits
+
+A trait is a `Partial<Row>` or a `(index, ids) => Partial<Row>`. Merge order is: defaults, then traits in the order applied, then the call's own `over` — last wins.
+
+A view from `with()` **shares the base sequence**, so ids never repeat across views of one factory. An unknown trait throws `X_TEST_FACTORY_TRAIT_UNKNOWN` **at the `with()` call**, not three calls later, and `cause` lists every declared trait — a typo and a trait nobody added have the same symptom, and the list is what separates them.
+
+### Associations
+
+A column whose value comes from another factory, built with the **same strategy**: `build()` builds the parent, `create()` creates it. Parents are created **sequentially, never `Promise.all`** — concurrent parents would interleave draws from the shared seeded generators and the ids would stop being reproducible. An association is skipped entirely when the caller supplies that column.
+
+### Determinism
+
+`seed` defaults to a hash of the **table name**, so every table has its own uuid stream while staying a pure function of the schema. `As of 2026-08` that is the 1.1.0 fix: every registry factory used to default to `seed: 1`, so two tables minted the same uuid and a join assertion could pass for the wrong reason.
+
+`ids.uuid()` and `ids.number()` come from the seeded generators; `index` starts at 1 for the first row.
+
+`factoriesFor(registry, seed?)` derives a factory per entity with name-based column inference — `id`/`*Id` → uuid, `*At` → epoch, `*Minor` → number, `*Currency` → `'USD'`, `is*`/`has*` → `false`, else `<column>-<index>`.
+
+### Persisting
+
+`create()` needs a persister; there is one seam and it is process-global.
+
+```ts
+// scripts/test-setup.ts
+usePersister({ insert: (table, row) => repoFor(table).insert(row) });
+```
+
+Without one, `create()` throws `X_TEST_FACTORY_NOT_PERSISTED` — which means **nothing was attempted**, distinct from an insert that failed. `build()` needs no persister. `clearPersister()` and `persisterInstalled()` round out the seam.
+
+## Shared examples
+
+One contract, asserted against many subjects, with the subject passed as a **thunk** so a `beforeAll`-built value is read at test time rather than at declaration time.
+
+```ts
+const anAuthenticatedAction = sharedExamples<Denier>('an authenticated action', (subject) => {
+  test('denies an anonymous actor', () => {
+    expect(subject().denies('anonymous')).toBe(true);
+  });
+});
+
+describe(testName('unit', 'publishPost'), () => {
+  behavesLike(anAuthenticatedAction, () => publishPost);
+});
+```
+
+`behavesLike` wraps the body in `describe('behaves like <name>')`, so a failure reads `publishPost > behaves like an authenticated action > denies an anonymous actor` — the subject and the contract both named. Because it calls `describe`, it belongs at declaration scope and never inside a test body. The body runs once per `behavesLike` call.
+
 ## Generated scaffolds
 
 Every primitive emits a test scaffold that fails until filled in — an untested action is a red build, not a backlog item.

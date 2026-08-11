@@ -2,7 +2,7 @@
 
 Durable background work, optionally multi-step. Postgres queue by default. `idempotencyKey` is required by the type. Drivers swap without touching job code.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The canonical shape
 

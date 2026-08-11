@@ -2,7 +2,14 @@
 // this order IS the framework's guarantee: context before user code, identity before
 // rate limiting, validation before authz, authz before the handler. Nothing can skip a
 // stage, and the array is exported so `/_x` renders it and pipeline.test.ts asserts it.
-import { anonymousActor, isAnonymous, logger, runWithContext, withSpan } from '@ultimat3/core';
+import {
+  anonymousActor,
+  isAnonymous,
+  logger,
+  recordRequest,
+  runWithContext,
+  withSpan,
+} from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfig, stripBasePath } from './config';
 import { actorView, asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -135,6 +142,13 @@ export interface PipelineDeps {
 const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/;
 const REQUEST_ID = /^[\w.:-]{8,128}$/;
 
+/**
+ * The one label a request with no matched route may carry. Every 404 and every scan of `/wp-admin`
+ * would otherwise be its own rate-limit bucket and its own metric series — an attacker choosing
+ * the server's cardinality is how a Prometheus dies.
+ */
+const UNMATCHED_ROUTE = 'unmatched';
+
 /** Authenticated routes are never shared-cacheable; that default is not overridable. */
 const defaultCache = (route: Route | undefined): CacheHint =>
   route === undefined || route.meta.auth === 'required'
@@ -221,7 +235,7 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
         actorId: actor?.id ?? null,
         orgId: actor?.orgId ?? null,
         ip: ctx.ip,
-        routeName: ctx.route?.meta.name ?? 'unmatched',
+        routeName: ctx.route?.meta.name ?? UNMATCHED_ROUTE,
       });
       const decision = await limiter.check(
         key,
@@ -394,18 +408,38 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
         withSpan(
           `${ctx.method} ${url.pathname}`,
           async (span) => {
-            const response = await execute(request, ctx);
-            // The root span of every request carried no attributes at all, so an exporter got a
-            // name and a duration and nothing to correlate: which request, which outcome. These
-            // four are what a reader joins on — `x-request-id` off the response, the status the
-            // client saw, and the method/path split out of the span name.
-            span.setAttributes({
-              'http.request_id': ctx.requestId,
-              'http.method': ctx.method,
-              'http.route': url.pathname,
-              'http.status_code': response.status,
-            });
-            return response;
+            // This package's ONE metrics call site. `finally`, not the happy line: `execute`
+            // absorbs app throws into a problem response, but a finalize stage can still throw on
+            // its own (immutable headers on a `Response.redirect`), and a counter that skips the
+            // requests the server handled worst is the one an autoscaler must not have. 500 is the
+            // status such a request gets from the caller either way.
+            let status = 500;
+            try {
+              const response = await execute(request, ctx);
+              status = response.status;
+              // The root span of every request carried no attributes at all, so an exporter got a
+              // name and a duration and nothing to correlate: which request, which outcome. These
+              // four are what a reader joins on — `x-request-id` off the response, the status the
+              // client saw, and the method/path split out of the span name.
+              span.setAttributes({
+                'http.request_id': ctx.requestId,
+                'http.method': ctx.method,
+                'http.route': url.pathname,
+                'http.status_code': response.status,
+              });
+              return response;
+            } finally {
+              // The span may carry the concrete path — a trace is sampled and thrown away. A
+              // metric is a stored series per label set, so this is the route PATTERN
+              // (`/posts/:id`), and `recordRequest` folds the status to its class for the same
+              // reason. Nothing here is attacker-chosen or per-user.
+              recordRequest({
+                method: ctx.method,
+                route: ctx.route?.path ?? UNMATCHED_ROUTE,
+                status,
+                durationMs: elapsedMs(ctx),
+              });
+            }
           },
           { kind: 'server' },
         ),

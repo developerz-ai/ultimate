@@ -22,6 +22,7 @@ import type { Env } from './dev-services';
 import { resolveServices } from './dev-services';
 import { PortInvalidError, RoleUnknownError } from './errors';
 import { holdUntilShutdown } from './hold';
+import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 
 export const DEFAULT_PORT = 3000;
@@ -40,17 +41,30 @@ export function roleFromEnv(env: Env): Role {
 }
 
 /**
- * Every PaaS injects `PORT` and routes traffic to exactly it. `Number.parseInt` would read `80abc`
- * as 80, so the whole string has to be a port — a partially-parsed port is a deploy that binds
- * somewhere nobody asked for.
+ * `Number.parseInt` would read `80abc` as 80, so the whole string has to be a port — a
+ * partially-parsed port is a deploy that binds somewhere nobody asked for.
  */
-export function portFromEnv(env: Env): number {
-  const raw = env['PORT'];
-  if (raw === undefined || raw.trim().length === 0) return DEFAULT_PORT;
+function portValue(env: Env, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw.trim().length === 0) return fallback;
   const port = Number(raw.trim());
   if (!Number.isInteger(port) || port < 0 || port > 65_535)
-    throw new PortInvalidError({ value: raw });
+    throw new PortInvalidError({ value: raw, name });
   return port;
+}
+
+/** Every PaaS injects `PORT` and routes traffic to exactly it. */
+export function portFromEnv(env: Env): number {
+  return portValue(env, 'PORT', DEFAULT_PORT);
+}
+
+/**
+ * The scrape port, deliberately its own env var and not `PORT + n`: an operator who moves the app
+ * port must not silently move the port their Prometheus is configured against, and the roles that
+ * set no `PORT` at all — `worker`, `scheduler`, `replicator` — still need this one.
+ */
+export function metricsPortFromEnv(env: Env): number {
+  return portValue(env, 'METRICS_PORT', DEFAULT_METRICS_PORT);
 }
 
 export interface ServeOptions {
@@ -60,6 +74,8 @@ export interface ServeOptions {
   readonly role?: Role;
   /** Overrides `PORT`. 0 asks the kernel for an ephemeral one, which is what a test wants. */
   readonly port?: number;
+  /** Overrides `METRICS_PORT`, on the same terms. */
+  readonly metricsPort?: number;
 }
 
 export interface ServedApp {
@@ -138,9 +154,17 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     ...assetRoutes({ root: options.root, storage: runtime.storage }),
     ...appRoutes({ buildId }),
   ];
+  const port = options.port ?? portFromEnv(options.env);
+  // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
+  // fixed 9090 would fail the next suite to boot beside it. An environment that names the port
+  // still wins — that is the deploy talking.
+  const metricsPort =
+    options.metricsPort ??
+    (port === 0 && options.env['METRICS_PORT'] === undefined ? 0 : metricsPortFromEnv(options.env));
   const running = await startRoles({
     roles: [role],
-    port: options.port ?? portFromEnv(options.env),
+    port,
+    metricsPort,
     buildId,
     runtime,
     routes,

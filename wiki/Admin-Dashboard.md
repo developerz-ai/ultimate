@@ -69,7 +69,9 @@ The projected tool calls `action.run(...)` — the same entry point the HTTP rou
 
 ## Theming
 
-Reads `apps/admin/shared/tokens/` — the same nine semantic colour roles as the app. Light in `:root`, dark in the media query, both mirrored in `html[data-theme]` overrides. A raw hex in an admin component is the same lint failure as anywhere else.
+The generated admin reads the same 24 semantic colour roles as the app, through the same four blocks: light in `:root`, dark behind the media query, both mirrored under `html[data-theme]`. A raw hex in an admin component is the same lint failure as anywhere else — `ThemeTokenRef` is a template-literal type, so `--x-*` typechecks and a hex does not.
+
+The `/_x` **dev** dashboard is a standalone page with no stylesheet pipeline, so it inlines its six channels — `bg`, `surface-raised`, `fg`, `fg-muted`, `line`, `accent` — into a `<style>` element. `As of 2026-08` it **derives** them from `@ultimat3/ui`'s `colorTokens` at render time rather than keeping a copy: the copy it used to keep went stale through the WCAG retune and shipped `line` on `surface-raised` at 1.16:1. The barrel is reached by dynamic `import()`, for the same reason the panels reach introspection that way — `/_x` stays out of the production graph → [Theming](Theming).
 
 | Concern | Behavior |
 |---|---|
@@ -99,10 +101,10 @@ Own routes in your own app. Never fork the framework.
 | A custom widget for a column kind | register a field widget in `apps/admin/shared/fields.ts`; unknown column kinds fall back to a read-only text widget rather than crashing |
 | A custom bulk operation | write an `action` with a `policy` and `mcp.expose`; it appears as a runner **and** an MCP tool |
 | Different columns in a list | declare the entity's `labelColumn` / column metadata; the admin reads the registry, not a config file per screen |
-| Branding | edit `apps/admin/shared/tokens/` |
+| Branding | `defineTheme({ colors, radius, font })` — the one override seam, validated not escaped → [Theming](Theming) |
 | Hide an entity | the entity's policy denies `admin:read` — visibility is authz, not configuration |
 
-No plugin API in 1.0 ([axiom](Home)). The extension point is that the admin is your app.
+No plugin API in v1 ([axiom](Home)). The extension point is that the admin is your app.
 
 ## Deployment
 

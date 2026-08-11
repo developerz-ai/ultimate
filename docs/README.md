@@ -13,7 +13,6 @@ Plus, outside `docs/`:
 | Where | What |
 |---|---|
 | [`../wiki/Home.md`](../wiki/Home.md) | the reference manual — every field, flag, and error code |
-| [`../site/`](../site/README.md) | the public GitHub Pages site |
 | [`../llms.txt`](../llms.txt) | the machine-readable repo map — start here if you're an agent |
 | [`../examples/dummy/`](../examples/dummy/README.md) | the reference app: every primitive, once, idiomatically |
 | [`../CLAUDE.md`](../CLAUDE.md) | the project brain — commands, tiers, non-negotiables |

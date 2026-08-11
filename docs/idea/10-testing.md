@@ -1,22 +1,40 @@
 # Testing
 
-`bun test`. N workers, N real Postgres databases, sealed network. No mocking the database, no rollback hacks, no shared-state flakes.
+Bun's own runner, one real Postgres database per test worker, sealed network. No mocking the database, no rollback hacks, no shared-state flakes. The runner is not reinvented — it is wrapped, per [`00-thesis.md`](./00-thesis.md#wrap-dont-reinvent).
 
-## Parallel by database clone
+## One database per worker
 
-```
-bun test --workers 8
-  worker 0 → myapp_test_0   (CREATE DATABASE myapp_test_0 TEMPLATE myapp_test_tpl)
-  worker 1 → myapp_test_1
-  ...
-```
+Which process a test runs in decides which database it gets. `workerId` reads `ULTIMATE_TEST_WORKER` first, then Bun's own `BUN_TEST_WORKER_ID` / `JEST_WORKER_ID`, then falls back to the pid ([`packages/testing/src/template-db.ts`](../../packages/testing/src/template-db.ts)).
+
+| Command | Processes | Databases |
+|---|---|---|
+| `bun test` | 1, worker 0 | 1 |
+| `x test [type] --workers N` | N file shards, each child run with `ULTIMATE_TEST_WORKER=0..N-1` | N |
+| `bun test --parallel=N` | N, Bun's own split — implies `--isolate`, workers 1..N | N |
+
+**There is no `bun test --workers` flag.** `--workers` belongs to `x test` ([`packages/cli/src/cmd-test.ts`](../../packages/cli/src/cmd-test.ts), [`test-shards.ts`](../../packages/cli/src/test-shards.ts), largest-first bin packing over file size); `--parallel` belongs to Bun.
 
 | Step | Mechanism |
 |---|---|
-| Once per run | build a template DB: migrate + seed → `myapp_test_tpl` |
-| Per worker | `CREATE DATABASE myapp_test_N TEMPLATE myapp_test_tpl` — Postgres file-copies, typically 100–400ms |
-| Per test file | truncate the tables that file touched, or take a savepoint if it declares `readonly` |
-| Teardown | drop on exit; `--keep-db` to inspect a failure |
+| Once per run | `pg_advisory_lock(hashtext(template))`, then `CREATE DATABASE "ultimate_test_template" TEMPLATE template0` + migrate. The first worker in builds it; the rest wait on the lock and reuse it |
+| Per worker | `DROP DATABASE IF EXISTS "ultimate_test_template_wN" WITH (FORCE)`, then `CREATE DATABASE … TEMPLATE "ultimate_test_template"` — Postgres file-copies |
+| No `TEST_DATABASE_URL` / `DATABASE_URL` | PGlite in memory behind the same handle, so `bun test` works on a laptop with nothing installed |
+| Teardown | `drop()` on the worker's handle |
+
+Not shipped, and not implied: per-file truncation, a `readonly` savepoint mode, and a `--keep-db` flag to inspect a failure. A worker's database is cloned fresh and dropped; that is the whole lifecycle today.
+
+### Parallel is opt-in, and not on the default path
+
+`As of 2026-08`, stated because the paragraph above is easy to read as more than it is:
+
+| Claim | Reality |
+|---|---|
+| `x verify` shards tests | **no.** It runs `bun test` **once per test type**, in one process, against one database — `testStepCommand` in [`packages/cli/src/verify-tests.ts`](../../packages/cli/src/verify-tests.ts) builds `['bun','test',…]` and never invokes `x test` |
+| a scaffolded app tests in parallel | **no.** `x new` writes `"test": "bun test"` ([`templates/scaffold-repo.ts`](../../packages/cli/src/templates/scaffold-repo.ts)) |
+| parallel is faster here | **not measured to be.** `bun test --parallel` implies `--isolate`, which re-runs the preload per file: `examples/dummy` 2.85s → 3.92s, `packages/testing` 0.187s → 0.314s |
+| `[test] parallel = N` in `bunfig.toml` turns it on | **no.** The flag is CLI-only; the config key is ignored |
+
+So parallel database cloning is a capability the harness has and the default path does not use. Parallel-by-default is **intent, not shipped** — until it is, a claim about test speed has to say which command it is about.
 
 Why not the usual approaches:
 
@@ -41,6 +59,7 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_EGRESS`, naming the URL and the fix |
 | **Fixed timezone + locale** | `UTC` and `en-US` unless a test declares otherwise; a tz-dependent bug fails deterministically |
 | **Ordered concurrency** | job workers in tests run deterministically; `runJobs()` drains the queue synchronously |
+| **Per-table factory seeds** | `defineFactory` derives its seed from the table name unless given, so two entities never draw the same uuid stream — a shared `seed: 1` let a join assertion pass for the wrong reason |
 
 Sealed network is the highest-value rule: it converts "the suite is slow and occasionally fails" into "you forgot to mock Stripe, here is the line".
 
@@ -79,6 +98,17 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) =>
 });
 ```
 
+## Fixtures you write once
+
+The framework's own vocabulary for "less test code", which is the same bet as [wrap, don't reinvent](./00-thesis.md#wrap-dont-reinvent) one level down — the framework wraps the runner, the app wraps the framework, and the agent writes the assertion.
+
+| Tool | Does | Rule that keeps it honest |
+|---|---|---|
+| `defineFactory(table, …)` with **traits** | one declaration, N named variants of a row | a trait is a named override, never a second factory |
+| `associate(…)` | a factory that builds its parent | the association is built with the strategy that asked: `build()` never reaches a database, `create()` writes the parent first |
+| `create()` | persist through the one write seam, `usePersister` | a factory taking a repo argument would put the seam at every call site |
+| `sharedExamples(name, body)` / `behavesLike(name, subject)` | one contract asserted against every implementation of it | `behavesLike` calls `describe`, so it goes at declaration scope — Bun rejects a `describe` inside a test body |
+
 ## Generated scaffolds
 
 Every primitive emits a test scaffold that fails until filled in — an untested action is a red build, not a backlog item.
@@ -93,24 +123,27 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 ## `x verify`
 
-The single gate. Green means shippable ([axiom 5](./00-thesis.md)).
+The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **17 steps**, in this order — `VERIFY_STEPS` in [`packages/cli/src/cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) is the executable copy.
 
-| # | Check | Fails on |
+| # | Step | Fails on |
 |---|---|---|
 | 1 | typecheck | any error; `any` is banned by lint, not tolerated by a cast |
 | 2 | lint (Biome) | formatting, `any`, default exports, bare `Error`, raw hex colours, hardcoded user-facing strings |
-| 3 | **import boundaries** | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages |
-| 4 | all six test types | any failure; flakes are failures |
-| 5 | **migration drift** | schema differs from migrations, or a migration is not reversible-or-marked |
-| 6 | **contract diff** | a breaking change to a published action/query without a version bump |
-| 7 | budgets | per-route JS bytes, LCP/CLS, Lighthouse thresholds, precache size |
-| 8 | SEO + i18n | missing title/description, duplicate meta, broken internal link, missing i18n key |
-| 9 | manifest freshness | `x.manifest.json` / `openapi.json` differ from what the code produces |
+| 3 | **boundaries** | `site/` → `app/`, routes → DB, services → HTTP, tier violations in framework packages |
+| 4 | filesize | a source file past the ceiling |
+| 5 | package-shape | a package missing its declared exports, or version skew across the lockstep release |
+| 6 | errors | a `fix:` that names no command, an `X_*` code with no documented row |
+| 7–12 | unit · contract · live · job · e2e · eval | any failure; flakes are failures. A type with no files of its own is skipped — except `eval`, which also fails on a prompt with no eval |
+| 13 | **drift** | schema differs from migrations |
+| 14 | **contract-diff** | a breaking change to a published action/query without a version bump |
+| 15 | budgets | per-route JS bytes, precache size |
+| 16 | manifest | `x.manifest.json` differs from what the code produces, or `AGENTS.md` is absent |
+| 17 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
 
 ```
 $ x verify
   ✓ typecheck  ✓ lint  ✓ boundaries  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e
-  ✗ migration drift
+  ✗ drift
       X_DB_DRIFT: schema differs from migrations
         cause: table "posts" has column "publish_at" not present in any migration
         fix:   x db gen "add publish_at"

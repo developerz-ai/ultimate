@@ -2,7 +2,7 @@
 
 A `route` is a URL + render mode + metadata + offline strategy. Render mode is a per-route property. SEO is enforced by the build, not described in a guide.
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The canonical shape
 

@@ -1,6 +1,12 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
-import { configureTelemetry, memoryExporter, resetTelemetry } from '@ultimat3/core';
+import {
+  collectMetrics,
+  configureTelemetry,
+  memoryExporter,
+  resetMetrics,
+  resetTelemetry,
+} from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
 import { createPipeline, PIPELINE_STAGES } from './pipeline';
@@ -54,6 +60,12 @@ const routes: readonly Route[] = [
     path: '/self-guarded',
     meta: { name: 'self-guarded', auth: 'public', policy: 'post:publish', enforcedBy: 'handler' },
     handler: () => text('the handler decided'),
+  },
+  {
+    method: 'GET',
+    path: '/posts/:id',
+    meta: { name: 'posts.show', auth: 'public' },
+    handler: () => text('one post'),
   },
 ];
 
@@ -302,5 +314,63 @@ describe('the request span', () => {
     // The refusal is the outcome worth finding in a timeline; a span that stopped at the throw
     // would report no status at all.
     expect(root?.attributes['http.status_code']).toBe(403);
+  });
+});
+
+/** The point of the whole exercise: `docker/helm`'s web HPA derives `rps` from this counter. */
+describe('every request lands in the metrics the deploy chart scales on', () => {
+  const seriesOf = (name: string) =>
+    collectMetrics().metrics.find((metric) => metric.descriptor.name === name)?.points ?? [];
+
+  const totalFor = (route: string, status: string): number =>
+    seriesOf('http_requests_total')
+      .filter(
+        (point) => point.attributes['route'] === route && point.attributes['status'] === status,
+      )
+      .reduce((sum, point) => sum + point.value, 0);
+
+  beforeEach(() => {
+    resetMetrics();
+  });
+
+  test('counts a served request once, with a duration beside it', async () => {
+    const pipeline = pipelineWith({});
+    await pipeline.handle(get('/public'), { role: 'web' });
+    await pipeline.handle(get('/public'), { role: 'web' });
+
+    expect(totalFor('/public', '2xx')).toBe(2);
+    const duration = seriesOf('http_request_duration_seconds').find(
+      (point) => point.attributes['route'] === '/public',
+    );
+    expect((duration as { count?: number } | undefined)?.count).toBe(2);
+  });
+
+  test('a refused request is counted too — an error path is not a request that did not happen', async () => {
+    const pipeline = pipelineWith({ actorId: 'u_1', decision: { allowed: false, reason: 'nope' } });
+    await pipeline.handle(get('/guarded'), { role: 'web' });
+
+    expect(totalFor('/guarded', '4xx')).toBe(1);
+  });
+
+  test('the label is the route PATTERN, so a million ids are one series', async () => {
+    const pipeline = pipelineWith({});
+    for (const id of ['1', '2', '3']) {
+      await pipeline.handle(get(`/posts/${id}`), { role: 'web' });
+    }
+
+    expect(totalFor('/posts/:id', '2xx')).toBe(3);
+    // The concrete paths must appear nowhere: this is the cardinality bomb, and a metric label is
+    // the one place an attacker gets to choose how much memory the monitoring stack allocates.
+    expect(seriesOf('http_requests_total').map((point) => point.attributes['route'])).toEqual([
+      '/posts/:id',
+    ]);
+  });
+
+  test('an unmatched path collapses to one series instead of one per probe', async () => {
+    const pipeline = pipelineWith({});
+    await pipeline.handle(get('/wp-admin'), { role: 'web' });
+    await pipeline.handle(get('/.env'), { role: 'web' });
+
+    expect(totalFor('unmatched', '4xx')).toBe(2);
   });
 });

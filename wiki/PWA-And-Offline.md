@@ -2,7 +2,7 @@
 
 `sw.js` is a build artifact, generated from the route table. Hand-editing it is a build error (`X_SW_HAND_EDITED`, checksum mismatch).
 
-v1.0.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## Why generated
 
@@ -107,7 +107,7 @@ The client is not broken and the server is not broken; they disagree about which
 | 3 | **N-deploy asset retention** | old builds' assets stay served for N deploys (default 10) or a minimum window (default 7d), whichever is longer. A build-A chunk resolves after six deploys |
 | 4 | **`AppUpdateAvailable` signal, not a 404** | a Solid signal flips when the server reports a newer build. The app renders its own "Update available — reload" affordance. **No forced navigation, no lost form state, no dinosaur** |
 | 5 | **Forced reload after a grace period** | security-flagged deploys (`x deploy --critical`) set a deadline. Client shows a countdown, saves in-flight state via the mutator queue, then reloads. Grace default 30m; a hard patch can set minutes |
-| 6 | **Skew is observable** | `/_x` and `x status --json` report the build-ID distribution of connected clients, so "how many users are three deploys behind" has an answer |
+| 6 | **Skew is observable** | the `/_x` live panel reports the build-ID distribution of connected clients, so "how many users are three deploys behind" has an answer. `x status --json` would report it outside dev and is **planned**, not shipped |
 | 7 | **Build ID scopes the SW cache** | preview/branch builds get their own cache namespace and SW scope, so a preview can never poison prod caches |
 
 Server behaviour on a stale build ID:

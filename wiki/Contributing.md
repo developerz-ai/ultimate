@@ -1,6 +1,6 @@
 # Contributing
 
-Bun-only monorepo. One gate: `x verify`. v1.0.0 `As of 2026-08` — semver covers the documented surface, so read the tier table before adding an import and assume a rename is a major ([Upgrading](Upgrading)).
+Bun-only monorepo. One gate: `x verify`. v1.1.0 `As of 2026-08` — semver covers the documented surface, so read the tier table before adding an import and assume a rename is a major ([Upgrading](Upgrading)).
 
 ```
 bun install

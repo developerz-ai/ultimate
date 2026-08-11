@@ -2,6 +2,9 @@
 // SQL, policy traces, and caught mail. The refusal is a throw at construction, not a 404 at
 // request time: an app that boots with /_x mounted in prod has already lost.
 
+// Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
+// values arrive through the dynamic `import()` in `shellStyle()`, same reason as `data.ts`.
+import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
 import { defaultDevSources } from './data';
 import type { DevSources } from './facts';
@@ -78,26 +81,17 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 const escapeHtml = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Tokens are defined inline: /_x is a standalone page and still owes both themes. */
-const SHELL_STYLE = `
-:root {
-  --x-color-bg: 253 246 240; --x-color-surface: 255 255 255; --x-color-fg: 38 34 31;
-  --x-color-fg-muted: 110 102 94; --x-color-line: 224 216 208; --x-color-accent: 34 122 197;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --x-color-bg: 18 18 20; --x-color-surface: 34 34 39; --x-color-fg: 228 226 222;
-    --x-color-fg-muted: 150 146 140; --x-color-line: 54 54 60; --x-color-accent: 96 170 240;
-  }
-}
-html[data-theme="light"] {
-  --x-color-bg: 253 246 240; --x-color-surface: 255 255 255; --x-color-fg: 38 34 31;
-  --x-color-fg-muted: 110 102 94; --x-color-line: 224 216 208; --x-color-accent: 34 122 197;
-}
-html[data-theme="dark"] {
-  --x-color-bg: 18 18 20; --x-color-surface: 34 34 39; --x-color-fg: 228 226 222;
-  --x-color-fg-muted: 150 146 140; --x-color-line: 54 54 60; --x-color-accent: 96 170 240;
-}
+/** The six roles /_x paints with. `--x-*` is the admin's namespace; the values are ui's. */
+const SHELL_ROLES = [
+  'bg',
+  'surface-raised',
+  'fg',
+  'fg-muted',
+  'line',
+  'accent',
+] as const satisfies readonly ColorRole[];
+
+const SHELL_LAYOUT = `
 body { margin: 0; background: rgb(var(--x-color-bg)); color: rgb(var(--x-color-fg));
   font: 14px/1.5 ui-monospace, monospace; }
 header { display: flex; gap: 1rem; padding: .75rem 1rem;
@@ -106,12 +100,36 @@ a { color: rgb(var(--x-color-accent)); }
 main { padding: 1rem; }
 h1 { font-size: 1rem; margin: 0 1rem 0 0; }
 p.question { color: rgb(var(--x-color-fg-muted)); margin: 0 0 1rem; }
-pre { background: rgb(var(--x-color-surface)); border: 1px solid rgb(var(--x-color-line));
+pre { background: rgb(var(--x-color-surface-raised)); border: 1px solid rgb(var(--x-color-line));
   padding: 1rem; overflow: auto; }
 :focus-visible { outline: 2px solid rgb(var(--x-color-accent)); outline-offset: 2px; }
 `;
 
+let stylePromise: Promise<string> | undefined;
+
+/**
+ * Tokens are inlined because /_x is a standalone page with no stylesheet pipeline — but the
+ * VALUES are read from `@ultimat3/ui` rather than copied, because the copy that used to live
+ * here went stale through a WCAG retune and shipped `line` on `surface-raised` at 1.16:1.
+ * Reached by dynamic `import()` for the same reason `data.ts` is: /_x stays out of the
+ * production graph, and the 46-component barrel loads only once a panel is actually drawn.
+ */
+async function shellStyle(): Promise<string> {
+  stylePromise ??= import('@ultimat3/ui').then(({ colorTokens }) => {
+    const block = (theme: 'light' | 'dark'): string =>
+      SHELL_ROLES.map((role) => `--x-color-${role}: ${colorTokens[theme][role]};`).join(' ');
+    return `
+:root { ${block('light')} }
+@media (prefers-color-scheme: dark) { :root { ${block('dark')} } }
+html[data-theme="light"] { ${block('light')} }
+html[data-theme="dark"] { ${block('dark')} }
+${SHELL_LAYOUT}`;
+  });
+  return stylePromise;
+}
+
 function shell(
+  style: string,
   basePath: string,
   panels: readonly DevPanel[],
   active: DevPanel,
@@ -128,7 +146,7 @@ function shell(
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>_x · ${escapeHtml(active.key)}</title><style>${SHELL_STYLE}</style></head>
+<title>_x · ${escapeHtml(active.key)}</title><style>${style}</style></head>
 <body><header><h1>_x</h1><nav>${tabs}</nav>
 <a href="${basePath}/${active.key}?json=1">--json</a></header>
 <main><p class="question">${escapeHtml(active.question)}</p>
@@ -180,7 +198,7 @@ export function devDashboard(opts: DevDashboardOptions = {}): DevDashboard {
 
       return wantsJson
         ? jsonResponse(payload, payload.ok ? 200 : 500)
-        : new Response(shell(basePath, panels, panel, payload), {
+        : new Response(shell(await shellStyle(), basePath, panels, panel, payload), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
           });

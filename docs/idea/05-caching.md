@@ -8,12 +8,33 @@ Four tiers, one invalidation graph. You declare what a write touches; the framew
 |---|---|---|---|---|
 | 1 | **Request memo** | one request (AsyncLocalStorage) | ~0 | the same `query` called by three components resolves once |
 | 2 | **In-process LRU** | process lifetime, size-bounded | ~microseconds | hot rows, policy lookups, compiled templates; per-instance, so treat as a probabilistic hit |
-| 3 | **Redis** (`Bun.redis`) | cross-instance, TTL + tag sets | ~1ms | shared query results, rendered fragments, session-adjacent data |
+| 3 | **shared** (`Bun.redis`) | cross-instance, TTL + tag sets | ~1ms | shared query results, rendered fragments, session-adjacent data |
 | 4 | **CDN / HTTP headers** | client + edge | `Cache-Control`, `ETag`, `stale-while-revalidate` | static + ISR pages, images, assets |
 
 Every tier is read in order 1 → 2 → 3 → origin. A tier is never consulted for a request whose `policy` has not already passed — **cache keys always include the actor's tenant and policy scope**, so a cache hit can never leak across tenants.
 
 Tier 2 is optional per entry (`local: false` for large or per-tenant-unbounded values). Tier 3 is required for any entry an ISR page depends on, because regeneration happens on a different instance than the write.
+
+### Tier 3 runs on Redis or Valkey, and nothing else today
+
+The shared tier speaks five commands — `GET`, `SET … EX`, `SADD`, `DEL`, `SMEMBERS` — plus one `EVAL` ([`packages/cache/src/redis.ts`](../../packages/cache/src/redis.ts)). That script is where the portability stops, `As of 2026-08`:
+
+```lua
+for i, tagKey in ipairs(KEYS) do            -- the tag SETS are declared
+  local members = redis.call('SMEMBERS', tagKey)
+  for _, key in ipairs(members) do
+    redis.call('DEL', key)                  -- the VALUE keys are not
+```
+
+`invalidateTags` passes only the tag-set keys in `KEYS`, then deletes members it discovers at runtime. Two engines refuse that:
+
+| Engine | Result |
+|---|---|
+| Redis / Valkey, single node | works — this is the tested path |
+| **Dragonfly**, single node included | refused: `CheckKeysDeclared()` rejects a script touching an undeclared key. `allow-undeclared-keys` buys it back at the cost of a global lock per invalidation |
+| **Redis Cluster** | refused: every key of a script must hash to one slot, and `x:t:<tag>` carries no hash tag, so tag sets and their members do not co-slot |
+
+The fix is `packages/cache/src/redis.ts`, never app code — either declare the members in a second round trip and lose the script's atomicity, or hash-tag the key layout. Until one lands, keep `REDIS_URL` pointed at Redis or Valkey, single node. [`17-scale-ladder.md`](./17-scale-ladder.md#dragonfly-honestly) has the operational detail.
 
 ## Entity tags are the invalidation graph
 
@@ -58,7 +79,7 @@ export const publishPost = action({
 |---|---|---|
 | Tier 1 request memo | drop entries carrying the tag | immediate, same request |
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
-| Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, transactional with the outbox |
+| Tier 3 shared | one `EVAL`: `SMEMBERS` the tag set, `DEL` each member, `DEL` the set | immediate, transactional with the outbox |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
 | CDN | purge by surrogate key — the same tag strings — through the configured `PurgeDriver` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication ([`03-realtime.md`](./03-realtime.md)) | independent path — realtime does not depend on cache invalidation |
@@ -75,6 +96,8 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
 | Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from actor scope |
+
+This is [wrap, don't reinvent](./00-thesis.md#wrap-dont-reinvent) applied to eviction: the tiers are `Bun.redis` and standard CDN headers, and what the wrapper deletes is the decision about which of them to clear. A wrapper that only renamed `DEL` would have earned nothing.
 
 Agents are measurably bad at *distant* invariants — the pattern "edit here, remember to also edit there" is where LLM-written code regresses most. Declaring `invalidates` at the write site is local, checkable, and typed: an unknown tag is a compile error, and a query whose tables are not covered by any tag is an `x verify` failure (`X_CACHE_UNTAGGED_QUERY`).
 

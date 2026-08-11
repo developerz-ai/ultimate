@@ -401,11 +401,13 @@ export class RoleUnknownError extends UltimateError {
  * reports nothing an operator can act on.
  */
 export class PortInvalidError extends UltimateError {
-  constructor(input: { value: string }) {
+  /** `name` so the scrape port reports itself; the code stays one, because the fault is one. */
+  constructor(input: { value: string; name?: string }) {
+    const name = input.name ?? 'PORT';
     super({
       code: 'X_PORT_INVALID',
-      cause: `PORT="${input.value}" is not a TCP port number between 0 and 65535`,
-      fix: 'docker run -e PORT=3000 <image>',
+      cause: `${name}="${input.value}" is not a TCP port number between 0 and 65535`,
+      fix: `docker run -e ${name}=${name === 'PORT' ? 3000 : 9090} <image>`,
       docs: docsFor('X_PORT_INVALID'),
     });
   }
