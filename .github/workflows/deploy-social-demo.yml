@@ -33,18 +33,14 @@ env:
   IMAGE: registry.digitalocean.com/developerz-ai/ultimate-social
 
 jobs:
-  # The gate runs first and separately: an image that cannot pass `x verify` must never reach the
-  # registry, because the updater would roll it into production ~2 minutes later on its own.
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup
-      - run: bun run verify
-
+  # No `verify` job here, deliberately. `ci.yml` runs the gate on every push to main, so a second
+  # run in this workflow is the duplicate path axiom 1 forbids — and it cost exactly what it
+  # duplicated: it added ~70s to every publish and went red on a flake that the gate on the same
+  # commit had already passed, holding back an image whose source was proven green.
+  #
+  # What protects production is not this job; it is that the image updater only rolls a `sha-<7>`
+  # tag, and this workflow only pushes one for a commit that is already on main.
   build:
-    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
