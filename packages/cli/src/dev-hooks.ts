@@ -4,7 +4,7 @@
 
 import { actorOf } from '@ultimat3/action';
 import type { AuthzDecision, ServerHooks } from '@ultimat3/http';
-import { asCtx } from '@ultimat3/http';
+import { asCtx, configuredAuthenticator } from '@ultimat3/http';
 import type { KnownPermission, Policy } from '@ultimat3/policy';
 import { can, evaluate } from '@ultimat3/policy';
 import { routeFor } from '@ultimat3/render';
@@ -22,8 +22,21 @@ function policyFor(path: string): Policy<unknown, unknown> | undefined {
   return permission !== undefined && isPermission(permission) ? can(permission) : undefined;
 }
 
+/**
+ * Both seams, never one. This returned `authorize` alone, so `hooks.authenticate` — the only
+ * place an actor can come from — had no caller anywhere in the framework: every request under
+ * `x dev` AND under `apps/web/server.ts` (both boot through `startRoles`) was anonymous, and
+ * `auth: 'required'` was unsatisfiable. The app declares the resolver with
+ * `configureAuthenticator()` at import time; this reads it back at server start, which is after
+ * `loadApp` has imported the app's modules.
+ *
+ * Read here rather than captured at module load so a test — and a watch-mode restart — sees the
+ * function the app configured, not the one that was absent when this module first evaluated.
+ */
 export function devHooks(): ServerHooks {
+  const authenticate = configuredAuthenticator();
   return {
+    ...(authenticate === undefined ? {} : { authenticate }),
     authorize: (route, _request, ctx): AuthzDecision => {
       // An action route never arrives here: it carries `enforcedBy: 'handler'`, so the pipeline
       // never asks. `invoke` is its one evaluation, and the only one holding the row a row-level

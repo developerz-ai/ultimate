@@ -50,9 +50,21 @@ export const stream = (
 export const noContent = (init?: ResponseInit): Response =>
   new Response(null, { ...init, status: 204 });
 
+/** 301 is absent on purpose: a permanent redirect is a deploy decision, not an app one. */
+export type RedirectStatus = 302 | 303 | 307 | 308;
+
 /** 303 after a mutation, 302 otherwise — never 301 from application code. */
-export const redirect = (location: string, status: 302 | 303 | 307 | 308 = 302): Response =>
+export const redirect = (location: string, status: RedirectStatus = 302): Response =>
   new Response(null, { status, headers: { location } });
+
+/**
+ * A redirect a handler asked for but could not return — see `redirect.ts`. Kept beside
+ * `redirect()` so the intent and the Response it becomes cannot drift on status.
+ */
+export interface RedirectIntent {
+  readonly location: string;
+  readonly status: RedirectStatus;
+}
 
 /**
  * RFC-9457. The body carries the framework's error contract verbatim: `code`,

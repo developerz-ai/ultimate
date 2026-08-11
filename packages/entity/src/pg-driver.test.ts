@@ -29,6 +29,7 @@ const invoices = entity('pg_test_invoices', {
 type Invoice = typeof invoices.$row;
 
 const ORG = '00000000-0000-7000-8000-0000000000a1';
+const _OTHER_ORG = '00000000-0000-7000-8000-0000000000a2';
 const ID = '00000000-0000-7000-8000-000000000101';
 
 /** What Bun.SQL hands back: snake_case names, int8 as a string, timestamptz as an ISO string. */

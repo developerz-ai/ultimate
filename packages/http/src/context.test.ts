@@ -3,9 +3,25 @@
 // what creation resolves and that the ALS hands the same object back, rather than a copy that
 // drifts from what the pipeline decided.
 import { describe, expect, test } from 'bun:test';
-import { anonymousActor, isAnonymous, runWithContext, userActor, uuid } from '@ultimat3/core';
+import {
+  anonymousActor,
+  createContext,
+  isAnonymous,
+  runWithContext,
+  userActor,
+  uuid,
+} from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { actorView, asCtx, createRequestContext, elapsedMs, useRequestContext } from './context';
+import {
+  actorView,
+  asCtx,
+  createRequestContext,
+  elapsedMs,
+  useRequestContext,
+  useRequestCookie,
+  useRequestHeader,
+  useRequestHeaders,
+} from './context';
 
 const config = defineHttpConfig();
 
@@ -115,6 +131,64 @@ describe('useRequestContext', () => {
     });
     const result = runWithContext(asCtx(ctx), () => useRequestContext());
     expect(Object.is(result, ctx)).toBe(true);
+  });
+});
+
+// Before these, `RequestContext` held the RESPONSE headers and no reference to the request at
+// all — so an action could set a session cookie and nothing in the framework could ever read it
+// back. Sign-in worked, and "signed in as X" was unreachable.
+describe('the inbound headers on the context', () => {
+  const withHeaders = (headers: HeadersInit) =>
+    createRequestContext({
+      url: new URL('https://example.com/x'),
+      method: 'get',
+      role: 'web',
+      config,
+      requestHeaders: headers,
+    });
+
+  test('a context built without them carries an empty Headers, never undefined', () => {
+    const ctx = createRequestContext({
+      url: new URL('https://example.com/x'),
+      method: 'get',
+      role: 'web',
+      config,
+    });
+    expect(ctx.requestHeaders).toBeInstanceOf(Headers);
+    expect(ctx.requestHeaders.get('cookie')).toBeNull();
+  });
+
+  test('useRequestHeader reads what the caller sent', () => {
+    const ctx = withHeaders({ 'x-demo': 'yes' });
+    expect(runWithContext(asCtx(ctx), () => useRequestHeader('X-Demo'))).toBe('yes');
+    expect(runWithContext(asCtx(ctx), () => useRequestHeader('x-absent'))).toBeNull();
+  });
+
+  test('useRequestCookie decodes one cookie out of the header', () => {
+    const ctx = withHeaders({ cookie: 'x-locale=de; session=abc%20def; other=1' });
+    expect(runWithContext(asCtx(ctx), () => useRequestCookie('session'))).toBe('abc def');
+    expect(runWithContext(asCtx(ctx), () => useRequestCookie('x-locale'))).toBe('de');
+    expect(runWithContext(asCtx(ctx), () => useRequestCookie('absent'))).toBeNull();
+  });
+
+  test('a cookie missing from a real request reads null, not a throw', () => {
+    const ctx = withHeaders({});
+    expect(runWithContext(asCtx(ctx), () => useRequestCookie('session'))).toBeNull();
+  });
+
+  // "no request here" and "the caller sent no cookie" are different facts. Folding them into
+  // one `null` is how a job would quietly run as nobody.
+  test('X_NO_REQUEST inside a context that is not a request', () => {
+    expect(() =>
+      runWithContext(createContext({ role: 'worker' }), () => useRequestCookie('session')),
+    ).toThrow('X_NO_REQUEST');
+    expect(() =>
+      runWithContext(createContext({ role: 'worker' }), () => useRequestHeaders()),
+    ).toThrow('X_NO_REQUEST');
+  });
+
+  test('X_NO_CONTEXT outside any context at all — core answers that one', () => {
+    expect(() => useRequestHeader('cookie')).toThrow('X_NO_CONTEXT');
   });
 });
 

@@ -45,9 +45,34 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
   that reason alone: `$parse` throws, and a call site should not need two error paths for one
   mistake.
-- **Tenancy applies to writes too.** `update(id, patch)` and `delete(id)` build the same plan a
-  read does, so an id alone never addresses a row on a tenant-scoped entity. Another tenant's id
-  reads as `X_NOT_FOUND`, never as their row.
+- **Tenancy applies to writes too.** `update(id, patch)`, `delete(id)`, `deleteWhere(filter)` and
+  `updateWhere(filter, patch)` build the same plan a read does, so an id or a filter alone never
+  addresses a row on a tenant-scoped entity. Another tenant's id reads as `X_NOT_FOUND`, never as
+  their row.
+- **`deleteWhere(filter)` and `updateWhere(filter, patch)` are the only filtered writes, and they
+  are bounded by construction.** `delete(id)` and `update(id, patch)` need a single-column primary
+  key, so on a composite key — `likes`, `blocks`, `participants`, any join table — the filtered
+  pair is the only write path that exists; without them the entity is create-only and a row can be
+  written and never unwritten. Properties, none of them optional:
+  - an empty filter is `X_WRITE_UNFILTERED` and never every row; an empty patch is `X_PATCH_EMPTY`
+    and never a counted no-op. An `undefined` value is dropped *before* either count, so a
+    forgotten variable lands on the error rather than on the table.
+  - **one code for both verbs**, because it is one situation with one remedy. Splitting it into
+    `X_DELETE_UNFILTERED`/`X_UPDATE_UNFILTERED` would give two codes the same `fix` and make a
+    caller choose which to catch. The situations that genuinely differ — no filter, no patch —
+    are what get separate codes.
+  - the filter guard runs before tenancy is applied, because one tenant's every row is still
+    every row.
+  - soft delete follows the entity's `deletedAt` column exactly as `delete(id)` does: stamped rows
+    are not matched twice, and `updateWhere` carries the same `deleted_at is null` clause
+    `update(id, patch)` does, so a deleted row is never patched back into shape.
+  - both return a count, never `void`: a filtered write that silently matches nothing is
+    indistinguishable from one that worked.
+- **`touch()` in `query.ts` is the ONE place `onUpdateNow()` columns are stamped**, for
+  `update(id, patch)` and `updateWhere(filter, patch)` alike — a second copy is how one of them
+  ends up writing a stale `updatedAt`. It returns an empty patch untouched, so whether
+  `X_PATCH_EMPTY` fires depends on the call and not on whether the entity happens to declare the
+  column.
 - **Nothing is interpolated into SQL.** `pg-sql.ts` binds every value through `sql` and resolves
   every identifier through the entity, so a column name can only be one the entity declared.
   `raw()` appears exactly twice, for `asc|desc` and the seek operator — both closed sets.

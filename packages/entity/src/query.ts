@@ -4,6 +4,7 @@
 // page, so a client silently skips and repeats rows.
 
 import type { EntityCore } from './entity';
+import { namedColumns } from './plan';
 import type { Page, Repo, RepoOptions } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import type { ColumnMap, Insertable } from './types';
@@ -32,6 +33,19 @@ export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;
   update(id: string, patch: Partial<Row>, options?: RepoOptions): Promise<Row>;
   delete(id: string, options?: RepoOptions): Promise<void>;
+  /**
+   * Delete by equality filter; resolves with the number of rows removed. The only way to remove a
+   * row from an entity whose primary key is composite — `likes`, `blocks`, a join table — where
+   * one id cannot name it. `deleteWhere({})` is `X_WRITE_UNFILTERED`, never every row.
+   */
+  deleteWhere(filter: Partial<Row>, options?: RepoOptions): Promise<number>;
+  /**
+   * Update by equality filter; resolves with the number of rows written. The `update(id, patch)`
+   * a composite primary key cannot express — `participants.updateWhere({ conversationId, userId },
+   * { lastReadAt })` is the reference case. Empty filter: `X_WRITE_UNFILTERED`. Empty patch:
+   * `X_PATCH_EMPTY`. `onUpdateNow()` columns are stamped exactly as `update(id, patch)` stamps them.
+   */
+  updateWhere(filter: Partial<Row>, patch: Partial<Row>, options?: RepoOptions): Promise<number>;
 }
 
 interface State {
@@ -121,8 +135,18 @@ const builder = <Source, Row>(
   };
 };
 
-/** Columns declared `onUpdateNow()` are written by the framework, never by the caller. */
+/**
+ * Columns declared `onUpdateNow()` are written by the framework, never by the caller. One helper,
+ * so `update(id, patch)` and `updateWhere(filter, patch)` stamp the same columns at the same
+ * moment — a second copy is how one of them ends up with a stale `updatedAt`.
+ *
+ * A patch that names nothing is returned untouched. Stamping `updatedAt` onto "the caller named no
+ * columns" would turn that mistake into a real write on any entity that happens to declare the
+ * column, and `X_PATCH_EMPTY` downstream would never see it — so whether the refusal fires would
+ * depend on the schema rather than on the call.
+ */
 const touch = <Row>(entity: EntityCore<Row>, patch: Partial<Row>): Partial<Row> => {
+  if (namedColumns(patch).length === 0) return patch;
   const stamped: Record<string, unknown> = {};
   for (const [property, column] of Object.entries(entity.$columns)) {
     if (column.$meta.onUpdate !== undefined) stamped[property] = new Date();
@@ -141,4 +165,7 @@ export const tableFor = <Row, C extends ColumnMap>(
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
   update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
   delete: async (id, options) => repo.delete(id, options),
+  deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),
+  updateWhere: async (filter, patch, options) =>
+    repo.updateWhere(filter, touch(entity, patch), options),
 });

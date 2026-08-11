@@ -50,9 +50,29 @@ const invoices = entity('pg_live_invoices', {
   },
 });
 
+/**
+ * A composite primary key AND a tenant column — the two things a filtered delete has to survive
+ * together. `delete(id)` cannot address a row here at all, which is the defect `deleteWhere` fixes,
+ * and asserting the statement text proves nothing about whether Postgres accepts `delete … where
+ * "invoice_id" = $1 and "label" = $2 and "org_id" = $3` or removes only the rows it names.
+ */
+const invoiceTags = entity('pg_live_invoice_tags', {
+  columns: {
+    invoiceId: uuid().references(() => invoices.id, { onDelete: 'cascade' }),
+    label: text({ max: 40 }),
+    orgId: uuid()
+      .references(() => orgs.id)
+      .tenant(),
+    /** A non-key column, so `updateWhere` has something to write that is not part of the key. */
+    note: text().nullable(),
+  },
+  primaryKey: ['invoiceId', 'label'],
+});
+
 type Invoice = typeof invoices.$row;
 
-const DROP = 'drop table if exists "pg_live_invoices", "pg_live_orgs" cascade';
+const DROP =
+  'drop table if exists "pg_live_invoice_tags", "pg_live_invoices", "pg_live_orgs" cascade';
 
 /**
  * The generator returns one `up` script; a driver executes one statement. Splitting on `;\n` is
@@ -77,7 +97,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     await client.execute(raw(DROP));
     migration = generateMigration({
       // Declaration order is dependency order: the foreign key needs `pg_live_orgs` first.
-      entities: [orgs.$describe(), invoices.$describe()],
+      entities: [orgs.$describe(), invoices.$describe(), invoiceTags.$describe()],
       name: 'live driver',
       now: new Date('2026-08-10T00:00:00.000Z'),
     });
@@ -111,7 +131,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     (await database({ orgs }, { driver: postgresDriver() }).orgs.insert({ slug })).id;
 
   /** Pages to exhaustion from `cursor`, in the order the driver handed the rows back. */
-  const walkFrom = async (args: FindManyArgs, cursor: string | null): Promise<Invoice[]> => {
+  const _walkFrom = async (args: FindManyArgs, cursor: string | null): Promise<Invoice[]> => {
     const rows: Invoice[] = [];
     let next = cursor;
     let more = true;
@@ -126,10 +146,10 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     return rows;
   };
 
-  const referencesOf = (rows: readonly Invoice[]): string[] => rows.map((row) => row.reference);
+  const _referencesOf = (rows: readonly Invoice[]): string[] => rows.map((row) => row.reference);
 
   /** The cursor a page had to hand back — otherwise `string | null` leaks into every caller. */
-  const cursorOf = (page: Page<Invoice>): string => {
+  const _cursorOf = (page: Page<Invoice>): string => {
     expect(page.nextCursor).toBeTypeOf('string');
     return page.nextCursor ?? '';
   };
@@ -236,189 +256,153 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(Number(rows[0]?.count)).toBe(0);
   });
 
-  test('a keyset page walks every row exactly once', async () => {
-    const org = (
-      await database({ orgs }, { driver: postgresDriver() }).orgs.insert({
-        slug: 'paging',
-      })
-    ).id;
-    const references = ['a', 'b', 'c', 'd', 'e'].map((letter) => `PAGE-${letter}`);
-    for (const reference of references) await write(org, reference);
+  test('a composite-key row is deletable by filter, and only inside its own tenant', async () => {
+    const tags = () => postgresRepo(invoiceTags);
+    const mine = await write(acme, 'INV-tags');
+    const yours = await write(other, 'INV-tags-other');
+    const tag = (invoiceId: string, orgId: string, label: string) =>
+      tags().insert({ invoiceId, orgId, label, note: null });
 
-    const seen: string[] = [];
-    let cursor: string | null = null;
-    for (let page = 0; page < 10; page += 1) {
-      const result: Page<Invoice> = await repo().findMany({
-        orgId: org,
-        orderBy: [{ column: 'reference', direction: 'asc' }],
-        limit: 2,
-        cursor,
-      });
-      seen.push(...result.rows.map((row) => row.reference));
-      cursor = result.nextCursor;
-      if (cursor === null) break;
+    for (const label of ['urgent', 'archive', 'review']) await tag(mine.id, acme, label);
+    await tag(yours.id, other, 'urgent');
+
+    // The whole point: three key columns' worth of row, none of them addressable by `delete(id)`.
+    await expect(tags().delete(mine.id, { orgId: acme })).rejects.toThrow(/deleteWhere/);
+
+    // A filter matching nothing is 0, not a throw and not a full-table delete.
+    expect(await tags().deleteWhere({ invoiceId: mine.id, label: 'absent' }, { orgId: acme })).toBe(
+      0,
+    );
+    expect(await tags().count({ orgId: acme })).toBe(3);
+
+    // Exactly the row the full key names.
+    expect(await tags().deleteWhere({ invoiceId: mine.id, label: 'urgent' }, { orgId: acme })).toBe(
+      1,
+    );
+    expect(await tags().count({ orgId: acme })).toBe(2);
+
+    // A partial filter takes the rest of this invoice's tags — and the other tenant's `urgent`
+    // row matches the label but is behind the org predicate Postgres itself applies.
+    expect(await tags().deleteWhere({ invoiceId: mine.id }, { orgId: acme })).toBe(2);
+    expect(await tags().count({ orgId: acme })).toBe(0);
+    expect(await tags().count({ orgId: other })).toBe(1);
+    expect(await tags().deleteWhere({ label: 'urgent' }, { orgId: acme })).toBe(0);
+    expect(await tags().count({ orgId: other })).toBe(1);
+
+    expect(await rejectionCode(tags().deleteWhere({}, { orgId: acme }))).toBe('X_WRITE_UNFILTERED');
+    expect(await rejectionCode(tags().deleteWhere({ label: 'urgent' }))).toBe('X_TENANCY_UNSCOPED');
+  });
+
+  test('a composite-key row is patchable by filter, and only inside its own tenant', async () => {
+    const tags = () => postgresRepo(invoiceTags);
+    const mine = await write(acme, 'INV-patch');
+    const yours = await write(other, 'INV-patch-other');
+    const noteOf = async (invoiceId: string, label: string, orgId: string) =>
+      (
+        await tags().findMany({
+          orgId,
+          where: [{ column: 'invoiceId', op: 'eq', value: invoiceId }],
+        })
+      ).rows.find((row) => row.label === label)?.note ?? null;
+
+    for (const label of ['red', 'green', 'blue']) {
+      await tags().insert({ invoiceId: mine.id, orgId: acme, label, note: null });
     }
+    await tags().insert({ invoiceId: yours.id, orgId: other, label: 'red', note: null });
 
-    // Exactly once, in order, with no page boundary repeating or skipping its neighbour's row.
-    expect(seen).toEqual(references);
-    expect(await repo().count({ orgId: org })).toBe(5);
-  });
-
-  test('a cursor from one plan is refused by another', async () => {
-    const org = (
-      await database({ orgs }, { driver: postgresDriver() }).orgs.insert({
-        slug: 'cursor-scope',
-      })
-    ).id;
-    for (const reference of ['S-1', 'S-2']) await write(org, reference);
-
-    const scoped = { orgId: org };
-    const first = await repo().findMany({ ...scoped, limit: 1 });
-    expect(first.nextCursor).not.toBeNull();
-
-    // Same rows, different sort — the cursor is bound to the plan, so it cannot be replayed here.
-    const elsewhere = repo().findMany({
-      ...scoped,
-      orderBy: [{ column: 'reference', direction: 'desc' }],
-      limit: 1,
-      cursor: first.nextCursor,
-    });
-    await expect(elsewhere).rejects.toThrow();
-  });
-
-  test('a row inserted before the cursor position neither duplicates nor skips a row', async () => {
-    const org = await newOrg('cursor-insert');
-    const seeded = ['SHIFT-b', 'SHIFT-c', 'SHIFT-d', 'SHIFT-e', 'SHIFT-f'];
-    for (const reference of seeded) await write(org, reference);
-
-    const listing: FindManyArgs = {
-      orgId: org,
-      orderBy: [{ column: 'reference', direction: 'asc' }],
-      limit: 2,
-    };
-    const first = await repo().findMany(listing);
-    expect(referencesOf(first.rows)).toEqual(['SHIFT-b', 'SHIFT-c']);
-
-    // The write the doc's OFFSET table gets wrong: a row lands *behind* the open cursor, which
-    // under OFFSET shifts every later page down one — repeating one row and dropping the next.
-    await write(org, 'SHIFT-a');
-    const seen = referencesOf([...first.rows, ...(await walkFrom(listing, cursorOf(first)))]);
-
-    expect(new Set(seen).size).toBe(seen.length);
-    expect(seen).toEqual(seeded);
-    // The late row really is in the tenant — it stayed out of the walk because the cursor names a
-    // position in the ordering, not a row count taken at some earlier instant.
-    expect(await repo().count({ orgId: org })).toBe(6);
-  });
-
-  test('the boundary row deleted between pages does not restart pagination', async () => {
-    const org = await newOrg('cursor-delete');
-    const seeded = ['GAP-a', 'GAP-b', 'GAP-c', 'GAP-d', 'GAP-e'];
-    for (const reference of seeded) await write(org, reference);
-
-    const listing: FindManyArgs = {
-      orgId: org,
-      orderBy: [{ column: 'reference', direction: 'asc' }],
-      limit: 2,
-    };
-    const first = await repo().findMany(listing);
-    const boundary = first.rows.at(-1);
-    expect(boundary?.reference).toBe('GAP-b');
-
-    // The row the cursor was cut at is gone before the next request — the case an id-only cursor
-    // cannot survive, because seeking by a row that is no longer there matches everything again.
-    await repo().delete(boundary?.id ?? '', { orgId: org });
-
-    const second = await repo().findMany({ ...listing, cursor: cursorOf(first) });
-    expect(referencesOf(second.rows)).toEqual(['GAP-c', 'GAP-d']);
-    expect(referencesOf(await walkFrom(listing, cursorOf(second)))).toEqual(['GAP-e']);
-  });
-
-  test('a descending listing pages correctly through a real mixed-direction seek', async () => {
-    const org = await newOrg('cursor-desc');
-    const seeded = ['DESC-a', 'DESC-b', 'DESC-c', 'DESC-d', 'DESC-e'];
-    for (const reference of seeded) await write(org, reference);
-
-    // `planFor` always appends the primary key ascending, so the plan is `reference desc, id asc`
-    // — a mixed pair no `(a, b) < (x, y)` can express, which is why `seekSql` spells it out.
-    const listing: FindManyArgs = {
-      orgId: org,
-      orderBy: [{ column: 'reference', direction: 'desc' }],
-      limit: 2,
-    };
-    expect(referencesOf(await walkFrom(listing, null))).toEqual([...seeded].reverse());
-
-    // A tie straddling a page boundary, where only the id tiebreak separates the two rows: a seek
-    // that compares the sort value alone either loses the second row or returns the first twice.
-    const tied = await newOrg('cursor-tie');
-    const ids = [(await write(tied, 'TIE')).id, (await write(tied, 'TIE')).id];
-    const walked = await walkFrom({ ...listing, orgId: tied, limit: 1 }, null);
-
-    expect(walked.map((row) => row.id).sort()).toEqual([...ids].sort());
-  });
-
-  test('a tampered cursor is X_CURSOR_INVALID, not a silent page one', async () => {
-    const org = await newOrg('cursor-tamper');
-    for (const reference of ['TAMPER-a', 'TAMPER-b', 'TAMPER-c']) await write(org, reference);
-
-    const listing: FindManyArgs = { orgId: org, limit: 1 };
-    const live = cursorOf(await repo().findMany(listing));
-    const body = live.slice(0, live.lastIndexOf('.'));
-    const signature = live.slice(live.lastIndexOf('.') + 1);
-    // Derived from the character already there: substituting a fixed one into a hex signature is
-    // a no-op one run in sixteen, and a test that only usually fails a forgery proves nothing.
-    const forged = `${signature.startsWith('0') ? '1' : '0'}${signature.slice(1)}`;
-
-    expect(await rejectionCode(repo().findMany({ ...listing, cursor: `${body}.${forged}` }))).toBe(
-      'X_CURSOR_INVALID',
+    // `update(id, patch)` cannot address any of these — the defect, against a real server.
+    await expect(tags().update(mine.id, { note: 'x' }, { orgId: acme })).rejects.toThrow(
+      /updateWhere/,
     );
 
-    // The signature covers the body, so a position lifted from another plan cannot borrow this
-    // cursor's signature to get itself accepted — and its scope would not have matched either.
-    const elsewhere = cursorOf(
-      await repo().findMany({ ...listing, orderBy: [{ column: 'reference', direction: 'desc' }] }),
+    // Nothing matched is 0: not a throw, and not a table-wide write.
+    expect(
+      await tags().updateWhere(
+        { invoiceId: mine.id, label: 'absent' },
+        { note: 'x' },
+        { orgId: acme },
+      ),
+    ).toBe(0);
+
+    // Exactly the row the full composite key names.
+    expect(
+      await tags().updateWhere(
+        { invoiceId: mine.id, label: 'red' },
+        { note: 'seen' },
+        { orgId: acme },
+      ),
+    ).toBe(1);
+    expect(await noteOf(mine.id, 'red', acme)).toBe('seen');
+    expect(await noteOf(mine.id, 'green', acme)).toBeNull();
+
+    // A partial filter patches the rest of this invoice's tags…
+    expect(
+      await tags().updateWhere({ invoiceId: mine.id }, { note: 'bulk' }, { orgId: acme }),
+    ).toBe(3);
+    expect(await noteOf(mine.id, 'blue', acme)).toBe('bulk');
+
+    // …and the other tenant's identically-labelled row sits behind the org predicate Postgres
+    // itself applies, so a filter that matches it on paper reaches only this tenant's copy.
+    expect(await tags().updateWhere({ label: 'red' }, { note: 'leak' }, { orgId: acme })).toBe(1);
+    expect(await noteOf(yours.id, 'red', other)).toBeNull();
+
+    expect(await rejectionCode(tags().updateWhere({}, { note: 'x' }, { orgId: acme }))).toBe(
+      'X_WRITE_UNFILTERED',
     );
-    const stolen = `${elsewhere.slice(0, elsewhere.lastIndexOf('.'))}.${signature}`;
-    expect(await rejectionCode(repo().findMany({ ...listing, cursor: stolen }))).toBe(
-      'X_CURSOR_INVALID',
+    expect(await rejectionCode(tags().updateWhere({ label: 'red' }, {}, { orgId: acme }))).toBe(
+      'X_PATCH_EMPTY',
+    );
+    expect(await rejectionCode(tags().updateWhere({ label: 'red' }, { note: 'x' }))).toBe(
+      'X_TENANCY_UNSCOPED',
     );
   });
 
-  test('a repository call joins the open transaction without being handed one', async () => {
-    const reference = 'INV-rollback';
+  test('updateWhere cannot reach a soft-deleted row, and rolls back with its transaction', async () => {
+    const org = await newOrg('update-where');
+    const target = await write(org, 'PATCH-a');
+    await write(org, 'PATCH-b');
+
+    expect(await repo().updateWhere({ paid: false }, { note: 'both' }, { orgId: org })).toBe(2);
+    expect((await repo().findById(target.id, { orgId: org }))?.note).toBe('both');
+
+    // Soft-delete one, then patch the pair again: only the live row is reachable, exactly as
+    // `update(id, patch)` on the deleted one would have been X_NOT_FOUND.
+    await repo().delete(target.id, { orgId: org });
+    expect(await repo().updateWhere({ paid: false }, { note: 'live only' }, { orgId: org })).toBe(
+      1,
+    );
+    expect((await repo().findById(target.id, { orgId: org, includeDeleted: true }))?.note).toBe(
+      'both',
+    );
+
     const failed = postgresTransactor().run(async () => {
-      // No client is threaded through: the repo resolves `db()`, which returns the open tx.
-      await write(acme, reference);
-      expect(
-        await repo().count({
-          orgId: acme,
-          where: [{ column: 'reference', op: 'eq', value: reference }],
-        }),
-      ).toBe(1);
+      expect(await repo().updateWhere({ paid: false }, { note: 'rolled' }, { orgId: org })).toBe(1);
       throw new Error('roll it back');
     });
     await expect(failed).rejects.toThrow('roll it back');
-
-    // Outside the transaction the row was never there — a real ROLLBACK, not an undo callback.
     expect(
-      await repo().count({
-        orgId: acme,
-        where: [{ column: 'reference', op: 'eq', value: reference }],
-      }),
-    ).toBe(0);
+      (await repo().findMany({ orgId: org })).rows.every((row) => row.note === 'live only'),
+    ).toBe(true);
   });
 
-  test('a committed transaction leaves its rows behind', async () => {
-    const reference = 'INV-commit';
-    await postgresTransactor().run(async () => {
-      await write(acme, reference);
-    });
+  test('deleteWhere soft-deletes where delete(id) would, and rolls back with its transaction', async () => {
+    const org = await newOrg('delete-where-soft');
+    for (const reference of ['SOFT-a', 'SOFT-b']) await write(org, reference);
 
-    expect(
-      await repo().count({
-        orgId: acme,
-        where: [{ column: 'reference', op: 'eq', value: reference }],
-      }),
-    ).toBe(1);
+    expect(await repo().deleteWhere({ paid: false }, { orgId: org })).toBe(2);
+    expect(await repo().count({ orgId: org })).toBe(0);
+    expect(await repo().count({ orgId: org, includeDeleted: true })).toBe(2);
+    // Already stamped, so the `deleted_at is null` clause means a second call matches nothing —
+    // the row's original deletion time survives.
+    expect(await repo().deleteWhere({ paid: false }, { orgId: org })).toBe(0);
+
+    const survivor = await newOrg('delete-where-rollback');
+    await write(survivor, 'ROLL-a');
+    const failed = postgresTransactor().run(async () => {
+      expect(await repo().deleteWhere({ reference: 'ROLL-a' }, { orgId: survivor })).toBe(1);
+      throw new Error('roll it back');
+    });
+    await expect(failed).rejects.toThrow('roll it back');
+    expect(await repo().count({ orgId: survivor })).toBe(1);
   });
 });

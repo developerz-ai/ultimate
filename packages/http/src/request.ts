@@ -5,6 +5,7 @@
 import type { Actor } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
+import { readCookie } from './locale';
 import type { Schema } from './validate';
 import { validate, validateSync } from './validate';
 
@@ -79,6 +80,15 @@ export class UltimateRequest {
 
   header(name: string): string | null {
     return this.raw.headers.get(name);
+  }
+
+  /**
+   * One decoded cookie. `hooks.authenticate` is handed this object and nothing else, so this is
+   * the seam a session lookup reads — a hand-rolled `Cookie` split in the app is the second
+   * parser this method exists to prevent.
+   */
+  cookie(name: string): string | null {
+    return readCookie(this.raw.headers.get('cookie'), name);
   }
 
   param(name: string): string {

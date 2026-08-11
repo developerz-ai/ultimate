@@ -113,6 +113,33 @@ export const ENTITY_ERRORS = {
 } as const;
 ```
 
+## Code → HTTP status
+
+`ERROR_STATUS` in [`packages/http/src/error-map.ts`](../../packages/http/src/error-map.ts) is the
+one place a code becomes a status. It is closed, and it holds the **framework's** codes — every
+package's, because HTTP is the only layer that knows what a status means, so no other package ever
+hardcodes one.
+
+An app's own codes are not in it, and `statusFor` falls back to 500. Left there, every
+app-defined code answered 500 — and the `error-map` stage reports `status >= 500` to the error
+monitor, so a wrong password paged whoever was on call. An app declares its half:
+
+```ts
+// beside the module that declares the codes — importing it IS the registration
+registerErrorStatus({ X_CREDENTIALS_INVALID: 401, X_SIGNUP_CLOSED: 403 });
+```
+
+| Rule | Why |
+|---|---|
+| the framework table wins, and registering a code it already holds is `X_ERROR_STATUS_INVALID` | an app that could map `X_UNAUTHENTICATED` to 200 changes a contract every client depends on |
+| a status outside 100–599 is `X_ERROR_STATUS_INVALID` | a status the runtime cannot send is a 500 with extra steps |
+| re-registering one code with a **different** status is `X_ERROR_STATUS_INVALID`; the same status is a no-op | a re-import is not a bug; two answers for one code is |
+| an undeclared code is still 500 | a missing row is a loud fault, never a quiet 200 |
+
+The status decides the paging, not only the response: 4xx is the caller's mistake, the problem
+document already told them, and a monitor holding those is a log nobody reads. An app that wants
+to be paged declares a 5xx and gets one.
+
 ## The `fix:` rule
 
 **Every error carries an executable `fix:`.** Not advice — a command, or a one-line edit naming the file.
@@ -159,6 +186,8 @@ Thrown by more than one package, or by the gate about any of them; every package
 |---|---|---|---|---|
 | `X_CONFIG_INVALID` | `core` | 500 | env or `app.config.ts` failed its schema at boot | `x doctor --json` |
 | `X_NO_CONTEXT` | `core` | 500 | ALS context read outside a request/job/subscription | `move this call inside a handler` |
+| `X_NO_REQUEST` | `http` | 500 | a request-scoped reader (`useRequestCookie`, `setRedirect`) used inside a job or a task | read it in a handler; a job takes the value from its payload |
+| `X_ERROR_STATUS_INVALID` | `http` | 500 | `registerErrorStatus()` given a framework code, an out-of-range status, or a second answer for one code | map a code this app owns to a status the framework does not hold |
 | `X_NOT_IMPLEMENTED` | any | 501 | a labelled unimplemented driver path | switch to the default driver |
 | `X_INTERNAL` | `core` | 500 | a non-`UltimateError` escaped | report with the trace id |
 | `X_INPUT_INVALID` | `schema` | 422 | `input` parse failed; `data.path` names the field | fix the caller's field |

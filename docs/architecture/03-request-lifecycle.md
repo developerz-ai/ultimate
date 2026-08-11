@@ -98,6 +98,57 @@ Consequences, enforced:
 - No context outside a request/job/subscription scope: reading `ctx` on a module's top level throws `X_NO_CONTEXT` with `fix: move this call inside a handler`.
 - Every layer can read actor/locale/tz/tenant. **No layer can write them.** Only stages 5–7 write, once.
 
+## Reading the request from app code
+
+`ctx.headers` is the **response** headers, accumulated by stages before a `Response` exists. The
+request's own headers are `ctx.requestHeaders`, set once at construction. App code never gets the
+raw `Request`: a `Request` on the context is a second body reader past `UltimateRequest`'s size
+cap, its content-type parse and its cache.
+
+| Need | Seam |
+|---|---|
+| a header, in a route handler or `hooks.authenticate` | `request.header(name)` |
+| a cookie, in a route handler or `hooks.authenticate` | `request.cookie(name)` |
+| a header, in an action, a page or a service | `useRequestHeader(name)` |
+| a cookie, in an action, a page or a service | `useRequestCookie(name)` |
+
+`use*` reads core's ALS, like `useContext()` and `useService()`: an action handler and a page are
+handed a `Ctx`, never an `UltimateRequest`, so an ambient reader is the only seam that reaches
+both. Outside any context it is core's `X_NO_CONTEXT`; inside a job's or a task's context it is
+`X_NO_REQUEST`, never `null` — "no request here" and "the caller sent no cookie" are different
+facts, and one `null` for both is how a job runs as nobody.
+
+`hooks.authenticate` turns a session cookie into `ctx.actor`, and the app declares it at import
+time:
+
+```ts
+configureAuthenticator(async (request) => {
+  const token = request.cookie('session');
+  return token === null ? null : await authenticate(auth, token);
+});
+```
+
+`startRoles` reads it back at server start, after `loadApp` has imported the app's modules — so
+`x dev` and `apps/web/server.ts` fill the same seam from the same declaration. `@ultimat3/auth`
+cannot supply it: it is tier 2, as `@ultimat3/http` is, so it can never import it. The app is the
+only place both are in scope.
+
+## Answering with a redirect
+
+A route handler returns `redirect(location, status)`. An action cannot: its return value is its
+output schema on **every** surface, and a `Response` returned only over HTTP is two return
+protocols for one primitive. It records the intent instead, and the HTTP projection reads it back.
+
+| | Route handler | Action |
+|---|---|---|
+| how | `return redirect('/feed', 303)` | `setRedirect('/feed')` |
+| default status | 302 | 303 |
+| who honours it | the handler *is* the response | `toRoute` only — the MCP tool and the job handle share none of a redirect's meaning |
+
+303 by default because the caller is a `<form method="post">`, which `site/` encourages at 0kb JS:
+303 turns the follow-up into a GET, so a reload does not repost. Setting `location` on
+`ctx.headers` does not work — it lands on the handler's 200, and a browser ignores it.
+
 ## One trace across HTTP → job → live query
 
 ```

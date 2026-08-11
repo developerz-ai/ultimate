@@ -25,7 +25,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `anonymousActor()`. A null here reaches every `ctx.actor` reader in the framework as a contract
   violation that only shows up on the first unauthenticated request.
 - Never add a stage to `PIPELINE_STAGES` without a `why` and a test.
-- Statuses live in `error-map.ts` only. No other file writes a status number.
+- Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
+  table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
+  `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,
+  every app code was 500 and `pipeline.ts` paged the on-call for a wrong password.
+- **The context carries the inbound headers, never the `Request`.** `ctx.requestHeaders` is set
+  once at construction; `useRequestHeader` / `useRequestCookie` are what app code reads, and
+  `UltimateRequest.cookie()` is what `hooks.authenticate` reads. A `Request` on the context is a
+  second body reader past the size cap, the content-type parse and the cache.
+- **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A single value,
+  not a list — two answers to "who is this?" is two identities per request. `@ultimat3/auth` is
+  the same tier and can never import this package, so the app is what wires them together.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -49,8 +59,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `pipeline.ts` | the ordered lifecycle; the framework's guarantee |
 | `router.ts` | trie matcher, precedence static > param > wildcard |
 | `error-map.ts` | code → status table + `factsOf()` |
-| `hooks.ts` | the two seams: `authenticate`, `authorize` |
-| `context.ts` | `RequestContext` + the single `Ctx` adapter (`asCtx`) |
+| `hooks.ts` | the two seams: `authenticate`, `authorize` + the app's `configureAuthenticator()` |
+| `context.ts` | `RequestContext` + the single `Ctx` adapter (`asCtx`) + the inbound-header readers |
+| `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 
 ## Commands
 

@@ -93,3 +93,4 @@ packages/cli/.mcp-fixture/
 .npmrc-login
 undefined/
 .serve-fixture/
+.dev-hold-fixture/

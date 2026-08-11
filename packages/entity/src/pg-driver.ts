@@ -7,7 +7,13 @@
 // being told — which is how `ctx.jobs.enqueue()` lands its outbox row atomically with the write
 // that caused it. `RepoOptions.tx` is the in-memory driver's undo hook and is ignored here.
 
-import { type DbClient, db, type TransactionOptions, withTransaction } from '@ultimat3/db';
+import {
+  type DbClient,
+  db,
+  type SqlFragment,
+  type TransactionOptions,
+  withTransaction,
+} from '@ultimat3/db';
 import { snake } from './column';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
@@ -22,7 +28,7 @@ import {
   selectStatement,
   updateStatement,
 } from './pg-sql';
-import { idPlan, readPlan } from './plan';
+import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, Transactor } from './repo';
 import type { QueryPlan } from './tenancy';
 
@@ -54,6 +60,21 @@ export const postgresRepo = <Row>(
     );
     return found === undefined ? null : decodeRow(entity, found);
   };
+
+  /**
+   * Hard or soft, decided once so `delete(id)` and `deleteWhere(filter)` cannot drift apart. Soft
+   * delete hides the row without losing it; the column's presence is the switch, and `shapeOf({})`
+   * keeps the `deleted_at is null` clause so a second call cannot move an existing stamp forward.
+   */
+  const removal = (plan: QueryPlan): SqlFragment =>
+    entity.$softDelete
+      ? updateStatement(
+          entity,
+          plan,
+          new Map([[snake(SOFT_DELETE_COLUMN), new Date()]]),
+          shapeOf({}),
+        )
+      : deleteStatement(entity, plan);
 
   return {
     async findById(id, options) {
@@ -110,16 +131,27 @@ export const postgresRepo = <Row>(
 
     async delete(id, options) {
       const plan = idPlan(entity, id, options, 'delete');
-      // Soft delete hides the row without losing it; the column's presence is the switch.
-      const statement = entity.$softDelete
-        ? updateStatement(
-            entity,
-            plan,
-            new Map([[snake(SOFT_DELETE_COLUMN), new Date()]]),
-            shapeOf({}),
-          )
-        : deleteStatement(entity, plan);
-      if ((await client().execute(statement)) === 0) throw notFound(entity.$name, id);
+      if ((await client().execute(removal(plan))) === 0) throw notFound(entity.$name, id);
+    },
+
+    // No `X_NOT_FOUND` here: a filter that matches nothing is a fact the caller asked for, not a
+    // failed address. The count is the answer, which is why it is a `number` and not `void`.
+    async deleteWhere(filter, options) {
+      return client().execute(removal(deletePlan(entity, filter, options, 'deleteWhere')));
+    },
+
+    async updateWhere(filter, patch, options) {
+      const plan = updatePlan(entity, filter, patch, options, 'updateWhere');
+      // `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)` already carries,
+      // so a soft-deleted row is not silently patched back into shape.
+      const statement = updateStatement(entity, plan, bindValues(entity, patch), shapeOf({}));
+      // `query`, not `execute`, for the rows `returning *` already produces: the in-memory driver
+      // re-asserts every row it writes, and a JS-only invariant (`kind: 'assert'`, `sql: null`)
+      // has no CHECK for Postgres to have enforced. Inside `withTransaction` the throw takes the
+      // whole statement with it.
+      const written = await client().query<PhysicalRow>(statement);
+      for (const row of written) entity.$assert(decodeRow(entity, row));
+      return written.length;
     },
 
     async count(args = {}) {

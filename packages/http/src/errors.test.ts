@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   bodyInvalid,
   buildSkew,
+  errorStatusInvalid,
   forbidden,
   HTTP_BORROWED_ERROR_CODES,
   HTTP_ERROR_CODES,
@@ -13,6 +14,7 @@ import {
   HTTP_OWNED_ERROR_CODES,
   HttpError,
   methodNotAllowed,
+  noRequest,
   pipelineNoResponse,
   rateLimited,
   routeConflict,
@@ -168,14 +170,38 @@ describe('HttpError', () => {
   });
 });
 
+describe('noRequest', () => {
+  test('names the member that was read and where reading it is legal', () => {
+    const error = noRequest('setRedirect()');
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.code).toBe('X_NO_REQUEST');
+    expect(error.cause).toContain('setRedirect()');
+    expect(error.cause).toContain('outside an HTTP request');
+    expect(error.fix).toContain('route handler');
+    expect(error.docs).toBe('https://ultimate.dev/errors/X_NO_REQUEST');
+  });
+});
+
+describe('errorStatusInvalid', () => {
+  test('carries the refused code and a fix naming the code being mapped', () => {
+    const error = errorStatusInvalid('X_UNAUTHENTICATED', 'the framework already maps it to 401');
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.code).toBe('X_ERROR_STATUS_INVALID');
+    expect(error.cause).toContain('X_UNAUTHENTICATED');
+    expect(error.cause).toContain('already maps it to 401');
+    expect(error.fix).toContain('registerErrorStatus({ X_UNAUTHENTICATED: 422 })');
+    expect(error.docs).toBe('https://ultimate.dev/errors/X_ERROR_STATUS_INVALID');
+  });
+});
+
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
 const EVERY_CODE: readonly string[] = HTTP_ERROR_CODES;
 const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 10 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(10);
+  test('contains exactly the 12 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(12);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
@@ -188,6 +214,8 @@ describe('HTTP_ERROR_CODES', () => {
         'X_ROUTE_CONFLICT',
         'X_SERVER_NOT_STARTED',
         'X_PIPELINE_NO_RESPONSE',
+        'X_NO_REQUEST',
+        'X_ERROR_STATUS_INVALID',
       ].sort(),
     );
   });

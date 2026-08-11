@@ -103,6 +103,29 @@ describe('header()', () => {
   });
 });
 
+// `hooks.authenticate` is handed this object and nothing else, so this is the only seam a
+// session lookup has. Without it every app rolls its own `Cookie` split — a second parser for
+// a header whose escaping rules the framework already knows.
+describe('cookie()', () => {
+  const cookies = (header: string) =>
+    build('https://example.com/x', { headers: { cookie: header } }).req;
+
+  test('reads one cookie out of the header and url-decodes it', () => {
+    const req = cookies('x-locale=de; session=a%20b; theme=dark');
+    expect(req.cookie('session')).toBe('a b');
+    expect(req.cookie('theme')).toBe('dark');
+  });
+
+  test('an absent cookie, and a request with no Cookie header at all, read null', () => {
+    expect(cookies('theme=dark').cookie('session')).toBeNull();
+    expect(build('https://example.com/x').req.cookie('session')).toBeNull();
+  });
+
+  test('a name that is only a prefix of another cookie does not match it', () => {
+    expect(cookies('session_id=nope').cookie('session')).toBeNull();
+  });
+});
+
 describe('param()', () => {
   test('returns the matched route param', () => {
     const { req, ctx } = build('https://example.com/posts/42');

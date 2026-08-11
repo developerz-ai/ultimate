@@ -10,15 +10,21 @@ export {
   createRequestContext,
   elapsedMs,
   useRequestContext,
+  useRequestCookie,
+  useRequestHeader,
+  useRequestHeaders,
 } from './context';
 export type { CorsConfig } from './cors';
 export { corsHeaders, DEFAULT_CORS, preflight } from './cors';
 export type { ErrorFacts, ProblemDocument } from './error-map';
 export {
+  appErrorStatus,
   DEFAULT_STATUS,
   ERROR_STATUS,
   factsOf,
+  registerErrorStatus,
   renderErrorLines,
+  resetErrorStatus,
   statusFor,
   toProblem,
 } from './error-map';
@@ -26,11 +32,13 @@ export type { HttpErrorCode } from './errors';
 export {
   bodyInvalid,
   buildSkew,
+  errorStatusInvalid,
   forbidden,
   HTTP_ERROR_CODES,
   HTTP_ERROR_TITLES,
   HttpError,
   methodNotAllowed,
+  noRequest,
   pipelineNoResponse,
   rateLimited,
   routeConflict,
@@ -38,7 +46,8 @@ export {
   serverNotStarted,
   unauthenticated,
 } from './errors';
-export type { AuthzDecision, ServerHooks } from './hooks';
+export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
+export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
 export {
   DEFAULT_LOCALE_CONFIG,
@@ -77,9 +86,10 @@ export {
   memoryRateLimitStore,
   rateLimitKey,
 } from './rate-limit';
+export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';
-export type { CacheHint } from './response';
+export type { CacheHint, RedirectIntent, RedirectStatus } from './response';
 export {
   applyCacheHeaders,
   cacheControl,

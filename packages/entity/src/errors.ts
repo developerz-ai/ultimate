@@ -9,6 +9,8 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_INVARIANT_VIOLATED',
   'X_TENANCY_UNSCOPED',
   'X_NOT_FOUND',
+  'X_WRITE_UNFILTERED',
+  'X_PATCH_EMPTY',
 ] as const;
 
 /**
@@ -32,6 +34,8 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_INVARIANT_VIOLATED: 'a domain invariant rejected this row',
   X_TENANCY_UNSCOPED: 'a tenant-scoped query has no org predicate',
   X_NOT_FOUND: 'no row for that id',
+  X_WRITE_UNFILTERED: 'a filtered write named no filter columns',
+  X_PATCH_EMPTY: 'a filtered update named no columns to write',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the
@@ -91,4 +95,40 @@ export const notFound = (entityName: string, id: string): EntityError =>
     code: 'X_NOT_FOUND',
     cause: `${entityName} ${id} does not exist (or is soft-deleted)`,
     fix: `x db query "select id from ${entityName} limit 5" --json   # confirm the id you expect`,
+  });
+
+/**
+ * A filtered write with no filter is refused rather than read as "every row": an empty filter is
+ * what a forgotten variable produces, and the two intentions look identical at the call site.
+ *
+ * One code for `deleteWhere` and `updateWhere`, not one each. The situation is a single one — a
+ * filtered write that named no filter — and the remedy is a single edit; splitting it by verb
+ * would give two codes the same `fix` and make a caller decide which to catch.
+ */
+export const writeUnfiltered = (
+  entityName: string,
+  operation: string,
+  primaryKey: readonly string[],
+): EntityError =>
+  new EntityError({
+    code: 'X_WRITE_UNFILTERED',
+    cause: `${entityName}.${operation}() named no filter columns — an empty filter would reach every row`,
+    fix: `${entityName}.${operation}({ ${primaryKey.join(', ')} }, …)   # name the columns that bound it. A deliberate whole-table write is a migration: x db gen "<name>"`,
+  });
+
+/**
+ * An empty patch is refused for the same reason an empty filter is, and it is the same mistake one
+ * argument along: `updateWhere(filter, { lastReadAt })` on a variable that came back undefined
+ * reduces to `{}`. Reporting "n rows updated" for a statement that wrote nothing is exactly the
+ * silent no-op the count was added to make impossible.
+ */
+export const patchEmpty = (
+  entityName: string,
+  operation: string,
+  columns: readonly string[],
+): EntityError =>
+  new EntityError({
+    code: 'X_PATCH_EMPTY',
+    cause: `${entityName}.${operation}() named no columns to write`,
+    fix: `${entityName}.${operation}(filter, { <column>: <value> })   # pick a column from: ${columns.join(', ')}`,
   });

@@ -9,7 +9,7 @@ const root = join(import.meta.dir, '..', '..');
 const flag = Bun.argv.indexOf('--out');
 const out = (flag === -1 ? undefined : Bun.argv[flag + 1]) ?? join(root, '.x', 'static');
 // SITE_ORIGIN is what canonical and og:url are built from; the default is only ever a local build.
-const origin = Bun.env['SITE_ORIGIN'];
+const origin = Bun.env.SITE_ORIGIN;
 
 if (import.meta.main) {
   const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });

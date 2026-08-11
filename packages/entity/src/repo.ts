@@ -10,7 +10,7 @@
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
-import { idPlan, readPlan, singleKeyOf } from './plan';
+import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 
 export interface Tx {
@@ -50,6 +50,20 @@ export interface Repo<T = unknown> {
   insert(values: T, options?: RepoOptions): Promise<T>;
   update(id: string, patch: Partial<T>, options?: RepoOptions): Promise<T>;
   delete(id: string, options?: RepoOptions): Promise<void>;
+  /**
+   * Delete by filter, returning how many rows went. The only way to remove a row from an entity
+   * with a composite primary key, where `delete(id)` cannot name one. Never `void`: a caller has
+   * to be able to tell "nothing matched" from "it worked", and an empty filter is
+   * `X_WRITE_UNFILTERED` rather than every row.
+   */
+  deleteWhere(filter: Partial<T>, options?: RepoOptions): Promise<number>;
+  /**
+   * Update by filter, returning how many rows were written. The `update(id, patch)` a composite
+   * primary key cannot express — `participants.lastReadAt` is the reference case. Same two guards
+   * as `deleteWhere`, plus `X_PATCH_EMPTY` for a patch that names no columns, and soft-deleted
+   * rows are not reachable, exactly as they are not by `update(id, patch)`.
+   */
+  updateWhere(filter: Partial<T>, patch: Partial<T>, options?: RepoOptions): Promise<number>;
   count(args?: FindManyArgs): Promise<number>;
 }
 
@@ -254,6 +268,33 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
       const key = keyOf(current);
       options?.tx?.onRollback(() => rows.set(key, current));
       rows.delete(key);
+    },
+
+    async deleteWhere(filter, options) {
+      // `rowsOf` is the read path: the same predicates, the same tenant scoping, and the same
+      // soft-delete visibility. A row already stamped is not matched, so a second call cannot
+      // move `deletedAt` forward — which is what the Postgres driver's `deleted_at is null`
+      // clause says there.
+      const doomed = rowsOf(deletePlan(entity, filter, options, 'deleteWhere'), {});
+      for (const row of doomed) {
+        if (entity.$softDelete) {
+          write(Object.assign({}, row, { [SOFT_DELETE_COLUMN]: new Date() }), options);
+          continue;
+        }
+        const key = keyOf(row);
+        options?.tx?.onRollback(() => rows.set(key, row));
+        rows.delete(key);
+      }
+      return doomed.length;
+    },
+
+    async updateWhere(filter, patch, options) {
+      // `rowsOf` again, so a soft-deleted row is as unreachable here as it is through
+      // `addressed()` — patching a row the app has already deleted is not an update, it is a
+      // resurrection nobody asked for. `write` re-asserts the invariants on each result.
+      const found = rowsOf(updatePlan(entity, filter, patch, options, 'updateWhere'), {});
+      for (const row of found) write(Object.assign({}, row, patch), options);
+      return found.length;
     },
 
     async count(args = {}) {

@@ -3,7 +3,8 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
-import { METRICS_PATH } from '@ultimat3/core';
+import { METRICS_PATH, userActor } from '@ultimat3/core';
+import { configureAuthenticator, resetAuthenticator } from '@ultimat3/http';
 import {
   createMemoryDriver,
   createMemoryEventBus,
@@ -186,5 +187,67 @@ describe('unit · x dev --role', () => {
     ).rejects.toThrow();
 
     blocker.stop(true);
+  });
+});
+
+/**
+ * `startWeb` passed `devHooks()`, which returned `authorize` and nothing else — so
+ * `hooks.authenticate` had no caller anywhere in the framework and `auth: 'required'` was
+ * unsatisfiable under `x dev` AND under `apps/web/server.ts`, which boots through this same
+ * function. This is that wiring, driven end to end: the app declares the resolver, the web role
+ * picks it up, and the `auth` stage calls it.
+ */
+describe('integration · the web role resolves an actor from the request', () => {
+  afterEach(resetAuthenticator);
+
+  const routes = [
+    {
+      method: 'GET' as const,
+      path: '/whoami',
+      meta: { name: 'whoami', auth: 'required' as const },
+      handler: (_request: unknown, ctx: { actor: { id: string } }) => new Response(ctx.actor.id),
+    },
+  ];
+
+  test('a session cookie becomes the actor; no cookie is still a 401', async () => {
+    let calls = 0;
+    configureAuthenticator((request) => {
+      calls += 1;
+      const session = request.cookie('session');
+      return session === null ? null : userActor({ id: session });
+    });
+
+    running = await startRoles({
+      roles: selectRoles('web'),
+      port: 0,
+      buildId: 'test',
+      runtime: fakeRuntime(),
+      env: {},
+      routes,
+    });
+
+    const anonymous = await running.server?.fetch(new Request('http://dev.test/whoami'));
+    expect(anonymous?.status).toBe(401);
+
+    const signedIn = await running.server?.fetch(
+      new Request('http://dev.test/whoami', { headers: { cookie: 'session=u-7' } }),
+    );
+    expect(signedIn?.status).toBe(200);
+    expect(await signedIn?.text()).toBe('u-7');
+    expect(calls).toBe(2);
+  });
+
+  test('an app that declares no authenticator still boots — every caller is anonymous', async () => {
+    running = await startRoles({
+      roles: selectRoles('web'),
+      port: 0,
+      buildId: 'test',
+      runtime: fakeRuntime(),
+      env: {},
+      routes,
+    });
+
+    const response = await running.server?.fetch(new Request('http://dev.test/whoami'));
+    expect(response?.status).toBe(401);
   });
 });

@@ -38,6 +38,7 @@ describe('unit · one bun test invocation per test type', () => {
       '--path-ignore-patterns=**/dist/**',
       '--path-ignore-patterns=**/build/**',
       '--path-ignore-patterns=**/examples/**',
+      '--path-ignore-patterns=**/dummy/**',
       '.contract.test.',
     ]);
     expect(testStepCommand('job').at(-1)).toBe('.job.test.');

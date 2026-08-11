@@ -252,12 +252,54 @@ describe('writes', () => {
 
   test('a composite key has no single id, and says so instead of guessing', async () => {
     const likes = entity('repo_test_likes', {
-      columns: { postId: uuid(), memberId: uuid() },
+      columns: { postId: uuid(), memberId: uuid(), label: text().nullable() },
       primaryKey: ['postId', 'memberId'],
     });
     const repo = memoryRepo(likes);
-    await repo.insert({ postId: org(1), memberId: org(2) });
+    await repo.insert({ postId: org(1), memberId: org(2), label: null });
     expect((await repo.findMany({ limit: 10 })).rows).toHaveLength(1);
     await expect(repo.findById(org(1))).rejects.toThrow(/composite primary key/);
+
+    // The row an id cannot name is still writable, both ways, and the count is how the caller
+    // knows it landed. Neither of these existed before: the entity was create-only.
+    expect(await repo.updateWhere({ postId: org(1), memberId: org(2) }, { label: 'seen' })).toBe(1);
+    expect((await repo.findMany({ limit: 10 })).rows[0]?.label).toBe('seen');
+    expect(await repo.deleteWhere({ postId: org(1), memberId: org(2) })).toBe(1);
+    expect((await repo.findMany({ limit: 10 })).rows).toHaveLength(0);
+
+    // No `deletedAt` column, so this is a real removal — and a failed unit of work puts it back.
+    await repo.insert({ postId: org(1), memberId: org(2), label: null });
+    const rolledBack = memoryTransactor().run(async (tx) => {
+      expect(await repo.deleteWhere({ postId: org(1) }, { tx })).toBe(1);
+      throw new Error('boom');
+    });
+    await expect(rolledBack).rejects.toThrow('boom');
+    expect((await repo.findMany({ limit: 10 })).rows).toHaveLength(1);
+  });
+
+  test('a failed transaction un-stamps every row deleteWhere soft-deleted', async () => {
+    const repo = memoryRepo(notes, seed);
+    const attempt = memoryTransactor().run(async (tx) => {
+      // A whole tenant at once: the undo has to restore all four, and the stamps are already
+      // written by the time the throw happens.
+      expect(await repo.deleteWhere({ orgId: org(1) }, { tx, orgId: org(1) })).toBe(4);
+      expect(await repo.count({ tx, orgId: org(1) })).toBe(0);
+      throw new Error('boom');
+    });
+    await expect(attempt).rejects.toThrow('boom');
+    expect(await repo.count({ orgId: org(1) })).toBe(4);
+  });
+
+  test('a failed transaction restores every row updateWhere patched', async () => {
+    const repo = memoryRepo(notes, seed);
+    const attempt = memoryTransactor().run(async (tx) => {
+      expect(
+        await repo.updateWhere({ orgId: org(1) }, { title: 'bulk' }, { tx, orgId: org(1) }),
+      ).toBe(4);
+      expect((await repo.findById(ids[0] ?? '', { tx, orgId: org(1) }))?.title).toBe('bulk');
+      throw new Error('boom');
+    });
+    await expect(attempt).rejects.toThrow('boom');
+    expect((await repo.findById(ids[0] ?? '', { orgId: org(1) }))?.title).toBe('a');
   });
 });

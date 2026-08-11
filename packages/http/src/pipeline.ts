@@ -417,6 +417,10 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
         role: init.role,
         config,
         ip: init.ip ?? null,
+        // The context is what app code reaches through core's ALS; without the inbound headers
+        // on it, a cookie the server itself set could never be read back on the next request,
+        // and `ctx.session` had no way to exist.
+        requestHeaders: raw.headers,
       });
       const request = new UltimateRequest(raw, ctx);
       // The ALS scope is entered here, before stage 1, so every stage — and everything

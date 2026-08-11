@@ -103,6 +103,8 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_BUILD_SKEW` | client build id does not match the server build id | a tab open across an incompatible deploy | reload; the SW fetches the new build manifest. See [PWA and offline](PWA-And-Offline) |
 | `X_SERVER_NOT_STARTED` | server handle used before `start()` | reading `url()` too early in a test | `await createServer({ … }).start()` first |
 | `X_PIPELINE_NO_RESPONSE` | a pipeline stage produced no response | a middleware returned `undefined` | return a `Response` from the stage or from the handler |
+| `X_NO_REQUEST` | the inbound request is not in scope here | `useRequestCookie()` / `setRedirect()` called from a job, a task or a module body | read it inside a route handler, an action or a page; a job gets the value from its payload |
+| `X_ERROR_STATUS_INVALID` | an error code cannot be mapped to that status | `registerErrorStatus()` given a framework-owned code, a status outside 100–599, or a second, different status for one code | `x errors list --json`, then map a code this app owns to a status the framework does not already hold |
 
 ## Policy and authz
 
@@ -139,6 +141,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ENTITY_DUPLICATE` | two entities claim the same name | copy-pasted `entity({ name })` | rename one; `x entities list --json` |
 | `X_INVARIANT_VIOLATED` | a domain invariant rejected this row | a CHECK or a declared invariant failed | `x entity explain <entity> --json` to see the invariant and its SQL |
 | `X_NOT_FOUND` | no row for that id | stale id, wrong tenant, or already deleted | confirm with `x db query "select id from <table> limit 5" --json` |
+| `X_WRITE_UNFILTERED` | `deleteWhere()` or `updateWhere()` named no filter columns | an empty filter, or one whose only value came back `undefined` — the two look identical at the call site, and either would reach every row | name the columns that bound it, e.g. `db.likes.deleteWhere({ postId, userId })`. A deliberate whole-table write is a migration: `x db gen "<name>"` |
+| `X_PATCH_EMPTY` | `updateWhere()` named no columns to write | an empty patch, or one whose only value came back `undefined` — reporting "n rows updated" for a statement that set nothing is the silent no-op the count exists to prevent | name the columns to write, e.g. `db.participants.updateWhere({ conversationId, userId }, { lastReadAt })` |
 | `X_DB_UNAVAILABLE` | cannot reach the database | nothing listening on `DATABASE_URL`, a statement the embedded driver refused, or `@electric-sql/pglite` not installed for a `pglite://` url | set `DATABASE_URL` to a reachable Postgres, or `x dev` for the embedded PGlite — `bun add @electric-sql/pglite` when the url is `pglite://` |
 | `X_MIGRATION_CONFLICT` | the migration ledger disagrees with this build | a ledger row from an app version this build does not ship, or an applied migration whose file was edited so its checksum moved | `x db status --json` — then deploy the version `cause` names, or `x db gen "fix <migration>"`. Never edit an applied migration |
 | `X_MIGRATION_IRREVERSIBLE` | this migration cannot be reversed without data loss | a generated plan that drops a column or a table | `x db gen "<name>" --allow-destructive`, or keep the column and deprecate it |

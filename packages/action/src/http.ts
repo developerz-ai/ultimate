@@ -7,7 +7,7 @@
 
 import { isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { json, problem } from '@ultimat3/http';
+import { json, problem, redirect, takeRedirect } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
 import { actionName, defOf, invoke } from './invoke';
 import {
@@ -51,7 +51,13 @@ export function toRoute(target: AnyAction): Route {
           replayed = true;
         },
       });
-      const response = json(result);
+      // The one thing an action's return value cannot say. `setRedirect()` inside the handler
+      // is how a `<form method="post">` gets an answer a browser follows — a `Location` on the
+      // 200 this used to always return is a header browsers ignore, so a JS-less form left the
+      // reader staring at `{"ok":true}`. Only this projection honours it: a redirect is an HTTP
+      // fact, and the MCP tool and the job handle share none of it.
+      const to = takeRedirect(req.ctx);
+      const response = to === undefined ? json(result) : redirect(to.location, to.status);
       if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
       return response;
     } catch (error) {

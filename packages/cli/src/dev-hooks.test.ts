@@ -5,8 +5,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { action, registerAction, resetRegistry, t, toRoute } from '@ultimat3/action';
+import { userActor } from '@ultimat3/core';
 import type { AuthzDecision, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig } from '@ultimat3/http';
+import {
+  configureAuthenticator,
+  createRequestContext,
+  defineHttpConfig,
+  resetAuthenticator,
+} from '@ultimat3/http';
 import {
   allow,
   can,
@@ -121,5 +127,30 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
     const decision = await decide(route, context('/ghost'));
     expect(decision.allowed).toBe(false);
     expect(decision).toMatchObject({ reason: expect.stringContaining('no policy is registered') });
+  });
+});
+
+// The other seam. `devHooks()` returned `authorize` alone, so the one place an actor can come
+// from had no caller — `x dev` and `apps/web/server.ts` both boot through `startWeb`, which
+// passes this object verbatim.
+describe('unit · x dev fills both seams, not one', () => {
+  afterEach(resetAuthenticator);
+
+  test('no authenticator declared: the key is absent, never a stub that answers nobody', () => {
+    expect('authenticate' in devHooks()).toBe(false);
+  });
+
+  test('the app’s declared resolver is what the server is handed, by identity', () => {
+    const authenticate = () => userActor({ id: 'u-1' });
+    configureAuthenticator(authenticate);
+    expect(devHooks().authenticate).toBe(authenticate);
+  });
+
+  // Read at server start, not at module load: a watch-mode restart re-reads the app's modules,
+  // and a captured `undefined` would outlive the app that later declared one.
+  test('it is read per call, so a declaration made after import is still picked up', () => {
+    expect(devHooks().authenticate).toBeUndefined();
+    configureAuthenticator(() => null);
+    expect(devHooks().authenticate).toBeDefined();
   });
 });

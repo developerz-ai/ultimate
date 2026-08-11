@@ -1,7 +1,7 @@
 // The one place a framework error code becomes an HTTP status. A table, not a
 // switch chain: adding a code elsewhere in the framework means adding a row here,
 // and a missing row is a loud 500 rather than a silently wrong 200.
-import { HTTP_ERROR_TITLES } from './errors';
+import { errorStatusInvalid, HTTP_ERROR_TITLES } from './errors';
 
 /**
  * code -> status. Codes owned by other packages are listed here on purpose: HTTP
@@ -20,6 +20,10 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   X_ROUTE_CONFLICT: 500,
   X_SERVER_NOT_STARTED: 500,
   X_PIPELINE_NO_RESPONSE: 500,
+  // Both are wiring bugs, never a caller's mistake: reading a cookie where no request exists,
+  // and declaring a status the framework already owns. 500 is the honest answer to either.
+  X_NO_REQUEST: 500,
+  X_ERROR_STATUS_INVALID: 500,
   // @ultimat3/entity
   X_NOT_FOUND: 404,
   X_ENTITY_DUPLICATE: 409,
@@ -56,7 +60,54 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
 
 export const DEFAULT_STATUS = 500;
 
-export const statusFor = (code: string): number => ERROR_STATUS[code] ?? DEFAULT_STATUS;
+/**
+ * Statuses for codes the APP owns. The table above is closed — it has to be, it is the
+ * framework's own contract — and every code outside it fell to 500, so a wrong password was an
+ * incident: `pipeline.ts` reports `status >= 500` to the error monitor, and a user's typo paged
+ * whoever was on call. This is the app's half of the same table, kept separate so a registration
+ * can never move `X_FORBIDDEN` off 403.
+ */
+const APP_ERROR_STATUS = new Map<string, number>();
+
+/**
+ * Declare the status for the codes this app throws. Call it once at boot, beside the module
+ * that declares the codes — importing that module IS the registration, the convention
+ * `registerActions` and `registerErrorCodes` already use.
+ *
+ * ```ts
+ * registerErrorStatus({ X_CREDENTIALS_INVALID: 401, X_SIGNUP_CLOSED: 403 });
+ * ```
+ */
+export const registerErrorStatus = (statuses: Readonly<Record<string, number>>): void => {
+  for (const [code, status] of Object.entries(statuses)) {
+    if (!Number.isInteger(status) || status < 100 || status > 599) {
+      throw errorStatusInvalid(code, `${String(status)} is not an HTTP status (100-599)`);
+    }
+    // The framework's own codes are not negotiable: an app that could map `X_UNAUTHENTICATED`
+    // to 200 would be an app whose 401 contract every client already depends on, changed.
+    if (ERROR_STATUS[code] !== undefined) {
+      throw errorStatusInvalid(code, `the framework already maps it to ${ERROR_STATUS[code]}`);
+    }
+    const existing = APP_ERROR_STATUS.get(code);
+    if (existing !== undefined && existing !== status) {
+      throw errorStatusInvalid(code, `already registered as ${existing} by this app`);
+    }
+    APP_ERROR_STATUS.set(code, status);
+  }
+};
+
+/** Test seam. Production registers once at boot and never unregisters. */
+export const resetErrorStatus = (): void => APP_ERROR_STATUS.clear();
+
+/** Every status the app declared, for `x errors list` and the manifest. */
+export const appErrorStatus = (): Readonly<Record<string, number>> =>
+  Object.fromEntries([...APP_ERROR_STATUS].sort(([a], [b]) => a.localeCompare(b)));
+
+// Framework table first: `registerErrorStatus` already refuses those codes, so the order is
+// belt-and-braces — but it is the belt that makes "the framework's statuses are fixed" true
+// even if a future caller reaches the map some other way.
+export const statusFor = (code: string): number =>
+  ERROR_STATUS[code] ?? APP_ERROR_STATUS.get(code) ?? DEFAULT_STATUS;
 
 /** Everything a renderer (problem+json, overlay, terminal) needs from a throwable. */
 export interface ErrorFacts {

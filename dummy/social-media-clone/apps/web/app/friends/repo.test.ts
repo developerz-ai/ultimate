@@ -27,6 +27,6 @@ test('a block can be lifted: the gap this test used to pin is closed', async () 
   // `delete(id)` still refuses, and correctly: a two-column key cannot be named by one id.
   await expect(db.blocks.delete(OLA)).rejects.toMatchObject({ code: 'X_INVARIANT_VIOLATED' });
 
-  // An unbounded filter is refused too — an empty `where` on a delete is not "remove nothing".
-  await expect(db.blocks.deleteWhere({})).rejects.toMatchObject({ code: 'X_DELETE_UNFILTERED' });
+  // An unbounded filter is refused too — an empty `where` on a write is not "touch nothing".
+  await expect(db.blocks.deleteWhere({})).rejects.toMatchObject({ code: 'X_WRITE_UNFILTERED' });
 });

@@ -58,12 +58,15 @@ const SUITES: Readonly<Record<Exclude<TestType, 'unit'>, TestSuite>> = {
 };
 
 /**
- * Build output, and nested projects that carry their own `x verify`. `examples/**` is the second
- * kind: the reference app is gated by its own run of this same step list, so collecting it here
- * would report one app failure on two different gates. The patterns are relative to the run's
- * root, so this excludes nothing when the app itself is the root.
+ * Build output, and nested projects that carry their own `x verify`. `examples/**` and
+ * `dummy/**` are the second kind: each holds a whole app gated by its own run of this same step
+ * list, so collecting them here would report one app failure on two different gates. The patterns
+ * are relative to the run's root, so this excludes nothing when the app itself is the root.
+ *
+ * `dummy/**` was added after the framework gate started running a demo app's tests and disagreeing
+ * with `bun run test` — which already excluded it — for no reason a reader could see.
  */
-const NEVER_A_TEST = ['**/dist/**', '**/build/**', '**/examples/**'];
+const NEVER_A_TEST = ['**/dist/**', '**/build/**', '**/examples/**', '**/dummy/**'];
 
 const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
   patterns.map((pattern) => `--path-ignore-patterns=${pattern}`);

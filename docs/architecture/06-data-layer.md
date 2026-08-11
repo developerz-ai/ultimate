@@ -45,13 +45,28 @@ Two enforcement points, one declaration. The TS check gives a typed error with a
 
 Generated per entity. The **only** place SQL lives.
 
+`Repo<T>` in [`packages/entity/src/repo.ts`](../../packages/entity/src/repo.ts) is the contract both drivers implement — `memoryRepo()` and `postgresRepo()`, one meaning.
+
 | Method | Notes |
 |---|---|
-| `byId(id)` | tenant filter applied automatically; returns `null`, never throws on miss |
-| `list(args)` | cursor-paginated only (below) |
-| `insert(values)` / `update(id, patch)` / `softDelete(id)` | invariants run before the statement |
-| `tx(fn)` | joins the ambient transaction if one exists, opens one otherwise |
+| `findById(id)` | tenant filter applied automatically; returns `null`, never throws on miss |
+| `findMany(args)` | cursor-paginated only (below) |
+| `insert(values)` / `update(id, patch)` | invariants run before the statement |
+| `delete(id)` | soft-deletes when the entity declares `deletedAt`, hard-deletes when it does not |
+| `deleteWhere(filter)` | delete by equality filter; resolves with the **number of rows removed** |
+| `updateWhere(filter, patch)` | update by equality filter; resolves with the **number of rows written** |
+| `count(args)` | the same plan as `findMany`, without the page |
+| `Transactor.run(fn)` | joins the ambient transaction if one exists, opens one otherwise |
 | custom | added in the feature's `repo.ts`, returning schema-parsed rows |
+
+The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. Four properties make them safe to be the only filtered writes:
+
+| Property | Mechanism |
+|---|---|
+| Bounded by construction | an empty filter is `X_WRITE_UNFILTERED`, never every row; an empty patch is `X_PATCH_EMPTY`, never a counted no-op. An `undefined` value is dropped before either count, so `updateWhere({ id }, { lastReadAt })` on a forgotten variable lands on the error rather than on the table |
+| Tenancy applies | `deletePlan`/`updatePlan` build the plan a read builds and run `assertScoped`, so the org predicate is in the statement Postgres executes. The empty-filter guard runs **first**: an org predicate bounds the blast radius to one tenant, which is still all of that tenant's rows |
+| Soft delete respected | the entity's `deletedAt` column is the same switch `delete(id)` uses. Soft entities delete via `update … set deleted_at = $1 … where deleted_at is null`, so a second delete matches nothing and the original stamp survives; `updateWhere` carries the same `deleted_at is null` clause `update(id, patch)` does, so a deleted row is not silently patched back into shape |
+| Stamps are the framework's | `touch()` in `query.ts` is the one place `onUpdateNow()` columns are written, for `update(id, patch)` and `updateWhere` alike. It leaves an empty patch empty, so whether `X_PATCH_EMPTY` fires depends on the call and not on whether the entity happens to declare `updatedAt` |
 
 Rules:
 
@@ -223,3 +238,5 @@ The short version of why not transaction-rollback isolation: the outbox commits,
 | `X_CURSOR_INVALID` | signature mismatch, or a cursor from another query, filter or sort order | restart pagination from `after: null` |
 | `X_INVARIANT_VIOLATED` | a write broke a declared invariant; `data.invariant` names it | fix the value, or relax the invariant |
 | `X_QUERY_UNBOUNDED` | `list`/live query without `limit` + total order | add `limit` and a unique tiebreak column |
+| `X_WRITE_UNFILTERED` | `deleteWhere({})` / `updateWhere({}, patch)` — no filter, so every row | name the columns that bound it; a whole-table write is a migration, `x db gen "<name>"` |
+| `X_PATCH_EMPTY` | `updateWhere(filter, {})` — nothing to write | name the columns to write |

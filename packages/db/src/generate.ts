@@ -100,6 +100,11 @@ function impliedByColumnClause(
   if (!index.unique || index.columns.length !== 1 || only === undefined) return false;
   const column = entity.columns.find((each) => each.column === only);
   // `columnClause` writes `unique` under exactly this condition — keep the two in step.
+  //
+  // NOT an optional chain, despite what biome's useOptionalChain suggests: `column?.unique` is
+  // `boolean | undefined`, and this function returns `boolean`. The lint rule marks its own fix
+  // unsafe for exactly this reason — applying it turned a green typecheck red.
+  // biome-ignore lint/complexity/useOptionalChain: an optional chain widens the return to include undefined
   return column !== undefined && column.unique && !column.primaryKey && added.has(only);
 }
 

@@ -1,13 +1,15 @@
-// `hooks.ts` is types only: the compiler proves a tier-3 implementation fits, but nothing
-// proves the decision union still narrows at runtime, or that a promise is as acceptable as a
-// plain value at either seam. The pipeline awaits both blindly, so these tests hold that half
-// of the contract — the half no implementer of the interface can check for itself.
-import { describe, expect, test } from 'bun:test';
+// `hooks.ts` is types plus one registry: the compiler proves a tier-3 implementation fits, but
+// nothing proves the decision union still narrows at runtime, or that a promise is as acceptable
+// as a plain value at either seam. The pipeline awaits both blindly, so these tests hold that
+// half of the contract — the half no implementer of the interface can check for itself — and
+// the last block holds the registry that finally gives `authenticate` a way to be filled.
+import { afterEach, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { createRequestContext } from './context';
 import { routeNotFound } from './errors';
 import type { AuthzDecision, ServerHooks } from './hooks';
+import { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
 import { UltimateRequest } from './request';
 import { text } from './response';
 import type { Route } from './router';
@@ -127,5 +129,42 @@ describe('ServerHooks', () => {
     expect(await hooks.authorize?.(route, request, ctx)).toEqual({ allowed: true });
     hooks.onError?.(routeNotFound('GET', '/gone'), ctx);
     expect(errored).toBe(true);
+  });
+});
+
+// The seam existed and had no way to be filled: nothing in the framework ever set
+// `hooks.authenticate`, so `auth: 'required'` was unsatisfiable in every host. This is the
+// declaration side; `packages/cli/src/dev-hooks.test.ts` is the wiring side.
+describe('configureAuthenticator', () => {
+  afterEach(resetAuthenticator);
+
+  test('nothing is configured until an app says so', () => {
+    expect(configuredAuthenticator()).toBeUndefined();
+  });
+
+  test('the configured function is what a host reads back, by identity', () => {
+    const authenticate = () => userActor({ id: 'u-1' });
+    configureAuthenticator(authenticate);
+    expect(configuredAuthenticator()).toBe(authenticate);
+  });
+
+  test('it fits ServerHooks.authenticate without an adapter', async () => {
+    const actor = userActor({ id: 'u-1' });
+    configureAuthenticator((incoming) => (incoming.cookie('session') === 'ok' ? actor : null));
+    const hooks: ServerHooks = { authenticate: configuredAuthenticator() };
+    const signedIn = new UltimateRequest(
+      new Request('http://x.test/posts', { headers: { cookie: 'session=ok' } }),
+      ctx,
+    );
+    expect(await hooks.authenticate?.(signedIn, ctx)).toBe(actor);
+    expect(await hooks.authenticate?.(request, ctx)).toBeNull();
+  });
+
+  test('the last declaration wins — one identity per request, never two', () => {
+    const first = () => null;
+    const second = () => userActor({ id: 'u-2' });
+    configureAuthenticator(first);
+    configureAuthenticator(second);
+    expect(configuredAuthenticator()).toBe(second);
   });
 });

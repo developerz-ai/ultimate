@@ -101,6 +101,34 @@ these filters, this sort order. A tampered cursor, or one taken from another lis
 `X_CURSOR_INVALID` rather than a silent page one. The page size is deliberately outside the scope:
 asking for a bigger next page is the same query.
 
+## Writing by filter
+
+```ts
+db.posts.delete(id);                                        // by a single primary key
+db.posts.update(id, { title });                             // ditto
+
+db.likes.deleteWhere({ postId, userId });                   // -> 1  · the only way to unlike
+db.likes.deleteWhere({ postId });                           // -> n  · every like on that post
+db.participants.updateWhere({ conversationId, userId }, { lastReadAt });   // -> 1 · mark read
+
+db.likes.deleteWhere({});                                   // X_WRITE_UNFILTERED, never every row
+db.participants.updateWhere({ conversationId }, {});        // X_PATCH_EMPTY, never a silent no-op
+```
+
+`delete(id)` and `update(id, patch)` both need a single-column primary key. A composite one —
+`likes`, `blocks`, `participants`, any join table — has no single id, so the filtered pair is the
+only write path there: without them such an entity is **create-only**, and a row could be written
+and never unwritten.
+
+| | |
+|---|---|
+| Returns | the **number of rows affected**, so "nothing matched" is distinguishable from "it worked" |
+| Empty filter | `X_WRITE_UNFILTERED`. An `undefined` value is dropped before the count, so a forgotten variable is the error and not the whole table |
+| Empty patch | `X_PATCH_EMPTY`. Counting rows for a statement that set nothing is the same silent no-op, one argument along |
+| Tenancy | the plan a read builds, through `assertScoped` — the org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row |
+| Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
+| `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
+
 ## Two drivers, one meaning
 
 ```ts
@@ -143,7 +171,7 @@ the invariants, which makes a seed a test of the schema as well.
 ## Errors
 
 `X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` · `X_DB_DRIFT` ·
-`X_NOT_FOUND`
+`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY`
 
 ## Boundaries
 

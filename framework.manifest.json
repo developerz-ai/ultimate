@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "a7080679c087c45423f3824de20f911b219ab3e0836a29b5c29b7603160a5e7a",
+  "buildId": "d26ac832d6cce9548262db07c0debd272f30d262dbef6be9670e15a59aa8115f",
   "tiers": {
     "0": [
       "core",
@@ -631,6 +631,11 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_ERROR_STATUS_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
       "code": "X_EVAL_BASELINE_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
@@ -981,6 +986,11 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_NO_REQUEST",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
       "code": "X_NOT_FOUND",
       "owner": "entity",
       "at": "packages/entity/src/errors.ts"
@@ -1029,6 +1039,11 @@
       "code": "X_PASSWORD_WEAK",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_PATCH_EMPTY",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     },
     {
       "code": "X_PERMISSION_UNKNOWN",
@@ -1579,6 +1594,11 @@
       "code": "X_VERIFY_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/errors.ts"
+    },
+    {
+      "code": "X_WRITE_UNFILTERED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     }
   ]
 }

@@ -13,6 +13,8 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_ROUTE_CONFLICT',
   'X_SERVER_NOT_STARTED',
   'X_PIPELINE_NO_RESPONSE',
+  'X_NO_REQUEST',
+  'X_ERROR_STATUS_INVALID',
 ] as const;
 
 /**
@@ -39,6 +41,8 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_ROUTE_CONFLICT: 'two routes claim the same path',
   X_SERVER_NOT_STARTED: 'server handle used before start()',
   X_PIPELINE_NO_RESPONSE: 'a pipeline stage produced no response',
+  X_NO_REQUEST: 'the inbound request is not in scope here',
+  X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -129,6 +133,25 @@ export const pipelineNoResponse = (stage: string): HttpError =>
     code: 'X_PIPELINE_NO_RESPONSE',
     cause: `the pipeline finished at stage "${stage}" without a response`,
     fix: 'return a Response from the route handler, or a Response from the stage that short-circuits',
+  });
+
+/**
+ * A request-scoped reader used where no request exists — a job, a task, a boot-time module
+ * body. Loud, because the alternative (`null`) reads as "the caller sent no cookie", which is
+ * how an unauthenticated job would quietly run as nobody.
+ */
+export const noRequest = (member: string): HttpError =>
+  new HttpError({
+    code: 'X_NO_REQUEST',
+    cause: `${member} was read outside an HTTP request`,
+    fix: 'move this call inside a route handler, an action or a page — or, for a job, call useRequestCookie(name) at enqueue time and pass the value in the payload',
+  });
+
+export const errorStatusInvalid = (code: string, reason: string): HttpError =>
+  new HttpError({
+    code: 'X_ERROR_STATUS_INVALID',
+    cause: `${code} cannot be mapped: ${reason}`,
+    fix: `x errors list --json   # then registerErrorStatus({ ${code}: 422 }) with a status the framework does not already own`,
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>

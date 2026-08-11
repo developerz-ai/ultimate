@@ -30,7 +30,9 @@ export {
   entityDuplicate,
   invariantViolated,
   notFound,
+  patchEmpty,
   tenancyUnscoped,
+  writeUnfiltered,
 } from './errors';
 export type { ColumnExpr, Expr, InvariantColumns, Resolve } from './expr';
 export type { Invariant, InvariantDef, InvariantKind } from './invariants';

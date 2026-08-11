@@ -4,7 +4,7 @@
 // driver applies is worse than none: the test passes and production leaks another tenant's rows.
 
 import type { EntityCore } from './entity';
-import { invariantViolated } from './errors';
+import { invariantViolated, patchEmpty, writeUnfiltered } from './errors';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan } from './tenancy';
 import { assertScoped } from './tenancy';
@@ -12,7 +12,7 @@ import { assertScoped } from './tenancy';
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
 export const DEFAULT_PAGE_SIZE = 50;
 
-/** Id-addressed operations need exactly one key. A composite key is a `findMany({ where })`. */
+/** Id-addressed operations need exactly one key. A composite key is addressed by every column. */
 export const singleKeyOf = <Row>(entity: EntityCore<Row>, operation: string): string => {
   const [only] = entity.$primaryKey;
   if (entity.$primaryKey.length !== 1 || only === undefined) {
@@ -20,7 +20,11 @@ export const singleKeyOf = <Row>(entity: EntityCore<Row>, operation: string): st
       entity.$name,
       operation,
       `${entity.$name} has a composite primary key (${entity.$primaryKey.join(', ')}) — ` +
-        'use findMany({ where }) instead of an id',
+        // The old wording sent every reader, whatever they were doing, to `findMany({ where })`,
+        // which is a read: a composite-key row looked unwritable because the one error that fires
+        // on `delete(id)`/`update(id, …)` named no write. Every surface gets named now.
+        'name every key column: findMany({ where }) to read, ' +
+        'updateWhere({ … }, patch) to patch, deleteWhere({ … }) to remove',
     );
   }
   return only;
@@ -80,3 +84,63 @@ export const idPlan = <Row>(
     },
     operation,
   );
+
+/**
+ * The columns a filter or a patch actually names. An `undefined` property is dropped rather than
+ * used: `deleteWhere({ postId })` where `postId` came back undefined must reduce to an empty
+ * filter and be refused, never to `post_id = null` — or worse, on a driver that ignores the bind,
+ * to no predicate at all. `updateWhere(filter, { lastReadAt })` is the same mistake, one argument
+ * along, so both guards count the same way.
+ */
+export const namedColumns = (values: unknown): readonly (readonly [string, unknown])[] =>
+  Object.entries(
+    typeof values === 'object' && values !== null ? (values as Record<string, unknown>) : {},
+  ).filter(([, value]) => value !== undefined);
+
+/** The filter a filtered write is allowed to run with: never the empty one. */
+const boundedWhere = <Row>(
+  entity: EntityCore<Row>,
+  filter: Partial<Row>,
+  operation: string,
+): Predicate[] => {
+  const where = namedColumns(filter).map(
+    ([column, value]): Predicate => ({ column, op: 'eq', value }),
+  );
+  if (where.length === 0) throw writeUnfiltered(entity.$name, operation, entity.$primaryKey);
+  return where;
+};
+
+/**
+ * The plan for a filtered delete. The guard order is the point: an empty filter is refused before
+ * tenancy runs, so `deleteWhere({}, { orgId })` cannot pass by virtue of the org predicate the
+ * framework added — that predicate bounds the blast radius to one tenant, which is still every
+ * row that tenant has.
+ *
+ * `limit` is the read default and is not a bound on the delete: neither driver pages a delete.
+ */
+export const deletePlan = <Row>(
+  entity: EntityCore<Row>,
+  filter: Partial<Row>,
+  options: RepoOptions | undefined,
+  operation: string,
+): QueryPlan =>
+  readPlan(entity, { ...options, where: boundedWhere(entity, filter, operation) }, operation);
+
+/**
+ * The plan for a filtered update. Same filter guard as the delete, from the same function, plus
+ * the patch: a write that names no columns is refused rather than counted, because "4 rows
+ * updated" for a statement that set nothing is the answer nobody can act on.
+ */
+export const updatePlan = <Row>(
+  entity: EntityCore<Row>,
+  filter: Partial<Row>,
+  patch: Partial<Row>,
+  options: RepoOptions | undefined,
+  operation: string,
+): QueryPlan => {
+  const where = boundedWhere(entity, filter, operation);
+  if (namedColumns(patch).length === 0) {
+    throw patchEmpty(entity.$name, operation, Object.keys(entity.$columns));
+  }
+  return readPlan(entity, { ...options, where }, operation);
+};

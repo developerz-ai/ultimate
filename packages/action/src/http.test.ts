@@ -5,9 +5,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
-import { createServer } from '@ultimat3/http';
-import { can } from '@ultimat3/policy';
+import { createServer, setRedirect } from '@ultimat3/http';
+import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import type { AnyAction } from './action';
 import { action } from './action';
 import { toRoute } from './http';
 
@@ -98,5 +99,66 @@ describe('an action route over the pipeline', () => {
     // Authentication, not authorization — which is why the count stays at zero.
     expect(response.status).toBe(401);
     expect(evaluations.count).toBe(0);
+  });
+});
+
+/**
+ * A JS-less `<form method="post">` is what `site/` encourages — 0kb JS — and this projection
+ * wrapped every return in `json()`, so the reader landed on `{"ok":true,"next":"/feed"}`. A
+ * `Location` set through `ctx.headers` did not help: it arrived on a 200, which browsers ignore.
+ */
+describe('an action answering a form post', () => {
+  const signIn = (redirectTo: string | null) =>
+    action({
+      input: t.object({ email: t.email }),
+      output: t.object({ ok: t.boolean }),
+      policy: allow(),
+      handle: () => {
+        if (redirectTo !== null) setRedirect(redirectTo);
+        return { ok: true };
+      },
+    }).named('createSession');
+
+  const post = (target: AnyAction) =>
+    createServer({ routes: [toRoute(target)] }).fetch(
+      new Request('http://dev.test/api/sessions/create', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: 'reader@example.test' }),
+      }),
+    );
+
+  test('answers 303 with the Location the handler asked for', async () => {
+    const response = await post(signIn('/feed'));
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/feed');
+    expect(await response.text()).toBe('');
+  });
+
+  test('an action that asks for nothing still answers its output as json', async () => {
+    const response = await post(signIn(null));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  // The intent is per-request state on a context the next request does not share; taking it is
+  // what keeps a second call on the same context from inheriting the first one's destination.
+  test('the redirect does not leak into the next request', async () => {
+    const target = signIn('/feed');
+    const server = createServer({ routes: [toRoute(target)] });
+    const call = () =>
+      server.fetch(
+        new Request('http://dev.test/api/sessions/create', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'reader@example.test' }),
+        }),
+      );
+
+    expect((await call()).status).toBe(303);
+    expect((await call()).status).toBe(303);
   });
 });
