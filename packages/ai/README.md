@@ -36,6 +36,7 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 | `effort` goes in `output_config` | a top-level `effort` is silently ignored |
 | The reasoning half of the body is **per model** | `effort` and adaptive thinking arrived with 4.6; sending them to an older model is a 400 on every request |
 | A control the model lacks is **refused**, never dropped | a declaration reading `effort: 'max'` that quietly runs at the default is the failure nobody can see |
+| A control nobody asked for is **omitted**, never defaulted | a default sent as a request is indistinguishable on the wire from one that was declared |
 | A refusal is `X_LLM_REFUSED`, not a schema failure | it is a 200 with no answer in it, and a repair turn buys the same refusal again |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
 | Retries use **full jitter** | synchronised retries from N workers reproduce the rate limit |

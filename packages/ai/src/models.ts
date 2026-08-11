@@ -1,20 +1,15 @@
-// The blessed models: their limits, their prices, and the reasoning controls each one's request
-// surface actually accepts.
-//
-// The last of those is the reason this file exists apart from ./provider. The controls are NOT
-// uniform across the catalogue — `output_config.effort` and adaptive thinking arrived with 4.6 —
-// so one body sent to all three models is a guaranteed 400 on the oldest one. A downgrade for
-// price is a price decision, not a licence to send a body the provider rejects.
-//
-// Prices are in INTEGER MINOR UNITS per million tokens. Token spend is money, and the house rule
-// applies to money regardless of where it comes from: never a float.
-//
-// As of 2026-08. Model IDs are exact alias strings — never append a date suffix.
+// The blessed models: limits, prices, and the reasoning controls each one's request surface
+// actually accepts. Apart from ./provider because those controls are NOT uniform across the
+// catalogue — one body sent to all three is a guaranteed 400 on the oldest, and a downgrade for
+// price is not a licence to send a body the provider rejects. As of 2026-08.
 
 import type { Money } from '@ultimat3/money';
 import { AiRequestInvalidError } from './errors';
 
-/** Blessed models. Opus 5 is the default; the others are explicit downgrades. */
+/**
+ * Blessed models. Opus 5 is the default; the others are explicit downgrades. IDs are exact alias
+ * strings — never append a date suffix.
+ */
 export const MODEL_IDS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
 export type ModelId = (typeof MODEL_IDS)[number];
 
@@ -62,6 +57,10 @@ export interface ModelSpec {
   readonly reasoning: ModelReasoning;
 }
 
+/**
+ * A price per million tokens, in INTEGER MINOR UNITS. Token spend is money, and the house rule
+ * applies to money wherever it comes from: never a float.
+ */
 const usd = (minor: number): Money => ({ minor, currency: 'USD' });
 
 export const MODELS: Readonly<Record<ModelId, ModelSpec>> = {
@@ -121,21 +120,22 @@ export function reasoningBody(
   const rules = MODELS[model].reasoning;
   const body: Record<string, unknown> = {};
 
-  if (rules.effort) {
-    // `output_config`, not a top-level `effort` — a top-level one is silently ignored.
-    body['output_config'] = { effort: effort ?? 'high' };
-  } else if (effort !== undefined) {
+  if (effort !== undefined && !rules.effort) {
     throw new AiRequestInvalidError({
       detail: `model "${model}" has no effort control; output_config.effort is a 400 on it`,
-      fix: `drop effort from the prompt, or set model: '${DEFAULT_MODEL}' on the declaration`,
+      fix: `drop effort from definePrompt, or set model: '${DEFAULT_MODEL}' on the llm() declaration`,
     });
   }
+  // Only what the caller asked for. `output_config`, not a top-level `effort` — a top-level one
+  // is silently ignored — and no block at all when nothing was requested, because a default sent
+  // as a request is indistinguishable on the wire from a declaration that asked for it.
+  if (effort !== undefined) body['output_config'] = { effort };
 
   if (!rules.adaptive) {
     if (thinking === 'adaptive') {
       throw new AiRequestInvalidError({
         detail: `model "${model}" predates adaptive thinking; a thinking block is a 400 on it`,
-        fix: `set model: '${DEFAULT_MODEL}' on the declaration, or drop thinking from the prompt`,
+        fix: `set model: '${DEFAULT_MODEL}' on the llm() declaration, or drop thinking from definePrompt`,
       });
     }
     // No `thinking` field at all is exactly "no thinking" on a pre-4.6 model, so `disabled`
@@ -158,6 +158,6 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
   if (cap === undefined || rankOf(effort) <= rankOf(cap)) return;
   throw new AiRequestInvalidError({
     detail: `model "${model}" allows thinking: 'disabled' only at effort '${cap}' or below, not '${effort}'`,
-    fix: `set effort: '${cap}' on the prompt alongside thinking: 'disabled', or leave thinking adaptive`,
+    fix: `set effort: '${cap}' in definePrompt alongside thinking: 'disabled', or drop thinking from it`,
   });
 }

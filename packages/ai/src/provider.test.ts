@@ -143,15 +143,31 @@ describe('Anthropic request body', () => {
     }
   });
 
-  test('every blessed model gets a body its own spec says it accepts', () => {
-    // Catalogue-driven, so a fourth model cannot be added with a body it would 400 on.
+  test('an effort nobody asked for is not sent, on any model', () => {
+    // A default sent as a request is indistinguishable on the wire from a declaration that asked
+    // for it, and it is a 400 on a model without the knob — so omission is the only safe shape.
     for (const model of MODEL_IDS) {
       const body = provider.body({
         model,
         messages: [{ role: 'user', content: 'hi' }],
         maxTokens: 1_000,
       });
+      expect(body['output_config']).toBeUndefined();
+    }
+  });
+
+  test('every blessed model gets a body its own spec says it accepts', () => {
+    // Catalogue-driven, so a fourth model cannot be added with a body it would 400 on.
+    for (const model of MODEL_IDS) {
       const { reasoning } = MODELS[model];
+      const body = provider.body({
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 1_000,
+        // Only ask for the control the catalogue says this model has; asking for one it lacks is
+        // the refusal the test below pins, not this one.
+        ...(reasoning.effort ? { effort: 'high' as const } : {}),
+      });
       expect(body['output_config'] !== undefined).toBe(reasoning.effort);
       expect(body['thinking'] !== undefined).toBe(reasoning.adaptive);
       expect(body['temperature']).toBeUndefined();

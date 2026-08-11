@@ -1,9 +1,7 @@
-// The `Provider` interface, the two implementations — `AnthropicProvider` (the real Messages
-// API, streaming and not) and `EchoProvider` (deterministic, for tests and `x dev` without a
-// key) — and the money arithmetic over a call's reported usage.
-//
-// This file owns the REQUEST half; ./models owns the catalogue and the per-model rules, and
-// ./wire owns the response half.
+// The `Provider` interface, its two implementations — `AnthropicProvider` (the real Messages API,
+// streaming and not) and `EchoProvider` (deterministic, for tests and `x dev` without a key) —
+// and the money arithmetic over a call's reported usage. The REQUEST half only: ./models owns the
+// catalogue and the per-model rules, ./wire owns the response half.
 
 import type { Money } from '@ultimat3/money';
 import { AiKeyMissingError, AiTransportError } from './errors';

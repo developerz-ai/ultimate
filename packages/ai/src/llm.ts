@@ -26,7 +26,7 @@ import { BudgetLedger, currentBudget, withBudget } from './budget';
 import { embedOne, fnv1a } from './embeddings';
 import { LlmOutputInvalidError, LlmRefusedError, LlmTruncatedError } from './errors';
 import type { ModelId } from './models';
-import { DEFAULT_MODEL } from './models';
+import { DEFAULT_MODEL, MODEL_IDS } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { aiEmbedder, aiGateway, semanticCacheFor } from './runtime';
@@ -187,6 +187,9 @@ async function generate<
           throw new LlmRefusedError({
             prompt: name,
             model: result.model,
+            // The fix names a model the caller can paste. `<another model>` is not one, and a
+            // refusal is exactly the moment nobody wants to go read the catalogue.
+            alternative: MODEL_IDS.find((id) => id !== result.model) ?? DEFAULT_MODEL,
             category: result.stopDetails?.category,
             explanation: result.stopDetails?.explanation,
           });

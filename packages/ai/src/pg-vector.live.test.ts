@@ -1,13 +1,7 @@
-// `PgVectorStore` against a real pgvector. `pg-vector.test.ts` asserts the statement text every
-// method compiles to; nothing there proves Postgres accepts it, that the table `ddl()` writes is
-// the table the queries read, or that a tenant filter compiled into SQL actually excludes a row.
-// The one bug this store has already shipped was exactly that shape — metadata bound `::jsonb`
-// was JSON-encoded twice, read back correctly, and made every `metadata ->> key` filter match
-// nothing. A recording client cannot see it; a live server sees it immediately.
-//
-// The whole chain runs here: ddl() -> a live server -> upsert -> cosine, FTS and the RRF fusion
-// -> decoded hit. Skips unless `TEST_DATABASE_URL` names a server with the `vector` extension
-// available, the same gate `pg-driver.live.test.ts` uses; CI's service container sets it.
+// `PgVectorStore` against a real pgvector: ddl() -> a live server -> upsert -> cosine, FTS and
+// the RRF fusion -> decoded hit. `pg-vector.test.ts` asserts the statement text each method
+// compiles to, which cannot prove Postgres accepts it. Runs only when `TEST_DATABASE_URL` is set
+// — the same gate `pg-driver.live.test.ts` uses; CI's service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createPostgresClient, type PostgresClient, raw, sql } from '@ultimat3/db';
@@ -62,6 +56,7 @@ const CORPUS: readonly VectorRecord[] = [
 describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
   let client: PostgresClient;
   let available = false;
+  let unavailable: unknown;
   let store: PgVectorStore;
 
   beforeAll(async () => {
@@ -69,10 +64,13 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
     try {
       await client.execute(raw('create extension if not exists vector'));
       available = true;
-    } catch {
-      // A stock `postgres:*` image has no pgvector. Report it rather than failing every case
-      // with an identical "extension vector is not available" — the store is not what broke.
+    } catch (error) {
+      // A stock `postgres:*` image has no pgvector. Report it once rather than failing every case
+      // with an identical "extension vector is not available" — the store is not what broke. The
+      // caught error is KEPT: "not available" and "permission denied" want different fixes, and
+      // this is the only place left that can say which one happened.
       available = false;
+      unavailable = error;
       return;
     }
     await client.execute(raw(DROP));
@@ -105,6 +103,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
       throw new Error(
         'TEST_DATABASE_URL names a Postgres without pgvector, so PgVectorStore is untested.\n' +
           'fix: docker run -d -e POSTGRES_PASSWORD=ultimate -p 5432:5432 pgvector/pgvector:pg17',
+        { cause: unavailable },
       );
     }
     expect(available).toBe(true);

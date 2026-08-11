@@ -198,11 +198,15 @@ describe('unit · the gate refuses to run while recording', () => {
   };
 
   const whileRecording = async <T>(run: () => Promise<T>): Promise<T> => {
+    // Restore, never delete: the variable is process-global, so a helper that clears a value the
+    // caller set would silently disarm recording for every test that runs after this one.
+    const previous = Bun.env[RECORD_ENV];
     Bun.env[RECORD_ENV] = '1';
     try {
       return await run();
     } finally {
-      delete Bun.env[RECORD_ENV];
+      if (previous === undefined) delete Bun.env[RECORD_ENV];
+      else Bun.env[RECORD_ENV] = previous;
     }
   };
 

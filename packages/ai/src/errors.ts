@@ -135,6 +135,8 @@ export class LlmRefusedError extends UltimateError {
   constructor(input: {
     prompt: string;
     model: string;
+    /** A blessed model that is NOT the one that refused — the fix has to be pasteable. */
+    alternative: string;
     category: string | undefined;
     explanation: string | undefined;
   }) {
@@ -144,7 +146,7 @@ export class LlmRefusedError extends UltimateError {
         `model "${input.model}" declined prompt "${input.prompt}"` +
         `${input.category === undefined ? '' : ` (${input.category})`}` +
         `${input.explanation === undefined ? '' : `: ${input.explanation}`}`,
-      fix: `rephrase the prompt template and bump its version, or set model: '<another model>' on the llm() declaration`,
+      fix: `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
       docs: docsFor('X_LLM_REFUSED'),
       meta: { model: input.model, category: input.category },
     });
@@ -161,7 +163,7 @@ export class LlmTruncatedError extends UltimateError {
     super({
       code: 'X_LLM_TRUNCATED',
       cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
-      fix: `raise maxTokens above ${input.maxTokens} on the llm() declaration, or shorten what the output schema asks for`,
+      fix: `set maxTokens: ${input.maxTokens * 2} on the llm() declaration, or drop fields from its output schema`,
       docs: docsFor('X_LLM_TRUNCATED'),
     });
   }
