@@ -22,6 +22,12 @@ Every fact the CLI reports comes from a framework package: the manifest from
 `app-evals.ts` is why the `eval` step can apply with no eval suite at all: a prompt no eval
 names is `X_EVAL_MISSING`, and a skipped step would read as a green gate over untested code.
 
+`app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
+a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
+gate runs in — so the step always has a question to answer, and gating both halves on the file
+that only the first one needs is how `X_AGENTS_MD_MISSING` stayed unreachable while its wiki row
+said it fails builds.
+
 ## What goes in `messages.ts`, and what does not
 
 `messages.ts` holds the strings a command *renders* — `CommandResult.summary`, `lines`, anything

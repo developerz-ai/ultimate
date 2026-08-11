@@ -69,6 +69,7 @@ There is no `--only` and no `--skip`; the exit code is non-zero if any step fail
 | `app-manifest.ts` | `x.manifest.json`, projected by `@ultimat3/manifest` |
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
+| `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
 | `dev-*.ts` | what `x dev` boots: services, runtime, routes, hooks, roles, the `/_x` mount |
 | `mcp-host.ts` | the shell-side half of `@ultimat3/mcp`'s dev server — db, tests, logs, verify |
 | `verify-step.ts` | the step shape, the step names, the host-check hook |

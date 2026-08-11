@@ -184,7 +184,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
 | `contract-diff` | a breaking change to a published action/query without a version bump |
 | `budgets` | per-route JS bytes and LCP |
-| `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces |
+| `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces, or `AGENTS.md` is missing or over its byte cap |
 | `roadmap` | framework repo only — a milestone missing its status marker, or a shipped milestone missing an artifact its own row names |
 
 Any failure fails the gate; flakes are failures.

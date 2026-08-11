@@ -199,7 +199,7 @@ reports as skipped (`-`), never as passed.
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |
 | `budgets` | per-route JS bytes and LCP |
-| `manifest` | `x.manifest.json` freshness |
+| `manifest` | the two files an agent reads: `x.manifest.json` freshness, and a hand-written `AGENTS.md` that exists and is under 12kB |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
 A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,
