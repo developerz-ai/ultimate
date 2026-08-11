@@ -28,7 +28,7 @@ Neither adapter may parse, authorize, or handle on its own. Both go through `inv
 
 | MCP requirement | Source | Notes |
 |---|---|---|
-| tool name | action name, kebab-cased | `publish-post` |
+| tool name | the action's export name, verbatim | `publishPost` — the name `scopes:` and `tools/call` address, and the one an author greps for |
 | input JSON Schema | the action's `input` via Standard Schema → JSON Schema | the same schema HTTP parses |
 | output schema | `output` | same |
 | description | `mcp.description` | required when `expose: true` |
@@ -74,6 +74,16 @@ Three distinct outcomes, deliberately different:
 | Actor's role could invoke it, but the **connection's scope** does not include it | explicit refusal: `X_MCP_SCOPE_DENIED`, naming the missing scope + `fix: reconnect with scope <name>` | the caller can legitimately fix this; hiding it would strand a well-behaved client |
 | Tool invoked, but the **policy denies this input** | `X_FORBIDDEN` with the denial reason | identical to the HTTP answer for the same call |
 
+Each outcome is declared in exactly one place:
+
+| Outcome | Declared by |
+|---|---|
+| 1 — hidden (role) | `mcp: { visibleTo: [...] }` on the action or query; an `McpVisibility` predicate for a programmatic surface that derives visibility from something richer than a role name |
+| 2 — scope | `scopes:` on `defineAppMcp` — scope name → the tool names that capability covers, never on the primitive |
+| 3 — policy | the primitive's own `policy`, unchanged |
+
+A projection invents no scope of its own: `toolFromAction` never sets one, because a scope is a capability of the connection's token, not something a projection can infer from the action. `defineAppMcp`'s `scopes:` map is refused at boot when it names a tool the server does not project (`X_MCP_SCOPE_UNKNOWN`) or claims one tool from two scopes (`X_MCP_SCOPE_CONFLICT`).
+
 **Hide, then answer ToolNotFound — never Forbidden.** A `Forbidden` on a hidden tool is an enumeration oracle: an agent (or an attacker driving one) walks a name list and reads the org's feature set, entity names, and internal operations off the difference between "not found" and "forbidden". The visibility decision is computed from the caller, never from the arguments, so it is stable per connection and cannot be probed by varying them.
 
 Rules:
@@ -96,7 +106,7 @@ Rules:
 |---|---|
 | 1. Role — conditional | a dedicated `ultimate_readonly` Postgres role: `NOLOGIN`, `USAGE` on the schema, `SELECT` on all tables, `ALL` revoked on sequences. Assumed with `SET LOCAL ROLE` **inside** the read-only transaction rather than through a second connection string — the grant reverts with the transaction, and a second pool would double the connection budget for a tool that runs one statement at a time. `NOLOGIN` means the role is unreachable by any connection string at all. Three things bound it: `ensureReadOnlyRole` returns `null` (never throws) when the connection may not `CREATE ROLE`/`GRANT` — a managed Postgres where the app user is not a role admin; `SET LOCAL ROLE` works only for a role the connected user is a member of, which is why the DDL grants that membership, so a Postgres that refuses the `GRANT` takes the whole layer with it; and `ALTER DEFAULT PRIVILEGES` reaches only objects created by the role it names, so a table created by some other role is outside the future-tables grant until the DDL is re-run. The layer is **reported as absent**, never silently assumed |
 | 2. Transaction | every statement runs inside `BEGIN READ ONLY` … `ROLLBACK`, on a connection reserved out of the pool so the `BEGIN` and the statement are the same session. Postgres refuses a write even if a grant is wrong |
-| 3. Parse | the leading keyword must be one of `select with explain show table values` — necessary, never sufficient. Also refused: more than one statement (a batch hides a write behind a read); any statement-level write keyword, which is what catches a data-modifying CTE (`WITH x AS (INSERT …) SELECT`), transaction control, `SET`/`COPY`, and `ANALYZE` — so `EXPLAIN ANALYZE` goes with it; a locking clause (`FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`); and the functions that reach outside the database (`pg_read_file`, `pg_read_binary_file`, `pg_ls_dir`, `pg_sleep`, `lo_import`, `lo_export`, `dblink`, `pg_terminate_backend`, `pg_cancel_backend`). Every check runs on a form with comments, string literals, quoted identifiers and dollar-quoted bodies blanked out, so a keyword hiding in a string cannot fool it and a second statement cannot hide behind a block comment. Refused before the host ever sees the string: `X_MCP_QUERY_REJECTED`. The statement that runs is the caller's own bytes, not the stripped form |
+| 3. Parse | the leading keyword must be one of `select with explain show table values` — necessary, never sufficient. Also refused: more than one statement (a batch hides a write behind a read); any statement-level write keyword, which is what catches a data-modifying CTE (`WITH x AS (INSERT …) SELECT`), transaction control, `SET`/`COPY`, and `ANALYZE` — so `EXPLAIN ANALYZE` goes with it; a locking clause (`FOR UPDATE`, `FOR NO KEY UPDATE`, `FOR SHARE`, `FOR KEY SHARE`); and a call from a banned function **family**, matched as a prefix of a whole token — `dblink`, `lo_`, `pg_advisory_`, `pg_try_advisory_`, `pg_cancel_backend`, `pg_ls_`, `pg_read_`, `pg_sleep`, `pg_stat_file`, `pg_stat_reset`, `pg_terminate_backend`, `set_config`. The family is the unit, never the name: an exact list admits every spelling nobody wrote down, so `pg_sleep_for` would pass a ban on `pg_sleep`, and `set_config` is `SET` — already a write keyword — spelled as a call. A `pg_advisory_*` lock is the same ban as `FOR UPDATE` and the worse breach: a session lock is not released by layer 2's `ROLLBACK`, so it outlives the read on a pooled connection (proved live in `packages/testing/src/db-integration.test.ts`). Every check runs on a form with comments, string literals, quoted identifiers and dollar-quoted bodies blanked out, so a keyword hiding in a string cannot fool it and a second statement cannot hide behind a block comment. Refused before the host ever sees the string: `X_MCP_QUERY_REJECTED`. The statement that runs is the caller's own bytes, not the stripped form |
 | 4. Limits | `statement_timeout` of 5 s (`SET LOCAL`, so it cannot leak into another session), a row cap — `limit` defaults to 100 and is clamped to a hard maximum of 1000 — and a 256 KiB byte cap on the serialised rows. Truncation is flagged in the response, never silent |
 
 The response carries a `guards` array naming the layers that actually engaged for that statement (`role:ultimate_readonly`, `txn:read-only`, `timeout:5000ms`, `parse:single-read`, `cap:100 rows` at the default `limit`, `cap:262144 bytes`), plus `truncatedBy: 'rows' | 'bytes' | null` and `bytes`. A layer that could not engage is absent from the list — `guards` is how a caller learns which defences held, instead of trusting a description.
@@ -155,13 +165,12 @@ Ultimate never generates prose documentation at runtime. `x new` scaffolds `AGEN
 The commercial property: **apps built with Ultimate are themselves agent-drivable**, with the user's users' sessions and the user's policies.
 
 ```ts
-// packages/mcp/src/index.ts
+// apps/myapp/src/mcp.ts
 export const appMcp = defineAppMcp({
   name: 'myapp',
-  actions: [publishPost, refundOrder, reindexCatalog],   // must declare mcp.expose
-  queries: [orderById, revenueByDay],
-  scopes: { 'orders:write': [refundOrder], 'catalog:admin': [reindexCatalog] },
-  auth: 'session',                                        // 'session' | 'pat'
+  include: 'exposed',                                     // every mcp.expose primitive, with its policy
+  scopes: { 'orders:write': ['refundOrder'], 'catalog:admin': ['reindexCatalog'] },
+  resolveToken: (token) => sessions.resolveAgentToken(token),
 });
 ```
 
@@ -181,6 +190,8 @@ An action listed in `defineAppMcp` without `mcp.expose` is a build error, so exp
 | Code | Meaning | Fix |
 |---|---|---|
 | `X_MCP_SCOPE_DENIED` | connection scope lacks this tool | reconnect with the named scope |
+| `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project | spell the projected tool name, or drop the entry from `scopes` |
+| `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool | keep the tool under a single scope |
 | `X_MCP_QUERY_REJECTED` | `db.query` got something other than one read-only statement | send exactly one read-only `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a non-branch database | `x branch <name>` |
 | `X_MCP_TOOL_UNDECLARED` | `defineAppMcp` lists an action without `mcp.expose` | add `mcp: { expose: true, description }` |

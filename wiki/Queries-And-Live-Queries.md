@@ -26,6 +26,7 @@ export const liveFeed = query({
 | `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. v2 |
 | `sql` | yes | `(input) => SqlSource`. Built with `from()` from `@ultimat3/query` or an `@ultimat3/entity` repo plan — no ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
+| `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
 Nothing else is a query field. Sorting, paging, and filtering are `input` fields consumed by `sql`.

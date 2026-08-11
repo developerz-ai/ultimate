@@ -137,7 +137,7 @@ Thirteen tools, `As of 2026-08` — the full catalog, and the exact names to cal
 | `verify.run` | guessing whether the work is shippable |
 | `logs.tail` | scrollback archaeology |
 
-Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. `db.query` refuses a batch, a write keyword anywhere at statement level (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, and `pg_read_file`-class functions — `X_MCP_QUERY_REJECTED`, before the host sees the string. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
+Read tools are unrestricted in dev; write tools are scoped to branch environments. The dev server is never exposed under `ROLE=web`. `db.query` refuses a batch, a write keyword anywhere at statement level (a data-modifying CTE included), a locking clause, `EXPLAIN ANALYZE`, and the banned function families matched by prefix (`pg_read_*`, `pg_ls_*`, `lo_*`, `pg_advisory_*`, `pg_sleep*`, `set_config`, …) — `X_MCP_QUERY_REJECTED`, before the host sees the string. Use `x mcp` for a standalone server (CI, remote agents). Editor config: Biome is the only formatter/linter — one binary, one config, no ESLint or Prettier.
 
 ## Upgrading and removal
 

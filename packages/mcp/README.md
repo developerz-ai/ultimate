@@ -30,7 +30,7 @@ reads only the catalog still knows what it is holding.
 |---|---|---|
 | 1. Role | `ultimate_readonly` — `NOLOGIN`, `SELECT` on every table present and future, nothing on sequences; assumed with `SET LOCAL ROLE` inside the transaction, never via a second connection string | `@ultimat3/db` |
 | 2. Transaction | `BEGIN READ ONLY` … `ROLLBACK` on one reserved connection — Postgres refuses the write even if a grant is wrong | `@ultimat3/db` |
-| 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock, no `pg_read_file`-class call — on a form with literals and comments blanked | `readonly-sql.ts` |
+| 3. Parse | one statement, a read leader, no mutating keyword at statement level, no lock — clause **or** `pg_advisory_*` call — and no call into a banned function family, matched by prefix of the called name — quoted and schema-qualified spellings included — so a new spelling is refused by default and a column sharing a prefix is not; on a form with literals and comments blanked | `readonly-sql.ts` |
 | 4. Limits | `SET LOCAL statement_timeout`, a hard 1000-row ceiling (`limit` clamps into it, never past it) and a 256 KiB byte cap | `query-limits.ts` |
 
 The answer carries `guards` — the layers that actually engaged — plus `truncatedBy` and `bytes`.
@@ -48,9 +48,14 @@ HTTP  POST /api/publishPost  ─┐
 MCP   tools/call publishPost ─┘
 ```
 
-A projected tool declares **no `scope`** — adding one would put a second gate in front of the
-only gate that matters, and the two would eventually disagree. There is no MCP-specific
-authorization code to review, because there is none.
+`mcp: { visibleTo: [...] }` on the action or query travels with the projection too — the only
+declaration surface outcome 1 has for a projected tool. Catalog audience, never authz.
+
+The projection itself declares **no `scope`** — a projection cannot know what a token means.
+`defineAppMcp`'s `scopes:` map (below) may attach one afterward, as a capability of the
+CONNECTION rather than a second gate: it decides before the policy runs and never reads the
+input, so the two cannot disagree. There is no MCP-specific authorization code to review
+beyond it.
 
 ## Security posture: three outcomes, hidden ≠ forbidden
 
@@ -103,6 +108,7 @@ export const mcp = defineAppMcp({
       },
     },
   },
+  scopes: { 'admin:seats': ['seatReport'] },   // scope name → tool NAMES, by string
   resolveToken: (token) => sessions.resolveAgentToken(token),
 });
 
@@ -122,9 +128,31 @@ the app registered, so one that never opted in is passed over. `actions:`/`queri
 missing from the catalog, and exposure stays declared next to the policy. Two primitives reaching
 one tool name is `X_MCP_TOOL_DUPLICATE`, also at boot.
 
+Both lists take the primitives themselves, exactly as the app declared them:
+
+```ts
+import { publishPost } from '../api/posts';
+
+defineAppMcp({ name: 'postly', actions: [publishPost] });
+// X_MCP_TOOL_UNDECLARED unless publishPost declared mcp: { expose: true }
+```
+
+One adapter serves both routes, so a written-out primitive runs through the same `invoke` (or
+`sourceFor`) the swept one does — the list changes which tools are NAMED, never how one runs.
+An action that was never handed to `defineApi` has no export name, and is
+`X_ACTION_UNREGISTERED` rather than a tool called `''` that nothing could call.
+
 A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an
 HTTP request goes through, so a tool cannot acquire a second authz path. A tool without one
 is `X_MCP_TOOL_UNSAFE` at boot, and an unmarked tool is metered as a write.
+
+`scopes:` (type `McpScopes`, applied through the exported `withScopes`) is outcome 2's
+declaration surface: a scope name → the TOOL NAMES it covers, however each one reached the
+catalog — a projected action, a projected query, or a key in `tools`. It lives here, not
+beside the action, because a scope is a capability of the CONNECTION's token — what
+`x token grant <scope>` names — not a fact about the operation; the policy beside the action
+stays the only rule that reads the input. A name this server does not project is
+`X_MCP_SCOPE_UNKNOWN` at boot; one tool claimed by two scopes is `X_MCP_SCOPE_CONFLICT`.
 
 ## Transports
 
@@ -166,6 +194,8 @@ inside their own handler.
 |---|---|
 | `X_MCP_TOOL_UNKNOWN` | no visible tool by that name — absent and role-hidden are one answer |
 | `X_MCP_SCOPE_DENIED` | visible, but the connection's token lacks the scope |
+| `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project |
+| `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool |
 | `X_MCP_ARGS_INVALID` | arguments failed the declared schema |
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |

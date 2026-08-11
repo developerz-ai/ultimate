@@ -64,18 +64,65 @@ const WRITE_KEYWORDS = new Set([
   'vacuum',
 ]);
 
-/** `pg_read_file`-class functions that read outside the database. */
+/**
+ * Function families a read may not call, matched as a PREFIX of a CALLED function name.
+ *
+ * The family is the unit, never the name. Refusing `pg_sleep` while admitting `pg_sleep_for` is a
+ * distinction only this parser draws, and an exact-name list admits by default: every spelling
+ * nobody thought to write down passes. A prefix refuses by default instead, so a member Postgres
+ * adds next release is covered on the day it ships.
+ *
+ * Each family is a ban this file already makes in some other spelling:
+ *  - reach outside the database — the original list (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`);
+ *  - hold a lock, which `FOR UPDATE` is refused for below. The call is the worse of the two: a
+ *    SESSION advisory lock is not released by the `ROLLBACK` layer 2 always runs, so it outlives
+ *    the read on a pooled connection the app's own writers use;
+ *  - mutate the server or the session — `set_config` is `SET` spelled as a call, and `SET` is a
+ *    write keyword above;
+ *  - burn the wall clock — layer 2's `statement_timeout` cannot interrupt embedded PGlite
+ *    (single-threaded WASM), which is the database `x dev` runs, so this ban is the only one
+ *    that holds there.
+ *
+ * The prefix is applied to a CALL — a name followed by `(` — and never to a bare word, so a
+ * column called `pg_sleep_for_seconds` stays readable. Quoting does not evade it: the scan reads
+ * a form where a quoted identifier keeps its content, because `"pg_advisory_lock"(1)` is the same
+ * call as `pg_advisory_lock(1)`.
+ */
 const FORBIDDEN_FUNCTIONS = [
-  'pg_read_file',
-  'pg_read_binary_file',
-  'pg_ls_dir',
-  'pg_sleep',
-  'lo_import',
-  'lo_export',
   'dblink',
-  'pg_terminate_backend',
+  'lo_',
+  'pg_advisory_',
   'pg_cancel_backend',
+  'pg_ls_',
+  'pg_read_',
+  'pg_sleep',
+  'pg_stat_file',
+  'pg_stat_reset',
+  'pg_terminate_backend',
+  'pg_try_advisory_',
+  'set_config',
 ];
+
+/** The family refusing `called`, or `undefined`. A prefix, so a new member is refused by default. */
+function forbiddenFamily(called: string): string | undefined {
+  return FORBIDDEN_FUNCTIONS.find((family) => called.startsWith(family));
+}
+
+/**
+ * A call: an identifier immediately before `(`. Schema qualification falls out of the scan —
+ * `pg_catalog.set_config(` matches on the last segment, which is the function being called.
+ */
+const CALL_PATTERN = /([a-z_][a-z0-9_$]*)\s*\(/g;
+
+/** Every function `sql` calls, lowercased. Read from the identifier-preserving strip. */
+function calledFunctions(sql: string): readonly string[] {
+  const names: string[] = [];
+  for (const match of sql.toLowerCase().matchAll(CALL_PATTERN)) {
+    const name = match[1];
+    if (name !== undefined) names.push(name);
+  }
+  return names;
+}
 
 /**
  * Throw unless `sql` is a single read-only statement. Every check runs on the *stripped* form
@@ -121,20 +168,28 @@ export function assertReadOnlyQuery(sql: string): string {
       );
     }
   }
+  // A family refuses a CALL, never a bare word: scanning every word rejected a column named
+  // `pg_sleep_for_seconds`, and scanning the blanked form missed `"pg_advisory_lock"(1)`, which
+  // is the same call wearing quotes. So this pass reads the form that keeps identifier content.
+  for (const called of calledFunctions(stripLiteralsAndComments(sql, 'keep'))) {
+    const family = forbiddenFamily(called);
+    if (family !== undefined) {
+      // The cause names what the author wrote AND the family it belongs to: the second half is
+      // the rule, and without it the next spelling looks like a different, arguable refusal.
+      throw rejected(
+        family === called
+          ? `the statement calls ${called}(), which db.query may not call`
+          : `the statement calls ${called}(), one of the ${family}* functions db.query may not call`,
+        'query tables only: no file access, no locks, no session settings, no sleeps',
+      );
+    }
+  }
   // `SELECT ... FOR UPDATE` takes row locks — a read that blocks other writers.
   if (/\bfor\s+(update|no\s+key\s+update|share|key\s+share)\b/i.test(statement)) {
     throw rejected(
       'the statement takes row locks (FOR UPDATE/SHARE)',
       'drop the locking clause; db.query may not hold locks',
     );
-  }
-  for (const fn of FORBIDDEN_FUNCTIONS) {
-    if (words.includes(fn)) {
-      throw rejected(
-        `the statement calls ${fn}(), which reaches outside the database`,
-        'query tables only',
-      );
-    }
   }
   return verbatim(sql);
 }
@@ -193,8 +248,12 @@ function notBranch(cause: string, fix: string): McpNotBranchDbError {
  * fooled by `SELECT 'delete'` (a harmless literal that looks like a write) and cannot be
  * evaded by hiding a second statement behind a block comment. Only word boundaries matter
  * downstream, so collapsing each run to one space is enough.
+ *
+ * `identifiers: 'keep'` unwraps a double-quoted identifier to its content instead — the call
+ * scan needs it, because `"pg_advisory_lock"(1)` calls the function the blanked form hides.
+ * String and dollar-quoted literals are blanked in both modes: a literal is never a call.
  */
-function stripLiteralsAndComments(sql: string): string {
+function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = 'blank'): string {
   let out = '';
   let i = 0;
   while (i < sql.length) {
@@ -213,8 +272,11 @@ function stripLiteralsAndComments(sql: string): string {
     }
     const char = sql[i];
     if (char === "'" || char === '"') {
-      i = skipQuoted(sql, i, char);
-      out += ' ';
+      const end = skipQuoted(sql, i, char);
+      // Padded, never spliced in place: `select"pg_advisory_lock"(1)` must not fuse into one
+      // token, or the call the quotes were hiding stays hidden behind the leading keyword.
+      out += char === '"' && identifiers === 'keep' ? ` ${inner(sql.slice(i, end))} ` : ' ';
+      i = end;
       continue;
     }
     if (char === '$') {
@@ -231,6 +293,12 @@ function stripLiteralsAndComments(sql: string): string {
     i += 1;
   }
   return out;
+}
+
+/** A quoted run's content: the delimiters dropped, SQL's doubled-quote escape collapsed. */
+function inner(run: string): string {
+  const closed = run.length > 1 && run.endsWith(run[0] ?? '');
+  return run.slice(1, closed ? -1 : undefined).replaceAll('""', '"');
 }
 
 /** Advance past a quoted run, honouring SQL's doubled-quote escape (`'it''s'`). */

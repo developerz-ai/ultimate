@@ -101,6 +101,94 @@ describe('assertReadOnlyQuery refuses', () => {
     );
   });
 
+  test('a lock taken as a call, which outlives the transaction the clause form dies with', () => {
+    // `FOR UPDATE` is refused above because db.query may not hold locks. A SESSION advisory lock
+    // is the same ban and the worse breach: layer 2's ROLLBACK does not release it, so it
+    // outlives the read on a pooled connection. `db-integration.test.ts` proves that on a real
+    // server — layers 1, 2 and 4 all let it through, so this is the only layer that can refuse.
+    for (const sql of [
+      'select pg_advisory_lock(42)',
+      'select pg_try_advisory_lock(42)',
+      'select pg_advisory_xact_lock(42)',
+      'select pg_advisory_unlock_all()',
+    ]) {
+      expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+    }
+  });
+
+  test('SET spelled as a call, which the keyword scan tokenises as one word', () => {
+    // `set` is a write keyword, but `set_config` is a single token and never matched it.
+    expect(() =>
+      assertReadOnlyQuery("select set_config('statement_timeout', '0', false)"),
+    ).toThrowError(expect.objectContaining(refusal));
+    expect(() =>
+      assertReadOnlyQuery("select pg_catalog.set_config('search_path', 'evil', false)"),
+    ).toThrowError(expect.objectContaining(refusal));
+  });
+
+  test('every member of a banned family, not only the spelling that was listed first', () => {
+    for (const sql of [
+      "select pg_sleep_for('1 hour')",
+      'select pg_sleep_until(now())',
+      "select pg_stat_file('/etc/passwd')",
+      'select pg_ls_logdir()',
+      "select pg_read_binary_file('/etc/passwd')",
+      'select lo_get(1)',
+      'select pg_stat_reset()',
+    ]) {
+      expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+    }
+  });
+
+  test('a quoted function name is the same call, not a way past the family', () => {
+    // `SELECT "pg_advisory_lock"(1)` is valid Postgres and calls the function. Blanking quoted
+    // identifiers before the scan — which the keyword pass still does, so `select "update"` stays
+    // a column — hid exactly the call whose lock outlives layer 2's ROLLBACK.
+    for (const sql of [
+      'select "pg_advisory_lock"(918273)',
+      'select pg_catalog."pg_sleep"(10)',
+      'select"pg_read_file"(\'/etc/passwd\')',
+      'select "pg_advisory_lock" (918273)',
+    ]) {
+      expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+    }
+  });
+
+  test('a column sharing a family prefix is a column, because only a call is checked', () => {
+    // The family is a prefix of the CALLED function. Scanning every word refused this row —
+    // fail-closed must not mean refusing a table an agent has every right to read.
+    for (const sql of [
+      'select pg_sleep_for_seconds from readings',
+      'select lo_rate from billing',
+      'select pg_read_ahead, pg_advisory_notes from metrics',
+    ]) {
+      expect(assertReadOnlyQuery(sql)).toBe(sql);
+    }
+  });
+
+  test('the cause names the call the author wrote and the family that refused it', () => {
+    expect(() => assertReadOnlyQuery("select pg_sleep_for('1 hour')")).toThrowError(
+      expect.objectContaining({ cause: expect.stringContaining('pg_sleep_for()') }),
+    );
+    expect(() => assertReadOnlyQuery("select pg_sleep_for('1 hour')")).toThrowError(
+      expect.objectContaining({ cause: expect.stringContaining('pg_sleep*') }),
+    );
+  });
+
+  test('a prefix family does not swallow the catalog an agent legitimately reads', () => {
+    // Fail-closed must not mean fail-useless: these share a prefix with nothing banned, and
+    // `pg_stat_activity` sits right beside `pg_stat_file` and `pg_stat_reset`.
+    for (const sql of [
+      'select * from pg_stat_activity',
+      'select * from pg_locks',
+      'select * from pg_settings',
+      'select "lo_rate" from billing',
+      "select 'pg_sleep_for' as note",
+    ]) {
+      expect(assertReadOnlyQuery(sql)).toBe(sql);
+    }
+  });
+
   test('EXPLAIN ANALYZE, which executes the plan it claims to describe', () => {
     expect(() => assertReadOnlyQuery('explain analyze select 1')).toThrowError(
       expect.objectContaining(refusal),

@@ -37,7 +37,9 @@ export {
   McpNotBranchDbError,
   McpProtocolError,
   McpQueryRejectedError,
+  McpScopeConflictError,
   McpScopeDeniedError,
+  McpScopeUnknownError,
   McpToolDuplicateError,
   McpToolUndeclaredError,
   McpToolUnknownError,
@@ -53,6 +55,8 @@ export {
   toolsListed,
 } from './from-action';
 export { toWireSchema } from './input-schema';
+export type { ListedPrimitive } from './projectable';
+export { asProjectable } from './projectable';
 export type { QueryLimits, QueryResult, QueryRows } from './query-limits';
 export {
   capQueryRows,
@@ -92,6 +96,8 @@ export {
   toPrompts,
   URI_ARG_SCHEMA,
 } from './resources';
+export type { McpScopes } from './scopes';
+export { withScopes } from './scopes';
 export type { CreateMcpServerInput } from './server';
 export { createMcpServer, McpServer } from './server';
 export type {

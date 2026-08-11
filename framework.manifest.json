@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "76243cabaf3f72e1842664660caf434aea9a457d86025c382af90445152d66c8",
+  "buildId": "eb137ad0893091cac0c94a348bbfb44d4ef027e362a5d36855fd8a37fc1c36d0",
   "tiers": {
     "0": [
       "core",
@@ -834,7 +834,17 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_SCOPE_CONFLICT",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_SCOPE_DENIED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_SCOPE_UNKNOWN",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

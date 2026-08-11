@@ -162,6 +162,28 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     expect(open).toEqual([]);
   });
 
+  test('a session advisory lock outlives layer 2 — the evidence for layer 3 refusing it', async () => {
+    const role = await ensureReadOnlyRole(client);
+    // `pg_advisory_lock` is PUBLIC-executable, legal inside `BEGIN READ ONLY`, and a SESSION lock
+    // is not released by the `ROLLBACK` layer 2 always runs. So layers 1, 2 and 4 all let it
+    // through and it survives the call on a pooled connection the app's own writers use — which
+    // is why `readonly-sql.ts` refuses the `pg_advisory_*` family outright. Only a real server
+    // can show that: a recording client has no lock table to look at.
+    const pinned = await client.reserve();
+    try {
+      await readOnlyQuery('select pg_advisory_lock(918273)', { client: pinned, role });
+
+      const held = await pinned.query<{ objid: number }>(
+        sql`select objid from pg_locks where locktype = 'advisory' and objid = 918273`,
+      );
+      expect(held).toEqual([{ objid: 918273 }]);
+    } finally {
+      // Session-scoped, so the release has to run on the connection that took it.
+      await pinned.execute(sql`select pg_advisory_unlock_all()`).catch(() => undefined);
+      pinned.release();
+    }
+  });
+
   test('ALTER DEFAULT PRIVILEGES covers tables created after the grant DDL ran', async () => {
     const role = await ensureReadOnlyRole(client);
     // The claim layer 1 makes is about the FUTURE: without `FOR ROLE`, Postgres scopes the

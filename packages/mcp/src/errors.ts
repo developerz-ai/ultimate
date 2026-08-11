@@ -13,6 +13,8 @@ export const MCP_ERROR_CODES = [
   'X_MCP_TOOL_UNSAFE',
   'X_MCP_TOOL_UNDECLARED',
   'X_MCP_TOOL_DUPLICATE',
+  'X_MCP_SCOPE_UNKNOWN',
+  'X_MCP_SCOPE_CONFLICT',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -27,6 +29,8 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_TOOL_UNSAFE: 'an MCP tool declares no policy',
   X_MCP_TOOL_UNDECLARED: 'defineAppMcp lists a primitive that declares no MCP exposure',
   X_MCP_TOOL_DUPLICATE: 'two primitives project to one MCP tool name',
+  X_MCP_SCOPE_UNKNOWN: 'defineAppMcp scopes a tool this server does not project',
+  X_MCP_SCOPE_CONFLICT: 'two scopes claim one MCP tool',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -147,6 +151,52 @@ export class McpToolDuplicateError extends UltimateError {
       fix: "rename one: the tool name is the primitive's export name, or the `tools` record key",
       docs: docsFor('X_MCP_TOOL_DUPLICATE'),
     });
+  }
+}
+
+/**
+ * `defineAppMcp`'s `scopes:` names a tool the server does not project. Boot-time and loud:
+ * the alternative is a scope entry that quietly covers nothing, leaving the tool the author
+ * meant to gate reachable by every connection — a gate that reads as declared and never runs.
+ * The projected names travel with it, because the usual cause is a rename or a typo.
+ */
+export class McpScopeUnknownError extends UltimateError {
+  /** The catalog as projected, so a caller can show it without re-parsing `cause`. */
+  readonly projected: readonly string[];
+
+  constructor(input: { scope: string; name: string; projected: readonly string[] }) {
+    const projected = input.projected.length > 0 ? input.projected.join(', ') : 'nothing';
+    super({
+      code: 'X_MCP_SCOPE_UNKNOWN',
+      cause: `scopes["${input.scope}"] names "${input.name}", which this server does not project (projected: ${projected})`,
+      fix: `in defineAppMcp, spell it as one of the projected names above — or drop "${input.name}" from scopes["${input.scope}"]`,
+      docs: docsFor('X_MCP_SCOPE_UNKNOWN'),
+    });
+    this.projected = input.projected;
+  }
+}
+
+/**
+ * Two scopes claim one tool. A tool carries ONE scope, so the second claim would either
+ * overwrite the first or be dropped — decided by object key order, which is not a security
+ * model. Refused at boot rather than resolved, because either resolution is a guess about
+ * which capability the author meant a token to need.
+ *
+ * The two claimants travel with it, as `McpScopeUnknownError` carries the projected catalog: the
+ * reader is usually an agent holding `--json`, and a sentence is not a field.
+ */
+export class McpScopeConflictError extends UltimateError {
+  /** The two scopes that claimed the tool, in the order the map declared them. */
+  readonly scopes: readonly [string, string];
+
+  constructor(input: { name: string; scopes: readonly [string, string] }) {
+    super({
+      code: 'X_MCP_SCOPE_CONFLICT',
+      cause: `tool "${input.name}" is claimed by two scopes ("${input.scopes[0]}" and "${input.scopes[1]}"); a tool carries one`,
+      fix: `in defineAppMcp, keep "${input.name}" under the single scope a token must hold for it, and remove the other entry`,
+      docs: docsFor('X_MCP_SCOPE_CONFLICT'),
+    });
+    this.scopes = input.scopes;
   }
 }
 
