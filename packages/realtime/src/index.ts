@@ -72,6 +72,7 @@ export {
 export {
   CursorStaleError,
   LiveClientMissingError,
+  LiveRowUnidentifiedError,
   NotImplementedError,
   ProtocolVersionError,
   REALTIME_ERROR_CODES,
@@ -127,12 +128,14 @@ export {
   type RowOp,
   type RowPatch,
 } from './json';
+export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';
 export {
   type LiveQueryDefinition,
   LiveQueryRegistry,
   type LiveQueryRegistryOptions,
   type LiveSubscription,
   qidOf,
+  type RowDenied,
   type SnapshotResult,
 } from './live-query';
 // ---- tier 3: local-first ------------------------------------------------------------------------

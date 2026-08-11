@@ -180,6 +180,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_REPLICATION_PROTOCOL` | the WAL stream cannot be decoded | a server or `pgoutput` version this build does not speak, or a proxy on the replication port | `x doctor db` — point the URL at postgres itself, on a server ≥ 14 |
 | `X_REPLICATOR_SLOT_HELD` | another replicator already owns this database | `replicator` scaled to more than one replica, or a rolling deploy started the new replicator before the old one exited — nothing is wrong with this process, the database already has its one replicator | scale the replicator to 1 per database: `kubectl scale deploy/replicator --replicas=1` |
 | `X_LIVE_CLIENT_MISSING` | a realtime hook ran with no `LiveClient` registered | `useLive` / `useConnection` / `useMutation` / `useMutationQueue` on a page whose entry never registered one | `setLiveClient(new LiveClient({ signal: createSignal, connect, buildId }))` in the app entry, above the first render |
+| `X_LIVE_ROW_UNIDENTIFIED` | a live query returned a row with no id | a `live: true` read whose projection selects columns but not the primary key — patches, cursors and the local store all address a row by `id` | select the primary key in that query's `sql()`, or drop `live: true` from it |
 
 ## Cache
 

@@ -7,16 +7,18 @@
 // something every `x dev` in a team should do to the same server by simply starting.
 
 import type { Role } from '@ultimat3/core';
-import { createContext, isRole, ROLES } from '@ultimat3/core';
+import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
 import type { Route, ServerHandle } from '@ultimat3/http';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import type { Scheduler, Worker } from '@ultimat3/jobs';
 import { createScheduler, createWorker } from '@ultimat3/jobs';
+import { listQueries } from '@ultimat3/query';
 import {
   ChannelHub,
   createSyncNode,
   LiveQueryRegistry,
   listenSyncNode,
+  liveQueryDefinition,
   PresenceRegistry,
   RingChangeBuffer,
   SocketRegistry,
@@ -111,6 +113,30 @@ function startWeb(options: StartRolesOptions): ServerHandle {
 }
 
 /**
+ * Every read the app declared `live: true` becomes a subscribable query on this node, through
+ * `@ultimat3/realtime`'s own bridge. A registry with nothing in it answers every live `subscribe`
+ * with "no live query registered", which is a working socket serving no reads — and it is what
+ * kept the row gate that decides per subscriber from ever running outside a unit test.
+ *
+ * The context is the node's, and it carries no actor: it supplies the services and the clock the
+ * shared read needs, never an authority. Who may subscribe, and which rows they see, is decided
+ * per socket at subscribe time and again for every row of every delivery.
+ */
+function registerLiveQueries(options: StartRolesOptions): LiveQueryRegistry {
+  const registry = new LiveQueryRegistry({
+    source: new RingChangeBuffer(),
+    // A withheld row is a metric, never a frame and never an error: telling a client "there is a
+    // row you may not see" is the leak the gate exists to prevent.
+    onRowDenied: (event) => logger.debug('live.rows_denied', { ...event }),
+  });
+  const ctx = createContext({ role: 'sync', buildId: options.buildId });
+  for (const target of listQueries()) {
+    if (target.isLive) registry.register(liveQueryDefinition(target, { ctx }));
+  }
+  return registry;
+}
+
+/**
  * The sync role owns its own socket: websockets and the request pipeline drain differently.
  *
  * Port 0 is passed straight through rather than incremented — `+ 1` would ask the kernel for
@@ -124,7 +150,7 @@ async function startSync(
   const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
   const node = createSyncNode({
     hub,
-    registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
+    registry: registerLiveQueries(options),
     transport: options.runtime.transport,
     buildId: options.buildId,
     sockets,

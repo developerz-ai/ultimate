@@ -16,6 +16,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATION_FAILED',
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
+  'X_LIVE_ROW_UNIDENTIFIED',
 ] as const;
 
 /**
@@ -46,6 +47,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATION_FAILED: 'the replication connection was refused',
   X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
+  X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -220,6 +222,21 @@ export class LiveClientMissingError extends RealtimeError {
       code: 'X_LIVE_CLIENT_MISSING',
       cause: `${args.hook}() ran before any LiveClient was registered`,
       fix: 'setLiveClient(new LiveClient({ signal: createSignal, connect, buildId })) in the app entry, above the first render',
+    });
+  }
+}
+
+/**
+ * A subscribable read projected a row with no `id`. Patches, cursors and the local store all
+ * address a row by `id`, so such a row cannot be delivered — and delivering it anyway produces a
+ * subscription that looks correct until the first update nobody can apply.
+ */
+export class LiveRowUnidentifiedError extends RealtimeError {
+  constructor(args: { query: string; keys: readonly string[] }) {
+    super({
+      code: 'X_LIVE_ROW_UNIDENTIFIED',
+      cause: `live query "${args.query}" returned a row with no id (columns: ${args.keys.join(', ') || 'none'})`,
+      fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
     });
   }
 }

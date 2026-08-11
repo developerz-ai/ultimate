@@ -64,7 +64,11 @@ export interface QueryOptions {
 }
 
 export interface SourceOptions extends QueryOptions {
-  /** `false` only for developer tooling (`explain`), which is admin-gated. */
+  /**
+   * `false` for developer tooling (`explain`, admin-gated) and for the shared, subject-less
+   * window a sync node builds once per `(query, input)` — see `ToLiveOptions.enforce`. Both are
+   * reads with no subscriber to decide about; every other caller leaves it alone.
+   */
   readonly enforce?: boolean;
 }
 

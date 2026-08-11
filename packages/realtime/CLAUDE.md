@@ -13,7 +13,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## Rules
 
-- Policy is evaluated **once per subscriber**, never once per query. `live-query.test.ts` proves it.
+- Policy is evaluated **once per subscriber**, never once per query. `live-query.test.ts` proves it
+  for a hand-written definition and `live-definition.test.ts` proves it for a real declared
+  `query({ live: true })` — the second one matters, because a rule that only holds for test fakes
+  is a rule no declaration can reach.
+- What `liveQueryDefinition` caches per query id is the compiled source, the shape, the matcher and
+  the shared row window. What it must never cache is a decision. It builds that shared half with
+  `enforce: false` **on purpose**: a source compiled under the first subscriber's authority and
+  then keyed by query id is that subscriber's entitlements becoming everyone's. `authorize` is
+  still the subscribe-time decision and still runs per socket.
+- Every policy call in `live-query.ts` takes a `Subscriber`. That is the enforcement: there is no
+  path through the gate that reads a query id and no actor.
 - The row policy always sees the *whole* row from the shared window, never a partial patch.
 - The retained change window stores **pre-policy** patches; resume re-filters them per subscriber.
 - Truth is the server. A client is never the merge authority.
@@ -59,7 +69,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 |---|---|
 | `sync-protocol.ts` | the wire: 10 frame kinds, `encode`/`decode`, `PROTOCOL_VERSION` |
 | `channel.ts` / `presence.ts` / `socket.ts` | tier 1 |
-| `live-query.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `transport-env.ts` / `matcher-bridge.ts` | tier 2 |
+| `live-query.ts` / `live-definition.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `transport-env.ts` / `matcher-bridge.ts` | tier 2 |
 | `pg-bytes.ts` / `pg-wire.ts` / `pg-auth.ts` / `pg-connection.ts` / `pg-socket.ts` | the Postgres v3 client: bytes, frames, SASL, session, socket |
 | `pgoutput.ts` / `pg-entity-row.ts` / `pg-replication.ts` | WAL decode → `ChangeEvent`, and the lsn that orders it |
 | `nats-protocol.ts` / `nats-commands.ts` / `nats-socket.ts` / `nats-connection.ts` | the NATS client: decode, encode, socket, session |
@@ -70,6 +80,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `client.ts` / `sync-node.ts` | the two halves |
 | `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
 | `policy-gate.ts` | the only authz seam |
+| `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
 
 ## Commands
