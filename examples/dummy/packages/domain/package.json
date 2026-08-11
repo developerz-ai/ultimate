@@ -16,7 +16,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "1.1.0",
-    "@ultimat3/money": "1.1.0"
+    "@ultimat3/core": "1.2.0",
+    "@ultimat3/money": "1.2.0"
   }
 }
