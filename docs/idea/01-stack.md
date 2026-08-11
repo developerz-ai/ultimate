@@ -60,7 +60,7 @@ Costs, stated plainly: no native-addon packages, and long-running-process maturi
 | A plugin API before v1 | fork the blessed path; extension points earn their way in |
 | Vendor edge functions, KV, image loaders | containers + our cache tiers + standard CDN headers |
 | ESLint + Prettier | Biome (one binary, one config) |
-| A separate migration tool | `x db gen` / `x db apply`, drift is a `x verify` failure |
+| A separate migration tool | `x db gen` / `x db migrate`, drift is a `x verify` failure |
 
 ## Versions
 

@@ -104,7 +104,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_GENERATE_CONFLICT: 'a generator would overwrite a file',
   X_PORT_IN_USE: 'the dev port is taken',
   X_DB_GEN_FAILED: 'x db gen failed',
-  X_DB_MIGRATE_FAILED: 'x db apply failed',
+  X_DB_MIGRATE_FAILED: 'x db migrate failed',
   X_DB_BRANCH_FAILED: 'an x db branch step failed',
   X_DB_STUDIO_FAILED: 'x db studio failed',
   X_BOUNDARY_SITE_TO_APP: 'site/ imported app/',

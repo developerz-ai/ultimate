@@ -113,13 +113,13 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_PASSWORD_WEAK` | strength check rejected the password | too short, or a known-common password | choose a longer, uncommon password — or relax `defineAuth({ password: { minLength } })` |
 | `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout | repeated failed attempts | `x auth unlock <key>` — `cause` names the key and the remaining seconds — or raise `defineAuth({ rateLimit })` |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong | one shape for all four — a precise message is an enumeration oracle | `x auth keys list --json`, then issue a fresh key |
-| `X_AUTH_WRITE_FAILED` | an adapter write returned no row, so it cannot be confirmed | an `insert … returning *` wrote nothing — the table is missing its migration, or a trigger or RLS policy swallowed the row | `x db apply`, then confirm the table with `x db query "select 1 from x_users limit 1" --json` |
+| `X_AUTH_WRITE_FAILED` | an adapter write returned no row, so it cannot be confirmed | an `insert … returning *` wrote nothing — the table is missing its migration, or a trigger or RLS policy swallowed the row | `x db migrate`, then confirm the table with `x db query "select 1 from x_users limit 1" --json` |
 
 ## Entity and database
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_DB_DRIFT` | schema differs from migrations | a column exists in code but in no migration | `x db gen "<describe the change>"` then `x db apply` |
+| `X_DB_DRIFT` | schema differs from migrations | a column exists in code but in no migration | `x db gen "<describe the change>"` then `x db migrate` |
 | `X_ENTITY_DUPLICATE` | two entities claim the same name | copy-pasted `entity({ name })` | rename one; `x entities list --json` |
 | `X_INVARIANT_VIOLATED` | a domain invariant rejected this row | a CHECK or a declared invariant failed | `x entity explain <entity> --json` to see the invariant and its SQL |
 | `X_NOT_FOUND` | no row for that id | stale id, wrong tenant, or already deleted | confirm with `x db query "select id from <table> limit 5" --json` |

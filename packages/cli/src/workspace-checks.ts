@@ -1,6 +1,7 @@
-// Two shape rules the gate owns: one file, one job (a hard line ceiling), and every workspace
-// package shipping the same contract files. Both report findings — a shape rule that is only
-// written down is not a rule (axiom 3).
+// Three shape rules the gate owns: one file, one job (a hard line ceiling), every workspace
+// package shipping the same contract files, and every published package's tarball matching what
+// its manifest promises. All report findings — a shape rule that is only written down is not a
+// rule (axiom 3).
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -76,6 +77,8 @@ export interface ManifestFacts {
   readonly private: boolean;
   /** Every `@ultimat3/*` pin npm publishes and the range it is pinned to, in declaration order. */
   readonly frameworkDeps: readonly (readonly [name: string, range: string])[];
+  /** The manifest's `files`, verbatim — what the tarball promises to carry. */
+  readonly files: readonly string[];
 }
 
 /**
@@ -140,6 +143,88 @@ export function checkLockstep(manifests: readonly ManifestFacts[]): readonly Fin
   return findings;
 }
 
+/**
+ * The exclusion every published package carries. Exact, not "some pattern that happens to match
+ * tests": a second spelling of one rule is the drift the gate exists to prevent.
+ */
+export const TEST_EXCLUSION = '!src/**/*.test.ts';
+
+export const missingPublishedFileFinding = (dir: string, entry: string): Finding => ({
+  code: 'X_PACKAGE_SHAPE',
+  cause: `packages/${dir}/package.json ships "${entry}" in "files", but packages/${dir}/${entry} does not exist`,
+  fix: `add packages/${dir}/${entry}, or drop "${entry}" from "files" in packages/${dir}/package.json`,
+  docs: docs('X_PACKAGE_SHAPE'),
+  at: `packages/${dir}/package.json`,
+});
+
+export const publishesTestsFinding = (dir: string): Finding => ({
+  code: 'X_PACKAGE_SHAPE',
+  cause: `packages/${dir}/package.json does not exclude ${TEST_EXCLUSION} from "files"`,
+  fix: `add "${TEST_EXCLUSION}" to "files" in packages/${dir}/package.json, after "src"`,
+  docs: docs('X_PACKAGE_SHAPE'),
+  at: `packages/${dir}/package.json`,
+});
+
+/**
+ * Reported apart from the exclusion above so the `fix:` stays runnable. Told to "add an entry to
+ * `files`" when there is no `files` at all, an author edits a key that is not there — and axiom 4
+ * is that an error names the exact fix, not an approximate one.
+ */
+export const noFilesAllowlistFinding = (dir: string): Finding => ({
+  code: 'X_PACKAGE_SHAPE',
+  cause: `packages/${dir}/package.json publishes with no "files" allowlist, so the tarball carries whatever is in the directory`,
+  fix: `add "files": ["src", "${TEST_EXCLUSION}", "README.md", "LICENSE"] to packages/${dir}/package.json`,
+  docs: docs('X_PACKAGE_SHAPE'),
+  at: `packages/${dir}/package.json`,
+});
+
+/**
+ * What the tarball actually carries, as a build error rather than a paragraph in PUBLISHING.md.
+ *
+ * npm **silently skips** a `files` entry with no file behind it, so a manifest can promise a
+ * `LICENSE` it never ships and publish green: all 28 packages declared `"license": "MIT"`, named
+ * `LICENSE` in `files`, and shipped the grant in none of them. It reads as correct in review, in
+ * `npm publish`, and on the package page — right up to the point somebody needs the license text
+ * that is not in the artifact they received. And a publish cannot be undone.
+ *
+ * The second half is `src` sweeping in every `*.test.ts` beside it. Tests are the framework's own,
+ * they run against a preloaded frozen clock and a sealed network, and a consumer's test runner
+ * collecting them is a failure nobody asked for — 393 files, over half of `@ultimat3/cli`'s
+ * tarball.
+ *
+ * Private packages are exempt: a generated app's `packages/*` never reach a registry, carry no
+ * `files` and need no license of their own.
+ */
+export function checkPublishShape(root: string, manifests: readonly ManifestFacts[]): Finding[] {
+  const findings: Finding[] = [];
+  for (const manifest of manifests) {
+    if (manifest.private) continue;
+    if (manifest.files.length === 0) {
+      findings.push(noFilesAllowlistFinding(manifest.dir));
+      continue;
+    }
+    for (const entry of manifest.files) {
+      // A negation removes files; only a positive literal can promise one that is not there.
+      if (entry.startsWith('!') || /[*?[\]]/.test(entry)) continue;
+      if (existsSync(join(root, 'packages', manifest.dir, entry))) continue;
+      findings.push(missingPublishedFileFinding(manifest.dir, entry));
+    }
+    if (!manifest.files.includes(TEST_EXCLUSION)) {
+      findings.push(publishesTestsFinding(manifest.dir));
+    }
+  }
+  return findings;
+}
+
+export function filesOf(manifest: unknown): readonly string[] {
+  const record = (typeof manifest === 'object' && manifest !== null ? manifest : {}) as {
+    files?: unknown;
+  };
+  return Array.isArray(record.files)
+    ? record.files.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
 export function frameworkDepsOf(manifest: unknown): ManifestFacts['frameworkDeps'] {
   const record = (typeof manifest === 'object' && manifest !== null ? manifest : {}) as Record<
     string,
@@ -196,7 +281,8 @@ export async function checkPackageShape(root: string): Promise<readonly Finding[
       version,
       private: record.private === true,
       frameworkDeps: frameworkDepsOf(manifest),
+      files: filesOf(manifest),
     });
   }
-  return [...findings, ...checkLockstep(facts)];
+  return [...findings, ...checkLockstep(facts), ...checkPublishShape(root, facts)];
 }

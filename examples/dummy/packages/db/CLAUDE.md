@@ -25,7 +25,7 @@ Entities + migrations + cache tags + seeds. Nothing else.
 | Task | Command |
 |---|---|
 | generate a migration | `x db gen "<message>"` |
-| apply | `x db apply` |
+| apply | `x db migrate` |
 | seed | `x db seed dev` |
 | inspect | `x db describe --json` (or the `schema.describe` MCP tool) |
 | typecheck | `bun run --filter @postly/db typecheck` |

@@ -1,16 +1,26 @@
 #!/usr/bin/env bun
-// Scaffold a framework package from the contract's templates: the same seven files, the same
+
+// Scaffold a framework package from the contract's templates: the same eight files, the same
 // package.json shape, a real error class and two tests that would catch a regression.
 //
 //   bun run scripts/new-package.ts seo --tier 1 --description "Metadata, sitemaps, robots"
 //   bun run scripts/new-package.ts seo --only CLAUDE.md      # fill in one missing contract file
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { FRAMEWORK_VERSION } from '@ultimat3/core';
 import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { allowedTiersFor, tierOf } from './lib/tiers';
+
+/**
+ * The grant, copied rather than referenced. npm packs a `files` entry per package directory and
+ * silently drops one with no file behind it, so a package that points at the repo root's LICENSE
+ * publishes the MIT claim in its manifest and none of the text — which is how all 28 shipped
+ * before the gate learned to check.
+ */
+const license = (): string => readFileSync(join(repoRoot(), 'LICENSE'), 'utf-8');
 
 interface Template {
   readonly path: string;
@@ -31,7 +41,7 @@ export function packageTemplates(name: string, tier: number, description: string
       path: 'package.json',
       contents: `{
   "name": "@ultimat3/${name}",
-  "version": "0.0.1",
+  "version": "${FRAMEWORK_VERSION}",
   "description": "${description}",
   "license": "MIT",
   "type": "module",
@@ -42,7 +52,7 @@ export function packageTemplates(name: string, tier: number, description: string
   },
   "publishConfig": { "access": "public", "provenance": true },
   "exports": { ".": "./src/index.ts" },
-  "files": ["src", "README.md", "LICENSE"],
+  "files": ["src", "!src/**/*.test.ts", "README.md", "LICENSE"],
   "engines": { "bun": ">=1.3.0" },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -51,6 +61,10 @@ export function packageTemplates(name: string, tier: number, description: string
   "dependencies": {}
 }
 `,
+    },
+    {
+      path: 'LICENSE',
+      contents: license(),
     },
     {
       path: 'tsconfig.json',

@@ -18,6 +18,7 @@
   },
   "files": [
     "src",
+    "!src/**/*.test.ts",
     "README.md",
     "LICENSE"
   ],

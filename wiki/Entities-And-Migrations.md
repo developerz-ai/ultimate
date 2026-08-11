@@ -16,7 +16,7 @@ One `entity()` call per table, in `packages/db/src/schema/<name>.ts`; a feature'
 |---|---|---|
 | SQL DDL | the generated migration — columns, CHECKs, indexes | Postgres |
 | Domain type | `export type Post = typeof posts.$row` | actions, queries, Solid component props |
-| Migration | `packages/db/migrations/*.sql` | `x db apply`, `ROLE=migrate` |
+| Migration | `packages/db/migrations/*.sql` | `x db migrate`, `ROLE=migrate` |
 | Repo type | the feature's `repo.ts` signature | `ctx.<service>` inside `handle` |
 | Admin screen | `apps/admin/` | operators, and the admin app's MCP surface |
 | Seed factory | `seed(name)` fixtures | all six test types |
@@ -161,7 +161,7 @@ More in [MCP and AI](MCP-And-AI).
 | Step | Command | Behavior |
 |---|---|---|
 | Generate | `x db gen "add publish_at"` | diffs entities vs migrations, writes a named, ordered migration + its `down` |
-| Apply (dev) | `x db apply` | runs pending migrations against the dev DB; live queries resubscribe |
+| Apply (dev) | `x db migrate` | runs pending migrations against the dev DB; live queries resubscribe |
 | Check | `x db drift --json` | schema vs migrations; exits non-zero on a difference |
 | Inspect | `x db studio` | tables, columns, indexes, FKs, generated SQL — also the `/_x` **Schema** panel |
 | Pre-deploy | `ROLE=migrate` container | run-once hook, same image; refuses to run while another version's migration is in flight (`X_MIGRATE_CONCURRENT`) |
@@ -192,7 +192,7 @@ There is no separate migration tool and no "regenerate types" step. `drift` is o
 | Every migration has a `down` | or an explicit `irreversible('<reason>')` marker |
 | An unmarked non-reversible migration | fails `x verify` — the same check as drift |
 | Destructive steps | column/table drops need the marker plus a rollout note; prefer expand → migrate → contract across two releases |
-| `x db apply` on a marked migration | proceeds, but the marker is printed and recorded in the manifest |
+| `x db migrate` on a marked migration | proceeds, but the marker is printed and recorded in the manifest |
 
 ## Branch DBs for agents
 

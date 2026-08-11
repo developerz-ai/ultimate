@@ -10,7 +10,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | 1 | Generate the slice | `x g resource post --live --admin` | 16 files ([`12-generated-app.md`](./12-generated-app.md)) |
 | 2 | Entity + invariants | edit | `packages/db/src/schema/posts.ts`, `apps/web/app/posts/entity.ts` |
 | 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/NNNN_create_posts.sql` |
-| 4 | Apply | `x db apply` | the dev database |
+| 4 | Apply | `x db migrate` | the dev database |
 | 5 | Policy | edit | `apps/web/app/posts/policy.ts` |
 | 6 | Service | edit | `apps/web/app/posts/service.ts` |
 | 7 | Action | edit | `apps/web/api/posts.ts` |
@@ -78,7 +78,7 @@ export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publish
 
 ```bash
 x db gen "create posts"     # diffs schema vs. the migration ledger
-x db apply                  # applies to the dev database
+x db migrate                  # applies to the dev database
 x db status --json          # confirm: no drift
 ```
 

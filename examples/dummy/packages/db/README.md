@@ -45,7 +45,7 @@ where validation lives in the app and the table happily stores the broken row.
 
 ```bash
 x db gen "add publish_at"     # diffs entities against migrations, writes the SQL
-x db apply                    # forward-only in prod; branch DBs in dev
+x db migrate                  # forward-only in prod; branch DBs in dev
 ```
 
 Never hand-write or edit a migration. A schema that differs from the migrations is `X_DB_DRIFT`

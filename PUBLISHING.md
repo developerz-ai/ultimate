@@ -104,6 +104,7 @@ before anything that imports it. Same order as `bun run scripts/list-workspaces.
 | npm CLI `>= 11.5.1` | the workflow upgrades npm; Node 22 ships an older one |
 | npm pinned to `11.5.2` | 11.6.x regressed provenance (`Cannot find module 'sigstore'`) |
 | `publishConfig.access: public` + `provenance: true` | every package.json |
+| a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
 | `bun run scripts/verify.ts` before the first publish | nothing reaches the registry unverified |
 
@@ -111,7 +112,28 @@ before anything that imports it. Same order as `bun run scripts/list-workspaces.
 
 `exports` points at `./src/index.ts` — the TypeScript source, not a build artifact. Ultimate is
 Bun-only, and Bun runs TypeScript directly; a `dist/` would be a second thing to keep in sync and
-a worse stack trace. `files` ships `src`, `README.md` and `LICENSE`, and nothing else.
+a worse stack trace.
+
+Every published package carries the identical `files`, and nothing else reaches the tarball:
+
+```json
+"files": ["src", "!src/**/*.test.ts", "README.md", "LICENSE"]
+```
+
+The exclusion is not cosmetic. `src` sweeps in every `<file>.test.ts` beside it — 393 files, over
+half of `@ultimat3/cli`'s tarball — and they run against the frozen clock, seeded RNG and sealed
+network `scripts/test-setup.ts` preloads, which a consumer's test runner does not have. Dropping
+them halves the install: `@ultimat3/cli` 974kB → 541kB, `@ultimat3/core` 348kB → 221kB.
+
+`LICENSE` is a **real file in each package directory**, not a pointer at the repo root's copy. npm
+silently skips a `files` entry with no file behind it, so a package can declare `"license": "MIT"`,
+name `LICENSE` in `files`, and ship the grant in neither — which is what all 28 did until the gate
+learned to check. `bun run scripts/new-package.ts` writes it, so a new package cannot regress.
+
+Both halves are enforced by `x verify`'s **package-shape** step, per axiom 3 — a published package
+that promises a file it does not carry, publishes its tests, or has no `files` allowlist at all is
+`X_PACKAGE_SHAPE`, before the tarball rather than after. Private packages are exempt: a generated
+app's `packages/*` never reach a registry.
 
 ## Unpublishing
 

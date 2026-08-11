@@ -7,7 +7,7 @@ that already works will be declined — that ambiguity is the tax agents pay.
 
 ```sh
 bin/setup      # bun version check, install, .env.development.local, git hooks
-bin/check      # the gate: typecheck, lint, boundaries, tests, file sizes, package shape
+bin/check      # the gate: typecheck, lint, boundaries, errors, tests, drift, budgets, manifest, roadmap
 ```
 
 Requirements: **Bun >= 1.3**. Nothing else. No Node, no Docker, no database — `x dev` runs
@@ -37,12 +37,14 @@ nothing to check here is reported as skipped (`-`), never as passed.
 | `boundaries` | a tier violation (see below) or an app surface violation |
 | `filesize` | a file over 500 lines |
 | `package-shape` | a package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` |
+| `errors` | an empty/advice-only `fix:`, a shipped code missing from `wiki/Error-Codes.md`, or a documented code no source declares |
 | `unit` | any failing test that is not one of the typed suites below; a flake is a failure |
 | `contract` `live` `job` `e2e` `eval` | any failing `*.<type>.test.ts` suite (or any test under `e2e/`) |
 | `drift` | an app schema that no migration recorded |
 | `contract-diff` | a breaking change to a published action without a version bump |
 | `budgets` | per-route JS bytes or LCP over the declared limit |
 | `manifest` | the manifest differs from what the code produces, or cannot be generated |
+| `roadmap` | a milestone status marker out of sync, or a shipped milestone naming no verifiable artifact |
 
 There is no `--only` and no `--skip`: "green" has to mean the same thing for everyone (axiom 5).
 
