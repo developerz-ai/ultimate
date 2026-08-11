@@ -139,6 +139,14 @@ export function resetTelemetry(): void {
   enabled = true;
 }
 
+/**
+ * The service identity every signal carries. One resource for spans and metrics alike, as OTel
+ * defines it — a metric that named a different service than its own traces is unjoinable.
+ */
+export function serviceResource(): SpanResource {
+  return resource;
+}
+
 export function currentSpan(): Span | undefined {
   return activeSpan.getStore();
 }

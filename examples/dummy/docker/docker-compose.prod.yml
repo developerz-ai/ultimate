@@ -29,7 +29,8 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
     deploy: { replicas: 2 } # scales on concurrent WS; no sticky sessions
-    ports: ['3001:3000']
+    # The sync role listens on PORT + 1; mapping to :3000 would route to a listener it never opens.
+    ports: ['3001:3001']
 
   worker:
     <<: *image

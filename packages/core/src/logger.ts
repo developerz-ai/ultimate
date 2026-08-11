@@ -3,6 +3,11 @@
 
 import { type Clock, systemClock } from './clock';
 import { isUltimateError } from './errors';
+import { isSecret, REDACTED } from './secret';
+
+// Re-exported, not redefined: `secret.ts` owns the placeholder because a `Secret` has to render
+// it without importing the logger, and two constants spelled the same is one rename from a leak.
+export { REDACTED } from './secret';
 
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
 
@@ -43,8 +48,6 @@ export interface LoggerOptions {
   readonly writer?: ((line: string, level: LogLevel) => void) | undefined;
 }
 
-export const REDACTED = '[redacted]';
-
 const redactedKeys = new Set<string>([
   'password',
   'token',
@@ -82,6 +85,9 @@ function defaultWriter(line: string, level: LogLevel): void {
 
 function serialiseValue(value: unknown, depth: number): unknown {
   if (value === null || typeof value !== 'object') return value;
+  // Before every other branch: a `Secret` is redacted by VALUE, so it stays redacted under a key
+  // nobody listed — `{ dsn: secret(url) }` is the leak key-name redaction cannot see.
+  if (isSecret(value)) return REDACTED;
   if (value instanceof Date) return value.toISOString();
   if (isUltimateError(value)) return value.toJSON();
   if (value instanceof Error) return { name: value.name, message: value.message };

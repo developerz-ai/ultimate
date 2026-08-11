@@ -1,11 +1,12 @@
 // `x build --target docker|binary|static` — three targets, no platform primitives. Deploy anywhere
 // means "anywhere that runs a container or a binary"; nothing here knows the name of a cloud.
 
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireAppRoot } from './app-root';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
-import { UnknownCommandError } from './errors';
+import { BuildEntryMissingError, UnknownCommandError } from './errors';
 import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -26,9 +27,28 @@ export function readTarget(raw: string | undefined): BuildTarget {
   });
 }
 
+/**
+ * The one file each target builds from, app-root-relative and POSIX. One table, because `x build`
+ * has to refuse a missing entry by name before it spawns anything, and the spawned command has to
+ * name the same file — a second copy is how `binary` came to compile a path `x new` never wrote.
+ */
+export const BUILD_ENTRY: Readonly<Record<BuildTarget, string>> = {
+  docker: 'docker/Dockerfile',
+  binary: 'apps/web/server.ts',
+  static: 'apps/web/prerender.ts',
+};
+
+/** Absolute path of the target's entry, or the error that names the file and what writes it. */
+export function requireEntry(root: string, target: BuildTarget): string {
+  const entry = BUILD_ENTRY[target];
+  const absolute = join(root, entry);
+  if (!existsSync(absolute)) throw new BuildEntryMissingError({ target, entry });
+  return absolute;
+}
+
 /** One image for every role; ROLE selects behaviour at start, so there is one artifact to promote. */
 export function dockerArgs(root: string, tag: string): readonly string[] {
-  return ['docker', 'build', '-f', join(root, 'docker', 'Dockerfile'), '-t', tag, root];
+  return ['docker', 'build', '-f', join(root, BUILD_ENTRY.docker), '-t', tag, root];
 }
 
 export function binaryArgs(root: string, out: string): readonly string[] {
@@ -37,14 +57,14 @@ export function binaryArgs(root: string, out: string): readonly string[] {
     'build',
     '--compile',
     '--minify',
-    join(root, 'apps', 'web', 'server.ts'),
+    join(root, BUILD_ENTRY.binary),
     '--outfile',
     out,
   ];
 }
 
 export function staticArgs(root: string, out: string): readonly string[] {
-  return ['bun', 'run', join(root, 'apps', 'web', 'prerender.ts'), '--out', out];
+  return ['bun', 'run', join(root, BUILD_ENTRY.static), '--out', out];
 }
 
 export function argsFor(
@@ -71,6 +91,10 @@ export const buildCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('build', ctx.cwd).dir;
     const target = readTarget(flagString(ctx.args, 'target'));
+    // Before the gate, not after: an entry the app does not have cannot be produced by a green
+    // typecheck, and eight seconds of `tsc` ahead of "that file does not exist" is eight seconds
+    // an agent spends on the wrong question.
+    requireEntry(root, target);
 
     // Run static verify steps before building.
     const staticSteps = ['typecheck', 'lint', 'boundaries', 'filesize', 'package-shape', 'errors'];

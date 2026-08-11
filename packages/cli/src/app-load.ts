@@ -22,6 +22,15 @@ const APP_GLOBS = [
   'packages/*/src/**/*.ts',
 ] as const;
 
+/**
+ * The two files that are *entry points*, not app modules: `apps/web/server.ts` starts the process
+ * and `apps/web/prerender.ts` runs the build. Importing either registers nothing — and importing
+ * `server.ts` deadlocks, because that module's own top-level `await runRole()` is what called this
+ * scan, so the dynamic import waits on a module that is waiting on the import. Anchored to the
+ * surface root: `apps/web/app/server.ts` is app code and stays in the scan.
+ */
+const ENTRY_POINT = /^apps\/[^/]+\/(?:server|prerender)\.tsx?$/;
+
 export interface LoadedApp {
   readonly root: string;
   /** App-root-relative POSIX paths of every module that imported, sorted. */
@@ -64,6 +73,7 @@ export async function loadApp(root: string): Promise<LoadedApp> {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
       if (absolute.includes('node_modules') || absolute.includes('.test.')) continue;
       const file = relative(root, absolute).split(sep).join('/');
+      if (ENTRY_POINT.test(file)) continue;
       let module: Record<string, unknown>;
       try {
         module = (await import(absolute)) as Record<string, unknown>;

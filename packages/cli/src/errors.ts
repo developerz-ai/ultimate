@@ -36,7 +36,14 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_MANIFEST_STALE',
   'X_BUDGET_UNMEASURED',
   'X_BUILD_FAILED',
+  'X_BUILD_ENTRY_MISSING',
   'X_DEPLOY_FAILED',
+  // The two the container's own environment can get wrong. A PaaS injects `PORT` and a supervisor
+  // injects `ROLE`; both arrive as strings from outside the app, so both are validated at boot
+  // rather than defaulted — a web role that quietly bound 3000 when the platform said 8080 fails
+  // its health check with nothing in the log that names the cause.
+  'X_ROLE_UNKNOWN',
+  'X_PORT_INVALID',
   'X_GENERATE_CONFLICT',
   'X_PORT_IN_USE',
   'X_DB_GEN_FAILED',
@@ -100,7 +107,10 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_MANIFEST_STALE: 'openapi.json is stale',
   X_BUDGET_UNMEASURED: 'a route declares a budget the build never measured',
   X_BUILD_FAILED: 'x build failed',
+  X_BUILD_ENTRY_MISSING: "the build target's entry file is not in the app",
   X_DEPLOY_FAILED: 'a deploy step failed',
+  X_ROLE_UNKNOWN: 'ROLE names something that is not a role',
+  X_PORT_INVALID: 'PORT is not a TCP port number',
   X_GENERATE_CONFLICT: 'a generator would overwrite a file',
   X_PORT_IN_USE: 'the dev port is taken',
   X_DB_GEN_FAILED: 'x db gen failed',
@@ -350,6 +360,53 @@ export class FixTargetUnknownError extends UltimateError {
           ? 'x routes --json   # every registered route file, app-root-relative'
           : `x fix boundary ${input.suggestion}`,
       docs: docsFor('X_FIX_TARGET_UNKNOWN'),
+    });
+  }
+}
+
+/**
+ * A build target names an entry file the app does not have. `x build` refuses before it spawns the
+ * builder: `bun build`'s own "module not found" says nothing about which file an Ultimate app is
+ * supposed to own, and `docker build`'s says nothing about which target wanted it.
+ */
+export class BuildEntryMissingError extends UltimateError {
+  constructor(input: { target: string; entry: string }) {
+    super({
+      code: 'X_BUILD_ENTRY_MISSING',
+      cause: `x build --target ${input.target} builds from ${input.entry}, and the app does not have it`,
+      fix: `x new <name> writes ${input.entry} — copy it from a fresh scaffold into this app`,
+      docs: docsFor('X_BUILD_ENTRY_MISSING'),
+    });
+  }
+}
+
+/**
+ * `ROLE` selects what a container is. One image runs every role, so a typo is a process that would
+ * otherwise start, serve nothing and report healthy — the one failure a rolling deploy cannot see.
+ */
+export class RoleUnknownError extends UltimateError {
+  constructor(input: { role: string; known: readonly string[] }) {
+    super({
+      code: 'X_ROLE_UNKNOWN',
+      cause: `ROLE="${input.role}" is not a role (known: ${input.known.join(', ')})`,
+      fix: `docker run -e ROLE=web <image>   # one of: ${input.known.join(', ')}`,
+      docs: docsFor('X_ROLE_UNKNOWN'),
+    });
+  }
+}
+
+/**
+ * Every PaaS injects `PORT` and expects the process to bind exactly it. Defaulting past a value
+ * that will not parse is how a deploy comes up on 3000, fails the platform's health probe, and
+ * reports nothing an operator can act on.
+ */
+export class PortInvalidError extends UltimateError {
+  constructor(input: { value: string }) {
+    super({
+      code: 'X_PORT_INVALID',
+      cause: `PORT="${input.value}" is not a TCP port number between 0 and 65535`,
+      fix: 'docker run -e PORT=3000 <image>',
+      docs: docsFor('X_PORT_INVALID'),
     });
   }
 }

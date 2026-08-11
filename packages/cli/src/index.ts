@@ -24,7 +24,14 @@ export { planBoundaryCuts } from './boundary-cuts';
 export type { BuildStats, RouteStats } from './budgets';
 export { BUILD_STATS_FILE, checkBudgets, readBuildStats } from './budgets';
 export type { BuildTarget } from './cmd-build';
-export { argsFor, BUILD_TARGETS, buildCommand, readTarget } from './cmd-build';
+export {
+  argsFor,
+  BUILD_ENTRY,
+  BUILD_TARGETS,
+  buildCommand,
+  readTarget,
+  requireEntry,
+} from './cmd-build';
 export { branchDatabaseName, branchSql, dbCommand, previewUrl } from './cmd-db';
 export type { DeployPlan } from './cmd-deploy';
 export { deployCommand, planDeploy } from './cmd-deploy';
@@ -64,9 +71,9 @@ export { devHooks } from './dev-hooks';
 export type { DevDbClient, RunningQueue } from './dev-queue';
 export { startQueue } from './dev-queue';
 export type { DevRenderOptions, DevRouteData } from './dev-render';
-export { appRoutes } from './dev-render';
-export type { RunningRoles, StartRolesOptions } from './dev-roles';
-export { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+export { appRoutes, routeDocument } from './dev-render';
+export type { RunningRoles, StartRolesOptions, WebBinding } from './dev-roles';
+export { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 export type { RunningServices } from './dev-runtime';
 export { startServices } from './dev-runtime';
 export type { DevServices, ServiceBinding } from './dev-services';
@@ -98,6 +105,7 @@ export {
 export type { CliErrorCode } from './errors';
 export {
   BadFlagError,
+  BuildEntryMissingError,
   BunVersionError,
   CatalogExistsError,
   CLI_ERROR_CODES,
@@ -109,6 +117,8 @@ export {
   JobUnknownError,
   NoTestFilesError,
   NotInAppError,
+  PortInvalidError,
+  RoleUnknownError,
   UnknownCommandError,
   VerifyFailedError,
 } from './errors';
@@ -122,6 +132,7 @@ export { renderJobTable } from './jobs-table';
 export type { CliMcpServer, DevHostInput } from './mcp-host';
 export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
+export { MIGRATIONS_DIR, migrationName, parseMigrationSql, readMigrations } from './migrations';
 export type { CommandResult, Finding, JsonValue, StepResult } from './output';
 export {
   exitCodeFor,
@@ -135,7 +146,19 @@ export {
 } from './output';
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
 export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from './parse';
+export type { PrerenderedPage, PrerenderOptions, PrerenderReport } from './prerender';
+export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export { CLI_VERSION, COMMANDS, commandFor, SPECS } from './registry';
+export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve';
+export {
+  CONTAINER_BINDING,
+  DEFAULT_PORT,
+  portFromEnv,
+  roleFromEnv,
+  runMigrations,
+  runRole,
+  serveApp,
+} from './serve';
 export {
   eachSourceFile,
   isGenerated,

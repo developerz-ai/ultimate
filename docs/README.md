@@ -6,6 +6,7 @@ Two bodies of docs, one split:
 |---|---|---|
 | [**idea/**](idea/README.md) | **what and why** | you want to understand a decision, or argue with it |
 | [**architecture/**](architecture/README.md) | **how it's built** | you're changing the framework itself |
+| [**ops/**](ops/README.md) | **how to run it** | you're deploying an app, or something is on fire |
 
 Plus, outside `docs/`:
 
@@ -37,6 +38,12 @@ Plus, outside `docs/`:
 
 1. [idea/14-roadmap.md](idea/14-roadmap.md) — the twelve milestones
 2. [idea/15-risks.md](idea/15-risks.md) — what could sink it, stated plainly
+
+**Running it in production:**
+
+1. [ops/README.md](ops/README.md) — the ladder, and the signal that says climb
+2. [ops/03-observability.md](ops/03-observability.md) — what to scrape, what to alert on
+3. [ops/06-runbooks.md](ops/06-runbooks.md) — read before the incident, not during
 
 ## 📖 Doc conventions
 

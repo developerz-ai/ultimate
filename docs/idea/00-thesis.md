@@ -28,6 +28,36 @@ Nothing here is novel in isolation. The bet is that no one has assembled it in o
 | **Inngest** | durable step workflows | a step is the retry unit; the job is not |
 | **Elixir/OTP** | supervision trees, graceful drain, role-based processes | one image, N roles, restart semantics you can reason about |
 | **Django** | admin-grade introspection, migrations that don't lie | if the framework can't describe itself, neither can an agent |
+| **Spring** | a large capability surface behind swappable seams | breadth is not the enemy of control — undeclared coupling is. Every capability here arrives as an interface with one shipped implementation |
+| **Ember Data** | an identity-mapped client store, one record per id | two components holding two copies of one row is a bug the framework should make unrepresentable |
+| **Expo** | the updates protocol as a published spec, not a product | OTA that a vendor cannot revoke, because the client speaks a spec anyone can serve |
+
+## Wrap, don't reinvent
+
+**The framework wraps libraries so the user doesn't have to. The user wraps the framework so their agent doesn't have to.**
+
+Two layers of wrapping, one goal: the least app code that can express the app. More code from an agent means more bugs, so the unit of progress is *lines not written*.
+
+| Layer | Wraps | So that |
+|---|---|---|
+| Bun natives | Postgres, Redis, S3, the bundler, the test runner | ~40 dependencies never enter the lockfile ([`01-stack.md`](./01-stack.md)) |
+| The framework | those natives, behind eight primitives | an agent writes `entity` / `action` / `job`, never a connection pool or a queue |
+| The app | those primitives, behind its own domain vocabulary | a feature is a declaration, not an integration |
+
+The rule that keeps this from becoming an abstraction tower: **a wrapper must delete a decision, not rename one.** A wrapper that only renames its subject adds a layer to learn and removes nothing to worry about — that is the failure mode, and it is the reason [axiom 1](#design-axioms) forbids a second path rather than encouraging a nicer one.
+
+Reinventing is reserved for where the wrap would leak the thing being avoided: there is no ORM, because an ORM's abstraction is exactly the thing that has to be understood to debug it.
+
+## Pre-MVP to planet-scale, without a rewrite
+
+The same app code runs on one PaaS dyno and on a distributed cluster. Climbing is a driver swap and configuration — never a re-architecture. That is the promise the whole design is arranged around, and the rungs, seams and honest incompatibilities are in [`17-scale-ladder.md`](./17-scale-ladder.md).
+
+| Stage | What changes | What does not |
+|---|---|---|
+| pre-MVP → production | a managed Postgres URL, a cache driver | entities, actions, policies, queries, jobs, routes, tasks |
+| production → scale-out | replicas, a NATS transport, a change feed | the same, plus every test that covered them |
+
+`As of 2026-08` this is the *design*, proven at one measured point — 50k sockets through a forced restart — and not yet at the top of the ladder. [`17-scale-ladder.md`](./17-scale-ladder.md) states which rungs are real today and which are intent, including the incompatibilities that would currently break the climb.
 
 ## Design axioms
 

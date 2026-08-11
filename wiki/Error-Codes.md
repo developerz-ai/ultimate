@@ -46,6 +46,17 @@ X_DB_DRIFT: schema differs from migrations
 | `X_REGISTRAR_MISSING` | no registrar is loaded for a primitive kind | the owning package is absent from the graph, so nothing announced a registrar — `defineApi({ queries })` without `@ultimat3/query`. `meta.kind` names the kind, and the owner is `@ultimat3/<kind>`; importing it is what announces | `bun add @ultimat3/<kind>` |
 | `X_REGISTRAR_CONFLICT` | two different registrars are loaded for one primitive kind | two copies of `@ultimat3/<kind>` in the dependency tree, each with its own registry, so half the primitives register where nothing reads them. `bun pm why @ultimat3/<kind>` names the dependents when ranges genuinely disagree | `bun update @ultimat3/<kind>` |
 
+## Metrics
+
+Counter, gauge and histogram live in `@ultimat3/core` (`metrics.ts`), aggregate in process, and are read through one `collectMetrics()`. The wire format is a **driver**: `MetricExporter` is the seam, the default is a no-op, and `metricsText()` renders the Prometheus/OpenMetrics scrape body behind `METRICS_PATH`. The framework ships no OTLP client — pointing `OTEL_EXPORTER_OTLP_ENDPOINT` at a collector means supplying a `MetricExporter` that speaks it, or scraping `/metrics` with an agent that does.
+
+The three series `docker/helm` autoscales on are `http_requests_total` (the counter `rps` is derived from), `connections` and `queue_depth` — `SCALING_METRICS` in `runtime-metrics.ts` maps each `ScalingSignal` to its series, so the role table and the chart cannot drift apart.
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_METRIC_NAME_INVALID` | metric name is malformed or already declared with another kind | a name that is not lowercase `snake_case` — dotted OTel names survive OTLP but not a Prometheus scrape, and the autoscaler reads the scrape — or one name declared as both a counter and a gauge | rename the instrument: `counter('http_requests_total')`, one metric name to one kind |
+| `X_METRIC_VALUE_INVALID` | metric value is not recordable | a `NaN`/`Infinity` observation, or a counter decremented — a counter is a cumulative total and only goes up | pass a finite value, and use `gauge(name)` for a number that can fall |
+
 ## Images
 
 One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes and encodes PNG and JPEG only**; WebP, AVIF, GIF and SVG are identified and measured — enough to inline `width`/`height` and keep CLS at 0 — but never synthesised. A variant in one of those formats comes from a CDN or an `ImageTransformDriver`, never from a silent passthrough.
@@ -62,9 +73,13 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 |---|---|---|---|
 | `X_CONFIG_INVALID` | a configuration this process cannot boot on — env **or** `app.config.ts` | a field failed its schema, a required field is missing, or two keys that each parse contradict each other (`selectMailDriver`, `selectPurgeDriver`) | `x doctor --json` and fix the named key; see [Configuration](Configuration) |
 | `X_ENV_MISSING` | required environment variables are missing or invalid | a key absent at boot; validation runs before the server listens | `x env check --fix`, then set the keys it names |
+| `X_ENVIRONMENT_INVALID` | `ULTIMATE_ENV` is not a known environment | a spelling the framework does not use (`prod`, `dev`, `preview`). `NODE_ENV` is only a fallback and is never policed — CI images legitimately set it to anything | `export ULTIMATE_ENV=production` — one of `development`, `test`, `staging`, `production` |
+| `X_ENV_EXAMPLE_DRIFT` | `.env.example` does not declare every variable the schema requires | a key added to `defineEnv()` and not to the committed example, so the next clone boots into `X_ENV_MISSING` for a variable nobody documented | `Bun.write('.env.example', renderEnvExample(schema))` — the example is a projection of the schema, never a second list |
 | `X_BUN_VERSION` | Bun is older than the framework floor | Bun < 1.3 | `bun upgrade` |
 | `X_NOT_IN_APP` | command must run inside an Ultimate app | no `app.config.ts` at or above the cwd | `x new myapp && cd myapp` |
 | `X_PORT_IN_USE` | the dev port is taken | another `x dev` or an unrelated process holds it | `x dev --port 3001`, or stop the other process |
+| `X_PORT_INVALID` | `PORT` is not a TCP port number | a platform-injected `PORT` that is empty, non-numeric or out of range — never defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause | `docker run -e PORT=3000 <image>` |
+| `X_ROLE_UNKNOWN` | `ROLE` names something that is not a role | a typo in a compose file, a Helm value or a `docker run` — one image runs every role, so the typo would otherwise start a process that serves nothing and reports healthy | `docker run -e ROLE=web <image>` — one of `web`, `sync`, `worker`, `scheduler`, `replicator`, `migrate` |
 
 ## Schema and validation
 
@@ -378,6 +393,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ERROR_CODE_UNREGISTERED` | the error reference documents a code no package registers | a row written for a code that was renamed, never built, or emitted as a `Finding` without a `registerErrorCodes()` call | register it in the owning package's `src/errors.ts`, or move its row under [Reserved codes](#reserved-codes) |
 | `X_APP_PACKAGE_INVALID` | the app's `package.json` has no usable `name`/`version` — the manifest never fabricates `app@0.0.0`, because its version is the compatibility gate | a malformed or hand-trimmed `package.json` | `bun pm pkg set name=<app> version=0.1.0` |
 | `X_BUILD_FAILED` | `x build` failed | a static check or the bundler | read `cause`; the failing step is named |
+| `X_BUILD_ENTRY_MISSING` | the build target's entry file is not in the app | an app scaffolded before `x new` wrote `apps/web/server.ts` and `apps/web/prerender.ts`, or one whose `docker/Dockerfile` was deleted — refused before the builder is spawned, because `bun build`'s own "module not found" names no owner | the `fix` names the file; `x new <name> --dry-run --json` lists every entry a build needs |
 | `X_DEPLOY_FAILED` | a deploy step failed | the compose/helm command exited non-zero | run the printed command directly for full output |
 | `X_SETUP_INSTALL_FAILED` | `bun install` failed during `bin/setup` | a conflicted lockfile, or a half-written `node_modules` | `rm -rf node_modules bun.lock && bun install` |
 | `X_RELEASE_VERSION_SKEW` | a workspace is not at the lockstep version | a package bumped on its own, or a release that stopped half-way | `bun run scripts/release.ts --bump patch --dry-run --json` to see the realignment, then run it without `--dry-run` and review the `package.json` diff |

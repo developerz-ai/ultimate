@@ -11,12 +11,18 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | request context on `AsyncLocalStorage` | `context.ts` |
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
 | typed env validated at boot | `env.ts` |
+| `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
+| named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
+| a value that cannot be printed by accident | `secret.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
 | structured JSON logging + redaction | `logger.ts` |
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
+| OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
+| the `/metrics` scrape body | `metrics-text.ts` |
+| the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
@@ -90,7 +96,7 @@ registered survives an actor swap unrebuilt.
 export const env = defineEnv({
   DATABASE_URL: { type: 'url', secret: true },
   PORT:         { type: 'port', default: 3000 },
-  STAGE:        { type: 'enum', values: ['dev', 'staging', 'prod'] },
+  REGION:       { type: 'enum', values: ['us', 'eu'] },
   SENTRY_DSN:   { type: 'url', required: false },
   NATS_URL:     { type: 'url', role: 'sync' },   // only required for ROLE=sync
 });
@@ -99,7 +105,46 @@ export const env = defineEnv({
 Every missing or malformed key is listed in one `X_ENV_MISSING`. `secret: true` keys are
 redacted in logs and masked in `checkEnv()` output; `describeEnv()` emits declarations only,
 safe for `x.manifest.json`. Omit `required` for required — `required: false` is the only
-loosening.
+loosening. Never declare an env var for *which deploy this is* — that is `ULTIMATE_ENV`, below.
+
+`.env.example` is a **projection** of that schema, never a second list:
+`renderEnvExample(schema)` writes it, `assertEnvExample(schema, text)` fails with
+`X_ENV_EXAMPLE_DRIFT` when a declared key has no line — the failure that otherwise arrives as
+somebody else's `X_ENV_MISSING` on a variable nobody documented.
+
+Loading `.env` is **Bun's**, not ours. `envFileCandidates()` states what it does, measured:
+`.env` → `.env.<mode>` → `.env.local`, with `.env.local` skipped under test, and the mode being
+`production`, `test` or **`development` for everything else — `staging` included**. There is no
+`.env.staging`; a staging deploy carries real environment variables.
+
+## One environment, one key
+
+```ts
+resolveEnvironment();   // 'development' | 'test' | 'staging' | 'production'
+isProduction();         // exact; nothing else counts
+isLocal();              // development or test — never staging
+```
+
+`ULTIMATE_ENV` is the key, `NODE_ENV` the fallback (platforms already set it). Values are
+`NODE_ENV`'s spellings plus `staging` — `prod` and `dev` are typos, not aliases, and
+`ULTIMATE_ENV=prod` is `X_ENVIRONMENT_INVALID`. An unrecognised `NODE_ENV` is *not* an error: it
+is not our key. This is the twin of `roles.ts` — `ROLE` says what the process does,
+`ULTIMATE_ENV` says which deploy it belongs to.
+
+## A secret is redacted by value, not by name
+
+```ts
+const dsn = secret(process.env.DATABASE_URL ?? '', 'DATABASE_URL');
+logger.info('boot', { dsn });        // {"dsn":"[redacted]"}
+connect(revealSecret(dsn));          // the one greppable way out
+```
+
+`redactKeys()` catches a secret travelling under a name someone remembered to list. A `Secret`
+box catches the other case: `String()`, template literals, `+`, `JSON.stringify`, `console.log`,
+the logger and an error's `meta` all render `[redacted]`, whatever key it sits under. It is
+frozen and everything but `label` is non-enumerable, so `{ ...dsn }` cannot spread the value back
+out. There is no vault integration and there will not be one — that is a platform primitive
+(axiom 7); a `Secret` plus the platform's own secret store is the whole design.
 
 ## Time, ids, telemetry, drain
 
@@ -109,11 +154,45 @@ loosening.
 - `withSpan('action.publishPost', fn)` is free until `configureTelemetry({ exporter })`.
   Traces cross process boundaries via `traceparent()` / `parseTraceparent()` — Sentry, Honeycomb
   and OTLP all plug in as a `SpanExporter`.
+- Metrics are the same shape one signal over: `counter()`, `gauge()`, `histogram()`, aggregated
+  in process, free until `configureMetrics({ exporter })`. See below.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
   deadline; `readyzPayload()` flips to 503 the moment draining starts, `healthzPayload()` stays
   200 until stopped.
 - Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
   That is what tells the sealed test network a loopback request is this process, not egress.
+
+## Metrics: same seam as tracing, one signal over
+
+```ts
+const published = counter('posts_published_total', { description: 'posts published' });
+published.add(1, { plan: 'pro' });
+
+gauge('queue_depth', { observe: () => pending() });   // read at scrape time, never stale
+histogram('render_duration_seconds').record(ms / 1000);
+
+metricsText();          // the /metrics body, at METRICS_PATH, METRICS_CONTENT_TYPE
+collectMetrics();       // the same numbers as data, for a MetricExporter
+```
+
+| | |
+|---|---|
+| Kinds | `counter` (monotonic sum), `gauge` (`record` / `add`, or an async `observe`), `histogram` (explicit bounds, OTel's default latency set) |
+| Temporality | cumulative, as OTel defines it — a read never resets a counter, so two scrapers cannot steal each other's samples |
+| Names | lowercase `snake_case`, the intersection every exposition format accepts. Dotted OTel names survive OTLP and die at a Prometheus scrape |
+| Attributes | `string \| number \| boolean` only — each distinct set is a stored series, so a user id here is an outage |
+| Driver seam | `MetricExporter`, defaulting to a no-op. `memoryMetricExporter()` for tests, `startMetricExport(ms)` for a periodic push |
+| Not shipped | an OTLP client. It is bytes on a wire and a dependency; the seam is here, the driver is yours — or scrape `/metrics` with an agent that already speaks it |
+
+`runtime-metrics.ts` holds the series every process emits, and `SCALING_METRICS` maps each
+`ScalingSignal` from `roles.ts` to the one that carries it — so the role table, the chart and the
+process cannot drift apart:
+
+| Role scales on | Series | Instrument |
+|---|---|---|
+| `rps` | `http_requests_total` | counter; `rps` is a **rate** the adapter derives (`rate(http_requests_total[1m])`), never a stored number |
+| `ws-connections` | `connections` | gauge, `+1`/`-1` |
+| `queue-depth` | `queue_depth` | gauge, by `queue` label |
 
 ## One cursor, everywhere
 

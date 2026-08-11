@@ -29,6 +29,7 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 - [Risks](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/15-risks.md): six risks, sized; the sync engine is ~70% of the effort.
 - [App targets](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/16-app-targets.md): web, mobile (React Native + OTA) and desktop (Tauri) from one definition; a screen is a `route`. Design only, not shipped.
 - [Scale ladder](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/17-scale-ladder.md): five rungs from a PaaS dyno to distributed SQL, and the driver seam each one swaps. Design only, not shipped.
+- [Operations](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/ops/README.md): running an Ultimate app for real — the PaaS → Compose → Kubernetes ladder, secrets, observability, datastore sizing, disaster recovery and runbooks. Recommendations only; the framework depends on none of it (axiom 7).
 
 ## Architecture
 

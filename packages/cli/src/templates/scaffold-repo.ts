@@ -1,14 +1,19 @@
 // The config half of what `x new` writes: the one config file, the tooling configs and the
 // workspace packages. Committed defaults only — a fresh clone boots with `x dev` and no env
-// scavenger hunt. The docs, shims and container files live in scaffold-docs.ts.
+// scavenger hunt. The docs and shims live in scaffold-docs.ts, the container files in
+// scaffold-container.ts.
 
 import type { GeneratedFile, NameSet } from './naming';
 import { docsFiles } from './scaffold-docs';
 import { i18nFiles } from './scaffold-i18n';
 import { packageShapeFiles } from './scaffold-package-shape';
 
+// `version` is not decoration: the manifest's app version IS the contract's compatibility gate,
+// and the manifest never fabricates one — so an app scaffolded without it failed `x manifest`,
+// the `manifest` verify step and every production boot with X_APP_PACKAGE_INVALID.
 const rootPackage = (app: NameSet, version: string): string => `{
   "name": "${app.kebab}",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -64,6 +69,8 @@ const rootTsconfig = (app: NameSet): string => `{
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["bun"],
     "paths": {
+      "@${app.kebab}/web/*": ["./apps/web/*"],
+      "@${app.kebab}/admin/*": ["./apps/admin/*"],
       "@${app.kebab}/*": ["./packages/*/src"]
     },
     "strict": true,
@@ -105,10 +112,13 @@ export const config = defineConfig({
 });
 `;
 
+// `biome.json` is strict JSON — Biome's own parser rejects a `//` comment in it, which made every
+// scaffolded app fail its first `x verify` on the config rather than on the code. The note that
+// used to be a comment lives here, where it is read by the person who would have changed the line:
+// x.manifest.json and openapi.json are emitted byte-for-byte by `x manifest`, so a formatter
+// rewriting them puts `x manifest` and `x verify` in a loop neither can win.
 const biome = (): string => `{
   "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
-  // x.manifest.json and openapi.json are emitted byte-for-byte by \`x manifest\`; a formatter
-  // rewriting them puts \`x manifest\` and \`x verify\` in a loop neither can win.
   "files": { "includes": ["**", "!x.manifest.json", "!openapi.json"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {

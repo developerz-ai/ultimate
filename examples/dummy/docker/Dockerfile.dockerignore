@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+**/.x
+**/dist
+**/*.tsbuildinfo
+.git
+.env
+.env.*.local
+coverage
+**/test-results
+**/playwright-report
