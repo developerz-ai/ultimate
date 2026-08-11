@@ -16,15 +16,15 @@
 #
 # syntax=docker/dockerfile:1
 
-# ---------- deps: the whole workspace graph, cached on manifests alone ----------
+# ---------- deps ----------
+# The whole tree, not a subset. `bun.lock` describes EVERY workspace member, so a partial copy
+# makes `--frozen-lockfile` refuse: bun sees members it cannot resolve and wants to rewrite the
+# lockfile it was told not to touch. Copying only what this app imports looked tidier and failed
+# with "lockfile had changes, but lockfile is frozen" — the lockfile is a property of the repo,
+# not of one app inside it. `.dockerignore` is what keeps this cheap.
 FROM oven/bun:1.3-alpine AS deps
 WORKDIR /repo
-# Manifests first: the layer only busts when a dependency actually changes, not on every source edit.
-COPY package.json bun.lock ./
-COPY packages ./packages
-COPY dummy/social-media-clone/package.json ./dummy/social-media-clone/
-COPY dummy/social-media-clone/apps ./dummy/social-media-clone/apps
-COPY dummy/social-media-clone/packages ./dummy/social-media-clone/packages
+COPY . .
 RUN bun install --frozen-lockfile
 
 # ---------- runtime ----------
@@ -33,11 +33,7 @@ RUN bun install --frozen-lockfile
 FROM oven/bun:1.3-alpine AS runtime
 WORKDIR /repo
 
-COPY --from=deps /repo/node_modules ./node_modules
-COPY --from=deps /repo/dummy/social-media-clone/node_modules ./dummy/social-media-clone/node_modules
-COPY packages ./packages
-COPY dummy/social-media-clone ./dummy/social-media-clone
-COPY package.json bun.lock ./
+COPY --from=deps /repo /repo
 
 WORKDIR /repo/dummy/social-media-clone
 

@@ -1,0 +1,32 @@
+# BuildKit prefers `<dockerfile>.dockerignore` over a root `.dockerignore`.
+#
+# The Dockerfile copies the WHOLE repo, because `bun.lock` describes every workspace member and a
+# partial copy makes `--frozen-lockfile` refuse. This file keeps that cheap — but it may only
+# exclude things that are NOT workspace members. Excluding `examples/*/apps` removed those
+# members' `package.json` files, which is the same refusal by another route: bun resolves the
+# workspace from the manifests on disk, so a missing manifest is a lockfile that "changed".
+#
+# The rule: ignore artifacts and secrets, never a manifest.
+
+node_modules
+**/node_modules
+
+# Artifacts. `.x/` holds the embedded Postgres data directory — hundreds of files, none of them
+# meaningful in a container that talks to a real server.
+**/.x
+**/dist
+**/build
+**/*.tsbuildinfo
+**/test-results
+**/playwright-report
+**/coverage
+
+.git
+.github
+
+# Never bake an environment into an image: one artifact deploys everywhere and the values arrive
+# from the platform.
+.env
+.env.*
+**/.env
+**/.env.*
