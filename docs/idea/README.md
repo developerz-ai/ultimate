@@ -20,6 +20,8 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`13-dx.md`](./13-dx.md) | First 60 seconds: no Docker, no env scavenger hunt, sub-second HMR that keeps state. |
 | [`14-roadmap.md`](./14-roadmap.md) | 12 milestones, each ending in a working demo app + green `x verify`. Ship 0–5 before realtime. |
 | [`15-risks.md`](./15-risks.md) | Six risks, honestly sized. The sync engine is ~70% of the effort. |
+| [`16-app-targets.md`](./16-app-targets.md) | Web, mobile, desktop from one definition. A screen is a `route`, not a ninth primitive. **Design only.** |
+| [`17-scale-ladder.md`](./17-scale-ladder.md) | PaaS to distributed in five rungs, where climbing is config and drivers — never a rewrite. **Design only.** |
 
 ## Reading paths
 
@@ -51,7 +53,9 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md).
 
 ## Status
 
-`As of 2026-07`: design phase. Nothing in these documents is shipped. Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
+`As of 2026-08`: **1.0.0, shipped.** All 28 packages publish to npm in lockstep, each behind an OIDC trusted publisher. Docs `00`–`15` describe what exists; `16` and `17` are design only and say so in every claim.
+
+Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
 
 ## Conventions in these docs
 

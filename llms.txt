@@ -27,6 +27,8 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 - [DX](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/13-dx.md): the first 60 seconds, no Docker, HMR that keeps state.
 - [Roadmap](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/14-roadmap.md): twelve strictly ordered milestones, each ending in a demo app and a green verify. 0–10 shipped; 11 is open on its two-platform deploy proof. The status markers are enforced by `x verify`'s `roadmap` step.
 - [Risks](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/15-risks.md): six risks, sized; the sync engine is ~70% of the effort.
+- [App targets](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/16-app-targets.md): web, mobile (React Native + OTA) and desktop (Tauri) from one definition; a screen is a `route`. Design only, not shipped.
+- [Scale ladder](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/17-scale-ladder.md): five rungs from a PaaS dyno to distributed SQL, and the driver seam each one swaps. Design only, not shipped.
 
 ## Architecture
 
