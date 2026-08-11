@@ -79,3 +79,31 @@ export type PinEntityIsAnEntityCore = Assert<
 export type PinEntityMapIsAnEntitySet = Assert<
   [{ readonly post: Entity<PinRow, PinColumns> }] extends [EntitySet] ? true : false
 >;
+
+// --- Insertable: a nullable column is omissible ------------------------------
+// `nullable()` widens the type to `T | null` without setting `$optional`, so before this pin every
+// insert had to spell out `avatarKey: null, deletedAt: null` — restating an absence the column
+// declaration already carries, for values SQL was going to write as NULL either way. The demo's
+// seed could not compile without that padding, which is precisely the boilerplate this framework
+// exists to delete.
+
+declare const nullableColumn: import('./types').Column<string | null, false>;
+declare const requiredColumn: import('./types').Column<string, false>;
+
+type InsertPinColumns = {
+  readonly required: typeof requiredColumn;
+  readonly optionalByNull: typeof nullableColumn;
+};
+
+type InsertPin = import('./types').Insertable<InsertPinColumns>;
+
+/** The nullable column may be omitted entirely… */
+type _NullableIsOmissible = Assert<{ required: 'x' } extends InsertPin ? true : false>;
+
+/** …and passing `null` explicitly stays legal, so a programmatic caller need not strip keys. */
+type _NullableStillAccepted = Assert<
+  { required: 'x'; optionalByNull: null } extends InsertPin ? true : false
+>;
+
+/** A non-nullable column with no default is still required — the pin must not over-relax. */
+type _RequiredStaysRequired = Assert<{ optionalByNull: null } extends InsertPin ? false : true>;

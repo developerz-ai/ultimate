@@ -29,13 +29,13 @@ export interface Actor {
   readonly id: UserId;
   readonly role: UserRole;
   /** Accepted friendships only. Pending ones grant nothing. */
-  readonly friendIds: ReadonlySet<UserId>;
+  readonly friendIds: ReadonlySet<string>;
   /**
    * Symmetric by construction: it holds everyone this actor blocked AND everyone who blocked
    * them, unioned at load time. A block is stored directionally but applied both ways, and
    * flattening it here is what stops every call site from having to remember that.
    */
-  readonly blockedIds: ReadonlySet<UserId>;
+  readonly blockedIds: ReadonlySet<string>;
 }
 
 /** Nobody is signed in. A real value, not `null` scattered through every predicate. */
@@ -43,10 +43,10 @@ export const anonymous = null;
 
 export const isSignedIn = (actor: Actor | null): actor is Actor => actor !== null;
 
-export const isSelf = (actor: Actor | null, userId: UserId): boolean =>
+export const isSelf = (actor: Actor | null, userId: string): boolean =>
   isSignedIn(actor) && actor.id === userId;
 
-export const isFriend = (actor: Actor | null, userId: UserId): boolean =>
+export const isFriend = (actor: Actor | null, userId: string): boolean =>
   isSignedIn(actor) && actor.friendIds.has(userId);
 
 /**
@@ -54,7 +54,7 @@ export const isFriend = (actor: Actor | null, userId: UserId): boolean =>
  * reach the audience ladder at all, or a `public` post would still be visible to someone who
  * blocked its author.
  */
-export const isBlocked = (actor: Actor | null, userId: UserId): boolean =>
+export const isBlocked = (actor: Actor | null, userId: string): boolean =>
   isSignedIn(actor) && actor.blockedIds.has(userId);
 
 export const isAdmin = (actor: Actor | null): boolean =>

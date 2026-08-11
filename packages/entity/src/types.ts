@@ -107,14 +107,28 @@ type DefaultedKeys<C extends ColumnMap> = {
   [K in keyof C]-?: C[K]['$optional'] extends true ? K : never;
 }[keyof C];
 
+/**
+ * A `.nullable()` column is omissible too, and that is not a convenience — it is the difference
+ * between declaring a fact and restating an absence. `nullable()` widens the type to `T | null`
+ * without setting `$optional`, so every insert had to spell out `avatarKey: null, deletedAt: null`
+ * for columns whose whole meaning is "there may be nothing here", and SQL was going to write NULL
+ * either way. That is boilerplate the declaration already contains.
+ *
+ * Omitting it and passing `null` stay equivalent, deliberately: a caller building a row
+ * programmatically should not have to strip keys to avoid a type error.
+ */
+type NullableKeys<C extends ColumnMap> = {
+  [K in keyof C]-?: null extends TypeOf<C[K]> ? K : never;
+}[keyof C];
+
 /** Money is the one column whose write shape is wider than its row shape. */
 type InputOf<T> = T extends MoneyValue ? MoneyInput : T;
 
-/** What an insert must supply: every column except the ones carrying a default. */
+/** What an insert must supply: every column that is neither defaulted nor nullable. */
 export type Insertable<C extends ColumnMap> = {
-  readonly [K in Exclude<keyof C, DefaultedKeys<C>>]: InputOf<TypeOf<C[K]>>;
+  readonly [K in Exclude<keyof C, DefaultedKeys<C> | NullableKeys<C>>]: InputOf<TypeOf<C[K]>>;
 } & {
-  readonly [K in DefaultedKeys<C>]?: InputOf<TypeOf<C[K]>>;
+  readonly [K in DefaultedKeys<C> | NullableKeys<C>]?: InputOf<TypeOf<C[K]>>;
 };
 
 export interface IndexDef {

@@ -7,7 +7,7 @@
 // round trip per row per connected client. A rule therefore decides on two things only — the actor
 // (which carries the resolved friend and block sets) and facts the caller already had.
 
-import { type Audience, isVisibleAudience, type UserId } from '@social-media-clone/domain';
+import { type Audience, isVisibleAudience } from '@social-media-clone/domain';
 import { can, definePermissions } from '@ultimat3/policy';
 import { currentViewer, isAdmin, isBlocked, isFriend, isSelf } from '../../shared/actor';
 
@@ -38,7 +38,7 @@ export const postPermissions = definePermissions([
 
 /** The row facts every post rule decides about. Loaded by the surface, never fetched in a rule. */
 export interface PostRow {
-  readonly authorId: UserId;
+  readonly authorId: string;
   readonly audience: Audience;
   readonly deletedAt: Date | null;
 }
