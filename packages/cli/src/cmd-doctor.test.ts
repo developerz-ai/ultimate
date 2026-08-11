@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { DoctorProbe } from './cmd-doctor';
-import { ICON_SOURCE, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
+import { OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
+import { ICON_SOURCE } from './dev-assets';
 
 const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: '1.3.14',

@@ -26,6 +26,13 @@ describe('error -> status', () => {
     expect(statusFor('X_NOT_IMPLEMENTED')).toBe(501);
   });
 
+  // The image routes are the framework's only caller-supplied query string, so both of these are
+  // the caller's mistake to fix — a 500 would send an agent hunting a server fault it cannot see.
+  test('a bad image transform request blames the caller, not the server', () => {
+    expect(statusFor('X_IMAGE_QUERY_INVALID')).toBe(400);
+    expect(statusFor('X_IMAGE_UNSUPPORTED')).toBe(415);
+  });
+
   test('an unmapped code is a loud 500, never a quiet 200', () => {
     expect(statusFor('X_SOMETHING_NEW')).toBe(500);
   });

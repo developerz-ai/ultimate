@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "eb137ad0893091cac0c94a348bbfb44d4ef027e362a5d36855fd8a37fc1c36d0",
+  "buildId": "6159eace958173766a4fe69b9263ce6c38eda2c32f57897cfee9fb1edf83e169",
   "tiers": {
     "0": [
       "core",
@@ -662,6 +662,11 @@
       "code": "X_IMAGE_DECODE_FAILED",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_IMAGE_QUERY_INVALID",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
     },
     {
       "code": "X_IMAGE_TOO_LARGE",

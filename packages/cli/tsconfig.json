@@ -51,6 +51,9 @@
       "path": "../policy"
     },
     {
+      "path": "../pwa"
+    },
+    {
       "path": "../query"
     },
     {
@@ -58,6 +61,9 @@
     },
     {
       "path": "../render"
+    },
+    {
+      "path": "../seo"
     },
     {
       "path": "../storage"

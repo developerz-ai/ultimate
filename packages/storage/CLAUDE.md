@@ -24,6 +24,7 @@ Tier 2. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
+| | `variantKey` is the cache identity `@ultimat3/cli`'s `/media/*` route looks a variant up by — derived, never stored, so a request that misses transforms once and every later one is a disk read |
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 
 ```bash

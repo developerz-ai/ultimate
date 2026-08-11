@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { renderPicture, responsiveImage, usableWidths } from './images';
+import {
+  IMAGE_QUERY_KEYS,
+  parseImageQuery,
+  renderPicture,
+  responsiveImage,
+  usableWidths,
+} from './images';
 
 const INPUT = { src: '/img/hero.jpg', width: 1200, height: 630, alt: 'Ultimate dashboard' };
 
@@ -42,5 +48,69 @@ describe('responsiveImage', () => {
     expect(html).toContain('width="1200"');
     expect(html).toContain('height="630"');
     expect(html).toContain('alt="Ultimate dashboard"');
+  });
+});
+
+/** `toBeUltimateError` reads a value, and every rejection here throws synchronously. */
+function caught(fn: () => unknown): unknown {
+  try {
+    fn();
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+}
+
+describe('parseImageQuery', () => {
+  test('round-trips the exact width and format a minted srcset URL carries', () => {
+    const image = responsiveImage(INPUT);
+    const firstEntry = image.sources[0]?.srcset.split(', ')[0]?.split(' ')[0] ?? '';
+    const url = new URL(firstEntry, 'https://x.test');
+    expect(parseImageQuery(url.searchParams)).toEqual({ width: 320, format: 'avif' });
+  });
+
+  test('a URL with none of the three keys is a plain asset read, not a transform', () => {
+    expect(parseImageQuery(new URL('https://x.test/img/hero.jpg').searchParams)).toBeNull();
+  });
+
+  test('accepts width, format and quality together', () => {
+    const params = new URLSearchParams({
+      [IMAGE_QUERY_KEYS.width]: '640',
+      [IMAGE_QUERY_KEYS.format]: 'webp',
+      [IMAGE_QUERY_KEYS.quality]: '75',
+    });
+    expect(parseImageQuery(params)).toEqual({ width: 640, format: 'webp', quality: 75 });
+  });
+
+  test('an empty, non-numeric, zero, negative or fractional width throws', () => {
+    for (const bad of ['', 'abc', '0', '-5', '12.5']) {
+      const error = caught(() => parseImageQuery(new URLSearchParams({ w: bad })));
+      expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
+    }
+  });
+
+  test('a quality above 100, or otherwise unusable, throws the same code', () => {
+    for (const bad of ['101', '1000', 'abc', '0', '-5']) {
+      const error = caught(() => parseImageQuery(new URLSearchParams({ q: bad })));
+      expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
+    }
+  });
+
+  test('a present but empty format throws', () => {
+    const error = caught(() => parseImageQuery(new URLSearchParams({ f: '' })));
+    expect(error).toBeUltimateError('X_IMAGE_QUERY_INVALID');
+  });
+
+  test('the fix line names a usable value, not just the code', () => {
+    const error = caught(() => parseImageQuery(new URLSearchParams({ w: '0' }))) as {
+      fix?: string;
+      cause?: string;
+    };
+    expect(error.cause).toContain('w=0');
+    expect(error.fix).toContain(`${IMAGE_QUERY_KEYS.width}=640`);
+  });
+
+  test('a format naming no real format is not rejected here — the driver owns that refusal', () => {
+    expect(parseImageQuery(new URLSearchParams({ f: 'potato' }))).toEqual({ format: 'potato' });
   });
 });

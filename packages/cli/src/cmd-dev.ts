@@ -16,6 +16,7 @@ import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
+import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels } from './dev-dashboard';
 import { appRoutes } from './dev-render';
@@ -138,6 +139,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const routes: readonly Route[] = [
     ...devDashboardRoutes(dashboard),
     ...listActions().map(toRoute),
+    // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
+    // variants every `srcset` promises. Mounted before the app's own routes so a page route can
+    // never shadow `/icons` or `/media`.
+    ...assetRoutes({ root: options.root, storage: runtime.storage }),
     ...appRoutes({ buildId }),
   ];
 

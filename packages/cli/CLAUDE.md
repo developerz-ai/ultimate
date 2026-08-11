@@ -92,6 +92,7 @@ that trace is the live panel's question, so the panel degrades to its own note i
 | `dev-queue.ts` | the db + queue pair alone, and the one place that takes `db()` and `jobDriver()` back |
 | `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
+| `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
@@ -108,6 +109,27 @@ that trace is the live panel's question, so the panel degrades to its own note i
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.
+
+### `dev-assets.ts` is where the image pipeline meets HTTP
+
+Three packages declare what an image is and none of them serves one: `@ultimat3/seo` says what a
+variant URL means (`parseImageQuery`) and produces the bytes (`builtinImageDriver`),
+`@ultimat3/storage` says what a variant is called and where it is cached (`variantKey`), and
+`@ultimat3/pwa` says which icons a web manifest promises (`planIcons`, `BuiltinImagePipeline`).
+Pixels are `@ultimat3/core`'s pipeline, only ever. This file picks two base paths — `ICON_BASE_PATH`
+and `MEDIA_BASE_PATH` — and decides nothing else; a resize, a format table or a second cache key
+here is the drift the split exists to prevent.
+
+`ICON_SOURCE` lives here, not in `cmd-doctor.ts`, because this is the module that reads it: the
+diagnostic checks what `x dev` serves, so one constant cannot pass the check and serve nothing.
+It is a **PNG** — core decodes PNG and JPEG only, and the SVG this used to name could never
+become an icon.
+
+The routes mount whether or not the source icon exists, and a missing one is refused with
+`X_PWA_ICON_MISSING` and its fix — a route that silently disappears is a 404 whose meaning an agent
+has to guess. Deliberately **not** also a boot finding: `x doctor` already reports this condition,
+with this code, and two reporters of one condition is the duplication this package's own rule
+forbids. `x dev` owns the runtime half; the diagnostic owns the other.
 
 ### `hold.ts` is why a long-running command outlives its own result
 

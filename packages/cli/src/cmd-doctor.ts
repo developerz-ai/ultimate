@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { usesDevCursorSecret } from '@ultimat3/core';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
+import { ICON_SOURCE } from './dev-assets';
 import { checkDrift } from './drift';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -39,7 +40,6 @@ const finding = (code: string, cause: string, fix: string, at?: string): Finding
     ? { code, cause, fix, docs: docs(code) }
     : { code, cause, fix, docs: docs(code), at };
 
-export const ICON_SOURCE = 'apps/web/site/icon.svg';
 export const OFFLINE_FALLBACK = 'apps/web/app/offline.tsx';
 
 /**
@@ -106,7 +106,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       finding(
         'X_PWA_ICON_MISSING',
         `${ICON_SOURCE} is missing, so install icons and og images cannot be generated`,
-        `add a 1024px square ${ICON_SOURCE}, then run x manifest`,
+        `create a 1024x1024 square PNG at ${ICON_SOURCE}, or run x new to scaffold one`,
         ICON_SOURCE,
       ),
     );

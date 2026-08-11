@@ -221,9 +221,14 @@ export function containedPath(root: string, path: string): string {
  * new keys are added — so a second, third… generator run keeps growing the same file instead of
  * fighting over it. A file that exists but does not parse as a JSON object cannot be merged into
  * without risking silent data loss, so that alone is reported rather than clobbered or thrown past.
+ *
+ * Typed to the `merge: 'json'` variant alone, not the general `GeneratedFile` union: a
+ * byte-carrying file has no `contents: string` to merge, and this is what stops one from ever
+ * reaching `parseJsonObject` even if a future caller forgets the `file.merge === 'json'` guard
+ * its one call site already applies.
  */
 async function mergeJsonFile(
-  file: GeneratedFile,
+  file: Extract<GeneratedFile, { merge: 'json' }>,
   absolute: string,
 ): Promise<{ written: boolean; conflict?: Finding }> {
   const generated = parseJsonObject(file.contents) ?? {};

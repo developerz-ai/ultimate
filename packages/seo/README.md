@@ -32,7 +32,7 @@ X_SEO_META_MISSING: a site/ route is missing required metadata
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k |
 | `robots.ts` | `buildRobots()`, environment-aware and fail-closed |
 | `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list |
-| `images.ts` | `srcset` widths, AVIF → WebP → original, inlined intrinsic dimensions |
+| `images.ts` | `srcset` widths, AVIF → WebP → original, inlined intrinsic dimensions, and `parseImageQuery()` — reads a minted URL back into a transform request |
 | `image-driver.ts` | `ImageTransformDriver` + `builtinImageDriver()`: the variant bytes and the blur placeholder |
 | `budgets.ts` | `checkBudgets()` / `assertBudgets()`, the CI gate |
 
@@ -90,6 +90,28 @@ await images.blurPlaceholder('/img/hero.png');
   above the intrinsic one clamps to the source and reports the source's size, so the box the
   browser reserves is the box the bytes fill.
 - `blurPlaceholder()` returns a 16px-wide PNG `data:` URI, ready for `ImageInput.blurDataUrl`.
+
+### Reading the URL back
+
+`images.ts` mints `?w=&f=` query strings; `parseImageQuery()` is the only place that reads one
+back, so a server route never hand-rolls its own parsing of what `responsiveImage()` wrote.
+
+```ts
+const query = parseImageQuery(new URL(req.url).searchParams);
+// null: none of w/f/q was present — a plain asset read, not a transform.
+if (query !== null) {
+  await images.transform({ src, width: query.width ?? intrinsicWidth, format: query.format });
+}
+```
+
+- **`null`** means no transform was asked for. A present-but-unusable `w` or `q` — empty, `0`,
+  negative, fractional, or `q` over 100 — throws `X_IMAGE_QUERY_INVALID` instead: serving the
+  untransformed original against a `?w=320` URL is the layout shift this contract exists to
+  prevent.
+- **`f` is not checked against real format names here.** `?f=potato` parses fine; `transform()`
+  is what refuses an unencodable format, with `X_IMAGE_UNSUPPORTED`.
+- **`IMAGE_QUERY_KEYS`** (`{ width: 'w', format: 'f', quality: 'q' }`) is the one spelling of the
+  three keys — `defaultUrlFor` and `parseImageQuery` both read it, so the two can never drift.
 
 ## Usage
 

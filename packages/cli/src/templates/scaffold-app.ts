@@ -3,6 +3,7 @@
 // a restructure. Every file here is real, typed and covered — no placeholder that fails to boot.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { icon } from './scaffold-icon';
 
 const webPackage = (app: NameSet): string => `{
   "name": "@${app.kebab}/web",
@@ -292,21 +293,11 @@ restructure.
 | Start | \`x new ${app.kebab}-${surface}\` inside this directory, or wire it by hand |
 `;
 
-const icon =
-  (): string => `<!-- The one source icon. x manifest derives every install icon, favicon and og image from
-     this file; currentColor keeps it correct in both themes. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img"
-     aria-label="app icon" fill="none" stroke="currentColor" stroke-width="6"
-     stroke-linecap="round">
-  <path d="M16 16 L32 44 L48 16" />
-</svg>
-`;
-
 export function appFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: 'apps/web/package.json', contents: webPackage(app) },
     { path: 'apps/web/tsconfig.json', contents: tsconfig() },
-    { path: 'apps/web/site/icon.svg', contents: icon() },
+    { path: 'apps/web/site/icon.png', contents: icon() },
     { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
     { path: 'apps/web/site/page.module.scss', contents: siteStyle() },
     { path: 'apps/web/site/page.test.ts', contents: sitePageTest() },

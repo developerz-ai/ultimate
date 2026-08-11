@@ -231,6 +231,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_LD_INVALID` | JSON-LD node is missing a required schema.org field | an `ld.*` helper called with a partial object | supply the field named in `cause` |
 | `X_SEO_BUDGET_EXCEEDED` | route exceeded its performance budget | a `js`/`css`/`lcp`/`cls`/`inp` budget broken in the SEO report | `x routes --json` for the route's budget, then cut the regression `cause` names |
 | `X_SITEMAP_TOO_LARGE` | sitemap exceeds the 50,000-entry limit | too many prerendered URLs in one file | enable sitemap index splitting in `app.config.ts` |
+| `X_IMAGE_QUERY_INVALID` | a minted image URL's `?w=`/`?q=` value is present but unusable | `?w=0`, `?w=-5`, `?q=150` on a URL `responsiveImage()` minted | request a positive integer, e.g. `?w=640` (quality is `1`-`100`, e.g. `?q=75`) |
 
 ## PWA and build skew
 
