@@ -17,6 +17,10 @@ export const UI_KEYS = {
   sortAscending: 'ui.sort.ascending',
   sortDescending: 'ui.sort.descending',
   breadcrumb: 'ui.breadcrumb',
+  /** AppShell's skip link — the first Tab stop on every page. */
+  skip: 'ui.skip',
+  /** AppShell's sidebar landmark name. */
+  navigation: 'ui.navigation',
   menu: 'ui.menu',
   more: 'ui.more',
   required: 'ui.required',

@@ -21,8 +21,12 @@ export {
 export type { AlertProps } from './components/Alert';
 // --- components --------------------------------------------------------------
 export { Alert } from './components/Alert';
+export type { AppShellProps } from './components/AppShell';
+export { AppShell } from './components/AppShell';
 export type { AvatarProps } from './components/Avatar';
 export { Avatar, initialsOf } from './components/Avatar';
+export type { ShellIds, ShellLandmark, ShellSlots } from './components/app-shell-view';
+export { shellIds, shellLandmarks } from './components/app-shell-view';
 export type { BadgeProps } from './components/Badge';
 export { Badge } from './components/Badge';
 export type { BreadcrumbItem, BreadcrumbProps } from './components/Breadcrumb';
@@ -63,6 +67,8 @@ export type { FormProps } from './components/Form';
 export { Form } from './components/Form';
 export type { GridProps } from './components/Grid';
 export { Grid } from './components/Grid';
+export type { HeadingLevel, HeadingTag } from './components/heading-level';
+export { HEADING_LEVELS, headingTag, nextHeadingLevel } from './components/heading-level';
 export type { IconButtonProps } from './components/IconButton';
 export { IconButton } from './components/IconButton';
 export type { ImageProps } from './components/Image';
@@ -82,6 +88,8 @@ export { Money } from './components/Money';
 export type { MoneyFormatter, MoneyInput, MoneyViewOptions } from './components/money-view';
 // --- formatting cores (pure, renderer-free) ----------------------------------
 export { moneyText, toMoney } from './components/money-view';
+export type { PageHeaderProps } from './components/PageHeader';
+export { PageHeader } from './components/PageHeader';
 export type { PaginationProps } from './components/Pagination';
 export { Pagination } from './components/Pagination';
 export type { Placement, PopoverProps } from './components/Popover';
@@ -92,6 +100,8 @@ export type { RelativeTimeProps } from './components/RelativeTime';
 export { RelativeTime } from './components/RelativeTime';
 export type { RelativeTimeOptions } from './components/relative-time-view';
 export { relativeTimeText } from './components/relative-time-view';
+export type { SectionProps } from './components/Section';
+export { Section } from './components/Section';
 export type { SelectOption, SelectProps } from './components/Select';
 export { Select } from './components/Select';
 export type { SkeletonProps } from './components/Skeleton';
@@ -116,6 +126,8 @@ export type { ThemeChoice, ThemeToggleProps } from './components/ThemeToggle';
 export { ThemeToggle } from './components/ThemeToggle';
 export type { ToastProps, ToastRegionProps } from './components/Toast';
 export { Toast, ToastRegion } from './components/Toast';
+export type { ToolbarProps } from './components/Toolbar';
+export { Toolbar } from './components/Toolbar';
 export type { TooltipProps } from './components/Tooltip';
 export { Tooltip } from './components/Tooltip';
 export type { Align, ButtonVariant, Size, SpaceStep, Tone } from './components/variants';
@@ -126,6 +138,7 @@ export type { ClassValue } from './cx';
 export { cx } from './cx';
 export type { UiErrorCode } from './errors';
 export {
+  invalidBrandTokenError,
   invalidThemeError,
   invalidValueError,
   runtimeMissingError,
@@ -135,6 +148,8 @@ export {
 } from './errors';
 export type { UiKey } from './i18n-keys';
 export { UI_KEYS } from './i18n-keys';
+export type { Brand, BrandInput, FontSlot } from './theme/brand';
+export { brandStyleTag, defineTheme, FONT_SLOTS } from './theme/brand';
 export type { Direction, UiContextValue } from './theme/context';
 export {
   defaultUiContext,
@@ -177,7 +192,18 @@ export {
   toggleTheme,
   watchOsTheme,
 } from './theme/theme';
-export type { ColorRole, Theme } from './tokens/tokens';
+export type { Channels } from './tokens/contrast';
+export {
+  AA_LARGE,
+  AA_TEXT,
+  CHANNELS_PATTERN,
+  contrastRatio,
+  meetsContrast,
+  parseChannels,
+  relativeLuminance,
+  roleContrast,
+} from './tokens/contrast';
+export type { ColorRole, RadiusName, Theme } from './tokens/tokens';
 // --- tokens ------------------------------------------------------------------
 export {
   assertColorRole,

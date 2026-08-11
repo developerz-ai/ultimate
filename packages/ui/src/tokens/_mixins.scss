@@ -151,6 +151,90 @@
   }
 }
 
+/// The inert state, spelled once. Both selectors, because a `<button disabled>` and a
+/// `[aria-disabled='true']` div are the same state to a reader and must look the same.
+@mixin disabled($opacity: 0.55) {
+  &:disabled,
+  &[aria-disabled='true'] {
+    opacity: $opacity;
+    cursor: not-allowed;
+  }
+}
+
+/// The `::backdrop` behind a `<dialog>`. Blur is opt-in — it costs a compositor layer.
+@mixin scrim-backdrop($alpha: 0.45, $blur: 0) {
+  &::backdrop {
+    background: colors.role('scrim', $alpha);
+
+    @if $blur != 0 {
+      backdrop-filter: blur($blur);
+    }
+  }
+}
+
+/// Inline run of items on one baseline — a toolbar, a header, an icon beside a label.
+@mixin row($gap: var(--space-3), $align: center, $justify: flex-start) {
+  display: flex;
+  flex-direction: row;
+  align-items: $align;
+  justify-content: $justify;
+  gap: $gap;
+}
+
+/// Vertical run. Paired with `row` so no component writes `flex-direction` by hand.
+@mixin column($gap: var(--space-3), $align: stretch) {
+  display: flex;
+  flex-direction: column;
+  align-items: $align;
+  gap: $gap;
+}
+
+// --- tones -------------------------------------------------------------------
+// One tone class set, generated. Button and IconButton each carried a hand-written copy of the
+// same six blocks; a seventh tone meant editing both, and they had already drifted.
+
+/// The four custom properties every toned component reads.
+@mixin tone-vars($base, $strong, $on, $soft) {
+  --tone: #{$base};
+  --tone-strong: #{$strong};
+  --tone-fg: #{$on};
+  --tone-soft: #{$soft};
+}
+
+/// Emits `.tone-<name>` for every rung of `colors.$tones`. Include once, at the top level of a
+/// component module, then read `var(--tone)` / `var(--tone-strong)` / `--tone-fg` / `--tone-soft`.
+@mixin tone-classes {
+  .tone-neutral {
+    @include tone-vars(
+      colors.role('fg-strong'),
+      colors.role('fg'),
+      colors.role('bg'),
+      colors.role('bg-soft')
+    );
+  }
+
+  .tone-accent {
+    // The one tone with no `-soft` token: accent tints composite off the same channels.
+    @include tone-vars(
+      colors.role('accent'),
+      colors.role('accent-strong'),
+      colors.role('accent-fg'),
+      colors.role('accent', 0.12)
+    );
+  }
+
+  @each $tone in (success, warning, danger, info) {
+    .tone-#{$tone} {
+      @include tone-vars(
+        colors.role($tone),
+        colors.role($tone),
+        colors.role('#{$tone}-fg'),
+        colors.role('#{$tone}-soft')
+      );
+    }
+  }
+}
+
 /// Shared shape for every text-ish form control so Input/Textarea/Select match.
 @mixin control {
   @include focus-ring;

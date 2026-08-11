@@ -41,6 +41,19 @@ describe('unit · template-db', () => {
     expect(workerId({}, 4097)).toBe(1);
   });
 
+  test('a runner-assigned shard beats the index Bun assigns its own --parallel worker', () => {
+    // Measured on Bun 1.3.14: `bun test --parallel` sets BOTH of these, identically and 1-based.
+    // The `x test` shard index has to win, or two shards share one cloned database.
+    expect(
+      workerId({ ULTIMATE_TEST_WORKER: '0', BUN_TEST_WORKER_ID: '2', JEST_WORKER_ID: '2' }),
+    ).toBe(0);
+    // And with no shard assigned, Bun's own workers stay distinct from each other.
+    const parallel = [1, 2, 3].map((id) =>
+      databaseNameFor(DEFAULT_TEMPLATE, workerId({ BUN_TEST_WORKER_ID: String(id) })),
+    );
+    expect(new Set(parallel).size).toBe(3);
+  });
+
   test('two workers acquire distinct databases from the same template', async () => {
     const first = recorder();
     const second = recorder();

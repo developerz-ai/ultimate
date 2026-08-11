@@ -48,8 +48,21 @@ export {
   TESTING_ERROR_TITLES,
   TestDatabaseUnavailableError,
 } from './errors';
-export type { EntityLike, EntityRegistry, Factory, FactoryOptions } from './factories';
-export { defineFactory, factoriesFor } from './factories';
+export type {
+  Association,
+  AssociationMap,
+  EntityLike,
+  Factory,
+  FactoryIds,
+  FactoryOptions,
+  Trait,
+  TraitMap,
+} from './factories';
+export { associate, defineFactory, seedFor } from './factories';
+export type { Persister } from './factory-persist';
+export { clearPersister, persisterInstalled, usePersister } from './factory-persist';
+export type { EntityRegistry, FactoryRegistry } from './factory-registry';
+export { factoriesFor } from './factory-registry';
 export type { TestClock, TestDuration } from './fixture-clock';
 export { createTestClock } from './fixture-clock';
 export type {
@@ -96,6 +109,8 @@ export {
   sealNetwork,
   unsealNetwork,
 } from './sealed-network';
+export type { SharedExamples } from './shared-examples';
+export { behavesLike, sharedExamples } from './shared-examples';
 export type { SqlRunner, TemplateDbConfig, WorkerDatabase } from './template-db';
 export {
   acquireWorkerDatabase,

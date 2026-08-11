@@ -1,0 +1,26 @@
+@use '../tokens' as t;
+
+.toolbar {
+  @include t.row(t.space(3), center, space-between);
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.surface {
+  @include t.surface('surface', 'xs');
+  padding-block: t.space(3);
+  padding-inline: t.space(4);
+}
+
+.start {
+  @include t.row(t.space(2), center);
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+
+.end {
+  @include t.row(t.space(2), center, flex-end);
+  flex: none;
+  flex-wrap: wrap;
+}

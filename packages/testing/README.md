@@ -11,7 +11,10 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `template-db.ts` | N workers, N databases, one migrated template, `CREATE DATABASE ... TEMPLATE` |
 | `determinism.ts` | frozen clock, seeded RNG, seeded uuids, `assertDeterministic` |
 | `sealed-network.ts` | any unmocked egress fails, with the URL and the mock line |
-| `factories.ts` | typed factories from the entity registry, seeded |
+| `factories.ts` | `defineFactory` — seeded rows, traits, associations, `build` vs `create` |
+| `factory-registry.ts` | `factoriesFor(registry)` — one factory per entity, defaults read off column names |
+| `factory-persist.ts` | `usePersister` — the one seam `create()` writes through |
+| `shared-examples.ts` | `sharedExamples` / `behavesLike` — one rule, many subjects |
 | `test-types.ts` | the six test types and their helpers |
 | `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` |
 | `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
@@ -100,17 +103,75 @@ Each helper prefixes the test name with its type (`job · onboards an org`), whi
 `bun test --test-name-pattern "job · "` selects — the six lines of `x verify` come from the tests
 themselves, not from a directory convention.
 
+## Factories
+
+```ts
+const orgs = defineFactory(orgEntity, {
+  defaults: (n, ids): Org => ({ id: ids.uuid(), name: `org-${n}` }),
+});
+
+const posts = defineFactory(postEntity, {
+  defaults: (n, ids): Post => ({ id: ids.uuid(), title: `post-${n}`, orgId: '', published: false }),
+  traits: { published: { published: true }, popular: (n) => ({ views: n * 100 }) },
+  associations: { orgId: associate(orgs, (org) => org.id) },
+});
+
+posts.with('published').build();          // in memory, org built alongside it, no database
+await posts.with('published').create();   // org written first, then the post
+```
+
+| | |
+|---|---|
+| **trait** | a named partial. `with('a', 'b')` composes left to right; an explicit override still wins |
+| **association** | a column whose value comes from another factory, built with the **same strategy** — `build` leaves the parent in memory, `create` writes it |
+| **overrides suppress associations** | a column the caller (or a trait) supplied never creates a parent row nobody asked for |
+| **`build` vs `create`** | `build` never touches a database; `create` writes through `usePersister` and fails as `X_TEST_FACTORY_NOT_PERSISTED` when nothing installed one |
+| **seeded per table** | the default seed is derived from the table name, so a post and an org never draw the same uuid. Pass `seed` only to replay an older recording |
+| **`with()` validates** | an undeclared trait fails at the line that named it, listing the declared ones (`X_TEST_FACTORY_TRAIT_UNKNOWN`) |
+
+`factoriesFor(registry)` builds one factory per registered entity, with values inferred from column
+names (`…Id` → uuid, `…At` → date, `…Minor` → integer, `is…`/`has…` → false). Enough for the rows a
+test does not care about; `defineFactory` is for the rows it does.
+
+## Shared examples
+
+```ts
+const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {
+  test('denies an anonymous actor', async () => {
+    await expect(subject().call(input, { actor: anonymous })).toDenyPolicy();
+  });
+});
+
+describe('publishPost', () => behavesLike(anAuthenticatedAction, () => publishPost));
+```
+
+The subject is a function, not a value, for the reason `describeApp`'s accessor is: the block is
+declared at module scope and the subject often does not exist until `beforeAll` has run. The
+failure line reads `publishPost > behaves like an authenticated action > denies an anonymous actor`
+— which subject, and which shared rule. `behavesLike` calls `describe`, so it goes at declaration
+scope, never inside a test body.
+
 ## Parallel databases
 
 ```ts
 const db = await acquireWorkerDatabase({ adminUrl, migrate });
-// worker 0 -> ultimate_test_template_w0
-// worker 1 -> ultimate_test_template_w1
 ```
 
 The first worker creates the template under a Postgres advisory lock and migrates it once; every
 worker then clones it copy-on-write. With no Postgres configured it falls back to PGlite, so
 `bun test` works on a laptop with nothing installed.
+
+**Parallelism is opt-in, not the default.** `As of 2026-08`:
+
+| Command | Processes | Worker ids | Databases |
+|---|---|---|---|
+| `bun test` (what a scaffolded app's `test` script runs, and what every `x verify` test step runs) | 1 | `0` | one |
+| `bun test --parallel[=N]` | N (default: CPU count) | `1..N`, from Bun's own `BUN_TEST_WORKER_ID` | N |
+| `x test --workers N` | N | `0..N-1`, from `ULTIMATE_TEST_WORKER` | N |
+
+`ULTIMATE_TEST_WORKER` is read first so a runner-assigned shard always beats the index Bun assigns
+its own `--parallel` worker — measured on Bun 1.3.14, `--parallel` populates `BUN_TEST_WORKER_ID`
+and `JEST_WORKER_ID` itself, so that precedence is load-bearing rather than defensive.
 
 ## Sealed network
 
@@ -128,3 +189,4 @@ integration — never for a socket test.
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
+`X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED`

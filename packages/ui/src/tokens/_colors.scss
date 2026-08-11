@@ -10,21 +10,21 @@ $light: (
   fg: 38 34 31,
   fg-strong: 17 15 13,
   fg-muted: 110 102 94,
-  line: 224 216 208,
+  line: 208 198 188,
   scrim: 17 15 13,
-  accent: 34 122 197,
+  accent: 31 110 178,
   accent-strong: 21 92 152,
   accent-fg: 255 255 255,
-  success: 22 128 84,
+  success: 21 123 80,
   success-soft: 222 244 232,
   success-fg: 255 255 255,
-  warning: 176 106 8,
+  warning: 155 93 7,
   warning-soft: 253 240 213,
   warning-fg: 255 255 255,
   danger: 190 42 42,
   danger-soft: 253 227 227,
   danger-fg: 255 255 255,
-  info: 34 122 197,
+  info: 31 110 178,
   info-soft: 224 239 252,
   info-fg: 255 255 255,
 );
@@ -36,8 +36,8 @@ $dark: (
   surface-raised: 44 44 50,
   fg: 228 226 222,
   fg-strong: 248 247 245,
-  fg-muted: 150 146 140,
-  line: 54 54 60,
+  fg-muted: 155 151 145,
+  line: 72 72 80,
   scrim: 0 0 0,
   accent: 96 170 240,
   accent-strong: 130 190 248,
@@ -55,6 +55,10 @@ $dark: (
   info-soft: 22 38 56,
   info-fg: 12 20 30,
 );
+
+/// The tone vocabulary, in the order components expose it. Mirrors `TONES` in
+/// `components/variants.ts`; `variants.test.ts` fails if the two drift.
+$tones: (neutral, accent, success, warning, danger, info);
 
 /// Emit one theme's channels as custom properties.
 @mixin channels($map) {

@@ -1,0 +1,47 @@
+@use '../tokens' as t;
+
+.pageHeader {
+  @include t.column(t.space(3));
+  padding-block-end: t.space(5);
+  border-block-end: 1px solid t.role('line');
+}
+
+// Wraps rather than shrinking: a long title must never squeeze the actions off the row.
+.bar {
+  @include t.row(t.space(4), flex-start, space-between);
+  flex-wrap: wrap;
+}
+
+.titles {
+  @include t.row(t.space(3), flex-start);
+  min-inline-size: 0;
+  flex: 1 1 20rem;
+}
+
+.media {
+  display: inline-flex;
+  flex: none;
+}
+
+.text {
+  @include t.column(t.space(1));
+  min-inline-size: 0;
+}
+
+.title {
+  color: t.role('fg-strong');
+  font-size: t.text(2xl);
+  line-height: t.leading(tight);
+}
+
+.description {
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+  max-inline-size: 68ch;
+}
+
+.actions {
+  @include t.row(t.space(2), center, flex-end);
+  flex-wrap: wrap;
+  flex: none;
+}

@@ -19,11 +19,7 @@
     transform: translateY(1px);
   }
 
-  &:disabled,
-  &[aria-disabled='true'] {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
+  @include t.disabled;
 }
 
 .full {
@@ -61,47 +57,7 @@
 // --- variants x tones --------------------------------------------------------
 // `--tone-*` is set by the tone class, so each variant is written once.
 
-.tone-neutral {
-  --tone: #{t.role('fg-strong')};
-  --tone-strong: #{t.role('fg')};
-  --tone-fg: #{t.role('bg')};
-  --tone-soft: #{t.role('bg-soft')};
-}
-
-.tone-accent {
-  --tone: #{t.role('accent')};
-  --tone-strong: #{t.role('accent-strong')};
-  --tone-fg: #{t.role('accent-fg')};
-  --tone-soft: #{t.role('accent', 0.12)};
-}
-
-.tone-success {
-  --tone: #{t.role('success')};
-  --tone-strong: #{t.role('success')};
-  --tone-fg: #{t.role('success-fg')};
-  --tone-soft: #{t.role('success-soft')};
-}
-
-.tone-warning {
-  --tone: #{t.role('warning')};
-  --tone-strong: #{t.role('warning')};
-  --tone-fg: #{t.role('warning-fg')};
-  --tone-soft: #{t.role('warning-soft')};
-}
-
-.tone-danger {
-  --tone: #{t.role('danger')};
-  --tone-strong: #{t.role('danger')};
-  --tone-fg: #{t.role('danger-fg')};
-  --tone-soft: #{t.role('danger-soft')};
-}
-
-.tone-info {
-  --tone: #{t.role('info')};
-  --tone-strong: #{t.role('info')};
-  --tone-fg: #{t.role('info-fg')};
-  --tone-soft: #{t.role('info-soft')};
-}
+@include t.tone-classes;
 
 .variant-primary {
   background: var(--tone);

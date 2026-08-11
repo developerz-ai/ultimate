@@ -49,10 +49,7 @@
     background: t.role('bg-soft');
   }
 
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
+  @include t.disabled(0.5);
 
   &[aria-selected='true'] {
     color: t.role('accent');

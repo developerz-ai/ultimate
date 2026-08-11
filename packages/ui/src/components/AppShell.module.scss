@@ -1,0 +1,110 @@
+@use '../tokens' as t;
+
+// Grid areas, not floats or fixed positioning: the areas re-flow at one breakpoint and the
+// writing mode is handled by the grid itself, so RTL needs no second rule.
+.shell {
+  display: grid;
+  grid-template-areas: 'header' 'sidebar' 'main' 'footer';
+  grid-template-rows: auto auto 1fr auto;
+  min-block-size: 100dvh;
+  background: t.role('bg');
+  color: t.role('fg');
+
+  @include t.respond-to(md) {
+    grid-template-columns: var(--shell-sidebar, 16rem) minmax(0, 1fr);
+    grid-template-areas: 'header header' 'sidebar main' 'footer footer';
+    grid-template-rows: auto 1fr auto;
+  }
+}
+
+.no-sidebar {
+  grid-template-areas: 'header' 'main' 'footer';
+  grid-template-rows: auto 1fr auto;
+
+  @include t.respond-to(md) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'header' 'main' 'footer';
+  }
+}
+
+// Off-screen but focusable — the first Tab on any page reveals it.
+.skip {
+  @include t.focus-ring;
+  @include t.transition(translate);
+  position: fixed;
+  z-index: t.z(skip-nav);
+  inset-block-start: t.space(2);
+  inset-inline-start: t.space(2);
+  padding-block: t.space(2);
+  padding-inline: t.space(4);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(md);
+  background: t.role('surface-raised');
+  color: t.role('fg-strong');
+  box-shadow: t.shadow(md);
+  font-weight: t.weight(semibold);
+  text-decoration: none;
+  translate: 0 -400%;
+
+  &:focus-visible {
+    translate: 0 0;
+  }
+}
+
+.header {
+  @include t.row(t.space(4), center, space-between);
+  grid-area: header;
+  padding-block: t.space(3);
+  padding-inline: t.space(4);
+  border-block-end: 1px solid t.role('line');
+  background: t.role('surface');
+}
+
+.sticky {
+  position: sticky;
+  z-index: t.z(sticky);
+  inset-block-start: 0;
+}
+
+// Below `md` the sidebar is a band above the content; from `md` it is the inline-start column.
+.sidebar {
+  @include t.custom-scrollbar;
+  grid-area: sidebar;
+  padding: t.space(4);
+  border-block-end: 1px solid t.role('line');
+  background: t.role('bg-soft');
+  overflow: auto;
+
+  // Deliberately not sticky: a sticky sidebar and a sticky header both anchored at 0 overlap,
+  // and the header's height is not knowable in CSS. The page scrolls as one.
+  @include t.respond-to(md) {
+    border-block-end: 0;
+    border-inline-end: 1px solid t.role('line');
+  }
+}
+
+.main {
+  grid-area: main;
+  min-inline-size: 0;
+  padding-block: t.space(6);
+  padding-inline: t.space(4);
+
+  // The skip link moves focus here; the ring would otherwise draw around the whole page.
+  &:focus-visible {
+    outline: none;
+  }
+
+  @include t.respond-to(md) {
+    padding-inline: t.space(6);
+  }
+}
+
+.footer {
+  grid-area: footer;
+  padding-block: t.space(5);
+  padding-inline: t.space(4);
+  border-block-start: 1px solid t.role('line');
+  background: t.role('surface');
+  color: t.role('fg-muted');
+  font-size: t.text(sm);
+}

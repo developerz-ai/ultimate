@@ -35,12 +35,39 @@ export class UiError extends UltimateError {
   }
 }
 
-/** A component asked for a token role that the SCSS source does not define. */
-export function unknownTokenError(kind: string, name: string, known: readonly string[]): UiError {
+/**
+ * A component asked for a token role that the SCSS source does not define. `source` is the
+ * partial that declares the scale — defaulted, because most kinds pluralise (`colors`), and
+ * named explicitly by the ones that do not (`radius`), so the `fix:` is always a real path.
+ */
+export function unknownTokenError(
+  kind: string,
+  name: string,
+  known: readonly string[],
+  source = `_${kind}s.scss`,
+): UiError {
   return new UiError({
     code: UI_ERROR_CODES.tokenUnknown,
     cause: `unknown ${kind} token "${name}"; known roles: ${known.join(', ')}`,
-    fix: `use one of the ${kind} roles above, or add "${name}" to packages/ui/src/tokens/_${kind}s.scss and mirror it in tokens.ts`,
+    fix: `use one of the ${kind} roles above, or add "${name}" to packages/ui/src/tokens/${source} and mirror it in tokens.ts`,
+  });
+}
+
+/**
+ * A `defineTheme()` override held something that is not a token value. Strict on purpose: the
+ * result is interpolated into a `<style>` element, so a value carrying `;`, `}` or `</style>` is
+ * a CSS injection, not a typo.
+ */
+export function invalidBrandTokenError(
+  scope: string,
+  name: string,
+  value: unknown,
+  expected: string,
+): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.invalidValue,
+    cause: `defineTheme() override ${scope}.${name} is ${JSON.stringify(value)}, which is not ${expected}`,
+    fix: `pass ${expected} to defineTheme(), e.g. defineTheme({ colors: { light: { accent: '31 110 178' } } })`,
   });
 }
 
