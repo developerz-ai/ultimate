@@ -45,6 +45,37 @@ them is answered by this table rather than by a second convention:
 | `Finding.cause` / `Finding.fix`, and `BadFlagError`'s `reason` | stable machine-readable diagnostics. A `fix:` is copied and run verbatim; a translated one is a broken command |
 | Fixed-width table headers (`renderJobTable`, `renderRouteTable`) | column keys, not prose — the widths are computed from them and `--json` carries the same names |
 
+## The introspection commands project registries, they never re-derive facts
+
+| Command | Files | Reads |
+|---|---|---|
+| `x actions` / `x queries` / `x entities` | `cmd-registries.ts` | the three declaration registries |
+| `x jobs` | `cmd-jobs.ts`, `jobs-{report,drain,json,table}.ts` | `@ultimat3/jobs`' own introspection |
+| `x tasks` | `cmd-tasks.ts`, `tasks-facts.ts` | `registeredTasks()` + `@ultimat3/time`'s cron resolution |
+| `x policy` | `cmd-policy.ts`, `policy-facts.ts` | `@ultimat3/policy`'s `policyMatrix()` over the app's own `Policy` objects |
+| `x i18n` | `cmd-i18n.ts`, `i18n-audit.ts` | `@ultimat3/i18n`'s `extractFromFiles` + `auditCatalogs` |
+
+Each pairs a `cmd-*.ts` of CLI wiring with a facts module that takes plain inputs and returns plain
+data, so the projection is testable without a `ParsedArgs` — the `cmd-jobs.ts` / `jobs-report.ts`
+split, repeated. Tables go through `table.ts`; a second padding helper is the drift it prevents.
+
+`x policy explain` exists because five packages already print it as the `fix:` on an authz denial
+(`policy`, `action`, `query`, `http`, `auth`), and `x i18n` because all three of `@ultimat3/i18n`'s
+own error fixes name it. A `fix:` line naming a command this build does not ship is the failure
+mode `cmd-planned.ts` closes for planned commands and these close for real ones.
+
+`x i18n check` scans source, which the "never parse source for primitives" rule below does not
+forbid: a `t()` call is not a primitive and no registry holds it. It uses `source-files.ts`, the
+same walk `errors` and `filesize` use, so the three cannot disagree on what the app's source is.
+
+**A catalog is authored nested and read flat.** `Catalog` (`{ 'nav.home': 'Home' }`) is the
+translator's form; the file on disk holds `{ nav: { home: 'Home' } }`, and `parseNestedCatalog`
+refuses a dot inside a key — so anything writing a catalog goes through `nestCatalog`
+(`serializeCatalog` for `x i18n add|sync`, `templates/catalog-json.ts` for every generator) or it
+emits a file `defineCatalogs` rejects at the app's first boot. `merge: 'json'` unions **deeply**
+(`json-merge.ts`) for the same reason: `x new` and `x g resource` both contribute under `app`, and
+a shallow spread keeps one of them.
+
 ## The `errors` step enforces the error contract
 
 | File | Job |

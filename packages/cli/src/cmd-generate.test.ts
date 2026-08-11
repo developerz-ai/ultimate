@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { catalogKeys, loadCatalog } from '@ultimat3/i18n';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { resetAppLoad } from './app-load';
 import { GENERATORS, generate, generateCommand, writeFiles } from './cmd-generate';
@@ -14,6 +15,16 @@ import type { GeneratedFile } from './templates';
 import { thrownBy } from './thrown-by';
 
 const loaderFor = (path: string): 'ts' | 'tsx' => (path.endsWith('.tsx') ? 'tsx' : 'ts');
+
+/**
+ * A generated catalog read exactly as the app reads it. `loadCatalog` is the assertion, not a
+ * convenience: it refuses the flat dot-key form, so a generator that emitted one would fail every
+ * catalog test here instead of shipping a file that only breaks at the app's first boot.
+ */
+const catalogOf = (contents: string | undefined): Record<string, string> => ({
+  ...loadCatalog(JSON.parse(contents ?? '{}')),
+});
+const catalogKeysOf = (contents: string | undefined): string[] => catalogKeys(catalogOf(contents));
 
 /** Parses with Bun's own transpiler: a generator that emits unparseable TS is a broken generator. */
 const parses = (file: GeneratedFile): boolean => {
@@ -174,7 +185,7 @@ describe('unit · x g', () => {
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-card.tsx');
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-form.tsx');
     const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
-    expect(catalog?.contents).toContain('app.invoice.empty');
+    expect(catalogKeysOf(catalog?.contents)).toContain('app.invoice.empty');
   });
 
   test('a resource with --admin also emits the admin override', () => {
@@ -202,9 +213,10 @@ describe('unit · x g', () => {
     ]);
     for (const locale of ['en', 'es']) {
       const catalog = files.find((file) => file.path === `packages/i18n/catalogs/${locale}.json`);
-      const keys = Object.keys(JSON.parse(catalog?.contents ?? '{}'));
+      const keys = catalogKeysOf(catalog?.contents);
       // The slice's own key (catalogSource) and the route's (routeFiles, for the /invoices page)
       // both survive the merge — this is the union, not whichever generator happened to run first.
+      // Both live under `app`, so a shallow spread would keep exactly one of them.
       expect(keys).toContain('app.invoice.empty');
       expect(keys).toContain('app.invoices.title');
     }
@@ -228,7 +240,7 @@ describe('unit · x g', () => {
     for (const admin of [false, true]) {
       const files = generate({ kind: 'resource', name: 'invoice', admin });
       const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
-      expect(JSON.parse(catalog?.contents ?? '{}')['admin.invoice.title']).toBe('Invoices');
+      expect(catalogOf(catalog?.contents)['admin.invoice.title']).toBe('Invoices');
     }
     const withAdmin = generate({ kind: 'resource', name: 'invoice', admin: true });
     const override = withAdmin.find((file) => file.path.endsWith('admin/resource.ts'));

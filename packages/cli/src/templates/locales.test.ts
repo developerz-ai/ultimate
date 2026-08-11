@@ -41,6 +41,29 @@ describe('unit · the generated-catalog locale resolver', () => {
     }
   });
 
+  test("the rejection names the caller's own command and flag, not x g --locales", () => {
+    const failure = thrownBy(() =>
+      resolveLocales(['1234'], { fix: 'x i18n add es', command: 'i18n', flag: 'locale' }),
+    );
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.cause).toContain('--locale on "x i18n"');
+    expect(failure.fix).toBe('x i18n add es');
+  });
+
+  test('a bare string second argument is still just the fix, on the x g default context', () => {
+    const failure = thrownBy(() => resolveLocales(['1234'], 'x g route blog --locales=en,es'));
+    expect(failure.cause).toContain('--locales on "x g"');
+    expect(failure.fix).toBe('x g route blog --locales=en,es');
+  });
+
+  test('a path escape carries the same context, so both rejections agree on the caller', () => {
+    const failure = thrownBy(() =>
+      resolveLocales(['../etc'], { fix: 'x i18n add es', command: 'i18n', flag: 'locale' }),
+    );
+    expect(failure.code).toBe('X_SCAFFOLD_PATH_ESCAPE');
+    expect(failure.fix).toBe('x i18n add es');
+  });
+
   test('resolving an already-resolved list is a no-op, so call sites may chain', () => {
     expect(resolveLocales(resolveLocales(['EN', 'es']))).toEqual(['en', 'es']);
   });

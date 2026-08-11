@@ -10,13 +10,16 @@ import { errorsCommand } from './cmd-errors';
 import { fixCommand } from './cmd-fix';
 import { generateCommand } from './cmd-generate';
 import { createHelpCommand, createVersionCommand } from './cmd-help';
+import { i18nCommand } from './cmd-i18n';
 import { jobsCommand } from './cmd-jobs';
 import { manifestCommand } from './cmd-manifest';
 import { mcpCommand } from './cmd-mcp';
 import { newCommand } from './cmd-new';
 import { plannedCommands } from './cmd-planned';
+import { policyCommand } from './cmd-policy';
 import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 import { routesCommand } from './cmd-routes';
+import { tasksCommand } from './cmd-tasks';
 import { testCommand } from './cmd-test';
 import { verifyCommand } from './cmd-verify';
 import type { CliCommand } from './command';
@@ -43,6 +46,9 @@ const CORE: readonly CliCommand[] = [
   queriesCommand,
   entitiesCommand,
   jobsCommand,
+  tasksCommand,
+  policyCommand,
+  i18nCommand,
   errorsCommand,
   fixCommand,
 ];

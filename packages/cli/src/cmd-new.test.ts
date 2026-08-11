@@ -5,6 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { decodeImage, probeImage } from '@ultimat3/core';
+import type { NestedCatalog } from '@ultimat3/i18n';
+import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
 import { planNewApp } from './cmd-new';
 import { icon } from './templates/scaffold-icon';
@@ -62,5 +64,35 @@ describe('unit · x new · scaffolded icon', () => {
     expect(a).toBe(255);
     // The maskable safe zone stops short of the edge, so the corner is canvas, not mark.
     expect(at(0, 0)[3]).toBe(0);
+  });
+});
+
+/** The scaffolded catalog for one variant, as a string — `contents` is `string | Uint8Array`. */
+function catalogSource(example: boolean): string {
+  const file = planNewApp({ name: 'demo-app', example }).find(
+    (candidate) => candidate.path === 'packages/i18n/catalogs/en.json',
+  );
+  const contents = file?.contents;
+  expect(typeof contents).toBe('string');
+  return typeof contents === 'string' ? contents : '';
+}
+
+describe('unit · x new · scaffolded catalog', () => {
+  // The catalog `x new` writes is the one `defineCatalogs` loads at the app's first boot. When it
+  // was authored flat (`"site.home.title"`), that boot threw X_CATALOG_INVALID — a dot is not a
+  // key segment — and nothing here noticed, because every assertion read the JSON directly rather
+  // than through the loader. These go through the loader.
+  for (const example of [false, true]) {
+    test(`--${example ? 'example' : 'no-example'} scaffolds a catalog defineCatalogs accepts`, () => {
+      const en = JSON.parse(catalogSource(example)) as unknown;
+      const catalogs = defineCatalogs({ default: 'en', locales: { en: en as NestedCatalog } });
+      expect(catalogKeys(catalogs.catalogs.en ?? {})).toContain('site.home.title');
+    });
+  }
+
+  test('the example slice and the scaffold both land in it, under the same top-level key', () => {
+    const keys = catalogKeys(loadCatalog(JSON.parse(catalogSource(true))));
+    expect(keys).toContain('app.dashboard.title');
+    expect(keys).toContain('app.post.empty');
   });
 });

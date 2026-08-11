@@ -4,6 +4,7 @@
 
 import { actionFiles } from './action';
 import { adminFiles } from './admin';
+import { catalogJson } from './catalog-json';
 import type { FeatureTarget } from './entity';
 import { entityFiles } from './entity';
 import { jobFiles } from './job';
@@ -151,14 +152,14 @@ export function ${feature.pascal}Form(props: ${feature.pascal}FormProps) {
 // `admin.<feature>.title` is always here, `--admin` or not: `defineAdmin()` resolves that key the
 // moment anyone writes the override, and a missing key renders ⟦key⟧ and fails the i18n gate,
 // while an unused key is only ever reported (`auditCatalogs` fails on `missing`, never `unused`).
-const catalogSource = (feature: NameSet): string => `{
-  "app.${feature.kebab}.empty": "No ${feature.pluralKebab} yet.",
-  "app.${feature.kebab}.updated": "Last updated",
-  "app.${feature.kebab}.titleLabel": "Title",
-  "app.${feature.kebab}.submit": "Save",
-  "admin.${feature.kebab}.title": "${pascal(feature.plural)}"
-}
-`;
+const catalogSource = (feature: NameSet): string =>
+  catalogJson({
+    [`app.${feature.kebab}.empty`]: `No ${feature.pluralKebab} yet.`,
+    [`app.${feature.kebab}.updated`]: 'Last updated',
+    [`app.${feature.kebab}.titleLabel`]: 'Title',
+    [`app.${feature.kebab}.submit`]: 'Save',
+    [`admin.${feature.kebab}.title`]: pascal(feature.plural),
+  });
 
 export interface ResourceOptions extends FeatureTarget {
   /** `x g resource post --admin` — also emits the per-entity admin override. */

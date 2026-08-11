@@ -99,6 +99,7 @@ export type { CliErrorCode } from './errors';
 export {
   BadFlagError,
   BunVersionError,
+  CatalogExistsError,
   CLI_ERROR_CODES,
   CLI_ERROR_TITLES,
   CliNotImplementedError,

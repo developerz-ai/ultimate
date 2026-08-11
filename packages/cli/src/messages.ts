@@ -10,6 +10,20 @@ const CATALOG = {
   'cli.flags.heading': 'flags',
   'cli.commands.heading': 'commands',
   'cli.build.done': 'built {target}',
+  // `describeCron`'s vocabulary. `@ultimat3/time` is tier 1 and reaches no i18n runtime, so the
+  // caller supplies the words — and the caller here is a rendered `x tasks show` line, which is
+  // exactly what this catalog holds. `msg()` leaves an un-supplied `{n}`/`{time}`/`{days}`/
+  // `{months}` intact, so each value arrives at `describeCron` as the template it interpolates.
+  'cli.cron.andMore': 'and {n} more',
+  'cli.cron.at': 'at {time}',
+  'cli.cron.everyDay': 'every day',
+  'cli.cron.everyHour': 'every hour',
+  'cli.cron.everyMinute': 'every minute',
+  'cli.cron.everyNHours': 'every {n} hours',
+  'cli.cron.everyNMinutes': 'every {n} minutes',
+  'cli.cron.inMonths': 'in {months}',
+  'cli.cron.onDaysOfMonth': 'on day {days} of the month',
+  'cli.cron.onWeekdays': 'on {days}',
   'cli.db.branch.ready': 'branch {name} ready',
   'cli.dev.ready': 'dev ready on {url} — /_x mounted ({panels} panels), {services}',
   // The mail and CDN halves of that boot line. Rendered text, so it lives here — while
@@ -32,6 +46,12 @@ const CATALOG = {
   'cli.fix.clean': 'no boundary violation involves {file}',
   'cli.fix.plan': '{count} boundary violation(s) involve {file} — {edits} edit(s) to make',
   'cli.generate.wrote': 'wrote {count} file(s) for {kind} {name}',
+  'cli.i18n.added': 'added {locale} — {keys} key(s) seeded from {from}',
+  'cli.i18n.dynamic': '{count} dynamic t() call(s) the extractor cannot verify:',
+  'cli.i18n.gaps': '{missing} missing key(s) across {locales} locale(s)',
+  'cli.i18n.ok': '{locales} locale(s), {keys} key(s) used — no gaps',
+  'cli.i18n.synced': 'synced {locale} from {from} — {added} key(s) added, {total} total',
+  'cli.i18n.unused': '{count} key(s) defined in {locale} and never used:',
   'cli.jobs.deadLetters': '{count} dead letter(s):',
   'cli.jobs.depth':
     '{ready} ready · {running} running · {delayed} delayed · {dead} dead across {queues} queue(s)',
@@ -50,10 +70,26 @@ const CATALOG = {
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.mcp.scopes': '  scopes {scopes}',
   'cli.new.done': 'created {name} — next: cd {name} && x dev',
+  'cli.policy.count':
+    '{permissions} permission(s), {roles} role(s), {enforced} enforced by a declaration',
+  // One row per (declaration, actor) pair, never per role: a permission two declarations enforce
+  // evaluates every actor twice, so "of N role(s)" over-counted whenever it had more than one.
+  'cli.policy.explained': '{subject} — allowed for {allowed} of {evaluations} actor evaluation(s)',
+  'cli.policy.allow': 'allow',
+  'cli.policy.deny': 'deny',
+  'cli.policy.declaration': '{kind} {name} — policy {label}',
+  /** The empty cell in a `x policy list` column — a value, not a column key. */
+  'cli.policy.none': '-',
+  'cli.policy.noInput':
+    'evaluated with no request input and no row — a rule reading either decides again on the real request',
+  'cli.policy.undecidable': 'not decidable outside a request — this policy reads request input',
+  'cli.policy.unenforced': '{count} permission(s) no action or query enforces:',
   'cli.registry.count': '{count} {kind}',
   'cli.registry.described': '{kind} {name}',
   'cli.routes.count': '{count} routes',
   'cli.routes.empty': 'no routes in the manifest — run `x manifest` first',
+  'cli.tasks.count': '{count} task(s)',
+  'cli.tasks.shown': '{name} — {cron} ({tz}), next {next}',
   'cli.test.fail': '{failed} of {workers} shard(s) failed',
   'cli.test.pass': '{files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',

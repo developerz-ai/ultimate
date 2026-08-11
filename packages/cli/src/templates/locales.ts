@@ -39,31 +39,49 @@ const canonicalTag = (tag: string): string | undefined => {
 };
 
 /**
+ * The invocation a rejection is reported against. `x g --locales=…` is not the only caller —
+ * `x i18n add <locale>` reaches this same validator — and a cause naming a command and a flag the
+ * user never typed is the misdirection axiom 4 exists to refuse.
+ */
+export interface LocaleFlagContext {
+  /** The runnable fix printed on a rejection. Defaults to the `x g` form. */
+  readonly fix?: string;
+  /** The command as typed, without the `x`. */
+  readonly command?: string;
+  /** The flag or argument the locale arrived on. */
+  readonly flag?: string;
+}
+
+/**
  * Every locale a generated catalog ships for: trimmed, validated, lowercased and deduped, or the
  * default when the caller names none. Loud rather than lenient — a typo silently resolved to `en`
  * writes a catalog the app never reads, and a traversal silently dropped writes one it never sees.
  */
-export function resolveLocales(requested?: readonly string[]): readonly string[] {
+export function resolveLocales(
+  requested?: readonly string[],
+  // A bare string is still the fix, so every `x g` call site reads exactly as it did.
+  context: string | LocaleFlagContext = LOCALES_FIX,
+): readonly string[] {
   if (requested === undefined) return DEFAULT_LOCALES;
+  const options: LocaleFlagContext = typeof context === 'string' ? { fix: context } : context;
+  const fix = options.fix ?? LOCALES_FIX;
+  const command = options.command ?? 'g';
+  const flag = options.flag ?? 'locales';
   const resolved: string[] = [];
   for (const raw of requested) {
     const tag = raw.trim();
     // `--locales=en,,es` is a typing artefact, not a request for a nameless catalog.
     if (tag.length === 0) continue;
     if (escapesCatalogRoot(tag)) {
-      throw new ScaffoldPathEscapeError({
-        path: `${CATALOG_ROOT}/${tag}`,
-        dir: CATALOG_ROOT,
-        fix: LOCALES_FIX,
-      });
+      throw new ScaffoldPathEscapeError({ path: `${CATALOG_ROOT}/${tag}`, dir: CATALOG_ROOT, fix });
     }
     const canonical = canonicalTag(tag);
     if (canonical === undefined) {
       throw new BadFlagError({
-        flag: 'locales',
-        command: 'g',
+        flag,
+        command,
         reason: `"${tag}" is not a BCP-47 locale`,
-        fix: LOCALES_FIX,
+        fix,
       });
     }
     // Lowercase, because the tag is a file stem: `en-US.json` and `en-us.json` are one file on a

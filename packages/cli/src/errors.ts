@@ -244,6 +244,25 @@ export class GenerateJsonInvalidError extends UltimateError {
 }
 
 /**
+ * `x i18n add <locale>` refuses to clobber a catalog that already exists — a human translation lost
+ * to a second run is unrecoverable. `X_GENERATE_CONFLICT` is this package's own code, used until now
+ * only as a `Finding` literal inside `cmd-generate.ts`'s `writeFiles`; this is the same registered
+ * code thrown as a real `UltimateError`. The path arrives already computed rather than derived from
+ * `catalogPath` here: `templates/locales.ts` imports this file, so calling back into it would close
+ * an import cycle.
+ */
+export class CatalogExistsError extends UltimateError {
+  constructor(input: { locale: string; path: string }) {
+    super({
+      code: 'X_GENERATE_CONFLICT',
+      cause: `${input.path} already exists`,
+      fix: `x i18n sync ${input.locale}`,
+      docs: docsFor('X_GENERATE_CONFLICT'),
+    });
+  }
+}
+
+/**
  * The app's `package.json` cannot supply a name and a version. Defaulting to `app@0.0.0` would put
  * a fabricated identity into `x.manifest.json`, whose version IS the semver compatibility gate —
  * so the contract would be overwritten with a lie no downstream check could catch.
@@ -289,6 +308,8 @@ export class DeclarationUnknownError extends UltimateError {
     name: string;
     known: readonly string[];
     suggestion?: string;
+    /** The subcommand that takes one name. `describe` for the registries, `show` for `x tasks`. */
+    verb?: string;
   }) {
     super({
       code: 'X_DECLARATION_UNKNOWN',
@@ -296,7 +317,7 @@ export class DeclarationUnknownError extends UltimateError {
       fix:
         input.suggestion === undefined
           ? `x ${input.kind} list --json`
-          : `x ${input.kind} describe ${input.suggestion}`,
+          : `x ${input.kind} ${input.verb ?? 'describe'} ${input.suggestion}`,
       docs: docsFor('X_DECLARATION_UNKNOWN'),
     });
   }

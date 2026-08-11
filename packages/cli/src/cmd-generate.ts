@@ -17,6 +17,7 @@ import {
   ScaffoldPathEscapeError,
   UnknownCommandError,
 } from './errors';
+import { mergeJsonDeep } from './json-merge';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagBool, flagList, flagString } from './parse';
@@ -114,10 +115,12 @@ export function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[
       seen.set(file.path, file);
     } else if (prior.merge === 'json' && file.merge === 'json') {
       // Both sides already proved parseable above — the fallback only guards a future change to
-      // that invariant, it never fires today.
+      // that invariant, it never fires today. Deep: two generators contributing to one nested
+      // catalog share top-level keys (`app`, `admin`), and a shallow spread drops one of them.
       const later = parseJsonObject(file.contents) ?? {};
       const earlier = parseJsonObject(prior.contents) ?? {};
-      seen.set(file.path, { ...prior, contents: prettyJson({ ...later, ...earlier }) });
+      const { merged } = mergeJsonDeep(earlier, later);
+      seen.set(file.path, { ...prior, contents: prettyJson(merged) });
     }
     // else: not mergeable — first write wins, exactly as it always has.
   }
@@ -249,11 +252,12 @@ async function mergeJsonFile(
       },
     };
   }
-  const gainedKeys = Object.keys(generated).some((key) => !(key in existing));
-  // Every key the generator wants is already there — leave the file untouched and unclaimed.
-  if (!gainedKeys) return { written: false };
   // An existing key wins because it may hold a human translation; only the new keys are added.
-  await Bun.write(absolute, prettyJson({ ...generated, ...existing }));
+  // Deep, so a nested catalog gains `site.blog.title` without losing the rest of `site`.
+  const { merged, gained } = mergeJsonDeep(existing, generated);
+  // Every key the generator wants is already there — leave the file untouched and unclaimed.
+  if (!gained) return { written: false };
+  await Bun.write(absolute, prettyJson(merged));
   return { written: true };
 }
 

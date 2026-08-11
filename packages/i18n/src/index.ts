@@ -8,6 +8,7 @@ export {
   mergeCatalogs,
   missingFrom,
   type NestedCatalog,
+  nestCatalog,
   parseNestedCatalog,
 } from './catalog';
 export {

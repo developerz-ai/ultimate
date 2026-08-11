@@ -7,6 +7,7 @@
 // relative POSIX path every finding and every manifest fact is keyed by.
 import { relative, sep } from 'node:path';
 import { registerActions } from '@ultimat3/action';
+import { localeConfig } from '@ultimat3/i18n';
 import type { ErrorCodeFact } from '@ultimat3/manifest';
 import { registerQueries } from '@ultimat3/query';
 import { isRouteConfig, registerRoute } from '@ultimat3/render';
@@ -27,6 +28,14 @@ export interface LoadedApp {
   readonly files: readonly string[];
   /** Every `X_*` code the app's source declares, by code — the one fact no registry holds. */
   readonly errorCodes: readonly ErrorCodeFact[];
+  /**
+   * The locale the app falls back to. `packages/i18n/src/index.ts` is inside the import loop, and
+   * `defineCatalogs()` configures `@ultimat3/i18n` on its way through — so this is the framework's
+   * own answer, read back from `localeConfig()`, and never a regex over the app's source, which
+   * only ever matched the one `defineCatalogs({ default: '…' })` spelling it anticipated. An app
+   * whose i18n module would not import leaves the framework default (`en`) and a finding saying so.
+   */
+  readonly defaultLocale: string;
   /** Modules that would not import, and primitives that would not register. */
   readonly findings: readonly Finding[];
 }
@@ -69,7 +78,14 @@ export async function loadApp(root: string): Promise<LoadedApp> {
   }
 
   files.sort();
-  return { root, files, errorCodes: await appErrorCodes(root), findings };
+  // Read after the loop, never before it: `configureLocales` runs on the app's own import.
+  return {
+    root,
+    files,
+    errorCodes: await appErrorCodes(root),
+    defaultLocale: localeConfig().fallback,
+    findings,
+  };
 }
 
 /** Registers a module once; every later call replays whatever the first one reported. */

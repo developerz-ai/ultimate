@@ -45,6 +45,46 @@ export function loadCatalog(value: unknown, prefix = ''): Catalog {
 }
 
 /**
+ * `flattenCatalog`'s inverse: the authored shape a flat catalog is written back to disk as.
+ * A tool that writes `{ "nav.home": "Home" }` produces a file `parseNestedCatalog` then refuses —
+ * a dot is not a key segment — so anything that reads a catalog, edits it and writes it back has
+ * to come through here or it round-trips into `X_CATALOG_INVALID`.
+ *
+ * A key that would nest under a leaf (`nav` and `nav.home` in the same catalog) is the same
+ * branch/leaf collision `flattenCatalog` refuses in the other direction, reported as such.
+ *
+ * Every node is `Object.create(null)`, never `{}`, because a catalog is untrusted input read off
+ * disk: on a normal object `node['__proto__']` resolves to `Object.prototype` instead of reading
+ * as absent, so the key `__proto__.polluted` would walk into the prototype and write to it. A
+ * null-prototype node makes `__proto__` an ordinary segment — it nests and serializes like any
+ * other, and nothing outside this catalog can be reached from a key.
+ */
+export function nestCatalog(catalog: Catalog): NestedCatalog {
+  const root = Object.create(null) as Record<string, unknown>;
+  for (const key of catalogKeys(catalog)) {
+    const value = catalog[key];
+    if (value === undefined) continue;
+    const segments = key.split('.');
+    const leaf = segments.pop();
+    if (leaf === undefined) continue;
+    let node = root;
+    for (const segment of segments) {
+      const child = node[segment];
+      if (child === undefined) node[segment] = Object.create(null);
+      else if (typeof child !== 'object') {
+        throw catalogInvalid(key, 'duplicate key — a nested branch and a dotted key collide');
+      }
+      node = node[segment] as Record<string, unknown>;
+    }
+    if (typeof node[leaf] === 'object') {
+      throw catalogInvalid(key, 'duplicate key — a nested branch and a dotted key collide');
+    }
+    node[leaf] = value;
+  }
+  return root as NestedCatalog;
+}
+
+/**
  * Later catalogs win. Call order is framework strings first, app strings last, so an
  * app can override `errors.notFound.title` without forking the framework catalog.
  */

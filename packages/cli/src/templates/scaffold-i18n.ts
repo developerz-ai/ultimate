@@ -1,7 +1,8 @@
-// The generated app's `packages/i18n`: one flat catalog file per locale, and the framework's one
+// The generated app's `packages/i18n`: one catalog file per locale, and the framework's one
 // blessed typed-catalog shape (modelled on examples/dummy/packages/i18n/src/index.ts) — split out
 // of scaffold-repo.ts to stay under the file-size ceiling.
 
+import { catalogJson } from './catalog-json';
 import type { GeneratedFile, NameSet } from './naming';
 import { camel } from './naming';
 import { packageShapeFiles } from './scaffold-package-shape';
@@ -94,20 +95,20 @@ export const useT = (): Translator<AppCatalog> => useI18n<AppCatalog>();
 }
 
 // `app.post.*` is not listed here: under `--example`, `x g resource post` merges its own keys
-// into this same flat file (`merge: 'json'`, resolved by `dedupe()`); under `--no-example` that
+// into this same file (`merge: 'json'`, resolved by `dedupe()`); under `--no-example` that
 // generator never runs, so those keys are simply absent, never a dangling reference.
-const i18nCatalog = (app: NameSet): string => `{
-  "site.home.title": "${app.pascal}",
-  "site.home.description": "Everything you need, one command from shippable.",
-  "site.home.cta": "Open the dashboard",
-  "app.dashboard.title": "Dashboard",
-  "app.dashboard.description": "Your workspace.",
-  "app.offline.title": "You are offline",
-  "app.offline.description": "This page will refresh itself when the connection returns.",
-  "admin.home.title": "Admin",
-  "admin.home.description": "Operations for ${app.pascal}."
-}
-`;
+const i18nCatalog = (app: NameSet): string =>
+  catalogJson({
+    'site.home.title': app.pascal,
+    'site.home.description': 'Everything you need, one command from shippable.',
+    'site.home.cta': 'Open the dashboard',
+    'app.dashboard.title': 'Dashboard',
+    'app.dashboard.description': 'Your workspace.',
+    'app.offline.title': 'You are offline',
+    'app.offline.description': 'This page will refresh itself when the connection returns.',
+    'admin.home.title': 'Admin',
+    'admin.home.description': `Operations for ${app.pascal}.`,
+  });
 
 const i18nTest = (): string => `import { expect } from 'bun:test';
 import { unitTest } from '@ultimat3/testing';
@@ -130,7 +131,7 @@ unitTest('no catalog value is empty', () => {
 /**
  * Everything `packages/i18n` ships: the manifest (the one package that declares a dependency),
  * the shared shape files with the extra `catalogs/**` include the JSON needs, the typed index,
- * its test, and the flat `en` catalog. `merge: 'json'` on the catalog is what lets `x g resource
+ * its test, and the `en` catalog. `merge: 'json'` on the catalog is what lets `x g resource
  * post` (the example slice, under `--example`) land its own keys in this same file instead of
  * `dedupe()` dropping one contributor's — see the comment on `i18nCatalog` above.
  */

@@ -91,21 +91,30 @@ There is no `policy: 'public'` shortcut and no default-allow. A route that is ge
 
 ```
 $ x policy explain publishPost --json
-{"action":"publishPost","capability":"post:publish","predicate":"ownsPost(actor, input.postId)",
- "surfaces":["http","client","job","mcp"],
- "branches":[{"outcome":"allow","when":"actor owns post"},
-             {"outcome":"deny","code":"X_FORBIDDEN","when":"actor does not own post"},
-             {"outcome":"deny","code":"X_UNAUTHENTICATED","when":"actor.kind == anonymous"}],
- "tests":["apps/web/app/posts/actions.test.ts:publishPost denies a non-owner"]}
+{"ok":true,"command":"policy","summary":"publishPost — allowed for 0 of 5 actor evaluation(s)","findings":[],
+ "data":{"subject":"publishPost","kind":"action","grantingRoles":["admin","author","owner"],
+  "declarations":[{"name":"publishPost","kind":"action","capability":"post:publish",
+   "label":"post:publish","decidable":true,"rows":[
+    {"actor":"anonymous","allowed":false,"reason":"no actor for post:publish","deciding":"post:publish"},
+    {"actor":"admin","allowed":false,"reason":"post:publish predicate returned false","deciding":"post:publish"},
+    {"actor":"author","allowed":false,"reason":"post:publish predicate returned false","deciding":"post:publish"},
+    {"actor":"owner","allowed":false,"reason":"post:publish predicate returned false","deciding":"post:publish"},
+    {"actor":"reader","allowed":false,"reason":"actor lacks post:publish","deciding":"post:publish"}]}]}}
 ```
+
+One row per actor per declaration — every declared role plus `anonymous`, evaluated once for each action or query that enforces the subject. A permission two declarations enforce therefore reports twice the evaluations, which is why the summary counts evaluations and never roles. `deciding` is the clause that produced the verdict and `reason` is why — which is what separates "this role was never granted the permission" from "it holds the grant and the row predicate said no".
+
+The matrix runs **outside a request**: no input, no row. A rule that reads either decides again on the real call, so a `predicate returned false` here is a no-input verdict rather than a standing denial — the human render says so under every table. `decidable` is `false` for a policy that cannot be evaluated at all outside a request (a predicate dereferencing `input.post.id` has nothing to dereference); `rows` is then empty and the render says that instead of printing a table of invented denials.
+
+`<subject>` resolves in order against a permission, an action name, a query name, then an action's HTTP path — so whichever of the four a throwing surface had to hand, the `fix:` line it printed is runnable.
 
 | Want | Command | MCP tool |
 |---|---|---|
-| one path explained | `x policy explain <path> --json` | `policies.list` |
-| every policy + its users | `x policy list --json` | `policies.list` |
+| one subject explained | `x policy explain <subject> --json` | none — no dev tool takes a subject, and `policies.list` returns the catalog without the per-declaration matrix |
+| every permission + who grants and enforces it | `x policy list --json` | `policies.list` (no arguments) |
 | unprotected surfaces | `x verify --json` (the `boundaries` step) | `budgets.report` / `manifest.get` |
 
-The `branches` array is what the generated tests enumerate — one denial test per branch. An untested branch is a red build.
+`x policy list` also names the permissions **no** action or query enforces. A grant nothing checks is a grant that does nothing, and it is invisible from any single declaration.
 
 ## Tenancy
 
