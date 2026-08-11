@@ -8,12 +8,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DevPanel } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
+import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
+import { configureTelemetry, resetTelemetry, withSpan } from '@ultimat3/core';
 import type { MailMessage, SendResult, SentMail } from '@ultimat3/mail';
 import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
 import type { RunningServices } from './dev-runtime';
 import type { DevServices, ServiceBinding } from './dev-services';
+import { createTraceRecorder } from './dev-traces';
 import { CliNotImplementedError } from './errors';
 
 /** The nine panels `@ultimat3/admin` ships. Spelled out so a silent drop is a failure here. */
@@ -210,7 +213,7 @@ describe('unit · x dev mounts the dashboard', () => {
     ]);
   });
 
-  test('an unwired source answers with the wiring line instead of throwing out of the panel', async () => {
+  test('a host that installed no exporter answers with the wiring line, not an empty timeline', async () => {
     const payload = await panelPayload(
       timelinePanel,
       devSources(inputFor()),
@@ -221,6 +224,45 @@ describe('unit · x dev mounts the dashboard', () => {
     expect(error?.code).toBe('X_NOT_IMPLEMENTED');
     // The fix line names the exact hook to supply — an empty array would say "nothing happened".
     expect(error?.fix).toContain('traces');
+  });
+
+  test('the recorder x dev installs becomes the timeline source', async () => {
+    const recorder = createTraceRecorder();
+    const input: DevDashboardInput = { ...inputFor(), traces: recorder };
+    configureTelemetry({ exporter: recorder.exporter });
+    try {
+      withSpan('GET /feed', (span) => {
+        span.setAttributes({ 'http.request_id': 'req_1', 'http.status_code': 200 });
+      });
+      const payload = await panelPayload(timelinePanel, devSources(input), new URLSearchParams());
+      expect(payload.ok).toBe(true);
+      expect(payload.ok ? payload.data.requests.map((entry) => entry.requestId) : []).toEqual([
+        'req_1',
+      ]);
+    } finally {
+      resetTelemetry();
+    }
+  });
+
+  test('the cache log is the report invalidateTags already built, not a second record of it', async () => {
+    // `declareTags` is additive and the log is process-global, so this asserts on the delta
+    // rather than resetting either — a reset here would wipe whatever a neighbouring file is
+    // mid-way through asserting.
+    declareTags(['dashboardfixture']);
+    const before = (await devSources(inputFor()).invalidations()).length;
+    const report = await invalidateTags([tag('dashboardfixture', 'p_1')]);
+    const after = await devSources(inputFor()).invalidations();
+
+    expect(after).toHaveLength(before + 1);
+    expect(after[0]?.tags).toEqual(report.tags);
+    expect(after[0]?.source.length).toBeGreaterThan(0);
+    expect(Date.parse(after[0]?.at ?? '')).not.toBeNaN();
+  });
+
+  test('the policy matrix comes from the app registries, so it is empty before the app loads', async () => {
+    // Registries are process-global and this file registers nothing: the honest answer for an app
+    // with no gated primitive is no cells, and it must be an answer rather than a refusal.
+    expect(await devSources(inputFor()).policyMatrix()).toEqual([]);
   });
 
   test('a manifest that was never generated is all-added, with the committed side undefined', async () => {

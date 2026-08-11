@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
+import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
@@ -27,8 +28,12 @@ const ROOT = join(import.meta.dir, '..', '.dev-fixture');
 const FILES: Readonly<Record<string, string>> = {
   'package.json': JSON.stringify({ name: 'dev-fixture', version: '1.4.0' }),
 
-  'apps/web/app/posts/policy.ts': `import { allow, can, definePermissions } from '@ultimat3/policy';
+  'apps/web/app/posts/policy.ts': `import { allow, can, definePermissions, defineRoles } from '@ultimat3/policy';
 export const permissions = definePermissions(['post:publish'] as const);
+export const roles = defineRoles({
+  author: { grants: ['post:publish'] },
+  reader: { grants: [] },
+});
 export const canPostWrite = can('post:publish');
 export const anyone = allow();
 `,
@@ -226,6 +231,97 @@ describe('unit · x dev boots the app', () => {
     expect(payload.data.manifest.committed).toBeNull();
     expect(payload.data.drifted).toBe(true);
     expect(payload.data.added).toContain('app');
+  });
+
+  test('/_x/timeline is the request this process just served, not a refusal', async () => {
+    await fetchDev('/api/posts/echo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ word: 'traced' }),
+    });
+
+    const payload = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
+      ok: boolean;
+      data: {
+        requests: { requestId: string; path: string }[];
+        selected: { status: number; spans: { kind: string; name: string }[] } | null;
+        totalsByKind: Record<string, number>;
+      };
+    };
+    expect(payload.ok).toBe(true);
+    // The action's own route, recorded through core's tracer — the panel was `X_NOT_IMPLEMENTED`
+    // until `x dev` installed an exporter, because tracing is free and off until one is configured.
+    const served = payload.data.requests.find((entry) => entry.path === '/api/posts/echo');
+    expect(served).toBeDefined();
+    expect(served?.requestId.length).toBeGreaterThan(0);
+    expect(payload.data.selected?.spans.some((span) => span.kind === 'http')).toBe(true);
+    expect(Object.keys(payload.data.totalsByKind)).toContain('http');
+  });
+
+  test("/_x/policy is the app's real matrix: one column per declared role", async () => {
+    const payload = (await (await fetchDev('/_x/policy?json=1')).json()) as {
+      ok: boolean;
+      data: {
+        actors: string[];
+        permissions: string[];
+        matrix: { permission: string; byActor: Record<string, boolean> }[];
+        unreachable: string[];
+      };
+    };
+    expect(payload.ok).toBe(true);
+    expect(payload.data.actors).toEqual(['anonymous', 'author', 'reader']);
+    expect(payload.data.permissions).toContain('post:publish');
+
+    const publish = payload.data.matrix.find((row) => row.permission === 'post:publish');
+    // The grant the fixture's `defineRoles` actually made, decided by the fixture's own policy.
+    expect(publish?.byActor['author']).toBe(true);
+    expect(publish?.byActor['reader']).toBe(false);
+    expect(publish?.byActor['anonymous']).toBe(false);
+    expect(payload.data.unreachable).not.toContain('post:publish');
+  });
+
+  test('/_x/cache is the invalidation log, instead of a 500 where the tab should be', async () => {
+    declareTags(['devfixture']);
+    await invalidateTags([tag('devfixture', 'p_1')]);
+
+    const response = await fetchDev('/_x/cache?json=1');
+    // Before the log existed this panel could not answer at all: the unwired source threw
+    // synchronously, past the panel's own `.catch`, and the whole tab was a 500.
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      ok: boolean;
+      data: { invalidations: { tags: string[] }[]; note: string | null };
+    };
+    expect(payload.ok).toBe(true);
+    // The log is process-global, so this asserts the bust is present rather than that it is alone.
+    expect(payload.data.invalidations.some((event) => event.tags.includes('devfixture:p_1'))).toBe(
+      true,
+    );
+    expect(payload.data.note).toBeNull();
+  });
+
+  test('every mounted panel answers — no tab is a dead end', async () => {
+    const refused: string[] = [];
+    for (const key of server.panels) {
+      const body = (await (await fetchDev(`/_x/${key}?json=1`)).json()) as { ok: boolean };
+      if (!body.ok) refused.push(key);
+    }
+    // Four of these eleven refused before this wiring: timeline, cache and policy had no source
+    // at all, and the refusal threw past the panels' own degradation on the way out.
+    expect(refused).toEqual([]);
+  });
+
+  test('/_x/live says there is no sync node rather than claiming no subscribers', async () => {
+    const payload = (await (await fetchDev('/_x/live?json=1')).json()) as {
+      ok: boolean;
+      data: { subscribers: unknown[]; note: string | null };
+    };
+    // `subscribers` is the one source still unwired — `@ultimat3/realtime` records no matcher
+    // trace, and that trace is the panel's whole question. The panel degrades to its note; an
+    // empty list with no note would read as "nobody is subscribed", which is a different claim.
+    expect(payload.ok).toBe(true);
+    expect(payload.data.subscribers).toEqual([]);
+    expect(payload.data.note).toBe('dev.live.no-sync-node');
   });
 
   test('an unknown /_x path 404s with a code, a cause and a fix', async () => {

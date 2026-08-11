@@ -4,7 +4,7 @@
 // the returned report is what the `/_x` cache panel renders, so "did it actually clear?" is
 // answerable without a log dive.
 
-import { logger, withSpan } from '@ultimat3/core';
+import { currentSpan, logger, systemClock, withSpan } from '@ultimat3/core';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
 import { assertKnownTags, parseTag, serializeTags } from './tags';
@@ -25,6 +25,43 @@ export interface InvalidationReport {
   readonly errors: readonly { tier: string; message: string }[];
 }
 
+/** One completed `invalidateTags` call, kept for the `/_x` cache panel. */
+export interface InvalidationEvent {
+  /** ISO-8601, from core's `systemClock` — never `new Date()`. */
+  readonly at: string;
+  /** Wire-form tags, exactly `report.tags`. */
+  readonly tags: readonly string[];
+  /**
+   * Everything the fan-out actually cleared: every tier key, plus the ISR paths, CDN paths
+   * and live queries.
+   */
+  readonly busted: readonly string[];
+  /**
+   * What triggered it: the name of the span active when `invalidateTags` was called, or
+   * `'invalidateTags'`.
+   */
+  readonly source: string;
+  readonly durationMs: number;
+  /** Tier failures, verbatim from the report — a partial bust must not read as a clean one. */
+  readonly errors: readonly { readonly tier: string; readonly message: string }[];
+}
+
+// A dev log, not an audit trail — capped so a long-lived `x dev` process cannot grow it forever.
+const MAX_INVALIDATION_LOG = 100;
+
+/** Newest first. Module-private; read it through `recentInvalidations()`. */
+const invalidationLog: InvalidationEvent[] = [];
+
+function recordInvalidation(event: InvalidationEvent): void {
+  invalidationLog.unshift(event);
+  invalidationLog.length = Math.min(invalidationLog.length, MAX_INVALIDATION_LOG);
+}
+
+/** What the `/_x` cache panel renders: newest first, capped, a copy of the live log. */
+export function recentInvalidations(): readonly InvalidationEvent[] {
+  return [...invalidationLog];
+}
+
 const registry: CacheTier[] = [];
 let revalidator: Revalidator | undefined;
 
@@ -39,9 +76,11 @@ export function registeredTiers(): readonly CacheTier[] {
   return sortTiers(registry);
 }
 
+/** Test seam: drops every registered tier, the revalidator, and the invalidation log. */
 export function resetTiers(): void {
   registry.length = 0;
   revalidator = undefined;
+  invalidationLog.length = 0;
 }
 
 export function registerRevalidator(next: Revalidator): void {
@@ -54,6 +93,10 @@ export function registerRevalidator(next: Revalidator): void {
  * lands in `report.errors` and the entry expires by TTL.
  */
 export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationReport> {
+  // Captured before `withSpan` opens `cache.invalidate` below: inside that callback the active
+  // span is already this call's own, which would make every event's source the same string.
+  const source = currentSpan()?.name ?? 'invalidateTags';
+
   return withSpan('cache.invalidate', async (): Promise<InvalidationReport> => {
     const startedAt = performance.now();
     assertKnownTags(tags);
@@ -97,9 +140,28 @@ export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationR
       errors,
     };
 
+    recordInvalidation({
+      at: systemClock.now().toISOString(),
+      tags: report.tags,
+      busted: dedupe([
+        ...report.tiers.flatMap((entry) => entry.keys),
+        ...report.isr,
+        ...report.cdn,
+        ...report.liveQueries,
+      ]),
+      source,
+      durationMs: report.durationMs,
+      errors: report.errors,
+    });
+
     if (errors.length > 0) logger.warn('cache.invalidate.partial', { ...report });
     return report;
   });
+}
+
+/** First-seen order kept — a union of what actually changed, not a sorted report. */
+function dedupe(values: readonly string[]): readonly string[] {
+  return [...new Set(values)];
 }
 
 /** Convenience for `x cache bust post:1` — accepts the wire form agents see in reports. */

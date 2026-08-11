@@ -8,6 +8,7 @@ import { watch } from 'node:fs';
 import { join } from 'node:path';
 import { listActions, toRoute } from '@ultimat3/action';
 import type { Role } from '@ultimat3/core';
+import { configureTelemetry, noopExporter } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
@@ -24,6 +25,7 @@ import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
+import { createTraceRecorder } from './dev-traces';
 import { holdUntilShutdown } from './hold';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -97,6 +99,11 @@ const envOf = (env: StartDevOptions['env']): { env?: string } => {
 export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const services = resolveServices(options.root, options.env);
   const runtime: RunningServices = await startServices(services);
+  // Installed before the app loads, so a span opened during registration is already recorded.
+  // Tracing is always on in the framework and free until an exporter is configured; `x dev` is
+  // what configures one, which is the whole reason `/_x/timeline` has anything to draw.
+  const traces = createTraceRecorder();
+  configureTelemetry({ exporter: traces.exporter });
   const app = await loadApp(options.root);
   const state: DevState = {
     manifest: (await appManifest(options.root)).manifest,
@@ -123,6 +130,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       findings: server.findings,
       reloads: state.reloads,
     }),
+    traces,
     ...envOf(options.env),
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);
@@ -178,6 +186,11 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       stopWatching();
       await running.stop();
       await runtime.stop();
+      // Released after the roles: a span opened by an in-flight request still has an exporter to
+      // end into. `configureTelemetry` merges, so handing back the noop is how it is uninstalled —
+      // leaving it in place would keep every span of the next `startDev` in this process's buffer.
+      configureTelemetry({ exporter: noopExporter });
+      traces.reset();
     },
   };
   return server;

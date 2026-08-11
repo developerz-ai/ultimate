@@ -69,8 +69,16 @@ and the step says so rather than guessing.
 
 `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
 dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
-holds — a SQL runner, the committed manifest, the process's own services — supplied as
-`defaultDevSources({ hooks })`.
+holds — a SQL runner, the caught outbox, the committed manifest, the process's own services, the
+spans it recorded — supplied as `defaultDevSources({ hooks })`.
+
+Wired means answerable: all eleven panels answer in a `x dev` process, and a hook the CLI does
+not supply is a panel that refuses with a wiring line, never one that renders empty. `timeline`
+is core's tracer (`x dev` is what calls `configureTelemetry`), `cache` is
+`recentInvalidations()`, `policy` is `@ultimat3/policy`'s own `policyMatrix()` over the app's
+roles — a verdict re-derived here would be the second authz the framework exists to prevent.
+`subscribers` is the one source left unwired: `@ultimat3/realtime` retains no matcher trace, and
+that trace is the live panel's question, so the panel degrades to its own note instead.
 
 ## `x dev` boots the app; it does not simulate one
 
@@ -83,7 +91,9 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
-| `cmd-dev.ts` | boot order, mounting `/_x`, the file watcher |
+| `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |
+| `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
+| `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
 | `mcp-db-target.ts` | which database the host is pointed at, and whether it is a branch |
 | `mcp-errors.ts` | `errors.explain`: one runnable command per code, typed over `CliErrorCode` |

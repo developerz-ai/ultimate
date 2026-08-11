@@ -86,9 +86,11 @@ const unavailable = (source: string, panel: string): DevSourceUnavailableError =
   new DevSourceUnavailableError({ source, panel });
 
 const unwired = <T>(source: string, panel: string): (() => Promise<T>) => {
-  return (): Promise<T> => {
-    throw unavailable(source, panel);
-  };
+  // A rejected promise, never a synchronous throw: every caller's declared return type is
+  // `Promise<T>`, and panels like `panel-cache.ts` degrade with `sources.invalidations().catch(…)`.
+  // A synchronous throw fires while that expression is still being evaluated, before there is a
+  // promise for `.catch` to attach to, so it escapes the panel's own degradation entirely.
+  return (): Promise<T> => Promise.reject(unavailable(source, panel));
 };
 
 /** How many recent runs the jobs panel traces. A dev panel reads, it does not page. */
@@ -151,7 +153,11 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         return {
           name: str(query['name']),
           live: query['live'] === true,
-          policy: str(query['policy']),
+          // `QueryDescriptor`'s permission field is named `capability`, not `policy` — this
+          // fact keeps its own field named `policy` (that is the /_x rendering, not the registry).
+          policy: str(query['capability']),
+          // `QueryDescriptor` carries no SQL text at all; this stays blank until the query
+          // registry actually describes one — never invent a value here.
           sql: str(query['sql']),
         };
       });
@@ -301,11 +307,21 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
       const authz = opts.authz;
       const actors = opts.actors ?? [];
       if (authz === undefined || actors.length === 0) {
-        throw new DevSourceUnavailableError({ source: 'authz + actors', panel: 'policy' });
+        // Neither is a `hooks` entry — both are `DevSourceOptions` fields — so the rendered fix
+        // has to spell a real `defaultDevSources({ authz, actors })` call, not the default
+        // `hooks: { <source> }` phrasing (`{ authz + actors }` is not valid syntax).
+        throw new DevSourceUnavailableError({
+          source: 'authz + actors',
+          panel: 'policy',
+          wiring: '{ authz, actors }',
+        });
       }
       const { describeActions } = await import('@ultimat3/action');
+      // `ActionDescriptor`'s permission field is named `capability`, not `policy` — reading the
+      // latter answered '' for every action, so the matrix came back empty even when both
+      // `authz` and `actors` were wired correctly.
       const permissions = [
-        ...new Set(listOf(describeActions()).map((raw) => str(bagOf(raw)['policy']))),
+        ...new Set(listOf(describeActions()).map((raw) => str(bagOf(raw)['capability']))),
       ].filter((permission) => permission !== '');
 
       return actors.flatMap((actor) =>

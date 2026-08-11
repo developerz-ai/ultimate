@@ -124,8 +124,20 @@ answer:
 | `services` | which database/events/storage this process is talking to, and its reload count |
 | `boundaries` | which import crosses a surface or a layer |
 
-A panel whose source is not wired in this process answers `ok: false` with the exact wiring line
-rather than an empty tab.
+Every one of the eleven answers in a `x dev` process. Three of them read facts only this process
+holds, so nothing else can serve them: `timeline` is core's own spans, recorded by the exporter
+`x dev` installs at boot (tracing is always on and free until one is configured); `cache` is the
+report `invalidateTags()` already built, kept by `@ultimat3/cache`; `policy` is
+`@ultimat3/policy`'s own `policyMatrix()` run over every capability an action or query gates,
+against one actor per role the app declared with `defineRoles` plus the anonymous caller — never
+a second reading of the actor. The matrix is evaluated with no row, and each cell's trace says so:
+a row-level rule decides again on the real request.
+
+`live` lists the registered live queries and notes that no subscriber list is attached —
+`@ultimat3/realtime` does not retain a subscriber's matcher trace, which is the rest of that
+panel's question. A panel whose source a host has not wired answers `ok: false` with the exact
+wiring line rather than an empty tab, and a panel that can degrade says which half is missing
+rather than rendering an empty one as an answer.
 
 | Env | Unset means | Set means |
 |---|---|---|

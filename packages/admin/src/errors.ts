@@ -101,11 +101,16 @@ export class AdminPolicyMissingError extends UltimateError {
  * empty panel, because an empty panel reads as "nothing happened".
  */
 export class DevSourceUnavailableError extends UltimateError {
-  constructor(input: { source: string; panel: string }) {
+  constructor(input: { source: string; panel: string; wiring?: string }) {
     super({
       code: 'X_NOT_IMPLEMENTED',
       cause: `the /_x ${input.panel} panel needs the "${input.source}" source, which is not wired in this process`,
-      fix: `devDashboard({ sources: defaultDevSources({ hooks: { ${input.source} } }) })`,
+      // `wiring`, when supplied, replaces the whole `defaultDevSources(...)` argument text —
+      // the default `hooks: { <source> }` phrasing is only valid when the source really is a
+      // `DevSources` key. "authz + actors" is not one; it is two `DevSourceOptions` fields, so
+      // that call site passes its own `wiring` rather than render `hooks: { authz + actors }`,
+      // which is not syntax an agent could run.
+      fix: `devDashboard({ sources: defaultDevSources(${input.wiring ?? `{ hooks: { ${input.source} } }`}) })`,
       docs: docsFor('X_NOT_IMPLEMENTED'),
     });
   }

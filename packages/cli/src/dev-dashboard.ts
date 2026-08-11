@@ -3,16 +3,28 @@
 // manifest, and two panels of process facts — and projects the dashboard onto HTTP routes.
 // A panel implemented here instead of in `admin` would be the second copy this seam exists to ban.
 
-import type { DevPanel, DevSources, MailFact, ManifestFact, SqlResult } from '@ultimat3/admin/dev';
+import type {
+  DevPanel,
+  DevSources,
+  InvalidationFact,
+  MailFact,
+  ManifestFact,
+  PolicyFact,
+  RequestTrace,
+  SqlResult,
+} from '@ultimat3/admin/dev';
 import { DEV_BASE_PATH, DEV_PANELS, defaultDevSources, devDashboard } from '@ultimat3/admin/dev';
+import { recentInvalidations } from '@ultimat3/cache';
 import type { Role } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { json as jsonResponse } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { checkAppBoundaries } from './app-boundaries';
 import { appManifest, readAppManifest } from './app-manifest';
+import { devPolicyMatrix } from './dev-policy';
 import type { RunningServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
+import type { TraceRecorder } from './dev-traces';
 import type { Finding } from './output';
 
 export interface DevStatus {
@@ -30,6 +42,8 @@ export interface DevDashboardInput {
   status(): DevStatus;
   /** NODE_ENV/X_ENV as x dev saw it; `devDashboard` refuses to mount in production. */
   readonly env?: string | undefined;
+  /** The spans this process recorded. Absent when `x dev` did not install the exporter. */
+  readonly traces?: TraceRecorder | undefined;
 }
 
 /**
@@ -88,17 +102,44 @@ async function manifestFact(root: string): Promise<ManifestFact> {
 }
 
 /**
- * `traces`, `subscribers`, `invalidations` and `policyMatrix` are left unwired on purpose:
- * `defaultDevSources` makes each throw `X_NOT_IMPLEMENTED` with the exact wiring line, which
- * `panelPayload` renders as `{ ok: false, error }`. An empty array would read as "nothing
- * happened" — a wrong answer, where the throw is a true one with the fix attached.
+ * `@ultimat3/cache` keeps the report of every `invalidateTags` fan-out; the panel reads it back
+ * as its log. Only the shape differs — the cache owns the facts, /_x owns the rendering.
+ */
+const invalidationFacts = (): readonly InvalidationFact[] =>
+  recentInvalidations().map((event) => ({
+    at: event.at,
+    tags: event.tags,
+    busted: event.busted,
+    source: event.source,
+  }));
+
+/**
+ * Every source only this process can answer. It owns the SQL connection, the caught outbox, the
+ * committed manifest on disk, the span exporter and the app's registries — no other host can.
+ *
+ * `subscribers` is the one left unwired, and stays that way until `@ultimat3/realtime` records a
+ * subscriber's matcher decision: `LiveSubscriberFact.trace` is the live panel's whole question,
+ * and nothing in the registry retains it. `defaultDevSources` rejects it with `X_NOT_IMPLEMENTED`
+ * and the wiring line, which the live panel degrades into its own `dev.live.no-sync-node` note —
+ * a bare empty list would claim nobody is subscribed, which is a different and unearned answer.
  */
 export function devSources(input: DevDashboardInput): DevSources {
+  const traces = input.traces;
   return defaultDevSources({
     hooks: {
       runSql: (sql: string): Promise<SqlResult> => runSql(input, sql),
       mail: (): Promise<readonly MailFact[]> => Promise.resolve(mailFacts(input)),
       manifest: (): Promise<ManifestFact> => manifestFact(input.root),
+      invalidations: (): Promise<readonly InvalidationFact[]> =>
+        Promise.resolve(invalidationFacts()),
+      // Read through the app's own policies at request time, so a reload that changes a rule
+      // changes the matrix without a remount.
+      policyMatrix: (): Promise<readonly PolicyFact[]> => Promise.resolve(devPolicyMatrix()),
+      // Spread, never passed as `undefined`: a host with no recorder must fall back to the
+      // refusal `defaultDevSources` already carries, not to an empty timeline.
+      ...(traces === undefined
+        ? {}
+        : { traces: (): Promise<readonly RequestTrace[]> => Promise.resolve(traces.traces()) }),
     },
   });
 }
