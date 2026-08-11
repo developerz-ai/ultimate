@@ -7,6 +7,7 @@
 export type { SqlFragment } from '@ultimat3/db';
 export { sql, withTransaction } from '@ultimat3/db';
 export type { Db } from './client';
-export { db } from './client';
+export { db, driver } from './client';
 export type { Block, Comment, Friendship, Like, Media, Post, User } from './schema';
 export * as schema from './schema';
+export { DEMO_LOGINS, demo, seedDemo } from './seed';

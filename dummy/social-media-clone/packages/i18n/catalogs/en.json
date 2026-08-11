@@ -20,6 +20,12 @@
       "cta": "Open the dashboard",
       "description": "Everything you need, one command from shippable.",
       "title": "SocialMediaClone"
+    },
+    "feed": {
+      "title": "The public feed",
+      "description": "Everything here is seeded and fake. What you can see is decided by a policy, not by a WHERE clause.",
+      "likes": "{count} likes",
+      "comments": "{count} comments"
     }
   }
 }

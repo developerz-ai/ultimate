@@ -8,6 +8,7 @@
 // including one southern-hemisphere and one without DST.
 
 import { defineSeed } from '@ultimat3/entity';
+import { driver } from './client';
 import { blocks, comments, friendships, likes, media, posts, users } from './schema';
 
 /** The two demo logins, said out loud so a reader does not have to infer them from a hash. */
@@ -88,7 +89,7 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
       handle: 'mara',
       email: 'mara@demo.example',
       displayName: 'Mara Ferrer',
-      bio: 'Blocked the demo user, and is blocked back. Nothing of hers should appear.',
+      bio: 'Blocked the demo user. Her posts are public, and must vanish once you sign in as user.',
       role: 'member',
       tz: 'Pacific/Auckland',
       locale: 'es',
@@ -174,8 +175,10 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
       updatedAt: at('2026-03-11T18:00:00Z'),
     },
     {
-      // PUBLIC, and still invisible to the demo user: a block beats the audience ladder. If this
-      // ever shows up in the feed, the ordering in `canSeePost` has regressed.
+      // PUBLIC, and invisible TO THE DEMO USER specifically: a block beats the audience ladder.
+      // It is correctly visible to an anonymous reader — Mara blocked one person, not the public —
+      // so the anonymous feed showing it is the rule working, not a leak. Signed in as `user` it
+      // must be absent; if it appears there, the ordering in `canSeePost` has regressed.
       id: id('post:blocked-author'),
       authorId: id('user:mara'),
       body: 'Written by someone who blocked the demo user. Public audience, and still must never appear.',
@@ -252,3 +255,16 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
     },
   ]);
 });
+
+/**
+ * Seeds into the SAME driver the app reads through, which is the whole reason `driver` is exported
+ * from `client.ts` rather than left as the module-private default.
+ */
+export const seedDemo = async (): Promise<void> => {
+  await demo.run({ driver });
+};
+
+if (import.meta.main) {
+  await seedDemo();
+  await Bun.stdout.write(`${JSON.stringify({ ok: true, seed: demo.name })}\n`);
+}
