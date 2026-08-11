@@ -101,6 +101,11 @@ importing them IS the registration. What those modules registered is then served
 A module that will not import becomes a finding on the result rather than a dead process, so the
 dev loop stays reachable while something is broken.
 
+Without `--once` the process stays up until it is signalled. `Ctrl-C` runs the same three-phase
+drain a production `SIGTERM` runs — stop accepting, finish in-flight, close — and only then
+releases the embedded Postgres, the worker and the file watcher, so `.x/pgdata` is never left
+locked by a process that has gone. `x mcp serve --transport http` behaves identically.
+
 `/_x/<panel>` is one tab per panel; `?json=1` (or `accept: application/json`) returns exactly what
 the tab draws. Eleven panels — the nine `@ultimat3/admin` ships plus the two only the CLI can
 answer:

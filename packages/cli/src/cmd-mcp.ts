@@ -3,11 +3,12 @@
 // supplies only the app, the caller and the socket. A tool answered here would be a second answer
 // to a question the framework already answers.
 
-import { markListening, nanoid, onShutdown } from '@ultimat3/core';
+import { markListening, nanoid } from '@ultimat3/core';
 import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
+import { holdUntilShutdown } from './hold';
 import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer, DEV_TOOL_SCOPES } from './mcp-host';
 import { msg } from './messages';
@@ -165,8 +166,11 @@ export const mcpCommand: CliCommand = {
     if (transport !== 'http') return serveOverStdio(host);
     // Long-running: the process stays alive on the server handle. The stop handle goes to the
     // shutdown registry so a signal releases the socket and the database, not the exit code alone.
+    // Long-running, exactly as `x dev` is: `dispatch` awaits the hold, and the drain a signal
+    // starts is what releases the socket and the database. Registering a shutdown hook and
+    // returning was the older shape — nothing installed a signal handler, so the hook was never
+    // reached and the exit code closed the socket the line above had just announced.
     const served = startMcpHttp(host, port);
-    onShutdown('cli:mcp-http', () => served.stop());
-    return served.result;
+    return { ...served.result, hold: holdUntilShutdown('mcp', () => served.stop()) };
   },
 };

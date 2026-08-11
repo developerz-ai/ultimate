@@ -24,6 +24,7 @@ import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
+import { holdUntilShutdown } from './hold';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
@@ -247,7 +248,10 @@ export const devCommand: CliCommand = {
       await server.stop();
       return result;
     }
-    // Long-running: the process stays alive on the server handle until SIGINT.
-    return result;
+    // Long-running: `dispatch` awaits this instead of exiting, so the watcher keeps reloading and
+    // `/_x` stays reachable. Ctrl-C drains the web role through core's phases first and releases
+    // the embedded Postgres, the worker and the watcher after — a hard kill leaves the PGlite
+    // directory locked by a process that no longer exists.
+    return { ...result, hold: holdUntilShutdown('dev', () => server.stop()) };
   },
 };

@@ -40,6 +40,13 @@ export interface CommandResult {
   /** Extra human-only lines (tables, file lists). Never carries data JSON does not have. */
   readonly lines?: readonly string[];
   readonly exitCode?: number;
+  /**
+   * A long-running command's "still running" handle: `dispatch` renders the result — the command
+   * has already reported that it is up — and then awaits this before the process exits. Neither
+   * renderer carries it, because it is behaviour rather than a fact, and a fact only one of them
+   * could show is how the two drift.
+   */
+  readonly hold?: () => Promise<void>;
 }
 
 export interface UltimateErrorShape {

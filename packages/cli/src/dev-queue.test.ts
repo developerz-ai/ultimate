@@ -12,6 +12,13 @@ import { resolveServices } from './dev-services';
 
 const ROOT = `${import.meta.dir}/../.queue-fixture`;
 
+/**
+ * Booting embedded Postgres is seconds of real work, and bun's default budget is 5s — close
+ * enough to it that a loaded machine, not the code, would decide this file. Explicit and generous
+ * so a hang is reported as a hang.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
+
 let running: RunningQueue | undefined;
 
 afterEach(async () => {
@@ -20,21 +27,25 @@ afterEach(async () => {
   resetJobDriver();
   setDbClient(undefined);
   await rm(ROOT, { recursive: true, force: true });
-});
+}, BOOT_TIMEOUT_MS);
 
 describe('startQueue', () => {
-  test('installs the ambient job driver, then clears it on stop', async () => {
-    const services = resolveServices(ROOT, {});
-    const queue = await startQueue(services);
-    running = queue;
+  test(
+    'installs the ambient job driver, then clears it on stop',
+    async () => {
+      const services = resolveServices(ROOT, {});
+      const queue = await startQueue(services);
+      running = queue;
 
-    expect(jobDriver()).toBe(queue.jobs);
+      expect(jobDriver()).toBe(queue.jobs);
 
-    await queue.stop();
-    running = undefined;
+      await queue.stop();
+      running = undefined;
 
-    // The bug this pins: `stop()` used to clear only the database client, so the next command
-    // saw a driver already installed, skipped queue startup, and queried a closed socket.
-    expect(jobDriver()).toBeUndefined();
-  });
+      // The bug this pins: `stop()` used to clear only the database client, so the next command
+      // saw a driver already installed, skipped queue startup, and queried a closed socket.
+      expect(jobDriver()).toBeUndefined();
+    },
+    BOOT_TIMEOUT_MS,
+  );
 });

@@ -81,6 +81,14 @@ const resetRegistries = (): void => {
 
 let server: DevServer;
 
+/**
+ * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
+ * default hook budget is 5s — close enough to this boot that a loaded machine decided whether the
+ * file passed. Every timeout in this file is explicit and generous for that reason: a hang should
+ * be reported as a hang, never as a boot that was 300ms slower than the runner's default.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
+
 beforeAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
   for (const [path, contents] of Object.entries(FILES)) {
@@ -89,13 +97,13 @@ beforeAll(async () => {
   resetRegistries();
   // Port 0 asks the OS for a free one, so this suite never collides with a running `x dev`.
   server = await startDev({ root: ROOT, port: 0, env: {}, roles: ['web', 'worker', 'scheduler'] });
-});
+}, BOOT_TIMEOUT_MS);
 
 afterAll(async () => {
   await server?.stop();
   await rm(ROOT, { recursive: true, force: true });
   resetRegistries();
-});
+}, BOOT_TIMEOUT_MS);
 
 const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {
   const handle = server.running.server;
@@ -241,4 +249,81 @@ describe('unit · x dev boots the app', () => {
     const role = devCommand.spec.flags?.find((flag) => flag.name === 'role');
     expect(role?.summary).toContain('web,sync,worker,scheduler');
   });
+});
+
+// Everything above proves the app is served. This proves it is still being served a moment later.
+// `dispatch` renders a `CommandResult` and `bin.ts` exits on it, so a dev server that only lives
+// inside the promise `run` resolves is a dev server the exit code takes down between the line
+// announcing the url and the first request to it — which is what `x dev` did. Only a real process
+// can show that, so this one is spawned rather than called.
+const HOLD_ROOT = join(import.meta.dir, '..', '.dev-hold-fixture');
+const BIN = join(import.meta.dir, 'bin.ts');
+
+/**
+ * One pump per stream, into one buffer. Reading the stream twice is what a naive version does,
+ * and abandoning a `for await` closes the underlying reader — the second read then waits forever
+ * on a stream nothing will ever write to again.
+ */
+function pump(stream: ReadableStream<Uint8Array>): { seen: () => string } {
+  const decoder = new TextDecoder();
+  let seen = '';
+  void (async () => {
+    for await (const chunk of stream) seen += decoder.decode(chunk, { stream: true });
+  })();
+  return { seen: () => seen };
+}
+
+/** Poll the buffer until `marker` shows up. The caller's own timeout is the deadline. */
+async function waitFor(output: { seen: () => string }, marker: string): Promise<string> {
+  for (;;) {
+    const seen = output.seen();
+    if (seen.includes(marker)) return seen;
+    await Bun.sleep(25);
+  }
+}
+
+describe('live · x dev stays up until it is signalled', () => {
+  test(
+    'boots, keeps serving, and drains on SIGINT instead of being killed',
+    async () => {
+      await rm(HOLD_ROOT, { recursive: true, force: true });
+      await Bun.write(
+        join(HOLD_ROOT, 'package.json'),
+        JSON.stringify({ name: 'dev-hold-fixture', version: '1.0.0' }),
+      );
+      await Bun.write(
+        join(HOLD_ROOT, 'app.config.ts'),
+        `import { defineConfig } from '@ultimat3/core';\nexport default defineConfig({ name: 'dev-hold-fixture' });\n`,
+      );
+
+      const child = Bun.spawn(['bun', BIN, 'dev', '--port', '0', '--json'], {
+        cwd: HOLD_ROOT,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const output = pump(child.stdout);
+      try {
+        expect(await waitFor(output, '"command":"dev"')).toContain('"ok":true');
+
+        // The regression: the process used to be gone by now, having exited on the code for the
+        // line it had just printed.
+        await Bun.sleep(500);
+        expect(child.exitCode).toBeNull();
+
+        child.kill('SIGINT');
+        const drained = await waitFor(output, '"msg":"stopped"');
+        const code = await child.exited;
+
+        // Drained, not killed: a hard kill leaves the embedded Postgres directory locked and never
+        // reaches core's phases, so this line is the whole difference.
+        expect(drained).toContain('"msg":"stopped"');
+        expect(code).toBe(0);
+      } finally {
+        child.kill('SIGKILL');
+        await child.exited;
+        await rm(HOLD_ROOT, { recursive: true, force: true });
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
 });

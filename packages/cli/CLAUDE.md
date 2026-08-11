@@ -6,6 +6,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 |---|---|
 | Entry | `src/bin.ts` (`#!/usr/bin/env bun`) — argv, stdout, exit code only |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
+| Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
 | Errors | `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
 | Subprocesses | only through `exec.ts`, so a test can inject a fake `Runner` |
@@ -93,6 +94,21 @@ holds — a SQL runner, the committed manifest, the process's own services — s
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.
+
+### `hold.ts` is why a long-running command outlives its own result
+
+`dispatch` renders a `CommandResult` and `bin.ts` exits on the code — so a command whose server is
+still listening when `run` resolves is a command the exit code takes down, between the line that
+announced the url and the first request to it. `x dev` and `x mcp serve --transport http` both did.
+
+The one answer is `CommandResult.hold`: report first, then `dispatch` awaits the hold before the
+exit code. `holdUntilShutdown` installs core's signal handlers (`installSignalHandlers` — until
+this it had no callers anywhere, which is why `cmd-mcp.ts`'s `onShutdown` registration was never
+reached), waits on the **drain's first phase** rather than on a signal list of its own, and
+releases what core's lifecycle never learned about — the embedded Postgres, the worker, the
+watcher — *after* the drain, so an in-flight request still has the database it opened against.
+Ctrl-C is therefore the same three phases production runs, not a kill that leaves `.x/pgdata`
+locked by a process that no longer exists.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 
