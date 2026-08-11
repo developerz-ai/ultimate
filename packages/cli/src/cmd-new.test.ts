@@ -4,7 +4,7 @@
 // an app that scaffolds with an icon nothing can ever turn into `/icons/icon-192.png`.
 
 import { describe, expect, test } from 'bun:test';
-import { probeImage } from '@ultimat3/core';
+import { decodeImage, probeImage } from '@ultimat3/core';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
 import { planNewApp } from './cmd-new';
 import { icon } from './templates/scaffold-icon';
@@ -45,5 +45,22 @@ describe('unit · x new · scaffolded icon', () => {
 
   test('icon() is deterministic: the same bytes on every call', () => {
     expect(icon()).toEqual(icon());
+  });
+
+  // Enforced rather than commented (axiom 3). The CLI cannot reach `@ultimat3/ui`'s colour roles —
+  // both are tier 5 — so the one honest placeholder is no colour at all: a grey level on all three
+  // channels. A palette value pasted in here fails this test instead of surviving to a review.
+  test('the mark is greyscale on a transparent canvas — no palette value to drift from', () => {
+    const raster = decodeImage(iconBytes());
+    const at = (x: number, y: number): readonly number[] => {
+      const i = (y * raster.width + x) * 4;
+      return [...raster.pixels.slice(i, i + 4)];
+    };
+
+    const [r, g, b, a] = at(raster.width / 2, raster.height / 2);
+    expect([g, b]).toEqual([r, r]);
+    expect(a).toBe(255);
+    // The maskable safe zone stops short of the edge, so the corner is canvas, not mark.
+    expect(at(0, 0)[3]).toBe(0);
   });
 });

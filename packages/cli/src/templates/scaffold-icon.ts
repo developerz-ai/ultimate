@@ -18,24 +18,26 @@ const ICON_SIZE = 1024;
 const MASKABLE_PADDING = 0.1;
 
 /**
- * Neutral grey, and a copy of nothing: it deliberately matches no role in `@ultimat3/ui`'s token
- * set, which this package cannot reach anyway — both are tier 5 and only `admin -> ui` is a
- * declared sideways edge, so `cli -> ui` is a boundary error and `cli -> admin -> ui` does not
- * transit. A placeholder the user is expected to replace must not claim a brand colour either.
+ * Not a colour: one mid-grey LEVEL, written to all three channels, so this file recreates no
+ * palette value that could drift from one. A token cannot supply it either — `@ultimat3/ui` owns
+ * the colour roles and is tier 5 like this package, so `cli -> ui` is a boundary error and
+ * `cli -> admin -> ui` does not transit. A placeholder must claim no brand colour to begin with.
  */
-const MARK_RGBA: readonly [number, number, number, number] = [113, 113, 122, 255];
+const MARK_LEVEL = 128;
+
+/** Opaque over the transparent canvas — the mark is what `probeImage` and a human both see. */
+const MARK_ALPHA = 255;
 
 /** Fills the maskable-safe inner square, transparent canvas left untouched around it. */
 function paintMark(raster: Raster, inset: number): void {
   const { width, height, pixels } = raster;
-  const [r, g, b, a] = MARK_RGBA;
   for (let y = inset; y < height - inset; y += 1) {
     for (let x = inset; x < width - inset; x += 1) {
       const i = (y * width + x) * 4;
-      pixels[i] = r;
-      pixels[i + 1] = g;
-      pixels[i + 2] = b;
-      pixels[i + 3] = a;
+      pixels[i] = MARK_LEVEL;
+      pixels[i + 1] = MARK_LEVEL;
+      pixels[i + 2] = MARK_LEVEL;
+      pixels[i + 3] = MARK_ALPHA;
     }
   }
 }
