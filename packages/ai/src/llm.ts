@@ -24,10 +24,11 @@ import { parseDuration } from '@ultimat3/time';
 import type { BudgetLimits } from './budget';
 import { BudgetLedger, currentBudget, withBudget } from './budget';
 import { embedOne, fnv1a } from './embeddings';
-import { LlmOutputInvalidError } from './errors';
+import { LlmOutputInvalidError, LlmRefusedError, LlmTruncatedError } from './errors';
+import type { ModelId } from './models';
+import { DEFAULT_MODEL } from './models';
 import type { Prompt, PromptVars } from './prompt';
-import type { AiMessage, GenerateRequest, GenerateResult, ModelId } from './provider';
-import { DEFAULT_MODEL } from './provider';
+import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { aiEmbedder, aiGateway, semanticCacheFor } from './runtime';
 import type { LlmTool } from './tools';
 
@@ -175,13 +176,30 @@ async function generate<
         const result = await gateway.generate({ ...request, messages });
         span.setAttributes({
           'llm.attempts': attempt,
+          'llm.stop': result.stopReason,
           'llm.tokens': result.usage.inputTokens + result.usage.outputTokens,
           'llm.cost.minor': result.cost.minor,
         });
+        // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial
+        // content, so parsing it first reports a schema disagreement — a cause that is wrong, a
+        // fix that does not apply, and a repair turn spent buying the same refusal again.
+        if (result.stopReason === 'refusal') {
+          throw new LlmRefusedError({
+            prompt: name,
+            model: result.model,
+            category: result.stopDetails?.category,
+            explanation: result.stopDetails?.explanation,
+          });
+        }
         const parsed = await validateAsync(def.output, structuredOutputOf(result));
         if (parsed.issues === undefined) {
           await cache?.remember(parsed.value);
           return parsed.value;
+        }
+        // A cut-off answer that also fails its schema is not a disagreement about the shape: the
+        // ceiling is the same on the next attempt, so the repair turn is a second truncation.
+        if (result.stopReason === 'max_tokens') {
+          throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
         }
         issues = formatIssues(parsed.issues).join('; ');
         messages = [...messages, { role: 'assistant', content: result.text }, repair(issues)];

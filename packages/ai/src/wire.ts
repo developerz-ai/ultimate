@@ -8,7 +8,7 @@
 // half way. Imports from provider.ts are types only — the dependency runs one way.
 
 import { AiTransportError } from './errors';
-import type { StopReason, StreamChunk, TokenUsage } from './provider';
+import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
 import type { LlmToolCall } from './tools';
 
@@ -61,6 +61,22 @@ export function parseStopReason(raw: unknown): StopReason {
 }
 
 /**
+ * The refusal detail, when the payload carries one. Populated ONLY on a refusal — every other
+ * stop reason leaves it null — so a caller reading it unguarded reads null on the happy path.
+ * `category` is passed through as written rather than matched against a union: it is an open
+ * set, and a new category is information, not a parse failure.
+ */
+export function parseStopDetails(raw: unknown): StopDetails | undefined {
+  const record = asRecord(raw);
+  if (record === undefined || record['type'] !== 'refusal') return undefined;
+  return {
+    type: 'refusal',
+    category: typeof record['category'] === 'string' ? record['category'] : undefined,
+    explanation: typeof record['explanation'] === 'string' ? record['explanation'] : undefined,
+  };
+}
+
+/**
  * In-band `error` events carry a type, not a status. Mapping them back to one keeps a single
  * retry rule in the gateway: an overloaded provider is retryable whether it says so with a
  * 529 on the handshake or with an `overloaded_error` frame ten tokens in.
@@ -88,6 +104,7 @@ export interface StreamState {
   readonly text: string;
   readonly toolCalls: readonly LlmToolCall[];
   readonly stopReason: StopReason;
+  readonly stopDetails: StopDetails | undefined;
   readonly usage: TokenUsage;
 }
 
@@ -100,6 +117,7 @@ export class MessageStream {
   private text = '';
   private readonly toolCalls: LlmToolCall[] = [];
   private stopReason: StopReason = 'end_turn';
+  private stopDetails: StopDetails | undefined;
   private usage: TokenUsage = ZERO_USAGE;
   private readonly pending = new Map<number, PendingTool>();
   private stopped = false;
@@ -139,6 +157,7 @@ export class MessageStream {
       text: this.text,
       toolCalls: [...this.toolCalls],
       stopReason: this.stopReason,
+      stopDetails: this.stopDetails,
       usage: this.usage,
     };
   }
@@ -234,6 +253,9 @@ export class MessageStream {
     const delta = asRecord(payload['delta']);
     if (delta !== undefined && delta['stop_reason'] !== null) {
       this.stopReason = parseStopReason(delta['stop_reason']);
+      // A refusal mid-stream keeps whatever was already streamed, so the reason alone reads as
+      // a complete answer that simply stopped. The detail is what says it is not one.
+      this.stopDetails = parseStopDetails(delta['stop_details']);
     }
     this.usage = { ...this.usage, ...parsePartialUsage(payload['usage']) };
     return [];

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "da83ad56ba4a56e0859a3b3d3e085575c1402035883978ada0126909119b4bfe",
+  "buildId": "a9c5adc4d69b55951d12319252e20162acd2fb2ed881b3cb7b644ed7b84eb4ef",
   "tiers": {
     "0": [
       "core",
@@ -730,6 +730,16 @@
     },
     {
       "code": "X_LLM_OUTPUT_INVALID",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_LLM_REFUSED",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_LLM_TRUNCATED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },

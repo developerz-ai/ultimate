@@ -1,81 +1,17 @@
-// The `Provider` interface, the model catalogue with its prices, and two implementations:
-// `AnthropicProvider` (the real Messages API, streaming and not) and `EchoProvider`
-// (deterministic, for tests and `x dev` without a key).
+// The `Provider` interface, the two implementations — `AnthropicProvider` (the real Messages
+// API, streaming and not) and `EchoProvider` (deterministic, for tests and `x dev` without a
+// key) — and the money arithmetic over a call's reported usage.
 //
-// This file owns the REQUEST half and the prices; ./wire owns the response half.
-//
-// Prices live here in INTEGER MINOR UNITS per million tokens. Token spend is money, and the
-// house rule applies to money regardless of where it comes from: never a float.
-//
-// As of 2026-08. Model IDs are exact alias strings — never append a date suffix.
+// This file owns the REQUEST half; ./models owns the catalogue and the per-model rules, and
+// ./wire owns the response half.
 
 import type { Money } from '@ultimat3/money';
-import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
+import { AiKeyMissingError, AiTransportError } from './errors';
+import type { Effort, ModelId, ThinkingMode } from './models';
+import { DEFAULT_MODEL, MODEL_IDS, MODELS, reasoningBody } from './models';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
-import { MessageStream, parseStopReason, parseUsage } from './wire';
-
-/** Blessed models. Opus 5 is the default; the others are explicit downgrades. */
-export const MODEL_IDS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
-export type ModelId = (typeof MODEL_IDS)[number];
-
-export const DEFAULT_MODEL: ModelId = 'claude-opus-5';
-
-/**
- * Reasoning depth. `xhigh` is the best setting for coding and agentic work; `high` is the
- * API default. Distinct from `maxTokens`, which is an enforced ceiling the model cannot see.
- */
-export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-
-/**
- * Thinking mode. Adaptive lets the model decide depth per request and is the default. There
- * is no token budget to tune — `effort` replaced it.
- */
-export type ThinkingMode = 'adaptive' | 'disabled';
-
-export interface ModelSpec {
-  readonly id: ModelId;
-  readonly contextWindow: number;
-  readonly maxOutput: number;
-  /** Cost of one million input tokens, in minor units. */
-  readonly inputPerMillion: Money;
-  /** Cost of one million output tokens, in minor units. */
-  readonly outputPerMillion: Money;
-  /** Minimum cacheable prefix; a shorter prefix silently does not cache. */
-  readonly cacheMinimumTokens: number;
-}
-
-const usd = (minor: number): Money => ({ minor, currency: 'USD' });
-
-export const MODELS: Readonly<Record<ModelId, ModelSpec>> = {
-  // $5 / $25 per MTok.
-  'claude-opus-5': {
-    id: 'claude-opus-5',
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(500),
-    outputPerMillion: usd(2_500),
-    cacheMinimumTokens: 512,
-  },
-  // $3 / $15 per MTok.
-  'claude-sonnet-5': {
-    id: 'claude-sonnet-5',
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(300),
-    outputPerMillion: usd(1_500),
-    cacheMinimumTokens: 1_024,
-  },
-  // $1 / $5 per MTok.
-  'claude-haiku-4-5': {
-    id: 'claude-haiku-4-5',
-    contextWindow: 200_000,
-    maxOutput: 64_000,
-    inputPerMillion: usd(100),
-    outputPerMillion: usd(500),
-    cacheMinimumTokens: 4_096,
-  },
-};
+import { MessageStream, parseStopDetails, parseStopReason, parseUsage } from './wire';
 
 export interface AiMessage {
   readonly role: 'user' | 'assistant';
@@ -113,11 +49,25 @@ export type StopReason =
   | 'pause_turn'
   | 'refusal';
 
+/**
+ * Why a refusal happened. Only ever present when `stopReason` is `refusal`, and `category` is
+ * an open set — a closed union here would turn the provider adding a category into a parse
+ * failure. Carried rather than dropped because the category is the one thing that says whether
+ * a different model would answer, which is the only decision a caller can act on.
+ */
+export interface StopDetails {
+  readonly type: 'refusal';
+  readonly category: string | undefined;
+  readonly explanation: string | undefined;
+}
+
 export interface GenerateResult {
   readonly model: ModelId;
   readonly text: string;
   readonly toolCalls: readonly LlmToolCall[];
   readonly stopReason: StopReason;
+  /** Required, not optional: a provider that forgets it turns a refusal into a silent empty answer. */
+  readonly stopDetails: StopDetails | undefined;
   readonly usage: TokenUsage;
   /** Cost of this call, computed from `usage` and the model's prices. */
   readonly cost: Money;
@@ -177,11 +127,24 @@ const API_KEY_ENV = 'ANTHROPIC_API_KEY';
 const DETAIL_LIMIT = 300;
 
 /**
- * The real Messages API shape. Three request-surface rules are encoded here rather than
- * documented, because getting them wrong is a 400 on every current model:
- *   - `temperature`/`top_p`/`top_k` are REJECTED. Steer with the prompt.
+ * Above this ceiling a non-streaming request sits on an open socket past the HTTP timeout and
+ * fails AFTER the completion was generated and billed. Every current model can be asked for
+ * eight times this, so the limit is the transport's, not the model's.
+ */
+export const STREAM_ONLY_MAX_TOKENS = 16_000;
+
+/** Whether this request has to go over the streaming transport to arrive at all. */
+export function requiresStreaming(request: GenerateRequest): boolean {
+  const model = request.model ?? DEFAULT_MODEL;
+  return Math.min(request.maxTokens, MODELS[model].maxOutput) > STREAM_ONLY_MAX_TOKENS;
+}
+
+/**
+ * The real Messages API shape. The request-surface rules are encoded rather than documented,
+ * because getting them wrong is a 400:
+ *   - `temperature`/`top_p`/`top_k` are REJECTED on every current model. Steer with the prompt.
  *   - `thinking.budget_tokens` is REJECTED. Use `output_config.effort`.
- *   - `thinking: 'disabled'` is only valid at effort `high` or below.
+ *   - `effort` and adaptive thinking are per-model, and ./models owns which model takes which.
  */
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
@@ -192,10 +155,29 @@ export class AnthropicProvider implements Provider {
     this.config = config;
   }
 
+  /**
+   * Above `STREAM_ONLY_MAX_TOKENS` this runs the STREAMING transport and returns the assembled
+   * result, rather than refusing. Refusing would leak a transport limit into the API: `llm()`
+   * has no streaming path, so a declaration asking for a legal 64k completion would become
+   * undeclarable instead of merely awkward — and the caller wanting the whole answer at once is
+   * the same caller either way.
+   */
   async generate(request: GenerateRequest): Promise<GenerateResult> {
+    if (requiresStreaming(request)) return this.assemble(request);
     const response = await this.send({ ...this.body(request), stream: false });
     const raw = (await response.json()) as Record<string, unknown>;
     return parseMessage(request.model ?? DEFAULT_MODEL, raw);
+  }
+
+  /** Drive `stream()` to its `done` chunk. It throws on a cut stream, so a partial never lands. */
+  private async assemble(request: GenerateRequest): Promise<GenerateResult> {
+    for await (const chunk of this.stream(request)) {
+      if (chunk.type === 'done') return chunk.result;
+    }
+    throw new AiTransportError({
+      provider: this.name,
+      detail: 'the stream completed without a result',
+    });
   }
 
   /**
@@ -235,18 +217,11 @@ export class AnthropicProvider implements Provider {
   /** The request body. Pure and side-effect free so a test can assert it directly. */
   body(request: GenerateRequest): Record<string, unknown> {
     const model = request.model ?? DEFAULT_MODEL;
-    const effort = request.effort ?? 'high';
-    const thinking = request.thinking ?? 'adaptive';
     const body: Record<string, unknown> = {
       model,
       max_tokens: Math.min(request.maxTokens, MODELS[model].maxOutput),
       messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
-      // `output_config`, not a top-level `effort` — a top-level one is silently ignored.
-      output_config: { effort },
-      thinking:
-        thinking === 'disabled'
-          ? assertDisableAllowed(effort)
-          : { type: 'adaptive', display: 'summarized' },
+      ...reasoningBody(model, request.effort, request.thinking),
     };
     if (request.system !== undefined) body['system'] = request.system;
     if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;
@@ -305,17 +280,6 @@ async function detailOf(response: Response): Promise<string> {
   return body === '' ? response.statusText : body.slice(0, DETAIL_LIMIT);
 }
 
-/** `thinking: 'disabled'` above `high` effort is a 400 — refuse locally with a real code. */
-function assertDisableAllowed(effort: Effort): Record<string, unknown> {
-  if (effort === 'xhigh' || effort === 'max') {
-    throw new AiRequestInvalidError({
-      detail: `thinking cannot be disabled at effort "${effort}" — the API allows it only at 'high' or below`,
-      fix: `use effort 'high' or below with thinking disabled, or leave thinking adaptive`,
-    });
-  }
-  return { type: 'disabled' };
-}
-
 /** Map a Messages API response onto `GenerateResult`. Exported so tests can drive it. */
 export function parseMessage(model: ModelId, raw: Record<string, unknown>): GenerateResult {
   const content = Array.isArray(raw['content']) ? raw['content'] : [];
@@ -339,6 +303,7 @@ export function parseMessage(model: ModelId, raw: Record<string, unknown>): Gene
     text,
     toolCalls,
     stopReason: parseStopReason(raw['stop_reason']),
+    stopDetails: parseStopDetails(raw['stop_details']),
     usage,
     cost: costOf(model, usage),
   };
@@ -383,6 +348,7 @@ export class EchoProvider implements Provider {
       text,
       toolCalls: [],
       stopReason: 'end_turn',
+      stopDetails: undefined,
       usage,
       cost: costOf(model, usage),
     };

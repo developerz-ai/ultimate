@@ -13,7 +13,8 @@ rather than imported. Same contract, two wire formats.
 
 | File | Job |
 |---|---|
-| `provider.ts` | `Provider` interface, model catalogue + prices, the request half, Anthropic + Echo |
+| `models.ts` | the blessed models: limits, prices, and the reasoning controls each one accepts |
+| `provider.ts` | `Provider` interface, the request half, the money arithmetic, Anthropic + Echo |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
 | `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
 | `gateway.ts` | routing, retries, cache, budget wiring |
@@ -73,8 +74,32 @@ rather than imported. Same contract, two wire formats.
   than the declared one is `X_VECTOR_DIM_MISMATCH` before anything reaches a store.
 - A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate.
 - Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
-  `output_config`, `thinking: 'disabled'` only at effort ≤ `high`. All 400s otherwise.
+  `output_config`. All 400s otherwise.
+- **The reasoning half of the body is PER MODEL, and `models.ts` owns which model takes what.**
+  `output_config.effort` and adaptive thinking arrived with 4.6, so one body sent to the whole
+  catalogue is a guaranteed 400 on the oldest entry — which is how `claude-haiku-4-5` shipped
+  blessed and uncallable. A control the caller never asked for is omitted; a control they DID
+  ask for is refused locally with `X_AI_REQUEST_INVALID`, never dropped, because a declaration
+  reading `effort: 'max'` that quietly runs at the default is the failure nobody can see. Adding
+  a model is a row in `MODELS`, never an `if` in the request builder.
 - Model IDs are exact aliases. Never append a date suffix.
+- The introductory price on a model is deliberately not modelled. A price that lapses on a date
+  makes a recorded cost depend on when it was read, and under-reporting spend after the lapse is
+  a budget that is not one. List price over-reserves, which is the safe direction.
+- `generate()` above `STREAM_ONLY_MAX_TOKENS` runs the STREAMING transport and assembles the
+  result, rather than refusing. The ceiling is the transport's, not the model's, and `llm()` has
+  no streaming path — refusing would make a legal `maxTokens` undeclarable instead of awkward.
+- A **refusal is a 200 with no answer in it**, so it becomes `X_LLM_REFUSED` at the `llm()` seam,
+  before the output is parsed. Parsing it first reports a schema disagreement — wrong cause,
+  inapplicable fix — and spends a repair turn buying the same refusal again. A truncated answer
+  that also fails its schema is `X_LLM_TRUNCATED` for the same reason: the ceiling does not move
+  between attempts. `stopDetails.category` is carried, not dropped: it is the only thing that
+  says whether another model would answer.
+- The gateway does not cache a refusal. Caching one keeps serving a classifier decision long
+  after the prompt that provoked it was fixed.
+- Server-side `fallbacks` (beta) are deliberately NOT sent. The provider speaks the stable
+  `2023-06-01` surface, and a 1.0 package that promises semver cannot pin a beta wire contract;
+  the typed refusal plus the gateway's own model routing is the framework's answer instead.
 - `definePrompt` refuses a re-registered version whose hash moved.
 - Every eval result carries the prompt hash. A score without one is not a measurement.
 - An eval gates on the DROP from its recorded baseline, never on an absolute score. An absolute

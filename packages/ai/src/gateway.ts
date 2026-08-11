@@ -8,8 +8,9 @@ import type { Money } from '@ultimat3/money';
 import type { BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
 import { AiProviderUnavailableError } from './errors';
-import type { GenerateRequest, GenerateResult, ModelId, Provider, StreamChunk } from './provider';
-import { DEFAULT_MODEL } from './provider';
+import type { ModelId } from './models';
+import { DEFAULT_MODEL } from './models';
+import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as
@@ -101,7 +102,11 @@ class GatewayImpl implements Gateway {
 
     const result = await this.attempt(model, (provider) => provider.generate(resolved));
     await ledger?.record(result.usage, result.cost);
-    await this.config.cache?.set(cacheKey, JSON.stringify(result));
+    // A refusal is not an answer, so it is not cached. Storing one would keep serving a decision
+    // the classifier might not make twice, long after the prompt that provoked it was fixed.
+    if (result.stopReason !== 'refusal') {
+      await this.config.cache?.set(cacheKey, JSON.stringify(result));
+    }
     return result;
   }
 

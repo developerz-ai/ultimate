@@ -11,6 +11,8 @@ export const AI_ERROR_CODES = [
   'X_AI_GATEWAY_MISSING',
   'X_AI_PROMPT_VERSION',
   'X_LLM_OUTPUT_INVALID',
+  'X_LLM_REFUSED',
+  'X_LLM_TRUNCATED',
   'X_EVAL_THRESHOLD',
   'X_EVAL_BASELINE_MISSING',
   'X_EVAL_BASELINE_INVALID',
@@ -29,6 +31,8 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_GATEWAY_MISSING: 'an llm() action ran with no gateway installed',
   X_AI_PROMPT_VERSION: 'prompt version or slots are wrong',
   X_LLM_OUTPUT_INVALID: 'structured output failed its schema on the answer and the repair turn',
+  X_LLM_REFUSED: 'the model declined the request',
+  X_LLM_TRUNCATED: 'the answer hit its maxTokens ceiling before it was complete',
   X_EVAL_THRESHOLD: 'an eval scored below its tolerance',
   X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
   X_EVAL_BASELINE_INVALID: 'a recorded baseline cannot be read',
@@ -114,6 +118,49 @@ export class LlmOutputInvalidError extends UltimateError {
         `${input.attempts} attempts: ${input.issues}`,
       fix: 'describe the output shape in the prompt template and bump its version, or widen `output` in the llm() declaration',
       docs: docsFor('X_LLM_OUTPUT_INVALID'),
+    });
+  }
+}
+
+/**
+ * The provider's safety classifiers declined the request. A refusal is a 200 with no answer in
+ * it, so it has to become an error HERE or it becomes an empty string somewhere downstream that
+ * reads exactly like a model with nothing to say. Distinct from `X_LLM_OUTPUT_INVALID` because
+ * the fix is different: nothing about the schema is wrong, and a repair turn buys a second
+ * refusal at full price.
+ */
+export class LlmRefusedError extends UltimateError {
+  constructor(input: {
+    prompt: string;
+    model: string;
+    category: string | undefined;
+    explanation: string | undefined;
+  }) {
+    super({
+      code: 'X_LLM_REFUSED',
+      cause:
+        `model "${input.model}" declined prompt "${input.prompt}"` +
+        `${input.category === undefined ? '' : ` (${input.category})`}` +
+        `${input.explanation === undefined ? '' : `: ${input.explanation}`}`,
+      fix: `rephrase the prompt template and bump its version, or set model: '<another model>' on the llm() declaration`,
+      docs: docsFor('X_LLM_REFUSED'),
+      meta: { model: input.model, category: input.category },
+    });
+  }
+}
+
+/**
+ * The answer was cut off at the enforced ceiling and what arrived does not satisfy the schema.
+ * Thrown instead of the repair turn on purpose: the ceiling does not move between attempts, so
+ * a second answer truncates at exactly the same place and only spends money.
+ */
+export class LlmTruncatedError extends UltimateError {
+  constructor(input: { prompt: string; maxTokens: number }) {
+    super({
+      code: 'X_LLM_TRUNCATED',
+      cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
+      fix: `raise maxTokens above ${input.maxTokens} on the llm() declaration, or shorten what the output schema asks for`,
+      docs: docsFor('X_LLM_TRUNCATED'),
     });
   }
 }

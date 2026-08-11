@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { createGateway, isRetryable } from './gateway';
-import { AnthropicProvider, costOf, MODELS, parseMessage, type StreamChunk } from './provider';
+import { MODEL_IDS, MODELS } from './models';
+import {
+  AnthropicProvider,
+  costOf,
+  parseMessage,
+  requiresStreaming,
+  STREAM_ONLY_MAX_TOKENS,
+  type StreamChunk,
+} from './provider';
 
 const provider = new AnthropicProvider();
 
@@ -94,6 +102,60 @@ describe('Anthropic request body', () => {
       thinking: 'disabled',
     });
     expect(ok['thinking']).toEqual({ type: 'disabled' });
+  });
+
+  test('sonnet has no cap on disabling thinking, so the opus rule is not applied to it', () => {
+    // The rule is per model, and modelling it as one global rule refused a legal request.
+    const body = provider.body({
+      model: 'claude-sonnet-5',
+      messages: [{ role: 'user', content: 'hi' }],
+      maxTokens: 1_000,
+      effort: 'max',
+      thinking: 'disabled',
+    });
+    expect(body['thinking']).toEqual({ type: 'disabled' });
+    expect(body['output_config']).toEqual({ effort: 'max' });
+  });
+
+  test('a pre-4.6 model is sent neither control — both are a 400 on it', () => {
+    const body = provider.body({
+      model: 'claude-haiku-4-5',
+      messages: [{ role: 'user', content: 'hi' }],
+      maxTokens: 1_000,
+    });
+    expect(body['output_config']).toBeUndefined();
+    expect(body['thinking']).toBeUndefined();
+    expect(body['model']).toBe('claude-haiku-4-5');
+  });
+
+  test('asking a pre-4.6 model for a control it lacks is refused locally, never dropped', () => {
+    // Silently dropping a declared `effort` would run at the default while the declaration
+    // says otherwise — the failure nobody can see. Both refusals name the model to move to.
+    for (const request of [{ effort: 'max' } as const, { thinking: 'adaptive' } as const]) {
+      expect(() =>
+        provider.body({
+          model: 'claude-haiku-4-5',
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 1_000,
+          ...request,
+        }),
+      ).toThrow(/claude-haiku-4-5/);
+    }
+  });
+
+  test('every blessed model gets a body its own spec says it accepts', () => {
+    // Catalogue-driven, so a fourth model cannot be added with a body it would 400 on.
+    for (const model of MODEL_IDS) {
+      const body = provider.body({
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 1_000,
+      });
+      const { reasoning } = MODELS[model];
+      expect(body['output_config'] !== undefined).toBe(reasoning.effort);
+      expect(body['thinking'] !== undefined).toBe(reasoning.adaptive);
+      expect(body['temperature']).toBeUndefined();
+    }
   });
 
   test('max_tokens is clamped to the model ceiling', () => {
@@ -283,16 +345,105 @@ describe('streaming', () => {
   });
 });
 
+describe('a completion too large for one response', () => {
+  test('generate above the ceiling goes over the streaming transport and assembles the result', async () => {
+    const calls: Call[] = [];
+    const remote = new AnthropicProvider({
+      apiKey: 'k',
+      fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
+    });
+
+    // A non-streaming request this large hits the HTTP timeout after paying for the whole
+    // completion, and `llm()` has no streaming path — so the transport switches, not the API.
+    const maxTokens = STREAM_ONLY_MAX_TOKENS + 1;
+    expect(requiresStreaming({ messages: [], maxTokens })).toBe(true);
+
+    const result = await remote.generate({
+      messages: [{ role: 'user', content: 'write a long thing' }],
+      maxTokens,
+    });
+
+    expect(calls[0]?.body['stream']).toBe(true);
+    expect(calls[0]?.headers['accept']).toBe('text/event-stream');
+    expect(result.text).toBe('ship it');
+    expect(result.stopReason).toBe('end_turn');
+  });
+
+  test('the ceiling is read after the model clamp, so a request no model can exceed does not stream', () => {
+    // 500k clamps to haiku's 64k, which is still over the ceiling; 8k is not.
+    expect(requiresStreaming({ model: 'claude-haiku-4-5', messages: [], maxTokens: 500_000 })).toBe(
+      true,
+    );
+    expect(requiresStreaming({ messages: [], maxTokens: 8_000 })).toBe(false);
+  });
+});
+
 describe('response parsing', () => {
   test('a refusal is a successful response with a refusal stop reason', () => {
     const result = parseMessage('claude-opus-5', {
       content: [],
       stop_reason: 'refusal',
+      stop_details: { type: 'refusal', category: 'cyber', explanation: 'declined' },
       usage: { input_tokens: 12, output_tokens: 0 },
     });
     // Callers must branch on stopReason before reading text — content may be empty.
     expect(result.stopReason).toBe('refusal');
     expect(result.text).toBe('');
+    // The category is the one thing that says whether another model would answer.
+    expect(result.stopDetails).toEqual({
+      type: 'refusal',
+      category: 'cyber',
+      explanation: 'declined',
+    });
+  });
+
+  test('stop details are absent on every other stop reason, and survive an unknown category', () => {
+    const ok = parseMessage('claude-opus-5', {
+      content: [{ type: 'text', text: 'hi' }],
+      stop_reason: 'end_turn',
+      stop_details: null,
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    expect(ok.stopDetails).toBeUndefined();
+
+    // The category set is open: a new one is information, not a parse failure.
+    const novel = parseMessage('claude-opus-5', {
+      content: [],
+      stop_reason: 'refusal',
+      stop_details: { type: 'refusal', category: 'something-new-2027' },
+      usage: {},
+    });
+    expect(novel.stopDetails?.category).toBe('something-new-2027');
+    expect(novel.stopDetails?.explanation).toBeUndefined();
+  });
+
+  test('a streamed refusal carries its details too, not just the reason', async () => {
+    const calls: Call[] = [];
+    const remote = new AnthropicProvider({
+      apiKey: 'k',
+      fetch: fakeFetch(calls, () =>
+        sseResponse([
+          { type: 'message_start', message: { usage: { input_tokens: 9 } } },
+          {
+            type: 'message_delta',
+            delta: { stop_reason: 'refusal', stop_details: { type: 'refusal', category: 'bio' } },
+            usage: { output_tokens: 0 },
+          },
+          { type: 'message_stop' },
+        ]),
+      ),
+    });
+
+    const chunks = await collect(
+      remote.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }),
+    );
+    const done = chunks.at(-1);
+    expect(done?.type).toBe('done');
+    expect(done?.type === 'done' && done.result.stopDetails).toEqual({
+      type: 'refusal',
+      category: 'bio',
+      explanation: undefined,
+    });
   });
 
   test('text and tool_use blocks are separated, and usage drives cost', () => {

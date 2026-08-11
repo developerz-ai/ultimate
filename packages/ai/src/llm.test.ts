@@ -11,9 +11,10 @@ import { PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { createGateway } from './gateway';
 import { llm } from './llm';
+import { DEFAULT_MODEL, MODEL_IDS } from './models';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
-import { costOf, DEFAULT_MODEL, EchoProvider, MODEL_IDS } from './provider';
+import { costOf, EchoProvider } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 
 const Input = t.object({ postId: t.uuid });
@@ -59,6 +60,7 @@ function reply(request: GenerateRequest, answer: unknown): GenerateResult {
       ? []
       : [{ id: 'call-1', name: 'respond', input: answer as Record<string, unknown> }],
     stopReason: prose ? 'end_turn' : 'tool_use',
+    stopDetails: undefined,
     usage: USAGE,
     cost: costOf(model, USAGE),
   };
@@ -193,6 +195,69 @@ describe('structured output', () => {
       code: 'X_LLM_OUTPUT_INVALID',
     });
     expect(seen.length).toBe(2);
+  });
+});
+
+/**
+ * A refusal and a truncation are both a 200 carrying no usable answer. Reading them as schema
+ * failures reports the wrong cause, offers a fix that does not apply, and spends a repair turn
+ * that cannot succeed — so both are decided from `stopReason`, before the answer is parsed.
+ */
+describe('a response that is not an answer', () => {
+  function stopping(
+    stopReason: GenerateResult['stopReason'],
+    details?: GenerateResult['stopDetails'],
+  ) {
+    const seen: GenerateRequest[] = [];
+    const provider: Provider = {
+      name: 'stopping',
+      models: MODEL_IDS,
+      generate(request) {
+        seen.push(request);
+        return Promise.resolve({
+          model: request.model ?? DEFAULT_MODEL,
+          text: '',
+          toolCalls: [],
+          stopReason,
+          stopDetails: details,
+          usage: USAGE,
+          cost: costOf(request.model ?? DEFAULT_MODEL, USAGE),
+        });
+      },
+      stream: () => new EchoProvider().stream({ messages: [], maxTokens: 1 }),
+    };
+    return { provider, seen };
+  }
+
+  test('a refusal throws X_LLM_REFUSED naming its category, and buys no repair turn', async () => {
+    const { provider, seen } = stopping('refusal', {
+      type: 'refusal',
+      category: 'cyber',
+      explanation: 'declined',
+    });
+    install(provider);
+    const summarize = declare(promptFor());
+
+    const failure = await summarize({ postId: POST_ID }, { ctx: anonymousCtx() }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: 'X_LLM_REFUSED' });
+    expect(String(failure)).toContain('cyber');
+    // A second attempt buys the same refusal at full price.
+    expect(seen.length).toBe(1);
+  });
+
+  test('a truncated answer throws X_LLM_TRUNCATED, because the ceiling does not move', async () => {
+    const { provider, seen } = stopping('max_tokens');
+    install(provider);
+    const summarize = declare(promptFor());
+
+    const failure = await summarize({ postId: POST_ID }, { ctx: anonymousCtx() }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: 'X_LLM_TRUNCATED' });
+    expect((failure as { fix: string }).fix).toContain('maxTokens');
+    expect(seen.length).toBe(1);
   });
 });
 
