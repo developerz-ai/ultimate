@@ -20,7 +20,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`13-topology-runtime.md`](./13-topology-runtime.md) | One image, six roles. Drain sequencing, `/healthz` vs `/readyz`, version skew. |
 | [`14-testing-internals.md`](./14-testing-internals.md) | Template-DB cloning, frozen clock, sealed network, and the exact order of `x verify`. |
 | [`15-adding-a-feature.md`](./15-adding-a-feature.md) | The end-to-end walkthrough with the exact command per step. Read this one most. |
-| [`16-build-pipeline.md`](./16-build-pipeline.md) | SCSS modules → CSS, the client bundle, content hashing, and what the budgets gate measures. |
+| [`16-build-pipeline.md`](./16-build-pipeline.md) | SCSS modules → scoped CSS, the server render path, and what the budgets gate now measures. There is still no client bundle — the page says why. |
 | [`17-uploads.md`](./17-uploads.md) | Signed direct upload: who signs, who verifies, where bytes land, and what sweeps the orphans. |
 
 ## Start here
