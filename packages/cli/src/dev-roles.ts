@@ -2,8 +2,9 @@
 // runs them in one process by starting the same framework objects each container starts, so a
 // job that only works when awaited inline still fails here.
 //
-// `migrate` and `replicator` are absent on purpose: `migrate` is run-once (`x db apply`) and the
-// replicator needs logical replication the embedded database does not serve yet.
+// `migrate` is absent on purpose: it is run-once (`x db apply`), not a process. `replicator` is
+// selectable but not default — it takes a replication slot on a shared database, which is not
+// something every `x dev` in a team should do to the same server by simply starting.
 
 import type { Role } from '@ultimat3/core';
 import { createContext, isRole, ROLES } from '@ultimat3/core';
@@ -20,11 +21,21 @@ import {
   SocketRegistry,
 } from '@ultimat3/realtime';
 import { devHooks } from './dev-hooks';
+import type { RunningReplicator } from './dev-replicator';
+import { startReplicator } from './dev-replicator';
 import type { RunningServices } from './dev-runtime';
+import type { Env } from './dev-services';
 import { BadFlagError } from './errors';
 
-/** Every role `x dev` can run, in boot order. */
+/** The roles `x dev` starts when `--role` names none, in boot order. */
 export const DEV_ROLES: readonly Role[] = ['web', 'sync', 'worker', 'scheduler'];
+
+/**
+ * What `--role` accepts. The replicator is here but not in `DEV_ROLES`: opt-in, because it takes
+ * the one replication slot a database has, and a default that did that would mean two developers
+ * pointed at one staging database silently fighting over it.
+ */
+export const SELECTABLE_ROLES: readonly Role[] = [...DEV_ROLES, 'replicator'];
 
 export interface StartRolesOptions {
   readonly roles: readonly Role[];
@@ -33,6 +44,8 @@ export interface StartRolesOptions {
   readonly runtime: RunningServices;
   /** Routes the web role serves: `/_x`, the actions, the pages. */
   readonly routes: readonly Route[];
+  /** The process environment, for the roles that resolve a driver from it. */
+  readonly env: Env;
 }
 
 export interface RunningRoles {
@@ -44,6 +57,8 @@ export interface RunningRoles {
   readonly server: ServerHandle | null;
   readonly worker: Worker | null;
   readonly scheduler: Scheduler | null;
+  /** The slot and feed this process holds; null when the replicator was not selected. */
+  readonly replicator: RunningReplicator | null;
   stop(): Promise<void>;
 }
 
@@ -67,17 +82,17 @@ export function selectRoles(flag: string | undefined): readonly Role[] {
         fix: `x dev --role ${DEV_ROLES.join(',')}`,
       });
     }
-    if (!DEV_ROLES.includes(name)) {
+    if (!SELECTABLE_ROLES.includes(name)) {
       throw new BadFlagError({
         flag: 'role',
         command: 'dev',
-        reason: `"${name}" does not run under x dev (it runs ${name === 'migrate' ? 'once, as `x db apply`' : 'against a replicated database'})`,
+        reason: `"${name}" does not run under x dev (it runs once, as \`x db apply\`)`,
         fix: `x dev --role ${DEV_ROLES.join(',')}`,
       });
     }
     if (!selected.includes(name)) selected.push(name);
   }
-  return DEV_ROLES.filter((role) => selected.includes(role));
+  return SELECTABLE_ROLES.filter((role) => selected.includes(role));
 }
 
 function startWeb(options: StartRolesOptions): ServerHandle {
@@ -155,6 +170,18 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     scheduler?.start();
     if (scheduler !== null) started.push(() => scheduler.stop());
 
+    // Last, and only after the transport it publishes to exists: a replicator started ahead of the
+    // sync node would decode changes with nothing subscribed to receive them, and the slot it
+    // holds is the one resource here another process can be locked out of.
+    const replicator = selected.includes('replicator')
+      ? await startReplicator({
+          services: options.runtime.services,
+          env: options.env,
+          transport: options.runtime.transport,
+        })
+      : null;
+    if (replicator !== null) started.push(() => replicator.stop());
+
     return {
       roles: selected,
       url: server === null ? null : server.url(),
@@ -162,7 +189,10 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       server,
       worker,
       scheduler,
+      replicator,
       async stop() {
+        // Reverse boot order, so the slot is released before the bus it published to closes.
+        await replicator?.stop();
         await scheduler?.stop();
         await worker?.stop('x dev stopped');
         await sync?.stop();

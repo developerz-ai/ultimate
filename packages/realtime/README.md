@@ -49,7 +49,7 @@ frame handler is unchanged between rungs.
 | Concern | Export |
 |---|---|
 | tier 1 | `topic`, `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
-| tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `createReplicator`, `matcherFor` |
+| tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
 | replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `subjectMatches` |
 | the bus client | `NatsConnection`, `NatsProtocolParser`, `NatsKvSet`, `ensureKvBucket`, `parseNatsUrl`, `bunNatsStream`, `FakeNatsServer` |
@@ -126,6 +126,21 @@ because refusing without one just moves the herd next door.
   publication and the slot, creates the slot when there is none, and confirms the slot as it goes so
   the WAL does not grow without bound. `InMemoryChangeFeed` + `InProcessTransport` remain the
   defaults for `x dev` and every test.
+- **`selectChangeFeed(env, { entities })` decides which feed a boot installs** — same law
+  `selectMailDriver` follows: an unset variable means the embedded default. It returns `{ feed,
+  mode, detail, slot, lock }`: `mode` is `'embedded' | 'external'`, `detail` is the env key that
+  selected it and never a credential, and `lock` is the `AdvisoryLock` for that feed — built here
+  rather than by the caller, because constructing one needs the URL and the URL carries a password.
+  Neither `DATABASE_URL` nor `REPLICATION_URL` set → `InMemoryChangeFeed`,
+  `mode: 'embedded'`. `REPLICATION_URL` wins when both are set, but naming a different host, port or
+  database than `DATABASE_URL` is refused at boot with `X_CONFIG_INVALID` — a feed streaming the
+  wrong database's WAL would be silently wrong forever. `REPLICATION_SLOT` (default `x_replicator`)
+  and `REPLICATION_PUBLICATION` (default `x_changes`) name the slot and publication, both checked
+  against `[a-z_][a-z0-9_]*` before they reach a replication command.
+- **`PgAdvisoryLock` is the production `AdvisoryLock`** — `SELECT
+  pg_try_advisory_lock(hashtext('x:replicator:<slot>'))` on its own session. Session-scoped, so a
+  crashed replicator releases it automatically: no lease renewal, no fencing token, no split brain.
+  `InMemoryAdvisoryLock` remains the single-process default for `x dev` and tests.
 - **`NatsTransport` speaks NATS itself** — its own protocol codec and session over `Bun.connect`,
   no client dependency. Fanout is core NATS; `shared` is a JetStream KV bucket the transport
   creates on first connect, one key per presence member, expired by the **server's** per-message
@@ -148,8 +163,8 @@ because refusing without one just moves the herd next door.
 
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
-`X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_LIVE_CLIENT_MISSING` ·
-`X_NOT_IMPLEMENTED`
+`X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
+`X_LIVE_CLIENT_MISSING` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.

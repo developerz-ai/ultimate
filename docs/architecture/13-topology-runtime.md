@@ -113,7 +113,7 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 | Consumer | Lock key | Held for | On loss |
 |---|---|---|---|
 | `scheduler` | `pg_try_advisory_lock(hashtext('ultimate:scheduler'))` | the DB session's lifetime | stop ticking immediately, report not-ready, retry acquisition every 5s |
-| `replicator` | `ultimate:replicator:<db>` | same | exit non-zero with `X_REPLICATOR_SLOT_HELD` — a second replicator would double-deliver |
+| `replicator` | `x:replicator:<slot>` | same | exit non-zero with `X_REPLICATOR_SLOT_HELD` — a second replicator would double-deliver |
 | `migrate` | `ultimate:migrate` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero |
 | ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |
 

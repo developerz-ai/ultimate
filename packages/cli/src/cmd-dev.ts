@@ -152,6 +152,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     buildId,
     runtime,
     routes,
+    env: options.env,
   });
 
   const stopWatching = watchApp(options.root, (file) => {
@@ -256,6 +257,10 @@ export const devCommand: CliCommand = {
         // and this line is printed, logged and scraped.
         mail: describeMail(server.runtime),
         cdn: describeCdn(server.runtime),
+        // The slot this process holds, or null when the replicator was not selected. Two of these
+        // on one database is the one topology mistake that cannot be seen from the outside, so the
+        // slot is a scriptable fact rather than a line in a log.
+        replicationSlot: server.running.replicator?.slot ?? null,
         buildId: server.buildId,
         manifest: join(root, MANIFEST_FILENAME),
         introspect: `${server.url}/_x`,

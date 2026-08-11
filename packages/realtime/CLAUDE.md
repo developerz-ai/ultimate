@@ -48,7 +48,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 |---|---|
 | `sync-protocol.ts` | the wire: 10 frame kinds, `encode`/`decode`, `PROTOCOL_VERSION` |
 | `channel.ts` / `presence.ts` / `socket.ts` | tier 1 |
-| `live-query.ts` / `changefeed.ts` / `replicator.ts` / `fanout.ts` / `matcher-bridge.ts` | tier 2 |
+| `live-query.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `matcher-bridge.ts` | tier 2 |
 | `pg-bytes.ts` / `pg-wire.ts` / `pg-auth.ts` / `pg-connection.ts` / `pg-socket.ts` | the Postgres v3 client: bytes, frames, SASL, session, socket |
 | `pgoutput.ts` / `pg-entity-row.ts` / `pg-replication.ts` | WAL decode → `ChangeEvent`, and the lsn that orders it |
 | `nats-protocol.ts` / `nats-commands.ts` / `nats-socket.ts` / `nats-connection.ts` | the NATS client: decode, encode, socket, session |

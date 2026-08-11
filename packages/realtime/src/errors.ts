@@ -14,6 +14,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_TRANSPORT_PROTOCOL',
   'X_REPLICATION_PROTOCOL',
   'X_REPLICATION_FAILED',
+  'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
 ] as const;
 
@@ -43,6 +44,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_TRANSPORT_PROTOCOL: 'the bus does not speak the protocol this build speaks',
   X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
   X_REPLICATION_FAILED: 'the replication connection was refused',
+  X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
 };
 
@@ -187,6 +189,24 @@ export class ReplicationFailedError extends RealtimeError {
       code: 'X_REPLICATION_FAILED',
       cause: `postgres replication ${args.stage} failed: ${args.detail}`,
       fix: args.fix,
+    });
+  }
+}
+
+/**
+ * A second replicator found the advisory lock held. Distinct from `X_REPLICATION_FAILED` because
+ * nothing is wrong with this process: the database already has its one replicator, and a second
+ * one that started anyway would publish every change twice. Terminal for a container whose whole
+ * job is that role — the scheduler is the thing that has to change, not the connection.
+ */
+export class ReplicatorSlotHeldError extends RealtimeError {
+  constructor(args: { key: string; holder?: string | undefined }) {
+    super({
+      code: 'X_REPLICATOR_SLOT_HELD',
+      cause:
+        `advisory lock ${args.key} is held${args.holder === undefined ? '' : ` by ${args.holder}`}` +
+        ' — one database has exactly one replicator',
+      fix: 'scale the replicator to 1 per database: kubectl scale deploy/replicator --replicas=1',
     });
   }
 }

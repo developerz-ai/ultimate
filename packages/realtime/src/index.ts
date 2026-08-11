@@ -15,6 +15,16 @@ export {
   type PgLogicalReplicationOptions,
   parseLsn,
 } from './changefeed';
+export {
+  type ChangeFeedSelection,
+  DEFAULT_REPLICATION_PUBLICATION,
+  DEFAULT_REPLICATION_SLOT,
+  REPLICATION_ENV_KEYS,
+  type ReplicationEnvironment,
+  replicatorLockKey,
+  type SelectChangeFeedOptions,
+  selectChangeFeed,
+} from './changefeed-env';
 
 // ---- tier 1: channels + presence ---------------------------------------------------------------
 export {
@@ -71,6 +81,7 @@ export {
   RebaseConflictError,
   ReplicationFailedError,
   ReplicationProtocolError,
+  ReplicatorSlotHeldError,
   SubscriptionLimitError,
   TopicForbiddenError,
   TransportProtocolError,
@@ -194,6 +205,7 @@ export {
   type QueueState,
   type QueueStore,
 } from './offline-queue';
+export { PgAdvisoryLock, type PgAdvisoryLockOptions } from './pg-advisory-lock';
 // ---- the postgres replication path ------------------------------------------------------------
 export { camel, entityRow } from './pg-entity-row';
 export {

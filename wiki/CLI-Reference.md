@@ -145,10 +145,14 @@ rather than rendering an empty one as an answer.
 | `NATS_URL` | in-process fanout | that NATS server |
 | `S3_ENDPOINT` | `.x/storage` on disk | that S3 |
 
-`migrate` and `replicator` are real roles but not dev roles: `migrate` is `x db migrate`, and the
-replicator needs logical replication the embedded database does not serve. Naming either is
-`X_CLI_BAD_FLAG`, never a silently ignored value. Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`,
-`X_ENV_MISSING`, `X_DB_DRIFT`.
+`migrate` is a real role but not a dev role: it runs once, as `x db migrate`; naming it under
+`--role` is `X_CLI_BAD_FLAG`. `replicator` does run under `x dev --role replicator`, but stays out
+of the default set — `x dev` with no `--role` still runs `web,sync,worker,scheduler`, because the
+replicator takes a slot on a shared database. With `DATABASE_URL` unset the embedded PGlite still
+serves no logical replication, so the role is refused, but `X_CLI_BAD_FLAG` now names the fix: set
+`DATABASE_URL` to a Postgres with `wal_level=logical`. With `DATABASE_URL` set, the role starts for
+real: advisory lock → `PgLogicalReplicationFeed` → `createReplicator` → publish to the transport.
+Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
 
 ## x g
 

@@ -145,7 +145,7 @@ SELECT pg_try_advisory_lock(hashtext('ultimate:scheduler'));   -- true = leader
 | Handover | the leader releases on SIGTERM (drain step 4), so the standby promotes within one lock-retry interval (default 5s) |
 | Missed tick | fires **late** rather than being skipped |
 | Double fire during handover | absorbed by the enqueued job's `idempotencyKey` |
-| `replicator` | same mechanism, key `ultimate:replicator:<db>`; a second instance exits non-zero with `X_REPLICATOR_SLOT_HELD` rather than double-delivering |
+| `replicator` | same mechanism, key `x:replicator:<slot>`; a second instance exits non-zero with `X_REPLICATOR_SLOT_HELD` rather than double-delivering |
 
 `task` only enqueues. A `task` with a handler body is a rejected design — if it does work, it is a `job` ([`../idea/02-primitives.md`](../idea/02-primitives.md)).
 

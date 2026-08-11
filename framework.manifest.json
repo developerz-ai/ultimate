@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "095b6e043bc54393088bc85a0fa1f6801cefb0c8a5a08c474487492423b9281a",
+  "buildId": "0f9e9a933cc91795ace4fa7344fe92b842429bd0a3f3c6e68284e7d8d363c155",
   "tiers": {
     "0": [
       "core",
@@ -1105,6 +1105,11 @@
     },
     {
       "code": "X_REPLICATION_PROTOCOL",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_REPLICATOR_SLOT_HELD",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
     },
