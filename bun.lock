@@ -18,6 +18,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@ultimat3/action": "^1.2.0",
+        "@ultimat3/admin": "^1.2.0",
         "@ultimat3/cache": "^1.2.0",
         "@ultimat3/cli": "^1.2.0",
         "@ultimat3/core": "^1.2.0",
@@ -29,6 +30,7 @@
         "@ultimat3/policy": "^1.2.0",
         "@ultimat3/pwa": "^1.2.0",
         "@ultimat3/query": "^1.2.0",
+        "@ultimat3/realtime": "^1.2.0",
         "@ultimat3/render": "^1.2.0",
         "@ultimat3/ui": "^1.2.0",
         "solid-js": "2.0.0-experimental.16",

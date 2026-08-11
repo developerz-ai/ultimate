@@ -6,10 +6,9 @@
 // promise, so an async component works — but it is a workaround, and a real `load` would also get
 // caching, the prerender enumeration and `meta({ data })`. Recorded, not hidden.
 
-import { db } from '@social-media-clone/db';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { visibleFeed } from '../../app/posts/service';
+import { feedForPage } from '../../app/posts/service';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -28,13 +27,10 @@ const day = (value: Date): string =>
   new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(value);
 
 export async function Page() {
-  const authors = await db.users.limit(200).all();
-  const byId = new Map(authors.map((user) => [user.id, user]));
-
   // A null viewer: anonymous. The audience ladder answers `public` and nothing else, so a
   // friends-only post, a private note and a soft-deleted row are all absent from this list
   // WITHOUT a `where` clause saying so — the policy is the only place that decides.
-  const items = await visibleFeed(null, 20, (id) => byId.get(id));
+  const items = await feedForPage(null, 20);
 
   return (
     <main class={styles.feed}>

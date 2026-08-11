@@ -33,3 +33,13 @@ export const feedPage = (limit: number): Promise<readonly FeedPost[]> =>
     .all();
 
 export const byId = (id: string): Promise<FeedPost | null> => db.posts.where({ id }).one();
+
+/** The authors a feed page needs, keyed by id. Bounded — an unbounded read is a scan waiting for traffic. */
+export const authorsById = async (
+  limit = 200,
+): Promise<ReadonlyMap<string, { handle: string; displayName: string }>> => {
+  const rows = await db.users.limit(limit).all();
+  return new Map(
+    rows.map((user) => [user.id, { handle: user.handle, displayName: user.displayName }]),
+  );
+};

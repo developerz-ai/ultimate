@@ -8,7 +8,7 @@
 
 import type { Actor } from '../../shared/actor';
 import { canSeePost } from './policy';
-import { type FeedPost, feedPage } from './repo';
+import { authorsById, type FeedPost, feedPage } from './repo';
 
 /** What a rendered feed row needs. Derived from the post; the author is joined in by name. */
 export interface FeedItem {
@@ -40,4 +40,17 @@ export const visibleFeed = async (
     items.push({ post, authorHandle: author.handle, authorName: author.displayName });
   }
   return items;
+};
+
+/**
+ * The feed a page renders. Wraps `visibleFeed` with the author lookup so a ROUTE never imports
+ * `db` — a page reaching the database directly is X_BOUNDARY_ROUTE_TO_DB, and it is how N+1
+ * queries end up inside a <head> computation.
+ */
+export const feedForPage = async (
+  viewer: Actor | null,
+  limit: number,
+): Promise<readonly FeedItem[]> => {
+  const authors = await authorsById();
+  return visibleFeed(viewer, limit, (id) => authors.get(id));
 };
