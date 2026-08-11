@@ -8,12 +8,18 @@ import {
   checkFileSizes,
   checkLockstep,
   checkPackageShape,
+  checkPublishShape,
   countLines,
+  filesOf,
   frameworkDepsOf,
   hasWorkspacePackages,
   LINE_CEILING,
+  missingPublishedFileFinding,
+  noFilesAllowlistFinding,
   PACKAGE_FILES,
   pinSkewFinding,
+  publishesTestsFinding,
+  TEST_EXCLUSION,
   workspacePackages,
 } from './workspace-checks';
 
@@ -35,7 +41,13 @@ beforeAll(async () => {
   await Bun.write(join(dir, 'packages/short/README.md'), '# short\n');
   await Bun.write(join(dir, 'packages/short/CLAUDE.md'), '# short\n');
   await Bun.write(join(dir, 'packages/short/tsconfig.json'), '{}\n');
-  await Bun.write(join(dir, 'packages/short/package.json'), '{"name":"short","version":"1.2.3"}\n');
+  await Bun.write(join(dir, 'packages/short/LICENSE'), 'MIT\n');
+  // `short` is the control: a package that satisfies every rule, so a finding against it is a
+  // real one. That includes the publish contract — a manifest with no `files` ships the directory.
+  await Bun.write(
+    join(dir, 'packages/short/package.json'),
+    `{"name":"short","version":"1.2.3","files":["src","${TEST_EXCLUSION}","README.md","LICENSE"]}\n`,
+  );
   await Bun.write(join(dir, 'packages/long/src/index.ts'), lines(LINE_CEILING + 1));
   await Bun.write(join(dir, 'packages/long/package.json'), '{"name":"long"}\n');
   await Bun.write(join(dir, 'packages/long/node_modules/dep/src/huge.ts'), lines(2_000));
@@ -134,6 +146,7 @@ const pkg = (over: Partial<ManifestFacts> & { dir: string }): ManifestFacts => (
   version: '1.0.0',
   private: false,
   frameworkDeps: [],
+  files: ['src', TEST_EXCLUSION, 'README.md', 'LICENSE'],
   ...over,
 });
 
@@ -254,5 +267,65 @@ describe('a stale pin in any published field is skew', () => {
         }),
       ]),
     ).toEqual([pinSkewFinding('ai', '@ultimat3/db', '0.0.1', '1.0.0')]);
+  });
+});
+
+describe('checkPublishShape', () => {
+  // The 1.0.0 defect, as a test: all 28 manifests declared "license": "MIT", named LICENSE in
+  // `files`, and shipped the text in none of them. npm drops a `files` entry with no file behind
+  // it without a word, so every check upstream of the registry stayed green.
+  test('a published package promising a file it does not have is a finding', () => {
+    const files = ['src', TEST_EXCLUSION, 'README.md', 'LICENSE', 'CHANGELOG.md'];
+    expect(checkPublishShape(dir, [pkg({ dir: 'short', files })])).toEqual([
+      missingPublishedFileFinding('short', 'CHANGELOG.md'),
+    ]);
+  });
+
+  test('a package carrying everything it promises is clean', () => {
+    expect(checkPublishShape(dir, [pkg({ dir: 'short' })])).toEqual([]);
+  });
+
+  // Told to add an entry to a "files" that is not there, an author edits a key that does not
+  // exist — so the two conditions report separately and each `fix:` stays runnable.
+  test('a published package with no files allowlist is its own finding', () => {
+    expect(checkPublishShape(dir, [pkg({ dir: 'short', files: [] })])).toEqual([
+      noFilesAllowlistFinding('short'),
+    ]);
+  });
+
+  // `src` sweeps in every `*.test.ts` beside it: 393 files across the framework, over half of
+  // @ultimat3/cli's tarball, all of it run against a preloaded clock a consumer does not have.
+  test('a published package that does not exclude its tests is a finding', () => {
+    expect(checkPublishShape(dir, [pkg({ dir: 'short', files: ['src'] })])).toEqual([
+      publishesTestsFinding('short'),
+    ]);
+  });
+
+  test('a negation and a glob are never existence-checked — only a literal promises a file', () => {
+    const files = ['src', TEST_EXCLUSION, '!nothing-here', 'src/**/*.json'];
+    expect(checkPublishShape(dir, [pkg({ dir: 'short', files })])).toEqual([]);
+  });
+
+  // A generated app's packages/* are private, carry no `files` and never reach a registry — the
+  // rule has to skip them or `x new` scaffolds an app whose very first gate run is red.
+  test('a private package is exempt from both halves', () => {
+    expect(checkPublishShape(dir, [pkg({ dir: 'short', private: true, files: [] })])).toEqual([]);
+  });
+
+  test('filesOf reads the array, and a manifest without one as none', () => {
+    expect(filesOf({ files: ['src', 'LICENSE'] })).toEqual(['src', 'LICENSE']);
+    expect(filesOf({ files: ['src', 7] })).toEqual(['src']);
+    expect(filesOf({})).toEqual([]);
+    expect(filesOf(null)).toEqual([]);
+  });
+});
+
+// Over the real repo, not a fixture: this is the assertion that would have stopped the 1.0.0
+// tarballs from reaching npm without the grant they claim, and it stays true for every release
+// after — a publish cannot be undone.
+describe('integration · every published package ships what it promises', () => {
+  test('no framework package promises a file it does not carry, or publishes its tests', async () => {
+    const findings = await checkPackageShape(REPO_ROOT);
+    expect(findings.filter((finding) => finding.code === 'X_PACKAGE_SHAPE')).toEqual([]);
   });
 });
