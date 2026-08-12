@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isStorageError } from './errors';
-import { assertSafeKey, isWithinOrg, joinKey, scopedKey } from './path';
+import { assertSafeKey, isTenantScoped, isWithinOrg, joinKey, scopedKey } from './path';
 
 /** The code, or a description of why there wasn't one — a failing assert then reads clearly. */
 function codeOf(fn: () => unknown): string {
@@ -74,6 +74,23 @@ describe('isWithinOrg', () => {
 
   test('a prefix collision is not containment', () => {
     expect(isWithinOrg(scopedKey('org-10', 'a.png'), 'org-1')).toBe(false);
+  });
+});
+
+describe('isTenantScoped', () => {
+  test('every key scopedKey builds is in the tenant namespace', () => {
+    expect(isTenantScoped(scopedKey('org-1', 'avatars', 'a.png'))).toBe(true);
+  });
+
+  test('a key nobody scoped belongs to no tenant', () => {
+    expect(isTenantScoped('brand/logo.png')).toBe(false);
+    // `orgs/` is a different prefix, not a longer spelling of this one.
+    expect(isTenantScoped('orgs/org-1/a.png')).toBe(false);
+  });
+
+  test('the two guards together are what makes a foreign key unreadable', () => {
+    const foreign = scopedKey('org-2', 'a.png');
+    expect(isTenantScoped(foreign) && !isWithinOrg(foreign, 'org-1')).toBe(true);
   });
 });
 

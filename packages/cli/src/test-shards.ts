@@ -3,7 +3,7 @@
 // cmd-test.ts because a printed reproduction is only true if it carries every input to the split —
 // that rule is this file's, and argv parsing is that one's.
 
-import { docsFor } from './errors';
+import { docsFor } from './error-codes';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';

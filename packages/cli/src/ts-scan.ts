@@ -171,9 +171,19 @@ export function scanFixes(source: string, at: string): readonly FixSite[] {
   return sites;
 }
 
-/** `packages/<pkg>/src/errors.ts` and core's `error-codes.ts`: one file per package, by rule. */
-export const isCodeRegistry = (path: string): boolean =>
-  /(?:^|\/)(?:errors|error-codes)\.ts$/.test(path);
+const CODE_TABLE = /\bexport const [A-Z][A-Z0-9_]*_ERROR_(?:CODES|TITLES)\b/;
+
+/**
+ * Whether a file IS a package's code registry — asked of its contents, not of its name.
+ *
+ * A filename test (`errors.ts` or `error-codes.ts`) held only while one file per package did both
+ * jobs. The moment `@ultimat3/cli`'s split under the 500-line ceiling — table into `error-codes.ts`,
+ * classes into `errors.ts` — the classes file was still *named* like a registry, so every code it
+ * throws outranked the package that actually owns it and `X_NOT_IMPLEMENTED` moved from `core` to
+ * `cli` in the manifest. The table is the thing; `export const <PKG>_ERROR_{CODES,TITLES}` is the
+ * one shape every package declares it in, and `x verify`'s `errors` step is what keeps that true.
+ */
+export const isCodeRegistry = (source: string): boolean => CODE_TABLE.test(source);
 
 const CODE_AT_KEY = /\bcode\s*[:=]\s*(['"`])(X_[A-Z0-9_]+)\1/g;
 const CODE_LITERAL = /(['"`])(X_[A-Z0-9_]+)\1/g;
@@ -192,7 +202,7 @@ export function scanCodes(source: string, at: string): readonly CodeSite[] {
     if (!sites.has(code)) sites.set(code, { at, line: lineOf(text, index), code });
   };
   for (const match of text.matchAll(CODE_AT_KEY)) add(match[2] as string, match.index);
-  if (isCodeRegistry(at)) {
+  if (isCodeRegistry(text)) {
     for (const match of text.matchAll(CODE_LITERAL)) add(match[2] as string, match.index);
     for (const match of text.matchAll(CODE_KEY)) add(match[1] as string, match.index);
   }

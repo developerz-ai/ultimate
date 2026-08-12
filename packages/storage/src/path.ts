@@ -85,6 +85,17 @@ export function isWithinOrg(key: string, orgId: string): boolean {
   return isSafeKey(key) && key.startsWith(orgPrefix(orgId));
 }
 
+/**
+ * Whether the key lives in the tenant namespace at all — `scopedKey` and `grantUpload` build
+ * `org/<id>/…`, `disk().put('logo.png', …)` does not. A surface serving objects has to tell the
+ * two apart: `isWithinOrg` alone would answer `false` for every un-scoped key and make an app's
+ * own shared assets unreachable, and dropping the check would make one tenant's prefix readable
+ * by another. The pair is the question "does this key belong to somebody else?".
+ */
+export function isTenantScoped(key: string): boolean {
+  return key.startsWith(`${ORG_PREFIX}/`);
+}
+
 /** `org/o1/a/b.png` -> `org/o1/a`. Empty for a top-level key. */
 export function keyDirname(key: string): string {
   const cut = key.lastIndexOf('/');

@@ -89,6 +89,8 @@ export {
   registeredErrorCodes,
   resetErrorCatalog,
 } from './error-catalog';
+export type { CliErrorCode } from './error-codes';
+export { CLI_ERROR_CODES, CLI_ERROR_TITLES } from './error-codes';
 export {
   BANNED_PHRASES,
   COMMAND_TOKENS,
@@ -102,14 +104,11 @@ export {
   RESERVED_HEADING,
   staticFix,
 } from './error-contract';
-export type { CliErrorCode } from './errors';
 export {
   BadFlagError,
   BuildEntryMissingError,
   BunVersionError,
   CatalogExistsError,
-  CLI_ERROR_CODES,
-  CLI_ERROR_TITLES,
   CliNotImplementedError,
   DeclarationUnknownError,
   ErrorCodeUnknownError,

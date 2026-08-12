@@ -26,6 +26,7 @@ import type { RunningServices } from './dev-runtime';
 import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
+import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
 import { holdUntilShutdown } from './hold';
 import { msg } from './messages';
@@ -143,6 +144,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // variants every `srcset` promises. Mounted before the app's own routes so a page route can
     // never shadow `/icons` or `/media`.
     ...assetRoutes({ root: options.root, storage: runtime.storage }),
+    ...storageRoutes({ storage: runtime.storage }),
     ...appRoutes({ buildId }),
   ];
 

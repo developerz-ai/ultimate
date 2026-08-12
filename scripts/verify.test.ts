@@ -35,7 +35,7 @@ describe('unit · the repo gate is the CLI gate', () => {
     try {
       await Bun.write(
         join(dir, 'packages/core/src/errors.ts'),
-        "export const CODES = ['X_MADE_UP'] as const;\n",
+        "export const CORE_ERROR_CODES = ['X_MADE_UP'] as const;\n",
       );
       await Bun.write(join(dir, ERROR_REFERENCE), '# Error codes\n');
       const findings = await errorCodeDocs(dir);

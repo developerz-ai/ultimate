@@ -103,6 +103,18 @@ const CATALOG = {
   'cli.env.invalid': '{count} of {total} declared variable(s) missing or malformed',
   'cli.env.wrote': 'wrote {path} — {count} declared variable(s)',
   'cli.env.fresh': '{path} already matches the declaration',
+  'cli.secrets.init': 'sealed {path} — master key {kid}, and .gitignore now covers the key file',
+  'cli.secrets.deploy': '  carry the key into a deploy with {env}="$(cat {keyPath})"',
+  'cli.secrets.redeploy': '  set {env}="$(cat {keyPath})" in every deploy before the next release',
+  'cli.secrets.shown': '{count} secret(s) in {path}, sealed with master key {kid}',
+  'cli.secrets.empty': '{path} holds no secrets yet',
+  'cli.secrets.undeclared':
+    '{count} secret(s) no envSchema declares, so nothing reads them: {names}',
+  'cli.secrets.edited': '{path} resealed — {added} added, {updated} changed, {removed} removed',
+  'cli.secrets.unchanged': '{path} unchanged — nothing was written',
+  'cli.secrets.set': 'sealed {name} into {path} — {count} secret(s)',
+  'cli.secrets.rotated':
+    'rotated {path} from master key {from} to {to} — {count} secret(s) resealed',
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

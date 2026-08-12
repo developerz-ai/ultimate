@@ -135,7 +135,7 @@ describe('the checks, over a repo', () => {
   // manifest. A collector that read one filename per package would leave both blind to the same
   // codes, and the manifest would claim a completeness it never had.
   test('collectDeclaredCodes reads every source file, not just a package registry', async () => {
-    await write('packages/db/src/errors.ts', "export const CODES = ['X_B'] as const;\n");
+    await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_B'] as const;\n");
     await write('packages/db/src/pool.ts', "throw new E({ code: 'X_C', fix: 'x db status' });\n");
     await write('scripts/gate.ts', "throw new E({ code: 'X_A', fix: 'bun run gate' });\n");
     expect(await collectDeclaredCodes(root)).toEqual([
@@ -146,7 +146,7 @@ describe('the checks, over a repo', () => {
   });
 
   test('collectDeclaredCodes skips tests and generated declarations', async () => {
-    await write('packages/db/src/errors.ts', "export const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
     await write('packages/db/src/pool.test.ts', "expect(e.code).toBe('X_INVENTED');\n");
     await write('packages/db/src/errors.d.ts', "export declare const C: 'X_DECLARED';\n");
     expect(await collectDeclaredCodes(root)).toEqual([
@@ -158,7 +158,7 @@ describe('the checks, over a repo', () => {
   // throw it — and `aaa.ts` proves the rule is not just "the alphabetically first path".
   test('collectDeclaredCodes prefers the registry over any throw site', async () => {
     await write('packages/db/src/aaa.ts', "throw new E({ code: 'X_A', fix: 'x db status' });\n");
-    await write('packages/db/src/errors.ts', "\nexport const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/errors.ts', "\nexport const DB_ERROR_CODES = ['X_A'] as const;\n");
     await write('packages/db/src/pool.ts', "throw new E({ code: 'X_A', fix: 'x db status' });\n");
     expect(await collectDeclaredCodes(root)).toEqual([
       { code: 'X_A', at: 'packages/db/src/errors.ts', line: 2 },
@@ -172,7 +172,29 @@ describe('the checks, over a repo', () => {
       'packages/admin/src/errors.ts',
       "export const ADMIN_BORROWED_ERROR_CODES = ['X_A'] as const;\n",
     );
-    await write('packages/core/src/error-codes.ts', "const T = {\n  X_A: 'not implemented',\n};\n");
+    await write(
+      'packages/core/src/error-codes.ts',
+      "export const CORE_ERROR_TITLES = {\n  X_A: 'not implemented',\n};\n",
+    );
+    expect(await collectDeclaredCodes(root)).toEqual([
+      { code: 'X_A', at: 'packages/core/src/error-codes.ts', line: 2 },
+    ]);
+  });
+
+  // A package over the 500-line ceiling splits its registry in two, and the half left behind is
+  // still called `errors.ts` while declaring no codes at all. Under the old filename test it was
+  // a registry, so `X_A` — core's, borrowed here — was attributed to `admin`, whose path sorts
+  // first. The table is what makes a file the registry, not what it is named.
+  test('collectDeclaredCodes ignores a classes-only errors.ts', async () => {
+    await write(
+      'packages/admin/src/error-codes.ts',
+      "export const ADMIN_BORROWED_ERROR_CODES = ['X_A'] as const;\n",
+    );
+    await write('packages/admin/src/errors.ts', "super({ code: 'X_A', fix: 'x help' });\n");
+    await write(
+      'packages/core/src/error-codes.ts',
+      "export const CORE_ERROR_TITLES = {\n  X_A: 'not implemented',\n};\n",
+    );
     expect(await collectDeclaredCodes(root)).toEqual([
       { code: 'X_A', at: 'packages/core/src/error-codes.ts', line: 2 },
     ]);
@@ -194,7 +216,10 @@ describe('the checks, over a repo', () => {
   });
 
   test('checkErrorCodeDocs reports a declared code the page does not name', async () => {
-    await write('packages/db/src/errors.ts', "export const CODES = ['X_A', 'X_B'] as const;\n");
+    await write(
+      'packages/db/src/errors.ts',
+      "export const DB_ERROR_CODES = ['X_A', 'X_B'] as const;\n",
+    );
     await write('wiki/Error-Codes.md', '| `X_A` | means | cause | fix |\n');
     const [finding, ...rest] = await checkErrorCodeDocs(root, 'wiki/Error-Codes.md');
     expect(rest).toEqual([]);
@@ -206,7 +231,7 @@ describe('the checks, over a repo', () => {
   });
 
   test('checkErrorCodeDocs passes when every declared code is on the page', async () => {
-    await write('packages/db/src/errors.ts', "export const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
     await write('wiki/Error-Codes.md', '| `X_A` | means | cause | fix |\n');
     expect(await checkErrorCodeDocs(root, 'wiki/Error-Codes.md')).toEqual([]);
   });
@@ -214,14 +239,14 @@ describe('the checks, over a repo', () => {
   // A missing reference page must fail loudly: silently passing would make an empty repo the
   // best-scoring one, which is the shape of every gate that reads green over nothing.
   test('checkErrorCodeDocs fails when the reference page is absent', async () => {
-    await write('packages/db/src/errors.ts', "export const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
     const [finding] = await checkErrorCodeDocs(root, 'wiki/Error-Codes.md');
     expect(finding?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
     expect(finding?.cause).toContain('does not exist');
   });
 
   test('one finding per code, however many files declare it', async () => {
-    await write('packages/db/src/errors.ts', "export const CODES = ['X_A'] as const;\n");
+    await write('packages/db/src/errors.ts', "export const DB_ERROR_CODES = ['X_A'] as const;\n");
     await write('packages/db/src/thing.ts', "throw new E({ code: 'X_A', fix: 'x help' });\n");
     await write('wiki/Error-Codes.md', 'no codes here\n');
     expect(await checkErrorCodeDocs(root, 'wiki/Error-Codes.md')).toHaveLength(1);

@@ -4,7 +4,6 @@
 // boot installs, only backed by embedded drivers.
 
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import type { PurgeDriver } from '@ultimat3/cache';
 import {
   createCdnTier,
@@ -20,10 +19,11 @@ import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from
 import type { Transport, TransportSelection } from '@ultimat3/realtime';
 import { selectTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver } from '@ultimat3/storage';
+import { defineStorage, localDriver, s3Driver } from '@ultimat3/storage';
 import type { DevDbClient } from './dev-queue';
 import { startQueue } from './dev-queue';
 import type { DevServices, Env } from './dev-services';
+import { StorageUnwritableError } from './errors';
 import { msg } from './messages';
 
 export interface RunningServices {
@@ -98,13 +98,55 @@ export function cdnLabel(runtime: RunningServices): string {
 
 const FILE_SCHEME = 'file://';
 
-function startStorage(services: DevServices): Storage {
+/**
+ * The storage disk this process will use.
+ *
+ * An `external` binding now reaches `s3Driver`. It used to fall through to a LOCAL directory —
+ * `S3_ENDPOINT` selected a different root and nothing else, so every deployment that configured
+ * object storage silently wrote to a container-local disk, and every upload was destroyed by the
+ * next restart while the configured bucket stayed empty. Nothing failed; the files just went
+ * nowhere.
+ *
+ * The embedded branch is also where a hardened container died. `mkdirSync` on a
+ * `readOnlyRootFilesystem` throws a bare `EROFS` from inside Bun's fs, with no code, no fix and no
+ * mention of storage — the demo CrashLooped 22 times on it. A read-only filesystem is a normal way
+ * to run a container, so this reports what to do instead of what went wrong.
+ */
+export function startStorage(services: DevServices, env: Env): Storage {
   const binding = services.storage;
-  const root =
-    binding.mode === 'embedded'
-      ? binding.url.slice(FILE_SCHEME.length)
-      : join(services.stateDir, 'storage');
-  mkdirSync(root, { recursive: true });
+
+  if (binding.mode === 'external') {
+    const bucket = env['S3_BUCKET'] ?? '';
+    if (bucket === '') {
+      throw new StorageUnwritableError(
+        `S3_ENDPOINT is set to ${binding.url} but S3_BUCKET is empty, so there is no disk to write to`,
+        'set S3_BUCKET to the bucket name, or unset S3_ENDPOINT to use the embedded disk',
+      );
+    }
+    return defineStorage({
+      disks: {
+        object: s3Driver({
+          bucket,
+          endpoint: binding.url,
+          ...(env['S3_REGION'] === undefined ? {} : { region: env['S3_REGION'] }),
+          // MinIO needs path style; R2 and AWS do not. Declared, never sniffed from the endpoint.
+          forcePathStyle: env['S3_FORCE_PATH_STYLE'] === '1',
+        }),
+      },
+      default: 'object',
+    });
+  }
+
+  const root = binding.url.slice(FILE_SCHEME.length);
+  try {
+    mkdirSync(root, { recursive: true });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new StorageUnwritableError(
+      `the embedded storage disk needs ${root} and it could not be created: ${detail}`,
+      `mount a writable volume at ${root}, or set S3_ENDPOINT and S3_BUCKET to use object storage instead`,
+    );
+  }
   return defineStorage({ disks: { local: localDriver({ root }) }, default: 'local' });
 }
 
@@ -152,7 +194,7 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
     // first change nobody receives, and the socket is a resource the unwind below has to release.
     await bus.connect();
     started.push(() => bus.transport.close());
-    const storage = startStorage(services);
+    const storage = startStorage(services, env);
     // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
     // show what a template renders in every locale without a mailbox or a message escaping to a
     // real address. `SMTP_URL` or `RESEND_API_KEY` makes it a real transport instead — the same

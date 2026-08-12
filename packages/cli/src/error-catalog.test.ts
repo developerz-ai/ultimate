@@ -12,7 +12,7 @@ import {
   loadErrorCatalog,
   registeredErrorCodes,
 } from './error-catalog';
-import { CLI_ERROR_CODES } from './errors';
+import { CLI_ERROR_CODES } from './error-codes';
 import { stripComments } from './ts-scan';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..');

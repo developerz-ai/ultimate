@@ -6,7 +6,7 @@
 
 // `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { docsFor } from './errors';
+import { docsFor } from './error-codes';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import type { CodeSite, FixSite } from './ts-scan';
@@ -148,8 +148,8 @@ export async function checkErrorCodeRegistry(
  * it borrows in that same file — so a registry that owns the code outranks a throw site, and a
  * registry that has said the code is somebody else's ranks below both.
  */
-const claim = (site: CodeSite, borrowed: ReadonlySet<string>): number => {
-  if (!isCodeRegistry(site.at)) return 1;
+const claim = (site: CodeSite, registry: boolean, borrowed: ReadonlySet<string>): number => {
+  if (!registry) return 1;
   return borrowed.has(site.code) ? 0 : 2;
 };
 
@@ -178,8 +178,9 @@ export async function collectDeclaredCodes(root: string): Promise<readonly CodeS
     if (isTest(source) || isGenerated(source)) continue;
     const text = await Bun.file(join(root, source)).text();
     const borrowed = scanBorrowedCodes(text);
+    const registry = isCodeRegistry(text);
     for (const site of scanCodes(text, source)) {
-      const found: [CodeSite, number] = [site, claim(site, borrowed)];
+      const found: [CodeSite, number] = [site, claim(site, registry, borrowed)];
       const seen = sites.get(site.code);
       sites.set(site.code, seen === undefined ? found : declarationOf(seen, found));
     }
