@@ -133,11 +133,13 @@ describe('scanCodes', () => {
     ]);
   });
 
+  // Registry-ness is read off the file's own table declaration, so the second argument is only
+  // ever the label a finding is reported at — renaming a file cannot change what it declares.
   test('collects list and table entries, but only in a code registry', () => {
-    const list = "export const CODES = ['X_A', 'X_B'] as const;";
+    const list = "export const X_ERROR_CODES = ['X_A', 'X_B'] as const;";
     expect(scanCodes(list, 'errors.ts').map((site) => site.code)).toEqual(['X_A', 'X_B']);
-    expect(scanCodes(list, 'thing.ts')).toEqual([]);
-    const table = 'const TITLES = {\n  X_C: "third",\n};';
+    expect(scanCodes("export const CODES = ['X_A', 'X_B'] as const;", 'errors.ts')).toEqual([]);
+    const table = 'export const X_ERROR_TITLES = {\n  X_C: "third",\n};';
     expect(scanCodes(table, 'packages/x/src/errors.ts').map((site) => site.code)).toEqual(['X_C']);
   });
 
@@ -193,11 +195,31 @@ describe('scanBorrowedCodes', () => {
 });
 
 describe('isCodeRegistry', () => {
-  test('only a package errors.ts or core error-codes.ts', () => {
-    expect(isCodeRegistry('packages/db/src/errors.ts')).toBe(true);
-    expect(isCodeRegistry('packages/core/src/error-codes.ts')).toBe(true);
-    expect(isCodeRegistry('packages/core/src/image/errors.ts')).toBe(true);
-    expect(isCodeRegistry('packages/cli/src/mcp-errors.ts')).toBe(false);
-    expect(isCodeRegistry('packages/http/src/error-map.ts')).toBe(false);
+  test('the file that declares the table, in either shape', () => {
+    expect(isCodeRegistry("export const DB_ERROR_CODES = ['X_DB_DRIFT'] as const;")).toBe(true);
+    expect(isCodeRegistry('export const CORE_ERROR_TITLES: Titles = {')).toBe(true);
+    expect(isCodeRegistry("export const HTTP_OWNED_ERROR_CODES = ['X_ROUTE_CONFLICT'];")).toBe(
+      true,
+    );
+  });
+
+  // The regression the filename test could not see: a package that splits its registry in two
+  // leaves behind a file still *named* `errors.ts` that declares no codes at all. Calling it a
+  // registry hands it every code it throws, and `X_NOT_IMPLEMENTED` moves off `core`.
+  test('a classes-only errors.ts is not a registry', () => {
+    const source = [
+      "import { docsFor } from './error-codes';",
+      'export class NotImplementedError extends UltimateError {',
+      "  constructor() { super({ code: 'X_NOT_IMPLEMENTED' }); }",
+      '}',
+    ].join('\n');
+    expect(isCodeRegistry(source)).toBe(false);
+  });
+
+  test('a file that merely maps or explains codes is not a registry', () => {
+    expect(
+      isCodeRegistry("const CLI_FIXES: Record<CliErrorCode, string> = { X_A: 'x help' };"),
+    ).toBe(false);
+    expect(isCodeRegistry("import { HTTP_ERROR_CODES } from './errors';")).toBe(false);
   });
 });

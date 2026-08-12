@@ -38,6 +38,21 @@ shape against a locally declared sample interface for exactly that reason.
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one way out, on purpose greppable |
+| the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
+
+`installSecrets()` is the ONLY path from `secrets.enc.json` to an app value, and it lands in
+`process.env` before `defineEnv` reads it — so a secret has one declaration (`envSchema`), one
+`.env.example` row, one mask and one reader. A second accessor would be five second
+implementations. The real environment always wins, which is what lets one image run in Compose and
+on K8s off one committed file.
+
+`secrets-errors.ts` registers its seven codes through `registerErrorCodes()` rather than joining
+`CORE_CODE_TITLES` — the codes and the module that throws them ship together, and `registerErrorCodes`
+is the one mechanism that raises `X_ERROR_CODE_DUPLICATE` if anything else claims one. Consequence
+to know: a test that calls `resetErrorCodes()` drops these titles like any other package's, so take
+`errorCodeSnapshot()` first. The envelope carries a `kid` (a domain-separated, truncated SHA-256 of
+the master key) purely so *wrong key* and *edited file* are two codes and not one shrug — GCM alone
+cannot tell them apart.
 
 Metrics mirror tracing exactly — `metrics.ts` is to `telemetry.ts` what a counter is to a span:
 always on, no-op exporter by default, driver on the wire. `runtime-metrics.ts` is the only place

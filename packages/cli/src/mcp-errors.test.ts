@@ -3,7 +3,7 @@
 // quieter half of it — the agent that ran a machine-readable command to get here is handed prose.
 
 import { describe, expect, test } from 'bun:test';
-import { CLI_ERROR_CODES } from './errors';
+import { CLI_ERROR_CODES } from './error-codes';
 import { explainErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';

@@ -8,7 +8,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
-| Errors | `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
+| Errors | codes + titles in `src/error-codes.ts`, classes in `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
 | Subprocesses | only through `exec.ts`, so a test can inject a fake `Runner` |
 | Templates | `templates/*.ts` return strings; no fixture files on disk |
 | Strings | rendered output through `messages.ts`, missing key renders `⟦key⟧` — see below for what is *not* rendered output |

@@ -4,8 +4,8 @@
 
 import { describeErrorCode, hasErrorCode, listErrorCodes } from '@ultimat3/core';
 import type { ErrorExplanation } from '@ultimat3/mcp';
-import type { CliErrorCode } from './errors';
-import { CLI_ERROR_CODES, docsFor } from './errors';
+import type { CliErrorCode } from './error-codes';
+import { CLI_ERROR_CODES, docsFor } from './error-codes';
 
 /**
  * One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build.
@@ -50,6 +50,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run scripts/new-package.ts <pkg> --only <file>',
   X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',
+  // Two real remedies and the command cannot know which one this deployment wants, so it names
+  // the one that inspects the binding rather than guessing between a volume and a bucket.
+  X_STORAGE_UNWRITABLE: 'x doctor --json',
   X_MANIFEST_STALE: 'x manifest --json',
   X_BUDGET_UNMEASURED: 'x build --json && x verify --json',
   X_BUILD_FAILED: 'x build --json   # the finding names the failing step',
@@ -74,6 +77,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_BOUNDARY_APP_TO_API: 'x fix boundary <file> --json',
   X_BOUNDARY_ROUTE_TO_DB: 'x fix boundary <file> --json',
   X_BOUNDARY_SERVICE_TO_HTTP: 'x fix boundary <file> --json',
+  // `EDITOR=` inline rather than `export`: the variable is only needed for the one invocation, and
+  // an agent copying this line gets a working command instead of a shell it has to keep.
+  X_SECRETS_EDITOR_MISSING: 'EDITOR=nano x secrets edit',
+  X_SECRETS_EDIT_FAILED: 'x secrets show --json   # then re-open the buffer: x secrets edit',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

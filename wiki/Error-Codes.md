@@ -82,6 +82,24 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_PORT_INVALID` | `PORT` is not a TCP port number | a platform-injected `PORT` that is empty, non-numeric or out of range — never defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause | `docker run -e PORT=3000 <image>` |
 | `X_ROLE_UNKNOWN` | `ROLE` names something that is not a role | a typo in a compose file, a Helm value or a `docker run` — one image runs every role, so the typo would otherwise start a process that serves nothing and reports healthy | `docker run -e ROLE=web <image>` — one of `web`, `sync`, `worker`, `scheduler`, `replicator`, `migrate` |
 
+## Encrypted secrets
+
+One committed file, `secrets.enc.json`, sealed with AES-256-GCM under a 32-byte master key read from `ULTIMATE_SECRETS_KEY` first and the gitignored `.secrets.key` second. Values are decrypted into the process environment by `installSecrets()` and read back through the app's own `envSchema` — a secret is an env var, so it has one declaration, one mask and one reader. See [CLI reference](CLI-Reference) for `x secrets`.
+
+The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the master key, safe to commit. It is what makes "you used the wrong key" and "this file was edited after it was sealed" two different codes instead of one unexplained decryption failure.
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_SECRETS_KEY_MISSING` | no master key for the encrypted secrets file | `ULTIMATE_SECRETS_KEY` is unset and `.secrets.key` does not exist, while a sealed file does. Fatal at boot on purpose — an app that started without its secrets authenticates against nothing and still reports healthy | `export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"`, or `x secrets init` in a repo that has no key yet |
+| `X_SECRETS_KEY_INVALID` | the master key is not 32 bytes of hex | a truncated paste, or a platform secret that carried quotes. An AES-256 key is exactly 64 lowercase hex characters | `export ULTIMATE_SECRETS_KEY="$(cat .secrets.key)"` |
+| `X_SECRETS_KEY_MISMATCH` | the secrets file was sealed with a different master key | a key from another environment, or a `x secrets rotate` interrupted between its two writes. Both key ids are named in the cause | `git checkout -- secrets.enc.json`, or point `ULTIMATE_SECRETS_KEY` at the key whose id the file names |
+| `X_SECRETS_FILE_MISSING` | the encrypted secrets file does not exist | `x secrets show/edit/set/rotate` in a repo that never ran `init`. Never an empty listing — "no secrets" and "no file" are different facts | `x secrets init` |
+| `X_SECRETS_FILE_INVALID` | the encrypted secrets file is not a readable envelope | a merge conflict marker, a truncated write, an unknown `v` or `alg`, or a header field that is not base64. Nothing reached authentication, so this is not tampering | `git checkout -- secrets.enc.json` — the file is written only by `x secrets`, never by hand |
+| `X_SECRETS_TAMPERED` | the secrets file failed its authentication tag | under a key whose id already matched, the ciphertext or the header bound into it as AAD changed after sealing. GCM refuses rather than returning garbage | `git checkout -- secrets.enc.json`, then `x secrets show --json` |
+| `X_SECRETS_PLAINTEXT_INVALID` | the decrypted secrets are not a flat map of env values | an `x secrets edit` buffer saved as something other than one flat JSON object, a key that is not an environment variable name, or an empty value. Refused before sealing, so a file that opens always installs | `x secrets edit` — the buffer is `{"SESSION_SECRET": "s3cr3t"}` |
+| `X_SECRETS_EDITOR_MISSING` | no `$EDITOR` to open the decrypted secrets in | neither `VISUAL` nor `EDITOR` is set. No editor is guessed — opening a decrypted file in a surprise program is the last place a default belongs | `EDITOR=nano x secrets edit`, or write one value without an editor: `printf %s "$TOKEN" \| x secrets set STRIPE_KEY` |
+| `X_SECRETS_EDIT_FAILED` | the editor exited non-zero, so nothing was resealed | a crash or a deliberate abort. The buffer is discarded and the committed file is untouched | `x secrets edit` |
+
 ## Schema and validation
 
 | Code | Means | Typical cause | Fix |
@@ -248,6 +266,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ROUTE_UNNORMALIZED` | a route was registered without `defineRoute` | `registerRoute({ config })` was handed the author's own object, so `meta` and `budget` were never normalized and every descriptor reader would read them wrong | wrap it: `registerRoute({ file, config: defineRoute({ … }) })` |
 | `X_ROUTE_DUPLICATE` | two route files resolve to one URL | a copied page directory | delete or rename one |
 | `X_ROUTE_FILE_INVALID` | a route file is not named for its surface | `site/pricing.tsx` or `site/blog/index.tsx` instead of `<dir>/page.tsx` | `mkdir -p <dir> && git mv <file> <dir>/page.tsx` — `route.ts` under `api/` |
+| `X_STORAGE_UNWRITABLE` | the storage disk this process needs cannot be written to | a hardened container (`readOnlyRootFilesystem: true`) with no writable volume at the embedded disk's root, or `S3_ENDPOINT` set with `S3_BUCKET` empty | mount a writable volume at the path in the message, or set `S3_ENDPOINT` + `S3_BUCKET` to use object storage. `x doctor --json` shows which binding this process resolved |
 | `X_ROUTE_LOAD_INVALID` | a route declared a `load` that is not a function | `load: someData` instead of `load: () => someData` | make `load` a function of `({ params, url })` returning the page data, or remove it |
 | `X_ROUTE_LOAD_FAILED` | a route's `load` threw while resolving its data | the query, client call or fetch inside `load` failed; the message names the path | fix the `load` for that path, or return a fallback so the page can still render. An `UltimateError` thrown by the loader passes through untouched, with its own code |
 | `X_SURFACE_BOUNDARY` | a surface imported across the hard boundary | `site/` reached `app/`, transitively | `x fix boundary <file>`, or move the shared module out of `shared/ui` |

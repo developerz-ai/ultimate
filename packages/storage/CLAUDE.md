@@ -28,7 +28,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `driver.ts` | `StorageDriver` contract + `toBytes`/`sha256Base64`/`etagOf` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-s3.ts` | `Bun.S3Client`, built lazily (import must never open a socket) |
-| `path.ts` | key validation + `scopedKey`/`isWithinOrg` tenant boundary |
+| `path.ts` | key validation + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
@@ -45,6 +45,16 @@ bun run typecheck
 ```
 
 Gotchas:
+- **The mounted read half is `@ultimat3/cli`'s `dev-storage.ts`, not this package.** `GET
+  /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
+  2 and unreachable from here — so a "serve this object" helper in this package could only ever be
+  a second authz path. This package's contribution to that route is `assertSafeKey`,
+  `isTenantScoped`/`isWithinOrg` and the driver's own `contentType`/`etag`; the `Response` is the
+  host's, exactly as `accept.ts`'s header says.
+- `acceptSignedUpload` still has no mounted route: the signing secret is closed over inside
+  `localDriver` and no `StorageDriver` method exposes it, so a host cannot verify a signed PUT
+  through the `Storage` seam it is handed. Serving reads needed none of it (policy decides, not a
+  signature); mounting the write half needs that seam question answered first.
 - `X_NOT_IMPLEMENTED` is core's — it belongs in `STORAGE_BORROWED_ERROR_CODES` (codes, no title)
   and never in the registration call. A `hasErrorCode()` guard there would suppress the
   `X_ERROR_CODE_DUPLICATE` two owners of one code are supposed to get. Tests need `resetStorage()`

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b0cb5ec98b75e4c58342492874ee5bee656afb58ca9741fb3bb4b3cad0f2c45e",
+  "buildId": "d51834778bb3a1414f8ca475becbb91821a17679209b290f02d641a0776a2789",
   "tiers": {
     "0": [
       "core",
@@ -343,7 +343,7 @@
     {
       "code": "X_APP_PACKAGE_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_AUTH_WRITE_FAILED",
@@ -358,27 +358,27 @@
     {
       "code": "X_BOUNDARY_APP_TO_API",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BOUNDARY_ROUTE_TO_DB",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BOUNDARY_SERVICE_TO_HTTP",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BOUNDARY_SHARED_LEAF",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BOUNDARY_SITE_TO_APP",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BOUNDARY_VIOLATION",
@@ -398,17 +398,17 @@
     {
       "code": "X_BUDGET_UNMEASURED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BUILD_ENTRY_MISSING",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BUILD_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BUILD_ID_MISSING",
@@ -423,7 +423,7 @@
     {
       "code": "X_BUN_VERSION",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CACHE_DRIVER_UNAVAILABLE",
@@ -458,17 +458,17 @@
     {
       "code": "X_CLI_BAD_FLAG",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CLI_UNEXPECTED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CLI_UNKNOWN_COMMAND",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CONFIG_INVALID",
@@ -513,7 +513,7 @@
     {
       "code": "X_DB_BRANCH_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DB_DRIFT",
@@ -523,17 +523,17 @@
     {
       "code": "X_DB_GEN_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DB_MIGRATE_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DB_STUDIO_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DB_UNAVAILABLE",
@@ -543,12 +543,12 @@
     {
       "code": "X_DECLARATION_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DEPLOY_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DEV_DASHBOARD_IN_PROD",
@@ -608,22 +608,22 @@
     {
       "code": "X_ERROR_CODE_UNDOCUMENTED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ERROR_CODE_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ERROR_CODE_UNREGISTERED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ERROR_FIX_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ERROR_REPORTER_DSN_INVALID",
@@ -663,12 +663,12 @@
     {
       "code": "X_FILE_TOO_LONG",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_FIX_TARGET_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_FLAG_DUPLICATE",
@@ -697,18 +697,18 @@
     },
     {
       "code": "X_FORBIDDEN",
-      "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "owner": "policy",
+      "at": "packages/policy/src/errors.ts"
     },
     {
       "code": "X_GENERATE_CONFLICT",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_GENERATE_JSON_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ID_INVALID",
@@ -788,7 +788,7 @@
     {
       "code": "X_JOB_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_LD_INVALID",
@@ -798,7 +798,7 @@
     {
       "code": "X_LINT_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_LIVE_CLIENT_MISSING",
@@ -883,7 +883,7 @@
     {
       "code": "X_MANIFEST_STALE",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_MATCHER_UNSUPPORTED",
@@ -1003,7 +1003,7 @@
     {
       "code": "X_NOT_IN_APP",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_OAUTH_EXCHANGE_FAILED",
@@ -1033,7 +1033,7 @@
     {
       "code": "X_PACKAGE_SHAPE",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_PASSWORD_WEAK",
@@ -1063,12 +1063,12 @@
     {
       "code": "X_PORT_IN_USE",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_PORT_INVALID",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_PRERENDER_FAILED",
@@ -1183,7 +1183,7 @@
     {
       "code": "X_RELEASE_VERSION_SKEW",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",
@@ -1223,7 +1223,7 @@
     {
       "code": "X_ROLE_UNKNOWN",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_ROUTE_CONFLICT",
@@ -1283,7 +1283,7 @@
     {
       "code": "X_SCAFFOLD_PATH_ESCAPE",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SCHEDULE_INVALID",
@@ -1294,6 +1294,51 @@
       "code": "X_SCHEMA_UNSUPPORTED",
       "owner": "schema",
       "at": "packages/schema/src/errors.ts"
+    },
+    {
+      "code": "X_SECRETS_EDIT_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SECRETS_EDITOR_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SECRETS_FILE_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_FILE_MISSING",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_KEY_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_KEY_MISMATCH",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_KEY_MISSING",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_PLAINTEXT_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SECRETS_TAMPERED",
+      "owner": "core",
+      "at": "packages/core/src/secrets-errors.ts"
     },
     {
       "code": "X_SEO_BUDGET_EXCEEDED",
@@ -1401,6 +1446,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_UNWRITABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_STORAGE_UPLOAD_FAILED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -1458,7 +1508,7 @@
     {
       "code": "X_TEST_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_TEST_FIXTURE_UNAVAILABLE",
@@ -1493,7 +1543,7 @@
     {
       "code": "X_TEST_NO_FILES",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_TEST_NONDETERMINISTIC",
@@ -1508,7 +1558,7 @@
     {
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_THEME_INVALID",
@@ -1563,7 +1613,7 @@
     {
       "code": "X_TYPECHECK_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_UI_INVALID_VALUE",
@@ -1603,7 +1653,7 @@
     {
       "code": "X_VERIFY_FAILED",
       "owner": "cli",
-      "at": "packages/cli/src/errors.ts"
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_WRITE_UNFILTERED",

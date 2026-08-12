@@ -14,6 +14,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
 | named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
 | a value that cannot be printed by accident | `secret.ts` |
+| the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
+| the two secrets files, and decrypted values → `defineEnv` | `secrets-store.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
@@ -175,6 +177,36 @@ the logger and an error's `meta` all render `[redacted]`, whatever key it sits u
 frozen and everything but `label` is non-enumerable, so `{ ...dsn }` cannot spread the value back
 out. There is no vault integration and there will not be one — that is a platform primitive
 (axiom 7); a `Secret` plus the platform's own secret store is the whole design.
+
+## Encrypted secrets are env values that arrive early
+
+```ts
+// app.config.ts
+await installSecrets();                       // secrets.enc.json → process.env, real env wins
+export const envSchema = {
+  SESSION_SECRET: { type: 'string', secret: true },
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
+```
+
+`secrets.enc.json` is committed; `.secrets.key` is not, and `ULTIMATE_SECRETS_KEY` is read before
+it so a container is handed its key by the platform. The plaintext is a flat map of environment
+variable names to values, so a secret keeps **one** declaration (`envSchema`), one `.env.example`
+row, one mask (`maskedEnvValues`), one redaction entry and one reader (`env.SESSION_SECRET`).
+There is deliberately no `secrets.get()`: a second accessor would mint values with no declaration,
+no type and no mask, and each of those five would need a second implementation. `x secrets` is the
+only writer.
+
+| Envelope | |
+|---|---|
+| Cipher | AES-256-GCM through WebCrypto, 128-bit tag, a fresh 12-byte IV per seal |
+| Key | 32 CSPRNG bytes, hex. No KDF — the key is the key |
+| AAD | `v`, `alg` and `kid`, so a downgraded header fails the tag rather than changing how the body is read |
+| `kid` | a domain-separated, truncated SHA-256 of the master key. Safe to commit, and what makes *wrong key* (`X_SECRETS_KEY_MISMATCH`) a different code from *edited file* (`X_SECRETS_TAMPERED`) |
+
+A missing file is not an error — an app may declare no secrets. A file with **no key to open it**
+is `X_SECRETS_KEY_MISSING` and fatal: a process that booted past its secrets authenticates against
+nothing and still reports healthy.
 
 ## Time, ids, telemetry, drain
 

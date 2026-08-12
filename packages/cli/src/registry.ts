@@ -20,6 +20,7 @@ import { plannedCommands } from './cmd-planned';
 import { policyCommand } from './cmd-policy';
 import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 import { routesCommand } from './cmd-routes';
+import { secretsCommand } from './cmd-secrets';
 import { tasksCommand } from './cmd-tasks';
 import { testCommand } from './cmd-test';
 import { verifyCommand } from './cmd-verify';
@@ -42,6 +43,7 @@ const CORE: readonly CliCommand[] = [
   doctorCommand,
   deployCommand,
   envCommand,
+  secretsCommand,
   manifestCommand,
   routesCommand,
   actionsCommand,

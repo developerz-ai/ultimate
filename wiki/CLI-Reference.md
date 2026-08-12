@@ -33,6 +33,7 @@ x version              # CLI version
 | `x db <sub>` | gen, migrate, reset, studio, branch | shipped |
 | `x verify [--workers N]` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
+| `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -357,6 +358,58 @@ manifest, assembles its routes, and holds until SIGTERM → [Deployment](Deploym
 
 The scaffolded `docker/Dockerfile` defaults `NODE_ENV=production ROLE=web PORT=3000`, exposes 3000,
 and health-checks `/readyz`.
+
+## x secrets
+
+```bash
+x secrets [show|init|edit|set <NAME>|rotate] [--json]
+```
+
+Two files, one committed and one never:
+
+| File | Committed | Holds |
+|---|---|---|
+| `secrets.enc.json` | yes | the sealed envelope: `v`, `alg`, the master key's id, the IV, the ciphertext |
+| `.secrets.key` | **no** — `x secrets init` writes the `.gitignore` rule before it writes the key | 64 hex characters, mode `0600` |
+
+`ULTIMATE_SECRETS_KEY` is read first and the key file second, so a container is handed its key by the platform and ships no key file at all.
+
+**A secret is an environment variable.** The decrypted payload is a flat map of `ENV_NAME` to value, and `installSecrets()` writes each one into the process environment where nothing has already set it — the real environment always wins, so one image runs in Compose and on K8s with the same committed file. Everything downstream is what already existed:
+
+```ts
+// app.config.ts
+await installSecrets();
+export const envSchema = {
+  SESSION_SECRET: { type: 'string', secret: true, description: 'Cookie signing key' },
+} satisfies EnvSchema;
+export const env = defineEnv(envSchema);
+```
+
+One declaration, one row in `.env.example`, one mask (`maskedEnvValues`), one redaction entry, one reader (`env.SESSION_SECRET`). There is no `secrets.get()` — a second accessor would be values with no declaration, no type and no mask.
+
+| Subcommand | Does |
+|---|---|
+| `show` (default) | names, lengths, and whether `envSchema` declares each one. **Never a value**, in either renderer |
+| `init` | a fresh master key, the `.gitignore` rule, and an empty sealed file. Refuses to overwrite either file |
+| `edit` | decrypt into a temp buffer outside the repo, open `$VISUAL`/`$EDITOR`, reseal on save. The buffer is deleted in a `finally` and by a `SIGINT`/`SIGTERM` handler; an unchanged buffer writes nothing |
+| `set <NAME>` | one value, read from **stdin** — never argv, which lands in shell history and in `ps` |
+| `rotate` | reseal the same values under a new master key. The committed file is written first and the key last: only the committed one can be restored from git |
+
+```bash
+$ x secrets init --json
+{"ok":true,"command":"secrets","summary":"sealed secrets.enc.json — master key 4f2a…",
+ "data":{"path":"secrets.enc.json","keyPath":".secrets.key","keyId":"4f2a…","gitignore":"added"}}
+
+$ printf %s "$STRIPE_KEY" | x secrets set STRIPE_KEY --json
+$ x secrets show
+name            value       length     envSchema
+SESSION_SECRET  [redacted]  44 chars   yes
+STRIPE_KEY      [redacted]  32 chars   no
+```
+
+`--json` carries exactly what the terminal does, which is why no subcommand has a `--reveal` flag: the one way to see a value is `x secrets edit`, and the one way to read one is the app reading `env.<NAME>`.
+
+Errors: `X_SECRETS_KEY_MISSING`, `X_SECRETS_KEY_INVALID`, `X_SECRETS_KEY_MISMATCH`, `X_SECRETS_FILE_MISSING`, `X_SECRETS_FILE_INVALID`, `X_SECRETS_TAMPERED`, `X_SECRETS_PLAINTEXT_INVALID`, `X_SECRETS_EDITOR_MISSING`, `X_SECRETS_EDIT_FAILED`, `X_GENERATE_CONFLICT` (`init` over an existing file).
 
 ## x manifest
 

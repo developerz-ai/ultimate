@@ -3,7 +3,7 @@
 // happens to them once selected — a wrong file list is never a race, and a race is never a
 // selection bug.
 
-import { docsFor } from './errors';
+import { docsFor } from './error-codes';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';

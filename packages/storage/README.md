@@ -37,7 +37,9 @@ literals: a key in `app.config.ts` is a key in git. Missing ones throw `X_ENV_MI
 absolute keys, backslashes, NUL/control bytes, percent-encoded separators (`%2e`, `%2f`),
 empty segments, over 1024 chars. No sanitising — a key that needed fixing was built wrong.
 `scopedKey('org-1', 'avatars', 'a.png')` is `org/org-1/avatars/a.png`; guard every
-client-supplied key with `isWithinOrg(key, ctx.actor.orgId)`.
+client-supplied key with `isWithinOrg(key, ctx.actor.orgId)`. A surface that serves objects pairs
+it with `isTenantScoped(key)`: only a key already inside `org/` is another tenant's to refuse, so
+`disk().put('brand/logo.png', …)` stays reachable while `org/org-2/…` never is.
 
 ## Signed URLs
 

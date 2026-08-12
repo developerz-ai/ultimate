@@ -93,6 +93,7 @@ export {
 export {
   assertSafeKey,
   isSafeKey,
+  isTenantScoped,
   isWithinOrg,
   joinKey,
   keyDirname,

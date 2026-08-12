@@ -26,6 +26,7 @@ import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import type { Env } from './dev-services';
 import { resolveServices } from './dev-services';
+import { storageRoutes } from './dev-storage';
 import { PortInvalidError, RoleUnknownError } from './errors';
 import { holdUntilShutdown } from './hold';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
@@ -186,6 +187,7 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
   const routes: readonly Route[] = [
     ...listActions().map(toRoute),
     ...assetRoutes({ root: options.root, storage: runtime.storage }),
+    ...storageRoutes({ storage: runtime.storage }),
     ...appRoutes({ buildId }),
   ];
   const port = options.port ?? portFromEnv(options.env);
