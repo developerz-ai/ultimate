@@ -82,17 +82,24 @@ jobs:
             -e POSTGRES_USER=ultimate -e POSTGRES_PASSWORD=ultimate -e POSTGRES_DB=postgres \
             -p 5433:5432 postgres:17-alpine -c wal_level=logical
           docker run -d --name nats-js -p 4222:4222 nats:2.11-alpine -js
+          # `-h 127.0.0.1`, not the default unix socket, and that is the whole point: the
+          # postgres entrypoint boots a TEMPORARY server to run initdb, and that one listens on
+          # the socket ONLY. A socket probe therefore answers "accepting connections" for a
+          # server that is about to shut down and be replaced — this step went red on main
+          # having logged "accepting connections" and "no response" two lines apart. TCP is up
+          # only once the real server is, so it cannot see the bootstrap one at all.
           for _ in $(seq 1 30); do
-            docker exec pg-logical pg_isready -U ultimate && break
+            docker exec pg-logical pg_isready -U ultimate -h 127.0.0.1 -p 5432 && break
             sleep 2
           done
-          docker exec pg-logical pg_isready -U ultimate \
+          docker exec pg-logical pg_isready -U ultimate -h 127.0.0.1 -p 5432 \
             || { echo 'postgres with wal_level=logical never became ready' >&2; exit 1; }
           for _ in $(seq 1 30); do
-            docker logs nats-js 2>&1 | grep -q 'Server is ready' && exit 0
+            docker logs nats-js 2>&1 | grep -q 'Server is ready' && break
             sleep 2
           done
-          echo 'nats-server never became ready' >&2 && exit 1
+          docker logs nats-js 2>&1 | grep -q 'Server is ready' \
+            || { echo 'nats-server never became ready' >&2; exit 1; }
       - name: x verify
         run: bun run scripts/verify.ts --json
 
