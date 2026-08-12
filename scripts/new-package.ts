@@ -8,7 +8,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FRAMEWORK_VERSION } from '@ultimat3/core';
+import { frameworkVersion } from '@ultimat3/core';
 import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -41,7 +41,7 @@ export function packageTemplates(name: string, tier: number, description: string
       path: 'package.json',
       contents: `{
   "name": "@ultimat3/${name}",
-  "version": "${FRAMEWORK_VERSION}",
+  "version": "${frameworkVersion()}",
   "description": "${description}",
   "license": "MIT",
   "type": "module",

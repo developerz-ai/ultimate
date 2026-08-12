@@ -150,13 +150,9 @@ bunx x build --target binary --out .x/app
 ✓ built binary
 ```
 
-**It compiles and then crashes at import** — a 1.1.0 known gap:
+It boots `As of 2026-08` — the 1.1.0 gap where it crashed at import on `/$bunfs/package.json` is closed. `x build` compiles the framework's version in as `--define ULTIMATE_FRAMEWORK_VERSION="1.2.0"`, because a single-file executable carries no `package.json` to read one from. Compile it any other way and it exits `X_INVARIANT` naming that flag, rather than reporting a version it does not have.
 
-```text
-ENOENT: no such file or directory, open '/$bunfs/package.json'
-```
-
-`FRAMEWORK_VERSION` reads `package.json` at module scope and a single-file executable has none. Use `--target docker`. The image is the self-contained artifact; the binary is a launcher for an app tree in any case, and must be started from the app root with the source beside it.
+Use `--target docker` anyway. The image is the self-contained artifact; the binary is a launcher for an app tree, and must be started from the app root with the source beside it — and no scaffolded app has yet been served from a bare VM this way.
 
 ## When one instance is not enough
 

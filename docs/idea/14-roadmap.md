@@ -38,11 +38,10 @@ Milestones 12–14 exist as a **design, not a plan in progress** — see [Design
 
 **Closed since**: a scaffolded app now has a deployable artifact. [`packages/cli/src/serve.ts`](../../packages/cli/src/serve.ts) boots a role with no dev watcher and no `/_x`, `ROLE=migrate` applies migrations through the db ledger and exits — the release phase a PaaS asks for — and `x new` writes `apps/web/server.ts`, `apps/web/prerender.ts`, `docker/Dockerfile`, its `.dockerignore` and `docker/docker-compose.prod.yml` ([`templates/scaffold-app.ts`](../../packages/cli/src/templates/scaffold-app.ts), [`templates/scaffold-container.ts`](../../packages/cli/src/templates/scaffold-container.ts)). That was the missing half of "one command produces something you can run"; it is **not** the two-platform proof, which is a measurement on real infrastructure and remains open.
 
-Three known gaps sit inside what did ship, `As of 2026-08` ([`CHANGELOG.md`](../../CHANGELOG.md)):
+Two known gaps sit inside what did ship, `As of 2026-08` ([`CHANGELOG.md`](../../CHANGELOG.md)):
 
 | Gap | Effect |
 |---|---|
-| `x build --target binary` | compiles, then crashes at import — `FRAMEWORK_VERSION` reads its own `package.json` at module scope ([`packages/core/src/version.ts`](../../packages/core/src/version.ts)) and a single-file executable has none |
 | `docker-compose.prod.yml`, framework and scaffolded alike | declares a host port **and** `replicas` > 1; two processes cannot bind one port. Compose without a proxy is a one-replica rung ([`17-scale-ladder.md`](./17-scale-ladder.md)) |
 | the shared cache tier's Lua invalidation | `DEL`s keys it never declared in `KEYS`, so it fails on Dragonfly and on Redis Cluster ([`05-caching.md`](./05-caching.md)) |
 

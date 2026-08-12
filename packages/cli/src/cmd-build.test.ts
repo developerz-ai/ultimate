@@ -2,7 +2,15 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { argsFor, BUILD_ENTRY, BUILD_TARGETS, readTarget, requireEntry } from './cmd-build';
+import { frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
+import {
+  argsFor,
+  BUILD_ENTRY,
+  BUILD_TARGETS,
+  binaryArgs,
+  readTarget,
+  requireEntry,
+} from './cmd-build';
 import { planNewApp } from './cmd-new';
 import type { ThrownShape } from './thrown-by';
 import { thrownBy } from './thrown-by';
@@ -46,6 +54,17 @@ test('an entry that is present resolves to its absolute path', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('the binary target defines the version the executable has no manifest to read', () => {
+  // The bug this pins: without the define, `frameworkVersion()` finds no `package.json` inside
+  // `/$bunfs` and the artifact throws before any role starts. `packages/core/e2e/version.e2e.test.ts`
+  // compiles and runs both halves; this one holds the flag that connects them.
+  const args = binaryArgs('/app', '/out');
+  const at = args.indexOf('--define');
+  expect(at).toBeGreaterThan(-1);
+  expect(args[at + 1]).toBe(`${VERSION_DEFINE}="${frameworkVersion()}"`);
+  expect(args[at + 1]).toMatch(/^ULTIMATE_FRAMEWORK_VERSION="\d+\.\d+\.\d+/);
 });
 
 test('an unknown target names the known ones and a working invocation', () => {

@@ -101,7 +101,7 @@ x build --target static     # site/ output only: HTML, assets, sitemap, feeds
 | Target | Output | Use |
 |---|---|---|
 | `docker` | one OCI image, `ROLE` selects behavior | the normal path |
-| `binary` | `.x/app` — `bun build --compile`, all roles inside. **Crashes at import `As of 2026-08`** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
+| `binary` | `.x/app` — `bun build --compile`, all roles inside. Boots `As of 2026-08`; **not yet served from a bare VM** ([Known gaps](Known-Gaps)) | VMs, systemd, air-gapped, a CLI-shaped product |
 | `static` | `.x/static` — 0kb-JS pages, hashed assets, `sitemap.xml`, `robots.txt`, feeds | CDN / object storage, deployed independently |
 
 All targets share one build ID (content hash), stamped into the image, the HTML, the assets, `sw.js`, and `x.manifest.json`.

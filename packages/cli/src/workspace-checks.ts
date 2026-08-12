@@ -53,7 +53,7 @@ export const missingFileFinding = (dir: string, file: string, scaffolder: boolea
 
 /**
  * A published package reports its own version by reading its own `package.json` at runtime
- * (`@ultimat3/core`'s `FRAMEWORK_VERSION`, the CLI's `CLI_VERSION`, every dependency `x new` pins).
+ * (`@ultimat3/core`'s `frameworkVersion()`, the CLI's `loadVersion()`, every dependency `x new` pins).
  * A manifest with no semver `version` therefore breaks the MCP handshake and every scaffold — so
  * the gate refuses the publish here, where the fix is one line, rather than at someone's install.
  */
