@@ -1,0 +1,56 @@
+plan: 101-framework-audit-raii-batching-nplusone
+title: Framework audit + RAII, batching, N+1 detection
+status: not_started
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: ""
+slices:
+  - file: 01-bugs-lower.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-bugs-upper.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 03-known-gaps.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 04-tests.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 06-raii.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 07-batching.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 08-nplusone.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 10-build-vs-wrap.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 11-migrations-backfill.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 05-dummy-app.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 09-docs.md
+    tier: 5
+    status: not_started
+    percent: 0
+evidence: []
+notes: "Audit sources: four parallel deep-exploration reports, 2026-08-12. JIT preload modeled on Rails includes + the sibling-preloading pattern, default-on."
+last_updated: 2026-08-12
