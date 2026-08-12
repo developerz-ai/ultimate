@@ -1,38 +1,68 @@
+// The profile's own layer. The identity block is the page's masthead, so it carries the only
+// oversized avatar in the app — every other one is the 2rem byline mark on a post card.
+
 @use '../../../shared/tokens' as t;
 
-// The API is functions, not `$variables`: `t.space(8)`, never `t.$space-8`. Same measure as the
-// feed, so a reader arriving from `/feed` lands on a page with the same rhythm.
-.profile {
-  width: min(100% - #{t.space(8)}, 44rem);
-  margin-inline: auto;
-  padding-block: t.space(10);
-  color: t.role('fg');
+.identity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: t.space(5);
+  margin-block-end: t.space(10);
+  padding-block-end: t.space(8);
+  border-block-end: 1px solid t.role('line');
 }
 
-.identity {
-  margin-block: t.space(2) t.space(8);
+.avatar {
+  display: grid;
+  place-items: center;
+  inline-size: 4rem;
+  block-size: 4rem;
+  border-radius: t.radius('full');
+  background: linear-gradient(140deg, t.role('accent', 0.22), t.role('accent', 0.08));
+  box-shadow: inset 0 0 0 1px t.role('accent', 0.24);
+  color: t.role('accent-strong');
+  font-size: t.text('xl');
+  font-weight: t.weight('bold');
+}
+
+.who {
+  display: grid;
+  gap: t.space(2);
+  min-inline-size: 0;
+}
+
+.name {
+  font-size: t.text('2xl');
+  text-wrap: balance;
+}
+
+.handle {
+  color: t.role('fg-muted');
+  font-family: var(--font-mono);
+  font-size: t.text('sm');
+}
+
+.bio {
+  max-inline-size: 58ch;
+  color: t.role('fg');
+  text-wrap: pretty;
+}
+
+.joined {
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+}
+
+.section {
+  margin-block-end: t.space(5);
+  font-size: t.text('lg');
 }
 
 .list {
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.when {
-  display: block;
-  font-size: t.text('sm');
-  color: t.role('fg-muted');
-}
-
-.body {
-  margin-block: t.space(3);
-  line-height: 1.55;
-}
-
-.counts {
-  display: flex;
+  display: grid;
   gap: t.space(4);
-  font-size: t.text('sm');
-  color: t.role('fg-muted');
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }

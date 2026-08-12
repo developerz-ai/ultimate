@@ -1,62 +1,71 @@
+// The thread list's own layer. The whole row is one anchor, so the pointer target and the keyboard
+// target are the same rectangle — which is why the inner elements are spans, not block children.
+
 @use '../../shared/tokens' as t;
-
-.messages {
-  width: min(100% - #{t.space(8)}, 44rem);
-  margin-inline: auto;
-  padding-block: t.space(10);
-  color: t.role('fg');
-}
-
-.lede {
-  color: t.role('fg-muted');
-  margin-block-end: t.space(8);
-}
 
 .list {
   display: grid;
   gap: t.space(3);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .thread {
-  @include t.card;
-  @include t.lift;
-}
+  @include t.focus-ring;
+  @include t.transition(border-color, box-shadow);
 
-.link {
+  display: grid;
+  gap: t.space(2);
+  padding: t.space(5);
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface-raised');
+  box-shadow: t.shadow('xs');
   color: t.role('fg');
   text-decoration: none;
 
-  &:focus-visible {
-    @include t.focus-ring;
+  &:hover {
+    border-color: t.role('accent', 0.4);
+    box-shadow: t.shadow('sm');
+    color: t.role('fg');
   }
 }
 
 .head {
   display: flex;
-  gap: t.space(2);
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
+  gap: t.space(2);
 }
 
 .name {
-  font-weight: 600;
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
 }
 
 .when {
-  font-size: t.text('sm');
   color: t.role('fg-muted');
+  font-size: t.text('sm');
 }
 
 .preview {
-  margin-block: t.space(2) 0;
   color: t.role('fg-muted');
-  line-height: 1.55;
+  line-height: t.leading('normal');
+  overflow-wrap: anywhere;
 }
 
+// A badge, and it says the word: unread carried by colour alone is unread nobody colour-blind sees.
 .unread {
-  color: t.role('accent');
-  font-size: t.text('sm');
-  font-weight: 600;
+  justify-self: start;
+  padding-block: t.space(1);
+  padding-inline: t.space(2);
+  border-radius: t.radius('pill');
+  background: t.role('accent', 0.14);
+  color: t.role('accent-strong');
+  font-size: t.text('xs');
+  font-weight: t.weight('semibold');
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
 }

@@ -9,7 +9,10 @@ import { actorOf } from '@ultimat3/action';
 import { useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { Badge, EmptyState } from '@ultimat3/ui';
+import { iconBell } from '@ultimat3/ui/icons/bell';
+import { AppShell } from '../../shared/ui/app-shell';
+import { EmptyState } from '../../shared/ui/empty-state';
+import { PageHeading } from '../../shared/ui/page-heading';
 import styles from './page.module.scss';
 import { inboxFor } from './service';
 
@@ -27,45 +30,48 @@ export const config = defineRoute({
   }),
 });
 
-export async function Page() {
+export async function Page(props: { readonly url?: string | undefined }) {
   const ctx = useContext();
   const viewer = actorOf(ctx);
   const inbox = viewer === null ? { items: [], unread: 0 } : await inboxFor(viewer.id);
 
   return (
-    <main class={styles.inbox}>
-      <header class={styles.header}>
-        <h1>{t('app.notifications.title')}</h1>
-        <Badge tone={inbox.unread > 0 ? 'accent' : 'neutral'}>
-          {t('app.notifications.unread', { count: inbox.unread })}
-        </Badge>
-      </header>
-      <p class={styles.lede}>{t('app.notifications.description')}</p>
+    <AppShell url={props.url}>
+      <PageHeading
+        title={t('app.notifications.title')}
+        lede={t('app.notifications.description')}
+        actions={
+          <span class={inbox.unread > 0 ? styles.countLive : styles.countQuiet}>
+            {t('app.notifications.unread', { count: inbox.unread })}
+          </span>
+        }
+      />
 
       {inbox.items.length === 0 ? (
         // The demo seed creates no notifications yet, so this is what the screen actually shows.
         <EmptyState
+          glyph={iconBell}
           title={t('app.notifications.empty')}
           description={t('app.notifications.emptyHelp')}
         />
       ) : (
         <ul class={styles.list}>
           {inbox.items.map((item) => (
-            <li class={`${styles.item} ${item.readAt === null ? styles.new : ''}`}>
-              <span class={styles.kind}>{t(`app.notifications.kind.${item.kind}`)}</span>{' '}
+            <li class={item.readAt === null ? styles.new : styles.item}>
+              <span class={styles.kind}>{t(`app.notifications.kind.${item.kind}`)}</span>
               <time class={styles.when} datetime={item.createdAt.toISOString()}>
                 {stamp(item.createdAt, ctx.tz)}
               </time>
-              <p class={styles.state}>
+              <span class={styles.state}>
                 {item.readAt === null
                   ? t('app.notifications.stateUnread')
                   : t('app.notifications.stateRead')}
-              </p>
+              </span>
             </li>
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
   );
 }
 

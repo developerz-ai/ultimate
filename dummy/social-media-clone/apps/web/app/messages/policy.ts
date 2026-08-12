@@ -4,11 +4,11 @@
 // Membership IS the authorization fact: a row in `participants` is permission to read the thread.
 // Nothing here consults a second grant, because a second grant is a second thing to keep in step.
 //
-// The predicate decides on `actor.id` and the loaded row ALONE — deliberately not on
-// `currentViewer()`, the way `app/posts/policy.ts` does. Post visibility is relational ("a friend
-// of the author"), so it needs the request-resolved graph; membership is a row, so an id is
-// enough. That difference is what lets this same rule run on a sync node, whose context carries
-// no session service at all (`packages/cli/src/dev-roles.ts:151`).
+// The predicate decides on `actor.id` and the loaded row ALONE, and reads both off the arguments
+// it is handed. `app/posts/policy.ts` needs one thing more — the request-resolved friend and block
+// sets — and it reads those off the SAME actor, as facts, for the same reason: a sync node's
+// context carries no ambient viewer (`packages/cli/src/dev-roles.ts:151`), and a rule that reached
+// for one would allow in a page render and deny for a subscriber.
 
 import { can, definePermissions } from '@ultimat3/policy';
 

@@ -1,49 +1,12 @@
+// The feed's own layer, and almost nothing: the card owns its surface and the shell owns the
+// measure, so all that is left here is the rhythm between rows.
+
 @use '../../shared/tokens' as t;
-
-.feed {
-  width: min(100% - #{t.space(8)}, 44rem);
-  margin-inline: auto;
-  padding-block: t.space(10);
-  color: t.role('fg');
-}
-
-.lede {
-  color: t.role('fg-muted');
-  margin-block-end: t.space(8);
-}
 
 .list {
   display: grid;
   gap: t.space(4);
+  margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.item {
-  @include t.card;
-  @include t.lift;
-}
-
-.byline {
-  display: flex;
-  gap: t.space(2);
-  align-items: baseline;
-  font-size: t.text('sm');
-  color: t.role('fg-muted');
-}
-
-.at {
-  color: t.role('fg-muted');
-}
-
-.body {
-  margin-block: t.space(3);
-  line-height: 1.55;
-}
-
-.counts {
-  display: flex;
-  gap: t.space(4);
-  font-size: t.text('sm');
-  color: t.role('fg-muted');
 }

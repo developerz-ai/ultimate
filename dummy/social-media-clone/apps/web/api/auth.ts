@@ -16,7 +16,7 @@ import { CAPTCHA_FIELD } from '../shared/auth-policy';
 import {
   clearedSessionCookie,
   isSecureRequest,
-  requestSessionToken,
+  readSessionToken,
   sessionCookie,
   setResponseCookie,
 } from '../shared/session';
@@ -138,16 +138,18 @@ export const destroySession = action({
     ok: t.boolean,
     next: t.string,
     /**
-     * Whether the `sessions` row was actually deleted, and not decoration: it is `false` on every
-     * call today, because `requestSessionToken` cannot see the cookie. Reporting a revocation that
-     * did not happen would be the one lie an operator must never be told about a sign-out.
+     * Whether the `sessions` row was actually deleted, and not decoration: reporting a revocation
+     * that did not happen would be the one lie an operator must never be told about a sign-out.
      */
     revoked: t.boolean,
   }),
   policy: allow('public'),
   mcp: { expose: false },
   async handle({ ctx }) {
-    const revoked = await signOut(requestSessionToken(ctx));
+    // The inbound headers the pipeline put on the context, through the framework's own reader —
+    // the same cookie `hooks.authenticate` read one stage earlier, never a second parse of a
+    // request object the context does not carry.
+    const revoked = await signOut(readSessionToken(useRequestHeader('cookie')));
     // Cleared regardless. The browser forgetting the token is the half this process controls, and
     // the row expires on its own clock — `sessions.expiresAt` is absolute for exactly this reason.
     setResponseCookie(ctx, clearedSessionCookie(isSecureRequest(ctx)));

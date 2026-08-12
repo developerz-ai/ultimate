@@ -9,6 +9,7 @@ import { seedDemo } from '@social-media-clone/db';
 import { userId } from '@social-media-clone/domain';
 import { seedId } from '@ultimat3/entity';
 import type { Actor } from '../../shared/actor';
+import { viewerActor } from '../../shared/actor';
 import { publicProfile } from './service';
 
 const idOf = (label: string): string => seedId(label);
@@ -17,12 +18,8 @@ const actor = (
   id: string,
   friends: readonly string[] = [],
   blocked: readonly string[] = [],
-): Actor => ({
-  id: userId(id),
-  role: 'member',
-  friendIds: new Set(friends),
-  blockedIds: new Set(blocked),
-});
+): Actor =>
+  viewerActor({ id: userId(id), role: 'member', friendIds: friends, blockedIds: blocked });
 
 await seedDemo();
 

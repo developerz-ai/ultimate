@@ -9,7 +9,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // Side-effect import: `defineCatalogs()` runs on the way through. Without it every `t()` in the
 // tree renders `⟦key⟧` — which is exactly what the last assertion here is checking for.
 import '@social-media-clone/i18n';
-import { t } from '@ultimat3/i18n';
+import { useI18n } from '@ultimat3/i18n';
 import { renderComponent } from '@ultimat3/render';
 
 const FILE = 'apps/web/site/page.tsx';
@@ -24,7 +24,14 @@ test('unit · the landing page ships zero JS and declares metadata', async () =>
   expect(page.config.render).toBe('static');
   expect(page.config.hydrate).toBe('never');
   expect(page.config.budget.js).toBe('0kb');
-  const meta = await page.config.meta({ data: {}, params: {}, url: 'https://demo.test/', t });
+  // `useI18n()`, not the bare `t`: `RouteMetaContext.t` is a `Translator` — the object with `has`,
+  // `raw`, `keys` and `locale` on it — and that is what `metaContextFor` hands a real render.
+  const meta = await page.config.meta({
+    data: {},
+    params: {},
+    url: 'https://demo.test/',
+    t: useI18n(),
+  });
   expect(meta.title ?? '').not.toBe('');
 });
 

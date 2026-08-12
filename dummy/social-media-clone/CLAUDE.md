@@ -94,13 +94,19 @@ if the verb is missing, add `scripts/<resource>/<verb>.ts` rather than improvisi
 | A `mutator`'s `local` must be **convergent, not incremental** | `local` is replayed on every rebase. `count + 1` re-applies per replay and shows three likes for one person. Derive from a boolean the replay also sets | `mutator.test.ts` asserts `apply×3 === apply×1` |
 | A `task` only **enqueues** | work inside a task runs on the scheduler, which is single-instance and unretried | review |
 | `row === null` in a policy is a **denial**, never a pass | an absent fact is not a satisfied one; treating it as one hands anyone who holds the grant a way to skip the row check by reaching a surface that passes no row | `policy.test.ts` |
-| Visibility here is **relational**, not a tenant column | this app has no `orgId`. Who may see a post depends on friendship and blocks. Resolve both **once per request** into the actor — a policy predicate is synchronous and may not query | `policy.test.ts` |
-| `admin/admin` is view-only **by permission**, not by hiding buttons | it holds `admin:read` and never `admin:write`. One decision renders the button and answers the call | `policy.test.ts` |
+| Visibility here is **relational**, not a tenant column | this app has no `orgId`. Who may see a post depends on friendship and blocks. Both are resolved **once per request** into `actor.facts` (`shared/actor.ts` augments core's `ActorFacts`) — a policy predicate is synchronous and may not query | `policy.test.ts`, `shared/actor.test.ts` |
+| A predicate reads its **`actor` argument**, never ambient state | the same rule runs in a page, a live query on a sync node, a job and an MCP tool, and only the argument exists in all four. `ctx.session` and `currentViewer()`-in-a-rule were the second answer to "who is the viewer?", and they returned `null` in production while every unit test installed one by hand | `friends/policy.test.ts` passes ONE actor and no context |
+| A permission a route declares must be **declared and granted** | an undeclared one is `X_PERMISSION_UNKNOWN` — a 500 on the page, at request time. A declared one nobody grants is a gate with no key: reachable by URL, refused for every account that exists. Both shipped green | `app/auth/route-policy.contract.test.ts` |
+| A wire the app owns is proved by a **request**, never by a unit test | `configureAuthenticator`, `viewerFor`, `withSession` and the `member` grant list each had a passing test over code with no caller. A resolver asserted in isolation proves the resolver | `app/auth/pipeline.contract.test.ts` — real pipeline, real cookie, real policy |
+| `admin/admin` is view-only **by permission**, not by hiding buttons | it holds `admin:read` and never `admin:write`. One decision renders the button and answers the call. `admin` inherits `member` so the operator is also a person; inheriting cannot leak a dashboard write, because every write gates on `admin:write` | `policy.test.ts`, `route-policy.contract.test.ts` |
 
 ## What NOT to build
 
 - A ninth primitive. Including for feature flags, uploads, captcha or search.
 - A second authz path. The MCP tool, the HTTP route and the admin button share one policy object.
+- A second answer to "who is the viewer?". There is one `Actor` — the framework's — and this app's
+  relational facts ride on it through `ActorFacts`. Never a parallel viewer on `ctx`, in a service,
+  or resolved a second time inside a rule.
 - A `console` command that hands out a database URL. That is the `db-gateway`'s job, with an audit
   row. A second door is a second door even when it is convenient.
 - Offset pagination. Cursors only — an insert before the offset shifts every later page.

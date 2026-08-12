@@ -1,0 +1,41 @@
+// The empty state's own layer. A dashed edge rather than the solid one a card carries: the shape
+// is there, the content is not, and the border says which of the two this is.
+
+@use '../tokens' as t;
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: t.space(3);
+  padding-block: t.space(12);
+  padding-inline: t.space(6);
+  border: 1px dashed t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface');
+  text-align: center;
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: t.radius('full');
+  background: t.role('accent', 0.12);
+  color: t.role('accent-strong');
+  font-size: t.text('lg');
+}
+
+.title {
+  color: t.role('fg-strong');
+  font-size: t.text('lg');
+  font-weight: t.weight('semibold');
+  text-wrap: balance;
+}
+
+.description {
+  max-inline-size: 52ch;
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-wrap: pretty;
+}

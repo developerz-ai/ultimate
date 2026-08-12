@@ -9,7 +9,7 @@
 import type { Role } from '@ultimat3/core';
 import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
 import type { Route, ServerHandle } from '@ultimat3/http';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { configuredAuthenticator, createServer, defineHttpConfig } from '@ultimat3/http';
 import type { Scheduler, Worker } from '@ultimat3/jobs';
 import { createScheduler, createWorker } from '@ultimat3/jobs';
 import { listQueries } from '@ultimat3/query';
@@ -136,7 +136,31 @@ export function selectRoles(flag: string | undefined): readonly Role[] {
   return SELECTABLE_ROLES.filter((role) => selected.includes(role));
 }
 
+/**
+ * A server whose route table demands an identity it has no way to resolve.
+ *
+ * `hooks.authenticate` is the only place an actor can come from, and `devHooks()` spreads nothing
+ * when the app never called `configureAuthenticator()`. So a process in that state boots clean,
+ * reports healthy, and refuses every valid session on every `auth: 'required'` route — which is
+ * exactly what the demo app did: sign-in issued a real cookie and the next page still said 401,
+ * while four unit tests over the app's own resolver stayed green because each installed a viewer
+ * by hand.
+ *
+ * A warning and not a throw, deliberately: `x new` scaffolds guarded routes before it scaffolds an
+ * authenticator, so an app in the minutes between the two is incomplete, not broken. It is loud,
+ * it names the code, and it prints the call that fixes it.
+ */
+function warnIfUnauthenticatable(routes: readonly Route[]): void {
+  if (configuredAuthenticator() !== undefined) return;
+  const guarded = routes.filter((route) => route.meta.auth === 'required');
+  if (guarded.length === 0) return;
+  logger.warn(
+    `X_CONFIG_INVALID: ${guarded.length} route(s) declare auth: 'required' and no authenticator is configured, so every request is anonymous and each of them refuses every session — fix: call configureAuthenticator() at module scope in a file under apps/*/, e.g. configureAuthenticator((request) => viewerFor(request.header('cookie')))`,
+  );
+}
+
 function startWeb(options: StartRolesOptions): ServerHandle {
+  warnIfUnauthenticatable(options.routes);
   const binding = options.http ?? DEV_BINDING;
   return createServer({
     routes: options.routes,

@@ -1,61 +1,101 @@
+// The thread's own layer. A message the viewer wrote is tinted and pushed to the inline end; every
+// other one keeps the neutral surface — the side and the ground both carry the same fact, so it
+// survives a reader who cannot separate the two tints.
+
 @use '../../../shared/tokens' as t;
 
-.thread {
-  width: min(100% - #{t.space(8)}, 44rem);
-  margin-inline: auto;
-  padding-block: t.space(10);
-  color: t.role('fg');
+.back {
+  @include t.focus-ring;
+
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  margin-block-end: t.space(4);
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-decoration: none;
+
+  &:hover {
+    color: t.role('accent-strong');
+  }
 }
 
-.back {
-  display: inline-block;
-  margin-block-end: t.space(4);
-  color: t.role('accent');
-  font-size: t.text('sm');
+.title {
+  margin-block-end: t.space(8);
+  font-size: t.text('2xl');
+  text-wrap: balance;
 }
 
 .list {
   display: grid;
   gap: t.space(3);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.message {
-  @include t.card;
+.mine,
+.theirs {
+  display: grid;
+  gap: t.space(2);
+  max-inline-size: 42rem;
+  padding: t.space(4);
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+}
+
+.theirs {
+  background: t.role('surface-raised');
+}
+
+.mine {
+  justify-self: end;
+  border-color: t.role('accent', 0.32);
+  background: t.role('accent', 0.08);
 }
 
 .byline {
   display: flex;
-  gap: t.space(2);
+  flex-wrap: wrap;
   align-items: baseline;
-  font-size: t.text('sm');
+  justify-content: space-between;
+  gap: t.space(3);
   color: t.role('fg-muted');
+  font-size: t.text('sm');
+}
+
+.who {
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
 }
 
 .body {
-  margin-block: t.space(2) 0;
-  line-height: 1.55;
+  color: t.role('fg');
+  line-height: t.leading('normal');
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .compose {
   display: grid;
-  gap: t.space(2);
-  margin-block-start: t.space(6);
+  justify-items: start;
+  gap: t.space(3);
+  margin-block-start: t.space(8);
+  padding: t.space(5);
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface');
+}
+
+.label {
+  color: t.role('fg-strong');
+  font-size: t.text('sm');
+  font-weight: t.weight('semibold');
 }
 
 .field {
-  width: 100%;
-  min-height: 5rem;
-  padding: t.space(3);
-  border: 1px solid t.role('border');
-  border-radius: t.radius('md');
-  background: t.role('surface');
-  color: t.role('fg');
-  font: inherit;
+  @include t.control;
 
-  &:focus-visible {
-    @include t.focus-ring;
-  }
+  min-block-size: 6rem;
+  resize: vertical;
 }

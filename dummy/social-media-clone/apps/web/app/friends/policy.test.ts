@@ -6,9 +6,9 @@
 
 import { expect, test } from 'bun:test';
 import { userId } from '@social-media-clone/domain';
-import { createContext, runWithContext } from '@ultimat3/core';
 import { evaluate } from '@ultimat3/policy';
 import type { Actor } from '../../shared/actor';
+import { viewerActor } from '../../shared/actor';
 import type { BlockRow, FriendshipRow } from './policy';
 import { canRemoveBlock, canRequestFriendship, canRespondToRequest, friendRespond } from './policy';
 
@@ -16,11 +16,13 @@ const ADA = userId('00000000-0000-4000-8000-00000000000a');
 const BRUNO = userId('00000000-0000-4000-8000-00000000000b');
 const MARA = userId('00000000-0000-4000-8000-00000000000c');
 
+// Built by the app's ONE actor constructor, so a fact this rule reads is a fact production puts
+// there — a literal would keep passing after the seam moved underneath it.
 const actor = (
   id = ADA,
   friends: readonly ReturnType<typeof userId>[] = [],
   blocked: readonly ReturnType<typeof userId>[] = [],
-): Actor => ({ id, role: 'member', friendIds: new Set(friends), blockedIds: new Set(blocked) });
+): Actor => viewerActor({ id, role: 'member', friendIds: friends, blockedIds: blocked });
 
 const request = (over: Partial<FriendshipRow> = {}): FriendshipRow => ({
   requesterId: BRUNO,
@@ -46,18 +48,17 @@ test('an accepted row is not answerable again; a declined one is', () => {
 });
 
 test('the whole `friendRespond` policy denies a row addressed to somebody else', () => {
+  // ONE actor in, no ambient anything: the rule reads the argument it is handed, which is what
+  // lets the identical object decide on a sync node, in a job and inside an MCP tool.
   const decide = (viewer: Actor | null, row: FriendshipRow | null): boolean =>
-    runWithContext(
-      createContext({ services: { session: { viewer: () => viewer } } }),
-      () =>
-        evaluate(friendRespond, {
-          input: {},
-          // The permission is a direct grant here: the app declares no role map yet, so a role would
-          // expand to nothing and every case below would pass for the wrong reason.
-          actor: { id: ADA, kind: 'user', roles: [], scopes: [], permissions: ['friend:respond'] },
-          row,
-        }).allowed,
-    );
+    evaluate(friendRespond, {
+      input: {},
+      // The permission is a DIRECT grant rather than the `member` role: role definitions are
+      // process-global, so leaning on them here would make this file pass or fail on whichever
+      // other test module happened to import `app/auth/roles.ts` first.
+      actor: viewer === null ? null : { ...viewer, permissions: ['friend:respond'] },
+      row,
+    }).allowed;
 
   expect(decide(actor(ADA), request())).toBe(true);
   expect(decide(actor(ADA), request({ addresseeId: MARA }))).toBe(false);

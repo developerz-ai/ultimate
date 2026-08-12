@@ -11,7 +11,10 @@ import { actorOf } from '@ultimat3/action';
 import { useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { EmptyState } from '@ultimat3/ui';
+import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';
+import { AppShell } from '../../shared/ui/app-shell';
+import { EmptyState } from '../../shared/ui/empty-state';
+import { PageHeading } from '../../shared/ui/page-heading';
 import styles from './page.module.scss';
 import { type ThreadSummary, threadsFor } from './service';
 
@@ -33,7 +36,7 @@ export const config = defineRoute({
   }),
 });
 
-export async function Page() {
+export async function Page(props: { readonly url?: string | undefined }) {
   const ctx = useContext();
   // The framework's own identity, not `currentViewer()`: membership is a row keyed by user id, so
   // the resolved friend/block graph a post rule needs is not part of this question.
@@ -41,18 +44,22 @@ export async function Page() {
   const threads = viewer === null ? [] : await threadsFor(viewer.id);
 
   return (
-    <main class={styles.messages}>
-      <h1>{t('app.messages.title')}</h1>
-      <p class={styles.lede}>{t('app.messages.description')}</p>
+    <AppShell url={props.url}>
+      <PageHeading title={t('app.messages.title')} lede={t('app.messages.description')} />
+
       {threads.length === 0 ? (
         // Honest rather than decorative: the demo seed creates no conversations yet, so this is
         // what the screen actually shows until it does.
-        <EmptyState title={t('app.messages.empty')} description={t('app.messages.emptyHelp')} />
+        <EmptyState
+          glyph={iconMessageSquare}
+          title={t('app.messages.empty')}
+          description={t('app.messages.emptyHelp')}
+        />
       ) : (
         <ul class={styles.list}>
           {threads.map((thread) => (
-            <li class={styles.thread}>
-              <a class={styles.link} href={`/messages/${thread.conversationId}`}>
+            <li>
+              <a class={styles.thread} href={`/messages/${thread.conversationId}`}>
                 <span class={styles.head}>
                   <span class={styles.name}>{nameOf(thread)}</span>
                   {thread.latest === null ? null : (
@@ -61,7 +68,9 @@ export async function Page() {
                     </time>
                   )}
                 </span>
-                <p class={styles.preview}>{thread.latest?.body ?? t('app.messages.noMessages')}</p>
+                <span class={styles.preview}>
+                  {thread.latest?.body ?? t('app.messages.noMessages')}
+                </span>
                 {thread.unread ? (
                   <span class={styles.unread}>{t('app.messages.unread')}</span>
                 ) : null}
@@ -70,7 +79,7 @@ export async function Page() {
           ))}
         </ul>
       )}
-    </main>
+    </AppShell>
   );
 }
 

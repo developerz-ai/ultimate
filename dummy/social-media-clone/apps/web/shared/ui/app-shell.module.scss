@@ -1,0 +1,69 @@
+// The frame's own layer: the column that pins the footer to the bottom of a short page, the three
+// content measures, and the skip link that is invisible until it is focused.
+
+@use '../tokens' as t;
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  // Not `height`: a long page must still grow. This is what stops the footer floating mid-screen
+  // on a page with one paragraph in it.
+  min-block-size: 100dvh;
+  background: t.role('bg');
+  color: t.role('fg');
+}
+
+.skip {
+  position: absolute;
+  z-index: t.z('skip-nav');
+  // Off-canvas rather than `visually-hidden`: this one has to be reachable, so it moves back into
+  // the page on focus instead of being a 1px box a pointer could land on.
+  inset-block-start: t.space(2);
+  inset-inline-start: t.space(2);
+  translate: 0 -200%;
+  padding-block: t.space(2);
+  padding-inline: t.space(4);
+  border-radius: t.radius('md');
+  background: t.role('accent');
+  box-shadow: t.shadow('md');
+  color: t.role('accent-fg');
+  font-size: t.text('sm');
+  font-weight: t.weight('semibold');
+  text-decoration: none;
+
+  &:focus-visible {
+    translate: 0 0;
+    outline: 2px solid t.role('fg-strong');
+    outline-offset: 2px;
+  }
+}
+
+.main {
+  flex: 1;
+  // Without this a wide child (a table, a `<pre>`) makes the flex item itself wider than the
+  // viewport, and the whole document scrolls sideways.
+  min-inline-size: 0;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.content {
+  margin-inline: auto;
+}
+
+.prose {
+  inline-size: min(100% - #{t.space(8)}, 46rem);
+  padding-block: t.space(12) t.space(16);
+}
+
+.wide {
+  inline-size: min(100% - #{t.space(8)}, 60rem);
+  padding-block: t.space(12) t.space(16);
+}
+
+// The landing page paints its own full-bleed bands, so the frame contributes no measure at all.
+.full {
+  inline-size: 100%;
+}

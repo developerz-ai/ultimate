@@ -5,10 +5,12 @@
 // Predicates are SYNCHRONOUS, and that constraint is what everything else follows from: a live
 // query re-evaluates one per subscriber on every change, so an `await` here would be a database
 // round trip per row per connected client. A rule therefore decides on two things only — the actor
-// (which carries the resolved friend and block sets) and facts the caller already had.
+// it is HANDED (which carries the resolved friend and block sets as actor facts) and facts the
+// caller already had. Never ambient state: the same rule has to answer identically on a sync node,
+// in a job and inside an MCP tool, and only the argument is present in all four.
 
 import { can, definePermissions } from '@ultimat3/policy';
-import { currentViewer, isAdmin, isSelf } from '../../shared/actor';
+import { isAdmin, isSelf } from '../../shared/actor';
 import { canSeePost, type PostRow } from '../../shared/visibility';
 
 /**
@@ -43,7 +45,7 @@ export const postPermissions = definePermissions([
  */
 export const postRead = can<Record<string, never>, PostRow>(
   'post:read',
-  ({ row }) => row !== null && canSeePost(currentViewer(), row),
+  ({ actor, row }) => row !== null && canSeePost(actor, row),
 );
 
 /** Anyone signed in may post. There is no per-audience grant — the audience is on the row. */
@@ -52,18 +54,18 @@ export const postCreate = can('post:create');
 /** Your own post, or a moderator's. Checked against the loaded row, never against an id alone. */
 export const postDelete = can<Record<string, never>, PostRow>(
   'post:delete',
-  ({ row }) => row !== null && (isSelf(currentViewer(), row.authorId) || isAdmin(currentViewer())),
+  ({ actor, row }) => row !== null && (isSelf(actor, row.authorId) || isAdmin(actor)),
 );
 
 /** You can only like or comment on what you could read. One rule, reused, so they cannot drift. */
 export const postLike = can<Record<string, never>, PostRow>(
   'post:like',
-  ({ row }) => row !== null && canSeePost(currentViewer(), row),
+  ({ actor, row }) => row !== null && canSeePost(actor, row),
 );
 
 export const postComment = can<Record<string, never>, PostRow>(
   'post:comment',
-  ({ row }) => row !== null && canSeePost(currentViewer(), row),
+  ({ actor, row }) => row !== null && canSeePost(actor, row),
 );
 
 /**
@@ -73,7 +75,7 @@ export const postComment = can<Record<string, never>, PostRow>(
  * in answers in full. The null branch grants nothing the per-row branch would not.
  */
 export const feedRead = can<Record<string, never>, PostRow>('feed:read', ({ actor, row }) =>
-  row === null ? actor !== null : canSeePost(currentViewer(), row),
+  row === null ? actor !== null : canSeePost(actor, row),
 );
 export type { PostRow } from '../../shared/visibility';
 export { canSeePost } from '../../shared/visibility';
