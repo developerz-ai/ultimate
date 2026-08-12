@@ -6,7 +6,7 @@ A reference manual that hides these is lying to the reader. Source of truth is t
 
 | Gap | Symptom | Work around it by |
 |---|---|---|
-| `x build --target binary` | compiles, then **crashes at import**: `FRAMEWORK_VERSION` reads `package.json` at module scope, and a single-file executable has none | `--target docker`, or run from source |
+| `x build --target binary` | boots `As of 2026-08` — the import crash is fixed — but the target is **unproven end to end**: no scaffolded app has been compiled and served from a bare VM, and the binary is a launcher for an app tree, not a self-contained artifact | `--target docker` when you want one file that carries everything |
 | `docker-compose.prod.yml` | declares `ports: ['3000:3000']` on `web` **and** `replicas: 3` — two processes cannot bind one host port, so scaling past 1 fails to start | drop `ports:` and put a reverse proxy in front, or set `replicas: 1`. This is the rung-1 ceiling → [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md) |
 | Shared cache tier invalidation | the Lua script `DEL`s keys it never declared in `KEYS`, so it fails on **Dragonfly** and on **Redis Cluster** | single-node Redis, or a cache tier that is not the shared one → [Caching and invalidation](Caching-And-Invalidation) |
 | `resolveEnvironment` twice | the name exists in both `@ultimat3/core` and `@ultimat3/seo` with different parameters and different return unions | import one with an alias; the table below says which you want → [Configuration](Configuration) |

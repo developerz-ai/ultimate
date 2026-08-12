@@ -3,6 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
@@ -51,12 +52,20 @@ export function dockerArgs(root: string, tag: string): readonly string[] {
   return ['docker', 'build', '-f', join(root, BUILD_ENTRY.docker), '-t', tag, root];
 }
 
+/**
+ * The define is not optional. A single-file executable carries no `package.json`, so
+ * `frameworkVersion()` has nothing to read and throws — which is exactly how this target came to
+ * compile an artifact that could never boot. The value is this CLI's own `@ultimat3/core`, which is
+ * the app's too: the packages release in lockstep and `x new` pins them together.
+ */
 export function binaryArgs(root: string, out: string): readonly string[] {
   return [
     'bun',
     'build',
     '--compile',
     '--minify',
+    '--define',
+    `${VERSION_DEFINE}=${JSON.stringify(frameworkVersion())}`,
     join(root, BUILD_ENTRY.binary),
     '--outfile',
     out,

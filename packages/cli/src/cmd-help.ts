@@ -79,15 +79,22 @@ export function createHelpCommand(specs: () => readonly CommandSpec[]): CliComma
   };
 }
 
-export function createVersionCommand(version: string): CliCommand {
+/**
+ * A resolver, not a string: `registry.ts` builds `COMMANDS` at module scope, and a manifest read
+ * done there runs before `main` in every process that imports `@ultimat3/cli` — including a
+ * compiled `apps/web/server.ts`, which never calls this command at all. Deferring the read into
+ * `run()` is what keeps that boot from depending on a `package.json` the binary does not carry.
+ */
+export function createVersionCommand(version: () => string): CliCommand {
   return {
     spec: { name: 'version', summary: 'the CLI version', usage: 'x version [--json]' },
     async run(): Promise<CommandResult> {
+      const resolved = version();
       return {
         ok: true,
         command: 'version',
-        summary: version,
-        data: { version, bun: Bun.version },
+        summary: resolved,
+        data: { version: resolved, bun: Bun.version },
       };
     },
   };

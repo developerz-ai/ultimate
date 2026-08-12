@@ -429,4 +429,10 @@ export {
   withSpan,
   withSpanContext,
 } from './telemetry';
-export { FRAMEWORK_VERSION, readPackageVersion, VERSION_MANIFEST } from './version';
+export {
+  frameworkVersion,
+  readPackageVersion,
+  resolveVersion,
+  VERSION_DEFINE,
+  VERSION_MANIFEST,
+} from './version';

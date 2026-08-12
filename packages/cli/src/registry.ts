@@ -28,8 +28,20 @@ import type { CliCommand } from './command';
 import type { CommandSpec } from './parse';
 import { loadVersion } from './version-loader';
 
-/** Single source of truth for the framework version — loaded from root package.json. */
-export const CLI_VERSION = loadVersion();
+let cliVersionCache: string | undefined;
+
+/**
+ * Single source of truth for the CLI's own version — loaded from its package.json, lazily.
+ * `index.ts` re-exports this module, so importing `@ultimat3/cli` for `runRole` alone — what a
+ * compiled `apps/web/server.ts` does — must not read a manifest a `--compile` binary does not
+ * carry. An eager `const` here reintroduced exactly the failure `frameworkVersion()` was made
+ * lazy to fix, one file over: it compiled clean and threw at import on the first boot that
+ * actually ran the artifact.
+ */
+export function cliVersion(): string {
+  if (cliVersionCache === undefined) cliVersionCache = loadVersion();
+  return cliVersionCache;
+}
 
 const CORE: readonly CliCommand[] = [
   newCommand,
@@ -66,7 +78,7 @@ export const COMMANDS: readonly CliCommand[] = [
   ...CORE,
   ...plannedCommands(),
   createHelpCommand(() => SPECS),
-  createVersionCommand(CLI_VERSION),
+  createVersionCommand(cliVersion),
 ];
 
 export const SPECS: readonly CommandSpec[] = COMMANDS.map((command) => command.spec);

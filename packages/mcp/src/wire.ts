@@ -5,13 +5,19 @@
 //
 // Reference: https://modelcontextprotocol.io/specification (2025-06-18).
 
-import { FRAMEWORK_VERSION } from '@ultimat3/core';
+import { frameworkVersion } from '@ultimat3/core';
 
 /** MCP protocol version advertised on `initialize`. */
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
 
-/** Identity advertised on `initialize` unless the host overrides it. */
-export const DEFAULT_SERVER_INFO = { name: 'ultimate', version: FRAMEWORK_VERSION } as const;
+/**
+ * Identity advertised on `initialize` unless the host overrides it. A call and not a constant:
+ * `frameworkVersion()` resolves on first use, so importing this module cannot be what stops a
+ * compiled single-file binary from booting.
+ */
+export function defaultServerInfo(): ServerInfo {
+  return { name: 'ultimate', version: frameworkVersion() };
+}
 
 export interface ServerInfo {
   readonly name: string;

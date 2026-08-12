@@ -322,14 +322,14 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 | `--target` | Entry file | Command it execs | Output |
 |---|---|---|---|
 | `docker` | `docker/Dockerfile` | `docker build -f <root>/docker/Dockerfile -t <tag> <root>` | one OCI image, `ROLE` selects behaviour |
-| `binary` | `apps/web/server.ts` | `bun build --compile --minify <root>/apps/web/server.ts --outfile <out>` | a single executable |
+| `binary` | `apps/web/server.ts` | `bun build --compile --minify --define ULTIMATE_FRAMEWORK_VERSION="<version>" <root>/apps/web/server.ts --outfile <out>` | a single executable |
 | `static` | `apps/web/prerender.ts` | `bun run <root>/apps/web/prerender.ts --out <out>` | prerendered `site/` |
 
 All three are written by `x new`. A missing one is `X_BUILD_ENTRY_MISSING`, whose `fix` names the file and points at a fresh scaffold — the usual cause is an app scaffolded before 1.1.0 wrote `server.ts` and `prerender.ts`, or a deleted `docker/Dockerfile`.
 
 Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_ENTRY_MISSING`, `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND` with `build --target docker` as the suggestion.
 
-> `--target binary` compiles and then **crashes at import** `As of 2026-08` — `FRAMEWORK_VERSION` reads `package.json` at module scope and a single-file executable has none. [Known gaps](Known-Gaps).
+> `--target binary` adds `--define ULTIMATE_FRAMEWORK_VERSION="<version>"`. A single-file executable carries no `package.json`, so the define is the only thing the framework's version read can find — build one with a bare `bun build --compile` and it exits `X_INVARIANT` at the first read, naming the flag. One define answers for both reads: `@ultimat3/cli` ships in lockstep with `@ultimat3/core`, so `x --version` inside a binary falls back to the same flag rather than declaring a second one. What is still unmeasured is the target end to end: no scaffolded app has been compiled and served from a bare VM ([Known gaps](Known-Gaps)).
 
 ## x deploy
 

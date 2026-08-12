@@ -271,6 +271,7 @@
         "@ultimat3/query": "1.2.0",
         "@ultimat3/realtime": "1.2.0",
         "@ultimat3/render": "1.2.0",
+        "@ultimat3/schema": "1.2.0",
         "@ultimat3/seo": "1.2.0",
         "@ultimat3/storage": "1.2.0",
         "@ultimat3/testing": "1.2.0",

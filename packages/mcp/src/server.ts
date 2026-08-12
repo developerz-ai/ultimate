@@ -12,7 +12,7 @@ import type { McpPrompt, McpResource } from './resources';
 import { ResourceRegistry } from './resources';
 import type { JsonRpcRequest, JsonRpcResponse, ServerInfo } from './wire';
 import {
-  DEFAULT_SERVER_INFO,
+  defaultServerInfo,
   errorResponse,
   INTERNAL_ERROR,
   INVALID_PARAMS,
@@ -49,7 +49,7 @@ export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
     tools,
     resources,
     input.prompts ?? [],
-    input.serverInfo ?? DEFAULT_SERVER_INFO,
+    input.serverInfo ?? defaultServerInfo(),
   );
 }
 

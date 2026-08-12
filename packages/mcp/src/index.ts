@@ -119,7 +119,7 @@ export type {
   ServerInfo,
 } from './wire';
 export {
-  DEFAULT_SERVER_INFO,
+  defaultServerInfo,
   errorResponse,
   INTERNAL_ERROR,
   INVALID_PARAMS,

@@ -32,7 +32,9 @@ deployable artifact (`packages/cli/src/serve.ts`; `x new` writes `apps/web/serve
 `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`; `ROLE=migrate` runs release-phase
 migrations), but the demo app on Compose **and** K8s from one image with an invisible rolling
 restart is still not demonstrated. Four known gaps ship with 1.1.0 and are named in
-[`CHANGELOG.md`](CHANGELOG.md): `x build --target binary` compiles and crashes at import;
+[`CHANGELOG.md`](CHANGELOG.md): `x build --target binary` compiled and crashed at import — **fixed**, the
+version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`, though the target
+is still unproven end to end;
 `docker-compose.prod.yml` pairs a published host port with `replicas: 3`; the shared cache tier's
 Lua invalidation `DEL`s keys it never declares in `KEYS`, so it fails on Dragonfly and Redis
 Cluster; `resolveEnvironment` exists in both `core` and `seo` with different return types. Milestone
