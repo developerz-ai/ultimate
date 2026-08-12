@@ -354,8 +354,9 @@ generates it. Because `x new` never writes `docker/helm`, `--method helm` in a s
 `helm` is treated as `compose`. `--critical` is carried into `--json` output and nothing else acts
 on it today. Errors: `X_DEPLOY_FAILED`, `X_NOT_IMPLEMENTED`.
 
-`X_MIGRATE_CONCURRENT` is **reserved and never thrown** — `ROLE=migrate` takes no advisory lock, so
-two overlapping deploys both migrate. Serialise them in the pipeline → [Known gaps](Known-Gaps).
+`X_MIGRATE_CONCURRENT` is **reserved and never thrown** — the lock is real. `ROLE=migrate` holds
+`pg_advisory_lock` on one pinned session for the whole run, so two overlapping deploys serialise:
+the second **waits**, it does not race and does not error → [Known gaps](Known-Gaps).
 
 ## Serving in production — `ROLE` and `PORT`
 

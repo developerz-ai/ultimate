@@ -58,6 +58,19 @@ already did. Consequence worth knowing: a failed `BEGIN` now also emits a best-e
 the server answers with a notice — cheaper than a second code path for the one statement that
 opens nothing.
 
+**The migration advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every
+statement on it.** `pg_advisory_lock` is scoped to a Postgres *session*, so taking it on a pooled
+handle locks whichever connection the pool lent for that one statement and then gives the session
+back: the unlock later lands on a different connection, answers `false`, and the lock stays held
+until that backend dies — the next migrator then waits forever rather than for the migration. The
+same split loses the lock the other way: the locking session sits idle for the whole run and the
+pool's idle timeout (`migrate`'s is 10s) closes it, releasing the lock mid-migration. `ROLE=migrate`
+hid the first half by accident — its pool is `max: 1`, so every statement found the same connection.
+No other role and no test has that. The pin is therefore also why the lock scope hands its session
+*down*: on `max: 1` a statement sent to the pool while the pin is held waits for a connection that
+cannot come back until the migration blocking on it finishes. `lock: false` (`x db branch`, a
+private database) reserves nothing and takes no lock, exactly as before.
+
 Every transaction-control statement is `.catch`ed exactly where a failure would *mask* the error
 that caused it, and nowhere else: `ROLLBACK` and `ROLLBACK TO SAVEPOINT` are best-effort, while
 `SAVEPOINT` and `RELEASE SAVEPOINT` are deliberately uncaught — a savepoint that was never taken

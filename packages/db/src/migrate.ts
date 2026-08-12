@@ -3,7 +3,7 @@
 // app-version fence is the `migrate` role's contract — a pod must refuse to migrate a database
 // another build already owns, because the alternative is two schemas racing during a rollout.
 
-import { baseClient, type DbClient } from './client';
+import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { migrationConflict } from './errors';
 import type { SchemaDescription } from './introspect';
 import { raw, sql } from './sql';
@@ -134,17 +134,44 @@ export function pendingMigrations(
     .filter((migration) => !applied.has(migration.id));
 }
 
+/**
+ * Hold the migration lock on **one** session for the whole of `fn`, which runs on that session.
+ *
+ * `pg_advisory_lock` is scoped to a Postgres session, not to a statement, so taking it on a pooled
+ * handle locks whichever connection the pool lent for that one statement and then hands the
+ * session back. Two things follow, and both were live: the unlock lands on a *different*
+ * connection, answers `false` and leaves the lock held until that backend dies — so the next
+ * migrator waits forever rather than for the migration; and the locking session, now idle for the
+ * whole run, is closed by the pool's idle timeout (`migrate`'s is 10s), which releases the lock
+ * mid-migration and lets a second deploy in. `ROLE=migrate` hid the first half by accident — its
+ * pool is `max: 1`, so every statement found the same connection. No other role and no test has
+ * that.
+ *
+ * `fn` receives the pinned session and must run every statement on it, for the same `max: 1`
+ * reason read the other way: a statement sent to the pool while the pin is held waits for a
+ * connection that cannot come back until the migration blocking on it has finished.
+ */
 async function withAdvisoryLock<T>(
   client: DbClient,
   enabled: boolean,
-  fn: () => Promise<T>,
+  fn: (session: DbClient) => Promise<T>,
 ): Promise<T> {
-  if (!enabled) return fn();
-  await client.execute(sql`select pg_advisory_lock(${MIGRATION_LOCK_KEY})`);
+  if (!enabled) return fn(client);
+  // Held by a `using` declaration, like every other pin in this package: the lock is taken after
+  // the guard exists, so a rejecting `pg_advisory_lock` gives the connection back too.
+  using pinned: DbConnection | undefined = isReservable(client)
+    ? await client.reserve()
+    : undefined;
+  const session: DbClient = pinned ?? client;
+  await session.execute(sql`select pg_advisory_lock(${MIGRATION_LOCK_KEY})`);
   try {
-    return await fn();
+    return await fn(session);
   } finally {
-    await client
+    // Best-effort, and only here: an unlock that rejects would mask the failure that ended the
+    // migration, and it can only reject on a session that is already broken — whose locks Postgres
+    // drops when it ends. It runs before the pin is disposed, so the unlock reaches the session
+    // that took the lock.
+    await session
       .execute(sql`select pg_advisory_unlock(${MIGRATION_LOCK_KEY})`)
       .catch(() => undefined);
   }
@@ -155,9 +182,9 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
   const appVersion = runningAppVersion(options.appVersion);
   const started = performance.now();
 
-  return withAdvisoryLock(client, options.lock !== false, async () => {
-    await ensureLedger(client);
-    const ledger = await readLedger(client);
+  return withAdvisoryLock(client, options.lock !== false, async (session) => {
+    await ensureLedger(session);
+    const ledger = await readLedger(session);
     auditLedger(ledger, options.migrations, appVersion);
 
     const pending = pendingMigrations(ledger, options.migrations);
@@ -174,7 +201,9 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
                     ${appVersion}, ${durationMs})
           `);
         },
-        { client },
+        // The lock's own session: a migration applied on another connection is not covered by the
+        // lock at all, and on `ROLE=migrate` there is no other connection to apply it on.
+        { client: session },
       );
       applied.push({
         id: migration.id,
@@ -196,33 +225,41 @@ export interface RollbackOptions {
   readonly migrations: readonly Migration[];
   readonly client?: DbClient | undefined;
   readonly steps?: number | undefined;
+  /** Skip the advisory lock. Only `x db branch` does this, against a private database. */
+  readonly lock?: boolean | undefined;
 }
 
 /** Reverse the newest `steps` applied migrations. `x db rollback`. */
 export async function rollback(options: RollbackOptions): Promise<readonly string[]> {
   const client = options.client ?? baseClient();
   const steps = options.steps ?? 1;
-  const ledger = await readLedger(client);
   const known = new Map(options.migrations.map((migration) => [migration.id, migration]));
-  const targets = [...ledger].reverse().slice(0, steps);
-  const reverted: string[] = [];
 
-  for (const row of targets) {
-    const migration = known.get(row.id);
-    if (migration === undefined) {
-      throw migrationConflict(
-        `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
-        `x db status --json   # deploy the build that shipped "${row.id}" and roll back there`,
+  // The same lock `migrate` takes, because the race is the same one: a rollback reversing the id a
+  // migrator is applying leaves a ledger that describes neither, and the ledger read below decides
+  // what to reverse — outside the lock it can be stale before the first `down` runs.
+  return withAdvisoryLock(client, options.lock !== false, async (session) => {
+    const ledger = await readLedger(session);
+    const targets = [...ledger].reverse().slice(0, steps);
+    const reverted: string[] = [];
+
+    for (const row of targets) {
+      const migration = known.get(row.id);
+      if (migration === undefined) {
+        throw migrationConflict(
+          `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
+          `x db status --json   # deploy the build that shipped "${row.id}" and roll back there`,
+        );
+      }
+      await withTransaction(
+        async (tx) => {
+          await tx.execute(raw(migration.down));
+          await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
+        },
+        { client: session },
       );
+      reverted.push(row.id);
     }
-    await withTransaction(
-      async (tx) => {
-        await tx.execute(raw(migration.down));
-        await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
-      },
-      { client },
-    );
-    reverted.push(row.id);
-  }
-  return reverted;
+    return reverted;
+  });
 }

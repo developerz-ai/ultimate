@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { setDbClient } from './client';
+import { type DbClient, type DbConnection, type ReservableClient, setDbClient } from './client';
 import { createRecordingClient, type RecordingClient } from './fake';
 import {
   auditLedger,
@@ -8,6 +8,7 @@ import {
   migrate,
   migrationChecksum,
   pendingMigrations,
+  rollback,
 } from './migrate';
 
 const addPosts: Migration = {
@@ -33,6 +34,53 @@ beforeEach(() => {
   client = createRecordingClient();
   setDbClient(client);
 });
+
+const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+interface PinnablePool {
+  readonly client: ReservableClient;
+  /** `reserve`, `release`, and every statement tagged with the handle that ran it. */
+  readonly events: readonly string[];
+}
+
+/**
+ * A pool whose pin is observable. The defect this pins is invisible to the recording client: the
+ * statement texts are identical whether the lock landed on the session that runs the migration or
+ * on whatever connection the pool lent for that one statement, and only the tag says which.
+ */
+function pinnable(inner: DbClient): PinnablePool {
+  const events: string[] = [];
+  const through = (tag: string): DbClient => ({
+    query: (fragment) => {
+      events.push(`${tag}:${squash(fragment.text)}`);
+      return inner.query(fragment);
+    },
+    one: (fragment) => {
+      events.push(`${tag}:${squash(fragment.text)}`);
+      return inner.one(fragment);
+    },
+    execute: (fragment) => {
+      events.push(`${tag}:${squash(fragment.text)}`);
+      return inner.execute(fragment);
+    },
+  });
+  return {
+    events,
+    client: {
+      ...through('pool'),
+      reserve: async (): Promise<DbConnection> => {
+        events.push('reserve');
+        let held = true;
+        const release = (): void => {
+          if (!held) return;
+          held = false;
+          events.push('release');
+        };
+        return { ...through('pin'), release, [Symbol.dispose]: release };
+      },
+    },
+  };
+}
 
 describe('migrate', () => {
   test('refuses and applies nothing when the ledger belongs to another app version', async () => {
@@ -107,5 +155,100 @@ describe('migrate', () => {
     const later: Migration = { ...addPosts, id: '20260303000000_add_publish_at', name: 'b' };
     const pending = pendingMigrations([ledgerRow()], [later, addPosts]);
     expect(pending.map((migration) => migration.id)).toEqual([later.id]);
+  });
+});
+
+describe('the migration advisory lock', () => {
+  test('the lock, the migration and the unlock run on one pinned session', async () => {
+    client.on(/from x_migrations/, { rows: [] });
+    const pool = pinnable(client);
+
+    await migrate({ migrations: [addPosts], appVersion: '1.5.0', client: pool.client });
+
+    expect(pool.events[0]).toBe('reserve');
+    expect(pool.events[1]).toContain('pg_advisory_lock');
+    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
+    expect(pool.events.at(-1)).toBe('release');
+    // Not one statement on the pool: `pg_advisory_lock` is session-scoped, so work done on any
+    // other connection is not under the lock, and the unlock would answer `false` on a session
+    // that never took it. On `ROLE=migrate` (`max: 1`) there is no other connection to run on.
+    expect(pool.events.filter((event) => event.startsWith('pool:'))).toEqual([]);
+    expect(pool.events).toContain('pin:BEGIN');
+    expect(pool.events).toContain('pin:COMMIT');
+    expect(pool.events.some((event) => event.includes('create table "posts"'))).toBe(true);
+    expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
+  });
+
+  test('a refused ledger unlocks and gives the pin back', async () => {
+    const foreign = ledgerRow({ id: '20260202000000_from_the_future', app_version: '1.6.0' });
+    client.on(/from x_migrations/, { rows: [foreign] });
+    const pool = pinnable(client);
+
+    await expect(
+      migrate({ migrations: [addPosts], appVersion: '1.5.0', client: pool.client }),
+    ).rejects.toThrow('X_MIGRATION_CONFLICT');
+
+    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
+    expect(pool.events.at(-1)).toBe('release');
+  });
+
+  test("lock: false takes no lock, and the only pin left is the transaction's own", async () => {
+    client.on(/from x_migrations/, { rows: [] });
+    const pool = pinnable(client);
+
+    await migrate({
+      migrations: [addPosts],
+      appVersion: '1.5.0',
+      client: pool.client,
+      lock: false,
+    });
+
+    expect(client.texts.some((text) => text.includes('pg_advisory'))).toBe(false);
+    // The ledger runs unpinned, so the one reservation belongs to `withTransaction`, not to a
+    // lock scope that was never opened.
+    expect(pool.events[0]).toStartWith('pool:');
+    expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
+    expect(pool.events.indexOf('reserve')).toBe(pool.events.indexOf('pin:BEGIN') - 1);
+    expect(client.texts.some((text) => text.includes('create table "posts"'))).toBe(true);
+  });
+
+  test('rollback takes the same lock, on its own pinned session', async () => {
+    client.on(/from x_migrations/, { rows: [ledgerRow()] });
+    const pool = pinnable(client);
+
+    const reverted = await rollback({ migrations: [addPosts], client: pool.client });
+
+    expect(reverted).toEqual([addPosts.id]);
+    expect(pool.events[0]).toBe('reserve');
+    expect(pool.events[1]).toContain('pg_advisory_lock');
+    expect(pool.events.some((event) => event.includes('drop table "posts"'))).toBe(true);
+    expect(pool.events.filter((event) => event.startsWith('pool:'))).toEqual([]);
+    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
+    expect(pool.events.at(-1)).toBe('release');
+  });
+
+  test('a rollback that cannot reverse a row unlocks and gives the pin back', async () => {
+    client.on(/from x_migrations/, { rows: [ledgerRow({ id: '20260404000000_unknown' })] });
+    const pool = pinnable(client);
+
+    await expect(rollback({ migrations: [addPosts], client: pool.client })).rejects.toThrow(
+      'X_MIGRATION_CONFLICT',
+    );
+
+    expect(pool.events.some((event) => event.includes('drop table "posts"'))).toBe(false);
+    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
+    expect(pool.events.at(-1)).toBe('release');
+  });
+
+  test('rollback with lock: false takes no lock, for a private branch database', async () => {
+    client.on(/from x_migrations/, { rows: [ledgerRow()] });
+    const pool = pinnable(client);
+
+    const reverted = await rollback({ migrations: [addPosts], client: pool.client, lock: false });
+
+    expect(reverted).toEqual([addPosts.id]);
+    expect(client.texts.some((text) => text.includes('pg_advisory'))).toBe(false);
+    expect(pool.events[0]).toStartWith('pool:');
+    expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
   });
 });
