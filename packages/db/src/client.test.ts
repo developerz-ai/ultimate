@@ -26,11 +26,13 @@ interface FakePool {
   /** Only the ones that reached a pinned connection — which path a statement took is the point. */
   readonly pinned: string[];
   releases: number;
+  closes: number;
 }
 
 interface FakeSqlOptions {
   readonly reserveError?: DriverFailure | undefined;
   readonly statementError?: DriverFailure | undefined;
+  readonly closeError?: DriverFailure | undefined;
 }
 
 // `Bun.SQL` is writable but not configurable, so the seam is assignment plus an afterEach restore.
@@ -42,7 +44,7 @@ afterEach(() => {
 });
 
 function installFakeSql(options: FakeSqlOptions = {}): FakePool {
-  const pool: FakePool = { urls: [], statements: [], pinned: [], releases: 0 };
+  const pool: FakePool = { urls: [], statements: [], pinned: [], releases: 0, closes: 0 };
   host.Bun.SQL = class {
     constructor(url: string) {
       pool.urls.push(url);
@@ -65,7 +67,10 @@ function installFakeSql(options: FakeSqlOptions = {}): FakePool {
         },
       };
     }
-    async close(): Promise<void> {}
+    async close(): Promise<void> {
+      pool.closes += 1;
+      if (options.closeError !== undefined) throw options.closeError;
+    }
   };
   return pool;
 }
@@ -188,5 +193,57 @@ describe('reserve', () => {
 
     expect((caught as DbError).code).toBe('X_DB_UNAVAILABLE');
     expect(pool.releases).toBe(1);
+  });
+});
+
+describe('close', () => {
+  test('closes the pool it opened, and reopens on the next statement', async () => {
+    const pool = installFakeSql();
+    const client = createPostgresClient({ url: TEST_URL });
+
+    await client.query(sql`select 1`);
+    await client.close();
+    await client.query(sql`select 2`);
+
+    expect(pool.closes).toBe(1);
+    expect(pool.urls).toHaveLength(2);
+  });
+
+  test('a client that never connected has no pool to close', async () => {
+    const pool = installFakeSql();
+
+    await createPostgresClient({ url: TEST_URL }).close();
+
+    expect(pool.closes).toBe(0);
+    expect(pool.urls).toEqual([]);
+  });
+
+  // The corpse: a `close()` that rejects has still torn the pool down, and keeping the handle
+  // cached hands it straight back to the next `connect()`. Every statement after that fails on a
+  // pool nobody can see is dead, and no second `close()` can clear it — the same throw recurs.
+  test('a rejecting close still clears the pool, so the next statement opens a live one', async () => {
+    const failure = new DriverFailure('connection terminated unexpectedly');
+    const pool = installFakeSql({ closeError: failure });
+    const client = createPostgresClient({ url: TEST_URL });
+    await client.query(sql`select 1`);
+
+    expect(await rejection(client.close())).toBe(failure);
+
+    await client.query(sql`select 2`);
+    expect(pool.urls).toHaveLength(2);
+    // The second statement went to the new pool, not the one that failed to close.
+    expect(pool.statements).toEqual(['select 1', 'select 2']);
+  });
+
+  test('closing twice after a rejection closes the second pool, not the dead one', async () => {
+    const pool = installFakeSql({ closeError: new DriverFailure('connection terminated') });
+    const client = createPostgresClient({ url: TEST_URL });
+    await client.query(sql`select 1`);
+
+    await rejection(client.close());
+    await client.close();
+
+    // The second close found nothing cached, so it closed nothing — not the corpse a second time.
+    expect(pool.closes).toBe(1);
   });
 });

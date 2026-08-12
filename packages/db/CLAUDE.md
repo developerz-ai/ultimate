@@ -47,6 +47,12 @@ and disposal), and a second release frees a pin that is no longer ours. `DbConne
 `Disposable`: `using connection = await client.reserve()` is the shape, and `[Symbol.dispose]` is
 `release()` itself, never a second code path.
 
+`close()` reads its cached driver into a local, clears the field, **then** awaits the teardown —
+`client.ts` and `pglite.ts` both. A teardown that rejects has still torn the pool down, so clearing
+after the await left the corpse cached for the next `connect()`, and a second `close()` threw in
+the same place rather than clearing it. The rejection still reaches the caller on `client.ts`
+(`pglite.ts` swallows a failed *boot*, which is a different thing: there is nothing to close).
+
 `execute()` trusts `affectedRows` only when it is `> 0`: PGlite counts MODIFIED rows, so a SELECT
 that returned rows is tagged `0`, and `??` would report 0 for every read while
 `PostgresClient.execute` reported the row count. A write that modified nothing returned no rows

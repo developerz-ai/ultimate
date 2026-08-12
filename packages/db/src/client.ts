@@ -205,8 +205,14 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       await client.query(sql`select 1`);
     },
     async close(): Promise<void> {
-      await driver?.close();
+      // Read-then-clear, the same shape as `pglite.ts`: a `close()` that rejects has still torn
+      // the pool down, so caching it would hand the next `connect()` a corpse and every statement
+      // after it would fail for a reason no caller can see. Clearing first also means a
+      // `connect()` racing the await opens a fresh pool instead of joining the one draining. The
+      // rejection still reaches the caller — a shutdown that could not drain wants to know.
+      const pool = driver;
       driver = undefined;
+      await pool?.close();
     },
   };
   return client;
