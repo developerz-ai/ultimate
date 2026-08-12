@@ -27,6 +27,14 @@ suite rather than beside it — `ULTIMATE_EVAL_RECORD` makes every eval write it
 pass, so a gate that inherited the flag would rewrite the committed baselines during the run, and
 a finding after the fact does not put them back.
 
+`verify-floor.ts` is the suite ratchet, and it is split across two owners on purpose. `runVerify`
+judges the **suites**: a step the committed `x.verify.json` names that reports nothing to check is
+recorded failed and not skipped, so the failure count, `data.failed` and every step table another
+gate parses all carry it. The `manifest` step judges the **file**: a floor that does not parse, or
+that names a step the gate does not run, enforces nothing — and a ratchet nobody notices is off is
+the false green it exists to close. Nothing writes the file; a gate that edits its own floor
+ratchets in both directions.
+
 `app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
 a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
 gate runs in — so the step always has a question to answer, and gating both halves on the file

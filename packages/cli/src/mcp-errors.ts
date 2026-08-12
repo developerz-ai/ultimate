@@ -47,6 +47,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_TYPECHECK_FAILED: 'bunx tsc -b --pretty false',
   X_LINT_FAILED: 'bunx biome check --write .',
   X_TEST_FAILED: 'x test --json   # the finding carries the exact bun test invocation that failed',
+  X_VERIFY_SUITE_VANISHED:
+    'x verify --json   # restore the suite, or drop its name from x.verify.json',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run scripts/new-package.ts <pkg> --only <file>',
   X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',

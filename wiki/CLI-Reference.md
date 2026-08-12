@@ -235,6 +235,19 @@ every reader sees:
 `--json` carries the same fact twice: `steps[].skipped` per step, and `data.skipped` as the list of
 names beside `data.failed`. `all {n} steps passed` is printed only when nothing was skipped.
 
+`x.verify.json` ratchets those skips. Hand-written, committed at the repo root, read by the gate
+and written by nothing:
+
+```json
+{ "steps": ["typecheck", "lint", "boundaries", "unit", "contract", "live", "e2e", "manifest"] }
+```
+
+Every name in it is a step this repo has already run, so a step in the list with nothing left to
+check is a deleted suite — reported as **failed**, not skipped, with `X_VERIFY_SUITE_VANISHED` and
+the two edits that resolve it. A repo with no such file is not ratcheted, and a name the gate does
+not run is refused by the `manifest` step (`X_CONFIG_INVALID`) rather than silently covering
+nothing. Removing a line is allowed; it just has to be a diff somebody reviews.
+
 `--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` shard across worker
 processes, each with its own database; `live` and `e2e` are serial by declaration and say so in the
 output. The default oversubscribes the cores — `clamp(round(cpus * 1.5), 2, 8)` — because leaving a
@@ -258,7 +271,7 @@ is not covered by three workers.
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |
 | `budgets` | per-route JS bytes and LCP, and the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`) |
-| `manifest` | the two files an agent reads: `x.manifest.json` freshness, and a hand-written `AGENTS.md` that exists and is under 12kB |
+| `manifest` | the files an agent reads: `x.manifest.json` freshness, `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
 A test's type is its filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`,

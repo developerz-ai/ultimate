@@ -8,6 +8,7 @@ import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE } from './app-openapi';
 import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 import { exitCodeFor } from './output';
+import { VERIFY_FLOOR_FILE } from './verify-floor';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
 
@@ -139,6 +140,99 @@ describe('unit · x verify', () => {
       expect(result.summary).toContain('1 of 3 steps failed');
       expect(result.summary).toContain('1 skipped: e2e');
       expect(result.data).toMatchObject({ failed: ['drift'], skipped: ['e2e'] });
+    });
+  });
+
+  // Counting the skips made them visible; nothing yet made one *fail*. A suite deleted in the same
+  // pull request that deleted the code it covered turns a passing step into a skipped one and the
+  // gate still exits 0 — so the floor is this repo's committed claim that the step ran here once,
+  // and a step that stops applying against that claim is a failure, not a skip.
+  describe('the ratchet: a step the committed floor requires may not go quiet', () => {
+    const green: readonly VerifyStep[] = [
+      { name: 'typecheck', summary: 'tsc', run: async () => ({ ok: true, findings: [] }) },
+    ];
+    const vanished: VerifyStep = {
+      name: 'job',
+      summary: 'no suite here',
+      applies: async () => false,
+      run: async () => ({ ok: false, findings: [] }),
+    };
+
+    const withFloor = async (
+      floor: string | undefined,
+      assert: (root: string) => Promise<void>,
+    ): Promise<void> => {
+      const root = await mkdtemp(join(tmpdir(), 'x-verify-ratchet-'));
+      try {
+        if (floor !== undefined) await Bun.write(join(root, VERIFY_FLOOR_FILE), floor);
+        await assert(root);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    };
+
+    test('no floor committed: a step with nothing to run is still an honest skip', async () => {
+      await withFloor(undefined, async (root) => {
+        const result = await runVerify([...green, vanished], { ...ctx, root });
+        expect(result.ok).toBe(true);
+        expect(result.data).toMatchObject({ failed: [], skipped: ['job'] });
+      });
+    });
+
+    test('a floor that does not name the step leaves it a skip', async () => {
+      await withFloor('{"steps":["typecheck"]}', async (root) => {
+        const result = await runVerify([...green, vanished], { ...ctx, root });
+        expect(result.ok).toBe(true);
+        expect(result.data).toMatchObject({ skipped: ['job'] });
+      });
+    });
+
+    test('a floor that names it turns the skip into a failed step with the fix', async () => {
+      await withFloor('{"steps":["typecheck","job"]}', async (root) => {
+        const result = await runVerify([...green, vanished], { ...ctx, root });
+        expect(result.ok).toBe(false);
+        expect(exitCodeFor(result)).toBe(1);
+        const job = result.steps?.find((step) => step.name === 'job');
+        expect(job?.findings[0]?.code).toBe('X_VERIFY_SUITE_VANISHED');
+        expect(job?.findings[0]?.fix).toContain('x verify --json');
+      });
+    });
+
+    // The whole value is that every reader of the run sees it: a step recorded as skipped would
+    // stay out of `data.failed`, out of the failure count, and green in the reference-app gate's
+    // own red list, which reads a step table exactly this shape.
+    test('the vanished step is reported as failed and not as skipped, everywhere', async () => {
+      await withFloor('{"steps":["job"]}', async (root) => {
+        const result = await runVerify([...green, vanished], { ...ctx, root });
+        expect(result.summary).toContain('1 of 2 steps failed');
+        expect(result.summary).not.toContain('skipped');
+        expect(result.data).toMatchObject({ failed: ['job'], skipped: [] });
+        expect(result.steps?.find((step) => step.name === 'job')?.skipped).toBe(false);
+      });
+    });
+
+    test('a floor is silent about steps that do apply', async () => {
+      await withFloor('{"steps":["typecheck"]}', async (root) => {
+        const result = await runVerify(green, { ...ctx, root });
+        expect(result.ok).toBe(true);
+        expect(result.steps?.[0]?.findings).toEqual([]);
+      });
+    });
+
+    // A name the gate does not run can never apply, so pinning it would hold the gate red forever
+    // and dropping it silently would leave a floor covering nothing. The `manifest` step owns the
+    // file's own integrity; the ratchet owns the suites.
+    test('a typo in the floor is reported by the manifest step, not by the ratchet', async () => {
+      await withFloor('{"steps":["contarct"]}', async (root) => {
+        const result = await runVerify([...green, vanished], { ...ctx, root });
+        expect(result.ok).toBe(true);
+        const step = VERIFY_STEPS.find((candidate) => candidate.name === 'manifest');
+        const outcome = await step?.run({ ...ctx, root });
+        expect(outcome?.ok).toBe(false);
+        const finding = outcome?.findings.find((each) => each.at === VERIFY_FLOOR_FILE);
+        expect(finding?.code).toBe('X_CONFIG_INVALID');
+        expect(finding?.cause).toContain('contarct');
+      });
     });
   });
 

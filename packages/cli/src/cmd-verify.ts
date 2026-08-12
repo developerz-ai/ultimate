@@ -29,6 +29,12 @@ import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import {
+  floorProblemFindings,
+  floorRequires,
+  readVerifyFloor,
+  vanishedSuiteFinding,
+} from './verify-floor';
 import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
@@ -145,11 +151,17 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // `.env.example` joins this step rather than becoming an eighteenth: the question is the same
     // one — "does a committed, generated file still describe the code?" — and the step list is the
     // definition of shippable, so it grows only when a genuinely new question needs asking.
+    //
+    // `x.verify.json` is here for that same question and no other: this step judges the floor
+    // FILE, `runVerify` judges the suites against it. A name the gate does not run can never
+    // vanish, so a typo in the floor covers nothing — which is the false green the floor exists to
+    // close, and it is only visible if something reads the file for its own sake.
     async run(ctx) {
       const agents = await checkAgentsMd(ctx.root);
       const findings = [
         ...(await driftFindings(ctx.root)),
         ...(await envExampleFindings(ctx.root)),
+        ...floorProblemFindings(await readVerifyFloor(ctx.root)),
         ...agents.findings,
         ...(await hostFindings(ctx, 'manifest')),
       ];
@@ -220,11 +232,24 @@ export async function runVerify(
   steps: readonly VerifyStep[],
   ctx: VerifyContext,
 ): Promise<CommandResult> {
+  const floor = await readVerifyFloor(ctx.root);
   const results: StepResult[] = [];
   for (const step of steps) {
     const applies = step.applies === undefined ? true : await step.applies(ctx);
     if (!applies) {
-      results.push({ name: step.name, ok: true, durationMs: 0, skipped: true, findings: [] });
+      // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
+      // that claim, committed — so "nothing to check" now means the suite was deleted, and the
+      // gate says so on the step's own line rather than counting one more thing not to worry
+      // about. Recorded as failed and NOT as skipped, so every reader of a step table sees it:
+      // the summary, `data.failed`, and the reference-app gate's own red list.
+      const required = floorRequires(floor, step.name);
+      results.push({
+        name: step.name,
+        ok: !required,
+        durationMs: 0,
+        skipped: !required,
+        findings: required ? [vanishedSuiteFinding(step.name)] : [],
+      });
       continue;
     }
     const started = performance.now();

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f289ad8317d5cf807172040a1292a4d7605c11996ad538690f74065e42077ca9",
+  "buildId": "d81764af9495992edd84cfbd75582d4aa9e719c2ac148ef84ebdd0b37b9037ba",
   "tiers": {
     "0": [
       "core",
@@ -1657,6 +1657,11 @@
     },
     {
       "code": "X_VERIFY_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_SUITE_VANISHED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
