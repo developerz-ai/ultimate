@@ -41,6 +41,12 @@ export function AdminShell(props: AdminShellProps) {
         <a class={styles.navLink} href={`${admin.basePath}/ops`}>
           {t('admin.ops.title')}
         </a>
+        {/* The way out. `apps/admin` is a separate surface, so nothing in its own route table
+            points back at the app — an operator who opened the dashboard had no link home and
+            had to edit the URL bar, which is the same defect as the app having no link IN. */}
+        <a class={styles.navLink} href="/">
+          {t('admin.backToApp')}
+        </a>
       </aside>
       <main class={styles.main}>
         <h1 class={styles.title}>{t(props.titleKey)}</h1>

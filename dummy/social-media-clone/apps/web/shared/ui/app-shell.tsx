@@ -11,7 +11,7 @@ import styles from './app-shell.module.scss';
 import { pathnameOf } from './nav';
 import { SiteFooter } from './site-footer';
 import { SiteHeader } from './site-header';
-import { viewerIsSignedIn } from './viewer';
+import { viewerIsOperator, viewerIsSignedIn } from './viewer';
 
 /** `prose` is the reading measure, `wide` the two-column screens, `full` the landing page's bands. */
 export type ShellWidth = 'prose' | 'wide' | 'full';
@@ -30,6 +30,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   const width = props.width ?? 'prose';
   // Read once and handed to both bars: two reads is two answers the moment one of them is cached.
   const signedIn = viewerIsSignedIn();
+  const operator = viewerIsOperator();
 
   return (
     <div class={styles.shell}>
@@ -37,7 +38,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
         {t('nav.skip')}
       </a>
 
-      <SiteHeader pathname={pathnameOf(props.url)} signedIn={signedIn} />
+      <SiteHeader pathname={pathnameOf(props.url)} signedIn={signedIn} operator={operator} />
 
       {/* `tabindex="-1"` is what makes the skip link move FOCUS and not just the viewport. */}
       <main id={MAIN_ID} class={styles.main} tabindex={-1}>

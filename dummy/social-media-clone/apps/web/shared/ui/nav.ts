@@ -7,6 +7,7 @@ import { iconBell } from '@ultimat3/ui/icons/bell';
 import { iconLayoutDashboard } from '@ultimat3/ui/icons/layout-dashboard';
 import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';
 import { iconRss } from '@ultimat3/ui/icons/rss';
+import { iconShieldCheck } from '@ultimat3/ui/icons/shield-check';
 import { iconUsers } from '@ultimat3/ui/icons/users';
 
 export interface NavItem {
@@ -31,12 +32,22 @@ const PRIVATE: readonly NavItem[] = [
 ];
 
 /**
+ * The dashboard is a separate surface (`apps/admin`) mounted at `/admin`, so nothing in the web
+ * app's own route table links it. It answered 200 for the seeded operator the whole time and was
+ * reachable only by typing the URL — a screen nobody can find is a screen that does not exist.
+ */
+const ADMIN: NavItem = { name: 'admin', href: '/admin', glyph: iconShieldCheck };
+
+/**
  * What the header offers this viewer. A signed-out visitor is shown only what they can actually
  * open: every private entry sits behind a route `policy`, and rendering one anyway would be a link
  * whose only outcome is a 303 back to sign-in.
+ *
+ * `operator` is asked as `admin:read` (see `viewer.ts`), the same grant the dashboard's own route
+ * gates on — so this list can never offer a door that the door refuses.
  */
-export const navFor = (signedIn: boolean): readonly NavItem[] =>
-  signedIn ? [FEED, ...PRIVATE] : [FEED];
+export const navFor = (signedIn: boolean, operator = false): readonly NavItem[] =>
+  signedIn ? [FEED, ...PRIVATE, ...(operator ? [ADMIN] : [])] : [FEED];
 
 export interface FooterLink {
   readonly name: string;
