@@ -33,19 +33,37 @@ hold it together and none is optional — the plain path takes a turn; a stateme
 a reservation runs direct **only while its turn is held**, re-queueing through `turns.run` once
 `release()` has been called. Drop the first and a rollback is silently lost; drop the second and
 `enqueue(input, { outbox: false })` inside `withTransaction` hangs forever; drop the third and a
-`tx` handle leaked past `withTransaction`'s `finally` writes into whichever transaction holds the
-connection next. The first two are pinned by live tests in `pglite.test.ts` and a fake driver
-cannot catch either; the third is a fake-driver test, because it is about ordering, not SQL.
+`tx` handle leaked past its scope writes into whichever transaction holds the connection next. The
+first two are pinned by live tests in `pglite.test.ts` and a fake driver cannot catch either; the
+third is a fake-driver test, because it is about ordering, not SQL.
 
 The third rule is **both** drivers', not PGlite's alone: `client.ts`'s pinned handle also runs
 direct only while it is held, and once `release()` has been called a late statement goes back
 through the pool for a connection of its own. On a server the leak is quieter than on PGlite and
 worse — the pool has already handed that physical connection to another unit of work, so the stray
 row lands inside *their* transaction and is committed or rolled back with it. `release()` is
-idempotent on both, because two owners reach it on one exit path (`withTransaction`'s `finally`
-and disposal), and a second release frees a pin that is no longer ours. `DbConnection` is
-`Disposable`: `using connection = await client.reserve()` is the shape, and `[Symbol.dispose]` is
-`release()` itself, never a second code path.
+idempotent on both, because nothing in the type stops a caller from also releasing by hand, and a
+second release frees a pin that is no longer ours. `DbConnection` is `Disposable`: `using
+connection = await client.reserve()` is the shape, and `[Symbol.dispose]` is `release()` itself,
+never a second code path.
+
+**A pin is held by a `using` declaration, never a hand-rolled `try/finally`** — `withTransaction`
+and `readOnlyQuery` are the two sites, and both now read the same. A `finally` only covers the
+statements someone remembered to put in its `try`, and `withTransaction` proved it: `BEGIN` sat
+*above* the block, so a `BEGIN` that rejected — a dead connection, a server in recovery, a
+`statement_timeout` — returned the pin to nobody. On a pool that leaks one connection per failure;
+on PGlite it holds the single session's turn, and every statement in the process after it waits
+forever. `BEGIN` therefore lives inside the guarded scope, which is what `readonly-query.ts`
+already did. Consequence worth knowing: a failed `BEGIN` now also emits a best-effort `ROLLBACK`
+the server answers with a notice — cheaper than a second code path for the one statement that
+opens nothing.
+
+Every transaction-control statement is `.catch`ed exactly where a failure would *mask* the error
+that caused it, and nowhere else: `ROLLBACK` and `ROLLBACK TO SAVEPOINT` are best-effort, while
+`SAVEPOINT` and `RELEASE SAVEPOINT` are deliberately uncaught — a savepoint that was never taken
+means the nested scope never opened, and a release that failed means its work is not durable in
+the outer one. Swallowing either would keep running against a transaction that is not the one the
+caller thinks it is in.
 
 `close()` reads its cached driver into a local, clears the field, **then** awaits the teardown —
 `client.ts` and `pglite.ts` both. A teardown that rejects has still torn the pool down, so clearing

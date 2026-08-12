@@ -81,7 +81,9 @@ export async function readOnlyQuery<T>(
   const client = options.client ?? baseClient();
   // A pooled BEGIN that lands on a different physical connection than the query that follows is
   // not a transaction at all, so a reservable client must pin one connection for the sequence.
-  const reserved: DbConnection | undefined = isReservable(client)
+  // Held by a `using` declaration, the same shape as `withTransaction` — the pin comes back on
+  // every exit path, and no future edit can move a statement above the guard that returns it.
+  using reserved: DbConnection | undefined = isReservable(client)
     ? await client.reserve()
     : undefined;
   const connection: DbClient = reserved ?? client;
@@ -122,8 +124,6 @@ export async function readOnlyQuery<T>(
     // Best-effort: the caller needs the original error, never the rollback's.
     await connection.execute(raw('ROLLBACK')).catch(() => undefined);
     throw error;
-  } finally {
-    reserved?.release();
   }
 }
 
