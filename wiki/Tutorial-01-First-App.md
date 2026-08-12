@@ -67,10 +67,10 @@ bunx x verify
   ✓ budgets            0ms
   ✓ manifest           1ms
   - roadmap            0ms
-✓ all 17 steps passed in 11633ms
+✓ 11 of 17 steps passed in 11633ms — 6 skipped: contract, live, job, e2e, contract-diff, roadmap
 ```
 
-`-` is skipped, not passed: no `*.contract.test.ts` exists yet, so the step has nothing to check. [Tutorial 2](Tutorial-02-First-Feature) turns four of those dashes into ticks.
+`-` is skipped, not passed: no `*.contract.test.ts` exists yet, so the step has nothing to check. The summary counts the two apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns three of those dashes into ticks.
 
 ### The invariant block is typed from your columns
 

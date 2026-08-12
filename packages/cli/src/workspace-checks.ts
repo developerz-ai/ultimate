@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding } from './output';
-import { eachSourceFile } from './source-files';
+import { eachSourceFile, isGenerated } from './source-files';
 
 export const LINE_CEILING = 500;
 
@@ -34,6 +34,7 @@ export const countLines = (text: string): number =>
 export async function checkFileSizes(root: string): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
   for await (const path of eachSourceFile(root)) {
+    if (isGenerated(path)) continue;
     const lines = countLines(await Bun.file(join(root, path)).text());
     if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
   }
@@ -166,6 +167,27 @@ export const publishesTestsFinding = (dir: string): Finding => ({
 });
 
 /**
+ * Emit that is authored source anyway, so the sweep may not take it. One list, read by the check
+ * and written into the `fix:` that performs it — a second spelling is a command that deletes a file
+ * the gate then reports as missing.
+ */
+export const ARTIFACT_ALLOWLIST: readonly string[] = ['packages/ui/src/scss.d.ts'];
+
+/** `-name` matches the same suffixes the check globs; `! -path` spares each allowlisted file. */
+const SWEEP_PREDICATE = [
+  `\\( -name '*.d.ts' -o -name '*.js' -o -name '*.map' \\)`,
+  ...ARTIFACT_ALLOWLIST.map((path) => `! -path '${path}'`),
+].join(' ');
+
+export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
+  code: 'X_PACKAGE_SHAPE',
+  cause: `packages/${dir}/src/ contains ${count} build artifacts (.d.ts, .js, .map files)`,
+  fix: `find packages/${dir}/src ${SWEEP_PREDICATE} -delete`,
+  docs: docs('X_PACKAGE_SHAPE'),
+  at: `packages/${dir}/src/`,
+});
+
+/**
  * Reported apart from the exclusion above so the `fix:` stays runnable. Told to "add an entry to
  * `files`" when there is no `files` at all, an author edits a key that is not there — and axiom 4
  * is that an error names the exact fix, not an approximate one.
@@ -259,10 +281,22 @@ export async function checkPackageShape(root: string): Promise<readonly Finding[
   const scaffolder = existsSync(join(root, 'scripts', 'new-package.ts'));
   const findings: Finding[] = [];
   const facts: ManifestFacts[] = [];
+  const allowlisted = new Set(ARTIFACT_ALLOWLIST);
   for (const dir of await workspacePackages(root)) {
     for (const file of PACKAGE_FILES) {
       if (existsSync(join(root, 'packages', dir, file))) continue;
       findings.push(missingFileFinding(dir, file, scaffolder));
+    }
+    // `src/` is authored source only; anything a build emitted there ships in the tarball too.
+    const artifacts: string[] = [];
+    for await (const path of new Bun.Glob('src/**/*.{d.ts,js,map}').scan({
+      cwd: join(root, 'packages', dir),
+      absolute: false,
+    })) {
+      if (!allowlisted.has(join('packages', dir, path))) artifacts.push(path);
+    }
+    if (artifacts.length > 0) {
+      findings.push(buildArtifactsFinding(dir, artifacts.length));
     }
     const manifest: unknown = await Bun.file(join(root, 'packages', dir, 'package.json')).json();
     const record = (typeof manifest === 'object' && manifest !== null ? manifest : {}) as {

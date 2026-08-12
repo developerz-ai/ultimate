@@ -29,6 +29,12 @@ import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import {
+  floorProblemFindings,
+  floorRequires,
+  readVerifyFloor,
+  vanishedSuiteFinding,
+} from './verify-floor';
 import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
@@ -145,11 +151,17 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // `.env.example` joins this step rather than becoming an eighteenth: the question is the same
     // one — "does a committed, generated file still describe the code?" — and the step list is the
     // definition of shippable, so it grows only when a genuinely new question needs asking.
+    //
+    // `x.verify.json` is here for that same question and no other: this step judges the floor
+    // FILE, `runVerify` judges the suites against it. A name the gate does not run can never
+    // vanish, so a typo in the floor covers nothing — which is the false green the floor exists to
+    // close, and it is only visible if something reads the file for its own sake.
     async run(ctx) {
       const agents = await checkAgentsMd(ctx.root);
       const findings = [
         ...(await driftFindings(ctx.root)),
         ...(await envExampleFindings(ctx.root)),
+        ...floorProblemFindings(await readVerifyFloor(ctx.root)),
         ...agents.findings,
         ...(await hostFindings(ctx, 'manifest')),
       ];
@@ -220,11 +232,24 @@ export async function runVerify(
   steps: readonly VerifyStep[],
   ctx: VerifyContext,
 ): Promise<CommandResult> {
+  const floor = await readVerifyFloor(ctx.root);
   const results: StepResult[] = [];
   for (const step of steps) {
     const applies = step.applies === undefined ? true : await step.applies(ctx);
     if (!applies) {
-      results.push({ name: step.name, ok: true, durationMs: 0, skipped: true, findings: [] });
+      // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
+      // that claim, committed — so "nothing to check" now means the suite was deleted, and the
+      // gate says so on the step's own line rather than counting one more thing not to worry
+      // about. Recorded as failed and NOT as skipped, so every reader of a step table sees it:
+      // the summary, `data.failed`, and the reference-app gate's own red list.
+      const required = floorRequires(floor, step.name);
+      results.push({
+        name: step.name,
+        ok: !required,
+        durationMs: 0,
+        skipped: !required,
+        findings: required ? [vanishedSuiteFinding(step.name)] : [],
+      });
       continue;
     }
     const started = performance.now();
@@ -244,18 +269,47 @@ export async function runVerify(
     });
   }
   const failedSteps = results.filter((step) => !step.ok).map((step) => step.name);
+  const skippedSteps = results.filter((step) => step.skipped === true).map((step) => step.name);
   const totalMs = results.reduce((sum, step) => sum + step.durationMs, 0);
   return {
     ok: failedSteps.length === 0,
     command: 'verify',
-    summary:
-      failedSteps.length === 0
-        ? msg('cli.verify.pass', { count: results.length, ms: totalMs })
-        : msg('cli.verify.fail', { failed: failedSteps.length, count: results.length }),
+    summary: verifySummary({ results, failed: failedSteps, skipped: skippedSteps, totalMs }),
     steps: results,
-    data: { failed: failedSteps, durationMs: totalMs },
+    // `skipped` is a list beside `failed` and not a count, because the two answer the same kind of
+    // question — *which* steps, not how many — and a caller ratcheting on coverage needs the names.
+    data: { failed: failedSteps, skipped: skippedSteps, durationMs: totalMs },
     exitCode: failedSteps.length === 0 ? 0 : 1,
   };
+}
+
+/**
+ * What the counts are allowed to claim. A step that does not apply is recorded green so the run
+ * continues, and the summary counted it among the "all 17 steps passed" — so a repo whose `job`
+ * and `eval` suites do not exist reported the same line as a repo where both ran. `--json` carried
+ * the per-step flag all along; the one line every reader actually sees did not, which is how a
+ * vacuous gate stayed invisible. It names the skipped steps, not just how many: "17/17" is worth
+ * something only when the gap is visible in the same glance.
+ */
+function verifySummary(input: {
+  readonly results: readonly StepResult[];
+  readonly failed: readonly string[];
+  readonly skipped: readonly string[];
+  readonly totalMs: number;
+}): string {
+  const params = {
+    count: input.results.length,
+    passed: input.results.filter((step) => step.ok && step.skipped !== true).length,
+    failed: input.failed.length,
+    skipped: input.skipped.length,
+    names: input.skipped.join(', '),
+    ms: input.totalMs,
+  };
+  const clean = input.skipped.length === 0;
+  if (input.failed.length === 0) {
+    return msg(clean ? 'cli.verify.pass' : 'cli.verify.passSkipped', params);
+  }
+  return msg(clean ? 'cli.verify.fail' : 'cli.verify.failSkipped', params);
 }
 
 function findingOf(error: unknown, step: string): Finding {

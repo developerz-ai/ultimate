@@ -31,6 +31,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_TYPECHECK_FAILED',
   'X_LINT_FAILED',
   'X_TEST_FAILED',
+  // The ratchet's own code. A skipped step is not a failure — unless `x.verify.json` says this
+  // repo already ran it, in which case the suite was deleted and the gate would otherwise print
+  // one more green line for it.
+  'X_VERIFY_SUITE_VANISHED',
   'X_FILE_TOO_LONG',
   'X_PACKAGE_SHAPE',
   'X_RELEASE_VERSION_SKEW',
@@ -119,6 +123,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_TYPECHECK_FAILED: 'tsc failed',
   X_LINT_FAILED: 'Biome failed',
   X_TEST_FAILED: 'a test type failed',
+  X_VERIFY_SUITE_VANISHED: 'a step the committed floor requires had nothing left to check',
   X_FILE_TOO_LONG: 'a source file is over 500 lines',
   X_PACKAGE_SHAPE: 'a workspace package is missing a contract file',
   X_RELEASE_VERSION_SKEW: 'a workspace is not at the lockstep version',

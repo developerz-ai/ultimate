@@ -182,6 +182,15 @@ export {
   scanFixes,
   stripComments,
 } from './ts-scan';
+export type { VerifyFloor } from './verify-floor';
+export {
+  floorProblemFindings,
+  floorRequires,
+  parseVerifyFloor,
+  readVerifyFloor,
+  VERIFY_FLOOR_FILE,
+  vanishedSuiteFinding,
+} from './verify-floor';
 export type {
   HostCheck,
   StepOutcome,

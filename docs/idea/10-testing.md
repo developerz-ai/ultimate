@@ -151,6 +151,20 @@ The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **17 steps**
 | 16 | manifest | `x.manifest.json` differs from what the code produces, or `AGENTS.md` is absent |
 | 17 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
 
+A skipped step is never counted as a passing one. The summary carries both numbers and names the
+skips — `12 of 17 steps passed in 53224ms — 5 skipped: job, eval, drift, contract-diff, budgets` —
+so a green gate that is green because the suite does not exist has to say so on the one line every
+reader sees. `all 17 steps passed` means seventeen steps actually ran.
+
+**The floor: a step that once applied must keep applying.** Naming the skips makes them visible;
+`x.verify.json` is what makes one *fail*. It is hand-written and committed — `{ "steps": [...] }`,
+the steps this repo has already proved it can run — and the gate reads it and never writes it. A
+step in that list that reports nothing to check is a suite somebody deleted, so it is recorded as
+**failed and not as skipped** (`X_VERIFY_SUITE_VANISHED`), which puts it in the failure count, in
+`data.failed`, and in every step table a reader or another gate parses. A repo that commits no
+floor is not ratcheted; a floor naming a step the gate does not run enforces nothing and says so
+through the `manifest` step, because a typo that silently covers no suite is the same false green.
+
 ```
 $ x verify
   ✓ typecheck  ✓ lint  ✓ boundaries  ✓ unit  ✓ contract  ✓ live  ✓ job  ✓ e2e

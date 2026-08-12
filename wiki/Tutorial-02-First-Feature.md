@@ -255,10 +255,10 @@ bunx x verify
                                     ✓ budgets            0ms
                                     ✓ manifest           1ms
                                     - roadmap            0ms
-✓ all 17 steps passed in 11153ms
+✓ 14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap
 ```
 
-Four steps that were dashes in [tutorial 1](Tutorial-01-First-App) are now ticks, from renaming four files.
+Three steps that were dashes in [tutorial 1](Tutorial-01-First-App) are now ticks, from renaming three files — and the summary names the three that still have nothing to run.
 
 ## Drive it from an agent
 

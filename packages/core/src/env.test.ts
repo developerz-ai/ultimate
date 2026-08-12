@@ -92,11 +92,25 @@ describe('defineEnv', () => {
     expect(summary.find((entry) => entry.key === 'NATS_URL')?.roles).toEqual(['sync']);
   });
 
+  // One wall-clock round measures the runner, not this function: a CI box running six test shards
+  // timed 73ms against a 40ms ceiling for work that costs 0.5ms on a developer machine. Contention
+  // only ever ADDS time, so the best of several rounds is the honest sample — under 16-way load the
+  // best round stayed within noise of an idle machine while its neighbours in the same run spiked
+  // 10x. The first round is discarded because it is still compiling. Boot pays for one check, so the
+  // budget is per call, and 50µs is ~20x the real cost — I/O or a quadratic scan misses it by orders.
+  const CHECKS_PER_ROUND = 200;
+  const BUDGET_US_PER_CHECK = 50;
+
   test('is fast enough to run at boot', () => {
-    const started = performance.now();
-    for (let index = 0; index < 200; index += 1) {
-      checkEnv(schema, { env: { DATABASE_URL: 'postgres://x/y', REGION: 'us', ROLE: 'web' } });
-    }
-    expect(performance.now() - started).toBeLessThan(40);
+    const round = (): number => {
+      const started = performance.now();
+      for (let index = 0; index < CHECKS_PER_ROUND; index += 1) {
+        checkEnv(schema, { env: { DATABASE_URL: 'postgres://x/y', REGION: 'us', ROLE: 'web' } });
+      }
+      return performance.now() - started;
+    };
+    round();
+    const best = Math.min(...Array.from({ length: 5 }, round));
+    expect((best / CHECKS_PER_ROUND) * 1000).toBeLessThan(BUDGET_US_PER_CHECK);
   });
 });
