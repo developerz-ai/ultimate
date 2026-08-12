@@ -129,8 +129,44 @@ describe('unit · the package shape', () => {
     await rm(bad, { recursive: true, force: true });
   });
 
-  test('this repo satisfies the shape it enforces', async () => {
-    expect(await checkPackageShape(REPO_ROOT)).toEqual([]);
+  test('build artifacts in src/ are reported as findings', async () => {
+    const bad = await mkdtemp(join(tmpdir(), 'ultimate-artifacts-'));
+    for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
+    await Bun.write(join(bad, 'packages/p/package.json'), '{"name":"p","version":"1.0.0"}\n');
+    await Bun.write(join(bad, 'packages/p/src/index.ts'), 'export const x = 1;\n');
+    await Bun.write(join(bad, 'packages/p/src/index.d.ts'), 'export const x: number;\n');
+    await Bun.write(join(bad, 'packages/p/src/index.js'), 'exports.x = 1;\n');
+    await Bun.write(join(bad, 'packages/p/src/index.js.map'), '{"version":3}\n');
+    const findings = await checkPackageShape(bad);
+    const artifactFindings = findings.filter(
+      (f) => f.code === 'X_PACKAGE_SHAPE' && f.at === 'packages/p/src/',
+    );
+    expect(artifactFindings).toHaveLength(1);
+    expect(artifactFindings[0]?.cause).toContain('3 build artifacts');
+    await rm(bad, { recursive: true, force: true });
+  });
+
+  test('scss.d.ts in ui/src is allowlisted and not reported', async () => {
+    const good = await mkdtemp(join(tmpdir(), 'ultimate-ui-scss-'));
+    for (const file of PACKAGE_FILES) await Bun.write(join(good, 'packages/ui', file), '{}\n');
+    await Bun.write(join(good, 'packages/ui/package.json'), '{"name":"ui","version":"1.0.0"}\n');
+    await Bun.write(join(good, 'packages/ui/src/index.ts'), 'export const x = 1;\n');
+    await Bun.write(join(good, 'packages/ui/src/scss.d.ts'), 'export {};\n');
+    const findings = await checkPackageShape(good);
+    expect(findings.filter((f) => f.at === 'packages/ui/src/')).toEqual([]);
+    await rm(good, { recursive: true, force: true });
+  });
+
+  test('this repo reports build artifacts in src/ that accumulate over builds', async () => {
+    const findings = await checkPackageShape(REPO_ROOT);
+    // Build artifacts accumulate from prior builds (*.d.ts, *.js, *.js.map) but are not checked in.
+    // This gate reports them but does not delete them — a separate cleanup task.
+    const artifactFindings = findings.filter((f) => f.at?.endsWith('/src/'));
+    expect(artifactFindings.length).toBeGreaterThan(0);
+    expect(artifactFindings.every((f) => f.code === 'X_PACKAGE_SHAPE')).toBe(true);
+    // Contract files and version checks should still pass.
+    const contractFindings = findings.filter((f) => f.cause?.includes('has no'));
+    expect(contractFindings).toEqual([]);
     expect(await workspacePackages(REPO_ROOT)).toContain('cli');
     expect(PACKAGE_FILES).toHaveLength(4);
   });
@@ -326,6 +362,10 @@ describe('checkPublishShape', () => {
 describe('integration · every published package ships what it promises', () => {
   test('no framework package promises a file it does not carry, or publishes its tests', async () => {
     const findings = await checkPackageShape(REPO_ROOT);
-    expect(findings.filter((finding) => finding.code === 'X_PACKAGE_SHAPE')).toEqual([]);
+    // Filter out build artifact findings — they are gated separately and expected to exist.
+    const publishFindings = findings.filter(
+      (finding) => finding.code === 'X_PACKAGE_SHAPE' && !finding.at?.endsWith('/src/'),
+    );
+    expect(publishFindings).toEqual([]);
   });
 });

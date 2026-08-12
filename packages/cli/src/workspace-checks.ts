@@ -165,6 +165,14 @@ export const publishesTestsFinding = (dir: string): Finding => ({
   at: `packages/${dir}/package.json`,
 });
 
+export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
+  code: 'X_PACKAGE_SHAPE',
+  cause: `packages/${dir}/src/ contains ${count} build artifacts (.d.ts, .js, .map files)`,
+  fix: `remove build artifacts from packages/${dir}/src/; source lives there only, never built output`,
+  docs: docs('X_PACKAGE_SHAPE'),
+  at: `packages/${dir}/src/`,
+});
+
 /**
  * Reported apart from the exclusion above so the `fix:` stays runnable. Told to "add an entry to
  * `files`" when there is no `files` at all, an author edits a key that is not there — and axiom 4
@@ -259,10 +267,26 @@ export async function checkPackageShape(root: string): Promise<readonly Finding[
   const scaffolder = existsSync(join(root, 'scripts', 'new-package.ts'));
   const findings: Finding[] = [];
   const facts: ManifestFacts[] = [];
+  // Allowlist for intentional build artifacts in src/
+  const artifactAllowlist = new Set(['packages/ui/src/scss.d.ts']);
   for (const dir of await workspacePackages(root)) {
     for (const file of PACKAGE_FILES) {
       if (existsSync(join(root, 'packages', dir, file))) continue;
       findings.push(missingFileFinding(dir, file, scaffolder));
+    }
+    // Check for build artifacts in src/
+    const artifacts: string[] = [];
+    for await (const path of new Bun.Glob('src/**/*.{d.ts,js,map}').scan({
+      cwd: join(root, 'packages', dir),
+      absolute: false,
+    })) {
+      const fullPath = join('packages', dir, path);
+      if (!artifactAllowlist.has(fullPath)) {
+        artifacts.push(path);
+      }
+    }
+    if (artifacts.length > 0) {
+      findings.push(buildArtifactsFinding(dir, artifacts.length));
     }
     const manifest: unknown = await Bun.file(join(root, 'packages', dir, 'package.json')).json();
     const record = (typeof manifest === 'object' && manifest !== null ? manifest : {}) as {
