@@ -120,3 +120,52 @@ contractTest('signing out revokes the row, and the SAME cookie stops working', a
   const after = await call('/friends', { headers: { cookie, accept: 'application/json' } });
   expect(after.status).toBe(401);
 });
+
+/**
+ * Every auth action is submitted by a NATIVE form — nothing on `site/` hydrates — so every one of
+ * them must answer a browser with a redirect and an agent with the output schema.
+ *
+ * The table is the point. `createSession` and `createAccount` got the split and `destroySession`
+ * did not, so signing out really revoked the session and then left the reader looking at
+ * `{"ok":true,"next":"/","revoked":true}` in the viewport. A per-action decision is a decision
+ * somebody forgets; asserting all three together is what makes forgetting the fourth impossible.
+ */
+const FORM_POSTS = [
+  { path: '/api/sessions/create', body: 'handle=user&password=user', lands: '/feed' },
+  {
+    path: '/api/accounts/create',
+    body: 'handle=freshone&displayName=Fresh+One&email=fresh%40demo.test&password=hunter2hunter2',
+    lands: '/feed',
+  },
+  { path: '/api/sessions/destroy', body: 'confirm=sign-out', lands: '/' },
+] as const;
+
+for (const form of FORM_POSTS) {
+  contractTest(`${form.path} redirects a browser instead of printing JSON at it`, async () => {
+    const response = await call(form.path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' },
+      body: form.body,
+    });
+    expect({ path: form.path, status: response.status }).toEqual({
+      path: form.path,
+      status: 303,
+    });
+    expect(response.headers.get('location')).toBe(form.lands);
+  });
+}
+
+contractTest('an agent still gets the output schema from every one of them', async () => {
+  for (const form of FORM_POSTS) {
+    const response = await call(form.path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: form.body.replace('freshone', 'freshtwo').replace('fresh%40', 'fresh2%40'),
+    });
+    expect({ path: form.path, status: response.status }).toEqual({
+      path: form.path,
+      status: 200,
+    });
+    expect(response.headers.get('content-type')).toContain('application/json');
+  }
+});

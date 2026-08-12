@@ -153,6 +153,10 @@ export const destroySession = action({
     // Cleared regardless. The browser forgetting the token is the half this process controls, and
     // the row expires on its own clock — `sessions.expiresAt` is absolute for exactly this reason.
     setResponseCookie(ctx, clearedSessionCookie(isSecureRequest(ctx)));
-    return { ok: true, next: '/', revoked };
+    // The same browser/agent split the other two actions make. Without it the header's sign-out
+    // form — a native POST, because nothing on these pages hydrates — leaves the reader looking
+    // at `{"ok":true,"next":"/","revoked":true}` in the viewport. The session really was revoked;
+    // the answer was just written for the wrong caller.
+    return { ok: true, next: landAfter(undefined, '/'), revoked };
   },
 });
