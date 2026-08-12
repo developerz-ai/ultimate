@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ld } from '@ultimat3/seo';
-import { headFromMeta, renderHead } from './head';
+import { documentBaseline, headFromMeta, renderHead } from './head';
 import { headTagKey, seoRenderers, toHeadTag } from './head-seo';
 
 describe('seoRenderers', () => {
@@ -38,7 +38,9 @@ describe('seoRenderers', () => {
     const merged = headFromMeta({ title: 'Home', description: 'first' }, seoRenderers(), [
       { kind: 'meta', key: 'meta:description', attrs: { name: 'description', content: 'second' } },
     ]);
-    expect(base.length).toBe(merged.length);
+    // `+ documentBaseline().length`: every document carries charset/viewport/color-scheme, and
+    // this test is about the seo tags surviving an override, not about the baseline.
+    expect(base.length + documentBaseline().length).toBe(merged.length);
     const description = merged.find((tag) => tag.key === 'meta:description');
     expect(description?.attrs?.['content']).toBe('second');
     expect(merged.filter((tag) => tag.key === 'meta:description')).toHaveLength(1);

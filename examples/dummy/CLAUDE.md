@@ -40,8 +40,12 @@ packages/ui                    app components on @ultimat3/ui
 packages/mcp                   the app's own MCP tools + prompts
 ```
 
-`apps/web/shared/theme.scss` is loaded once by the framework for both surfaces; it emits the
-`@ultimat3/ui` tokens and styles bare elements. `/signin`, `/signup` and `/signout` are mounted by
+`apps/web/shared/global.scss` is the app's global CSS layer — `@ultimat3/ui`'s custom properties
+and its reset — and `apps/web/shared/global.ts` is the one-line side-effect import that puts it in
+the module graph, which is what makes the framework's boot scan load it once for both surfaces. No
+other stylesheet in the app emits top-level CSS: every module is its own Sass compilation, so a
+second emitter would duplicate the `:root` block. A document that carries none is
+`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. `/signin`, `/signup` and `/signout` are mounted by
 the wrapped Better Auth integration, so they are in the route table without living in `site/`.
 
 `apps/web/shared/actor.ts` is the app half of the actor — org, orgs, member row, request clock —

@@ -19,6 +19,12 @@ export interface HttpConfig {
   readonly buildId: string | null;
   readonly buildIdHeader: string;
   readonly dev: boolean;
+  /**
+   * Where a browser that failed `auth: 'required'` is sent, or `null` to answer it with the
+   * problem document. `null` by default: guessing `/signin` sends an app that spells it `/login`
+   * to a 404, and a framework may not invent one of its app's routes.
+   */
+  readonly signInPath: string | null;
   /** Read `x-forwarded-for` / `x-forwarded-proto`. Only safe behind our own proxy. */
   readonly trustProxy: boolean;
   readonly bodyLimitBytes: number;
@@ -38,6 +44,7 @@ export interface HttpConfigInput {
   readonly buildId?: string | null;
   readonly buildIdHeader?: string;
   readonly dev?: boolean;
+  readonly signInPath?: string | null;
   readonly trustProxy?: boolean;
   readonly bodyLimitBytes?: number;
   readonly drainTimeoutMs?: number;
@@ -77,6 +84,7 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     buildId: input.buildId ?? env('BUILD_ID') ?? null,
     buildIdHeader: input.buildIdHeader ?? 'x-ultimate-build',
     dev,
+    signInPath: input.signInPath ?? null,
     trustProxy: input.trustProxy ?? true,
     bodyLimitBytes: input.bodyLimitBytes ?? 1_048_576,
     drainTimeoutMs: input.drainTimeoutMs ?? 15_000,

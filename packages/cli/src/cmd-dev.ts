@@ -7,11 +7,13 @@
 import { watch } from 'node:fs';
 import { join } from 'node:path';
 import { listActions, toRoute } from '@ultimat3/action';
+import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { configureTelemetry, METRICS_PATH, noopExporter } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
@@ -155,6 +157,14 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     runtime,
     routes,
     env: options.env,
+    // Read from `app.config.ts` rather than threaded through `DevOptions`: it is the app's own
+    // declaration, and `x dev` and `serve.ts` must not be able to disagree about where the app's
+    // sign-in page is.
+    signInPath: await loadSignInPath(options.root),
+    // The one document this process serves that the app did not write; `startRoles` covers the
+    // app's own surfaces itself. `x dev` sends the policy report-only, so an uncovered `<style>`
+    // here is a console report rather than a blank page — which is how this reached production.
+    inlineStyles: [await devShellStyle()],
   });
 
   const stopWatching = watchApp(options.root, (file) => {

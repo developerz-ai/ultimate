@@ -18,6 +18,20 @@ export interface ThemeConfig {
   readonly tokens: Readonly<Record<string, string>>;
 }
 
+/**
+ * Where a browser that failed `auth: 'required'` is sent, and where it lands afterwards.
+ *
+ * `signInPath: null` is the default and the redirect stays off until an app names its page: the
+ * framework may not invent one of its app's routes, and an app that spells it `/login` would send
+ * every unauthenticated visitor to a 404. Null means the visitor gets the problem document — the
+ * right answer for an agent, and what a browser got in production until this existed.
+ */
+export interface AuthConfig {
+  readonly signInPath: string | null;
+  /** Where sign-in lands when there is nowhere to return to, or `?next=` is not same-origin. */
+  readonly afterSignInPath: string;
+}
+
 export interface PwaConfig {
   readonly enabled: boolean;
   readonly offline: OfflineStrategy;
@@ -77,6 +91,7 @@ export interface AppConfig {
   readonly defaultTimeZone: string;
   readonly defaultCurrency: string;
   readonly theme: ThemeConfig;
+  readonly auth: AuthConfig;
   readonly pwa: PwaConfig;
   readonly roles: readonly Role[];
   readonly database: DatabaseConfig;
@@ -99,6 +114,7 @@ export interface AppConfigInput {
   readonly defaultTimeZone?: string | undefined;
   readonly defaultCurrency?: string | undefined;
   readonly theme?: Input<ThemeConfig> | undefined;
+  readonly auth?: Input<AuthConfig> | undefined;
   readonly pwa?: Input<PwaConfig> | undefined;
   readonly roles?: readonly Role[] | undefined;
   readonly database?: Input<DatabaseConfig> | undefined;
@@ -151,6 +167,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     defaultTimeZone: 'UTC',
     defaultCurrency: 'USD',
     theme: { defaultMode: 'system', tokens: {} },
+    auth: { signInPath: null, afterSignInPath: '/' },
     pwa: {
       enabled: false,
       offline: 'network-only',
@@ -248,6 +265,7 @@ export function defineConfig(
     defaultTimeZone: merged.defaultTimeZone ?? base.defaultTimeZone,
     defaultCurrency: merged.defaultCurrency ?? base.defaultCurrency,
     theme: section(base.theme, merged.theme),
+    auth: section(base.auth, merged.auth),
     pwa: section(base.pwa, merged.pwa),
     roles: merged.roles ?? base.roles,
     database: section(base.database, merged.database),

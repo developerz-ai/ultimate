@@ -11,6 +11,11 @@ import {
 const SITE = '/srv/demo/apps/web/site/page.module.scss';
 const APP = '/srv/demo/apps/web/app/dashboard/page.module.scss';
 const PACKAGE = '/srv/demo/packages/ui/src/card.module.scss';
+/** The app's global layer: tokens + reset, the one file both surfaces' documents must carry. */
+const GLOBAL = '/srv/demo/apps/web/shared/global.scss';
+const GLOBAL_CSS = ':root{--color-fg:38 34 31}*{margin:0}';
+
+const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
 
 afterEach(() => {
   clearStylesheets();
@@ -89,5 +94,36 @@ describe('stylesFor', () => {
 
   test('no stylesheets means no style tag to emit', () => {
     expect(stylesFor('site')).toBe('');
+  });
+
+  test("a shared/ stylesheet reaches both surfaces — it is the app's own global layer", () => {
+    loadStylesheet(GLOBAL, GLOBAL_CSS);
+    expect(stylesFor('site')).toContain('--color-fg:');
+    expect(stylesFor('app')).toContain('--color-fg:');
+  });
+
+  test('the global layer leads, whichever module happened to load first', () => {
+    loadStylesheet(SITE, '.hero{color:red}');
+    loadStylesheet(GLOBAL, GLOBAL_CSS);
+    const css = stylesFor('site');
+    expect(css.indexOf('--color-fg:')).toBeLessThan(css.indexOf('.hero'));
+    expect(css.startsWith(':root')).toBe(true);
+  });
+
+  test('the global layer is emitted exactly once, however many modules pull it in', () => {
+    loadStylesheet(GLOBAL, GLOBAL_CSS);
+    loadStylesheet(SITE, '.hero{color:red}');
+    loadStylesheet(APP, '.panel{color:blue}');
+    // Every app module importing the same file is the same registry key, so the `:root` block
+    // cannot be duplicated — the failure mode a token file `@use`d per module would have.
+    loadStylesheet(GLOBAL, GLOBAL_CSS);
+    expect(occurrences(stylesFor('site'), '--color-fg:')).toBe(1);
+    expect(occurrences(stylesFor('app'), '--color-fg:')).toBe(1);
+  });
+
+  test('a module stylesheet is not the global layer, so it never jumps the reset', () => {
+    loadStylesheet(GLOBAL, GLOBAL_CSS);
+    loadStylesheet(PACKAGE, '.card{color:green}');
+    expect(stylesFor('app').startsWith(GLOBAL_CSS)).toBe(true);
   });
 });

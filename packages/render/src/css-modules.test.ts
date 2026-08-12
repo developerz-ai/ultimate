@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { compileStylesheet, isCssModule, scopeClasses } from './css-modules';
+import { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
 
 // A real directory, because a bare `@use` is resolved by Bun against the file that wrote it.
 const TOKENS = `${import.meta.dir}/page.module.scss`;
@@ -9,6 +9,14 @@ describe('isCssModule', () => {
     expect(isCssModule('a/page.module.scss')).toBe(true);
     expect(isCssModule('a/page.module.css')).toBe(true);
     expect(isCssModule('a/global.scss')).toBe(false);
+  });
+});
+
+describe('isGlobalStylesheet', () => {
+  test('a plain stylesheet is the global layer; a module never is', () => {
+    expect(isGlobalStylesheet('apps/web/shared/global.scss')).toBe(true);
+    expect(isGlobalStylesheet('apps/web/site/page.module.scss')).toBe(false);
+    expect(isGlobalStylesheet('apps/web/site/page.module.css')).toBe(false);
   });
 });
 

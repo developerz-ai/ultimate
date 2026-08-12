@@ -207,9 +207,30 @@
   },
   "site": {
     "home": {
-      "cta": "Open the dashboard",
-      "description": "Everything you need, one command from shippable.",
-      "title": "SocialMediaClone"
+      "title": "A social network, built to break a framework",
+      "description": "Every Ultimate primitive, once, in one real app: relational visibility decided by a policy, a live feed, offline reads, uploads and an admin that shares the same authz object as the API.",
+      "cta": "Read the public feed",
+      "signin": "Sign in",
+      "seeded": "Seeded demo data. Every account, post and photo here is fabricated.",
+      "proofs": {
+        "title": "What this deployment is evidence for",
+        "policy": {
+          "title": "One authz object, four surfaces",
+          "body": "Who may see a post is friendship and blocks, not a tenant column — and the HTTP route, the live query, the MCP tool and the admin button all ask the same policy."
+        },
+        "realtime": {
+          "title": "Live queries, not polling",
+          "body": "A read declared live: true becomes a subscription, with the row gate re-decided per subscriber."
+        },
+        "offline": {
+          "title": "Offline is a route declaration",
+          "body": "Each route says precache, runtime or network-only, and the service worker is generated from the route table."
+        },
+        "admin": {
+          "title": "Admin is view-only by permission",
+          "body": "It holds admin:read and never admin:write. One decision renders the button and answers the call."
+        }
+      }
     },
     "feed": {
       "title": "The public feed",

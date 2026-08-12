@@ -10,7 +10,7 @@ import { installRenderLoader } from './module-loader';
 installRenderLoader();
 
 export type { CompiledStylesheet } from './css-modules';
-export { compileStylesheet, isCssModule, scopeClasses } from './css-modules';
+export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
 export type { RenderErrorCode } from './errors';
 export {
   BudgetExceededError,
@@ -35,6 +35,7 @@ export type {
   ThemeScriptOptions,
 } from './head';
 export {
+  documentBaseline,
   headFromMeta,
   mergeHead,
   renderHead,

@@ -55,6 +55,10 @@ export const config = defineConfig({
   defaultLocale: 'en',
   defaultTimeZone: 'UTC',
   defaultCurrency: 'USD',
+  // Without `signInPath` a browser that opens /dashboard with no session is answered with the
+  // problem+json document — correct for an agent, and rendered as raw JSON text to a person.
+  // Naming the page turns that into a 303 carrying `?next=`, and the page sends them back.
+  auth: { signInPath: '/signin', afterSignInPath: '/dashboard' },
   // Env KEYS, never the value: the same image deploys to every environment.
   database: { urlEnv: 'DATABASE_URL', poolSize: 10 },
   cache: { driver: 'memory', tiers: ['memo', 'lru'] },

@@ -279,6 +279,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_BUDGET_EXCEEDED` | a route blew its JS or LCP budget | a heavy transitive import | `x routes --json` for the chain; move it behind `hydrate: 'interaction'` or raise the budget deliberately |
 | `X_BUDGET_UNMEASURED` | a route declares a JS or LCP budget the build never measured | the route is absent from `.x/build-stats.json` | `x build`, then `x verify` |
 | `X_PRERENDER_FAILED` | a prerendered path threw during build | `prerender()` returned an id that no longer resolves | fix the data source, or narrow `prerender()` |
+| `X_STYLES_GLOBAL_MISSING` | a surface renders documents whose CSS defines no `:root` custom properties | nothing in the app's module graph imports the global layer, so every `var(--color-*)` and `var(--space-*)` a component emits resolves to nothing and the browser drops the declaration | add `apps/web/shared/global.scss` containing `@use '@ultimat3/ui/global.scss';` and `apps/web/shared/global.ts` containing `import './global.scss';` — `x new` scaffolds both |
 
 ## SEO
 

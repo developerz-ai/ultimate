@@ -2,6 +2,7 @@
 // native form posting at the route `createAccount` derives. The only difference is that the
 // challenge here is demanded on EVERY attempt — there is no prior failure to count.
 
+import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { captchaSiteKey, HCAPTCHA_SCRIPT_URL, MIN_PASSWORD_LENGTH } from '../../shared/auth-policy';
@@ -21,7 +22,14 @@ export const config = defineRoute({
   }),
 });
 
-export function Page() {
+export interface SignUpProps {
+  readonly query: Readonly<Record<string, string>>;
+}
+
+export function Page(props: SignUpProps) {
+  // Same round trip the sign-in page carries: somebody bounced off a guarded page may create the
+  // account instead of signing in, and must still land where they were going.
+  const next = nextAfterSignIn(props.query[NEXT_PARAM], '/dashboard');
   const siteKey = captchaSiteKey();
 
   return (
@@ -30,6 +38,7 @@ export function Page() {
       <p class={styles.lede}>{t('site.signup.description')}</p>
 
       <form class={styles.form} method="post" action="/api/accounts/create">
+        <input type="hidden" name={NEXT_PARAM} value={next} />
         <label class={styles.label} for="signup-handle">
           {t('site.signup.handle')}
         </label>

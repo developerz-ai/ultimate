@@ -3,7 +3,7 @@
 // request time: an app that boots with /_x mounted in prod has already lost.
 
 // Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
-// values arrive through the dynamic `import()` in `shellStyle()`, same reason as `data.ts`.
+// values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
 import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
 import { defaultDevSources } from './data';
@@ -113,8 +113,12 @@ let stylePromise: Promise<string> | undefined;
  * here went stale through a WCAG retune and shipped `line` on `surface-raised` at 1.16:1.
  * Reached by dynamic `import()` for the same reason `data.ts` is: /_x stays out of the
  * production graph, and the 46-component barrel loads only once a panel is actually drawn.
+ *
+ * Exported because the host that mounts /_x is the one that configures the CSP the panels are
+ * served under, and the `style-src` hash it needs is of THIS text — a host that hashed its own
+ * copy would send a policy that blocks the document this function actually writes.
  */
-async function shellStyle(): Promise<string> {
+export async function devShellStyle(): Promise<string> {
   stylePromise ??= import('@ultimat3/ui').then(({ colorTokens }) => {
     const block = (theme: 'light' | 'dark'): string =>
       SHELL_ROLES.map((role) => `--x-color-${role}: ${colorTokens[theme][role]};`).join(' ');
@@ -198,7 +202,7 @@ export function devDashboard(opts: DevDashboardOptions = {}): DevDashboard {
 
       return wantsJson
         ? jsonResponse(payload, payload.ok ? 200 : 500)
-        : new Response(shell(await shellStyle(), basePath, panels, panel, payload), {
+        : new Response(shell(await devShellStyle(), basePath, panels, panel, payload), {
             status: 200,
             headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
           });

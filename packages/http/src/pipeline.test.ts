@@ -194,6 +194,22 @@ describe('lifecycle', () => {
     expect(((await response.json()) as Record<string, unknown>)['code']).toBe('X_UNAUTHENTICATED');
   });
 
+  // What the deployed app did to a person clicking a link: rendered the problem document as raw
+  // text in the viewport. The document is right for the agent that asked for JSON and wrong for
+  // the browser that asked for HTML, and `signInPath` is what separates them.
+  test('a browser hitting the same route is sent to the sign-in page', async () => {
+    const signIn = createPipeline({
+      table: createRouter(routes),
+      config: defineHttpConfig({ dev: false, signInPath: '/signin' }),
+      hooks: { authenticate: () => null },
+    });
+    const response = await signIn.handle(get('/private', { headers: { accept: 'text/html' } }), {
+      role: 'web',
+    });
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/signin?next=%2Fprivate');
+  });
+
   test('an invalid body is 422 with the failing path in the cause', async () => {
     const response = await pipelineWith({}).handle(
       get('/posts', {

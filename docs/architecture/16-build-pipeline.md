@@ -54,3 +54,27 @@ Both halves of the config stay as they are, and each now means one thing:
 - **No hydration.** `solid-js@1.9.14` does ship `solid-js/web` — `render`, `hydrate`, `renderToString`, `generateHydrationScript` are all there — so this is **framework work, not an upstream blocker** `As of 2026-08`. What is missing is the compile step: `solid-js/jsx-runtime` exports types and no factory, because Solid compiles JSX to `template()` calls rather than runtime `jsx()` calls. Hydration therefore needs a second, Solid-compiled bundle graph for the client, distinct from the inert `h` the server renders through. `hydrate.ts` and `islands.ts` emit the markup conventions that bundle would read; nothing reads them yet.
 - **No `<Suspense>` holes.** `renderStreamHtml` still splices `<x-hole>` chunks, but nothing marks a subtree as one, so a `stream` route flushes its whole body in the first chunk — correct output, no streaming benefit. Solid's own `<Suspense>` is **not** the missing piece and must not be reached for: it calls `getContextId()`, which throws `cannot be used under non-hydrating context` outside a Solid renderer. Async data needs no boundary here — `renderToHtml` awaits async components and promise children directly.
 - **No per-module CSS graph.** `stylesFor(surface)` filters by the stylesheet's own path, which keeps `site/` and `app/` apart but does not attribute CSS to a single route.
+
+## What reaches the document, in what order
+
+`As of 2026-08`. `stylesFor(surface)` emits **globals first, then modules**, and includes the
+surface's own sheets plus every `surface === null` (a package sheet) and `shared/` one.
+
+Two bugs lived in the gap between that sentence and the code, and both were invisible until a page
+was opened in a browser:
+
+| Was | Cost |
+|---|---|
+| `packages/ui/src/global.scss` — "one import for an app document shell" — was imported by **nothing, anywhere** | no `:root` block reached any document, so every `var(--color-*)` and `var(--space-*)` resolved to nothing and the whole token layer was dead in every app ever deployed |
+| `stylesFor` dropped `surface === 'shared'` | a stylesheet in the one directory both graphs import was filtered out of both documents |
+| insertion order, not globals-first | the reset could lose a specificity tie to whichever page module happened to load first |
+
+The global layer arrives through the **app's own module graph** — `apps/web/shared/global.scss`
+(`@use '@ultimat3/ui/global.scss'`) plus a one-line `shared/global.ts` that imports it — because
+`render` is tier 4 and `ui` is tier 5, so no framework package may pull it in. `x new` writes both,
+and `x verify`'s `budgets` step fails with `X_STYLES_GLOBAL_MISSING` when a rendered document
+carries CSS and defines no `:root` custom properties.
+
+`shared/global.ts` must be reached by a **dynamic** import (`loadApp`'s glob already is one): Bun
+resolves a file's entire static graph before evaluating the module that installs the `.scss`
+plugin, so a static import would compile the stylesheet with no loader in place.

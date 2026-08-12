@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 import {
+  documentBaseline,
   type HeadRenderers,
   type HeadTag,
   headFromMeta,
@@ -59,13 +60,16 @@ describe('mergeHead', () => {
 
 describe('headFromMeta', () => {
   const meta = { title: 'Home' } as RouteMeta;
+  const BASELINE = new Set(documentBaseline().map((tag) => tag.key));
+  /** Every document carries the baseline; these tests are about what the ROUTE contributes. */
+  const routeTags = (tags: readonly HeadTag[]) => tags.filter((tag) => !BASELINE.has(tag.key));
 
   test('includes the tags from renderers.renderMeta', () => {
     const renderers: HeadRenderers = {
       renderMeta: () => [{ kind: 'title', key: 'title', content: 'Home' }],
     };
     const tags = headFromMeta(meta, renderers);
-    expect(tags).toEqual([{ kind: 'title', key: 'title', content: 'Home' }]);
+    expect(routeTags(tags)).toEqual([{ kind: 'title', key: 'title', content: 'Home' }]);
   });
 
   test('adds one ld+json script tag when renderLd returns a non-null string', () => {
@@ -74,7 +78,7 @@ describe('headFromMeta', () => {
       renderLd: () => '{"@type":"WebSite"}',
     };
     const tags = headFromMeta(meta, renderers);
-    expect(tags).toEqual([
+    expect(routeTags(tags)).toEqual([
       {
         kind: 'script',
         key: 'script:ld+json',
@@ -89,12 +93,12 @@ describe('headFromMeta', () => {
       renderMeta: () => [],
       renderLd: () => null,
     };
-    expect(headFromMeta(meta, renderers)).toEqual([]);
+    expect(routeTags(headFromMeta(meta, renderers))).toEqual([]);
   });
 
   test('adds no ld+json tag when renderLd is not provided', () => {
     const renderers: HeadRenderers = { renderMeta: () => [] };
-    expect(headFromMeta(meta, renderers)).toEqual([]);
+    expect(routeTags(headFromMeta(meta, renderers))).toEqual([]);
   });
 
   test('overrides participate in the same last-writer-wins merge', () => {
@@ -103,7 +107,7 @@ describe('headFromMeta', () => {
     };
     const overrides: HeadTag[] = [{ kind: 'meta', key: 'meta:description', content: 'second' }];
     const tags = headFromMeta(meta, renderers, overrides);
-    expect(tags).toEqual([{ kind: 'meta', key: 'meta:description', content: 'second' }]);
+    expect(routeTags(tags)).toEqual([{ kind: 'meta', key: 'meta:description', content: 'second' }]);
   });
 });
 
@@ -206,5 +210,31 @@ describe('themeScript', () => {
 
   test('a script within the default cap does not throw', () => {
     expect(() => themeScript()).not.toThrow();
+  });
+});
+
+describe('documentBaseline', () => {
+  // Every deployed Ultimate app rendered zoomed-out on a phone because of the missing one.
+  test('every document carries charset, viewport and color-scheme', () => {
+    const keys = documentBaseline().map((tag) => tag.key);
+    expect(keys).toEqual(['meta:charset', 'meta:viewport', 'meta:color-scheme']);
+  });
+
+  test('they arrive through headFromMeta, ahead of the seo tags', () => {
+    const html = renderHead(headFromMeta({ title: 'T' } as never, { renderMeta: () => [] }));
+    expect(html).toContain('<meta charset="utf-8">');
+    expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
+  });
+
+  // Baseline, not a lock: an app that wants `maximum-scale` or a fixed width must be able to say
+  // so, and merge order is what makes "first, but overridable" one rule instead of two.
+  test('a route override still wins', () => {
+    const html = renderHead(
+      headFromMeta({ title: 'T' } as never, { renderMeta: () => [] }, [
+        { kind: 'meta', key: 'meta:viewport', attrs: { name: 'viewport', content: 'width=420' } },
+      ]),
+    );
+    expect(html).toContain('content="width=420"');
+    expect(html).not.toContain('width=device-width');
   });
 });

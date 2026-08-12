@@ -33,6 +33,7 @@ export type {
   AppConfig,
   AppConfigInput,
   AppConfigOverlay,
+  AuthConfig,
   CacheConfig,
   CacheTier,
   DatabaseConfig,

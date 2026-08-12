@@ -44,4 +44,5 @@ export {
   type DevDashboard,
   type DevDashboardOptions,
   devDashboard,
+  devShellStyle,
 } from './server';

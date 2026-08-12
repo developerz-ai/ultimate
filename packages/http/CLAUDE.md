@@ -12,6 +12,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Rules
 
 - Route `meta.auth` is required. Never default a route to public.
+- **A browser that fails `auth: 'required'` is redirected; an agent gets the problem document.**
+  One condition, two audiences, decided once in `auth-redirect.ts` and applied in the `error-map`
+  stage before the overlay. `config.signInPath` is `null` until an app names its page, because a
+  framework that guessed `/signin` would send an app spelling it `/login` to a 404 — strictly
+  worse than the JSON. The round trip is `?next=`, and `nextAfterSignIn` is the ONE reader of it:
+  anything that is not a same-origin path falls back, or the page that hands out a session
+  becomes an open redirect.
 - **`meta.enforcedBy` says who evaluates `meta.policy`, and the `authz` stage obeys it.**
   `'pipeline'` (the default, and what a page wants) means the stage decides through
   `hooks.authorize`; `'handler'` means the handler is the one evaluation and the stage returns
@@ -62,6 +69,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `hooks.ts` | the two seams: `authenticate`, `authorize` + the app's `configureAuthenticator()` |
 | `context.ts` | `RequestContext` + the single `Ctx` adapter (`asCtx`) + the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
+| `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 
 ## Commands
 

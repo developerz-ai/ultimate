@@ -2,8 +2,11 @@
 // agent debugs from, and it must show the same facts the terminal and `--json` do. An
 // escaping slip or a field silently dropped from the render turns that screen into a lie.
 import { describe, expect, test } from 'bun:test';
+import { defineHttpConfig } from './config';
 import { bodyInvalid, routeNotFound } from './errors';
 import { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
+import { cspHashSource } from './security-headers';
+import { createServer } from './server';
 
 describe('wantsOverlay', () => {
   test('true when the client accepts html', () => {
@@ -103,5 +106,48 @@ describe('overlayResponse', () => {
 
     const body = await response.text();
     expect(body).toBe(renderOverlay(error, meta));
+  });
+});
+
+/**
+ * The regression this file exists to pin, stated once: whatever `<style>` a response carries must
+ * be admitted by the CSP that same response sends. The framework shipped an overlay — and a page —
+ * whose 64kb of inline CSS the browser refused to parse, and no test asked this question.
+ */
+const uncoveredStyles = (body: string, csp: string): readonly string[] =>
+  [...body.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+    .map((match) => match[1] ?? '')
+    .filter((css) => !csp.includes(cspHashSource(css)));
+
+describe('the overlay under the policy the same response sends', () => {
+  const boom = (): never => {
+    throw routeNotFound('GET', '/missing');
+  };
+
+  const serve = (): ReturnType<typeof createServer> =>
+    createServer({
+      routes: [
+        { method: 'GET', path: '/boom', meta: { name: 'boom', auth: 'public' }, handler: boom },
+      ],
+      role: 'web',
+      // `dev` turns the overlay on; `reportOnly: false` is what an app that wants CSP violations
+      // to actually block in development sets, and it is the only way this assertion can fail.
+      config: defineHttpConfig({ dev: true, security: { csp: { reportOnly: false } } }),
+    });
+
+  test('every inline style in the rendered overlay is covered by the response CSP', async () => {
+    const response = await serve().fetch(
+      new Request('http://dev.test/boom', { headers: { accept: 'text/html' } }),
+    );
+    const body = await response.text();
+    const csp = response.headers.get('content-security-policy') ?? '';
+
+    expect(body).toContain('<style>');
+    expect(csp).toContain("style-src 'self' 'sha256-");
+    expect(uncoveredStyles(body, csp)).toEqual([]);
+  });
+
+  test('a body the policy does not name is what the assertion reports', () => {
+    expect(uncoveredStyles('<style>a{}</style>', "style-src 'self'")).toEqual(['a{}']);
   });
 });

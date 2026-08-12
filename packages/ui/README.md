@@ -145,7 +145,7 @@ override, no forked package, no second entry point — one call, validated, rend
 as the custom properties that beat `theme.scss` at every specificity level it emits.
 
 ```ts
-import { brandStyleTag, defineTheme } from '@ultimat3/ui';
+import { brandStyleCspSource, brandStyleTag, defineTheme } from '@ultimat3/ui';
 
 export const brand = defineTheme({
   colors: {
@@ -158,6 +158,11 @@ export const brand = defineTheme({
 
 // in <head>, AFTER global.scss
 `${brandStyleTag(brand)}`;
+
+// …and the one source that admits it under the framework's locked CSP. The baseline is
+// `style-src 'self' 'sha256-…'` with no 'unsafe-inline', so a tag whose hash the header does
+// not carry is a stylesheet the browser parses zero rules out of.
+`Content-Security-Policy: style-src 'self' ${brandStyleCspSource(brand)}`;
 ```
 
 | Slot | Accepts | Refused with |
@@ -175,7 +180,7 @@ ever read the roles, never a colour.
 
 ```tsx
 import { Button, Field, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
-import '@ultimat3/ui/global.scss';
+import '../../shared/global'; // `shared/global.scss` is the app's one `@use '@ultimat3/ui/global.scss'`
 
 setSolidRuntime(await import('solid-js'));   // once, in the app entry
 

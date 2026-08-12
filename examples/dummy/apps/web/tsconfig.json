@@ -3,5 +3,12 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["site/**/*", "app/**/*", "api/**/*", "shared/**/*", "e2e/**/*"]
+  "include": [
+    "site/**/*",
+    "app/**/*",
+    "api/**/*",
+    "shared/**/*",
+    "e2e/**/*",
+    "../../types/scss.d.ts"
+  ]
 }

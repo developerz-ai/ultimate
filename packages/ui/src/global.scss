@@ -1,5 +1,7 @@
 // One import for an app document shell: every custom property, then the reset.
 // Component modules add nothing global — they only ever emit their own classes.
+// Reach it from ONE file in the app (`apps/web/shared/global.scss`), imported for its side effect
+// by `shared/global.ts` — every module is its own Sass compilation, so a second @use duplicates it.
 
 @use 'tokens/theme';
 @use 'tokens/reset';

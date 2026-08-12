@@ -24,6 +24,7 @@
         "@ultimat3/core": "^1.2.0",
         "@ultimat3/db": "^1.2.0",
         "@ultimat3/entity": "^1.2.0",
+        "@ultimat3/http": "^1.2.0",
         "@ultimat3/i18n": "^1.2.0",
         "@ultimat3/jobs": "^1.2.0",
         "@ultimat3/mcp": "^1.2.0",
@@ -424,6 +425,7 @@
       "dependencies": {
         "@ultimat3/cache": "1.2.0",
         "@ultimat3/core": "1.2.0",
+        "@ultimat3/i18n": "1.2.0",
         "@ultimat3/seo": "1.2.0",
         "sass": "1.102.0",
       },
