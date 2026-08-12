@@ -37,6 +37,16 @@ a reservation runs direct **only while its turn is held**, re-queueing through `
 connection next. The first two are pinned by live tests in `pglite.test.ts` and a fake driver
 cannot catch either; the third is a fake-driver test, because it is about ordering, not SQL.
 
+The third rule is **both** drivers', not PGlite's alone: `client.ts`'s pinned handle also runs
+direct only while it is held, and once `release()` has been called a late statement goes back
+through the pool for a connection of its own. On a server the leak is quieter than on PGlite and
+worse — the pool has already handed that physical connection to another unit of work, so the stray
+row lands inside *their* transaction and is committed or rolled back with it. `release()` is
+idempotent on both, because two owners reach it on one exit path (`withTransaction`'s `finally`
+and disposal), and a second release frees a pin that is no longer ours. `DbConnection` is
+`Disposable`: `using connection = await client.reserve()` is the shape, and `[Symbol.dispose]` is
+`release()` itself, never a second code path.
+
 `execute()` trusts `affectedRows` only when it is `> 0`: PGlite counts MODIFIED rows, so a SELECT
 that returned rows is tagged `0`, and `??` would report 0 for every read while
 `PostgresClient.execute` reported the row count. A write that modified nothing returned no rows

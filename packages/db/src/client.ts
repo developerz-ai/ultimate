@@ -15,8 +15,13 @@ export interface DbClient {
   execute(fragment: SqlFragment): Promise<number>;
 }
 
-/** A connection pinned out of the pool. `withTransaction` needs one so BEGIN/COMMIT agree. */
-export interface DbConnection extends DbClient {
+/**
+ * A connection pinned out of the pool. `withTransaction` needs one so BEGIN/COMMIT agree.
+ * `Disposable`, so `using connection = await client.reserve()` gives the pin back on every exit
+ * path — the hand-rolled `finally` is what forgets it on the one path nobody wrote a test for.
+ */
+export interface DbConnection extends DbClient, Disposable {
+  /** Idempotent, and `[Symbol.dispose]` is the same call: releasing twice releases once. */
   release(): void;
 }
 
@@ -172,14 +177,28 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
         // other than X_DB_UNAVAILABLE.
         throw dbUnavailable('could not reserve a connection from the pool', error);
       }
+      let held = true;
+      // Direct only while the pin is held. `release()` hands this physical connection back, and
+      // the pool may already have given it to another unit of work mid-transaction — a statement
+      // issued on the stale handle would land inside theirs, committed or rolled back with it and
+      // no error anywhere to explain the row. So a late statement takes its own connection out of
+      // the pool, exactly like any other caller. Same rule as `pglite.ts`, one driver down.
+      const on = (fragment: SqlFragment): Promise<unknown> =>
+        held ? runOn(reserved, fragment) : run(fragment);
+      // Idempotent because two owners already exist on one exit path: `withTransaction` releases
+      // in a `finally` and `[Symbol.dispose]` fires on the same scope. A second `release()` on a
+      // handle already back in the pool frees whoever holds that connection now.
+      const release = (): void => {
+        if (!held) return;
+        held = false;
+        reserved.release();
+      };
       return {
-        query: async <T>(fragment: SqlFragment) => rowsOf<T>(await runOn(reserved, fragment)),
-        one: async <T>(fragment: SqlFragment) =>
-          rowsOf<T>(await runOn(reserved, fragment))[0] ?? null,
-        execute: async (fragment: SqlFragment) => affectedBy(await runOn(reserved, fragment)),
-        release: () => {
-          reserved.release();
-        },
+        query: async <T>(fragment: SqlFragment) => rowsOf<T>(await on(fragment)),
+        one: async <T>(fragment: SqlFragment) => rowsOf<T>(await on(fragment))[0] ?? null,
+        execute: async (fragment: SqlFragment) => affectedBy(await on(fragment)),
+        release,
+        [Symbol.dispose]: release,
       };
     },
     async ping(): Promise<void> {

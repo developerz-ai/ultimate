@@ -150,13 +150,15 @@ describe('readOnlyQuery', () => {
       execute: (fragment) => recorder.execute(fragment),
       reserve: async () => {
         reserveCalls += 1;
+        const release = (): void => {
+          releaseCalls += 1;
+        };
         return {
           query: (fragment) => recorder.query(fragment),
           one: (fragment) => recorder.one(fragment),
           execute: (fragment) => recorder.execute(fragment),
-          release: () => {
-            releaseCalls += 1;
-          },
+          release,
+          [Symbol.dispose]: release,
         };
       },
     };
