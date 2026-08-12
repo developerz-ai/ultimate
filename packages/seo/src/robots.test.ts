@@ -27,10 +27,24 @@ describe('buildRobots', () => {
   });
 
   test('the unsafe default is impossible: omitting environment never allows all', () => {
-    const txt = buildRobots({ ...BASE, environment: undefined });
-    expect(txt.includes('Disallow: /') || txt.includes('Sitemap:')).toBe(true);
-    // With no production marker in this test process, the safe branch must win.
-    if (resolveEnvironment() !== 'production') expect(txt).toContain('Disallow: /');
+    // buildRobots resolves the environment from process.env when omitted, so pin
+    // both vars for the duration of this test instead of guessing at ambient state —
+    // an assertion gated on the ambient env can silently stop asserting anything.
+    const originalUltimateEnv = process.env.ULTIMATE_ENV;
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.ULTIMATE_ENV = 'preview';
+    process.env.NODE_ENV = 'preview';
+    try {
+      expect(resolveEnvironment()).toBe('preview');
+      const txt = buildRobots({ ...BASE, environment: undefined });
+      expect(txt.includes('Disallow: /') || txt.includes('Sitemap:')).toBe(true);
+      expect(txt).toContain('Disallow: /');
+    } finally {
+      if (originalUltimateEnv === undefined) delete process.env.ULTIMATE_ENV;
+      else process.env.ULTIMATE_ENV = originalUltimateEnv;
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+    }
   });
 
   test('production allows crawling and points at the sitemap', () => {
