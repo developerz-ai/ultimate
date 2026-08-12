@@ -2,9 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fixProblem } from './error-contract';
 import type { ManifestFacts } from './workspace-checks';
 import {
+  ARTIFACT_ALLOWLIST,
   badVersionFinding,
+  buildArtifactsFinding,
   checkFileSizes,
   checkLockstep,
   checkPackageShape,
@@ -104,14 +107,17 @@ describe('unit · the file-size ceiling', () => {
   });
 
   // Emitted declarations are not authored source — a stale `.d.ts` over the ceiling is not a
-  // reason to split anything, so the rule cannot even reach it.
+  // reason to split anything, so the rule cannot even reach it. The `.ts` beside it is what keeps
+  // that provable: a walk that stopped reporting everything would pass on the `.d.ts` alone.
   test('a generated declaration over the ceiling is not walked at all', async () => {
     const genDir = await mkdtemp(join(tmpdir(), 'ultimate-workspace-checks-gen-'));
     try {
       await Bun.write(join(genDir, 'packages/stale/src/huge.d.ts'), lines(LINE_CEILING + 1));
+      await Bun.write(join(genDir, 'packages/stale/src/huge.ts'), lines(LINE_CEILING + 1));
 
       const findings = await checkFileSizes(genDir);
 
+      expect(findings.map((finding) => finding.at)).toContain('packages/stale/src/huge.ts');
       expect(findings.map((finding) => finding.at)).not.toContain('packages/stale/src/huge.d.ts');
     } finally {
       await rm(genDir, { recursive: true, force: true });
@@ -161,6 +167,17 @@ describe('unit · the package shape', () => {
     await rm(bad, { recursive: true, force: true });
   });
 
+  // Axiom 4: the fix is the remediation, not a description of it. This one is the sweep itself, so
+  // it has to name the directory it clears, the three suffixes, and every file it must not take.
+  test('the artifact fix is the sweep, runnable as written', () => {
+    const { fix } = buildArtifactsFinding('p', 3);
+    expect(fix.startsWith('find packages/p/src ')).toBe(true);
+    expect(fix.endsWith(' -delete')).toBe(true);
+    for (const suffix of ['*.d.ts', '*.js', '*.map']) expect(fix).toContain(`-name '${suffix}'`);
+    for (const path of ARTIFACT_ALLOWLIST) expect(fix).toContain(`! -path '${path}'`);
+    expect(fixProblem(fix)).toBeUndefined();
+  });
+
   test('scss.d.ts in ui/src is allowlisted and not reported', async () => {
     const good = await mkdtemp(join(tmpdir(), 'ultimate-ui-scss-'));
     for (const file of PACKAGE_FILES) await Bun.write(join(good, 'packages/ui', file), '{}\n');
@@ -172,14 +189,18 @@ describe('unit · the package shape', () => {
     await rm(good, { recursive: true, force: true });
   });
 
-  test('this repo reports build artifacts in src/ that accumulate over builds', async () => {
+  // Emit is not committed, so how much of it is on disk is a fact about this machine: a clean
+  // checkout carries none and a checkout somebody has built in carries hundreds. Asserting a count
+  // either way would be a test of the working tree — the fixtures above are what prove detection.
+  // What is invariant here is the shape: every package carries its contract files, and any artifact
+  // finding this tree does produce is one an author can act on.
+  test('this repo satisfies the shape it enforces, whatever emit is lying around', async () => {
     const findings = await checkPackageShape(REPO_ROOT);
-    // Build artifacts accumulate from prior builds (*.d.ts, *.js, *.js.map) but are not checked in.
-    // This gate reports them but does not delete them — a separate cleanup task.
-    const artifactFindings = findings.filter((f) => f.at?.endsWith('/src/'));
-    expect(artifactFindings.length).toBeGreaterThan(0);
-    expect(artifactFindings.every((f) => f.code === 'X_PACKAGE_SHAPE')).toBe(true);
-    // Contract files and version checks should still pass.
+    for (const finding of findings.filter((f) => f.at?.endsWith('/src/'))) {
+      expect(finding.code).toBe('X_PACKAGE_SHAPE');
+      expect(fixProblem(finding.fix)).toBeUndefined();
+      expect(finding.fix).toContain(finding.at?.replace(/\/$/, '') ?? '');
+    }
     const contractFindings = findings.filter((f) => f.cause?.includes('has no'));
     expect(contractFindings).toEqual([]);
     expect(await workspacePackages(REPO_ROOT)).toContain('cli');
@@ -377,7 +398,9 @@ describe('checkPublishShape', () => {
 describe('integration · every published package ships what it promises', () => {
   test('no framework package promises a file it does not carry, or publishes its tests', async () => {
     const findings = await checkPackageShape(REPO_ROOT);
-    // Filter out build artifact findings — they are gated separately and expected to exist.
+    // Emit under `src/` is its own rule and its own fix, and whether any is on disk is a fact about
+    // this machine — reading it here would make the publish contract answer a question it is not
+    // asking.
     const publishFindings = findings.filter(
       (finding) => finding.code === 'X_PACKAGE_SHAPE' && !finding.at?.endsWith('/src/'),
     );

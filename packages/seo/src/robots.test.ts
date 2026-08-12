@@ -37,7 +37,6 @@ describe('buildRobots', () => {
     try {
       expect(resolveEnvironment()).toBe('preview');
       const txt = buildRobots({ ...BASE, environment: undefined });
-      expect(txt.includes('Disallow: /') || txt.includes('Sitemap:')).toBe(true);
       expect(txt).toContain('Disallow: /');
     } finally {
       if (originalUltimateEnv === undefined) delete process.env.ULTIMATE_ENV;

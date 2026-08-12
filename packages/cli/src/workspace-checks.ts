@@ -166,10 +166,23 @@ export const publishesTestsFinding = (dir: string): Finding => ({
   at: `packages/${dir}/package.json`,
 });
 
+/**
+ * Emit that is authored source anyway, so the sweep may not take it. One list, read by the check
+ * and written into the `fix:` that performs it — a second spelling is a command that deletes a file
+ * the gate then reports as missing.
+ */
+export const ARTIFACT_ALLOWLIST: readonly string[] = ['packages/ui/src/scss.d.ts'];
+
+/** `-name` matches the same suffixes the check globs; `! -path` spares each allowlisted file. */
+const SWEEP_PREDICATE = [
+  `\\( -name '*.d.ts' -o -name '*.js' -o -name '*.map' \\)`,
+  ...ARTIFACT_ALLOWLIST.map((path) => `! -path '${path}'`),
+].join(' ');
+
 export const buildArtifactsFinding = (dir: string, count: number): Finding => ({
   code: 'X_PACKAGE_SHAPE',
   cause: `packages/${dir}/src/ contains ${count} build artifacts (.d.ts, .js, .map files)`,
-  fix: `remove build artifacts from packages/${dir}/src/; source lives there only, never built output`,
+  fix: `find packages/${dir}/src ${SWEEP_PREDICATE} -delete`,
   docs: docs('X_PACKAGE_SHAPE'),
   at: `packages/${dir}/src/`,
 });
@@ -268,23 +281,19 @@ export async function checkPackageShape(root: string): Promise<readonly Finding[
   const scaffolder = existsSync(join(root, 'scripts', 'new-package.ts'));
   const findings: Finding[] = [];
   const facts: ManifestFacts[] = [];
-  // Allowlist for intentional build artifacts in src/
-  const artifactAllowlist = new Set(['packages/ui/src/scss.d.ts']);
+  const allowlisted = new Set(ARTIFACT_ALLOWLIST);
   for (const dir of await workspacePackages(root)) {
     for (const file of PACKAGE_FILES) {
       if (existsSync(join(root, 'packages', dir, file))) continue;
       findings.push(missingFileFinding(dir, file, scaffolder));
     }
-    // Check for build artifacts in src/
+    // `src/` is authored source only; anything a build emitted there ships in the tarball too.
     const artifacts: string[] = [];
     for await (const path of new Bun.Glob('src/**/*.{d.ts,js,map}').scan({
       cwd: join(root, 'packages', dir),
       absolute: false,
     })) {
-      const fullPath = join('packages', dir, path);
-      if (!artifactAllowlist.has(fullPath)) {
-        artifacts.push(path);
-      }
+      if (!allowlisted.has(join('packages', dir, path))) artifacts.push(path);
     }
     if (artifacts.length > 0) {
       findings.push(buildArtifactsFinding(dir, artifacts.length));

@@ -82,11 +82,16 @@ export const floorRequires = (floor: VerifyFloor | undefined, step: string): boo
  * A step the floor requires that found nothing to run. Named for what happened rather than for the
  * file — the suite is what vanished — and the fix carries both edits that resolve it, because
  * either can be right: the suite comes back, or the floor drops a line in a commit that says why.
+ *
+ * Command first, alternatives behind a `#`, so the line runs verbatim and the shell drops the rest
+ * (the shape `mcp-errors.ts` gives this same code). Neither edit is scripted here on purpose: a
+ * command that rewrites the floor is the gate editing its own ratchet, which is the false green the
+ * floor exists to close — so the run that proves the step is back is what this offers to repeat.
  */
 export const vanishedSuiteFinding = (step: string): Finding => ({
   code: 'X_VERIFY_SUITE_VANISHED',
   cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and this run found nothing for it to check`,
-  fix: `restore the ${step} suite, or delete "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why — then: x verify --json`,
+  fix: `x verify --json   # restore the ${step} suite, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
   docs: docsFor('X_VERIFY_SUITE_VANISHED'),
   at: VERIFY_FLOOR_FILE,
 });
@@ -95,12 +100,15 @@ export const vanishedSuiteFinding = (step: string): Finding => ({
  * The floor file's own integrity, as findings. `X_CONFIG_INVALID` rather than a second code of this
  * package's own: a committed file the framework reads and cannot use is exactly what core already
  * named, and a floor that enforces nothing is not a vanished suite.
+ *
+ * The command runs first because it is what the edit needs: the step table it prints is the closed
+ * set of names the floor may hold, so an author fixing a typo reads the answer instead of guessing.
  */
 export const floorProblemFindings = (floor: VerifyFloor | undefined): readonly Finding[] =>
   (floor?.problems ?? []).map((problem) => ({
     code: 'X_CONFIG_INVALID',
     cause: `${VERIFY_FLOOR_FILE} is not a suite floor: ${problem}`,
-    fix: `write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps the gate runs — x verify --json lists every one`,
+    fix: `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`,
     docs: docsFor('X_CONFIG_INVALID'),
     at: VERIFY_FLOOR_FILE,
   }));

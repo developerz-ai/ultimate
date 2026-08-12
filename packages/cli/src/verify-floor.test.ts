@@ -1,10 +1,14 @@
+// The ratchet's own tests. A floor that reads wrong is a gate that is green over a suite nobody
+// runs — the exact false green it exists to close — so every way the file can be malformed is
+// pinned here, and so is the rule that both findings it emits are runnable as written.
+
 import { describe, expect, test } from 'bun:test';
 // Bun ships no `Bun.*` equivalent for either: `mkdtemp`/`rm` own a throwaway root's lifetime, and
 // `join` builds the host-separator path the committed floor is written to.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { COMMAND_TOKENS, fixProblem } from './error-contract';
+import { fixProblem } from './error-contract';
 import {
   floorProblemFindings,
   floorRequires,
@@ -122,11 +126,24 @@ describe('unit · the suite floor', () => {
       expect(finding.docs).toBe('https://ultimate.dev/errors/X_VERIFY_SUITE_VANISHED');
     });
 
-    test('no fix is advice: each passes the contract and carries a command token', () => {
+    // "Runnable as written" is decidable rather than a matter of taste: everything before the `#`
+    // is what a shell would execute, so it has to be a command and not a sentence — and everything
+    // after it is a comment the shell drops, which is what lets one line carry both remedies.
+    test('each fix runs verbatim: a command first, every alternative behind a #', () => {
       for (const finding of findings) {
         expect(fixProblem(finding.fix)).toBeUndefined();
-        expect(COMMAND_TOKENS.some((token) => token.test(finding.fix))).toBe(true);
+        const command = finding.fix.split('#')[0]?.trim() ?? '';
+        expect(command).toMatch(/^x [a-z][a-z-]*(?: --?[a-z][a-z-]*)*$/);
       }
+    });
+
+    // A fix that ran the gate and said nothing else would leave an author with the failure and no
+    // edit, so both remedies have to survive the split the shell makes.
+    test('the comment half still carries the edits, so nothing is lost to the #', () => {
+      const [vanished, malformed] = findings;
+      expect(vanished?.fix.split('#')[1]).toContain(VERIFY_FLOOR_FILE);
+      expect(vanished?.fix.split('#')[1]).toContain('job');
+      expect(malformed?.fix.split('#')[1]).toContain('"steps"');
     });
   });
 });
