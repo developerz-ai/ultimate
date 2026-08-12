@@ -244,18 +244,47 @@ export async function runVerify(
     });
   }
   const failedSteps = results.filter((step) => !step.ok).map((step) => step.name);
+  const skippedSteps = results.filter((step) => step.skipped === true).map((step) => step.name);
   const totalMs = results.reduce((sum, step) => sum + step.durationMs, 0);
   return {
     ok: failedSteps.length === 0,
     command: 'verify',
-    summary:
-      failedSteps.length === 0
-        ? msg('cli.verify.pass', { count: results.length, ms: totalMs })
-        : msg('cli.verify.fail', { failed: failedSteps.length, count: results.length }),
+    summary: verifySummary({ results, failed: failedSteps, skipped: skippedSteps, totalMs }),
     steps: results,
-    data: { failed: failedSteps, durationMs: totalMs },
+    // `skipped` is a list beside `failed` and not a count, because the two answer the same kind of
+    // question — *which* steps, not how many — and a caller ratcheting on coverage needs the names.
+    data: { failed: failedSteps, skipped: skippedSteps, durationMs: totalMs },
     exitCode: failedSteps.length === 0 ? 0 : 1,
   };
+}
+
+/**
+ * What the counts are allowed to claim. A step that does not apply is recorded green so the run
+ * continues, and the summary counted it among the "all 17 steps passed" — so a repo whose `job`
+ * and `eval` suites do not exist reported the same line as a repo where both ran. `--json` carried
+ * the per-step flag all along; the one line every reader actually sees did not, which is how a
+ * vacuous gate stayed invisible. It names the skipped steps, not just how many: "17/17" is worth
+ * something only when the gap is visible in the same glance.
+ */
+function verifySummary(input: {
+  readonly results: readonly StepResult[];
+  readonly failed: readonly string[];
+  readonly skipped: readonly string[];
+  readonly totalMs: number;
+}): string {
+  const params = {
+    count: input.results.length,
+    passed: input.results.filter((step) => step.ok && step.skipped !== true).length,
+    failed: input.failed.length,
+    skipped: input.skipped.length,
+    names: input.skipped.join(', '),
+    ms: input.totalMs,
+  };
+  const clean = input.skipped.length === 0;
+  if (input.failed.length === 0) {
+    return msg(clean ? 'cli.verify.pass' : 'cli.verify.passSkipped', params);
+  }
+  return msg(clean ? 'cli.verify.fail' : 'cli.verify.failSkipped', params);
 }
 
 function findingOf(error: unknown, step: string): Finding {

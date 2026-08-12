@@ -97,6 +97,13 @@ const CATALOG = {
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
+  // A skipped step is not a passed one, so the two counts never share a sentence — and the skipped
+  // ones are named, because "which suite has nothing to run here?" is the question a green gate
+  // over a missing suite has to answer on its own line. Whole sentences per case rather than a
+  // clause the caller glues on, the same shape `cli.jobs.drained`/`drainedPartial` already uses.
+  'cli.verify.passSkipped':
+    '{passed} of {count} steps passed in {ms}ms — {skipped} skipped: {names}',
+  'cli.verify.failSkipped': '{failed} of {count} steps failed — {skipped} skipped: {names}',
   'cli.verify.serial': 'serial',
   'cli.verify.workers': '{workers} workers',
   'cli.env.checked': '{count} declared variable(s), all present and valid',

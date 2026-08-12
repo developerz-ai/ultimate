@@ -94,6 +94,54 @@ describe('unit · x verify', () => {
     expect(result.steps?.find((step) => step.name === 'e2e')?.skipped).toBe(true);
   });
 
+  // The summary is the line CI logs and the one a reader glances at, so it may not count a step
+  // that did not apply as one that passed. At the framework root `job` and `eval` have no suite of
+  // their own: "all 17 steps passed" over that is exactly the vacuous green the gate exists to
+  // prevent, and it is only visible if the summary itself says which steps had nothing to run.
+  describe('skips are counted apart from passes, and named', () => {
+    const green: readonly VerifyStep[] = [
+      { name: 'typecheck', summary: 'tsc', run: async () => ({ ok: true, findings: [] }) },
+      { name: 'lint', summary: 'biome', run: async () => ({ ok: true, findings: [] }) },
+    ];
+    const inapplicable = (name: 'job' | 'eval'): VerifyStep => ({
+      name,
+      summary: 'no suite here',
+      applies: async () => false,
+      run: async () => ({ ok: false, findings: [] }),
+    });
+
+    test('nothing skipped: the line still claims every step, and says nothing about skips', async () => {
+      const result = await runVerify(green, ctx);
+      expect(result.summary).toContain('all 2 steps passed');
+      expect(result.summary).not.toContain('skipped');
+      expect(result.data).toMatchObject({ skipped: [] });
+    });
+
+    test('a green run with a skip reports the smaller pass count and names the step', async () => {
+      const result = await runVerify([...green, inapplicable('job')], ctx);
+      expect(result.ok).toBe(true);
+      expect(result.summary).toContain('2 of 3 steps passed');
+      expect(result.summary).toContain('1 skipped: job');
+      expect(result.data).toMatchObject({ skipped: ['job'] });
+    });
+
+    test('every skipped step is named, in step order', async () => {
+      const result = await runVerify([...green, inapplicable('job'), inapplicable('eval')], ctx);
+      expect(result.summary).toContain('2 of 4 steps passed');
+      expect(result.summary).toContain('2 skipped: job, eval');
+      expect(result.data).toMatchObject({ skipped: ['job', 'eval'] });
+    });
+
+    // A red gate hides skips just as well as a green one: the reader fixes the failure, sees
+    // green, and never learns two suites were never there.
+    test('a red run carries the skips too', async () => {
+      const result = await runVerify(stubs, ctx);
+      expect(result.summary).toContain('1 of 3 steps failed');
+      expect(result.summary).toContain('1 skipped: e2e');
+      expect(result.data).toMatchObject({ failed: ['drift'], skipped: ['e2e'] });
+    });
+  });
+
   test('it never bails early: later steps still run after a failure', async () => {
     const seen: string[] = [];
     const traced = stubs.map<VerifyStep>((step) => ({

@@ -224,7 +224,16 @@ x verify [--workers N] [--json]
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
 with the framework repo's own `bun run verify` — there is no `--only` and no `--skip`, because
 "green" has to mean the same thing for everyone. A step with nothing to check in this project
-reports as skipped (`-`), never as passed.
+reports as skipped (`-`), never as passed — and the summary counts skips apart from passes and
+names them, so a gate that is green because a suite does not exist has to say so on the one line
+every reader sees:
+
+```text
+✓ 14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap
+```
+
+`--json` carries the same fact twice: `steps[].skipped` per step, and `data.skipped` as the list of
+names beside `data.failed`. `all {n} steps passed` is printed only when nothing was skipped.
 
 `--workers` widens the test steps only. `unit`, `contract`, `job` and `eval` shard across worker
 processes, each with its own database; `live` and `e2e` are serial by declaration and say so in the
@@ -270,11 +279,13 @@ compared — and rewrites the committed baselines on its way through.
 
 ```bash
 $ x verify --json
-{"ok":false,"command":"verify","summary":"1 of 17 steps failed","steps":[
+{"ok":false,"command":"verify",
+ "summary":"1 of 17 steps failed — 3 skipped: e2e, contract-diff, roadmap","steps":[
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
     {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
      "fix":"x fix boundary site/pricing/page.tsx",
-     "docs":"https://ultimate.dev/errors/X_BUDGET_EXCEEDED","at":"site/pricing"}]}]}
+     "docs":"https://ultimate.dev/errors/X_BUDGET_EXCEEDED","at":"site/pricing"}]}],
+ "data":{"failed":["budgets"],"skipped":["e2e","contract-diff","roadmap"],"durationMs":11153}}
 ```
 
 Errors: `X_VERIFY_FAILED` (with the failing step names), plus each step's own code.
