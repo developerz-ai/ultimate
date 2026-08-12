@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { staticDevSources } from './data';
-import { assertDevOnly, DEV_PANELS, devDashboard } from './server';
+import { assertDevOnly, DEV_PANELS, devDashboard, devShellStyle } from './server';
 
 const sources = staticDevSources({
   routes: async () => [
@@ -110,5 +110,18 @@ describe('every panel is a rendering of its --json', () => {
       expect(payload.error.code).toBe('X_NOT_IMPLEMENTED');
       expect(payload.error.fix).toContain('defaultDevSources');
     }
+  });
+});
+
+describe('devShellStyle', () => {
+  test('is the exact body the served document inlines, so a host can hash it', async () => {
+    // The host that mounts /_x configures the CSP those responses are sent under. If it hashed
+    // anything other than this text the shell would be refused and every panel would render as
+    // unstyled `<pre>` — the same failure the app's own pages shipped with.
+    const style = await devShellStyle();
+    const html = await devDashboard({ env: 'development', sources, panels: DEV_PANELS }).handle(
+      new Request('http://x/_x/routes'),
+    );
+    expect(await html?.text()).toContain(`<style>${style}</style>`);
   });
 });

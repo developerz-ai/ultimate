@@ -23,6 +23,17 @@ export function isCssModule(file: string): boolean {
 }
 
 /**
+ * The complement, named rather than spelled `!isCssModule(…)` at the call site, because the
+ * registry ORDERS on it: a plain stylesheet is the global layer — the `:root` custom properties
+ * every module rule reads through `var(--…)`, and the element reset — and it has to reach the
+ * document before the modules do. A cascade rule that only exists as a negation at one call site
+ * is a cascade rule the next reader inverts by accident.
+ */
+export function isGlobalStylesheet(file: string): boolean {
+  return !isCssModule(file);
+}
+
+/**
  * Sass resolves relative `@use` itself; a bare specifier is Bun's job, because `@ultimat3/ui/tokens`
  * is an `exports` entry and only the module resolver knows where that lands.
  */

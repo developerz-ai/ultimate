@@ -1,6 +1,7 @@
 // The public surface of @ultimat3/http. Explicit, never `export *`: what is not
 // listed here is an implementation detail and may change without a major bump.
 
+export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, stripBasePath } from './config';
 export type { ActorView, RequestContext, RequestContextInit } from './context';
@@ -61,6 +62,7 @@ export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { OverlayMeta } from './overlay';
 export { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
+export { OVERLAY_STYLE } from './overlay-style';
 export type {
   HandleInit,
   Pipeline,
@@ -122,7 +124,7 @@ export {
   normalizePath,
 } from './router';
 export type { SecurityConfig } from './security-headers';
-export { buildCsp, DEFAULT_SECURITY, securityHeaders } from './security-headers';
+export { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';
 export type { LifecycleState, ServerHandle, ServerOptions } from './server';
 export { createServer } from './server';
 export type { InferOutput, Schema, ValidationOutcome } from './validate';

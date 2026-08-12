@@ -1,7 +1,11 @@
 // The app's one styling entry point: `@use '../../shared/tokens' as t;` and nothing else.
 // It forwards @ultimat3/ui's token layer verbatim and adds the computed layer the framework
 // deliberately leaves to the app — fluid sizing, the two breakpoint intents `respond-to` cannot
-// express, and the motion guard. Emits no CSS; global custom properties come from ui's theme.scss.
+// express, and the motion guard.
+//
+// Emits no CSS, and must not: every module is its own Sass compilation, so a `:root` block in here
+// would be inlined once per stylesheet that uses it. The custom properties these functions REFER
+// to are defined exactly once, by `shared/global.scss`.
 
 @use 'sass:map';
 @use 'sass:math';

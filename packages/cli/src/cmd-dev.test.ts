@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
+import { cspHashSource } from '@ultimat3/http';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { clearPermissions, clearRoles } from '@ultimat3/policy';
 import { resetRegistry as resetQueries } from '@ultimat3/query';
@@ -60,7 +61,14 @@ export const echoPost = action({
 });
 `,
 
+  // A stylesheet the page imports, because that import is what registers it — and the document's
+  // inline `<style>` is what the CSP has to name. Without one this file served no styled page and
+  // could not have caught the policy that blanked every deployed app.
+  'apps/web/site/pricing/page.module.scss': `.price { color: #123456; }
+`,
+
   'apps/web/site/pricing/page.tsx': `import { defineRoute } from '@ultimat3/render';
+import './page.module.scss';
 
 export const config = defineRoute({
   render: 'static',
@@ -344,5 +352,32 @@ describe('unit · x dev boots the app', () => {
   test('--role is a declared flag with the dev roles in its summary', () => {
     const role = devCommand.spec.flags?.find((flag) => flag.name === 'role');
     expect(role?.summary).toContain('web,sync,worker,scheduler');
+  });
+});
+
+/**
+ * The policy `x dev` sends, against the documents `x dev` serves. Report-only here — which is
+ * precisely why the production breakage went unseen: in dev the browser reports the violation and
+ * paints the page anyway, and only an enforced policy blanks it. The sources are the same either
+ * way, so this is the wiring's end-to-end pin: the app's surfaces AND the `/_x` shell.
+ */
+describe('unit · x dev sends a policy that admits its own inline styles', () => {
+  const uncovered = (body: string, csp: string): readonly string[] =>
+    [...body.matchAll(/<style>([\s\S]*?)<\/style>/g)]
+      .map((match) => match[1] ?? '')
+      .filter((css) => !csp.includes(cspHashSource(css)));
+
+  const check = async (path: string): Promise<readonly string[]> => {
+    const response = await fetchDev(path, { headers: { accept: 'text/html' } });
+    const csp = response.headers.get('content-security-policy-report-only') ?? '';
+    return uncovered(await response.text(), csp);
+  };
+
+  test("a page's own stylesheet is named by the policy that page is served under", async () => {
+    expect(await check('/pricing')).toEqual([]);
+  });
+
+  test('the /_x shell is named too, because x dev is what mounted it', async () => {
+    expect(await check('/_x/routes')).toEqual([]);
   });
 });

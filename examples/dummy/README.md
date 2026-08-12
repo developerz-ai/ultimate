@@ -74,7 +74,7 @@ apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}
 | Concern | Where to look | Proof |
 |---|---|---|
 | **i18n** | [`packages/i18n/catalogs`](packages/i18n/catalogs) | zero hardcoded user-facing strings; `en` + `es` both complete, parity asserted in [`catalog.test.ts`](packages/i18n/src/catalog.test.ts) |
-| **Dark theme** | [`apps/web/shared/theme.scss`](apps/web/shared/theme.scss) | every colour is `var(--color-*)`; no raw hex in any `.tsx` or `.scss` |
+| **Dark theme** | [`apps/web/shared/global.scss`](apps/web/shared/global.scss) | every colour is `var(--color-*)`; no raw hex in any `.tsx` or `.scss`; the `:root` blocks that define those properties reach the document through [`shared/global.ts`](apps/web/shared/global.ts) |
 | **Timezones** | [`packages/core/src/digest-schedule.ts`](packages/core/src/digest-schedule.ts) | member `tz` drives every `<DateTime>`; digest fires 09:00 local, DST-correct across the March/November transitions |
 | **Money** | [`packages/core/src/billing.ts`](packages/core/src/billing.ts) | integer minor units, USD + EUR, arithmetic never leaves minor units, `Intl` only at the edge |
 | **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` queues offline and reconciles; feed reads from the persisted store; [`site/offline/page.tsx`](apps/web/site/offline/page.tsx) is the required fallback |

@@ -27,9 +27,12 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Responses | return `RenderResult`. `@ultimat3/http` builds the `Response`. |
 | Solid | no `solid-js` import anywhere in this package. Inject primitives. The JSX factory in `jsx.ts` builds inert nodes — it is not a Solid renderer and must never become one. |
 | The loaders | `module-loader.ts` installs them at `index.ts` module scope, once. A plugin only affects modules loaded after it, so a second install point is a page that renders in one entry point and not another. |
+| `<head>` baseline | `documentBaseline()` in `head.ts` — charset, viewport, `color-scheme` — merged FIRST so a route can still override any of them. Absent until `As of 2026-08`, and the missing `viewport` is why every deployed app rendered zoomed-out on a phone whatever its CSS said. |
 | Escaping | `html.ts` only. A second escaper is how one of them ends up missing a character, and a missing character in an attribute is an injection. |
 | Which export is the page | `route-component.ts`, one precedence: `Page` → a single `…Page` → a single capitalised function. Never a per-generator name table. |
 | Stylesheets | compiled by `css-modules.ts` and served **inlined** per surface. `sass` is this package's only third-party dependency and its only reason to exist here. |
+| CSS order | `stylesFor` sorts **globals before modules** (`isGlobalStylesheet`), never plain insertion order — the reset styles bare elements at the lowest specificity there is, so whichever page loaded first must not decide who wins a tie. `shared/` is carried by both graphs, like a package sheet: it is where an app's own global layer lives, and filtering it out is what made every deployed app render token-less. |
+| The global layer | this package may not import `@ultimat3/ui` (tier 5, upward), so the app's source graph carries it: one `shared/global.scss` that `@use`s `@ultimat3/ui/global.scss`, side-effect-imported by `shared/global.ts`. One file, because each stylesheet is its own Sass compilation — a token file `@use`d per module duplicates its `:root` block per module. `x verify` fails with `X_STYLES_GLOBAL_MISSING` when a surface's document defines none. |
 | Colours | tokens and `data-theme` only. No hex in `head.ts` or any emitted script. |
 | `<head>` binding | `head.ts` stays injection-only (testable with no catalog); `head-seo.ts` is the ONE binding of `HeadRenderers` to `@ultimat3/seo`. A caller writing its own converter is the drift this file prevents. |
 

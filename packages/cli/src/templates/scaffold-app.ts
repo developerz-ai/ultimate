@@ -217,8 +217,13 @@ contractTest('health projects one MCP tool and one OpenAPI operation', () => {
 `;
 
 const sharedTokens =
-  (): string => `// This app's one styling entry point. Forwards @ultimat3/ui's token layer verbatim and is where
-// this app's own additions go. Emits no CSS: the global custom properties come from ui's theme.scss.
+  (): string => `// This app's authoring layer for stylesheets: \`@use '../../shared/tokens' as t;\` in a
+// \`*.module.scss\` and reach for \`t.role(…)\`. Forwards @ultimat3/ui's token layer verbatim and is
+// where this app's own functions and mixins go.
+//
+// Emits no CSS, and must not: every module is its own Sass compilation, so a \`:root\` block in here
+// would be inlined once per stylesheet that uses it. The custom properties those functions REFER to
+// are defined exactly once, by \`shared/global.scss\`.
 //
 // A raw hex anywhere in the app is a lint failure, because dark theme is not a later project.
 //
@@ -227,6 +232,29 @@ const sharedTokens =
 // Colours are stored as space-separated RGB CHANNELS, so \`role('accent', 0.12)\` gives you a tint
 // without inventing a second token.
 @forward '@ultimat3/ui/tokens';
+`;
+
+const sharedGlobalStyle =
+  (): string => `// The app document's global layer, and the only stylesheet in this app that emits top-level CSS:
+// @ultimat3/ui's custom properties (\`:root{--color-*;--space-*;…}\`) and then its reset. Every rule
+// a component emits reads those properties through \`var(--…)\`, so without this file the browser
+// drops every one of those declarations and the app renders unstyled.
+//
+// Exactly one file, imported for its side effect by \`global.ts\` — never \`@use\`d from a
+// \`*.module.scss\`. Each module is a separate Sass compilation, so a \`@use\` that emits would
+// duplicate the whole \`:root\` block once per module.
+//
+// This app's own global rules go below the @use, never inside a component module.
+@use '@ultimat3/ui/global.scss';
+`;
+
+const sharedGlobalModule =
+  (): string => `// The one edge that puts the global stylesheet in this app's module graph. \`shared/\` is loaded by
+// both surfaces and by the framework's own boot scan, so the tokens reach every document without a
+// page having to remember to import them — and \`x verify\` fails with X_STYLES_GLOBAL_MISSING if
+// this edge is ever cut.
+
+import './global.scss';
 `;
 
 const sharedActor =
@@ -374,6 +402,8 @@ export function appFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'apps/web/api/health.ts', contents: apiAction() },
     { path: 'apps/web/api/health.test.ts', contents: apiTest() },
     { path: 'apps/web/shared/tokens.scss', contents: sharedTokens() },
+    { path: 'apps/web/shared/global.scss', contents: sharedGlobalStyle() },
+    { path: 'apps/web/shared/global.ts', contents: sharedGlobalModule() },
     { path: 'apps/web/shared/actor.ts', contents: sharedActor() },
     { path: 'apps/web/shared/actor.test.ts', contents: sharedActorTest() },
     { path: 'apps/admin/package.json', contents: adminPackage(app) },

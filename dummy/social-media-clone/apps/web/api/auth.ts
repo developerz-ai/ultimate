@@ -8,6 +8,7 @@
 
 import { MAX_HANDLE } from '@social-media-clone/domain';
 import { action, t } from '@ultimat3/action';
+import { NEXT_PARAM, nextAfterSignIn, setRedirect, useRequestHeader } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import type { IssuedSession } from '../app/auth/service';
 import { signIn, signOut, signUp } from '../app/auth/service';
@@ -50,10 +51,28 @@ const attach = (ctx: unknown, issued: IssuedSession, now: Date): void => {
   );
 };
 
+/**
+ * The form field the sign-in page carries, and the only reason these two actions differ from
+ * every other one. `nextAfterSignIn` refuses anything that is not a same-origin path.
+ */
+const nextInput = t.optional(t.string.max(2048));
+
+/**
+ * A browser that posted the native form gets a 303 to where it was going; an agent that posted
+ * JSON gets the output schema, unchanged. Same operation, two audiences — `setRedirect` is the
+ * seam that exists for exactly this, so the action does not grow a second protocol.
+ */
+const landAfter = (raw: string | undefined, fallback: string): string => {
+  const next = nextAfterSignIn(raw, fallback);
+  if ((useRequestHeader('accept') ?? '').includes('text/html')) setRedirect(next);
+  return next;
+};
+
 export const createSession = action({
   input: t.object({
     handle: handleInput,
     password: t.string.min(1),
+    [NEXT_PARAM]: nextInput,
     [CAPTCHA_FIELD]: t.optional(t.string),
   }),
   output: sessionOutput,
@@ -72,7 +91,7 @@ export const createSession = action({
       now,
     );
     attach(ctx, issued, now);
-    return { ok: true, next: '/feed', handle: input.handle };
+    return { ok: true, next: landAfter(input[NEXT_PARAM], '/feed'), handle: input.handle };
   },
 });
 
@@ -82,6 +101,7 @@ export const createAccount = action({
     displayName: t.string.min(1).max(80),
     email: t.email,
     password: t.string.min(1),
+    [NEXT_PARAM]: nextInput,
     [CAPTCHA_FIELD]: t.optional(t.string),
   }),
   output: sessionOutput,
@@ -100,7 +120,7 @@ export const createAccount = action({
       now,
     );
     attach(ctx, issued, now);
-    return { ok: true, next: '/feed', handle: input.handle };
+    return { ok: true, next: landAfter(input[NEXT_PARAM], '/feed'), handle: input.handle };
   },
 });
 

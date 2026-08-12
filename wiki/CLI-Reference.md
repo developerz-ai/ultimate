@@ -248,7 +248,7 @@ is not covered by three workers.
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | published actions vs `openapi.json` |
-| `budgets` | per-route JS bytes and LCP |
+| `budgets` | per-route JS bytes and LCP, and the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`) |
 | `manifest` | the two files an agent reads: `x.manifest.json` freshness, and a hand-written `AGENTS.md` that exists and is under 12kB |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 

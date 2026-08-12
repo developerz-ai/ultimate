@@ -53,12 +53,35 @@ export function mergeHead(...sources: readonly (readonly HeadTag[])[]): readonly
 }
 
 /** Build the head for a route from its `meta` output plus explicit overrides. */
+/**
+ * The tags every HTML document needs and no route should have to declare. Merged FIRST, so a
+ * route that sets one of these keys still wins.
+ *
+ * Absent until now, and the omission was not cosmetic: with no `viewport`, a phone lays the page
+ * out at ~980px and scales it down, so every deployed Ultimate app rendered zoomed-out on mobile
+ * whatever its CSS said. `color-scheme` is the other half of the token layer's dark mode — without
+ * it the browser paints its own form controls and scrollbars light under a dark page.
+ */
+export const documentBaseline = (): readonly HeadTag[] => [
+  { kind: 'meta', key: 'meta:charset', attrs: { charset: 'utf-8' } },
+  {
+    kind: 'meta',
+    key: 'meta:viewport',
+    attrs: { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+  },
+  {
+    kind: 'meta',
+    key: 'meta:color-scheme',
+    attrs: { name: 'color-scheme', content: 'light dark' },
+  },
+];
+
 export function headFromMeta(
   meta: RouteMeta,
   renderers: HeadRenderers,
   overrides: readonly HeadTag[] = [],
 ): readonly HeadTag[] {
-  const seoTags = renderers.renderMeta(meta);
+  const seoTags = [...documentBaseline(), ...renderers.renderMeta(meta)];
   const ld = renderers.renderLd?.(meta) ?? null;
   const ldTags: readonly HeadTag[] =
     ld === null

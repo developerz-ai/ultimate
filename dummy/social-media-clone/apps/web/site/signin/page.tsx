@@ -2,6 +2,7 @@
 // because it needs no JavaScript: a native `<form method="post">` at the route `createSession`
 // already derives. Nothing here hydrates, so the browser's own form handling IS the client.
 
+import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import {
@@ -28,8 +29,16 @@ export const config = defineRoute({
   }),
 });
 
-export function Page() {
+export interface SignInProps {
+  readonly query: Readonly<Record<string, string>>;
+}
+
+export function Page(props: SignInProps) {
   const siteKey = captchaSiteKey();
+  // Where the pipeline said this visitor was going before it bounced them here. `nextAfterSignIn`
+  // refuses anything that is not a same-origin path — `?next=` is off the URL bar, and an
+  // unchecked value makes the one page that hands out a session an open redirect.
+  const next = nextAfterSignIn(props.query[NEXT_PARAM], '/dashboard');
 
   return (
     <main class={styles.auth}>
@@ -38,6 +47,8 @@ export function Page() {
 
       {/* The action is the route `createSession` derives, not a path anyone chose twice. */}
       <form class={styles.form} method="post" action="/api/sessions/create">
+        {/* The return trip. A native form carries it as a field because nothing here hydrates. */}
+        <input type="hidden" name={NEXT_PARAM} value={next} />
         <label class={styles.label} for="signin-handle">
           {t('site.signin.handle')}
         </label>

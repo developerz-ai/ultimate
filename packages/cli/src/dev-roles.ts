@@ -30,6 +30,7 @@ import type { RunningServices } from './dev-runtime';
 import type { Env } from './dev-services';
 import { BadFlagError } from './errors';
 import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
+import { inlineStyleSources } from './style-csp';
 
 /** The roles `x dev` starts when `--role` names none, in boot order. */
 export const DEV_ROLES: readonly Role[] = ['web', 'sync', 'worker', 'scheduler'];
@@ -58,6 +59,18 @@ export interface StartRolesOptions {
    * probe, which is the same failure in four costumes.
    */
   readonly http?: WebBinding;
+  /**
+   * The app's `auth.signInPath`. Threaded rather than read from the config here because
+   * `startRoles` takes plain values — a test starts a web role with no `app.config.ts` at all.
+   */
+  readonly signInPath?: string | null;
+  /**
+   * Inline `<style>` bodies this process serves that the app's own surfaces do not account for —
+   * `/_x`'s shell. The surfaces themselves are read from the stylesheet registry here rather than
+   * passed, so no caller of `startRoles` can ship a web server whose CSP blocks the pages it
+   * serves: that policy is what rendered every deployed app completely unstyled.
+   */
+  readonly inlineStyles?: readonly string[];
   /**
    * Where the scrape listener binds. Defaults to `DEFAULT_METRICS_PORT`, except when `port` is 0
    * — a caller asking the kernel for an ephemeral HTTP port is a test, and a test that grabbed
@@ -134,6 +147,13 @@ function startWeb(options: StartRolesOptions): ServerHandle {
       dev: binding.dev,
       buildId: options.buildId,
       hostname: binding.hostname,
+      signInPath: options.signInPath ?? null,
+      // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
+      // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a
+      // function of that body. Read after `loadApp` — importing the app IS what registered them.
+      security: {
+        csp: { extend: { 'style-src': inlineStyleSources(options.inlineStyles ?? []) } },
+      },
     }),
   }).start();
 }

@@ -17,6 +17,10 @@ export const RENDER_ERROR_CODES = [
   'X_SURFACE_BOUNDARY',
   'X_BUDGET_EXCEEDED',
   'X_PRERENDER_FAILED',
+  // Render's, not the CLI's, for the same reason X_BUDGET_EXCEEDED is: this package owns the
+  // stylesheet registry and `stylesFor`, so "the CSS a document on this surface carries" is a fact
+  // about render's own output. `x verify` is only the surface that reports it.
+  'X_STYLES_GLOBAL_MISSING',
 ] as const;
 
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
@@ -33,6 +37,8 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
   X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
+  X_STYLES_GLOBAL_MISSING:
+    'a surface renders documents whose CSS defines no :root custom properties',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

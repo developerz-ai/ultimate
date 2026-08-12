@@ -20,6 +20,7 @@ import { OPENAPI_FILE, openApiJson } from './app-openapi';
 import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
+import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkDrift } from './drift';
 import { checkErrorFixes } from './error-contract';
 import { BadFlagError } from './errors';
@@ -29,7 +30,7 @@ import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
 import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
-import { fromExec, fromFindings, hostFindings, passed } from './verify-step';
+import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
 import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
 
@@ -116,12 +117,22 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'budgets',
-    summary: 'per-route JS bytes and LCP',
+    summary: 'per-route JS bytes and LCP, and the global style layer every document carries',
+    // The global-style assertion rides here rather than becoming an eighteenth step, because this
+    // step already asks the one question it asks: what does the document this build emits actually
+    // contain? It is also the same app load — `appManifest` fills render's stylesheet registry on
+    // its way through — so a separate step would pay for a second one to answer half a question.
+    //
+    // A repo with no `app.config.ts` is the framework monorepo, which renders no documents and has
+    // no stylesheet registry to read; there is nothing for either half to weigh.
+    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
     async run(ctx) {
       const stats = await readBuildStats(ctx.root);
-      if (stats === undefined) return passed;
       const { manifest } = await appManifest(ctx.root);
-      return fromFindings(checkBudgets(manifest, stats));
+      return fromFindings([
+        ...checkDocumentStyles(documentSurfaces()),
+        ...(stats === undefined ? [] : checkBudgets(manifest, stats)),
+      ]);
     },
   },
   {

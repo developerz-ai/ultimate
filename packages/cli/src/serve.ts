@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/core';
 import { type MigrationReport, migrate } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
+import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import { assetRoutes } from './dev-assets';
@@ -205,6 +206,9 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     runtime,
     routes,
     env: options.env,
+    // Same declaration `x dev` reads. Without it a container answers a browser that opened a
+    // guarded page with the problem document, rendered as raw JSON in the viewport.
+    signInPath: await loadSignInPath(options.root),
     http: CONTAINER_BINDING,
   });
   return {

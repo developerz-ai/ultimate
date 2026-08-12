@@ -11,6 +11,7 @@ import {
   runWithContext,
   withSpan,
 } from '@ultimat3/core';
+import { signInRedirect } from './auth-redirect';
 import { defineHttpConfig, type HttpConfig, stripBasePath } from './config';
 import { actorView, asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -30,7 +31,7 @@ import { compose, type Middleware } from './middleware';
 import { overlayResponse, wantsOverlay } from './overlay';
 import { createRateLimiter, type RateLimiter, rateLimitKey } from './rate-limit';
 import { UltimateRequest } from './request';
-import { applyCacheHeaders, type CacheHint, problem } from './response';
+import { applyCacheHeaders, type CacheHint, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
 import { securityHeaders } from './security-headers';
 import { validate } from './validate';
@@ -316,6 +317,16 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
       }
       hooks.onError?.(error, ctx);
       logger.error(`${facts.code}: ${facts.cause} [${ctx.requestId}]`);
+      // Before the overlay and before the problem document: a browser with no session has not
+      // hit a defect to debug, it has hit a login wall, and the answer to that is the sign-in
+      // page. `signInPath` is null until an app declares one, so this is off by default.
+      const toSignIn = signInRedirect({
+        code: facts.code,
+        signInPath: config.signInPath,
+        request: request.raw,
+        ctx,
+      });
+      if (toSignIn !== undefined) return redirect(toSignIn.location, toSignIn.status);
       if (config.dev && wantsOverlay(request.raw)) {
         return overlayResponse(error, {
           requestId: ctx.requestId,

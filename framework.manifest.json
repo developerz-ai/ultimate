@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d51834778bb3a1414f8ca475becbb91821a17679209b290f02d641a0776a2789",
+  "buildId": "f289ad8317d5cf807172040a1292a4d7605c11996ad538690f74065e42077ca9",
   "tiers": {
     "0": [
       "core",
@@ -1464,6 +1464,11 @@
       "code": "X_STORAGE_URL_INVALID",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STYLES_GLOBAL_MISSING",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
     },
     {
       "code": "X_SUBSCRIPTION_LIMIT",

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
-import { brandStyleTag, defineTheme } from './brand';
+import { brandStyleCspSource, brandStyleTag, defineTheme } from './brand';
 
 function codeOf(run: () => unknown): string | undefined {
   try {
@@ -107,5 +107,20 @@ describe('brandStyleTag', () => {
     const brand = defineTheme({ radius: { md: '0.125rem' } });
     expect(brandStyleTag(brand)).toBe(`<style>${brand.css}</style>`);
     expect(brandStyleTag(brand)).not.toContain('</style><');
+  });
+});
+
+describe('brandStyleCspSource', () => {
+  test('hashes exactly the body the tag carries, so the policy admits that document', () => {
+    const brand = defineTheme({ radius: { md: '0.125rem' } });
+    const body = brandStyleTag(brand).replace('<style>', '').replace('</style>', '');
+    const digest = new Bun.CryptoHasher('sha256').update(body).digest('base64');
+    expect(brandStyleCspSource(brand)).toBe(`'sha256-${digest}'`);
+  });
+
+  test('a different brand is a different source — the header cannot be checked in', () => {
+    expect(brandStyleCspSource(defineTheme({ radius: { md: '0.125rem' } }))).not.toBe(
+      brandStyleCspSource(defineTheme({ radius: { md: '0.25rem' } })),
+    );
   });
 });

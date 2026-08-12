@@ -1,0 +1,18 @@
+// The app document's global layer, and the only stylesheet in this app that emits top-level CSS:
+// @ultimat3/ui's custom properties (`:root{--color-*;--space-*;…}`) and then its reset. Every rule
+// a component module emits reads those properties through `var(--…)`, so without this file the
+// browser drops every one of those declarations and the app renders unstyled.
+//
+// Exactly one file, imported for its side effect by `global.ts` — never `@use`d from a
+// `*.module.scss`. Each module is a separate Sass compilation, so a `@use` that emits would
+// duplicate the whole `:root` block once per module that reached for it.
+
+@use '@ultimat3/ui/global.scss';
+@use '@ultimat3/ui/tokens' as t;
+
+// The one element rule the reset deliberately leaves to the app: inline code and blocks sit on a
+// tinted ground, which is a product decision rather than a normalization.
+:where(code, pre) {
+  background: t.role('bg-soft');
+  border-radius: t.radius('sm');
+}

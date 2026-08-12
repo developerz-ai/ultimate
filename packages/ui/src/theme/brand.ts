@@ -3,7 +3,7 @@
 // level it emits. There is deliberately no SCSS `@use ... with ()` seam — two ways to change the
 // accent colour is the ambiguity axiom 1 exists to delete.
 
-import { invalidBrandTokenError, unknownTokenError } from '../errors';
+import { invalidBrandTokenError, runtimeMissingError, unknownTokenError } from '../errors';
 import { parseChannels } from '../tokens/contrast';
 import {
   COLOR_ROLES,
@@ -70,6 +70,21 @@ export function defineTheme(input: BrandInput): Brand {
 /** The exact tag to inline, after `global.scss` so the overrides land later in the cascade. */
 export function brandStyleTag(brand: Brand): string {
   return `<style>${brand.css}</style>`;
+}
+
+/**
+ * `'sha256-…'` for exactly what `brandStyleTag` puts between the tags — the one `style-src` source
+ * that admits it under the framework's locked CSP. Server/build-only, like the theme script's
+ * hash: `defineTheme` runs at the app's entry point, and the header is written there too.
+ */
+export function brandStyleCspSource(brand: Brand): string {
+  if (typeof Bun === 'undefined') {
+    throw runtimeMissingError(
+      'Bun.CryptoHasher to hash the brand stylesheet',
+      'call brandStyleCspSource() during build or SSR, never in browser code',
+    );
+  }
+  return `'sha256-${new Bun.CryptoHasher('sha256').update(brand.css).digest('base64')}'`;
 }
 
 function rule(selector: string, declarations: readonly string[]): string {

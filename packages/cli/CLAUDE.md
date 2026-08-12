@@ -123,6 +123,7 @@ that trace is the live panel's question, so the panel degrades to its own note i
 | `dev-queue.ts` | the db + queue pair alone, and the one place that takes `db()` and `jobDriver()` back |
 | `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
+| `style-csp.ts` | the `style-src` sha256 of every inline `<style>` the web role serves |
 | `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |

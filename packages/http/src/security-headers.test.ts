@@ -3,8 +3,12 @@
 // production, an HSTS header sent over plaintext where it is ignored outright. These tests
 // pin the locked baseline and each way config is allowed to move it.
 import { describe, expect, test } from 'bun:test';
+import { OVERLAY_STYLE } from './overlay-style';
 import type { SecurityConfig } from './security-headers';
-import { buildCsp, DEFAULT_SECURITY, securityHeaders } from './security-headers';
+import { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';
+
+const directive = (csp: string, name: string): string =>
+  csp.split('; ').find((part) => part.startsWith(`${name} `)) ?? `${name} <absent>`;
 
 describe('buildCsp()', () => {
   test('the default policy is a locked baseline with no unsafe- sources', () => {
@@ -12,8 +16,12 @@ describe('buildCsp()', () => {
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
-    expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).not.toContain("'unsafe-eval'");
+    // Elements stay locked: nothing may execute or paint on the strength of being inline.
+    expect(directive(csp, 'script-src')).not.toContain("'unsafe-inline'");
+    expect(directive(csp, 'style-src')).not.toContain("'unsafe-inline'");
+    // The ONE relaxation, and it is attribute-scoped — see the comment on the baseline.
+    expect(directive(csp, 'style-src-attr')).toBe("style-src-attr 'unsafe-inline'");
     // ';'-joined directive list, each a "name sources..." pair.
     for (const part of csp.split('; ')) {
       expect(part).toMatch(/^[a-z-]+ .+/);
@@ -41,10 +49,22 @@ describe('buildCsp()', () => {
     expect(csp).toContain("prefetch-src 'self'");
   });
 
-  test('a nonce is appended to script-src alongside the existing sources', () => {
-    const csp = buildCsp(DEFAULT_SECURITY, 'abc123');
-    const scriptSrc = csp.split('; ').find((part) => part.startsWith('script-src'));
-    expect(scriptSrc).toBe("script-src 'self' 'wasm-unsafe-eval' 'nonce-abc123'");
+  test('style-src carries the dev overlay hash, so http covers its own document', () => {
+    // The regression: the CSP was written for documents nobody could hash and none for the ones
+    // the framework actually emits, so every inline `<style>` it wrote was refused by it.
+    expect(directive(buildCsp(DEFAULT_SECURITY), 'style-src')).toContain(
+      cspHashSource(OVERLAY_STYLE),
+    );
+  });
+
+  test('a style hash from extend joins the baseline rather than replacing it', () => {
+    const hash = cspHashSource('body{color:red}');
+    const csp = buildCsp({
+      ...DEFAULT_SECURITY,
+      csp: { ...DEFAULT_SECURITY.csp, extend: { 'style-src': [hash] } },
+    });
+    expect(directive(csp, 'style-src')).toContain("'self'");
+    expect(directive(csp, 'style-src')).toContain(hash);
   });
 
   test('reportUri appends a report-uri directive when set, omits it when null', () => {
@@ -57,6 +77,18 @@ describe('buildCsp()', () => {
 
     const withoutReport = buildCsp(DEFAULT_SECURITY);
     expect(withoutReport).not.toContain('report-uri');
+  });
+});
+
+describe('cspHashSource()', () => {
+  test('is the base64 sha256 of the body, quoted the way a directive takes it', () => {
+    const body = 'main{display:grid}';
+    const digest = new Bun.CryptoHasher('sha256').update(body).digest('base64');
+    expect(cspHashSource(body)).toBe(`'sha256-${digest}'`);
+  });
+
+  test('a single changed byte is a different source — the point of hashing the body', () => {
+    expect(cspHashSource('a{color:red}')).not.toBe(cspHashSource('a{color:red} '));
   });
 });
 

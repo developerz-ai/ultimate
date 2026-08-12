@@ -186,7 +186,7 @@ export {
 export type { UiKey } from './i18n-keys';
 export { UI_KEYS } from './i18n-keys';
 export type { Brand, BrandInput, FontSlot } from './theme/brand';
-export { brandStyleTag, defineTheme, FONT_SLOTS } from './theme/brand';
+export { brandStyleCspSource, brandStyleTag, defineTheme, FONT_SLOTS } from './theme/brand';
 export type { Direction, UiContextValue } from './theme/context';
 export {
   defaultUiContext,

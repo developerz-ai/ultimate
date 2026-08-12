@@ -4,7 +4,7 @@
  * `bun test` all load a component the same way and there is no separate "bundled" behaviour.
  */
 
-import { compileStylesheet } from './css-modules';
+import { compileStylesheet, isGlobalStylesheet } from './css-modules';
 import { PrerenderFailedError } from './errors';
 import type { Surface } from './surfaces';
 import { surfaceOf } from './surfaces';
@@ -38,6 +38,8 @@ export interface Stylesheet {
   readonly file: string;
   /** The surface that owns it, or `null` for a package stylesheet shared by both graphs. */
   readonly surface: Surface | null;
+  /** A plain (non-module) stylesheet: the tokens and the reset, which the cascade needs first. */
+  readonly global: boolean;
   readonly css: string;
 }
 
@@ -53,12 +55,24 @@ export function clearStylesheets(): void {
 }
 
 /**
- * The CSS a document on `surface` must carry, in load order. A `site/` page never receives `app/`
- * CSS — that is axiom 6 applied to bytes the browser parses, not just bytes it executes.
+ * The CSS a document on `surface` must carry: the global layer first, then the modules, each group
+ * in load order. A `site/` page never receives `app/` CSS — that is axiom 6 applied to bytes the
+ * browser parses, not just bytes it executes.
+ *
+ * `shared/` is carried by both graphs by definition — it is the one directory both surfaces import
+ * from, and it is where an app's own global stylesheet lives. Filtering it out (which this did)
+ * meant an app could put its tokens in the one place the convention names and have every document
+ * silently drop them.
+ *
+ * Globals sort ahead of modules rather than riding load order: the reset styles bare elements at
+ * the lowest specificity there is, so a reset that happened to register after a module rule wins
+ * ties it must lose. Insertion order alone made that depend on which page a request hit first.
  */
 export function stylesFor(surface: Surface | null): string {
-  return [...stylesheets.values()]
-    .filter((sheet) => sheet.surface === null || sheet.surface === surface)
+  const carried = [...stylesheets.values()].filter(
+    (sheet) => sheet.surface === null || sheet.surface === 'shared' || sheet.surface === surface,
+  );
+  return [...carried.filter((sheet) => sheet.global), ...carried.filter((sheet) => !sheet.global)]
     .map((sheet) => sheet.css)
     .join('');
 }
@@ -73,11 +87,23 @@ export function transformTsx(source: string): string {
   return JSX_PRELUDE + transpiler.transformSync(source);
 }
 
-/** `.scss` source → the module body an `import styles from …` receives, registering the CSS. */
+/**
+ * `.scss` source → the module body an `import styles from …` receives, registering the CSS.
+ *
+ * Keyed by absolute path, which is what makes the global layer emit ONCE however many app modules
+ * import it. Sass dedupes `@use` within a single compilation, and every file here is its own
+ * compilation — so a token file `@use`d by twenty `page.module.scss` would inline its `:root` block
+ * twenty times. One file, imported for its side effect, is the shape that cannot do that.
+ */
 export function loadStylesheet(path: string, source: string): string {
   const compiled = compileStylesheet(path, source);
   if (compiled.css.length > 0) {
-    stylesheets.set(path, { file: path, surface: surfaceOf(path), css: compiled.css });
+    stylesheets.set(path, {
+      file: path,
+      surface: surfaceOf(path),
+      global: isGlobalStylesheet(path),
+      css: compiled.css,
+    });
   }
   return `export default ${JSON.stringify(compiled.classes)};`;
 }
