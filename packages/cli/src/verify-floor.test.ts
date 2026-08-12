@@ -9,6 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixProblem } from './error-contract';
+import { parseArgs } from './parse';
+import { commandFor, SPECS } from './registry';
 import {
   floorProblemFindings,
   floorRequires,
@@ -126,14 +128,22 @@ describe('unit · the suite floor', () => {
       expect(finding.docs).toBe('https://ultimate.dev/errors/X_VERIFY_SUITE_VANISHED');
     });
 
-    // "Runnable as written" is decidable rather than a matter of taste: everything before the `#`
-    // is what a shell would execute, so it has to be a command and not a sentence — and everything
-    // after it is a comment the shell drops, which is what lets one line carry both remedies.
-    test('each fix runs verbatim: a command first, every alternative behind a #', () => {
+    // "Runnable as written" is decided against this build, not by shape: everything before the `#`
+    // is what a shell would execute, so the registry has to hold that command and the real parser
+    // has to accept its flags — the check `mcp-errors.test.ts` makes of the same code's MCP entry.
+    // A regex over the line would have blessed `x verfy --jsn` exactly as readily. Everything after
+    // the `#` is a comment the shell drops, which is what lets one line carry both remedies.
+    test('each fix runs verbatim: a shipped command first, every alternative behind a #', () => {
       for (const finding of findings) {
         expect(fixProblem(finding.fix)).toBeUndefined();
-        const command = finding.fix.split('#')[0]?.trim() ?? '';
-        expect(command).toMatch(/^x [a-z][a-z-]*(?: --?[a-z][a-z-]*)*$/);
+        const argv = (finding.fix.split('#')[0] ?? '').trim().split(/\s+/);
+        expect(argv[0]).toBe('x');
+        const spec = commandFor(argv[1] ?? '')?.spec;
+        expect(spec?.name).toBe(argv[1]);
+        expect(spec?.summary.endsWith('(planned)')).toBe(false);
+        expect(() => parseArgs(argv.slice(1), SPECS)).not.toThrow();
+        // Axiom 4 again: the agent that ran a machine-readable command to get here is handed one.
+        expect(argv).toContain('--json');
       }
     });
 
