@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixProblem } from './error-contract';
+import { explainErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
 import { commandFor, SPECS } from './registry';
 import {
@@ -154,6 +155,21 @@ describe('unit · the suite floor', () => {
       expect(vanished?.fix.split('#')[1]).toContain(VERIFY_FLOOR_FILE);
       expect(vanished?.fix.split('#')[1]).toContain('job');
       expect(malformed?.fix.split('#')[1]).toContain('"steps"');
+    });
+
+    // Two surfaces answer for this one code — the finding `runVerify` prints, and `errors.explain`
+    // for the agent that asked the MCP host instead — and the tables live in different modules, so
+    // nothing but this stops one from drifting off the other. Neither is scripted to perform the
+    // edit: a command that rewrites the floor is the gate ratcheting its own ratchet, so what both
+    // offer to repeat is the run that proves the suite is back.
+    test('errors.explain answers this code with the same command and the same two edits', () => {
+      const finding = vanishedSuiteFinding('job');
+      const explained = explainErrorCode('X_VERIFY_SUITE_VANISHED');
+      const command = (fix: string) => (fix.split('#')[0] ?? '').trim();
+      expect(command(explained?.fix ?? '')).toBe(command(finding.fix));
+      expect(explained?.fix).toContain('restore the');
+      expect(explained?.fix).toContain(`drop its name from ${VERIFY_FLOOR_FILE}`);
+      expect(explained?.docs).toBe(finding.docs);
     });
   });
 });
