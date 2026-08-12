@@ -64,3 +64,73 @@ describe('stdout survives process.exit through a pipe', () => {
     expect(code).toBe(1);
   });
 });
+
+/**
+ * The second half of the same story, and the more expensive one.
+ *
+ * A CI runner hands the process a stdout pipe in NON-BLOCKING mode. `writeSync` to one whose
+ * buffer is full does not block — it throws `EAGAIN` — so the loop above, which fixed the
+ * truncation, took the entire gate down on GitHub Actions and emitted nothing at all. `x verify`
+ * appeared to print zero bytes, which reads as "the step produced no output" rather than "the step
+ * crashed while writing it".
+ *
+ * This half is tested against the retry rule rather than against a real non-blocking fd: setting
+ * `O_NONBLOCK` on a spawned child's own fd 1 needs `fcntl`, which neither Bun nor `node:fs`
+ * exposes, and an FFI shim that silently fails to set the flag is a test that proves nothing —
+ * the first draft of this file did exactly that and passed while measuring an ordinary pipe. What
+ * IS the rule, and what the shipped fix encodes, is that a write refused with `EAGAIN` must be
+ * retried and never counted or thrown.
+ */
+const drain = (write: (from: number) => number, buffer: Buffer): void => {
+  let written = 0;
+  while (written < buffer.length) {
+    try {
+      written += write(written);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'EAGAIN') throw cause;
+    }
+  }
+};
+
+const eagain = (): NodeJS.ErrnoException =>
+  Object.assign(new Error('resource temporarily unavailable, write'), { code: 'EAGAIN' });
+
+describe('the write loop both writers use, against a pipe that refuses', () => {
+  test('an EAGAIN is retried, not counted and not thrown', () => {
+    const buffer = Buffer.from('abcdef');
+    let refusals = 0;
+    drain((from) => {
+      if (refusals < 3) {
+        refusals += 1;
+        throw eagain();
+      }
+      return buffer.length - from;
+    }, buffer);
+    expect(refusals).toBe(3);
+  });
+
+  test('a partial write resumes from where it stopped, EAGAIN in between', () => {
+    const buffer = Buffer.from('x'.repeat(10));
+    const chunks: number[] = [];
+    let calls = 0;
+    drain((from) => {
+      calls += 1;
+      if (calls === 2) throw eagain();
+      const n = Math.min(3, buffer.length - from);
+      chunks.push(n);
+      return n;
+    }, buffer);
+    expect(chunks.reduce((a, b) => a + b, 0)).toBe(10);
+  });
+
+  // Retrying everything would turn a closed pipe into an infinite loop, which is strictly worse
+  // than the crash it replaced: the gate would hang instead of failing.
+  test('any other error still escapes', () => {
+    const buffer = Buffer.from('abc');
+    expect(() =>
+      drain(() => {
+        throw Object.assign(new Error('broken pipe'), { code: 'EPIPE' });
+      }, buffer),
+    ).toThrow('broken pipe');
+  });
+});

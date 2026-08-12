@@ -62,12 +62,22 @@ export function render(result: ScriptResult, json: boolean): string {
  *
  * The loop is not decoration: a single `writeSync` to a pipe may write fewer bytes than it was
  * given, and dropping the remainder would reintroduce the bug in a harder-to-see form.
+ *
+ * `EAGAIN` is a retry, never a failure. A CI runner hands the process a stdout that is a pipe in
+ * NON-BLOCKING mode, and a `writeSync` to one whose buffer is full throws instead of blocking —
+ * so the fix for the truncation crashed the whole gate on GitHub Actions, printing nothing at all
+ * and leaving `x verify` looking like it had produced no output. The reader drains within
+ * microseconds and the next attempt succeeds; treating "would block" as fatal is the bug.
  */
 export function writeOut(text: string): void {
   const buffer = Buffer.from(text);
   let written = 0;
   while (written < buffer.length) {
-    written += writeSync(1, buffer, written, buffer.length - written);
+    try {
+      written += writeSync(1, buffer, written, buffer.length - written);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== 'EAGAIN') throw cause;
+    }
   }
 }
 

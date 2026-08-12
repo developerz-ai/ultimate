@@ -22,7 +22,15 @@ function writeLine(line: string): void {
   const buffer = Buffer.from(`${line}\n`);
   let written = 0;
   while (written < buffer.length) {
-    written += writeSync(1, buffer, written, buffer.length - written);
+    try {
+      written += writeSync(1, buffer, written, buffer.length - written);
+    } catch (cause) {
+      // `EAGAIN` is "the pipe is full right now", not a failure. CI hands the process a
+      // NON-BLOCKING stdout, where `writeSync` throws rather than blocking — so the loop that
+      // fixed `--json` truncation took the whole command down on a runner, emitting nothing. The
+      // reader drains in microseconds; the retry is the correct response to "would block".
+      if ((cause as NodeJS.ErrnoException).code !== 'EAGAIN') throw cause;
+    }
   }
 }
 
