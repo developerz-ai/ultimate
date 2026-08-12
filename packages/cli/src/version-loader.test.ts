@@ -1,10 +1,10 @@
-// `CLI_VERSION` and every dependency `x new` pins come from here. It read the workspace root's
+// `cliVersion()` and every dependency `x new` pins come from here. It read the workspace root's
 // `package.json`, which has no `version`, so both were `undefined` — silently, because the return
 // type said `string`. This pins the loader to the CLI's own manifest.
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { CLI_VERSION } from './registry';
+import { cliVersion } from './registry';
 import { CLI_MANIFEST, loadVersion } from './version-loader';
 
 describe('loadVersion', () => {
@@ -22,8 +22,8 @@ describe('loadVersion', () => {
     expect(loadVersion()).toBe(manifest.version);
   });
 
-  test('CLI_VERSION is the loaded value — `x --version` never prints "undefined"', () => {
-    expect(CLI_VERSION).toBe(loadVersion());
-    expect(CLI_VERSION).not.toContain('undefined');
+  test('cliVersion() is the loaded value — `x --version` never prints "undefined"', () => {
+    expect(cliVersion()).toBe(loadVersion());
+    expect(cliVersion()).not.toContain('undefined');
   });
 });
