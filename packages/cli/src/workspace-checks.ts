@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding } from './output';
-import { eachSourceFile } from './source-files';
+import { eachSourceFile, isGenerated } from './source-files';
 
 export const LINE_CEILING = 500;
 
@@ -34,6 +34,7 @@ export const countLines = (text: string): number =>
 export async function checkFileSizes(root: string): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
   for await (const path of eachSourceFile(root)) {
+    if (isGenerated(path)) continue;
     const lines = countLines(await Bun.file(join(root, path)).text());
     if (lines > LINE_CEILING) findings.push(tooLongFinding(path, lines));
   }

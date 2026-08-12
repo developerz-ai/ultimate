@@ -102,6 +102,21 @@ describe('unit · the file-size ceiling', () => {
       expect(finding.fix).toContain(finding.at ?? '');
     }
   });
+
+  // Emitted declarations are not authored source — a stale `.d.ts` over the ceiling is not a
+  // reason to split anything, so the rule cannot even reach it.
+  test('a generated declaration over the ceiling is not walked at all', async () => {
+    const genDir = await mkdtemp(join(tmpdir(), 'ultimate-workspace-checks-gen-'));
+    try {
+      await Bun.write(join(genDir, 'packages/stale/src/huge.d.ts'), lines(LINE_CEILING + 1));
+
+      const findings = await checkFileSizes(genDir);
+
+      expect(findings.map((finding) => finding.at)).not.toContain('packages/stale/src/huge.d.ts');
+    } finally {
+      await rm(genDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('unit · the package shape', () => {
