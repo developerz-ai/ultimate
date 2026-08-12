@@ -7,6 +7,7 @@
 
 import { seedDemo } from '@social-media-clone/db';
 import { userId } from '@social-media-clone/domain';
+import { actorFact } from '@ultimat3/core';
 import { beforeAll, expect, unitTest } from '@ultimat3/testing';
 import { CAPTCHA_AFTER_FAILURES } from '../../shared/auth-policy';
 import { hashToken, newSessionToken } from '../../shared/session';
@@ -47,10 +48,12 @@ unitTest(
 unitTest('the two demo logins work, and the handle is matched case-insensitively', async () => {
   const issued = await signIn({ handle: 'USER', password: 'user', captchaToken: null }, NOW);
   expect(issued.token.length).toBeGreaterThan(0);
-  expect(issued.actor.role).toBe('member');
+  // `users.role` lands in `actor.roles`, because that is what @ultimat3/policy expands into the
+  // permission set. A `role` field beside it would be a column nothing reads.
+  expect(issued.actor.roles).toEqual(['member']);
 
   const admin = await signIn({ handle: 'admin', password: 'admin', captchaToken: null }, NOW);
-  expect(admin.actor.role).toBe('admin');
+  expect(admin.actor.roles).toEqual(['admin']);
 });
 
 unitTest('the issued token is stored HASHED — the row never holds a usable cookie', async () => {
@@ -100,7 +103,7 @@ unitTest('the block set is symmetric — one row hides the pair both ways', asyn
   // And the actor carries it flattened, so `isBlocked` is one set lookup in a synchronous
   // predicate rather than two queries per row per subscriber.
   const issued = await signIn({ handle: 'user', password: 'user', captchaToken: null }, NOW);
-  expect(issued.actor.blockedIds.has(mara)).toBe(true);
+  expect(actorFact(issued.actor, 'blockedIds')?.has(mara)).toBe(true);
 });
 
 unitTest('friendship is accepted-only and direction-blind', async () => {
@@ -200,7 +203,7 @@ unitTest('a new account is signed in with an empty graph, built by the one resol
     },
     NOW,
   );
-  expect(issued.actor.friendIds.size).toBe(0);
-  expect(issued.actor.blockedIds.size).toBe(0);
+  expect(actorFact(issued.actor, 'friendIds')?.size).toBe(0);
+  expect(actorFact(issued.actor, 'blockedIds')?.size).toBe(0);
   expect((await viewerFor(issued.token, NOW))?.id).toBe(issued.actor.id);
 });

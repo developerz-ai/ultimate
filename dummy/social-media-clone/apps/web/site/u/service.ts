@@ -1,15 +1,13 @@
 // What a reader may see on somebody's profile. The rule is `canSeePost` and only `canSeePost` —
-// imported from the posts feature rather than restated, because a second copy of "who may read
-// this" is how a friends-only post ends up on an anonymous page.
+// imported rather than restated, because a second copy of "who may read this" is how a
+// friends-only post ends up on an anonymous page.
 //
-// The import crosses site/ -> app/, which `x verify` reports as X_BOUNDARY_SITE_TO_APP. That is a
-// real finding and not a shrug: `site/feed/page.tsx` already crosses it the same way. The right
-// repair is to move the visibility rule down into `shared/` (a leaf both surfaces may import), not
-// to write the rule twice — and moving it means editing the posts feature, which this slice does
-// not own. Recorded here so the next reader knows which of the two options was rejected and why.
+// Imported from `shared/visibility`, which is where the rule lives; `app/posts/policy.ts` only
+// re-exports it. Reaching for the re-export crossed site/ -> app/ (X_BOUNDARY_SITE_TO_APP) to get
+// at a leaf both surfaces may already import.
 
-import { canSeePost } from '../../app/posts/policy';
 import type { Actor } from '../../shared/actor';
+import { canSeePost } from '../../shared/visibility';
 import type { Post, User } from './repo';
 import { postsByAuthor, userByHandle } from './repo';
 

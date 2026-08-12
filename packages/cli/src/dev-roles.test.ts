@@ -3,7 +3,8 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
-import { METRICS_PATH, userActor } from '@ultimat3/core';
+import { logger, METRICS_PATH, userActor } from '@ultimat3/core';
+import type { Route } from '@ultimat3/http';
 import { configureAuthenticator, cspHashSource, resetAuthenticator } from '@ultimat3/http';
 import {
   createMemoryDriver,
@@ -335,5 +336,90 @@ describe('the CSP the web role sends admits the styles it serves', () => {
         'content-security-policy',
       ) ?? '';
     expect(uncovered('<style>body{margin:0}</style>', csp)).toEqual([]);
+  });
+});
+
+describe('unit · a server that cannot resolve an identity says so', () => {
+  const guarded: Route = {
+    method: 'GET',
+    path: '/private',
+    meta: { name: 'private', auth: 'required' },
+    handler: () => new Response('ok'),
+  };
+  const open: Route = {
+    method: 'GET',
+    path: '/public',
+    meta: { name: 'public', auth: 'public' },
+    handler: () => new Response('ok'),
+  };
+
+  // The exact production state the demo app shipped in: guarded routes, no authenticator, a clean
+  // boot, and a 401 on every valid session. Silence there is what let it survive to a deployment.
+  test('guarded routes with no authenticator warn, naming the call that fixes it', async () => {
+    resetAuthenticator();
+    const lines: string[] = [];
+    const original = logger.warn;
+    logger.warn = (line: string) => lines.push(line);
+    try {
+      const running = await startRoles({
+        roles: ['web'],
+        port: 0,
+        buildId: 'test',
+        runtime: fakeRuntime(),
+        routes: [open, guarded],
+        env: {},
+      });
+      await running.stop();
+    } finally {
+      logger.warn = original;
+    }
+    const warned = lines.find((line) => line.includes('X_CONFIG_INVALID'));
+    expect(warned).toBeDefined();
+    expect(warned).toContain("1 route(s) declare auth: 'required'");
+    expect(warned).toContain('configureAuthenticator()');
+  });
+
+  test('an app that configured one is silent', async () => {
+    resetAuthenticator();
+    configureAuthenticator(() => null);
+    const lines: string[] = [];
+    const original = logger.warn;
+    logger.warn = (line: string) => lines.push(line);
+    try {
+      const running = await startRoles({
+        roles: ['web'],
+        port: 0,
+        buildId: 'test',
+        runtime: fakeRuntime(),
+        routes: [guarded],
+        env: {},
+      });
+      await running.stop();
+    } finally {
+      logger.warn = original;
+      resetAuthenticator();
+    }
+    expect(lines.filter((line) => line.includes('X_CONFIG_INVALID'))).toEqual([]);
+  });
+
+  test('a route table with nothing guarded is silent', async () => {
+    resetAuthenticator();
+    const lines: string[] = [];
+    const original = logger.warn;
+    logger.warn = (line: string) => lines.push(line);
+    try {
+      const running = await startRoles({
+        roles: ['web'],
+        port: 0,
+        buildId: 'test',
+        runtime: fakeRuntime(),
+        routes: [open],
+        env: {},
+      });
+      await running.stop();
+    } finally {
+      logger.warn = original;
+    }
+    expect(lines.filter((line) => line.includes('X_CONFIG_INVALID'))).toEqual([]);
   });
 });

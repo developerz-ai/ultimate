@@ -1,0 +1,98 @@
+// The footer's own layer. `bg-soft` rather than a second surface role: it is the same ground as
+// the page, one step down, which is what makes it read as the end rather than as another card.
+
+@use '../tokens' as t;
+
+.footer {
+  margin-block-start: t.space(16);
+  border-block-start: 1px solid t.role('line');
+  background: t.role('bg-soft');
+}
+
+.inner {
+  display: grid;
+  gap: t.space(8);
+  inline-size: min(100% - #{t.space(8)}, 72rem);
+  margin-inline: auto;
+  padding-block: t.space(10) t.space(6);
+
+  @include t.respond-to('md') {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: t.space(12);
+  }
+}
+
+.about {
+  display: grid;
+  gap: t.space(3);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
+  letter-spacing: var(--tracking-tight);
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border-radius: t.radius('sm');
+  background: t.role('accent', 0.16);
+  color: t.role('accent-strong');
+  font-size: t.text('xs');
+}
+
+.blurb {
+  max-inline-size: 46ch;
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+}
+
+.links {
+  display: grid;
+  gap: t.space(3);
+  align-content: start;
+}
+
+.heading {
+  color: t.role('fg-muted');
+  font-size: t.text('xs');
+  font-weight: t.weight('semibold');
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.list {
+  display: grid;
+  gap: t.space(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link {
+  @include t.focus-ring;
+
+  color: t.role('fg');
+  font-size: t.text('sm');
+  text-decoration: none;
+
+  &:hover {
+    color: t.role('accent-strong');
+    text-decoration: underline;
+  }
+}
+
+.disclaimer {
+  inline-size: min(100% - #{t.space(8)}, 72rem);
+  margin-inline: auto;
+  padding-block: t.space(4) t.space(8);
+  border-block-start: 1px solid t.role('line');
+  color: t.role('fg-muted');
+  font-size: t.text('xs');
+}

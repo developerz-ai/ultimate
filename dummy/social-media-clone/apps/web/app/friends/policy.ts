@@ -3,11 +3,12 @@
 // door, and there is no `WHERE` clause anywhere that repeats one of these sentences.
 //
 // The predicates are SYNCHRONOUS, like every other predicate in this app: a live query re-evaluates
-// one per subscriber on every change. So each rule decides on the actor (which carries the resolved
-// friend and block sets) plus a row the SURFACE loaded — never on something it goes and fetches.
+// one per subscriber on every change. So each rule decides on the actor it is HANDED (which carries
+// the resolved friend and block sets as actor facts) plus a row the SURFACE loaded — never on
+// something it goes and fetches, and never on ambient state a sync node or a job would not have.
 
 import { can, definePermissions } from '@ultimat3/policy';
-import { currentViewer, isBlocked, isSelf, isSignedIn } from '../../shared/actor';
+import { isBlocked, isSelf, isSignedIn } from '../../shared/actor';
 
 /**
  * Declared rather than assumed, so a typo is a build error instead of a rule that silently never
@@ -91,21 +92,21 @@ export const friendRead = can('friend:read');
  */
 export const friendRequest = can<Record<string, never>, PersonRow>(
   'friend:request',
-  ({ row }) => row !== null && canRequestFriendship(currentViewer(), row.id),
+  ({ actor, row }) => row !== null && canRequestFriendship(actor, row.id),
 );
 
 export const friendRespond = can<Record<string, never>, FriendshipRow>(
   'friend:respond',
-  ({ row }) => row !== null && canRespondToRequest(currentViewer(), row),
+  ({ actor, row }) => row !== null && canRespondToRequest(actor, row),
 );
 
 /** Blocking needs no friendship and no relationship — only a real person who is not yourself. */
 export const blockCreate = can<Record<string, never>, PersonRow>(
   'block:create',
-  ({ row }) => row !== null && isSignedIn(currentViewer()) && !isSelf(currentViewer(), row.id),
+  ({ actor, row }) => row !== null && isSignedIn(actor) && !isSelf(actor, row.id),
 );
 
 export const blockDelete = can<Record<string, never>, BlockRow>(
   'block:delete',
-  ({ row }) => row !== null && canRemoveBlock(currentViewer(), row),
+  ({ actor, row }) => row !== null && canRemoveBlock(actor, row),
 );

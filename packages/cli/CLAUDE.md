@@ -138,6 +138,11 @@ that trace is the live panel's question, so the panel degrades to its own note i
 | `mcp-test-output.ts` | reading `bun test`'s own summary back into a `TestRun` |
 | `cmd-mcp.ts` | `x mcp serve`: the two transports, and the local developer's caller |
 
+`startWeb` warns when the route table declares `auth: 'required'` and the app configured no
+authenticator: `hooks.authenticate` is the only place an actor can come from, so such a process
+boots clean, reports healthy, and refuses every valid session. A warning and not a throw, because
+`x new` scaffolds guarded routes before it scaffolds an authenticator.
+
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.

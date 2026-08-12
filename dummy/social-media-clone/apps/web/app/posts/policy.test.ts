@@ -8,22 +8,20 @@
 import { expect, test } from 'bun:test';
 import { userId } from '@social-media-clone/domain';
 import type { Actor } from '../../shared/actor';
+import { viewerActor } from '../../shared/actor';
 import { canSeePost, type PostRow } from './policy';
 
 const ADA = userId('00000000-0000-4000-8000-00000000000a');
 const BRUNO = userId('00000000-0000-4000-8000-00000000000b');
 const MARA = userId('00000000-0000-4000-8000-00000000000c');
 
+// Built by the app's ONE actor constructor, so a fact this rule reads is a fact production puts
+// there — a literal would keep passing after the seam moved underneath it.
 const actor = (
   id = ADA,
   friends: readonly ReturnType<typeof userId>[] = [],
   blocked: readonly ReturnType<typeof userId>[] = [],
-): Actor => ({
-  id,
-  role: 'member',
-  friendIds: new Set(friends),
-  blockedIds: new Set(blocked),
-});
+): Actor => viewerActor({ id, role: 'member', friendIds: friends, blockedIds: blocked });
 
 const post = (over: Partial<PostRow> = {}): PostRow => ({
   authorId: BRUNO,

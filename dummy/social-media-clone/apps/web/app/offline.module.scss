@@ -1,9 +1,9 @@
+// The offline fallback's own layer: one heading, then the shared empty state does the rest.
+
 @use '../shared/tokens' as t;
 
-.offline {
-  display: grid;
-  gap: t.space(3);
-  padding: t.space(8);
-  background: t.role('bg');
-  color: t.role('fg-muted');
+.title {
+  margin-block-end: t.space(8);
+  font-size: t.text('2xl');
+  text-wrap: balance;
 }

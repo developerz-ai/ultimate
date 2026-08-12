@@ -1,0 +1,59 @@
+// The heading block's own layer. `2xl` and not the reset's `3xl`: the landing hero owns the top of
+// the scale, and an interior page that shouts as loudly as the front door has no hierarchy left.
+
+@use '../tokens' as t;
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  // `start`, so a page's controls sit beside its heading rather than floating down beside the last
+  // line of a three-line lede.
+  align-items: start;
+  justify-content: space-between;
+  gap: t.space(4);
+  margin-block-end: t.space(10);
+  padding-block-end: t.space(6);
+  border-block-end: 1px solid t.role('line');
+}
+
+// `flex: 1 1 20rem` and not the default `auto` basis: a lede's max-content width is the whole
+// sentence unwrapped, and a flex line sizes on that before it shrinks — so the actions wrapped to
+// their own row on every screen that has any, however much room was actually left.
+.text {
+  display: grid;
+  flex: 1 1 20rem;
+  gap: t.space(2);
+  min-inline-size: 0;
+}
+
+.eyebrow {
+  color: t.role('accent-strong');
+  font-size: t.text('xs');
+  font-weight: t.weight('semibold');
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.title {
+  max-inline-size: 22ch;
+  font-size: t.text('2xl');
+  // Wrapping a headline at the last two words reads as a mistake; `balance` evens the lines.
+  text-wrap: balance;
+}
+
+.lede {
+  max-inline-size: 62ch;
+  color: t.role('fg-muted');
+  font-size: t.text('lg');
+  line-height: t.leading('snug');
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  // Optical, not structural: an `xl` heading's cap height starts below its line box, and a control
+  // aligned to the box reads as sitting too high beside it.
+  padding-block-start: t.space(2);
+  gap: t.space(2);
+}

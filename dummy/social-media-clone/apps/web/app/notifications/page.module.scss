@@ -1,50 +1,67 @@
+// The inbox's own layer. Unread is carried by a border AND by the word beside it, never by colour
+// alone — the same rule the count badge above the list follows.
+
 @use '../../shared/tokens' as t;
-
-.inbox {
-  width: min(100% - #{t.space(8)}, 44rem);
-  margin-inline: auto;
-  padding-block: t.space(10);
-  color: t.role('fg');
-}
-
-.header {
-  display: flex;
-  gap: t.space(3);
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.lede {
-  color: t.role('fg-muted');
-  margin-block-end: t.space(8);
-}
 
 .list {
   display: grid;
   gap: t.space(3);
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.item {
-  @include t.card;
+.item,
+.new {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: t.space(1) t.space(4);
+  padding: t.space(4) t.space(5);
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface-raised');
+  box-shadow: t.shadow('xs');
 }
 
-/** Unread is carried by a border AND by text, never by colour alone. */
 .new {
   border-inline-start: 3px solid t.role('accent');
 }
 
 .kind {
-  font-weight: 600;
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
 }
 
 .when {
-  font-size: t.text('sm');
   color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-align: end;
 }
 
 .state {
-  font-size: t.text('sm');
+  grid-column: 1 / -1;
   color: t.role('fg-muted');
+  font-size: t.text('sm');
+}
+
+.countQuiet,
+.countLive {
+  padding-block: t.space(1);
+  padding-inline: t.space(3);
+  border-radius: t.radius('pill');
+  font-size: t.text('sm');
+  font-variant-numeric: tabular-nums;
+  font-weight: t.weight('semibold');
+  white-space: nowrap;
+}
+
+.countQuiet {
+  background: t.role('bg-soft');
+  color: t.role('fg-muted');
+}
+
+.countLive {
+  background: t.role('accent', 0.14);
+  color: t.role('accent-strong');
 }

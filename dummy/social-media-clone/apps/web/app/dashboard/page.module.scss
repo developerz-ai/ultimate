@@ -1,7 +1,76 @@
+// The dashboard's own layer. The whole card is the link — a card with a link inside it gives a
+// pointer a large target and a keyboard a small one, and they should be the same target.
+
 @use '../../shared/tokens' as t;
 
-.panel {
-  padding: t.space(6);
+.grid {
+  display: grid;
+  gap: t.space(4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  @include t.respond-to('md') {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.card {
+  @include t.focus-ring;
+  @include t.transition(border-color, box-shadow, transform);
+
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: t.space(1) t.space(4);
+  block-size: 100%;
+  padding: t.space(5);
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
   background: t.role('surface-raised');
+  box-shadow: t.shadow('xs');
   color: t.role('fg');
+  text-decoration: none;
+
+  &:hover {
+    border-color: t.role('accent', 0.45);
+    box-shadow: t.shadow('md');
+    color: t.role('fg');
+
+    @include t.motion {
+      transform: translateY(-2px);
+    }
+  }
+}
+
+.icon {
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: t.radius('md');
+  background: t.role('accent', 0.12);
+  color: t.role('accent-strong');
+}
+
+.title {
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
+}
+
+.body {
+  grid-column: 2;
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-wrap: pretty;
+}
+
+.more {
+  grid-row: span 2;
+  color: t.role('fg-muted');
+}
+
+.card:hover .more {
+  color: t.role('accent-strong');
 }

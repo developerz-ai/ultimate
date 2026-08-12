@@ -1,0 +1,90 @@
+// The post card's own layer. `surface-raised` over the page's `bg` is the only elevation this app
+// uses for content — one step, so "raised" still means something when it appears.
+
+@use '../tokens' as t;
+
+.card {
+  @include t.transition(border-color, box-shadow);
+
+  display: grid;
+  gap: t.space(3);
+  padding: t.space(5);
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface-raised');
+  box-shadow: t.shadow('xs');
+
+  &:hover {
+    border-color: t.role('accent', 0.4);
+    box-shadow: t.shadow('sm');
+  }
+}
+
+.byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: t.space(2);
+  font-size: t.text('sm');
+  color: t.role('fg-muted');
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: t.radius('full');
+  background: t.role('accent', 0.16);
+  color: t.role('accent-strong');
+  font-size: t.text('sm');
+  font-weight: t.weight('semibold');
+}
+
+.name {
+  @include t.focus-ring;
+
+  color: t.role('fg-strong');
+  font-weight: t.weight('semibold');
+  text-decoration: none;
+
+  &:hover {
+    color: t.role('accent-strong');
+    text-decoration: underline;
+  }
+}
+
+.handle,
+.when {
+  color: t.role('fg-muted');
+}
+
+.dot {
+  color: t.role('line');
+}
+
+.body {
+  // A seeded post can carry an unbroken token; without this it is what makes the page scroll
+  // sideways on a 360px phone.
+  overflow-wrap: anywhere;
+  color: t.role('fg');
+  line-height: t.leading('normal');
+  text-wrap: pretty;
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: t.space(4);
+  padding-block-start: t.space(3);
+  border-block-start: 1px solid t.role('line');
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+}
+
+.metric {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  font-variant-numeric: tabular-nums;
+}

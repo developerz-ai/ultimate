@@ -1,10 +1,7 @@
 // The session cookie and the token behind it: what the cookie is called, how the token is hashed
-// before it is stored, and the `SessionService` the request context carries. `shared/` is a leaf,
-// so nothing here reads a database — `app/auth/service.ts` resolves the actor and hands it in.
-
-import type { Ctx } from '@ultimat3/core';
-import { createContext, runWithContext, tryUseContext, withChildContext } from '@ultimat3/core';
-import type { Actor, SessionService } from './actor';
+// before it is stored, and how it is parsed back out of a `Cookie:` header. `shared/` is a leaf, so
+// nothing here reads a database or a request — `app/auth/viewer.ts` turns the token into an actor,
+// and `app/auth/authenticator.ts` is what hands it the header.
 
 /**
  * Two names for one cookie, chosen by the flag that makes the strong one legal.
@@ -89,30 +86,6 @@ export const clearedSessionCookie = (secure: boolean): string =>
   sessionCookie({ token: '', secure, maxAgeSeconds: 0 });
 
 /**
- * The service `ctx.session` is. A closure over an actor that was resolved ONCE, before the render
- * started — `viewer()` is called from synchronous policy predicates, once per subscriber per
- * change on a live query, so it may not await and may not fetch.
- */
-export const sessionService = (actor: Actor | null): SessionService => ({
-  viewer: () => actor,
-});
-
-/**
- * Run `fn` with this viewer installed on the ambient context.
- *
- * The two branches are `@ultimat3/action`'s own idiom (`packages/action/src/invoke.ts:72`): inside
- * a request there is a context to narrow, and outside one — a test, a job — there is not, and
- * `withChildContext` would throw `X_NO_CONTEXT` instead of doing the obvious thing.
- */
-export const withSession = <T>(actor: Actor | null, fn: () => T): T => {
-  const services = { session: sessionService(actor) };
-  const base: Ctx | undefined = tryUseContext();
-  return base === undefined
-    ? runWithContext(createContext({ services }), fn)
-    : withChildContext({ services }, fn);
-};
-
-/**
  * A context that is carrying response headers. Read structurally rather than cast, because this is
  * the one thing the app cannot prove: the object the pipeline publishes through ALS is
  * `@ultimat3/http`'s `RequestContext` cast to core's `Ctx` (`packages/http/src/context.ts:102`),
@@ -139,38 +112,3 @@ export const setResponseCookie = (ctx: unknown, cookie: string): boolean => {
 /** `https` in production only. The same fact picks the cookie name and the `Secure` attribute. */
 export const isSecureRequest = (ctx: unknown): boolean =>
   typeof ctx === 'object' && ctx !== null && 'https' in ctx && ctx.https === true;
-
-/** A context that can still reach the request it was built for. Nothing in the framework is one. */
-interface RequestCarrier {
-  readonly request: { readonly headers: Headers };
-}
-
-const carriesRequest = (ctx: unknown): ctx is RequestCarrier => {
-  if (typeof ctx !== 'object' || ctx === null || !('request' in ctx)) return false;
-  const request: unknown = ctx.request;
-  return (
-    typeof request === 'object' &&
-    request !== null &&
-    'headers' in request &&
-    request.headers instanceof Headers
-  );
-};
-
-/**
- * The `Cookie:` header of the request being served — and **today it is always `null`**.
- *
- * That is a framework gap, written as a probe rather than a stub so it starts working the moment
- * the gap closes. The context published through ALS is `@ultimat3/http`'s `RequestContext`
- * (`packages/http/src/context.ts:23`), which carries the RESPONSE headers, the url, the actor and
- * the matched route — and no reference to the `UltimateRequest` beside it. `hooks.authenticate`
- * (`packages/http/src/hooks.ts:20`) is the seam that WOULD read the cookie, and `x dev` hard-wires
- * it to `devHooks()` (`packages/cli/src/dev-roles.ts:131`), which supplies only `authorize`.
- *
- * So an app can SET a session cookie and can never read one back. Everything downstream of this
- * function is written and tested against a token; only its source is missing.
- */
-export const requestCookieHeader = (ctx: unknown): string | null =>
-  carriesRequest(ctx) ? ctx.request.headers.get('cookie') : null;
-
-export const requestSessionToken = (ctx: unknown): string | null =>
-  readSessionToken(requestCookieHeader(ctx));

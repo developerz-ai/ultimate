@@ -10,6 +10,9 @@ import {
   captchaSiteKey,
   HCAPTCHA_SCRIPT_URL,
 } from '../../shared/auth-policy';
+import { ActionButton } from '../../shared/ui/action';
+import { AppShell } from '../../shared/ui/app-shell';
+import { Field } from '../../shared/ui/field';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -31,6 +34,7 @@ export const config = defineRoute({
 
 export interface SignInProps {
   readonly query: Readonly<Record<string, string>>;
+  readonly url?: string | undefined;
 }
 
 export function Page(props: SignInProps) {
@@ -41,80 +45,77 @@ export function Page(props: SignInProps) {
   const next = nextAfterSignIn(props.query[NEXT_PARAM], '/dashboard');
 
   return (
-    <main class={styles.auth}>
-      <h1>{t('site.signin.title')}</h1>
-      <p class={styles.lede}>{t('site.signin.description')}</p>
+    <AppShell url={props.url}>
+      <div class={styles.auth}>
+        <div class={styles.head}>
+          <h1 class={styles.title}>{t('site.signin.title')}</h1>
+          <p class={styles.lede}>{t('site.signin.description')}</p>
+        </div>
 
-      {/* The action is the route `createSession` derives, not a path anyone chose twice. */}
-      <form class={styles.form} method="post" action="/api/sessions/create">
-        {/* The return trip. A native form carries it as a field because nothing here hydrates. */}
-        <input type="hidden" name={NEXT_PARAM} value={next} />
-        <label class={styles.label} for="signin-handle">
-          {t('site.signin.handle')}
-        </label>
-        <input
-          id="signin-handle"
-          name="handle"
-          type="text"
-          autocomplete="username"
-          required
-          maxlength={30}
-        />
+        {/* The action is the route `createSession` derives, not a path anyone chose twice. */}
+        <form class={styles.card} method="post" action="/api/sessions/create">
+          {/* The return trip. A native form carries it as a field because nothing here hydrates. */}
+          <input type="hidden" name={NEXT_PARAM} value={next} />
 
-        <label class={styles.label} for="signin-password">
-          {t('site.signin.password')}
-        </label>
-        <input
-          id="signin-password"
-          name="password"
-          type="password"
-          autocomplete="current-password"
-          required
-        />
+          <Field
+            id="signin-handle"
+            name="handle"
+            label={t('site.signin.handle')}
+            autocomplete="username"
+            required
+            maxlength={30}
+          />
+          <Field
+            id="signin-password"
+            name="password"
+            label={t('site.signin.password')}
+            type="password"
+            autocomplete="current-password"
+            required
+          />
 
-        {siteKey === null ? (
-          <p class={styles.note}>{t('site.signin.captchaOff')}</p>
-        ) : (
-          <>
-            <p class={styles.note}>
-              {t('site.signin.captchaAfterFailures', { count: CAPTCHA_AFTER_FAILURES })}
-            </p>
-            {/* Rendered on every load rather than only after a failure: the page cannot know how
-                many times THIS handle has been refused before the handle is typed, and the server
-                is the only thing that decides whether the answer is demanded. */}
-            <div class="h-captcha" data-sitekey={siteKey} />
-            <script src={HCAPTCHA_SCRIPT_URL} async defer />
-          </>
-        )}
+          {siteKey === null ? (
+            <p class={styles.note}>{t('site.signin.captchaOff')}</p>
+          ) : (
+            <>
+              <p class={styles.note}>
+                {t('site.signin.captchaAfterFailures', { count: CAPTCHA_AFTER_FAILURES })}
+              </p>
+              {/* Rendered on every load rather than only after a failure: the page cannot know how
+                  many times THIS handle has been refused before the handle is typed, and the server
+                  is the only thing that decides whether the answer is demanded. */}
+              <div class="h-captcha" data-sitekey={siteKey} />
+              <script src={HCAPTCHA_SCRIPT_URL} async defer />
+            </>
+          )}
 
-        <button class={styles.submit} type="submit">
-          {t('site.signin.submit')}
-        </button>
-      </form>
-
-      <section class={styles.aside}>
-        <h2>{t('site.signin.demo.title')}</h2>
-        <ul>
-          <li>{t('site.signin.demo.user')}</li>
-          <li>{t('site.signin.demo.admin')}</li>
-        </ul>
-      </section>
-
-      <section class={styles.aside}>
-        <h2>{t('site.signin.signOut.title')}</h2>
-        <p>{t('site.signin.signOut.description')}</p>
-        <form method="post" action="/api/sessions/destroy">
-          {/* A form with no fields posts an empty body, and an action's input is an object. */}
-          <input type="hidden" name="confirm" value="sign-out" />
-          <button class={styles.secondary} type="submit">
-            {t('site.signin.signOut.submit')}
-          </button>
+          <ActionButton size="lg">{t('site.signin.submit')}</ActionButton>
         </form>
-      </section>
 
-      <p class={styles.note}>
-        {t('site.signin.noAccount')} <a href="/signup">{t('site.signin.createOne')}</a>
-      </p>
-    </main>
+        <section class={styles.demo}>
+          <h2 class={styles.demoTitle}>{t('site.signin.demo.title')}</h2>
+          <ul class={styles.demoList}>
+            <li>{t('site.signin.demo.user')}</li>
+            <li>{t('site.signin.demo.admin')}</li>
+          </ul>
+        </section>
+
+        <p class={styles.alt}>
+          {t('site.signin.noAccount')} <a href="/signup">{t('site.signin.createOne')}</a>
+        </p>
+
+        {/* `<details>` is the only disclosure a 0kb page can have, and this is the right thing to
+            put behind one: signing out is not what anyone came to this page to do. */}
+        <details class={styles.signOut}>
+          <summary class={styles.summary}>{t('site.signin.signOut.title')}</summary>
+          <p class={styles.note}>{t('site.signin.signOut.description')}</p>
+          <form method="post" action="/api/sessions/destroy">
+            {/* A form with no fields posts an empty body, and an action's input is an object. */}
+            <input type="hidden" name="confirm" value="sign-out" />
+            <ActionButton variant="secondary">{t('site.signin.signOut.submit')}</ActionButton>
+          </form>
+        </details>
+      </div>
+    </AppShell>
   );
 }

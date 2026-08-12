@@ -1,4 +1,31 @@
 {
+  "brand": {
+    "name": "SocialMediaClone"
+  },
+  "nav": {
+    "primary": "Primary",
+    "skip": "Skip to content",
+    "feed": "Feed",
+    "dashboard": "Dashboard",
+    "friends": "Friends",
+    "messages": "Messages",
+    "notifications": "Notifications",
+    "signIn": "Sign in",
+    "signUp": "Create account",
+    "signOut": "Sign out"
+  },
+  "footer": {
+    "blurb": "A social network built to stress-test Ultimate: every primitive, once, in one real app. Public pages here ship no JavaScript at all.",
+    "explore": "Explore",
+    "linksLabel": "Footer",
+    "seeded": "Seeded demo data. Every account, post and photo here is fabricated.",
+    "link": {
+      "feed": "Public feed",
+      "signIn": "Sign in",
+      "signUp": "Create account",
+      "dashboard": "Dashboard"
+    }
+  },
   "admin": {
     "home": {
       "description": "Operations for SocialMediaClone.",
@@ -118,8 +145,27 @@
   },
   "app": {
     "dashboard": {
-      "description": "Your workspace.",
-      "title": "Dashboard"
+      "description": "Four screens, four policies. Nothing on this page is readable without the permission the route declares — including this page.",
+      "title": "Dashboard",
+      "eyebrow": "Signed in",
+      "card": {
+        "friends": {
+          "title": "Friends",
+          "body": "Who asked whom, in five lists — because direction is part of the fact."
+        },
+        "messages": {
+          "title": "Messages",
+          "body": "A row in participants is permission to read a thread. There is no second grant."
+        },
+        "notifications": {
+          "title": "Notifications",
+          "body": "Unread is derived from readAt, so marking read is safe to replay offline."
+        },
+        "feed": {
+          "title": "Public feed",
+          "body": "The same list a signed-out reader gets, decided by the same policy object."
+        }
+      }
     },
     "friends": {
       "title": "Friends",
@@ -159,7 +205,8 @@
         "pending": "Pending",
         "accepted": "Friends",
         "declined": "Declined"
-      }
+      },
+      "eyebrow": "Relational visibility"
     },
     "messages": {
       "title": "Messages",
@@ -202,16 +249,57 @@
     },
     "offline": {
       "description": "This page will refresh itself when the connection returns.",
-      "title": "You are offline"
+      "title": "You are offline",
+      "help": "Every app/ route declares its own offline strategy, and the service worker is generated from those declarations rather than hand-written."
     }
   },
   "site": {
     "home": {
       "title": "A social network, built to break a framework",
       "description": "Every Ultimate primitive, once, in one real app: relational visibility decided by a policy, a live feed, offline reads, uploads and an admin that shares the same authz object as the API.",
+      "eyebrow": "This page ships 0 kb of JavaScript",
       "cta": "Read the public feed",
       "signin": "Sign in",
       "seeded": "Seeded demo data. Every account, post and photo here is fabricated.",
+      "decision": {
+        "caption": "What a signed-out reader may see",
+        "visible": "visible",
+        "hidden": "hidden",
+        "note": "Not a WHERE clause. One policy object answers the HTTP route, the live query, the MCP tool and the admin button — and it is re-decided per row, per subscriber."
+      },
+      "stats": {
+        "primitives": {
+          "value": "8",
+          "label": "primitives, and the list is closed"
+        },
+        "js": {
+          "value": "0 kb",
+          "label": "JavaScript on every public page"
+        },
+        "authz": {
+          "value": "1",
+          "label": "policy object per decision, on all four surfaces"
+        },
+        "packages": {
+          "value": "29",
+          "label": "packages published in lockstep"
+        }
+      },
+      "declaration": {
+        "title": "None of that is configuration. It is a declaration.",
+        "body": "A route says how it renders, whether it hydrates, what it does offline and what it may cost. The service worker, the budget check and the prerender list are all generated from those five lines — so a page cannot quietly start shipping JavaScript.",
+        "point": {
+          "one": "The directory is the URL. There is no route table to keep in step.",
+          "two": "A budget is a build failure, not a note in a README.",
+          "three": "Who may read a post is one policy object, asked by HTTP, live queries, the MCP tools and the admin alike."
+        }
+      },
+      "closing": {
+        "title": "Everything here is real, and none of it is true",
+        "body": "The data is fabricated and the app is not. Read the feed and every row you see was decided by a policy, not by a WHERE clause.",
+        "cta": "Read the public feed",
+        "secondary": "Create an account"
+      },
       "proofs": {
         "title": "What this deployment is evidence for",
         "policy": {
@@ -235,8 +323,13 @@
     "feed": {
       "title": "The public feed",
       "description": "Everything here is seeded and fake. What you can see is decided by a policy, not by a WHERE clause.",
-      "likes": "{count} likes",
-      "comments": "{count} comments"
+      "eyebrow": "Anonymous, and allowed",
+      "empty": "Nothing public to read yet",
+      "emptyHelp": "Every post the seed created is either friends-only, private, or written by someone who blocked the demo user — so a signed-out reader is shown none of them.",
+      "likes_one": "{count} like",
+      "likes_other": "{count} likes",
+      "comments_one": "{count} comment",
+      "comments_other": "{count} comments"
     },
     "profile": {
       "title": "{name} (@{handle})",
@@ -244,11 +337,13 @@
       "joined": "Joined {date}",
       "posts": {
         "title": "Posts",
-        "empty": "Nothing here that a signed-out reader may see."
+        "empty": "Nothing here that a signed-out reader may see",
+        "emptyHelp": "This account may have posted plenty. A friends-only post, a private note and a soft-deleted row are all absent without a WHERE clause saying so."
       },
       "notFound": {
         "title": "No such profile",
-        "description": "There is no account with that handle. Handles are lowercase, and a URL differing only in case is a different URL."
+        "description": "There is no account with that handle. Handles are lowercase, and a URL differing only in case is a different URL.",
+        "cta": "Read the public feed"
       }
     },
     "signin": {

@@ -3,31 +3,31 @@
 // because a predicate is synchronous and re-evaluated per subscriber per change on a live query.
 
 import type { User } from '@social-media-clone/db';
-import { userId } from '@social-media-clone/domain';
 import type { Actor } from '../../shared/actor';
+import { viewerActor } from '../../shared/actor';
 import { hashToken } from '../../shared/session';
 import { acceptedFriendIds, blockedIdsBothWays, sessionByTokenHash, userById } from './repo';
 
 /**
  * The actor for a user, with the whole graph they need already in memory.
  *
- * Two queries fan out in parallel and the result is two frozen Sets. That is the entire budget a
- * request gets for authorization data — every `isFriend` and `isBlocked` call after this point is
- * a hash lookup, whether it happens once in a page render or ten thousand times across the
- * subscribers of one live query.
+ * Two queries fan out in parallel and the result is two frozen Sets, carried as actor FACTS. That
+ * is the entire budget a request gets for authorization data — every `isFriend` and `isBlocked`
+ * call after this point is a hash lookup off the actor a rule was already handed, whether it
+ * happens once in a page render or ten thousand times across the subscribers of one live query.
  */
 export const actorFor = async (user: User): Promise<Actor> => {
   const [friends, blocked] = await Promise.all([
     acceptedFriendIds(user.id),
     blockedIdsBothWays(user.id),
   ]);
-  return {
-    id: userId(user.id),
+  return viewerActor({
+    id: user.id,
     role: user.role,
-    friendIds: new Set(friends),
+    friendIds: friends,
     // Already symmetric — `blockedIdsBothWays` unioned the two directions. See `shared/actor.ts`.
-    blockedIds: new Set(blocked),
-  };
+    blockedIds: blocked,
+  });
 };
 
 /**

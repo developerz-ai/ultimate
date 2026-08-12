@@ -14,7 +14,12 @@ import { actorOf } from '@ultimat3/action';
 import { useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute, type RouteParams } from '@ultimat3/render';
-import { EmptyState } from '@ultimat3/ui';
+import { Icon } from '@ultimat3/ui';
+import { iconArrowLeft } from '@ultimat3/ui/icons/arrow-left';
+import { iconMessageSquare } from '@ultimat3/ui/icons/message-square';
+import { ActionButton } from '../../../shared/ui/action';
+import { AppShell } from '../../../shared/ui/app-shell';
+import { EmptyState } from '../../../shared/ui/empty-state';
 import { threadFor } from '../service';
 import styles from './page.module.scss';
 
@@ -27,7 +32,10 @@ export const config = defineRoute({
   meta: () => ({ title: t('app.messages.thread.title'), robots: { index: false } }),
 });
 
-export async function Page(props: { readonly params: RouteParams }) {
+export async function Page(props: {
+  readonly params: RouteParams;
+  readonly url?: string | undefined;
+}) {
   const ctx = useContext();
   const viewer = actorOf(ctx);
   const conversationId = props.params.id ?? '';
@@ -38,23 +46,25 @@ export async function Page(props: { readonly params: RouteParams }) {
   const thread = await threadFor(viewer?.id ?? null, conversationId);
 
   return (
-    <main class={styles.thread}>
+    <AppShell url={props.url}>
       <a class={styles.back} href="/messages">
+        <Icon glyph={iconArrowLeft} />
         {t('app.messages.thread.back')}
       </a>
-      <h1>{thread.title ?? t('app.messages.thread.title')}</h1>
+      <h1 class={styles.title}>{thread.title ?? t('app.messages.thread.title')}</h1>
 
       {thread.messages.length === 0 ? (
         <EmptyState
+          glyph={iconMessageSquare}
           title={t('app.messages.thread.empty')}
           description={t('app.messages.thread.emptyHelp')}
         />
       ) : (
         <ul class={styles.list}>
           {thread.messages.map((message) => (
-            <li class={styles.message}>
+            <li class={message.authorId === viewer?.id ? styles.mine : styles.theirs}>
               <header class={styles.byline}>
-                <span>
+                <span class={styles.who}>
                   {message.authorId === viewer?.id
                     ? t('app.messages.you')
                     : (thread.namesById.get(message.authorId) ?? t('app.messages.them'))}
@@ -71,7 +81,9 @@ export async function Page(props: { readonly params: RouteParams }) {
 
       <form class={styles.compose} method="post" action="/api/messages/send">
         <input type="hidden" name="conversationId" value={conversationId} />
-        <label for="message-body">{t('app.messages.compose.label')}</label>
+        <label class={styles.label} for="message-body">
+          {t('app.messages.compose.label')}
+        </label>
         <textarea
           class={styles.field}
           id="message-body"
@@ -79,9 +91,9 @@ export async function Page(props: { readonly params: RouteParams }) {
           rows={3}
           placeholder={t('app.messages.compose.placeholder')}
         />
-        <button type="submit">{t('app.messages.compose.send')}</button>
+        <ActionButton>{t('app.messages.compose.send')}</ActionButton>
       </form>
-    </main>
+    </AppShell>
   );
 }
 

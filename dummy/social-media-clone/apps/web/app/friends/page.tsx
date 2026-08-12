@@ -10,8 +10,10 @@
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { PageHeader, Stack, Text } from '@ultimat3/ui';
+import { Stack, Text } from '@ultimat3/ui';
 import { currentViewer } from '../../shared/actor';
+import { AppShell } from '../../shared/ui/app-shell';
+import { PageHeading } from '../../shared/ui/page-heading';
 import styles from './page.module.scss';
 import { friendsScreen } from './screen';
 import { EdgeList } from './ui/edge-list';
@@ -36,26 +38,30 @@ export const config = defineRoute({
   }),
 });
 
-export async function Page() {
+export async function Page(props: { readonly url?: string | undefined }) {
   const viewer = currentViewer();
   // Unreachable through HTTP — `friend:read` denies an anonymous caller before the render — but a
   // render is not the place to assert that. An empty screen beats a thrown TypeError.
   if (viewer === null) {
     return (
-      <main class={styles.screen}>
+      <AppShell url={props.url} width="wide">
         <Text as="p" tone="muted">
           {t('app.friends.description')}
         </Text>
-      </main>
+      </AppShell>
     );
   }
 
   const screen = await friendsScreen(viewer.id);
 
   return (
-    <main class={styles.screen}>
-      <PageHeader title={t('app.friends.title')} description={t('app.friends.description')} />
-      <Stack gap={8}>
+    <AppShell url={props.url} width="wide">
+      <PageHeading
+        eyebrow={t('app.friends.eyebrow')}
+        title={t('app.friends.title')}
+        lede={t('app.friends.description')}
+      />
+      <Stack gap={8} class={styles.sections}>
         <EdgeList
           title={t('app.friends.incoming.title')}
           description={t('app.friends.incoming.description')}
@@ -100,6 +106,6 @@ export async function Page() {
           control={(item) => <UnblockForm userId={item.person.id} />}
         />
       </Stack>
-    </main>
+    </AppShell>
   );
 }

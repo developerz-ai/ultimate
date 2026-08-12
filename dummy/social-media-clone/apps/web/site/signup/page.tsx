@@ -6,6 +6,9 @@ import { NEXT_PARAM, nextAfterSignIn } from '@ultimat3/http';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { captchaSiteKey, HCAPTCHA_SCRIPT_URL, MIN_PASSWORD_LENGTH } from '../../shared/auth-policy';
+import { ActionButton } from '../../shared/ui/action';
+import { AppShell } from '../../shared/ui/app-shell';
+import { Field } from '../../shared/ui/field';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -24,6 +27,7 @@ export const config = defineRoute({
 
 export interface SignUpProps {
   readonly query: Readonly<Record<string, string>>;
+  readonly url?: string | undefined;
 }
 
 export function Page(props: SignUpProps) {
@@ -33,71 +37,67 @@ export function Page(props: SignUpProps) {
   const siteKey = captchaSiteKey();
 
   return (
-    <main class={styles.auth}>
-      <h1>{t('site.signup.title')}</h1>
-      <p class={styles.lede}>{t('site.signup.description')}</p>
+    <AppShell url={props.url}>
+      <div class={styles.auth}>
+        <div class={styles.head}>
+          <h1 class={styles.title}>{t('site.signup.title')}</h1>
+          <p class={styles.lede}>{t('site.signup.description')}</p>
+        </div>
 
-      <form class={styles.form} method="post" action="/api/accounts/create">
-        <input type="hidden" name={NEXT_PARAM} value={next} />
-        <label class={styles.label} for="signup-handle">
-          {t('site.signup.handle')}
-        </label>
-        <input
-          id="signup-handle"
-          name="handle"
-          type="text"
-          autocomplete="username"
-          required
-          maxlength={30}
-          pattern="[A-Za-z0-9_]+"
-        />
-        <p class={styles.note}>{t('site.signup.handleHint')}</p>
+        <form class={styles.card} method="post" action="/api/accounts/create">
+          <input type="hidden" name={NEXT_PARAM} value={next} />
 
-        <label class={styles.label} for="signup-name">
-          {t('site.signup.displayName')}
-        </label>
-        <input
-          id="signup-name"
-          name="displayName"
-          type="text"
-          autocomplete="name"
-          required
-          maxlength={80}
-        />
+          <Field
+            id="signup-handle"
+            name="handle"
+            label={t('site.signup.handle')}
+            autocomplete="username"
+            required
+            maxlength={30}
+            pattern="[A-Za-z0-9_]+"
+            hint={t('site.signup.handleHint')}
+          />
+          <Field
+            id="signup-name"
+            name="displayName"
+            label={t('site.signup.displayName')}
+            autocomplete="name"
+            required
+            maxlength={80}
+          />
+          <Field
+            id="signup-email"
+            name="email"
+            label={t('site.signup.email')}
+            type="email"
+            autocomplete="email"
+            required
+          />
+          <Field
+            id="signup-password"
+            name="password"
+            label={t('site.signup.password')}
+            type="password"
+            autocomplete="new-password"
+            required
+            minlength={MIN_PASSWORD_LENGTH}
+            hint={t('site.signup.passwordHint', { count: MIN_PASSWORD_LENGTH })}
+          />
 
-        <label class={styles.label} for="signup-email">
-          {t('site.signup.email')}
-        </label>
-        <input id="signup-email" name="email" type="email" autocomplete="email" required />
+          {siteKey !== null && (
+            <>
+              <div class="h-captcha" data-sitekey={siteKey} />
+              <script src={HCAPTCHA_SCRIPT_URL} async defer />
+            </>
+          )}
 
-        <label class={styles.label} for="signup-password">
-          {t('site.signup.password')}
-        </label>
-        <input
-          id="signup-password"
-          name="password"
-          type="password"
-          autocomplete="new-password"
-          required
-          minlength={MIN_PASSWORD_LENGTH}
-        />
-        <p class={styles.note}>{t('site.signup.passwordHint', { count: MIN_PASSWORD_LENGTH })}</p>
+          <ActionButton size="lg">{t('site.signup.submit')}</ActionButton>
+        </form>
 
-        {siteKey !== null && (
-          <>
-            <div class="h-captcha" data-sitekey={siteKey} />
-            <script src={HCAPTCHA_SCRIPT_URL} async defer />
-          </>
-        )}
-
-        <button class={styles.submit} type="submit">
-          {t('site.signup.submit')}
-        </button>
-      </form>
-
-      <p class={styles.note}>
-        {t('site.signup.haveAccount')} <a href="/signin">{t('site.signup.signIn')}</a>
-      </p>
-    </main>
+        <p class={styles.alt}>
+          {t('site.signup.haveAccount')} <a href="/signin">{t('site.signup.signIn')}</a>
+        </p>
+      </div>
+    </AppShell>
   );
 }

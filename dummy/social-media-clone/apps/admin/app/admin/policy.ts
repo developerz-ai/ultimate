@@ -75,27 +75,30 @@ const READ_GRANTS = [
 
 /**
  * Roles, merged onto whatever is already defined rather than replacing it: `defineRoles()` SETS the
- * map, so two modules that both call it would silently delete each other's roles depending on
- * import order. Merging is the only composable spelling there is.
+ * map, so this module and `apps/web/app/auth/roles.ts` would silently delete each other's roles
+ * depending on import order. Merging is the only composable spelling there is.
  *
- * `operator` exists so the refusal below is provably a PERMISSION and not a missing feature: the
+ * `member` is NOT declared here. It is the web surface's role and its grants are the web surface's
+ * permissions; declaring an empty one beside them is what left every signed-in demo user holding
+ * nothing at all. This file owns the dashboard's half and inherits the rest.
+ *
+ * `admin` inherits `member` because the seeded `admin` account is also a person who uses the app —
+ * and inheriting cannot leak a write into the dashboard, whose every write gates on `admin:write`.
+ *
+ * `operator` exists so the refusal above is provably a PERMISSION and not a missing feature: the
  * same code path allows the write when the actor holds `admin:write`. No seeded user can reach it —
  * `USER_ROLES` in @social-media-clone/domain is `member | admin` and nothing else — so it is a test
  * fixture that cannot become a production grant by accident.
  */
 export const adminRoles = defineRoles({
   ...roleDefinitions(),
-  member: {
-    grants: [],
-    description: 'a demo visitor. The dashboard is not theirs to open.',
-  },
   admin: {
     grants: [...READ_GRANTS],
+    inherits: ['member'],
     description: 'the seeded demo operator: sees everything, changes nothing. No admin:write.',
   },
   operator: {
     grants: [
-      ...READ_GRANTS,
       ADMIN_WRITE,
       ADMIN_DESTROY,
       'users:write',
@@ -106,6 +109,7 @@ export const adminRoles = defineRoles({
       'media:write',
       'media:delete',
     ],
+    inherits: ['admin'],
     description: 'a real operator. Unreachable in this app — no seeded user carries this role.',
   },
 });

@@ -1,49 +1,118 @@
+// The landing page's own layer, and the only place in this app that paints full-bleed bands.
+//
+// Depth comes from two gradients and a masked grid rather than an image: an asset would be a
+// request the `precache` budget has to pay for, and a gradient built from `role()` is the only kind
+// that stays right when the theme flips. Nothing here is hardcoded — every colour is a role at an
+// alpha, so the dark theme is the same file.
+
 @use '../shared/tokens' as t;
 
-.page {
-  display: grid;
-  gap: t.space(10);
-  padding: t.space(8) t.space(6);
-  background: t.role('bg');
-  color: t.role('fg');
-}
+$band: 72rem;
+
+// --- Hero --------------------------------------------------------------------
 
 .hero {
-  display: grid;
-  gap: t.space(4);
-  max-width: 62ch;
+  position: relative;
+  // `clip` and not `hidden`: the decorative layers must never widen the document, and `clip` does
+  // that without making this a scroll container.
+  overflow: clip;
+  isolation: isolate;
+  border-block-end: 1px solid t.role('line');
+}
 
-  h1 {
-    // Wrapping a headline at the last two words reads as a mistake; `balance` evens the lines.
-    text-wrap: balance;
+// Two wide, soft pools of accent light — the whole reason the page reads as designed rather than
+// as a default document. Behind the content, never over it.
+.hero::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  background:
+    radial-gradient(52rem 30rem at 8% 4%, t.role('accent', 0.3), transparent 64%),
+    radial-gradient(40rem 26rem at 78% -4%, t.role('info', 0.22), transparent 62%),
+    radial-gradient(34rem 22rem at 100% 62%, t.role('accent', 0.12), transparent 66%);
+}
+
+// A blueprint grid, faded out with a mask so it never reaches an edge and stops being texture.
+// The mask's colour is a stencil — only its alpha is read — so a role keeps the rule token-only.
+.hero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  // Accent-tinted rather than `line`: the neutral line role sits a few percent off the warm page
+  // ground and disappears entirely, which is a texture nobody can see and therefore is not one.
+  background-image:
+    linear-gradient(to right, t.role('accent', 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, t.role('accent', 0.16) 1px, transparent 1px);
+  background-size: 3.5rem 3.5rem;
+  mask-image: radial-gradient(78% 84% at 46% 6%, t.role('fg'), transparent 82%);
+}
+
+.heroInner {
+  display: grid;
+  align-items: center;
+  gap: t.space(10);
+  inline-size: min(100% - #{t.space(8)}, #{$band});
+  margin-inline: auto;
+  padding-block: t.space(16) t.space(12);
+
+  @include t.respond-to('lg') {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: t.space(12);
   }
 }
 
-.lede {
-  color: t.role('fg-muted');
-  font-size: t.text('lg');
+.heroText {
+  display: grid;
+  justify-items: start;
+  gap: t.space(5);
+  min-inline-size: 0;
 }
 
-.actions {
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  padding-block: t.space(1);
+  padding-inline: t.space(3);
+  border: 1px solid t.role('accent', 0.28);
+  border-radius: t.radius('pill');
+  background: t.role('accent', 0.1);
+  color: t.role('accent-strong');
+  font-size: t.text('xs');
+  font-weight: t.weight('semibold');
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.pulse {
+  inline-size: 0.4rem;
+  block-size: 0.4rem;
+  border-radius: t.radius('full');
+  background: t.role('success');
+}
+
+.title {
+  max-inline-size: 17ch;
+  font-size: t.text('3xl');
+  line-height: t.leading('tight');
+  text-wrap: balance;
+}
+
+.lede {
+  max-inline-size: 60ch;
+  color: t.role('fg-muted');
+  font-size: t.text('lg');
+  line-height: t.leading('snug');
+  text-wrap: pretty;
+}
+
+.ctas {
   display: flex;
   flex-wrap: wrap;
   gap: t.space(3);
-}
-
-.cta {
-  text-decoration: none;
-  padding: t.space(2) t.space(4);
-  border-radius: t.radius('md');
-  background: t.role('accent');
-  color: t.role('accent-fg');
-}
-
-.secondary {
-  text-decoration: none;
-  padding: t.space(2) t.space(4);
-  border: 1px solid t.role('line');
-  border-radius: t.radius('md');
-  color: t.role('fg');
+  margin-block-start: t.space(2);
 }
 
 .note {
@@ -51,27 +120,340 @@
   font-size: t.text('sm');
 }
 
-.list {
+// --- The visibility panel ----------------------------------------------------
+// What the app is actually about, in three rows: the same call, three audiences, one anonymous
+// reader. It earns the hero's second column because it is the product's subject, not decoration.
+
+.decision {
+  min-inline-size: 0;
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface-raised', 0.92);
+  box-shadow: t.shadow('lg');
+  overflow: hidden;
+}
+
+.decisionBar {
+  padding-block: t.space(3);
+  padding-inline: t.space(4);
+  border-block-end: 1px solid t.role('line');
+  background: t.role('bg-soft');
+  color: t.role('fg-strong');
+  font-family: var(--font-mono);
+  font-size: t.text('sm');
+  overflow-x: auto;
+}
+
+.decisionCaption {
+  padding-block: t.space(4) t.space(2);
+  padding-inline: t.space(4);
+  color: t.role('fg-muted');
+  font-size: t.text('xs');
+  font-weight: t.weight('semibold');
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.decisionList {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: t.space(4);
-  margin-block-start: t.space(4);
+  gap: t.space(2);
+  margin: 0;
+  padding-block: 0 t.space(4);
+  padding-inline: t.space(4);
+  list-style: none;
+}
+
+.rowVisible,
+.rowHidden {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: t.space(2);
+  padding-block: t.space(3);
+  padding-inline: t.space(3);
+  border-radius: t.radius('md');
+  font-size: t.text('sm');
+}
+
+.rowVisible {
+  background: t.role('success-soft');
+  color: t.role('fg-strong');
+}
+
+// Not colour alone: the muted ground, the icon and the word all say "hidden", so the row still
+// reads as refused in forced-colors and to a reader who cannot separate green from red.
+.rowHidden {
+  background: t.role('bg-soft');
+  color: t.role('fg-muted');
+}
+
+.rowKey {
+  font-family: var(--font-mono);
+}
+
+.rowVerdict {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  font-weight: t.weight('semibold');
+}
+
+.rowVisible .rowVerdict {
+  color: t.role('success');
+}
+
+.decisionNote {
+  padding-block: t.space(4);
+  padding-inline: t.space(4);
+  border-block-start: 1px solid t.role('line');
+  background: t.role('bg-soft', 0.6);
+  color: t.role('fg-muted');
+  font-size: t.text('xs');
+  text-wrap: pretty;
+}
+
+// --- Stats -------------------------------------------------------------------
+
+.statsRow {
+  inline-size: min(100% - #{t.space(8)}, #{$band});
+  margin-inline: auto;
+  padding-block-end: t.space(12);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: t.space(6);
+  padding-block-start: t.space(8);
+  border-block-start: 1px solid t.role('line');
+
+  @include t.respond-to('md') {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+// A grid with `order` on the value, not `column-reverse`: every number then sits on the same row
+// track, so a label that wraps to two lines cannot push its own figure out of line with the rest.
+.stat {
+  display: grid;
+  align-content: start;
+  gap: t.space(1);
+}
+
+.statValue {
+  order: -1;
+  margin: 0;
+  color: t.role('fg-strong');
+  font-size: t.text('2xl');
+  font-variant-numeric: tabular-nums;
+  font-weight: t.weight('bold');
+  letter-spacing: var(--tracking-tight);
+}
+
+.statLabel {
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-wrap: pretty;
+}
+
+// --- Bands -------------------------------------------------------------------
+
+.band,
+.bandAlt {
+  border-block-end: 1px solid t.role('line');
+}
+
+.bandAlt {
+  background: t.role('bg-soft');
+}
+
+.bandInner {
+  display: grid;
+  gap: t.space(8);
+  inline-size: min(100% - #{t.space(8)}, #{$band});
+  margin-inline: auto;
+  padding-block: t.space(16);
+}
+
+.bandTitle {
+  max-inline-size: 24ch;
+  font-size: t.text('xl');
+  text-wrap: balance;
+}
+
+.bandLede {
+  max-inline-size: 54ch;
+  color: t.role('fg-muted');
+  text-wrap: pretty;
+}
+
+// --- Proof cards -------------------------------------------------------------
+
+// Two columns, never four. Four fits, and turns every body into a six-line column nobody reads.
+.proofs {
+  display: grid;
+  gap: t.space(5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  @include t.respond-to('md') {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .proof {
+  @include t.transition(border-color, box-shadow, transform);
+
   display: grid;
-  gap: t.space(2);
-  padding: t.space(4);
+  align-content: start;
+  gap: t.space(3);
+  padding: t.space(6);
   border: 1px solid t.role('line');
   border-radius: t.radius('lg');
-  background: t.role('surface');
+  background: t.role('surface-raised');
+  box-shadow: t.shadow('xs');
 
-  h3 {
-    text-wrap: balance;
-  }
+  &:hover {
+    border-color: t.role('accent', 0.45);
+    box-shadow: t.shadow('md');
 
-  p {
-    color: t.role('fg-muted');
-    font-size: t.text('sm');
+    @include t.motion {
+      transform: translateY(-2px);
+    }
   }
+}
+
+.proofIndex {
+  color: t.role('accent-strong');
+  font-family: var(--font-mono);
+  font-size: t.text('sm');
+  font-weight: t.weight('bold');
+  letter-spacing: var(--tracking-wide);
+}
+
+.proofTitle {
+  font-size: t.text('lg');
+  text-wrap: balance;
+}
+
+.proofBody {
+  color: t.role('fg-muted');
+  font-size: t.text('sm');
+  text-wrap: pretty;
+}
+
+// --- The declaration band ----------------------------------------------------
+
+.declare {
+  display: grid;
+  align-items: center;
+  gap: t.space(10);
+  inline-size: min(100% - #{t.space(8)}, #{$band});
+  margin-inline: auto;
+  padding-block: t.space(16);
+
+  @include t.respond-to('lg') {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: t.space(12);
+  }
+}
+
+.declareText {
+  display: grid;
+  gap: t.space(4);
+  min-inline-size: 0;
+}
+
+.points {
+  display: grid;
+  gap: t.space(2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.point {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: t.space(3);
+  color: t.role('fg');
+  font-size: t.text('sm');
+
+  // The check is the list's only bullet, so it carries the meaning as well as the marker.
+  > svg {
+    margin-block-start: 0.2em;
+    color: t.role('success');
+  }
+}
+
+.sample {
+  min-inline-size: 0;
+  margin: 0;
+  border: 1px solid t.role('line');
+  border-radius: t.radius('lg');
+  background: t.role('surface-raised');
+  box-shadow: t.shadow('md');
+  overflow: hidden;
+}
+
+.sampleBar {
+  padding-block: t.space(3);
+  padding-inline: t.space(4);
+  border-block-end: 1px solid t.role('line');
+  background: t.role('bg-soft');
+  color: t.role('fg-muted');
+  font-family: var(--font-mono);
+  font-size: t.text('xs');
+}
+
+.pre {
+  @include t.custom-scrollbar;
+
+  // The one element on this page allowed to scroll sideways — inside its own box, so the document
+  // never does. A wrapped code sample is a code sample nobody can read.
+  overflow-x: auto;
+  padding: t.space(5);
+  background: none;
+  font-size: t.text('sm');
+  line-height: t.leading('snug');
+  tab-size: 2;
+}
+
+.code {
+  color: t.role('fg');
+}
+
+.comment {
+  color: t.role('fg-muted');
+}
+
+// --- Closing -----------------------------------------------------------------
+
+.closing {
+  background: t.role('bg');
+}
+
+.closingInner {
+  display: grid;
+  justify-items: center;
+  gap: t.space(4);
+  inline-size: min(100% - #{t.space(8)}, 46rem);
+  margin-inline: auto;
+  padding-block: t.space(16);
+  text-align: center;
+}
+
+.closingTitle {
+  max-inline-size: 20ch;
+  font-size: t.text('2xl');
+  text-wrap: balance;
+}
+
+.closingBody {
+  max-inline-size: 54ch;
+  color: t.role('fg-muted');
+  text-wrap: pretty;
 }

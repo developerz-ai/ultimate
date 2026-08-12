@@ -1,53 +1,77 @@
-// Who the request is acting as, in the shape a policy needs. Policies read this and nothing else,
-// so authz cannot disagree between HTTP, live queries, jobs and MCP.
+// Who the request is acting as, in the shape a policy needs. There is ONE actor — the framework's
+// own — and every rule reads it from the argument it is handed, so authz cannot disagree between
+// HTTP, live queries, jobs and MCP.
 //
 // The two Sets are the load-bearing part of this file. Visibility here is RELATIONAL — "a friend
 // of the author", "someone who blocked me" — not a column comparison, and a policy predicate is
 // synchronous because a live query re-evaluates one per subscriber per change. So the graph is
-// resolved ONCE per request, into memory, and every predicate reads it for free. Resolving it
-// inside a predicate would be one database round trip per row per connected client.
+// resolved ONCE per request, into the actor, and every predicate reads it for free.
 
-import { canModerate, type UserId, type UserRole } from '@social-media-clone/domain';
-import { useContext } from '@ultimat3/core';
+import { canModerate, USER_ROLES, type UserRole } from '@social-media-clone/domain';
+import type { Actor } from '@ultimat3/core';
+import { actorFact, isAnonymous, useContext, userActor } from '@ultimat3/core';
 
 /**
- * The viewer rides on the request context as a service, NOT on `@ultimat3/core`'s `Actor`.
+ * This app's authz facts, declared once on core's extension seam.
  *
- * That is a workaround, and worth naming. Core's `Actor` is closed — `{ kind, id, orgId, roles,
- * scopes }` — with no extension point, and a policy predicate receives exactly that. Roles and an
- * org id are enough when authorization is columnar ("same tenant?"). They cannot express
- * "a friend of the author", because a friend set is not derivable from a role. And a predicate is
- * synchronous by contract, so it cannot go and fetch one either.
- *
- * So the graph is resolved once per request into this service and read from memory inside the
- * predicate. The cost is that a rule reads the viewer from the context instead of from the `actor`
- * argument it was handed — the argument is real, it is just not the whole story. The framework fix
- * is a typed extension seam on `Actor`, the same module-augmentation trick `CtxServices` and
- * `PermissionRegistry` already use.
+ * They ride on the same `Actor` every surface already hands the policy layer, which is what makes
+ * a relational rule work identically in a page render, a live query, a job and an MCP tool without
+ * a second place to ask "who is the viewer?". Reading them through `actorFact()` is what makes an
+ * unresolved fact `undefined` — a denial by construction — rather than a silent `false`.
  */
-export interface Actor {
-  readonly id: UserId;
-  readonly role: UserRole;
-  /** Accepted friendships only. Pending ones grant nothing. */
-  readonly friendIds: ReadonlySet<string>;
-  /**
-   * Symmetric by construction: it holds everyone this actor blocked AND everyone who blocked
-   * them, unioned at load time. A block is stored directionally but applied both ways, and
-   * flattening it here is what stops every call site from having to remember that.
-   */
-  readonly blockedIds: ReadonlySet<string>;
+declare module '@ultimat3/core' {
+  interface ActorFacts {
+    /** Accepted friendships only. Pending ones grant nothing. */
+    readonly friendIds: ReadonlySet<string>;
+    /**
+     * Symmetric by construction: everyone this actor blocked AND everyone who blocked them,
+     * unioned at load time. A block is stored directionally but applied both ways, and flattening
+     * it here is what stops every call site from having to remember that.
+     */
+    readonly blockedIds: ReadonlySet<string>;
+  }
 }
 
-/** Nobody is signed in. A real value, not `null` scattered through every predicate. */
-export const anonymous = null;
+export type { Actor };
 
-export const isSignedIn = (actor: Actor | null): actor is Actor => actor !== null;
+export interface ViewerInit {
+  readonly id: string;
+  readonly role: UserRole;
+  readonly friendIds?: Iterable<string> | undefined;
+  readonly blockedIds?: Iterable<string> | undefined;
+}
+
+/**
+ * The one constructor for a signed-in actor of this app — `app/auth/viewer.ts` in production and
+ * every test fixture alike. A hand-built object literal would be a second answer to "what carries
+ * the graph", and the first thing to drift when a fact is added.
+ *
+ * `roles: [role]` and not a bare `role` field: `@ultimat3/policy` expands `actor.roles` into the
+ * permission set, so the column IS the grant, with no mapping table in between.
+ */
+export const viewerActor = (init: ViewerInit): Actor =>
+  userActor({
+    id: init.id,
+    roles: [init.role],
+    facts: {
+      friendIds: new Set(init.friendIds ?? []),
+      blockedIds: new Set(init.blockedIds ?? []),
+    },
+  });
+
+/**
+ * `null` is "nobody" everywhere in this app, because that is what a policy predicate is handed:
+ * `@ultimat3/action`'s `actorOf` maps core's anonymous actor onto `null` before any rule runs. A
+ * reader that gets the raw context actor has to make the same collapse, hence the second check.
+ */
+export const isSignedIn = (actor: Actor | null): actor is Actor =>
+  actor !== null && !isAnonymous(actor);
 
 export const isSelf = (actor: Actor | null, userId: string): boolean =>
   isSignedIn(actor) && actor.id === userId;
 
 export const isFriend = (actor: Actor | null, userId: string): boolean =>
-  isSignedIn(actor) && actor.friendIds.has(userId);
+  actorFact(actor, 'friendIds')?.has(userId) ?? false;
 
 /**
  * Either direction. Checked before every visibility decision, and first — a blocked pair must not
@@ -55,24 +79,21 @@ export const isFriend = (actor: Actor | null, userId: string): boolean =>
  * blocked its author.
  */
 export const isBlocked = (actor: Actor | null, userId: string): boolean =>
-  isSignedIn(actor) && actor.blockedIds.has(userId);
+  actorFact(actor, 'blockedIds')?.has(userId) ?? false;
+
+/** Derived from `canModerate` over the closed role set, so moderation has one definition. */
+const MODERATOR_ROLES: readonly string[] = USER_ROLES.filter(canModerate);
 
 export const isAdmin = (actor: Actor | null): boolean =>
-  isSignedIn(actor) && canModerate(actor.role);
-
-/** What `ctx.session` is. Installed once per request, where the request is resolved. */
-export interface SessionService {
-  viewer(): Actor | null;
-}
-
-declare module '@ultimat3/core' {
-  interface CtxServices {
-    readonly session: SessionService;
-  }
-}
+  isSignedIn(actor) && actor.roles.some((role) => MODERATOR_ROLES.includes(role));
 
 /**
- * The viewer, read synchronously from the request context. This is what a policy predicate calls;
- * see the note on `Actor` for why it does not use the predicate's own `actor` argument.
+ * The viewer of the request being rendered, for a PAGE — a rule reads its own `actor` argument and
+ * never this. It is `@ultimat3/action`'s `actorOf` spelled against core alone: `shared/` sits in
+ * `site/`'s import graph, and the static path does not pay for tier 3 to answer a question core
+ * already holds the answer to.
  */
-export const currentViewer = (): Actor | null => useContext().session.viewer();
+export const currentViewer = (): Actor | null => {
+  const actor = useContext().actor;
+  return isAnonymous(actor) ? null : actor;
+};

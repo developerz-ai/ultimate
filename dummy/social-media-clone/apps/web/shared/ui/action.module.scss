@@ -1,0 +1,67 @@
+// The pressable's own layer. The lift on hover is a shadow change for everyone and a translate
+// only for viewers who have not asked for less motion — and the box never changes size, so a
+// hover cannot cost layout shift.
+
+@use '../tokens' as t;
+
+.action {
+  @include t.focus-ring;
+  @include t.transition(background-color, border-color, box-shadow, transform);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: t.space(2);
+  border: 1px solid transparent;
+  border-radius: t.radius('md');
+  font-weight: t.weight('semibold');
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.md {
+  padding-block: t.space(2);
+  padding-inline: t.space(4);
+  font-size: t.text('sm');
+}
+
+.lg {
+  padding-block: t.space(3);
+  padding-inline: t.space(6);
+  font-size: t.text('md');
+}
+
+.primary {
+  background: t.role('accent');
+  border-color: t.role('accent-strong');
+  box-shadow: t.shadow('sm');
+  color: t.role('accent-fg');
+
+  &:hover {
+    background: t.role('accent-strong');
+    box-shadow: t.shadow('md');
+    color: t.role('accent-fg');
+
+    @include t.motion {
+      transform: translateY(-1px);
+    }
+  }
+}
+
+.secondary {
+  background: t.role('surface-raised');
+  border-color: t.role('line');
+  color: t.role('fg-strong');
+
+  &:hover {
+    border-color: t.role('accent', 0.5);
+    box-shadow: t.shadow('sm');
+    color: t.role('fg-strong');
+
+    @include t.motion {
+      transform: translateY(-1px);
+    }
+  }
+}

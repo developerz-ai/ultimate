@@ -1,10 +1,10 @@
+// The friends screen's own layer, and almost nothing: the shell owns the measure and `Section`
+// owns each block's heading, so all that is left is a rule between the five lists.
+
 @use '../../shared/tokens' as t;
 
-// The API is functions, not `$variables`: `t.space(8)`, never `t.$space-8`. The measure matches
-// site/feed so the two screens read as one product.
-.screen {
-  width: min(100% - #{t.space(8)}, 48rem);
-  margin-inline: auto;
-  padding-block: t.space(10);
-  color: t.role('fg');
+// Five lists in a row need a visible seam, or "sent requests" reads as more of "incoming".
+.sections > * + * {
+  padding-block-start: t.space(8);
+  border-block-start: 1px solid t.role('line');
 }

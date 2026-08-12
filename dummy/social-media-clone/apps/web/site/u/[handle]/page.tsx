@@ -12,7 +12,14 @@
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
-import { Avatar, Card, PageHeader, Section, Stack, Text } from '@ultimat3/ui';
+import { Icon } from '@ultimat3/ui';
+import { iconArrowRight } from '@ultimat3/ui/icons/arrow-right';
+import { iconUserSearch } from '@ultimat3/ui/icons/user-search';
+import { ActionLink } from '../../../shared/ui/action';
+import { AppShell } from '../../../shared/ui/app-shell';
+import { EmptyState } from '../../../shared/ui/empty-state';
+import { PageHeading } from '../../../shared/ui/page-heading';
+import { PostCard } from '../../../shared/ui/post-card';
 import { publicProfile } from '../service';
 import styles from './page.module.scss';
 
@@ -51,59 +58,72 @@ export const config = defineRoute<ProfileData>({
 const day = (value: Date): string =>
   new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(value);
 
-export async function Page(props: { readonly params?: Readonly<Record<string, string>> }) {
+/** First character of the display name. Decorative — the name is rendered right beside it. */
+const initialOf = (name: string): string => (name.at(0) ?? '').toUpperCase();
+
+export async function Page(props: {
+  readonly params?: Readonly<Record<string, string>>;
+  readonly url?: string | undefined;
+}) {
   const handle = handleOf(props.params ?? {});
   // A null viewer: anonymous. Every hiding decision below follows from that one argument.
   const profile = await publicProfile(null, handle);
 
   if (profile === null) {
     return (
-      <main class={styles.profile}>
-        <PageHeader
+      <AppShell url={props.url}>
+        <PageHeading
           title={t('site.profile.notFound.title')}
-          description={t('site.profile.notFound.description')}
+          lede={t('site.profile.notFound.description')}
         />
-      </main>
+        {/* A dead end needs a door. The feed is the one page every visitor may open. */}
+        <ActionLink href="/feed" size="lg">
+          {t('site.profile.notFound.cta')}
+          <Icon glyph={iconArrowRight} />
+        </ActionLink>
+      </AppShell>
     );
   }
 
   const { user, posts } = profile;
 
   return (
-    <main class={styles.profile}>
-      <PageHeader
-        title={user.displayName}
-        description={user.bio ?? undefined}
-        media={<Avatar name={user.displayName} size="xl" />}
-      />
-      <Text as="p" tone="muted" class={styles.identity}>
-        @{user.handle} · {t('site.profile.joined', { date: day(user.createdAt) })}
-      </Text>
+    <AppShell url={props.url}>
+      <header class={styles.identity}>
+        <span class={styles.avatar} aria-hidden="true">
+          {initialOf(user.displayName)}
+        </span>
+        <div class={styles.who}>
+          <h1 class={styles.name}>{user.displayName}</h1>
+          <p class={styles.handle}>@{user.handle}</p>
+          {user.bio === null ? null : <p class={styles.bio}>{user.bio}</p>}
+          <p class={styles.joined}>{t('site.profile.joined', { date: day(user.createdAt) })}</p>
+        </div>
+      </header>
 
-      <Section title={t('site.profile.posts.title')}>
-        {posts.length === 0 ? (
-          <Text as="p" tone="muted">
-            {t('site.profile.posts.empty')}
-          </Text>
-        ) : (
-          <Stack as="ul" gap={4} class={styles.list}>
-            {posts.map((post) => (
-              <Card as="li" padding={4}>
-                <article>
-                  <time datetime={post.publishedAt.toISOString()} class={styles.when}>
-                    {day(post.publishedAt)}
-                  </time>
-                  <p class={styles.body}>{post.body}</p>
-                  <footer class={styles.counts}>
-                    <span>{t('site.feed.likes', { count: post.likeCount })}</span>
-                    <span>{t('site.feed.comments', { count: post.commentCount })}</span>
-                  </footer>
-                </article>
-              </Card>
-            ))}
-          </Stack>
-        )}
-      </Section>
-    </main>
+      <h2 class={styles.section}>{t('site.profile.posts.title')}</h2>
+
+      {posts.length === 0 ? (
+        <EmptyState
+          glyph={iconUserSearch}
+          title={t('site.profile.posts.empty')}
+          description={t('site.profile.posts.emptyHelp')}
+        />
+      ) : (
+        <ul class={styles.list}>
+          {posts.map((post) => (
+            <li>
+              <PostCard
+                body={post.body}
+                publishedAt={post.publishedAt}
+                published={day(post.publishedAt)}
+                likeCount={post.likeCount}
+                commentCount={post.commentCount}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </AppShell>
   );
 }

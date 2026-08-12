@@ -1,0 +1,25 @@
+// The form control's own layer. `control` is @ultimat3/ui's shared input shape, so this app's
+// inputs match the design system's without restating a border radius or a focus colour.
+
+@use '../tokens' as t;
+
+.field {
+  display: grid;
+  gap: t.space(2);
+}
+
+.label {
+  color: t.role('fg-strong');
+  font-size: t.text('sm');
+  font-weight: t.weight('semibold');
+}
+
+.input {
+  @include t.control;
+}
+
+.hint {
+  color: t.role('fg-muted');
+  font-size: t.text('xs');
+  text-wrap: pretty;
+}
