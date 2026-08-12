@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { VERSION_DEFINE } from '@ultimat3/core';
 import { cliVersion } from './registry';
 import { CLI_MANIFEST, loadVersion } from './version-loader';
 
@@ -25,5 +26,14 @@ describe('loadVersion', () => {
   test('cliVersion() is the loaded value — `x --version` never prints "undefined"', () => {
     expect(cliVersion()).toBe(loadVersion());
     expect(cliVersion()).not.toContain('undefined');
+  });
+
+  // The binary case itself is `e2e/registry-boot.e2e.test.ts`; only a compile can produce a define.
+  // What this pins is the name: the identifier the loader falls back to is core's, so renaming
+  // `VERSION_DEFINE` cannot leave `x --version` silently reading a define nothing passes.
+  test('falls back to the define core declares, not a second one of its own', async () => {
+    const source = await Bun.file(join(import.meta.dir, 'version-loader.ts')).text();
+    expect(source).toContain(`declare const ${VERSION_DEFINE}:`);
+    expect(source).toContain(`typeof ${VERSION_DEFINE} === 'string'`);
   });
 });

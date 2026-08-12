@@ -60,8 +60,8 @@ export function resolveVersion(manifestPath: string, defined: string | undefined
   if (defined !== undefined && SEMVER.test(defined)) return defined;
   throw new UltimateError({
     code: 'X_INVARIANT',
-    cause: `no manifest at ${manifestPath} and no valid ${VERSION_DEFINE} define (found ${JSON.stringify(defined)})`,
-    fix: `build through the builder that passes the define: x build --target binary`,
+    cause: `no manifest at ${manifestPath} and no valid ${VERSION_DEFINE} define (found ${JSON.stringify(defined)}) — only the builder that passes the define produces a bootable binary`,
+    fix: `x build --target binary`,
   });
 }
 

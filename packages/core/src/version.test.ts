@@ -4,7 +4,8 @@
 // threw before `main`. These tests pin the value to this package's own manifest, pin the
 // build-define fallback that a binary has instead of one, and pin the failure loud.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { UltimateError } from './errors';
 import {
@@ -30,8 +31,17 @@ describe('frameworkVersion', () => {
     expect(frameworkVersion()).toBe(manifest.version);
   });
 
-  test('caches — a second call is the same string, not a second read', () => {
-    expect(frameworkVersion()).toBe(frameworkVersion());
+  test('caches — the second call reads no manifest at all', () => {
+    // Comparing two return values would pass whether or not the memo exists. The claim is the
+    // read that does NOT happen, so the read is what the test watches.
+    const first = frameworkVersion();
+    const spy = spyOn(fs, 'readFileSync');
+    try {
+      expect(frameworkVersion()).toBe(first);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('resolves the package manifest, never the workspace root', async () => {

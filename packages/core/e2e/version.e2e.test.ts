@@ -46,7 +46,12 @@ async function compileAndRun(
     ],
     { cwd: dir, stdout: 'pipe', stderr: 'pipe' },
   );
-  expect(await build.exited).toBe(0);
+  // The compiler's own diagnostic, or a failed compile reports `1 !== 0` and nothing actionable.
+  const [buildErr, buildCode] = await Promise.all([
+    new Response(build.stderr).text(),
+    build.exited,
+  ]);
+  expect(buildCode, buildErr).toBe(0);
   const run = Bun.spawn([out], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
   const [stdout, stderr, code] = await Promise.all([
     new Response(run.stdout).text(),

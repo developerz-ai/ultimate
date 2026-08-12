@@ -329,7 +329,7 @@ All three are written by `x new`. A missing one is `X_BUILD_ENTRY_MISSING`, whos
 
 Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_ENTRY_MISSING`, `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND` with `build --target docker` as the suggestion.
 
-> `--target binary` adds `--define ULTIMATE_FRAMEWORK_VERSION="<version>"`. A single-file executable carries no `package.json`, so the define is the only thing the framework's version read can find — build one with a bare `bun build --compile` and it exits `X_INVARIANT` at the first read, naming the flag. What is still unmeasured is the target end to end: no scaffolded app has been compiled and served from a bare VM ([Known gaps](Known-Gaps)).
+> `--target binary` adds `--define ULTIMATE_FRAMEWORK_VERSION="<version>"`. A single-file executable carries no `package.json`, so the define is the only thing the framework's version read can find — build one with a bare `bun build --compile` and it exits `X_INVARIANT` at the first read, naming the flag. One define answers for both reads: `@ultimat3/cli` ships in lockstep with `@ultimat3/core`, so `x --version` inside a binary falls back to the same flag rather than declaring a second one. What is still unmeasured is the target end to end: no scaffolded app has been compiled and served from a bare VM ([Known gaps](Known-Gaps)).
 
 ## x deploy
 

@@ -46,7 +46,7 @@ The bottom rung is `git push` on a plan that costs nothing. No Kubernetes, no Co
 
 **Unblocked since 1.1.0.** A scaffolded app now produces a deployable artifact: `x new` writes `apps/web/server.ts` (three lines calling `runRole`), `apps/web/prerender.ts`, `docker/Dockerfile`, its `.dockerignore` and `docker/docker-compose.prod.yml` ([`templates/scaffold-app.ts`](../../packages/cli/src/templates/scaffold-app.ts), [`templates/scaffold-container.ts`](../../packages/cli/src/templates/scaffold-container.ts)), and the Dockerfile has no build stage at all — `x verify` is the gate, so the image never needs the devDependencies its `--production` install leaves out.
 
-All three targets compile, and all three now produce something that starts. `--target binary` did not until the framework's version read went lazy and `x build` began compiling it in as `--define ULTIMATE_FRAMEWORK_VERSION="<version>"` — a single-file executable carries no `package.json`. Rung 0 does not need the binary; the bare-VM row in [`12-build-deploy.md`](./12-build-deploy.md) does, and that row stays **unproven** until a scaffolded app is compiled and served from a VM.
+All three targets compile. `docker` and `binary` produce artifacts that start; `static` starts nothing — it emits files for a CDN or an object store. `--target binary` did not start until the framework's version read went lazy and `x build` began compiling it in as `--define ULTIMATE_FRAMEWORK_VERSION="<version>"` — a single-file executable carries no `package.json`. Rung 0 does not need the binary; the bare-VM row in [`12-build-deploy.md`](./12-build-deploy.md) does, and that row stays **unproven** until a scaffolded app is compiled and served from a VM.
 
 ### What a free tier actually constrains
 
