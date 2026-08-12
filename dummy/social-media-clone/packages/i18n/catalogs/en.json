@@ -12,7 +12,8 @@
     "notifications": "Notifications",
     "signIn": "Sign in",
     "signUp": "Create account",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "admin": "Admin"
   },
   "footer": {
     "blurb": "A social network built to stress-test Ultimate: every primitive, once, in one real app. Public pages here ship no JavaScript at all.",
@@ -141,7 +142,8 @@
       "schedule": "Schedule",
       "scheduleHint": "Every cron carries an explicit IANA zone. An unzoned cron runs twice or not at all on a DST switch day.",
       "enqueues": "enqueues {jobs}"
-    }
+    },
+    "backToApp": "← Back to the app"
   },
   "app": {
     "dashboard": {

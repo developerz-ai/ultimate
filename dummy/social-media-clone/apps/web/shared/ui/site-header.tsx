@@ -18,6 +18,8 @@ export interface SiteHeaderProps {
   /** Path of the page being rendered. Only this decides which item carries `aria-current`. */
   readonly pathname: string;
   readonly signedIn: boolean;
+  /** Holds `admin:read`. Decided by `viewerIsOperator()`, never by a role test here. */
+  readonly operator: boolean;
 }
 
 export function SiteHeader(props: SiteHeaderProps): JSX.Element {
@@ -33,7 +35,7 @@ export function SiteHeader(props: SiteHeaderProps): JSX.Element {
 
         <nav class={styles.nav} aria-label={t('nav.primary')}>
           <ul class={styles.list}>
-            {navFor(props.signedIn).map((item) => (
+            {navFor(props.signedIn, props.operator).map((item) => (
               <li>
                 <a
                   class={styles.link}
