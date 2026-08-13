@@ -241,3 +241,62 @@ describe('a query with no cache block', () => {
     expect(counts.executed).toBe(2);
   });
 });
+
+// The read path's three guarantees, proved together for the query the audit named:
+// `where({ deletedAt: null })`. Each half is unit-tested elsewhere (`source.test.ts`,
+// `shape.test.ts`, `cache.test.ts`) — this is the end-to-end claim: the statement a recording
+// client would see, the rows `execute()` actually answers, and what IS NULL means in Postgres
+// all agree, and that agreement is one execution even under concurrency.
+describe('NULL parity: recorded SQL, in-memory rows and IS NULL semantics agree', () => {
+  interface SoftRow {
+    readonly id: string;
+    readonly orgId: string;
+    readonly deletedAt: string | null;
+  }
+
+  const softRows: readonly SoftRow[] = [
+    { id: 'a', orgId: ORG, deletedAt: null },
+    { id: 'b', orgId: ORG, deletedAt: '2026-01-01' },
+    { id: 'c', orgId: ORG, deletedAt: null },
+  ];
+
+  test('the statement a recording client would see says `is null`, and execute() answers what IS NULL means', async () => {
+    const source = from<SoftRow>('rows', softRows).where({ orgId: ORG, deletedAt: null });
+    // `toSQL()` is the statement text a real driver — a recording client included — receives.
+    // This is the SQL side of the parity claim.
+    const recorded = source.toSQL();
+    expect(recorded.sql).toBe('select * from "rows" where "deletedAt" is null and "orgId" = $1');
+    expect(recorded.params).toEqual([ORG]);
+
+    // The oracle here is a plain `=== null` check, not `shape.ts`'s own `isNull` — an independent
+    // restatement of what Postgres' `IS NULL` means, so this proves the SQL and the memory rows
+    // agree rather than asserting the same function equals itself.
+    const expected = softRows.filter((row) => row.orgId === ORG && row.deletedAt === null);
+    const executed = await source.execute();
+    expect(executed).toEqual(expected);
+    expect(executed.map((row) => row.id)).toEqual(['a', 'c']);
+  });
+
+  test('two concurrent reads of a NULL-filtered query still execute once', async () => {
+    let executions = 0;
+    const target = query({
+      input: Input,
+      policy: can('feed:read'),
+      sql: () =>
+        from<SoftRow>('rows', async () => {
+          executions += 1;
+          return softRows;
+        }).where({ orgId: ORG, deletedAt: null }),
+    }).named('softDeleteFeed');
+    const ctx = createContext({ actor: readerActor });
+
+    const [first, second] = await Promise.all([
+      runQuery(target, { orgId: ORG }, { ctx }),
+      runQuery(target, { orgId: ORG }, { ctx }),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(first.map((row) => row.id)).toEqual(['a', 'c']);
+    expect(executions).toBe(1);
+  });
+});
