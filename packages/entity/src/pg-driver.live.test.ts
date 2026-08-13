@@ -287,6 +287,43 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     }
   });
 
+  test('a sequential loop over a page of tags is two statements against the invoices it points at', async () => {
+    // The JIT-preload half of the same claim, against a real server: `findMany` on `invoiceTags`
+    // leaves its page's `invoiceId` values behind, so a `for … of` loop that follows — one
+    // `await` per iteration, no two lookups sharing a microtask — costs one widened `in` query
+    // for the whole page, not one `select` per row.
+    const org = await newOrg('jit-live');
+    const tags = () => postgresRepo(invoiceTags);
+    const written = await Promise.all(
+      ['JIT-1', 'JIT-2', 'JIT-3'].map((reference) => write(org, reference)),
+    );
+    for (const invoice of written) {
+      await tags().insert({ invoiceId: invoice.id, orgId: org, label: 'primary', note: null });
+    }
+
+    const statements: string[] = [];
+    setStatementObserver({ onStatement: (event) => statements.push(event.text) });
+    try {
+      const references = await runWithContext(createContext(), async () => {
+        const page = await tags().findMany({ orgId: org });
+        const seen: string[] = [];
+        for (const tagRow of page.rows) {
+          const invoice = await repo().findById(tagRow.invoiceId, { orgId: org });
+          seen.push(invoice?.reference ?? 'missing');
+        }
+        return seen;
+      });
+
+      // The tags page, and one `in (…)` statement for the three invoices it named — never three.
+      expect(statements).toHaveLength(2);
+      expect(statements[1]).toContain('from "pg_live_invoices"');
+      expect(statements[1]).toContain('"id" in ($1, $2, $3)');
+      expect(references.slice().sort()).toEqual(['JIT-1', 'JIT-2', 'JIT-3']);
+    } finally {
+      setStatementObserver(undefined);
+    }
+  });
+
   test('delete on an entity without a soft-delete column removes the row', async () => {
     const target = await database({ orgs }, { driver: postgresDriver() }).orgs.insert({
       slug: 'hard-delete',
