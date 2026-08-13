@@ -135,6 +135,35 @@ export const countStatement = <Row>(
 ): SqlFragment =>
   sql`select count(*) as count from ${identifier(entity.$table)} where ${conditions(entity, plan, shape)}`;
 
+/** What a grouped count comes back as. Both names are fixed, so neither can be a column's. */
+export interface GroupRow {
+  readonly group_value: unknown;
+  readonly group_count: unknown;
+}
+
+/**
+ * The grouped count: one row per distinct value of one column, over exactly the rows
+ * `countStatement` would have counted — the same predicates, the same soft-delete filter, one
+ * `group by` more. `limit` bounds the groups, not the rows, which is what turns a whole-table
+ * breakdown into a refusal instead of a result set nobody sized.
+ *
+ * Both output names are aliases and fixed, so they cannot collide with each other whatever the
+ * table declares: an entity is free to have a column called `count`, and the un-aliased form would
+ * then return two outputs of one name.
+ */
+export const countByStatement = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  shape: ReadShape,
+  column: string,
+  limit: number,
+): SqlFragment => {
+  const grouped = columnRef(entity, column);
+  return sql`select ${grouped} as group_value, count(*) as group_count from ${identifier(
+    entity.$table,
+  )} where ${conditions(entity, plan, shape)} group by ${grouped} limit ${limit}`;
+};
+
 /** `on conflict (…) do update set …`, or `do nothing` when there is nothing to overwrite. */
 export interface ConflictTarget {
   /** Physical columns of the unique index a collision is judged against. */

@@ -144,6 +144,8 @@ Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes))
 
 The memo collapses the *same* read asked twice. Fifty *different* row lookups collapse one layer down, in the repo: `findById` issued across one microtask of a request is one `where "id" in (…)` ([Entities and migrations → Point lookups batch themselves](Entities-And-Migrations#point-lookups-batch-themselves)) — or, named on the chain instead of inferred from a loop, one `preload()` per relation ([Entities and migrations → Preload states a relation the loop would infer](Entities-And-Migrations#preload-states-a-relation-the-loop-would-infer)).
 
+Fifty *counts* collapse neither way — one `count()` per row is fifty different questions, so nothing above the repo can batch them. The repo answers them in one statement instead: `db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId')` is a map keyed by the column's values, biggest group first, with a value nothing matched absent rather than `0` ([Entities and migrations → A count per row is one grouped count](Entities-And-Migrations#a-count-per-row-is-one-grouped-count)).
+
 ## Every cached query carries a tag
 
 The contract. **Not yet a gate** — `As of 2026-08` `X_CACHE_UNTAGGED_QUERY` is reserved: no code path raises it, and `x errors explain X_CACHE_UNTAGGED_QUERY` refuses it ([Error codes → Reserved codes](Error-Codes#reserved-codes)).

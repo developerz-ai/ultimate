@@ -8,6 +8,7 @@
 //     position in the sort order, not a row count.
 
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
+import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
@@ -101,6 +102,16 @@ export interface Repo<T = unknown> {
    */
   updateWhere(filter: Partial<T>, patch: Partial<T>, options?: RepoOptions): Promise<number>;
   count(args?: FindManyArgs): Promise<number>;
+  /**
+   * The grouped count: one statement, one entry per distinct value of `column`, over exactly the
+   * rows `count(args)` counts — the aggregate a `count()` per row is the N+1 of. A value nothing
+   * matched is absent rather than `0`: the caller knows which keys they asked about, and a map
+   * that invents them cannot say which ones the table has never seen.
+   *
+   * `column` is a property name, spelled as `select` spells one — the typed form is
+   * `ReadBuilder.countBy`, which knows the row. Ordered by count, biggest group first.
+   */
+  countBy(column: string, args?: FindManyArgs): Promise<ReadonlyMap<unknown, number>>;
 }
 
 export interface Transactor {
@@ -381,6 +392,21 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
 
     async count(args = {}) {
       return select(args, 'count').found.length;
+    },
+
+    async countBy(column, args = {}) {
+      // Refused before a row is read, and by the same function the Postgres driver calls: a column
+      // a map cannot be keyed by is that mistake in both drivers or in neither.
+      groupColumnOf(entity, column, 'countBy');
+      const { found } = select(args, 'countBy');
+      const groups = new Map<unknown, number>();
+      for (const row of found) {
+        // `?? null`, so a property this row never carried lands in the same group Postgres puts a
+        // NULL row in — and `0`, `''` and `false` stay the values they are.
+        const value = field(row, column) ?? null;
+        groups.set(value, (groups.get(value) ?? 0) + 1);
+      }
+      return countsFrom(entity, column, 'countBy', [...groups]);
     },
   };
 };

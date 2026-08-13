@@ -23,6 +23,7 @@ import {
 } from './bulk-write';
 import { coalesceFindById } from './coalesce';
 import { snake } from './column';
+import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -31,8 +32,10 @@ import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { bindValues, decodeRow, type PhysicalRow } from './pg-row';
 import {
   type ConflictTarget,
+  countByStatement,
   countStatement,
   deleteStatement,
+  type GroupRow,
   insertStatement,
   type ReadShape,
   selectStatement,
@@ -241,6 +244,23 @@ export const postgresRepo = <Row>(
         countStatement(entity, plan, shapeOf(args)),
       );
       return Number(row?.count ?? 0);
+    },
+
+    async countBy(column, args = {}) {
+      const grouped = groupColumnOf(entity, column, 'countBy');
+      const plan = readPlan(entity, args, 'countBy');
+      // One group past the bound, for the same reason a page reads one row past its limit: the
+      // presence of that group is what says the answer was never going to fit, and `countsFrom`
+      // refuses it rather than hand back a breakdown missing its tail.
+      const rows = await client().query<GroupRow>(
+        countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1),
+      );
+      return countsFrom(
+        entity,
+        column,
+        'countBy',
+        rows.map((row) => [groupValue(grouped, row.group_value), Number(row.group_count)] as const),
+      );
     },
   };
 };

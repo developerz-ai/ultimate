@@ -67,6 +67,21 @@ export interface ReadBuilder<Row> {
   all(): Promise<readonly Row[]>;
   one(): Promise<Row | null>;
   count(): Promise<number>;
+  /**
+   * The grouped count: one statement, one entry per distinct value of `column`, keyed by that
+   * value — the aggregate a `count()` per row is the N+1 of. `recount every post's likes` is one
+   * `likes.andWhere('postId', 'in', ids).countBy('postId')`, not one statement per post.
+   *
+   * Counts the whole predicate, exactly as `count()` does: the chain's filters, its tenancy and
+   * its soft-delete visibility, never its page. A value nothing matched is absent rather than `0`,
+   * which is what `group by` returns and what lets a caller tell "none" from "never asked".
+   * Entries come back biggest group first, ties by the value, `null` — the group every row without
+   * one shares — last.
+   *
+   * Refused rather than answered: a column whose values a map cannot be keyed by (a timestamp, a
+   * jsonb, money), and a chain matching more distinct values than one statement should answer with.
+   */
+  countBy<K extends keyof Row & string>(column: K): Promise<ReadonlyMap<Row[K], number>>;
   /** The plan this chain describes. Safe to log — `describePlan()` elides values. */
   plan(): QueryPlan;
 }
@@ -252,6 +267,13 @@ const builder = <Source, Row>(
     },
 
     count: () => repo.count(args()),
+
+    async countBy<K extends keyof Row & string>(column: K) {
+      // The one cast on this terminal, and it is the same seam `select()` has: the driver contract
+      // is row-agnostic because a column name is a runtime string there, while the chain knows
+      // which property it just named and therefore what the map is keyed by.
+      return (await repo.countBy(column, args())) as ReadonlyMap<Row[K], number>;
+    },
 
     plan: (): QueryPlan => ({
       entity: entity.$name,

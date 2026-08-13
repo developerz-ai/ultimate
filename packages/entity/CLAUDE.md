@@ -96,7 +96,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   mutates**: a preloaded relation is written onto `{ ...row }`, because the in-memory driver
   hands back the row it stores and attaching directly would leak the relation into the table
   itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
-  relation; `count()` and `plan()` do not, since neither reads a row to attach one to.
+  relation; `count()`, `countBy()` and `plan()` do not, since none reads a row to attach one to.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -122,6 +122,37 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   in one batch mints no cursor — so a nullable sort key would otherwise pass in every test and fail
   once the table grew. `State.limit` is `number | undefined` for the same reason: only "the caller
   named a page size" can be told apart from the default, which the driver already applies.
+- **A grouped count means one thing in both drivers, and `count-by.ts` is where that one thing is
+  written.** `countBy(column)` is the aggregate a `count()` per row is the N+1 of, so both drivers
+  call `groupColumnOf` before their statement exists and `countsFrom` after their rows are in — a
+  rule added to `pg-driver.ts` or to `repo.ts` alone is exactly the drift that file exists to
+  prevent. **Groupable kinds are a closed set**: `uuid`, `text`, `char`, `boolean`, `integer`,
+  `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object and `money` is two physical columns
+  — a `Map` compares a non-primitive key by identity, so any of those would file rows under a key
+  no caller can look up again and the result would be a map that only ever answers `undefined`. The
+  refusal is `X_INVARIANT_VIOLATED` naming a column of *this* entity that is groupable, never
+  `x entity explain`: what repairs it is one edit to the call, and the entity is the only place the
+  replacement column lives. **The bound is a refusal, not a truncation.** The statement asks for
+  `MAX_GROUPS + 1` groups — the trick a page already uses when it reads one row past its limit — and
+  that extra group is what says the answer was never going to fit, so `countsFrom` throws with the
+  `andWhere(…, 'in', values)` that bounds it. Truncating would hand back a map that reads exactly
+  like a complete one, and a caller recounting from it would write the wrong number to every row it
+  missed. **Absent is not `0`**: a value nothing matched has no entry, because that is what
+  `group by` returns and it is the only way a caller can tell "none" from "never asked" — the
+  `?? 0` is theirs to write, and inventing it here would answer for keys the table has never seen.
+  **NULL is one group**, keyed `null`: the memory driver reads the property as `?? null` so it lands
+  where Postgres puts its NULL rows, while `0`, `''` and `false` stay the values they are. **The
+  order is applied after the rows are in, never in SQL** — a hash aggregate returns groups in
+  whatever order it built them and a `Map` filled row by row returns insertion order, so an
+  `order by` in the statement would let the two drivers disagree about a result they agree on;
+  sorting groups (never rows) costs nothing at this size and is what puts the largest bucket at the
+  front. **Both output names are fixed aliases** — `group_value` and `group_count` in
+  `countByStatement` (`pg-sql.ts`) — because an entity is free to declare a column called `count`,
+  and the un-aliased form would then return two outputs of one name; the grouped value is re-parsed
+  by the column that declared it, since `int8` arrives as a string and would otherwise key the map
+  by text where memory keys it by a `bigint`. **Nothing new to declare**: no `groupBy()` builder and
+  no error code of its own — it is a terminal on the chain that already exists, over exactly the
+  rows `count()` counts.
 - **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
   `cursorFor(entity, plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. Both call
   `assertSeekable`, so an ordering that cannot carry a position — a nullable key, an undeclared
@@ -287,6 +318,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
 | `bulk-write.ts` | what a many-row write is made of — the column list, the conflict plan, the bind-count chunking |
+| `count-by.ts` | what a grouped count is made of — the groupable kinds, the group bound, the key's decoding, the order |
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |

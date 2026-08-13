@@ -60,6 +60,7 @@ Generated per entity. The **only** place SQL lives.
 | `deleteWhere(filter)` | delete by equality filter; resolves with the **number of rows removed** |
 | `updateWhere(filter, patch)` | update by equality filter; resolves with the **number of rows written** |
 | `count(args)` | the same plan as `findMany`, without the page |
+| `countBy(column, args)` | the grouped count — one entry per distinct value of `column`, over exactly the rows `count(args)` counts, in one `group by` statement where a `count()` per row was N. What both drivers must agree on lives in [`count-by.ts`](../../packages/entity/src/count-by.ts) |
 | `Transactor.run(fn)` | joins the ambient transaction if one exists, opens one otherwise |
 | custom | added in the feature's `repo.ts`, returning schema-parsed rows |
 
@@ -72,6 +73,24 @@ One family, three members:
 | Eager preload ([`preload.ts`](../../packages/entity/src/preload.ts)) | `.preload('<relation>')` named on the chain | one `where <key> in (…)` per relation, resolved before the caller sees a row |
 
 Reach for `preload()` when the relation is part of what the page *is* — a list rendered with its authors, rows handed to something that will not call back into the repo, or a read a reviewer should see stated rather than inferred from a loop. The other two ask for nothing: a same-microtask fan-out and a sequential `for … of` loop already get them for free. All three read their keys through one file ([`batch-read.ts`](../../packages/entity/src/batch-read.ts)) — one spelling of a key, one 500-id bind cap — so a bound and a key's identity cannot disagree between them. What each may widen is its own: the two implicit paths share a scope key and refuse to widen across a tenant, a soft-delete visibility, a projection or an entity, because they answer a statement the caller already sent; `preload()` sends its own, so it carries the chain's tenant predicate onto it and refuses when it cannot.
+
+That family collapses one *lookup* repeated per row. The other repeated statement is an aggregate — one `count()` per row, the shape `recountLikes` had — and no batch reaches it, because each of those statements asks a different question. `countBy(column)` asks all of them at once:
+
+```ts
+// One statement for every post in `ids`, not one `select count(*)` each.
+const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
+for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
+```
+
+| Rule | Mechanism |
+|---|---|
+| Counts the predicate, never the page | the plan `count(args)` builds, so the filters, the tenant predicate and `deleted_at is null` are in the statement Postgres runs and `limit`/`after` bound nothing |
+| A value nothing matched is absent, never `0` | what `group by` returns, and the only way a caller can tell "none" from "never asked". The `?? 0` is the caller's |
+| NULL is one group, keyed `null` | the memory driver reads the property as `?? null`, so it lands where Postgres puts its NULL rows. `0`, `''` and `false` stay the values they are |
+| Ordered biggest group first | ties by the value, `null` last — applied in [`count-by.ts`](../../packages/entity/src/count-by.ts) *after* the rows are in, because a hash aggregate returns groups in whatever order it built them and a `Map` filled row by row returns insertion order, so an `order by` in the statement would let the two drivers disagree about a result they agree on |
+| Groupable columns are a closed set | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object, `money` is two columns — a `Map` compares those by identity, so the map could only ever answer `undefined`. `X_INVARIANT_VIOLATED` naming a column of that entity that is groupable |
+| The group count is bounded, and the bound is a refusal | `MAX_GROUPS` (1000). The statement asks for one group past it, exactly as a page reads one row past its limit; the extra group is `X_INVARIANT_VIOLATED` spelling `andWhere('<column>', 'in', values)`. A truncated map reads exactly like a complete one, and a caller recounting from it writes the wrong number to every row it missed |
+| One statement, fixed output names | `select "post_id" as group_value, count(*) as group_count … group by "post_id" limit $n` ([`pg-sql.ts`](../../packages/entity/src/pg-sql.ts)) — aliased so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it, since `int8` arrives as a string |
 
 `upsertAll` refuses four things before a statement exists, each of them otherwise a `42P10`, a cross-tenant write, a `21000` or a silent surprise:
 

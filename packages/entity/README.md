@@ -150,6 +150,30 @@ learn or to drift.
 | Refusals | on the chain, not one batch later: a size that is not a whole number of rows, a `limit()` on the same chain (one number, two meanings), and an ordering no cursor can carry — a nullable sort column, which a result that fits in one batch would otherwise hide until the table grew |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
 
+## Counting by a column
+
+`As of 2026-08`. `count()` answers one number, so a screen or a backfill that needs one per row
+asks N times. `countBy(column)` is that whole loop as one statement, keyed by the value:
+
+```ts
+// One statement for every post in `ids`, not one `select count(*)` each.
+const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
+for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
+```
+
+`ReadonlyMap<Row[K], number>`, keyed by the column named — the chain knows the row, so
+`counts.get(postId)` is a `number | undefined` and the `undefined` is load-bearing.
+
+| | |
+|---|---|
+| Counts | the whole predicate, exactly as `count()` does: the chain's filters, its tenancy and its soft-delete visibility. `limit()` and `after()` bound the page, never the count |
+| A value nothing matched | absent, never `0` — that is what `group by` returns, and it is what tells "none" apart from "never asked". The default is the caller's `?? 0` |
+| NULL | one group, keyed `null`, in both drivers. `0`, `''` and `false` stay the values they are |
+| Order | biggest group first, ties by the value (numbers and bigints numerically, everything else by its text), `null` last — applied after the rows are in, since a hash aggregate and a `Map` filled row by row have no order to inherit |
+| Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or `money` is `X_INVARIANT_VIOLATED` naming one of this entity's columns that is: a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
+| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map — the statement asks for one group past the bound, exactly as a page reads one row past its limit. The `fix` spells the `andWhere('<column>', 'in', values)` that bounds it |
+| Statement | `select "post_id" as group_value, count(*) as group_count … group by "post_id"`. Both names are fixed aliases, so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it |
+
 ## Writing by filter
 
 ```ts
@@ -273,7 +297,7 @@ page.rows[0].author;        // the member row, or null — always present
 | Shape | `belongsTo` attaches the row or `null`; `hasMany` an array — always present |
 | Statements | one extra per relation, resolved concurrently; naming one twice is one statement |
 | Tenancy | carried onto the related read only when the other entity's tenant column shares the name; otherwise `X_TENANCY_UNSCOPED` refuses the related read rather than guess |
-| Terminals | `page()`, `all()`, `one()` preload; `count()` and `plan()` don't — neither reads a row |
+| Terminals | `page()`, `all()`, `one()` preload; `count()`, `countBy()` and `plan()` don't — none reads a row to attach one to |
 
 ## Two drivers, one meaning
 

@@ -198,7 +198,7 @@ a page later.
 |---|---|
 | Shape | a `belongsTo` attaches the row or `null`; a `hasMany` attaches an array, empty when there are none. Always present, so "no author" and "nobody preloaded the author" cannot read the same |
 | Statements | one extra statement per named relation, resolved **concurrently** — two `preload()` calls are two statements in flight, never one after the other. Naming one relation twice is one statement |
-| Terminals | `page()`, `all()`, `one()` resolve every named relation. `count()` and `plan()` do not — a count reads no rows |
+| Terminals | `page()`, `all()`, `one()` resolve every named relation. `count()`, `countBy()` and `plan()` do not — a count reads no row to attach one to |
 | Projection | attached after `select()`. `select()` is widened internally with the relation's own key, so a projection can drop neither the key the preload reads nor the relation it attaches — `plan().select` reports the widened list, the one that actually ran |
 | Tenancy | the page's own tenant predicate carries onto the related read only when **both** entities are scoped by a column of that same name — a value that scopes one entity is a guess on another, and a source scoped by `workspaceId` may carry an ordinary `orgId` predicate that is a filter and not its tenancy. Carrying nothing is not silence: the related read builds its own plan, so it is refused as `X_TENANCY_UNSCOPED` rather than answered with a guess |
 | Soft delete | the related read is `findMany`, so `deleted_at is null` applies exactly as it does to any other read |
@@ -247,9 +247,38 @@ await db.checkpoints.update(id, { cursor: batches.cursor });   // resume with .a
 | Sort order | an ordering no cursor can carry — a nullable sort column — is refused at `inBatches()`, not one batch later. A result that fits in a single batch mints no cursor, so deferring it would hide the mistake until the table grew |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
 
+## A count per row is one grouped count
+
+The batching family above collapses a *lookup* repeated per row. A `count()` per row is not a
+lookup — each statement asks a different question, so no batch reaches it. One statement asks all of
+them, `As of 2026-08`:
+
+```ts
+// One statement for every post in `ids`, not one `select count(*)` each.
+const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
+for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
+```
+
+A `ReadonlyMap` keyed by the column's own values and typed from the row, so `counts.get(postId)` is
+a `number | undefined` — and the `undefined` is load-bearing.
+
+| Property | Behavior |
+|---|---|
+| Counts | the whole predicate, exactly as `count()` does: the chain's filters, its tenancy and its soft-delete visibility are in the statement. `limit()` and `after()` bound a page, never a count |
+| A value nothing matched | absent, never `0`. That is what `group by` returns, and it is what tells "none" apart from "never asked" — the default is the caller's `?? 0` |
+| NULL | one group, keyed `null`, in both drivers: a property a row never carried is read as `null`, so it lands where Postgres puts its NULL rows. `0`, `''` and `false` stay the values they are |
+| Order | biggest group first, ties by the value — numbers and bigints numerically, everything else by its text — and `null` last. Applied after the rows are in, not in the statement: a hash aggregate returns groups in whatever order it built them, so an `order by` there would let the two drivers disagree about a result they agree on |
+| Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or `money` is `X_INVARIANT_VIOLATED` naming a column of that entity that is groupable — a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
+| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map: the statement asks for one group past the bound, exactly as a page reads one row past its limit, and the `fix` spells the `andWhere('<column>', 'in', values)` that bounds it. A map that lost its tail reads like a complete one, and recounting from it writes the wrong number to every row it missed |
+| Statement | `select "post_id" as group_value, count(*) as group_count … group by "post_id"` — both names are fixed aliases, so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it |
+| Tenancy | the plan's, as everywhere else: an unscoped chain on a tenant-scoped entity is `X_TENANCY_UNSCOPED`, never a count across tenants |
+
+There is no `groupBy()` builder and no error code of its own: `countBy` is a terminal on the chain
+that already exists, over exactly the rows `count()` counts.
+
 ## Writing many rows is one statement
 
-The three sections above make a read loop stop being N statements. A loop of `insert()` calls is
+The sections above make a read loop stop being N statements. A loop of `insert()` calls is
 the same defect on the write side, and `insertAll`/`upsertAll` are its answer, `As of 2026-08`:
 
 ```ts
