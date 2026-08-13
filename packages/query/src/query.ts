@@ -56,7 +56,8 @@ export interface QueryOptions {
   /**
    * Skips every cache for this call — the request memo as well as the tiers, since a memo is a
    * cache with a request's lifetime. The one way to read past a write made earlier in the same
-   * request. Live fanout always reads fresh.
+   * request: what it reads replaces the memo entry, so the next plain read of this key in this
+   * request sees the write too. Live fanout always reads fresh.
    */
   readonly fresh?: boolean;
   /**

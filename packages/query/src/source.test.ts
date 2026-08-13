@@ -1,3 +1,8 @@
+// Parity between the two halves of one source: the SQL text a driver receives and the rows
+// `execute()` answers from memory. `from()` is the reference implementation an app's `sql:` is
+// modelled on, so a filter, an ordering or a seek that means one thing in the generated statement
+// and another in the fixture rows is a defect an app inherits — these read both and compare.
+
 import { describe, expect, test } from 'bun:test';
 import type { OrderKey } from './shape';
 import { from, isAfterKey } from './source';
@@ -69,6 +74,15 @@ describe('a filter on NULL compiles to `is null`', () => {
     expect(await source.execute()).toEqual([]);
   });
 
+  test('an `in` given no list is the same constant, not `in $1` — which no driver can read', async () => {
+    const source = feed().compare('publishedAt', 'in', '2026-01-01');
+    // `matchesFilter` answers no row for a non-list operand, so the SQL says exactly that. The
+    // bound-parameter fallback said `"publishedAt" in $1`, which is a syntax error a driver
+    // reports instead of the empty result the two halves agree on.
+    expect(source.toSQL()).toEqual({ sql: 'select * from "posts" where 1 = 0', params: [] });
+    expect(await source.execute()).toEqual([]);
+  });
+
   test('an ordering operator needs no case: NULL matches nothing on either side', async () => {
     const source = feed().compare('score', '>', 5);
     expect(source.toSQL().sql).toContain('"score" > $1');
@@ -95,6 +109,40 @@ describe('the ordering says where NULL goes', () => {
       'select * from "posts" order by "publishedAt" desc nulls first',
     );
     expect(ids(await source.execute())).toEqual(['c', 'd', 'b', 'a']);
+  });
+});
+
+/**
+ * `total()` is how a read that has no cursor still asks for the order a cursor read is served in —
+ * a live window, whose patches the matcher places by `totalOrder`. Without it the window arrives
+ * ordered by the declared keys alone and a tie sits wherever the rows happened to be.
+ */
+describe('total() serves the declared keys plus the id tiebreak', () => {
+  /** Two rows tied on the only declared key, given to the source in the wrong id order. */
+  const tied: readonly Post[] = [
+    { id: 'y', orgId: ORG, publishedAt: '2026-01-01', score: 1 },
+    { id: 'x', orgId: ORG, publishedAt: '2026-01-01', score: 2 },
+  ];
+
+  test('appends `"id" asc` to the statement and to the rows', async () => {
+    const source = from<Post>('posts', tied).orderBy('publishedAt').total();
+    expect(source.toSQL().sql).toBe(
+      'select * from "posts" order by "publishedAt" asc nulls last, "id" asc nulls last',
+    );
+    expect(ids(await source.execute())).toEqual(['x', 'y']);
+  });
+
+  test('leaves a plain read exactly the statement it asked for', async () => {
+    const source = from<Post>('posts', tied).orderBy('publishedAt');
+    expect(source.toSQL().sql).toBe('select * from "posts" order by "publishedAt" asc nulls last');
+    // Stable sort, so the tie keeps the order the rows arrived in — which is no order at all in
+    // SQL. That is the divergence `total()` exists to close, not a guarantee.
+    expect(ids(await source.execute())).toEqual(['y', 'x']);
+  });
+
+  test('does not double an ordering that already names id', () => {
+    const source = from<Post>('posts', tied).orderBy('id', 'desc').total();
+    expect(source.toSQL().sql).toBe('select * from "posts" order by "id" desc nulls first');
   });
 });
 

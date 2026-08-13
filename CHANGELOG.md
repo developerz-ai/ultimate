@@ -114,7 +114,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
   `readOnce(ctx, key, run)` is the single-flight half of `readThrough`, split out and exported; `readThrough` is now `readOnce` plus the tier fill and nothing else, so there is one place a key is joined and one place it is stored. What the memo holds is the **execution**, never the decision: `readRows` parses the input, evaluates the policy and calls `sql()` before it reaches the memo on every call, and `.as()` reads in a child context whose identity is its own memo — so a memoized answer is still one that actor was allowed to ask for, and an impersonated read can never join one made as someone else.
 
-  `fresh: true` now skips the memo as well as the tiers, a memo being a cache whose lifetime is the request. That makes it the one way to read past a write made earlier in the same request: an action's `invalidates` drops tier entries, not memo entries.
+  `fresh: true` now skips the memo as well as the tiers, a memo being a cache whose lifetime is the request. That makes it the one way to read past a write made earlier in the same request: an action's `invalidates` drops tier entries, not memo entries. It skips the memo on the way *in* and publishes to it on the way *out* — `readFresh` is `readOnce` minus the join, both sharing one publish step — so the read it just made is the request's answer from then on. Returning the rows early instead would leave the pre-write entry standing and end the guarantee at the one call that asked for it, handing the next plain read of that key the answer the write had already moved past.
 
 - **A read filtered on NULL matched every row in memory and no row in the database.** `@ultimat3/query`'s source emitted `"col" = $n` whatever the value was, and `= $n` with a NULL argument is *unknown* in Postgres, never true — so `where({ deletedAt: null })` selected every live row from `from()` and nothing at all from a driver. The keyset predicate had the same defect one page later: `"publishedAt" > $n` is unknown for every draft, so page two stopped at the first NULL and the rows behind it could not be reached through a cursor at all.
 
@@ -133,7 +133,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   ("publishedAt" > $1)                         (("publishedAt" > $1 or "publishedAt" is null))
   ```
 
-  Two behaviour changes ride along, both making the memory path answer what Postgres answers: an ordering operator against a NULL no longer compares the string `"null"` (a null `score` used to sort past `5` and land in a `score > 5` feed), and `compareValues` sorts NULL after every value instead of between `"m"` and `"o"`, which is what `compareRows`, `isAfterKey` and the live matcher's insertion position all read. `!=` compiles to `is distinct from`, the pair `@ultimat3/entity`'s `predicateSql` already emitted. An empty `in` list is `1 = 0` rather than `in ()`, which Postgres refuses outright. `isNull` is exported beside `isAfterKey`, for the same reason: a custom `SqlSource` has to agree on what NULL is rather than re-decide it.
+  Two behaviour changes ride along, both making the memory path answer what Postgres answers: an ordering operator against a NULL no longer compares the string `"null"` (a null `score` used to sort past `5` and land in a `score > 5` feed), and `compareValues` sorts NULL after every value instead of between `"m"` and `"o"`, which is what `compareRows`, `isAfterKey` and the live matcher's insertion position all read. `!=` compiles to `is distinct from`, the pair `@ultimat3/entity`'s `predicateSql` already emitted. An empty `in` list is `1 = 0` rather than `in ()`, which Postgres refuses outright — and so is an `in` handed something that is not a list at all, which used to fall through to `"col" in $1`: a syntax error from the driver where `matchesFilter` had quietly answered no rows. `isNull` is exported beside `isAfterKey`, for the same reason: a custom `SqlSource` has to agree on what NULL is rather than re-decide it.
 
   A generated `order by` now carries `nulls last`/`nulls first` explicitly. It is Postgres' own default — no plan changes, and `asc nulls last` is still the default btree order — but an assertion on exact SQL text needs updating.
 
@@ -147,6 +147,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   ```
 
   A row with no `id` is now `X_QUERY_NOT_PAGEABLE` at the matcher, as it already was at `seekKeyOf`: `String(undefined)` is `"undefined"`, an id every id-less row shares, so one row's patch landed on another's position and a `remove` named a row no client held. An unordered query still appends — SQL promises no position there to get wrong. `totalOrder` is exported for the reason `isNull` and `isAfterKey` are: a custom `SqlSource` has to serve the order the cursor assumes rather than re-decide it.
+
+  **And the live window is now served in that order too.** Placing the patch by `totalOrder` fixed two of the three readers and left the third: the initial window came from the query's own `sql()` unpaged, so it arrived ordered by the declared keys alone and a tied row sat wherever the database returned it — the matcher then inserted by id into a list that was not sorted by id, and the resume `seek()` read the next page as though it had been. `SqlSource` gains an optional `total()` — the same read, no cursor and no window, ordered `<declared keys>, "id" asc` — and `sourceFor` calls it for `surface: 'live'` and nothing else:
+
+  ```sql
+  -- a live feed's window, before          -- after
+  order by "createdAt" asc nulls last      order by "createdAt" asc nulls last, "id" asc nulls last
+  ```
+
+  `Builder.total()` implements it (`seek()` already implied it, and the private `pageOrder()` is now `servedOrder()` because a live window is not a page). A source that does not implement `total()` is untouched, as is every non-live read: a plain `from()` over rows with no `id` still generates exactly the SQL it was asked for. An assertion on a live query's `sqlText` needs updating.
 
 - **A `BEGIN` that fails no longer leaks the connection it was going to run on.** `withTransaction` reserved a connection, ran `BEGIN` *above* its `try`, and released the pin in the block's `finally` — so the one statement that opens the transaction was the one statement not covered by the guard that closes it. A `BEGIN` that rejected (a connection killed mid-pool, a server in recovery, `statement_timeout` on a hung `SET`) returned the pin to nobody: one leaked pool connection per failure on Postgres, and on PGlite the single session's turn, which every later statement in the process then waits for forever.
 

@@ -80,10 +80,12 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
 | No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
 
-A page is served `order by <declared keys>, "id" asc`, and the matcher places an arriving row by
-that same list: a row tied on every declared key lands where its id puts it, not after the tie
-group. `x queries describe <name> --json` prints the order. A row that reaches the matcher with no
-`id` is `X_QUERY_NOT_PAGEABLE`, never a patch aimed at a position no client holds.
+A page is served `order by <declared keys>, "id" asc`, and so is a live window — `As of 2026-08`,
+the initial window, the matcher's patch positions and the keyset re-read a reconnect resumes with
+are one ordering. A row tied on every declared key lands where its id puts it, not after the tie
+group, and not wherever the database happened to return it. `x queries describe <name> --json`
+prints the order. A row that reaches the matcher with no `id` is `X_QUERY_NOT_PAGEABLE`, never a
+patch aimed at a position no client holds.
 
 A non-live query has none of these constraints — it is just a read.
 
@@ -136,7 +138,7 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 | Scope safety | two actors never share an entry — each request has its own context, and `.as()` reads in a child of it |
 | Authorization | parsing, the policy and `sql` run on every call. What the memo holds is the execution, never the decision |
 | Failure | a rejection is evicted, so the next read in the request retries rather than replaying one failure |
-| Invalidation | none — a write in the same request drops tier entries, not memo entries. `fresh: true` is the read-past |
+| Invalidation | none — a write in the same request drops tier entries, not memo entries. `fresh: true` is the read-past, and what it read replaces the memo entry, so the next plain read of that key sees the write too |
 
 Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres. The same memo is what keeps an uncached lookup called once per row of a list to one round trip — `As of 2026-08`, per row is what it used to cost.
 

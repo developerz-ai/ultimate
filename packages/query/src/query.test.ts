@@ -240,6 +240,26 @@ describe('a query with no cache block', () => {
 
     expect(counts.executed).toBe(2);
   });
+
+  test('a fresh read is the request’s answer from then on, so a plain read sees the write', async () => {
+    const rows: { id: string; orgId: string }[] = [{ id: 'a', orgId: ORG }];
+    const target = query({
+      input: Input,
+      policy: can('feed:read'),
+      sql: () => from('rows', async () => [...rows]),
+    }).named('writtenFeed');
+    const ctx = createContext({ actor: readerActor });
+
+    await runQuery(target, { orgId: ORG }, { ctx });
+    rows.push({ id: 'b', orgId: ORG });
+    const refreshed = await runQuery(target, { orgId: ORG }, { ctx, fresh: true });
+    // `fresh` skips the memo on the way in; what it read replaces it on the way out. Returning
+    // early instead would leave the pre-write entry standing and end the guarantee at one call.
+    const plain = await runQuery(target, { orgId: ORG }, { ctx });
+
+    expect(refreshed.map((row) => (row as { id: string }).id)).toEqual(['a', 'b']);
+    expect(plain).toEqual(refreshed);
+  });
 });
 
 // The read path's three guarantees, proved together for the query the audit named:

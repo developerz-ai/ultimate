@@ -25,6 +25,12 @@ export interface SqlSource<TRow> {
   execute(): Promise<readonly TRow[]>;
   /** Required for `live: true`: the matcher patches from the shape, not from SQL. */
   shape(): QueryShape;
+  /**
+   * The same read served in `totalOrder` — the declared keys, then `id`. A live read is built
+   * through this, because the matcher places a patched row by that order and a reconnect resumes
+   * by it. Absent means the source already serves one order it can be resumed in.
+   */
+  total?(): SqlSource<TRow>;
   /** Cursor push-down. Absent means pagination slices after execution. */
   seek?(after: SeekKey | null, limit: number): SqlSource<TRow>;
 }
@@ -48,10 +54,16 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     private readonly rowLimit: number | null,
     private readonly after: SeekKey | null,
     private readonly unsupported: readonly string[],
-    /** Set by `seek()`. Only a paged read pays for the id tiebreak — see `pageOrder()`. */
-    private readonly paged: boolean = false,
+    /** Set by `seek()` and `total()` — the only reads that pay for the id tiebreak. */
+    private readonly totalized: boolean = false,
   ) {}
 
+  /**
+   * One equality filter per key, and the clauses come out in **lexical key order** — not the order
+   * the object literal was typed in. The generated text is something callers compare across runs:
+   * `explain()` prints it, `LiveQuery.sqlText` caches it, and tests pin it. Reordering two keys in
+   * a call site must not rewrite the statement.
+   */
   where(equals: Readonly<Record<string, unknown>>): Builder<TRow> {
     const added = Object.keys(equals)
       .sort()
@@ -77,7 +89,15 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   }
 
   seek(after: SeekKey | null, limit: number): Builder<TRow> {
-    return this.derive({ after, rowLimit: limit, paged: true });
+    return this.derive({ after, rowLimit: limit, totalized: true });
+  }
+
+  /**
+   * The declared keys plus the `id` tiebreak, with no cursor and no window — page one of the
+   * ordering a paged read already serves. `seek()` implies it; a live read asks for it directly.
+   */
+  total(): Builder<TRow> {
+    return this.derive({ totalized: true });
   }
 
   shape(): QueryShape {
@@ -96,7 +116,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
     const clauses = this.filters.map((filter) => filterClause(filter, slot));
     if (this.after !== null) clauses.push(this.seekClause(this.after, slot));
     const where = clauses.length > 0 ? ` where ${clauses.join(' and ')}` : '';
-    const keys = this.pageOrder();
+    const keys = this.servedOrder();
     const order = keys.length > 0 ? ` order by ${keys.map(orderTerm).join(', ')}` : '';
     const limit = this.rowLimit === null ? '' : ` limit ${this.rowLimit}`;
     return { sql: `select * from "${this.entity}"${where}${order}${limit}`, params };
@@ -105,7 +125,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   async execute(): Promise<readonly TRow[]> {
     const source = typeof this.rows === 'function' ? await this.rows() : this.rows;
     let result = source.filter((row) => matchesFilters(row, this.filters));
-    const keys = this.pageOrder();
+    const keys = this.servedOrder();
     if (keys.length > 0) {
       result = [...result].sort((a, b) => compareRows(a, b, keys));
     }
@@ -122,14 +142,14 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   }
 
   /**
-   * The ordering a page is actually served in — `totalOrder`, so the SQL, the in-memory sort,
+   * The ordering this read is actually served in — `totalOrder`, so the SQL, the in-memory sort,
    * `seekClause()` and the matcher all read one list.
    *
-   * Only a paged read pays for it: an unpaginated `from()` over rows that have no `id` must keep
-   * generating exactly the SQL it was asked for.
+   * Only a read that asked for it pays: `seek()` for a page, `total()` for a live window. A plain
+   * `from()` over rows that have no `id` must keep generating exactly the SQL it was asked for.
    */
-  private pageOrder(): readonly OrderKey[] {
-    return this.paged ? totalOrder(this.order) : this.order;
+  private servedOrder(): readonly OrderKey[] {
+    return this.totalized ? totalOrder(this.order) : this.order;
   }
 
   /**
@@ -141,11 +161,11 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
    * thing. Same shape as `@ultimat3/entity`'s `seekSql`: one meaning, two drivers.
    */
   private seekClause(after: SeekKey, slot: Slot): string {
-    // The same `pageOrder()` the ORDER BY is built from, so the predicate can only ever describe
+    // The same `servedOrder()` the ORDER BY is built from, so the predicate can only ever describe
     // the order the rows actually arrive in. The tiebreak is absent when the ordering already
     // named `id`: a second `id` term compares the key to itself, can never be true, and is dead
     // SQL an agent then has to reason about.
-    const keys = this.pageOrder();
+    const keys = this.servedOrder();
     const values = this.ordersById ? [...after.key] : [...after.key, after.id];
     const terms: string[] = [];
     for (const [index, key] of keys.entries()) {
@@ -173,7 +193,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
       patch.rowLimit === undefined ? this.rowLimit : patch.rowLimit,
       patch.after === undefined ? this.after : patch.after,
       patch.unsupported ?? this.unsupported,
-      patch.paged ?? this.paged,
+      patch.totalized ?? this.totalized,
     );
   }
 }
@@ -196,7 +216,11 @@ const slotter =
  */
 function filterClause(filter: Filter, slot: Slot): string {
   const column = `"${filter.column}"`;
-  if (filter.op === 'in' && Array.isArray(filter.value)) {
+  if (filter.op === 'in') {
+    // `in` reads a list or nothing. A non-array operand matches no row in memory, so the SQL says
+    // the same constant — the fallback below would emit `"col" in $n`, which is a syntax error a
+    // driver reports instead of the empty result the two sources agree on.
+    if (!Array.isArray(filter.value)) return NEVER;
     const present = filter.value.filter((item) => !isNull(item));
     const list =
       present.length === 0
@@ -257,7 +281,7 @@ interface BuilderState {
   readonly rowLimit: number | null;
   readonly after: SeekKey | null;
   readonly unsupported: readonly string[];
-  readonly paged: boolean;
+  readonly totalized: boolean;
 }
 
 /**

@@ -1,3 +1,8 @@
+// What a subscriber's window does when one row changes: whether the row belongs, where it lands,
+// and what leaves. Position is the guarantee under test — a patch placed anywhere but where the
+// source would serve the row is an order no re-read returns and a cursor that skips what it was
+// pushed past — alongside the identity a patch is addressed by, which no row may be missing.
+
 import { describe, expect, test } from 'bun:test';
 import type { ChangeEvent, Patch } from './matcher';
 import { match } from './matcher';

@@ -10,6 +10,7 @@ import type { ReadCache, ReadCacheEntry } from './cache';
 import {
   getReadCache,
   MemoryReadCache,
+  readFresh,
   readOnce,
   readThrough,
   requestMemo,
@@ -277,13 +278,19 @@ describe('readThrough', () => {
   test('writes the tier with an absolute expiry, or none at all', async () => {
     const run = async (): Promise<string> => 'rows';
 
+    // The clock reads once, before the writes. Recomputing `Date.now()` for the assertion asserts
+    // that no millisecond ticked across two awaits, which is the test machine's business.
+    const before = Date.now();
     await readThrough(createContext({}), 'ttl', 60_000, run);
     await readThrough(createContext({}), 'forever', null, run);
+    const after = Date.now();
 
-    expect(tier.writes).toEqual([
-      { value: 'rows', expiresAt: Date.now() + 60_000 },
-      { value: 'rows', expiresAt: null },
-    ]);
+    const [ttl, forever] = tier.writes;
+    expect(ttl?.value).toBe('rows');
+    expect(ttl?.expiresAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(ttl?.expiresAt).toBeLessThanOrEqual(after + 60_000);
+    expect(forever).toEqual({ value: 'rows', expiresAt: null });
+    expect(tier.writes).toHaveLength(2);
   });
 
   test('fails every reader that joined the read, having run the source once', async () => {
@@ -324,13 +331,79 @@ describe('readThrough', () => {
   });
 });
 
+describe('readFresh', () => {
+  test('runs even when the memo already holds an answer', async () => {
+    const ctx = createContext({});
+    let calls = 0;
+    const run = async (): Promise<number> => {
+      calls += 1;
+      return calls;
+    };
+
+    expect(await readOnce(ctx, 'k', run)).toBe(1);
+    expect(await readFresh(ctx, 'k', run)).toBe(2);
+    expect(calls).toBe(2);
+  });
+
+  test('replaces the memo, so the next plain read of the key joins it', async () => {
+    const ctx = createContext({});
+    let calls = 0;
+    const run = async (): Promise<number> => {
+      calls += 1;
+      return calls;
+    };
+
+    await readOnce(ctx, 'k', run);
+    await readFresh(ctx, 'k', run);
+
+    // Not the stale 1 the first read left behind: the fresh read is the request's newest answer.
+    expect(await readOnce(ctx, 'k', run)).toBe(2);
+    expect(calls).toBe(2);
+  });
+
+  test('leaves the earlier answer standing when it rejects', async () => {
+    const ctx = createContext({});
+    const run = async (): Promise<string> => 'rows';
+    const boom = async (): Promise<string> => {
+      throw new Error('boom');
+    };
+
+    await readOnce(ctx, 'k', run);
+    await expect(readFresh(ctx, 'k', boom)).rejects.toThrow('boom');
+
+    // A failed read is not an answer, so it evicts itself — the next read re-runs the source
+    // rather than replaying the failure.
+    expect(requestMemo(ctx).has('k')).toBe(false);
+    expect(await readOnce(ctx, 'k', run)).toBe('rows');
+  });
+
+  test('does not evict a fresh read that replaced it while it was in flight', async () => {
+    const ctx = createContext({});
+    const source = gate();
+    const slow = async (): Promise<string> => {
+      await source.wait;
+      throw new Error('boom');
+    };
+
+    const failing = readOnce(ctx, 'k', slow).catch((error: unknown) => String(error));
+    expect(await readFresh(ctx, 'k', async () => 'newer')).toBe('newer');
+    source.open();
+
+    expect(await failing).toBe('Error: boom');
+    expect(await requestMemo(ctx).get('k')).toBe('newer');
+  });
+});
+
 describe('MemoryReadCache', () => {
   test('drops an entry whose expiry has passed, and keeps one that has not', async () => {
     const memory = new MemoryReadCache();
-    await memory.set('stale', { value: 'rows', expiresAt: Date.now() - 1 });
-    await memory.set('live', { value: 'rows', expiresAt: Date.now() + 1 });
+    // One `now` for the write and for the assertion, and a horizon no test machine crosses: a
+    // millisecond ticking between the two would expire the live entry for the clock's reasons.
+    const now = Date.now();
+    await memory.set('stale', { value: 'rows', expiresAt: now - 1 });
+    await memory.set('live', { value: 'rows', expiresAt: now + 60_000 });
 
     expect(await memory.get('stale')).toBeUndefined();
-    expect(await memory.get('live')).toEqual({ value: 'rows', expiresAt: Date.now() + 1 });
+    expect(await memory.get('live')).toEqual({ value: 'rows', expiresAt: now + 60_000 });
   });
 });

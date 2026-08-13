@@ -1,3 +1,8 @@
+// The read vocabulary's two rules, pinned where every reader of them can only agree: NULL is one
+// absence that `=`/`!=`/`in` read as a value and `>`/`<` read as unknown, and `totalOrder` is the
+// order a read is served in. `compareRows`, `isAfterKey` and the matcher's insertion position all
+// call these, so one wrong answer here moves rows on three surfaces at once.
+
 import { describe, expect, test } from 'bun:test';
 import type { Filter, OrderKey } from './shape';
 import { compareRows, compareValues, isNull, matchesFilter, totalOrder } from './shape';

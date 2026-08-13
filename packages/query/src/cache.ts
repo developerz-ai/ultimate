@@ -93,7 +93,28 @@ export async function readOnce<T>(ctx: Ctx, key: string, run: () => Promise<T>):
   // Already answered or already being answered: the second reader waits on the first read
   // rather than starting a competing one. Awaiting a settled promise costs a microtask.
   if (joined !== undefined) return (await joined) as T;
+  return publish(memo, key, run);
+}
 
+/**
+ * Runs no matter what the memo holds, and then *becomes* what it holds — what `fresh: true` asks
+ * for.
+ *
+ * Joining is the half `fresh` refuses; publishing is not. A fresh read that left the earlier entry
+ * in place would read past a write for its own caller and hand the next plain read of that key in
+ * the same request the answer this one just proved stale — so the guarantee would end at the one
+ * call that asked for it.
+ */
+export function readFresh<T>(ctx: Ctx, key: string, run: () => Promise<T>): Promise<T> {
+  return publish(requestMemo(ctx), key, run);
+}
+
+/** The read in flight: published before its first await, evicted if it rejects. */
+async function publish<T>(
+  memo: Map<string, Promise<unknown>>,
+  key: string,
+  run: () => Promise<T>,
+): Promise<T> {
   // Published before the first await, so a reader arriving in the same tick finds this read.
   const flight = run();
   memo.set(key, flight);
@@ -101,7 +122,8 @@ export async function readOnce<T>(ctx: Ctx, key: string, run: () => Promise<T>):
     return await flight;
   } catch (error) {
     // A rejection is not an answer. Drop it so a later read in the same request retries
-    // instead of replaying one failure until the request ends.
+    // instead of replaying one failure until the request ends. Only ours: a fresh read may have
+    // replaced this entry already, and evicting that one would discard a live answer.
     if (memo.get(key) === flight) memo.delete(key);
     throw error;
   }

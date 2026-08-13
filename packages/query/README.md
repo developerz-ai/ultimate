@@ -123,6 +123,12 @@ database chose, while the cursor reads them as if id had decided — so one of a
 on both pages and the other on neither, and a row the matcher appends after a tie group is a
 position no re-read returns.
 
+A **live** read is served that way too, and `SqlSource.total()` is how it says so: the same read
+with no cursor and no window, ordered `<declared keys>, "id" asc`. `sourceFor` calls it for
+`surface: 'live'` and for nothing else, so the initial window, the patch positions the matcher
+computes and the keyset re-read a reconnect resumes with are one ordering. A source that does not
+implement `total()` is left alone — it already serves one order it can be resumed in.
+
 ## NULL
 
 One rule, three readers: the SQL a source generates, the in-memory execution behind `from()`, and
@@ -168,8 +174,10 @@ otherwise cost one round trip per row. Parsing, the policy and `sql()` still run
 the memo holds the execution, not the decision — and `.as()` reads in a child context, so an
 impersonated read never joins one made as someone else.
 
-`fresh: true` skips both, the memo included. It is how a caller reads past a write made earlier
-in the same request: invalidation drops tier entries, not memo entries.
+`fresh: true` skips both on the way in, and **publishes into the memo on the way out**: it is how
+a caller reads past a write made earlier in the same request, and the read it just made is the
+request's answer from then on, so a later plain read of the same key joins it rather than the entry
+the write moved past. Invalidation drops tier entries, not memo entries.
 
 ## Errors
 

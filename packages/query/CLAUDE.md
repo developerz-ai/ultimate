@@ -76,19 +76,28 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   and none in the database, and `"col" > $n` blanked page two at the first NULL. Never emit a bound
   parameter where NULL is the value being tested, and never let `compareValues` sort a NULL as the
   string `"null"` again — `compareRows`, `isAfterKey` and the matcher's insertion position all
-  read it, so one string compare moves rows on three surfaces.
+  read it, so one string compare moves rows on three surfaces. `in` takes a list or nothing: an
+  empty one is `1 = 0`, and so is an operand that is not an array at all — `matchesFilter` answers
+  no rows for it, and `"col" in $n` is a syntax error the driver reports instead of that answer.
 - **The id is the tiebreak that makes the order total.** A row without one is
   `X_QUERY_NOT_PAGEABLE` at `seekKeyOf` **and** at the matcher's `idOf`, never `String(undefined)`:
   `"undefined"` is a position every row matches, signed and opaque, so page two would be page one
   forever and one row's patch would land on another's index.
 - **`totalOrder` is the order a read is served in, and all three readers use it.** The declared
-  keys then `id asc`, unless the ordering already names `id` — `Builder.pageOrder()` compiles it,
+  keys then `id asc`, unless the ordering already names `id` — `Builder.servedOrder()` compiles it,
   the in-memory sort applies it, and `positionFor` places a row by it. The matcher comparing
   `shape.orderBy` alone appended a tied row after its whole tie group, which is a position no
   re-read returns and a cursor that skips every tie it was pushed past. `SeekKey` is the same list
   decomposed — `key` for the declared part, `id` for the tiebreak — so never add `id` to
   `QueryShape.orderBy` to get it: `seekKeyOf` would then sign the id twice. An unordered query
   appends, because SQL promises no position there to get wrong.
+- **A live read asks for that order explicitly, and `sourceFor` is where it asks.** `total()` is
+  the `SqlSource` method for "the same read, served in `totalOrder`" — no cursor, no window — and
+  `buildSource` calls it when `surface === 'live'`, for nothing else, and only when the source
+  implements it. A live window served by the declared keys alone puts a tied row wherever the
+  database returned it, while `positionFor` places the patch by id and the resume re-read seeks by
+  id: the client then renders an order no re-read answers. Never reach for `seek(null, limit)`
+  instead — a live query need not carry a limit, and inventing one is a window nobody asked for.
 - The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown
@@ -109,9 +118,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   identity is its own memo. So a memoized answer is still one this actor was allowed to ask for,
   and no impersonated read can join a read made as someone else. Moving the memo above
   `buildSource` would turn it into an authz bypass.
-- **`fresh: true` skips the memo too**, because a memo is a cache whose lifetime is the request.
-  It is the one way to read past a write made earlier in the same request: invalidation drops tier
-  entries, not memo entries.
+- **`fresh: true` skips the memo on the way in and publishes to it on the way out.** A memo is a
+  cache whose lifetime is the request, so `fresh` refuses to *join* an entry — `readFresh` is
+  `readOnce` minus the join, both sharing one `publish` — but it must still *become* one. Returning
+  the rows early instead left the pre-write entry standing, so "the one way to read past a write
+  made earlier in the same request" ended at the single call that asked for it and the next plain
+  read of that key got the stale answer back. Invalidation still drops tier entries only.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
   `@ultimat3/policy`; a live denial keeps its 4403 close code on `QueryDeniedError.denial`.
   `policy-gate.ts` is the only file that imports the policy package.
