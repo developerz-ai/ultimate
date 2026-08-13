@@ -28,6 +28,14 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   whole contract exists to prevent. `parseImageQuery` never validates `f` against real format
   names; that refusal stays `image-driver.ts`'s `X_IMAGE_UNSUPPORTED`, so one bad URL never
   carries two codes.
+- **A feed date never throws and never lies.** `feed-dates.ts` is the only place a feed timestamp
+  is parsed or formatted; `buildFeed` resolves every date once, so no builder ever sees a string it
+  has to parse. An item date that will not parse is **absent** — the element is omitted (Atom's
+  required `<updated>` falls back to the feed's) — never `Invalid Date`, never today standing in
+  for it, and never a `RangeError` out of a route a reader is polling. Scan a feed with a loop, not
+  `Math.max(...times)`: a spread is one argument per item and the engine's limit is the caller's
+  stack depth, not the feed's size. "Now" arrives through `BuildFeedOptions.clock`; nothing in
+  `rss.ts` reads a clock of its own.
 - Only `site/` routes are SEO-checked — `app/` is behind auth and crawlers never authenticate.
 
 ## Files
@@ -38,6 +46,8 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 | `meta.ts` | model + `renderMeta()`; the only place head tags are constructed |
 | `validate.ts` | the gate; `MetaIssue` is the serialisable projection of a `SeoError` |
 | `xml.ts` | all escaping. Never hand-roll an escape in another module |
+| `rss.ts` | `buildFeed()` — the three feed formats; owns markup, never a date |
+| `feed-dates.ts` | all timestamp parsing and formatting for feeds. Never `Date.parse` in another module |
 | `images.ts` | what the markup promises: `srcset` widths, `<picture>` order, inlined dimensions — plus `IMAGE_QUERY_KEYS` and `parseImageQuery`, the contract that reads a minted URL back. Decodes nothing |
 | `image-driver.ts` | the bytes behind that promise: `ImageTransformDriver` + `builtinImageDriver({ read })` over core's pipeline — png/jpeg only |
 

@@ -99,7 +99,7 @@ export type { RobotsConfig, RobotsGroup, SeoEnvironment } from './robots';
 export { buildRobots, isIndexable, resolveEnvironment } from './robots';
 export type { ChangeFreq, RenderMode, RouteBudget, RouteRecord, Surface } from './routes';
 export { expandRoute, indexableRoutes, isDynamic } from './routes';
-export type { Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';
+export type { BuildFeedOptions, Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';
 export { buildFeed } from './rss';
 export type {
   BuildSitemapOptions,

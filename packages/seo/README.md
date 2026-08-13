@@ -32,6 +32,7 @@ X_SEO_META_MISSING: a site/ route is missing required metadata
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k |
 | `robots.ts` | `buildRobots()`, environment-aware and fail-closed |
 | `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list |
+| `feed-dates.ts` | the one place a feed timestamp is parsed or formatted — an item date that will not parse is *absent*, never `Invalid Date` and never a crash |
 | `images.ts` | `srcset` widths, AVIF → WebP → original, inlined intrinsic dimensions, and `parseImageQuery()` — reads a minted URL back into a transform request |
 | `image-driver.ts` | `ImageTransformDriver` + `builtinImageDriver()`: the variant bytes and the blur placeholder |
 | `budgets.ts` | `checkBudgets()` / `assertBudgets()`, the CI gate |

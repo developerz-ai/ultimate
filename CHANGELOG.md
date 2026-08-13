@@ -250,6 +250,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **One bad date no longer takes the whole feed down.** `buildFeed` parsed item timestamps straight into `new Date(...).toISOString()`, so a `published` that would not parse — a CMS column holding prose, a hand-typed front-matter line — reached `toISOString()` as `NaN` and threw a bare `RangeError` out of the feed route. The same line spread its work into `Math.max(...times)`, one argument per item, so a feed that grew past the engine's argument limit crashed in proportion to how well the blog did; and the empty-feed branch called `Date.now()` directly, the one clock read in the package no test could freeze.
+
+  All three are gone. `feed-dates.ts` is now the only place a feed timestamp is parsed or formatted, `buildFeed` resolves every date once, and the three builders only ever see instants:
+
+  ```ts
+  const feed = buildFeed(channel, [{ ...post, published: 'sometime last spring' }]);
+  // renders: the item keeps its title, link and guid — only the date is missing
+  ```
+
+  A date that will not parse is treated as **absent**, never invented: RSS drops that item's `<pubDate>`, Atom drops its `<published>`, JSON Feed drops `date_published`, and Atom's *required* `<updated>` falls back to the feed's own instant, which is always real. An unparseable date sorts last instead of turning the comparator into `NaN` and handing the feed's order to the engine's sort. An unparseable `channel.updated` falls back to the newest item rather than poisoning `lastBuildDate`. Every timestamp the three formats emit is now normalised to UTC from one instant, so an offset-bearing input means the same moment in all three.
+
+  "Now" is a seam: `buildFeed(channel, items, { clock })` takes a `Clock` — `frozenClock(at)` makes a feed with no usable dates byte-for-byte reproducible — and defaults to `systemClock`.
+
 - **`Pipeline.handle()` keeps its one promise: a Response, always.** The lifecycle absorbed a throw from every stage that runs *before* the response exists, and then ran the two that finish it — `cache-headers` and `response` — in a bare loop outside that guard. A stage refusing the response it was handed (headers that cannot be set, on a `Response.redirect` or anything else a handler returned) rejected `handle()` against the contract written on it, and the caller got whatever the runtime prints instead of a document naming the defect. The recover stage had the same hole from the other side: it is the single place a throw becomes a status, so an app's `onError` sink or a `devNotices` producer throwing inside it left nothing to render its own throw.
 
   Both are now guarded in `finalize.ts`, and a refusal degrades to the new **`X_PIPELINE_FINALIZE_FAILED`** — 500, with the stage name and the underlying message in `cause`:
