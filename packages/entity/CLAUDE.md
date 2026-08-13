@@ -139,6 +139,25 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   review comment — plus the coalesced flush, the sibling preload, a relation's own read, a chunked
   batch's every statement, hand-written SQL (no pair), a refusal (no statement) and the
   no-observer-installed branch.
+- **The two N+1 codes are owned here, and their `fix` is a call the schema already answers.**
+  `X_N_PLUS_ONE_QUERY` and `X_N_PLUS_ONE_WRITE` live in this package rather than in the process
+  that detects them, because the fix speaks this package's vocabulary — `preload`, `insertAll`,
+  `updateWhere` — and a code owned by the CLI would put the one sentence an author acts on in a
+  package the entity layer cannot see. **Detection is somebody else's**: `n-plus-one.ts` counts
+  nothing, holds no threshold and installs no observer; it takes a verdict (`StatementLoop`) and
+  returns the error. **The relation is derived, never invented** — `preloadsFor()` reads the same
+  `relationMap()` `preload()` resolves against, so the pasted line compiles; the operation picks
+  the side (`findById` → `belongsTo`, `findMany` → `hasMany`), and anything else takes the `in`
+  form rather than a relation that would attach the wrong rows. **Edges are read by their `to`
+  end**, because the loop repeated on the entity being looked up and the ledger never saw the
+  `for … of` above it — so every page that could preload it is named, first one pasteable and the
+  rest after it, exactly as `preloadUnknownRelation` spells its names. **A schema whose relations
+  cannot be named still reports the loop**: `relationMap()` throws `X_INVARIANT_VIOLATED` on two
+  keys it cannot tell apart, and a diagnostic that let that escape would replace the N+1 with a
+  schema complaint the loop did not cause — in a dev process, as an uncaught throw — so the
+  derivation falls back to the `in` form. **`expectedQueryLoop` is the only way to declare a loop
+  deliberate**, and it silences the count upstream; there is no flag on these errors and no fix
+  that turns the warning off.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -380,6 +399,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
+| `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 
 ## Commands

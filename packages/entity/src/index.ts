@@ -22,7 +22,12 @@ export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, memoryDriver } from './database';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
-export type { EntityErrorCode } from './errors';
+export type {
+  EntityErrorCode,
+  PreloadCandidate,
+  QueryLoopBatch,
+  WriteLoopBatch,
+} from './errors';
 export {
   dbDrift,
   ENTITY_ERROR_CODES,
@@ -31,6 +36,8 @@ export {
   entityDuplicate,
   invariantViolated,
   notFound,
+  nPlusOneQuery,
+  nPlusOneWrite,
   patchEmpty,
   preloadUnknownRelation,
   tenancyUnscoped,
@@ -45,6 +52,8 @@ export {
   invariantsToSql,
   toSql,
 } from './invariants';
+export type { StatementLoop } from './n-plus-one';
+export { nPlusOne, preloadsFor } from './n-plus-one';
 export type { PostgresDriverOptions } from './pg-driver';
 export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 export type { RelatedTable, RelatedTables } from './preload';

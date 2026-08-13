@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0809c791a787062e582150e34168415005277b9dbb2746bf702c5cb389019f8e",
+  "buildId": "12aeb7605243fce2cfeee8d747a82082015382e3fe28bcc595c9c29f4132a656",
   "tiers": {
     "0": [
       "core",
@@ -979,6 +979,16 @@
       "code": "X_MONEY_NOT_INTEGER",
       "owner": "money",
       "at": "packages/money/src/errors.ts"
+    },
+    {
+      "code": "X_N_PLUS_ONE_QUERY",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_N_PLUS_ONE_WRITE",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     },
     {
       "code": "X_NO_CONTEXT",
