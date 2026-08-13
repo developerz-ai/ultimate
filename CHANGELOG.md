@@ -250,6 +250,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A cache tier that refuses no longer fails the read it was supposed to speed up.** `createCacheStack` walked the ladder with every tier call unguarded, so a tier throwing anywhere on the value path threw straight out of `read()` — the caller saw a failed business read where the source had already answered correctly. The common one needs no outage to reproduce: `LruCache.set` raises `X_CACHE_TOO_LARGE` for any entry over the tier's whole byte budget, so a page that grew past `maxBytes` stopped *loading* rather than stopping *caching*. A `get` was the same shape — a Redis with no socket failed every read that walked past it, including ones the memo or the LRU would have answered.
+
+  Every `get`/`set`/`del` the stack makes now goes through `bestEffort()`, which reads a refusal as "that tier did not answer": the walk continues, later tiers are still populated, `write` and `drop` still reach the tiers behind the refusing one, and the value still comes back.
+
+  ```ts
+  const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
+  if (hit === undefined) continue;                  // a miss and a refusal read the same here
+  ...
+  const value = await load();                       // the one call still left to throw
+  ```
+
+  `load()` stays unguarded on purpose — it *is* the business read, and absorbing it would hand back `undefined` as though it were the value. Silence is the other half of the bug, so the absorbed refusals are readable: **`recentTierFailures()`** returns the last 100, newest first, each carrying the tier, the operation, the key, the message and the `X_*` code when there is one, and each one is logged as `cache.tier.failed`. That is `report.errors` applied to the path that has no report to return, and `resetTiers()` clears it alongside the invalidation log. `LruCache.set` is unchanged and still throws for a direct caller: the stack is the layer that degrades, not the tier.
+
 - **Two identical reads in one request are one read, even when they race.** The request memo behind a cached `query` stored the *value*, and stored it only after the read had settled — so two holes rendering concurrently both missed the memo, both asked the cache tier, and both executed the source. The memo now holds the read **in flight**, published before `readThrough`'s first await: the second reader joins the first instead of starting a competing one, and five concurrent readers cost one execution and one tier round trip.
 
   ```ts

@@ -45,6 +45,16 @@ const feed = await stack.read('feed:org-1', () => db.posts.recent(), {
 });
 ```
 
+Every tier call the stack makes is best-effort: a tier that throws on `get`, `set` or `del` is a
+tier that did not answer, so `read`, `write` and `drop` carry on. A feed too big for the LRU
+(`X_CACHE_TOO_LARGE`) or a Redis with no socket costs the entry, never the read. The one call left
+to throw is `load()` — it *is* the business read, and absorbing it would hand back `undefined` as
+though it were the value.
+
+`recentTierFailures()` is where those refusals go: last 100, newest first, each naming the tier, the
+operation, the key and the `X_*` code, and each one also logged as `cache.tier.failed`. Same
+bargain as `report.errors` on the invalidation side — degraded is visible, not merely slow.
+
 ## Tags
 
 ```ts

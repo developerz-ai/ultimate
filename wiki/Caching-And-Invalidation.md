@@ -85,6 +85,8 @@ Fanout is enqueued in the **same transaction** as the write — the transactiona
 
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 
+The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
+
 ## Failure modes removed
 
 The bug is never "the cache is wrong". The bug is that invalidation is a *decision made at a distance*: the developer editing `publishPost` must remember which of nine cached things this write affects, including two added last month by someone else.
@@ -179,5 +181,5 @@ Verbatim shapes: [`packages/cache/src/errors.ts`](https://github.com/developerz-
 - `flushAll` exists only as `x cache clear` in dev; there is no runtime API for it.
 - Cache misses must be correct and merely slower — no code path may depend on a hit.
 - Prefer `tag.post.id(x)` over `tag.post`. Narrow eviction is the default, not an optimization.
-- A cache tier may never fail a business write. Tier errors land in the invalidation report.
+- A cache tier may never fail a business read or write. Tier errors land in the invalidation report, or in `recentTierFailures()` on the read ladder.
 - Realtime is not a cache tier. Live queries flow from logical replication on their own path ([Realtime](Realtime)).

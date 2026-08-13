@@ -71,6 +71,8 @@ export {
   tagsFor,
   tagsIntersect,
 } from './tags';
+export type { TierFailure, TierOperation } from './tier-failures';
+export { recentTierFailures } from './tier-failures';
 export type {
   CacheEntry,
   CacheSetOptions,
