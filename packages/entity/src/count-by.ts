@@ -74,7 +74,7 @@ const tooManyGroups = <Row>(
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entity.$name}.${operation}('${property}') matched more than ${MAX_GROUPS} distinct values — that column is a key, not a grouping`,
-    fix: `${entity.$name}.andWhere('${property}', 'in', values).${operation}('${property}')   # bound the values first; a whole-table breakdown is a report, and a report is paged`,
+    fix: `${entity.$name}.andWhere('${property}', 'in', <values>).${operation}('${property}')   # bound the values first; a whole-table breakdown is a report, and a report is paged`,
   });
 
 /**

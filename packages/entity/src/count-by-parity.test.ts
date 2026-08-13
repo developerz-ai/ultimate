@@ -319,6 +319,29 @@ describe('two drivers, one meaning', () => {
     ]);
   });
 
+  test('a page bounds a page, never a count: limit() and after() reach neither driver', async () => {
+    // An aggregate covers the predicate — the chain's filters, its tenancy, its soft-delete
+    // visibility — and never the page. A cursor that reached one driver and not the other would
+    // make the breakdown change as the caller paged through it.
+    const args = { orgId: ORG } as const;
+    const { nextCursor } = await memory().findMany({ ...args, limit: 2 });
+    expect(nextCursor).not.toBeNull();
+    const paged = { ...args, limit: 2, cursor: nextCursor };
+    client.on('group by', { rows: VISIBLE_GROUPS });
+
+    const fromPostgres = await repo().countBy('postId', paged);
+    // The only limit in the statement is the group bound, and no seek term made it in.
+    expect(lastValues().at(-1)).toBe(MAX_GROUPS + 1);
+    expect(lastText()).not.toContain('>');
+
+    const fromMemory = await memory().countBy('postId', paged);
+
+    expect([...fromPostgres]).toEqual([...fromMemory]);
+    expect([...fromMemory]).toEqual([...(await memory().countBy('postId', args))]);
+    // `count()` is the same rule with one group, and it is the one both are compared against.
+    expect(await memory().count(paged)).toBe(await memory().count(args));
+  });
+
   test('a predicate nothing matches is an empty map in both drivers, never a map of zeros', async () => {
     const args = { orgId: ORG, where: [{ column: 'reaction', op: 'eq' as const, value: 'nope' }] };
 

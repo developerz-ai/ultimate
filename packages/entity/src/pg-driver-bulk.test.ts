@@ -251,14 +251,32 @@ describe('upsertAll() compiles the conflict clause', () => {
     expect(lastText()).toEndWith(
       ' on conflict ("org_id", "reference") do update set' +
         ' "total_minor" = excluded."total_minor", "total_currency" = excluded."total_currency",' +
-        ' "paid" = excluded."paid", "note" = excluded."note", "issued_at" = excluded."issued_at",' +
-        ' "deleted_at" = excluded."deleted_at" returning *',
+        ' "paid" = excluded."paid", "note" = excluded."note", "issued_at" = excluded."issued_at"' +
+        ' returning *',
     );
     // Neither `"id"` nor `"reference"` is in that list: how the row was found and where it lives.
     // `"org_id"` is absent too, because the tenant column is part of the target now — so the
     // statement can only land on a row of the tenant that sent it, and this is the assertion that
     // stops a cross-tenant rewrite coming back as a set-list entry.
     expect(lastText()).not.toContain('excluded."org_id"');
+    // And `"deleted_at"` is the third: a soft-deleted row still occupies its conflict target, so
+    // setting the stamp from `excluded` would clear a delete the app made and hand the row back.
+    // The column is still in the INSERT list above — a row that collides with nothing keeps it.
+    expect(lastText()).not.toContain('excluded."deleted_at"');
+    expect(lastText()).toContain('"deleted_at") values');
+  });
+
+  test('a collision leaves the stamp where it was, in both drivers', async () => {
+    // The rule lives in `bulk-write.ts`, so the in-memory driver reads the same answer rather than
+    // a second copy of it: the stored row stays deleted and takes the batch's other columns.
+    const deleted = invoice(2, { deletedAt: STAMPED, note: 'gone' });
+    const incoming = invoice(2, { note: 'back?' });
+    const args = { onConflict: ['orgId', 'reference'] as const };
+
+    const [merged] = await memoryRepo(invoices, [deleted]).upsertAll([incoming], args);
+
+    expect(merged?.deletedAt).toEqual(STAMPED);
+    expect(merged?.note).toBe('back?');
   });
 
   test('a composite conflict target names every column of the index, and sets none of them', async () => {

@@ -346,12 +346,14 @@ describe('many-row writes', () => {
 
   test('an invariant judges every row of the batch, not just the first', async () => {
     const repo = memoryRepo(members);
-    // Only the refusal is asserted: what the map has written by the time row two throws is the
-    // one place the two drivers do not yet agree (Postgres asserts the batch before its first
-    // statement), and pinning either answer here would pin the disagreement.
     await expect(
       repo.insertAll([member(1), member(2, { nickname: '' })]),
     ).rejects.toBeUltimateError('X_INVARIANT_VIOLATED');
+    // Nothing landed, and that is the rule both drivers hold to: `insertAll` asserts every row
+    // before its first `write`, `writeRows` before its first statement. Pinned here because an
+    // untested rule is one a refactor deletes — move `$assert` into `write()` and this batch
+    // half-applies while every other test stays green.
+    expect(await repo.count()).toBe(0);
   });
 
   test('an upsert with nothing to collide with is an insert', async () => {

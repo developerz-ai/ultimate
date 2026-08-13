@@ -161,9 +161,12 @@ describe.skipIf(!hasPostgres)('live · postgres · preload', () => {
       .all();
     const anaRow = byAuthor.find((row) => field(row, 'id') === ana);
     const benRow = byAuthor.find((row) => field(row, 'id') === ben);
-    expect(
-      (field(anaRow, BY_AUTHOR) as readonly unknown[]).map((row) => field(row, 'id')).sort(),
-    ).toEqual([p1, p2].sort());
+    // The attached array is not sorted here: it arrives in the related read's own total order,
+    // which is that entity's primary key ascending — and a uuid sorts the same way in Postgres as
+    // its lower-case text does here. The ids are the server's, hence the sort on the expectation.
+    expect((field(anaRow, BY_AUTHOR) as readonly unknown[]).map((row) => field(row, 'id'))).toEqual(
+      [p1, p2].sort(),
+    );
     expect((field(benRow, BY_AUTHOR) as readonly unknown[]).map((row) => field(row, 'id'))).toEqual(
       [p3],
     );
@@ -192,10 +195,11 @@ describe.skipIf(!hasPostgres)('live · postgres · preload', () => {
     expect(rows).toHaveLength(3);
     // Two relations named, two statements sent — never one merged, never one per row.
     expect(sent).toHaveLength(2);
-    // Two authors are distinct across three posts: two binds, not three.
-    expect(sent[0]).toContain('in ($1, $2)');
-    // One reviewer named across three posts: one bind.
-    expect(sent[1]).toContain('in ($1)');
+    // Two authors are distinct across three posts: two binds, not three. One reviewer named across
+    // three posts: one bind. Counted rather than indexed — the two relations resolve concurrently,
+    // so arrival order is not the order they were named in and pinning it would flake.
+    expect(sent.filter((text) => text.includes('in ($1, $2)'))).toHaveLength(1);
+    expect(sent.filter((text) => text.includes('in ($1)'))).toHaveLength(1);
   });
 
   test('the page tenant scope carries onto the preload statement, and a cross-tenant target excludes', async () => {

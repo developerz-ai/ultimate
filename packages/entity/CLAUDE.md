@@ -142,7 +142,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   replacement column lives. **The bound is a refusal, not a truncation.** The statement asks for
   `MAX_GROUPS + 1` groups — the trick a page already uses when it reads one row past its limit — and
   that extra group is what says the answer was never going to fit, so `countsFrom` throws with the
-  `andWhere(…, 'in', values)` that bounds it. Truncating would hand back a map that reads exactly
+  `andWhere(…, 'in', <values>)` that bounds it. Truncating would hand back a map that reads exactly
   like a complete one, and a caller recounting from it would write the wrong number to every row it
   missed. **Absent is not `0`**: a value nothing matched has no entry, because that is what
   `group by` returns and it is the only way a caller can tell "none" from "never asked" — the
@@ -235,10 +235,20 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   lives in `bulk-write.ts`, decided in **property** space and projected to physical columns for the
   SQL: the column list a batch writes (`Object.hasOwn`, exactly as `bindValues` decides it), what a
   collision overwrites, the conflict key, and the chunking. Rules, none optional. **A collision
-  overwrites every column in the batch except two closed sets** — the conflict target, which is how
-  the stored row was found, and the primary key, which is where it lives; an upsert that moved
-  either would move a row nobody asked to move and every foreign key already pointing at that id
-  would miss it. **The conflict target must be a declared unique constraint** — because a target
+  overwrites every column in the batch except three closed sets** — the conflict target, which is
+  how the stored row was found, the primary key, which is where it lives, and the soft-delete
+  stamp, which is whether the row is there at all; an upsert that moved either of the first two
+  would move a row nobody asked to move and every foreign key already pointing at that id would
+  miss it. **The stamp is the third because a soft-deleted row still occupies its conflict target**
+  — the index it collides with is not partial — so `excluded."deleted_at"` would clear a delete the
+  app made and hand the row back holding the batch's values, which is the resurrection
+  `update(id, patch)` and `updateWhere` refuse by carrying `deleted_at is null` and an
+  `on conflict` clause cannot carry. Excluded from the set list rather than refused, because
+  `$parse` fills every declared column before a row reaches `upsertPlan`: that `deletedAt: null` is
+  the framework's and not the caller's, so refusing it would make `onMatch: 'update'` impossible on
+  every soft-deleting entity. `insertAll` is untouched — a row colliding with nothing writes the
+  stamp it carries, exactly as `insert` does. **The conflict target must be a declared unique
+  constraint** — because a target
   Postgres cannot infer an index for is `42P10` wrapped as `X_DB_UNAVAILABLE`, which names nothing
   the author can act on. All **three** of this framework's spellings of one count, or the refusal
   would tell an author to declare a constraint they already declared and ship two indexes: the

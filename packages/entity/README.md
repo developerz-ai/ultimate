@@ -171,7 +171,7 @@ for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0
 | NULL | one group, keyed `null`, in both drivers. `0`, `''` and `false` stay the values they are |
 | Order | biggest group first, ties by the value (numbers and bigints numerically, everything else by its text), `null` last — applied after the rows are in, since a hash aggregate and a `Map` filled row by row have no order to inherit |
 | Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or `money` is `X_INVARIANT_VIOLATED` naming one of this entity's columns that is: a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
-| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map — the statement asks for one group past the bound, exactly as a page reads one row past its limit. The `fix` spells the `andWhere('<column>', 'in', values)` that bounds it |
+| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map — the statement asks for one group past the bound, exactly as a page reads one row past its limit. The `fix` spells the `andWhere('<column>', 'in', <values>)` that bounds it |
 | Statement | `select "post_id" as group_value, count(*) as group_count … group by "post_id"`. Both names are fixed aliases, so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it |
 
 ## Writing by filter
@@ -233,7 +233,8 @@ caller counts what it actually inserted.
 | | |
 |---|---|
 | One builder | `insertStatement` compiles every insert in the framework, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
-| What a collision overwrites | every column the batch writes, minus the conflict target (how the row was found) and minus the primary key (where it lives). Moving either moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| What a collision overwrites | every column the batch writes, minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| A soft-deleted row it lands on | stays deleted, and takes the batch's other columns. The stamped row still occupies its conflict target — that index is not partial — so `excluded."deleted_at"` would resurrect it; `$parse` fills `deletedAt: null` into every row before the plan is built, so the stamp is dropped from the set list rather than refused. `insertAll` still writes the stamp a new row carries |
 | Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
 | Tenancy | on a tenant-scoped entity `onMatch: 'update'` requires the tenant column *in the conflict target*, else `X_TENANCY_UNSCOPED`: a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
 | A batch that repeats itself | two rows with one conflict target under `'update'` is refused. Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |

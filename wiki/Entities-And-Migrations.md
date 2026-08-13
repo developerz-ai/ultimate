@@ -254,7 +254,7 @@ lookup — each statement asks a different question, so no batch reaches it. One
 them, `As of 2026-08`:
 
 ```ts
-// One statement for every post in `ids`, not one `select count(*)` each.
+// One statement for all of `ids`, not one `select count(*)` per post.
 const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
 for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
 ```
@@ -268,8 +268,8 @@ a `number | undefined` — and the `undefined` is load-bearing.
 | A value nothing matched | absent, never `0`. That is what `group by` returns, and it is what tells "none" apart from "never asked" — the default is the caller's `?? 0` |
 | NULL | one group, keyed `null`, in both drivers: a property a row never carried is read as `null`, so it lands where Postgres puts its NULL rows. `0`, `''` and `false` stay the values they are |
 | Order | biggest group first, ties by the value — numbers and bigints numerically, everything else by its text — and `null` last. Applied after the rows are in, not in the statement: a hash aggregate returns groups in whatever order it built them, so an `order by` there would let the two drivers disagree about a result they agree on |
-| Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or `money` is `X_INVARIANT_VIOLATED` naming a column of that entity that is groupable — a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
-| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map: the statement asks for one group past the bound, exactly as a page reads one row past its limit, and the `fix` spells the `andWhere('<column>', 'in', values)` that bounds it. A map that lost its tail reads like a complete one, and recounting from it writes the wrong number to every row it missed |
+| Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or a `money` column is `X_INVARIANT_VIOLATED`, whose `fix` names a column of that entity that *is* groupable — a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
+| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map: the statement asks for one group past the bound, exactly as a page reads one row past its limit, and the `fix` spells the `andWhere('<column>', 'in', <values>)` that bounds it. A map that lost its tail reads like a complete one, and recounting from it writes the wrong number to every row it missed |
 | Statement | `select "post_id" as group_value, count(*) as group_count … group by "post_id"` — both names are fixed aliases, so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it |
 | Tenancy | the plan's, as everywhere else: an unscoped chain on a tenant-scoped entity is `X_TENANCY_UNSCOPED`, never a count across tenants |
 
@@ -301,7 +301,8 @@ already stored is skipped and absent, which is how a caller counts what it actua
 | Property | Behavior |
 |---|---|
 | One builder | every insert in the framework compiles through the same function, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
-| What a collision writes | every column the batch names, minus the conflict target (how the row was found) and minus the primary key (where it lives). Moving either moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| What a collision writes | every column the batch names, minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| A soft-deleted row it lands on | stays deleted, and takes the batch's other columns. A stamped row still occupies its conflict target — that unique index is not partial — so writing `deletedAt` from the incoming row would bring back a row the app deleted, which is the resurrection `update()` and `updateWhere()` refuse by carrying `deleted_at is null`. `insertAll` is unaffected: a row that collides with nothing writes the stamp it carries |
 | Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
 | Tenancy | on a tenant-scoped entity, `onMatch: 'update'` requires the tenant column *inside* the conflict target, else `X_TENANCY_UNSCOPED`: an upsert builds no read plan, so a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
 | A batch repeating itself | two rows with one conflict target under `'update'` is refused: Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |

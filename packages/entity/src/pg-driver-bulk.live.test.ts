@@ -110,12 +110,19 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
       name: 'live bulk writes',
       now: new Date('2026-08-12T00:00:00.000Z'),
     });
+    let replaced = 0;
     for (const statement of statementsOf(migration.up)) {
       // See `COMPOSITE_UNIQUE`: the generated form of this one index names a column that does not
       // exist, so it is replaced rather than applied.
-      if (statement.includes(UNIQUE_INDEX)) continue;
+      if (statement.includes(UNIQUE_INDEX)) {
+        replaced += 1;
+        continue;
+      }
       await client.execute(raw(statement));
     }
+    // Counted, because a generator that renames that index would match nothing here and send the
+    // broken `create unique index` to the server — a `42703` that reads like a driver bug.
+    expect(replaced).toBe(1);
     await client.execute(raw(COMPOSITE_UNIQUE));
   });
 
@@ -286,5 +293,30 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
     expect(hidden.rows).toHaveLength(1);
     expect(hidden.rows[0]?.id).toBe(stored.id);
     expect(hidden.rows[0]?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  test('an update upsert onto that stamped row writes its columns and never its stamp', async () => {
+    const org = await newOrg('bulk-soft-update');
+    const stored = await db().invoices.insert({
+      orgId: org,
+      reference: 'SOFT-2',
+      total: MONEY,
+      note: 'before',
+    });
+    await repo().delete(stored.id, { orgId: org });
+
+    // The row the caller passes carries `deletedAt: null` whether they wrote it or not — `$parse`
+    // fills every declared column — so this is the shape that would resurrect it.
+    const [written] = await db().invoices.upsertAll(
+      [{ orgId: org, reference: 'SOFT-2', total: MONEY, note: 'after' }],
+      { onConflict: ['orgId', 'reference'] },
+    );
+
+    // `"deleted_at"` is not in the `do update set` list: the delete the app made stands, and the
+    // row is still invisible to an ordinary read.
+    expect(written?.note).toBe('after');
+    expect(written?.deletedAt).toBeInstanceOf(Date);
+    expect(await repo().findById(stored.id, { orgId: org })).toBeNull();
+    expect(await repo().count({ orgId: org })).toBe(0);
   });
 });

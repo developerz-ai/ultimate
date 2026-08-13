@@ -6,7 +6,7 @@
 
 import { keyOf } from './batch-read';
 import { valueAt } from './cursor';
-import type { EntityCore } from './entity';
+import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError, invariantViolated } from './errors';
 import { columnsOf } from './pg-row';
 
@@ -73,10 +73,14 @@ const noConflictTarget = (entityName: string): EntityError =>
     fix: `${entityName}.upsertAll(rows, { onConflict: ['<column>'] })   # the columns of the unique index a duplicate lands on`,
   });
 
-const nothingToSet = (entityName: string, on: readonly string[]): EntityError =>
+const nothingToSet = (
+  entityName: string,
+  on: readonly string[],
+  spared: readonly string[],
+): EntityError =>
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
-    cause: `${entityName}.upsertAll() would write nothing on a collision: every column in the batch is part of onConflict (${on.join(', ')}) or of the primary key`,
+    cause: `${entityName}.upsertAll() would write nothing on a collision: every column in the batch is one a collision never moves (${spared.join(', ')})`,
     fix: `${entityName}.upsertAll(rows, { onConflict: ['${on.join("', '")}'], onMatch: 'nothing' })   # keep the stored row`,
   });
 
@@ -150,17 +154,28 @@ const sameColumns = (left: readonly string[], right: readonly string[]): boolean
 
 /**
  * The conflict target, and what a collision overwrites. `'nothing'` overwrites nothing by
- * definition; `'update'` takes every column the batch writes except two closed sets — the conflict
- * target, which is how the stored row was found, and the primary key, which is its address. An
- * upsert that moved either would move a row nobody asked to move, and every foreign key already
- * pointing at that id would miss it.
+ * definition; `'update'` takes every column the batch writes except three closed sets — the
+ * conflict target, which is how the stored row was found, the primary key, which is its address,
+ * and the soft-delete stamp, which is whether the row is there at all. An upsert that moved one of
+ * the first two would move a row nobody asked to move, and every foreign key already pointing at
+ * that id would miss it.
  *
- * Four refusals precede that, and each one is a statement Postgres would either reject or, worse,
- * accept: a target no declared unique constraint matches (`42P10`), a target that does not carry
- * the tenant column under `'update'` (another tenant's row, silently rewritten), a batch whose
- * rows name different columns under `'update'` (`excluded.<col>` is the column's default for a row
- * that omitted it, so "leave it alone" is not what happens), and a target that leaves nothing to
- * write.
+ * The stamp is the third for a reason no caller can work around: a soft-deleted row still occupies
+ * its conflict target — the unique index it collides with is not partial — so setting `deleted_at`
+ * from `excluded` would clear a stamp the app wrote and hand the row back holding this batch's
+ * values. That is the resurrection `update(id, patch)` and `updateWhere` both refuse by carrying
+ * `deleted_at is null`, which an `on conflict` clause cannot carry. Excluded rather than refused,
+ * because `$parse` fills every declared column before a row reaches here: the `deletedAt: null` in
+ * the batch is the framework's, not the caller's, and refusing it would make `'update'` impossible
+ * on every soft-deleting entity. `insertAll` is untouched — a row with no stored row to collide
+ * with writes the stamp it carries, exactly as `insert` does.
+ *
+ * Four refusals precede all of that, and each one is a statement Postgres would either reject or,
+ * worse, accept: a target no declared unique constraint matches (`42P10`), a target that does not
+ * carry the tenant column under `'update'` (another tenant's row, silently rewritten), a batch
+ * whose rows name different columns under `'update'` (`excluded.<col>` is the column's default for
+ * a row that omitted it, so "leave it alone" is not what happens), and a target that leaves
+ * nothing to write.
  */
 export const upsertPlan = <Row>(
   entity: EntityCore<Row>,
@@ -197,11 +212,17 @@ export const upsertPlan = <Row>(
     const missing = properties.find((property) => !owns(row, property));
     if (missing !== undefined) throw unevenBatch(entity.$name, position, missing);
   }
-  const address = new Set([...onConflict, ...entity.$primaryKey]);
-  const set = properties.filter((property) => !address.has(property));
+  const spared = new Set([
+    ...onConflict,
+    ...entity.$primaryKey,
+    ...(entity.$softDelete ? [SOFT_DELETE_COLUMN] : []),
+  ]);
+  const set = properties.filter((property) => !spared.has(property));
   // An empty batch sends no statement, so there is nothing to refuse — but the target above is
   // checked either way, so a typo in `onConflict` fails on no rows exactly as it does on a page.
-  if (set.length === 0 && properties.length > 0) throw nothingToSet(entity.$name, onConflict);
+  if (set.length === 0 && properties.length > 0) {
+    throw nothingToSet(entity.$name, onConflict, [...spared]);
+  }
   return { on: onConflict, set };
 };
 
