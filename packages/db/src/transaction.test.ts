@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type DbClient, type ReservableClient, setDbClient } from './client';
+import { type DbClient, setDbClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
+import { reservableOver } from './fake-reservable';
 import { sql } from './sql';
 import { beginStatement, currentTx, withTransaction } from './transaction';
 
@@ -11,44 +12,6 @@ beforeEach(() => {
   client = createRecordingClient();
   setDbClient(client);
 });
-
-interface PinCounts {
-  reserves: number;
-  releases: number;
-}
-
-/**
- * A pool whose pin is countable. The leak this pins is invisible to the recording client: the
- * statements are identical whether or not the reservation ever came back, and only the counter
- * says which happened.
- */
-function reservableOver(inner: DbClient): { client: ReservableClient; pins: PinCounts } {
-  const pins: PinCounts = { reserves: 0, releases: 0 };
-  return {
-    pins,
-    client: {
-      query: (fragment) => inner.query(fragment),
-      one: (fragment) => inner.one(fragment),
-      execute: (fragment) => inner.execute(fragment),
-      reserve: async () => {
-        pins.reserves += 1;
-        let held = true;
-        const release = (): void => {
-          if (!held) return;
-          held = false;
-          pins.releases += 1;
-        };
-        return {
-          query: (fragment) => inner.query(fragment),
-          one: (fragment) => inner.one(fragment),
-          execute: (fragment) => inner.execute(fragment),
-          release,
-          [Symbol.dispose]: release,
-        };
-      },
-    },
-  };
-}
 
 describe('withTransaction', () => {
   test('currentTx() is visible inside and undefined outside', async () => {

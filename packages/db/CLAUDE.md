@@ -10,7 +10,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 | Deps | none. `@electric-sql/pglite` is an **optional peer**, imported by variable specifier inside `loadPgliteDriver()` so no consumer's `tsc` or bundler resolves it. **No ORM** — `entity`'s hand-written `postgresDriver()` is the production backing |
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
 | Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point |
-| Errors | subclass `DbError`; never `throw new Error` |
+| Errors | subclass `DbError`; never `throw new Error` **in source**. A test simulating a *database* failure throws `dbUnavailable()`; a test simulating the *caller's body* failing throws a bare `Error` on purpose — an arbitrary throw is exactly what rollback and disposal must survive, and a `DbError` there would prove the narrower thing |
 | New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
 | Files | < 200 LOC, one responsibility, `kebab-case.ts`, test beside source |
@@ -130,6 +130,9 @@ Gotchas:
 - `exactOptionalPropertyTypes` — declare optional fields as `x?: T | undefined`.
 - `noUncheckedIndexedAccess` — array reads are `T | undefined`; `chunks[i] ?? ''` everywhere.
 - Tests use `createRecordingClient()` + `setDbClient()`; no test may need a live database.
+- A test that must prove a pin came back uses `reservableOver()` (`fake-reservable.ts`), never a
+  local copy — the recording client cannot see a leak, so the counter is the whole assertion and
+  a second copy of it drifts.
 - `ALTER DEFAULT PRIVILEGES` is scoped to an object's creator, so layer 1 covers future tables
   only for the roles in `creators` (default: the connected user). Migrations running as another
   DB user must name it, or tables created later are not selectable by `ultimate_readonly`.

@@ -4,48 +4,11 @@
 // live-database test would name, because every one of them still returns the right rows.
 
 import { describe, expect, test } from 'bun:test';
-import type { DbClient, ReservableClient } from './client';
+import type { DbClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient } from './fake';
+import { reservableOver } from './fake-reservable';
 import { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
-
-interface PinCounts {
-  reserves: number;
-  releases: number;
-}
-
-/**
- * A pool whose pin is countable. The leak this pins is invisible to the recording client — the
- * statements are identical whether or not the reservation ever came back, and only the counter
- * says which happened.
- */
-function reservableOver(inner: DbClient): { client: ReservableClient; pins: PinCounts } {
-  const pins: PinCounts = { reserves: 0, releases: 0 };
-  return {
-    pins,
-    client: {
-      query: (fragment) => inner.query(fragment),
-      one: (fragment) => inner.one(fragment),
-      execute: (fragment) => inner.execute(fragment),
-      reserve: async () => {
-        pins.reserves += 1;
-        let held = true;
-        const release = (): void => {
-          if (!held) return;
-          held = false;
-          pins.releases += 1;
-        };
-        return {
-          query: (fragment) => inner.query(fragment),
-          one: (fragment) => inner.one(fragment),
-          execute: (fragment) => inner.execute(fragment),
-          release,
-          [Symbol.dispose]: release,
-        };
-      },
-    },
-  };
-}
 
 describe('readOnlyQuery', () => {
   test('the default order is BEGIN READ ONLY, timeout, statement, ROLLBACK', async () => {

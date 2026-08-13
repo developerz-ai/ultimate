@@ -220,7 +220,6 @@ The same clone mechanism powers test parallelism: `bun test --workers 8` gives e
 | Code | Cause | Fix |
 |---|---|---|
 | `X_DB_DRIFT` | schema differs from migrations | `x db gen "<name>"` |
-| `X_MIGRATE_CONCURRENT` | another version's migration is in flight | wait for the running `ROLE=migrate` to finish, then redeploy |
 | `X_ENTITY_DUPLICATE` | two entities on the same table | rename one, or merge them |
 | `X_INVARIANT_VIOLATED` | a write broke a named invariant | fix the caller, or change the invariant and generate a migration |
 | `X_TENANCY_UNSCOPED` | a query without a tenant predicate | go through the repo |
