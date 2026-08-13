@@ -12,7 +12,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | Better Auth | binds through `AuthAdapter`. It is an adapter, never a dependency. |
 | Errors | `AuthError` from `errors.ts`; never `throw new Error` |
 | Time | take a `Clock`. No `Date.now()` anywhere in this package. |
-| Secrets | compare with `timingSafeEqual`; store `sha256Hex`. Never `===` on a secret. |
+| Secrets | compare with `timingSafeEqual` (from `@ultimat3/core`, re-exported off `tokens.ts` — same implementation `@ultimat3/storage` uses); store `sha256Hex`. Never `===` on a secret. |
 
 ## Non-negotiables
 

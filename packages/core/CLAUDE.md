@@ -54,6 +54,18 @@ to know: a test that calls `resetErrorCodes()` drops these titles like any other
 the master key) purely so *wrong key* and *edited file* are two codes and not one shrug — GCM alone
 cannot tell them apart.
 
+`schema-error-codes.ts` is the same shape a second time, for codes this package does not even own.
+`@ultimat3/schema` is tier 0 like `core` and so can neither call `registerErrorCodes()` itself nor
+import core to reach it — the two codes' titles are a deliberate, tested duplicate of
+`SCHEMA_ERROR_CODES` in `packages/schema/src/errors.ts`, registered unconditionally at import time
+so any process that imports core (not just `@ultimat3/cli`, which used to be the only registrant)
+renders schema's real titles. Neither tier-0 package can check the duplicate against its source, so
+the pin (`schema-error-codes-pin.test.ts`) lives in `@ultimat3/cli`, which may legally import both.
+
+`timing-safe-equal.ts` holds the one constant-time string comparison `@ultimat3/auth` and
+`@ultimat3/storage` both need — core is the lowest tier both can reach, so the shared code lives
+here rather than in either package copying the other's file.
+
 Metrics mirror tracing exactly — `metrics.ts` is to `telemetry.ts` what a counter is to a span:
 always on, no-op exporter by default, driver on the wire. `runtime-metrics.ts` is the only place
 that names a series the deploy chart reads (`http_requests_total`, `connections`, `queue_depth`);

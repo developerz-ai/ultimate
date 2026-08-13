@@ -331,6 +331,7 @@ export {
   requests,
   SCALING_METRICS,
 } from './runtime-metrics';
+export { SCHEMA_ERROR_CODE_TITLES } from './schema-error-codes';
 export type { Secret } from './secret';
 export {
   isSecret,
@@ -429,6 +430,7 @@ export {
   withSpan,
   withSpanContext,
 } from './telemetry';
+export { timingSafeEqual } from './timing-safe-equal';
 export {
   frameworkVersion,
   readPackageVersion,

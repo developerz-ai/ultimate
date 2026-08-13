@@ -3,8 +3,7 @@
 // commands actually need — so without this, `x errors explain X_UNAUTHENTICATED` answered "not a
 // registered error code" for a code the framework throws on every unauthenticated request.
 
-import { listErrorCodes, registerErrorCodes } from '@ultimat3/core';
-import { SCHEMA_ERROR_CODES } from '@ultimat3/schema';
+import { listErrorCodes } from '@ultimat3/core';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -65,21 +64,6 @@ export interface ErrorCatalog {
 }
 
 let cached: Promise<ErrorCatalog> | undefined;
-let schemaRegistered = false;
-
-/**
- * `@ultimat3/schema` is tier 0 alongside `core`, so it cannot register its own codes — it exports
- * the declarations and names the CLI as the package that may import both tiers. This is that, in
- * one unguarded call: a `hasErrorCode()` skip would swallow the exact collision
- * `registerErrorCodes` raises `X_ERROR_CODE_DUPLICATE` for, and `x errors` would then explain a
- * schema code with whatever title the package that claimed it first gave it. Once per process,
- * because the code registry is process-global while this module's cache is not.
- */
-function registerSchemaCodes(): void {
-  if (schemaRegistered) return;
-  schemaRegistered = true;
-  registerErrorCodes(SCHEMA_ERROR_CODES);
-}
 
 /**
  * Bun reports an unresolvable specifier as a `ResolveMessage` carrying `ERR_MODULE_NOT_FOUND` —
@@ -130,8 +114,12 @@ export async function buildErrorCatalog(
   };
 }
 
+/**
+ * `@ultimat3/schema`'s codes are registered by `@ultimat3/core` itself now (`schema-error-codes.ts`)
+ * — every process that imports core gets them, this CLI process included, just by importing
+ * `@ultimat3/core` at all. Nothing schema-specific happens here any more.
+ */
 async function importAll(): Promise<ErrorCatalog> {
-  registerSchemaCodes();
   return buildErrorCatalog((specifier) => import(specifier));
 }
 

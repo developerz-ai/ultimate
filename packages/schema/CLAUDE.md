@@ -15,6 +15,12 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 Module order (no cycles): `node → builder → validators → provider → t`.
 `standard.ts` and `errors.ts` depend on nothing but each other.
 
+`SCHEMA_ERROR_CODES` in `errors.ts` is data, not a `registerErrorCodes()` call — this package is
+tier 0 and cannot import `@ultimat3/core` to reach it. `@ultimat3/core`'s `schema-error-codes.ts`
+carries a duplicate of these titles and registers them unconditionally, so every process gets the
+real titles just by importing core. Add a code here **and** update that duplicate in the same
+change — `schema-error-codes-pin.test.ts` in `@ultimat3/cli` fails the build if they disagree.
+
 `t` delegates through `schemaProvider()` on every property access — that is what makes
 `configureSchemaProvider()` work for modules that already imported `t`. Do not cache members.
 

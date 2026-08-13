@@ -4,9 +4,13 @@
 // a 2GB executable. Verification never throws and never short-circuits on expiry before the
 // signature, so a forged URL can never learn "the signature was fine, just late".
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
+
+/** Re-exported so every existing `from '@ultimat3/storage'` import keeps working — the
+ * implementation now lives in `@ultimat3/core`, shared with `@ultimat3/auth`. */
+export { timingSafeEqual };
 
 export const SIGNED_URL_VERSION = 'v1';
 export const DEFAULT_SIGNED_URL_TTL_MS = 900_000;
@@ -82,16 +86,6 @@ export async function signConstraints(
   );
   const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(canonicalRequest(constraints)));
   return [...new Uint8Array(mac)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-/** Length is public (fixed-width hex); the byte comparison must not early-exit. */
-export function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  }
-  return diff === 0;
 }
 
 const trimBase = (base: string): string => base.replace(/\/+$/, '');
