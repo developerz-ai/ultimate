@@ -176,6 +176,41 @@ already declares, so the fix reaches loops that are already written.
 | Wide pages | past 500 ids, whole statements — the same bound the microtask batch has |
 | Outside a request | a job, a script: a page leaves nothing behind, and every lookup is the statement it always was |
 
+## Preload states a relation the loop would infer
+
+The eager, declarative third of the family: the relation is named on the chain and resolved
+before the caller sees a row, `As of 2026-08`:
+
+```ts
+export const db = database({ orgs, posts, members });
+
+// Two statements: the page, then one `select … where "id" in (…)` over its authors.
+const page = await db.posts.where({ orgId }).preload('author').page();
+page.rows[0].author;        // the member row, or null — always present
+```
+
+Nothing new to declare: `'author'` is the relation the `authorId` foreign key on `posts` already
+produces — `preload()` names it, it does not define it. A name no foreign key produces is
+`X_PRELOAD_UNKNOWN_RELATION`, resolved and thrown when `preload()` is called, on the chain and not
+a page later.
+
+| Property | Behavior |
+|---|---|
+| Shape | a `belongsTo` attaches the row or `null`; a `hasMany` attaches an array, empty when there are none. Always present, so "no author" and "nobody preloaded the author" cannot read the same |
+| Statements | one extra statement per named relation, resolved **concurrently** — two `preload()` calls are two statements in flight, never one after the other. Naming one relation twice is one statement |
+| Terminals | `page()`, `all()`, `one()` resolve every named relation. `count()` and `plan()` do not — a count reads no rows |
+| Projection | attached after `select()`. `select()` is widened internally with the relation's own key, so a projection can drop neither the key the preload reads nor the relation it attaches — `plan().select` reports the widened list, the one that actually ran |
+| Tenancy | the page's own tenant predicate carries onto the related read only when the other entity's tenant column has the same name — a value that scopes one entity is a guess on another. Carrying nothing is not silence: the related read builds its own plan, so it is refused as `X_TENANCY_UNSCOPED` rather than answered with a guess |
+| Soft delete | the related read is `findMany`, so `deleted_at is null` applies exactly as it does to any other read |
+| Wide relations | past 500 ids, whole statements — the same bound the two batches above share. A `hasMany` wider than one page costs another keyset page rather than a silent truncation |
+| Reach | a table reads only the entities its own `database()` call named. A relation to one outside the set is `X_INVARIANT_VIOLATED`; the fix names the missing entity in that same `database({ … })` call |
+
+Reach for it when the relation is part of what the page *is* — a list rendered with its authors,
+rows handed to something that will not call back into the repo, or a read a reviewer should see
+stated rather than inferred from a loop. The other two members of the family ask for nothing:
+`findById` batches a same-microtask fan-out for itself, and a `for … of` loop over a page is
+already two statements, above.
+
 ## Invariants
 
 | Rule | Behavior |
@@ -270,5 +305,6 @@ The same clone mechanism powers test parallelism: `bun test --workers 8` gives e
 | `X_ENTITY_DUPLICATE` | two entities on the same table | rename one, or merge them |
 | `X_INVARIANT_VIOLATED` | a write broke a named invariant | fix the caller, or change the invariant and generate a migration |
 | `X_TENANCY_UNSCOPED` | a query without a tenant predicate | go through the repo |
+| `X_PRELOAD_UNKNOWN_RELATION` | `preload('<name>')` named a relation no `references()` produces | pick one of the relation names the error lists, or add the `.references()` call that creates it |
 
 Full list with `--json` shapes: [Error codes](Error-Codes). Source: [`docs/idea/02-primitives.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/02-primitives.md), [`docs/idea/10-testing.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/10-testing.md).

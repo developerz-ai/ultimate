@@ -182,8 +182,31 @@ named subset — a `belongsTo` to an entity outside it is still reported, a `has
 sides. An entity holding its own keys reads `entity.$references()`: same closure, so a foreign key
 is read once and not twice.
 
-Nothing consumes the map yet — a preload is the next slice. It is exported because the derivation
-is a fact about the schema, not an implementation detail of whoever traverses it first.
+`preload()`, below, is what consumes it — exported because the derivation is a fact about the
+schema, not an implementation detail of whoever traverses it first.
+
+## Preloading a relation
+
+A single `findById` batches itself, and a `for … of` loop over a page batches the loop it
+causes — reach for `preload()` to carry the relation from the start, without waiting on
+either pattern to trigger it:
+
+```ts
+export const db = database({ orgs, posts, members });
+
+// Two statements: the page, then one `select … where "id" in (…)` over its authors.
+const page = await db.posts.where({ orgId }).preload('author').page();
+page.rows[0].author;        // the member row, or null — always present
+```
+
+| | |
+|---|---|
+| Vocabulary | one method, `preload('<relation>')` — no `include`, `join` or `with` |
+| Unknown name | `X_PRELOAD_UNKNOWN_RELATION` at `preload()` itself, not a page later |
+| Shape | `belongsTo` attaches the row or `null`; `hasMany` an array — always present |
+| Statements | one extra per relation, resolved concurrently; naming one twice is one statement |
+| Tenancy | carried onto the related read only when the other entity's tenant column shares the name; otherwise `X_TENANCY_UNSCOPED` refuses the related read rather than guess |
+| Terminals | `page()`, `all()`, `one()` preload; `count()` and `plan()` don't — neither reads a row |
 
 ## Two drivers, one meaning
 
@@ -272,7 +295,7 @@ the invariants, which makes a seed a test of the schema as well.
 ## Errors
 
 `X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` · `X_DB_DRIFT` ·
-`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY`
+`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` · `X_PRELOAD_UNKNOWN_RELATION`
 
 ## Boundaries
 

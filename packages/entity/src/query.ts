@@ -5,9 +5,20 @@
 
 import type { EntityCore } from './entity';
 import { namedColumns } from './plan';
+import type { RelatedTables } from './preload';
+import { preloaded } from './preload';
+import type { Relation } from './relations';
+import { relationNamed } from './relations';
 import type { Page, Repo, RepoOptions } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import type { ColumnMap, IdOf, Insertable } from './types';
+
+/**
+ * What a preloaded relation adds to a row. `unknown` because the name is a string resolved at
+ * runtime against the relation map: the row on the other side is parsed by its own entity, never
+ * asserted into shape here.
+ */
+export type Preloaded<Name extends string> = { readonly [K in Name]: unknown };
 
 export interface ReadBuilder<Row> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
@@ -20,6 +31,18 @@ export interface ReadBuilder<Row> {
   select<K extends keyof Row & string>(
     fields: { readonly [P in K]: true },
   ): ReadBuilder<Pick<Row, K>>;
+  /**
+   * One relation, read for the whole page in one extra `where <key> in (…)` and attached to every
+   * row under its own name — the eager form of the batching a point lookup does for itself, and
+   * the line an N+1 warning names. The relation is the `references()` already declared, so there
+   * is nothing to declare here; a name no foreign key produces is `X_PRELOAD_UNKNOWN_RELATION`,
+   * listing the ones that exist.
+   *
+   * A `belongsTo` attaches the row or `null`, a `hasMany` an array — always present, so "no
+   * author" never reads like "nobody preloaded the author". Attached after the projection: a
+   * `select()` narrows the columns, never the relations.
+   */
+  preload<Name extends string>(relation: Name): ReadBuilder<Row & Preloaded<Name>>;
   /** The terminal: one bounded page and the cursor that continues it. */
   page(): Promise<Page<Row>>;
   all(): Promise<readonly Row[]>;
@@ -55,9 +78,18 @@ interface State {
   readonly limit: number;
   readonly cursor: string | null;
   readonly select: readonly string[] | undefined;
+  /** Resolved when `preload()` was called, so an unknown name fails at the chain and not a page later. */
+  readonly preload: readonly Relation[];
 }
 
-const EMPTY: State = { where: [], orderBy: [], limit: 50, cursor: null, select: undefined };
+const EMPTY: State = {
+  where: [],
+  orderBy: [],
+  limit: 50,
+  cursor: null,
+  select: undefined,
+  preload: [],
+};
 
 const asRecord = (value: unknown): Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
@@ -67,17 +99,36 @@ const builder = <Source, Row>(
   repo: Repo<Source>,
   state: State,
   pick: (row: Source) => Row,
+  related?: RelatedTables,
 ): ReadBuilder<Row> => {
   const next = (patch: Partial<State>): ReadBuilder<Row> =>
-    builder(entity, repo, { ...state, ...patch }, pick);
+    builder(entity, repo, { ...state, ...patch }, pick, related);
+
+  /**
+   * A projection that drops a key the page is about to be preloaded on would send the statement
+   * looking for a column it did not select. The framework asks for what it needs; `pick` still
+   * hands the caller only the columns they named.
+   */
+  const selected: readonly string[] | undefined =
+    state.select === undefined
+      ? undefined
+      : [...new Set([...state.select, ...state.preload.map((relation) => relation.localKey)])];
 
   const args = () => ({
     where: state.where,
     orderBy: state.orderBy,
     limit: state.limit,
     cursor: state.cursor,
-    ...(state.select === undefined ? {} : { select: state.select }),
+    ...(selected === undefined ? {} : { select: selected }),
   });
+
+  /** The page the caller gets: projected, then every named relation attached to it by position. */
+  const attach = (rows: readonly Source[]): Promise<readonly Row[]> =>
+    preloaded(
+      { entity, related, relations: state.preload, where: state.where },
+      rows,
+      rows.map(pick),
+    );
 
   return {
     where: (filter) =>
@@ -102,25 +153,47 @@ const builder = <Source, Row>(
     select<K extends keyof Row & string>(fields: { readonly [P in K]: true }) {
       // The predicate is what carries the literal key type through `Object.keys`.
       const keys = Object.keys(fields).filter((key): key is K => Object.hasOwn(fields, key));
-      return builder<Source, Pick<Row, K>>(entity, repo, { ...state, select: keys }, (row) => {
-        const source = pick(row);
-        const picked = {} as Pick<Row, K>;
-        for (const key of keys) picked[key] = source[key];
-        return picked;
-      });
+      return builder<Source, Pick<Row, K>>(
+        entity,
+        repo,
+        { ...state, select: keys },
+        (row) => {
+          const source = pick(row);
+          const picked = {} as Pick<Row, K>;
+          for (const key of keys) picked[key] = source[key];
+          return picked;
+        },
+        related,
+      );
+    },
+
+    preload<Name extends string>(relation: Name) {
+      // Resolved here, so a name no foreign key produces fails on the chain rather than one page
+      // later — and naming one relation twice is one statement, not two identical ones.
+      const resolved = relationNamed(entity.$name, relation);
+      const already = state.preload.some((held) => held.name === resolved.name);
+      return builder<Source, Row & Preloaded<Name>>(
+        entity,
+        repo,
+        { ...state, preload: already ? state.preload : [...state.preload, resolved] },
+        // The relation is attached after the projection, so `pick` is unchanged and the row type
+        // is the only thing that grows — one cast, where a runtime name becomes a static one.
+        pick as (row: Source) => Row & Preloaded<Name>,
+        related,
+      );
     },
 
     page: async () => {
       const result = await repo.findMany(args());
-      return { rows: result.rows.map(pick), nextCursor: result.nextCursor };
+      return { rows: await attach(result.rows), nextCursor: result.nextCursor };
     },
 
-    all: async () => (await repo.findMany(args())).rows.map(pick),
+    all: async () => attach((await repo.findMany(args())).rows),
 
     one: async () => {
       const { rows } = await repo.findMany({ ...args(), limit: 1 });
       const row = rows[0];
-      return row === undefined ? null : pick(row);
+      return row === undefined ? null : ((await attach([row]))[0] ?? null);
     },
 
     count: () => repo.count(args()),
@@ -131,7 +204,9 @@ const builder = <Source, Row>(
       orderBy: state.orderBy,
       limit: state.limit,
       ...(state.cursor === null ? {} : { cursor: state.cursor }),
-      ...(state.select === undefined ? {} : { select: state.select }),
+      // The projection actually sent, preload keys included: a plan that is safe to log is only
+      // useful if it is the plan that ran.
+      ...(selected === undefined ? {} : { select: selected }),
     }),
   };
 };
@@ -161,8 +236,10 @@ const touch = <Row>(entity: EntityCore<Row>, patch: Partial<Row>): Partial<Row> 
 export const tableFor = <Row, C extends ColumnMap>(
   entity: EntityCore<Row, C>,
   repo: Repo<Row>,
+  /** How this table reaches another — `database()` passes it; a table built by hand has none. */
+  related?: RelatedTables,
 ): Table<Row, C> => ({
-  ...builder<Row, Row>(entity, repo, EMPTY, (row) => row),
+  ...builder<Row, Row>(entity, repo, EMPTY, (row) => row, related),
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
   update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
   delete: async (id, options) => repo.delete(id, options),

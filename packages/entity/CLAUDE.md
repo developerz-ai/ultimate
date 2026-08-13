@@ -63,6 +63,33 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   statement it always read. `MAX_IDS_PER_STATEMENT` bounds the preload exactly as it bounds a
   batch. What both share — the scope key, `keyOf`, the one `in` statement — lives in
   `batch-read.ts` so the two can never disagree about when a shared statement is legal.
+- **`preload(name)` shares `batch-read.ts` with the coalescer and the JIT preload above, but
+  keeps no request-scoped cache of its own.** `keyOf`, `MAX_IDS_PER_STATEMENT` and
+  `statementChunks` come from the same file, so a bind-count bound and a key's identity can
+  never disagree across the three — but `preload()` reads its scope straight off the chain's
+  own `where` and issues its statement every call; nothing here declines to an old statement
+  the way the coalescer or the JIT preload can, because there is no old statement to decline
+  to — a chain that calls `preload('author')` always gets the extra statement. **Tenancy is
+  carried, never inferred, and that is a security boundary, not a convenience**:
+  `tenantScope()` carries the page's own tenant predicate onto the related read only when the
+  other entity's tenant column has the *same name* as this one's — a value that scopes one
+  entity is a guess on another, and serving a guessed scope is a cross-tenant read. A
+  differently-named column carries nothing, on purpose, so the related read builds an
+  unscoped plan of its own and `assertScoped` refuses it as `X_TENANCY_UNSCOPED` rather than
+  let it pass. **Reach is the same `database()` set the two bullets above already answer
+  to**: `RelatedTables` is the resolver `database()` hands every table it builds, an
+  entity-name → `{ entity, repo }` map closed over the same call, so `preload('author')`
+  resolves `author` only when that call named the entity the relation points at — outside it
+  is `X_INVARIANT_VIOLATED`, never a reach around the handle. `tableFor(entity, repo)` built
+  by hand takes no `related` resolver, so the identical call fails the identical way with
+  `related` itself `undefined`. **A projection cannot drop what a preload needs**:
+  `select()` widens its own field list with each preloaded relation's local key, so
+  `plan().select` — the projection that actually runs — always carries it, though the row
+  type the caller sees still names only what they picked. **Attachment copies, never
+  mutates**: a preloaded relation is written onto `{ ...row }`, because the in-memory driver
+  hands back the row it stores and attaching directly would leak the relation into the table
+  itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
+  relation; `count()` and `plan()` do not, since neither reads a row to attach one to.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -193,6 +220,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
+| `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |

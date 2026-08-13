@@ -46,7 +46,8 @@ export {
 } from './invariants';
 export type { PostgresDriverOptions } from './pg-driver';
 export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
-export type { ReadBuilder, Table } from './query';
+export type { RelatedTable, RelatedTables } from './preload';
+export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';
 export type {
   ColumnDescription,

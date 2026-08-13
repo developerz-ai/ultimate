@@ -2,6 +2,7 @@
 // writes a repository class per entity, and nobody can reach a table that is not in the set.
 
 import type { EntityCore } from './entity';
+import type { RelatedTables } from './preload';
 import type { Table } from './query';
 import { tableFor } from './query';
 import type { Repo } from './repo';
@@ -53,9 +54,18 @@ export const database = <E extends EntitySet>(
   options: DatabaseOptions = {},
 ): Database<E> => {
   const driver = options.driver ?? defaultDriver();
+  // Keyed by entity name, which is what a relation names — the object key is the caller's spelling
+  // of it. This handle is the whole of what a preload can reach: a table reads the entities its own
+  // `database()` call named, through the driver that call was given, so a preload against memory
+  // means what a preload against Postgres means.
+  const declared = new Map(Object.values(entities).map((entity) => [entity.$name, entity]));
+  const related: RelatedTables = (entityName) => {
+    const entity = declared.get(entityName);
+    return entity === undefined ? undefined : { entity, repo: driver.repo(entity) };
+  };
   const tables: Record<string, unknown> = {};
   for (const [key, entity] of Object.entries(entities)) {
-    tables[key] = tableFor(entity, driver.repo(entity));
+    tables[key] = tableFor(entity, driver.repo(entity), related);
   }
   // Built key by key from `entities`, so each table is the one `Database<E>` names.
   return tables as Database<E>;
