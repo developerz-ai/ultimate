@@ -6,7 +6,17 @@ import { debounce } from './debounce';
 import { UI_ERROR_CODES, UiError } from './errors';
 
 const WINDOW = 10;
-const AFTER = 40;
+const QUIET = 40;
+
+/**
+ * A loaded runner fires a 10ms timer far later than 10ms, so a call that IS expected is polled for
+ * rather than bet on a fixed sleep covering the window — that bet is what went red on CI, with two
+ * chained windows landing past a 40ms budget. A call that is NOT expected still needs a real wait,
+ * and `QUIET` is that one: waiting longer there only makes the assertion stricter.
+ */
+const waitFor = async (done: () => boolean, polls = 200): Promise<void> => {
+  for (let poll = 0; poll < polls && !done(); poll += 1) await Bun.sleep(5);
+};
 
 describe('debounce', () => {
   test('only the last call of a burst runs, with its own arguments', async () => {
@@ -18,7 +28,7 @@ describe('debounce', () => {
     filter('abc');
     expect(seen).toEqual([]);
 
-    await Bun.sleep(AFTER);
+    await waitFor(() => seen.length > 0);
     expect(seen).toEqual(['abc']);
     expect(filter.pending()).toBe(false);
   });
@@ -30,9 +40,9 @@ describe('debounce', () => {
     }, WINDOW);
 
     tick();
-    await Bun.sleep(AFTER);
+    await waitFor(() => calls > 0);
     tick();
-    await Bun.sleep(AFTER);
+    await waitFor(() => calls > 1);
     expect(calls).toBe(2);
   });
 
@@ -47,7 +57,7 @@ describe('debounce', () => {
     tick.cancel();
     expect(tick.pending()).toBe(false);
 
-    await Bun.sleep(AFTER);
+    await Bun.sleep(QUIET);
     expect(calls).toBe(0);
   });
 
@@ -59,7 +69,7 @@ describe('debounce', () => {
     filter.flush();
     expect(seen).toEqual(['now']);
 
-    await Bun.sleep(AFTER);
+    await Bun.sleep(QUIET);
     expect(seen).toEqual(['now']);
   });
 
@@ -80,7 +90,7 @@ describe('debounce', () => {
     }, WINDOW);
 
     filter('first');
-    await Bun.sleep(AFTER);
+    await waitFor(() => seen.length > 1);
     expect(seen).toEqual(['first', 'second']);
   });
 

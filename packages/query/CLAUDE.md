@@ -66,13 +66,64 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `@ultimat3/entity`'s `seekSql` spells it. A row-value comparison cannot express a mixed
   `createdAt desc, id asc` ordering, and the id-tiebreak-only fallback it replaced returned rows
   the ordering was already past — with `execute()` disagreeing with the SQL it printed.
+- **NULL has one meaning, and `isNull` is it.** `null` and a column the row omits are the same
+  absence, in the SQL and in memory alike. `=`/`!=`/`in` read NULL as a **value** — `is null`,
+  `is not null`, `is distinct from`, `in (…) or is null`, the pair `@ultimat3/entity`'s
+  `predicateSql` emits; `>`/`>=`/`<`/`<=` read it as **unknown**, matching nothing on either side,
+  which is why they need no special emission; `order by` reads it as the **largest value**, spelled
+  `asc nulls last` / `desc nulls first` rather than inherited from the driver. `= $n` with a NULL
+  argument is never true in Postgres, so `where({ deletedAt: null })` matched every row in memory
+  and none in the database, and `"col" > $n` blanked page two at the first NULL. Never emit a bound
+  parameter where NULL is the value being tested, and never let `compareValues` sort a NULL as the
+  string `"null"` again — `compareRows`, `isAfterKey` and the matcher's insertion position all
+  read it, so one string compare moves rows on three surfaces. `in` takes a list or nothing: an
+  empty one is `1 = 0`, and so is an operand that is not an array at all — `matchesFilter` answers
+  no rows for it, and `"col" in $n` is a syntax error the driver reports instead of that answer.
 - **The id is the tiebreak that makes the order total.** A row without one is
-  `X_QUERY_NOT_PAGEABLE` at `seekKeyOf`, never `String(undefined)`: `"undefined"` is a position
-  every row matches, signed and opaque, so page two would be page one forever.
+  `X_QUERY_NOT_PAGEABLE` at `seekKeyOf` **and** at the matcher's `idOf`, never `String(undefined)`:
+  `"undefined"` is a position every row matches, signed and opaque, so page two would be page one
+  forever and one row's patch would land on another's index.
+- **`totalOrder` is the order a read is served in, and all three readers use it.** The declared
+  keys then `id asc`, unless the ordering already names `id` — `Builder.servedOrder()` compiles it,
+  the in-memory sort applies it, and `positionFor` places a row by it. The matcher comparing
+  `shape.orderBy` alone appended a tied row after its whole tie group, which is a position no
+  re-read returns and a cursor that skips every tie it was pushed past. `SeekKey` is the same list
+  decomposed — `key` for the declared part, `id` for the tiebreak — so never add `id` to
+  `QueryShape.orderBy` to get it: `seekKeyOf` would then sign the id twice. An unordered query
+  appends, because SQL promises no position there to get wrong.
+- **A live read asks for that order explicitly, and `sourceFor` is where it asks.** `total()` is
+  the `SqlSource` method for "the same read, served in `totalOrder`" — no cursor, no window — and
+  `buildSource` calls it when `surface === 'live'`, for nothing else, and only when the source
+  implements it. A live window served by the declared keys alone puts a tied row wherever the
+  database returned it, while `positionFor` places the patch by id and the resume re-read seeks by
+  id: the client then renders an order no re-read answers. Never reach for `seek(null, limit)`
+  instead — a live query need not carry a limit, and inventing one is a window nobody asked for.
 - The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown
   by core's `CursorInvalidError`, which `errors.ts` re-exports so the name stays on this surface.
+- **The request memo holds the read, not the rows.** `readOnce` publishes the in-flight promise
+  before its first await, so two reads of one key in one request are one execution and one tier
+  round trip whether the second follows the first or races it. A value-keyed map could not express
+  that, and could not tell a memoized `undefined` from a miss either. A rejection is evicted — a
+  failed read is not the request's answer, and the next read retries. `requestMemo(ctx)` is
+  therefore `Map<string, Promise<unknown>>`; never put a settled value in it.
+- **Every read is memoized; only a `cache:` read goes through the tier.** `readThrough` is
+  `readOnce` plus `fill` and nothing else, and `readRows` picks between them on `def.cache` alone.
+  The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
+  every row otherwise, which is the N+1 this collapses. Never gate `readOnce` on `def.cache`
+  again, and never let a second key function grow beside `cacheKeyFor`.
+- **The memo holds an execution, never a decision.** `readRows` runs `buildSource` — parse, guard,
+  `sql()` — *before* it reaches the memo, on every call, and `.as()` reads in a child context whose
+  identity is its own memo. So a memoized answer is still one this actor was allowed to ask for,
+  and no impersonated read can join a read made as someone else. Moving the memo above
+  `buildSource` would turn it into an authz bypass.
+- **`fresh: true` skips the memo on the way in and publishes to it on the way out.** A memo is a
+  cache whose lifetime is the request, so `fresh` refuses to *join* an entry — `readFresh` is
+  `readOnce` minus the join, both sharing one `publish` — but it must still *become* one. Returning
+  the rows early instead left the pre-write entry standing, so "the one way to read past a write
+  made earlier in the same request" ended at the single call that asked for it and the next plain
+  read of that key got the stale answer back. Invalidation still drops tier entries only.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
   `@ultimat3/policy`; a live denial keeps its 4403 close code on `QueryDeniedError.denial`.
   `policy-gate.ts` is the only file that imports the policy package.

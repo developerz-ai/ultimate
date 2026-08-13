@@ -17,7 +17,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatPath, validateAsync } from '@ultimat3/schema';
-import { cacheKeyFor, readThrough } from './cache';
+import { cacheKeyFor, readFresh, readOnce, readThrough } from './cache';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
 import { actorOf, guard } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
@@ -100,12 +100,19 @@ async function readRows<TInput extends StandardSchemaV1, TRow extends object>(
   const name = queryName(target);
   const source = await buildSource(target, raw, ctx, options);
   const read = (): Promise<readonly object[]> => withSpan(`query.${name}`, () => source.execute());
-  // The source came from this query's own `sql()`, so its rows are TRow.
-  if (options.fresh === true || def.cache === undefined) {
-    return (await read()) as readonly TRow[];
-  }
-  const key = cacheKeyFor(name, raw, def.cache.tags);
-  const rows = await readThrough(ctx, key, def.cache.ttlMs ?? null, read);
+  // The source came from this query's own `sql()`, so its rows are TRow throughout.
+  const key = cacheKeyFor(name, raw, def.cache?.tags ?? []);
+  // `fresh` is the caller saying no cache may answer this one — the memo included, a memo being
+  // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
+  // newest answer the request has, so the next plain read of the key joins it rather than the
+  // entry a write earlier in the request already moved past.
+  if (options.fresh === true) return (await readFresh(ctx, key, read)) as readonly TRow[];
+  // `cache:` buys the tier, never the memo: a read asked twice in one request is one execution
+  // whether or not its author opted into caching.
+  const rows =
+    def.cache === undefined
+      ? await readOnce(ctx, key, read)
+      : await readThrough(ctx, key, def.cache.ttlMs ?? null, read);
   return rows as readonly TRow[];
 }
 
@@ -125,7 +132,13 @@ async function buildSource(
       options.surface ?? 'server',
     );
   }
-  return def.sql(input, ctx);
+  const source = def.sql(input, ctx);
+  // A live window is served in the order its patches are placed in. The matcher breaks a tie on
+  // the declared keys with `id` (`totalOrder`) and so does the keyset re-read a reconnect resumes
+  // with, so an initial window served in the declared keys alone puts tied rows where neither of
+  // them would: the client renders one order and the next read answers another. A source that
+  // cannot say (`total` absent) already serves one order it can be resumed in.
+  return options.surface === 'live' && source.total !== undefined ? source.total() : source;
 }
 
 async function validate(schema: StandardSchemaV1, raw: unknown, name: string): Promise<unknown> {

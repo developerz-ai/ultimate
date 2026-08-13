@@ -116,10 +116,42 @@ gone. A row with no `id` cannot name a position at all: that is `X_QUERY_NOT_PAG
 cursor signed over `"undefined"`.
 
 Because the predicate always carries that id, the ordering carries it too: a paged read is served
-`order by <declared keys>, "id" asc`, and the in-memory path sorts by the same list. Ordering by
-the declared keys alone leaves rows with equal sort values in whatever order the database chose,
-while the cursor reads them as if id had decided — so one of a tied pair comes back on both pages
-and the other on neither.
+`order by <declared keys>, "id" asc` — that list is `totalOrder(orderBy)`, exported for the reason
+`isAfterKey` is — and the in-memory sort and the live matcher's insertion position read the same
+one. Ordering by the declared keys alone leaves rows with equal sort values in whatever order the
+database chose, while the cursor reads them as if id had decided — so one of a tied pair comes back
+on both pages and the other on neither, and a row the matcher appends after a tie group is a
+position no re-read returns.
+
+A **live** read is served that way too, and `SqlSource.total()` is how it says so: the same read
+with no cursor and no window, ordered `<declared keys>, "id" asc`. `sourceFor` calls it for
+`surface: 'live'` and for nothing else, so the initial window, the patch positions the matcher
+computes and the keyset re-read a reconnect resumes with are one ordering. A source that does not
+implement `total()` is left alone — it already serves one order it can be resumed in.
+
+## NULL
+
+One rule, three readers: the SQL a source generates, the in-memory execution behind `from()`, and
+the live matcher. `null` and a column the row omits are the same absence — `isNull` is the one
+definition, exported for the same reason `isAfterKey` is.
+
+| Operator | NULL is | Emitted as |
+|---|---|---|
+| `=` `!=` `in` | a value — it matches itself and nothing else | `is null` · `is not null` · `is distinct from` · `in (…) or is null` |
+| `>` `>=` `<` `<=` | unknown — a NULL on either side matches nothing | `"col" > $n`, which already matches no NULL |
+| `order by`, the cursor | the largest value: last ascending, first descending | `asc nulls last` · `desc nulls first` |
+
+`where({ deletedAt: null })` compiles to `"deletedAt" is null` and binds no parameter: `= $1` with
+a NULL argument is unknown in Postgres and unknown is never true, so that filter used to match
+every row in memory and none in the database. The seek predicate had the same defect one page
+later — `"publishedAt" > $1` is unknown for every draft, so page two stopped at the first NULL and
+the rows after it were unreachable through a cursor. An ascending key now reaches them
+(`("col" > $1 or "col" is null)`); a NULL cursor value drops its own term, nothing sorting after a
+NULL under `nulls last`, and the page continues on the id tiebreak, which is never NULL.
+
+`nulls last` / `nulls first` are Postgres' own defaults, written down rather than inherited: it is
+the rule `compareValues` implements, so the in-memory sort and the seek predicate can only agree
+with it, and a driver whose default differs cannot re-open the divergence.
 
 ## Caching
 
@@ -127,6 +159,25 @@ Request memo (same read twice in one render ⇒ one round trip), then the tier b
 `ReadCache`. Keys are `query:<name>:<input fingerprint>:<tags>`. An action's
 `cache.invalidates` and a query's `cache.tags` meet in the one graph owned by
 `@ultimat3/cache`.
+
+The memo entry is the read **in flight**, not its value, so "twice" covers reads that race as
+well as reads that follow: five holes rendering concurrently share one execution and one tier
+round trip. A rejection is evicted — a failed read is not the request's answer.
+
+| Layer | Applies to | Lifetime |
+|---|---|---|
+| request memo (`readOnce`) | **every** query, `cache:` or not | the request — a `Ctx`'s identity is the key |
+| tag-keyed tier (`readThrough`) | a query that declares `cache:` | `ttlMs`, or until an `invalidates` fan-out drops the tag |
+
+`cache:` buys the tier, never the memo: an uncached lookup called once per row of a list would
+otherwise cost one round trip per row. Parsing, the policy and `sql()` still run on every call —
+the memo holds the execution, not the decision — and `.as()` reads in a child context, so an
+impersonated read never joins one made as someone else.
+
+`fresh: true` skips both on the way in, and **publishes into the memo on the way out**: it is how
+a caller reads past a write made earlier in the same request, and the read it just made is the
+request's answer from then on, so a later plain read of the same key joins it rather than the entry
+the write moved past. Invalidation drops tier entries, not memo entries.
 
 ## Errors
 

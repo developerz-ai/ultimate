@@ -5,6 +5,7 @@ import { t } from '@ultimat3/schema';
 import { toLiveQuery } from './live';
 import { match } from './matcher';
 import { query } from './query';
+import { sourceFor } from './read';
 import { registerQuery, resetRegistry } from './registry';
 import { from } from './source';
 
@@ -89,5 +90,70 @@ describe('live query descriptor', () => {
     expect(next.version).toBe(1);
     expect(next.rows).toBe(3);
     expect(next.seek).toEqual({ key: [30], id: 'c' });
+  });
+});
+
+/**
+ * The window a subscriber holds and the position a patch lands at are two readings of one
+ * ordering. The matcher breaks a tie on the declared keys with `id` and so does the keyset re-read
+ * a reconnect resumes with, so the window has to arrive in that order too — served by the declared
+ * keys alone, a tie sits wherever the rows happened to be, and the client renders an order no
+ * re-read returns.
+ */
+describe('a live window is served in the order its patches are placed in', () => {
+  beforeEach(() => {
+    resetRegistry();
+  });
+
+  /** Tied on the only declared key, and handed over in the opposite order to their ids. */
+  const tiedFeed = (rows: readonly Post[]) =>
+    query({
+      input: t.object({ orgId: t.uuid }),
+      policy: can('feed:read'),
+      live: true,
+      sql: ({ orgId }) =>
+        from<Post>('posts', async () => rows)
+          .where({ orgId })
+          .orderBy('createdAt')
+          .limit(50),
+    });
+
+  const tied: readonly Post[] = [
+    { id: 'y', orgId: ORG, createdAt: 10 },
+    { id: 'x', orgId: ORG, createdAt: 10 },
+  ];
+
+  const idsOf = (rows: readonly object[]): readonly string[] => rows.map((row) => (row as Post).id);
+  const window = (target: ReturnType<typeof tiedFeed>): Promise<readonly object[]> =>
+    sourceFor(target, { orgId: ORG }, { ctx: member, surface: 'live' }).then((source) =>
+      source.execute(),
+    );
+
+  test('the statement carries the id tiebreak the matcher sorts by', async () => {
+    const feed = registerQuery('tiedFeed', tiedFeed(tied));
+    const live = await toLiveQuery(feed, { orgId: ORG }, { ctx: member, epoch: 'build-1' });
+
+    expect(live.sqlText).toContain('order by "createdAt" asc nulls last, "id" asc nulls last');
+    expect(idsOf(await window(feed))).toEqual(['x', 'y']);
+  });
+
+  test('a patched window is the list the next read answers, tie included', async () => {
+    const feed = registerQuery('tiedFeed', tiedFeed(tied));
+    const live = await toLiveQuery(feed, { orgId: ORG }, { ctx: member, epoch: 'build-1' });
+    const held = await window(feed);
+
+    const incoming: Post = { id: 'w', orgId: ORG, createdAt: 10 };
+    const patches = match('tiedFeed', live.shape, held, {
+      entity: 'posts',
+      op: 'insert',
+      row: incoming,
+    });
+    expect(patches).toEqual([{ kind: 'add', position: 0, row: incoming }]);
+
+    // The claim: the client's patched window and the server's next answer are one list. The
+    // re-read is a second registration over the same rows plus the insert — the server's view.
+    const patched = [incoming, ...held];
+    const server = registerQuery('tiedAfterInsert', tiedFeed([...tied, incoming]));
+    expect(idsOf(patched)).toEqual(idsOf(await window(server)));
   });
 });

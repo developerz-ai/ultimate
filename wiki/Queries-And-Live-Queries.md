@@ -80,6 +80,13 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
 | No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
 
+A page is served `order by <declared keys>, "id" asc`, and so is a live window — `As of 2026-08`,
+the initial window, the matcher's patch positions and the keyset re-read a reconnect resumes with
+are one ordering. A row tied on every declared key lands where its id puts it, not after the tie
+group, and not wherever the database happened to return it. `x queries describe <name> --json`
+prints the order. A row that reaches the matcher with no `id` is `X_QUERY_NOT_PAGEABLE`, never a
+patch aimed at a position no client holds.
+
 A non-live query has none of these constraints — it is just a read.
 
 ## Row-level policy filtering
@@ -96,19 +103,44 @@ Policy is not a subscribe-time gate that then trusts the stream.
 
 One authz system. A live query cannot become a second door into your data — that is the failure mode that killed the `allow`/`deny` generation of frameworks ([The eight primitives](The-Eight-Primitives)).
 
+## NULL
+
+`As of 2026-08`, one rule for the generated SQL, the in-memory source behind `from()` and the live
+matcher alike. `null` and a column the row omits are the same absence.
+
+| Operator | NULL is | Generated SQL |
+|---|---|---|
+| `=` `!=` `in` | a value — it matches itself and nothing else | `is null` · `is not null` · `is distinct from` · `in (…) or is null` |
+| `>` `>=` `<` `<=` | unknown — a NULL on either side matches nothing | `"col" > $n`, which already matches no NULL |
+| `orderBy`, the cursor | the largest value: last ascending, first descending | `asc nulls last` · `desc nulls first` |
+
+`where({ deletedAt: null })` emits `"deletedAt" is null` and binds no parameter. `= $1` with a NULL
+argument is *unknown* in Postgres and unknown is never true, so before this the same read matched
+every row from a memory source and no row from a driver. A cursor across a nullable sort key had
+the defect one page later: page two stopped at the first NULL, and the rows behind it were
+unreachable. `x queries describe <name> --json` prints the SQL that says so.
+
+A nullable sort key pages correctly here. `@ultimat3/entity`'s repo cursor refuses one outright at
+mint time instead ([Entities and migrations](Entities-And-Migrations)) — two answers to the same
+question, both explicit, neither silent.
+
 ## Request memo (tier 1) dedupe
 
 Three components on one page calling `liveFeed({ orgId })` resolve **one** query.
 
 | Property | Behavior |
 |---|---|
-| Store | AsyncLocalStorage, keyed by query name + parsed `input` + actor tenant + policy scope |
+| Coverage | every query, `cache:` or not. `cache:` buys the tier behind the memo, never the memo itself |
+| Store | a map per request context, keyed by query name + `input` fingerprint + the query's tags |
 | Lifetime | one request. No cross-request reuse, no eviction policy to tune |
 | Hit cost | ~0 |
-| Scope safety | two actors in the same process never share an entry — the scope is in the key |
-| Invalidation | dropped immediately when a write in the same request invalidates a tag it carries |
+| Concurrency | the entry is the read *in flight*, so a caller that races the first one joins it instead of starting a competing read |
+| Scope safety | two actors never share an entry — each request has its own context, and `.as()` reads in a child of it |
+| Authorization | parsing, the policy and `sql` run on every call. What the memo holds is the execution, never the decision |
+| Failure | a rejection is evicted, so the next read in the request retries rather than replaying one failure |
+| Invalidation | none — a write in the same request drops tier entries, not memo entries. `fresh: true` is the read-past, and what it read replaces the memo entry, so the next plain read of that key sees the write too |
 
-Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres.
+Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres. The same memo is what keeps an uncached lookup called once per row of a list to one round trip — `As of 2026-08`, per row is what it used to cost.
 
 ## Every cached query carries a tag
 
@@ -168,4 +200,8 @@ x verify              # runs all six test types
 - `live: true` needs `orderBy` + `limit`, always.
 - Presence, typing indicators, and cursors are tier 1 channels forever — never model ephemeral state as rows ([Realtime](Realtime)).
 - A cache miss must be correct and merely slower. No query may depend on a hit.
+- NULL is a value to `=`/`!=`/`in`, unknown to `>`/`<`, and the largest value to `orderBy`. Never
+  write a filter that reads a NULL a fourth way.
+- One order, three readers: the generated SQL, the cursor and the live matcher all serve
+  `<declared keys>, "id" asc`. Never sort a window by the declared keys alone.
 - Cache keys are framework-generated. A hand-built key is a rejected PR.

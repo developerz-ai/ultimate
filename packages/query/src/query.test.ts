@@ -33,6 +33,41 @@ const defineFeed = () =>
     sql: ({ orgId }) => from<Post>('posts', posts).where({ orgId }).orderBy('createdAt').limit(50),
   });
 
+/** A promise plus its resolver, so a test can hold a read open and prove a second one joined it. */
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * A query with no `cache:` block whose executions are countable — the memo's whole job is that
+ * number. `built` counts `sql()` calls, which is how a test tells "answered from the memo" from
+ * "skipped the front half": validation and policy run before `sql()` on every call.
+ */
+function defineCounted(hold?: Promise<void>) {
+  const counts = { built: 0, executed: 0 };
+  const entered = deferred();
+  const target = query({
+    input: Input,
+    policy: can('feed:read'),
+    sql: ({ orgId }) => {
+      counts.built += 1;
+      return from<Post>('posts', async () => {
+        counts.executed += 1;
+        entered.resolve();
+        if (hold !== undefined) await hold;
+        return posts;
+      })
+        .where({ orgId })
+        .orderBy('createdAt');
+    },
+  }).named('countedFeed');
+  return { target, counts, entered: entered.promise };
+}
+
 describe('query', () => {
   beforeEach(() => {
     resetRegistry();
@@ -147,8 +182,141 @@ describe('query', () => {
     const feed = registerQuery('orgFeed', defineFeed());
     const explained = await explain(feed, { orgId: ORG }, member);
     expect(explained.sql).toBe(
-      'select * from "posts" where "orgId" = $1 order by "createdAt" asc limit 50',
+      'select * from "posts" where "orgId" = $1 order by "createdAt" asc nulls last limit 50',
     );
     expect(explained.params).toEqual([ORG]);
+  });
+});
+
+// A `cache:` block buys the tier. It never bought the request memo — that one is every read's,
+// or a list rendering one uncached lookup per row pays for every row.
+describe('a query with no cache block', () => {
+  test('is read once however many times one request asks', async () => {
+    const { target, counts } = defineCounted();
+    const ctx = createContext({ actor: readerActor });
+
+    const first = await runQuery(target, { orgId: ORG }, { ctx });
+    const second = await runQuery(target, { orgId: ORG }, { ctx });
+
+    expect(second).toEqual(first);
+    expect(counts.executed).toBe(1);
+    // The memo holds the execution, never the decision: input parsing, the policy and `sql()`
+    // run on every call, so a memoized answer is still one this actor was allowed to ask for.
+    expect(counts.built).toBe(2);
+  });
+
+  test('is read once by a second reader that arrives while the first read is in flight', async () => {
+    const hold = deferred();
+    const { target, counts, entered } = defineCounted(hold.promise);
+    const ctx = createContext({ actor: readerActor });
+
+    const first = runQuery(target, { orgId: ORG }, { ctx });
+    await entered;
+    const second = runQuery(target, { orgId: ORG }, { ctx });
+    hold.resolve();
+
+    expect(await second).toEqual(await first);
+    expect(counts.executed).toBe(1);
+  });
+
+  test('is read again for a different input, and for another request', async () => {
+    const { target, counts } = defineCounted();
+    const ctx = createContext({ actor: readerActor });
+    const other = '00000000-0000-4000-8000-000000000002';
+
+    await runQuery(target, { orgId: ORG }, { ctx });
+    await runQuery(target, { orgId: other }, { ctx });
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: readerActor }) });
+
+    expect(counts.executed).toBe(3);
+  });
+
+  test('is read again when the caller asks for it fresh', async () => {
+    const { target, counts } = defineCounted();
+    const ctx = createContext({ actor: readerActor });
+
+    await runQuery(target, { orgId: ORG }, { ctx });
+    await runQuery(target, { orgId: ORG }, { ctx, fresh: true });
+
+    expect(counts.executed).toBe(2);
+  });
+
+  test('a fresh read is the request’s answer from then on, so a plain read sees the write', async () => {
+    const rows: { id: string; orgId: string }[] = [{ id: 'a', orgId: ORG }];
+    const target = query({
+      input: Input,
+      policy: can('feed:read'),
+      sql: () => from('rows', async () => [...rows]),
+    }).named('writtenFeed');
+    const ctx = createContext({ actor: readerActor });
+
+    await runQuery(target, { orgId: ORG }, { ctx });
+    rows.push({ id: 'b', orgId: ORG });
+    const refreshed = await runQuery(target, { orgId: ORG }, { ctx, fresh: true });
+    // `fresh` skips the memo on the way in; what it read replaces it on the way out. Returning
+    // early instead would leave the pre-write entry standing and end the guarantee at one call.
+    const plain = await runQuery(target, { orgId: ORG }, { ctx });
+
+    expect(refreshed.map((row) => (row as { id: string }).id)).toEqual(['a', 'b']);
+    expect(plain).toEqual(refreshed);
+  });
+});
+
+// The read path's three guarantees, proved together for the query the audit named:
+// `where({ deletedAt: null })`. Each half is unit-tested elsewhere (`source.test.ts`,
+// `shape.test.ts`, `cache.test.ts`) — this is the end-to-end claim: the statement a recording
+// client would see, the rows `execute()` actually answers, and what IS NULL means in Postgres
+// all agree, and that agreement is one execution even under concurrency.
+describe('NULL parity: recorded SQL, in-memory rows and IS NULL semantics agree', () => {
+  interface SoftRow {
+    readonly id: string;
+    readonly orgId: string;
+    readonly deletedAt: string | null;
+  }
+
+  const softRows: readonly SoftRow[] = [
+    { id: 'a', orgId: ORG, deletedAt: null },
+    { id: 'b', orgId: ORG, deletedAt: '2026-01-01' },
+    { id: 'c', orgId: ORG, deletedAt: null },
+  ];
+
+  test('the statement a recording client would see says `is null`, and execute() answers what IS NULL means', async () => {
+    const source = from<SoftRow>('rows', softRows).where({ orgId: ORG, deletedAt: null });
+    // `toSQL()` is the statement text a real driver — a recording client included — receives.
+    // This is the SQL side of the parity claim.
+    const recorded = source.toSQL();
+    expect(recorded.sql).toBe('select * from "rows" where "deletedAt" is null and "orgId" = $1');
+    expect(recorded.params).toEqual([ORG]);
+
+    // The oracle here is a plain `=== null` check, not `shape.ts`'s own `isNull` — an independent
+    // restatement of what Postgres' `IS NULL` means, so this proves the SQL and the memory rows
+    // agree rather than asserting the same function equals itself.
+    const expected = softRows.filter((row) => row.orgId === ORG && row.deletedAt === null);
+    const executed = await source.execute();
+    expect(executed).toEqual(expected);
+    expect(executed.map((row) => row.id)).toEqual(['a', 'c']);
+  });
+
+  test('two concurrent reads of a NULL-filtered query still execute once', async () => {
+    let executions = 0;
+    const target = query({
+      input: Input,
+      policy: can('feed:read'),
+      sql: () =>
+        from<SoftRow>('rows', async () => {
+          executions += 1;
+          return softRows;
+        }).where({ orgId: ORG, deletedAt: null }),
+    }).named('softDeleteFeed');
+    const ctx = createContext({ actor: readerActor });
+
+    const [first, second] = await Promise.all([
+      runQuery(target, { orgId: ORG }, { ctx }),
+      runQuery(target, { orgId: ORG }, { ctx }),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(first.map((row) => row.id)).toEqual(['a', 'c']);
+    expect(executions).toBe(1);
   });
 });
