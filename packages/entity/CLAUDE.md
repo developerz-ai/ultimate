@@ -20,7 +20,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   sort order, page size), `cursor.ts` (one codec, values included) and the `Repo` contract, so a
   test that passes against memory says something about Postgres. A guard, an operator or a sort
   rule added to one and not the other is the bug this split exists to prevent — `pg-driver.test.ts`
-  pins the parity.
+  pins the parity, and every bulk method added since carries the same two files: a
+  `*-parity.test.ts` seeding identical rows into both drivers and asserting identical output
+  (`batch-parity.test.ts`, `preload-parity.test.ts`, `count-by-parity.test.ts`, and the
+  `insertAll`/`upsertAll` cross-driver assertions inside `pg-driver-bulk.test.ts`), and a
+  `pg-driver-<feature>.live.test.ts` proving the same call against a real server
+  (`pg-driver-batch.live.test.ts`, `pg-driver-preload.live.test.ts`, `pg-driver-count.live.test.ts`,
+  `pg-driver-bulk.live.test.ts`). A method with only the first is unproven against Postgres itself;
+  a method with only the second is unproven against memory. Both are the bar, not either one.
 - **The Postgres driver is proved against a real Postgres, not only against a recording client.**
   `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
   `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
