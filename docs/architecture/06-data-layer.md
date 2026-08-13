@@ -129,7 +129,7 @@ Defense in depth, because a single missed `WHERE` is a data breach.
 | 3. Write guard | insert/update stamps the tenant from context, refuses a mismatching literal | `X_TENANT_MISMATCH` |
 | 4. Read guard | a returned row whose tenant ≠ context tenant is a bug, not a filter miss | `X_TENANT_MISMATCH`, logged with the query hash |
 | 5. Postgres RLS | optional, opt-in per entity; policy uses a session variable set on checkout | last line of defense for raw SQL and admin sessions |
-| 6. Cache keys | derived from actor scope, never hand-built | a cache hit cannot cross tenants ([`../idea/05-caching.md`](../idea/05-caching.md)) |
+| 6. Cache keys | query name + parsed-input fingerprint + tags, never hand-built. `As of 2026-08` the actor is **not** a part, so the tenant must be in the read's input | a `cache:` read scoped by actor rather than by input is a cross-tenant hit ([`../idea/05-caching.md`](../idea/05-caching.md)) |
 | 7. Live queries | subject includes the tenant; policy re-checked per delivered row | [`07-realtime-internals.md`](./07-realtime-internals.md) |
 
 ## Cursor pagination only

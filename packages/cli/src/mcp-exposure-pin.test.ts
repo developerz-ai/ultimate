@@ -1,13 +1,7 @@
-// One declaration, six readers, one answer. `mcp: { expose }` is read by `@ultimat3/action`
-// (the tool, the manifest fact, the OpenAPI hint), `@ultimat3/query`, `@ultimat3/mcp` and
-// `@ultimat3/ai` — packages on three tiers that cannot import each other, so no one of them can
-// prove the others agree. `@ultimat3/cli` is tier 5 and may import all of them, which is why the
-// pin lives here, exactly like `schema-error-codes-pin.test.ts`.
-//
-// Until 2026-08 they did NOT agree: two readers fail-opened (`?? true`, `!== false`) and four
-// fail-closed, so an action with no `mcp` block was published as a tool by the contract and
-// refused by every surface that could serve one. `isMcpExposed` in `@ultimat3/core` is now the
-// single predicate; this file is what makes "single" checkable.
+// One declaration, six readers, one answer: the pin that makes "one predicate" checkable.
+// `mcp: { expose }` is read across `action`, `query`, `mcp` and `ai` — three tiers that cannot
+// import each other, so no one of them can prove the others agree. `@ultimat3/cli` is tier 5 and
+// may import all of them, which is why the pin lives here, like `schema-error-codes-pin.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import { action, describeAction, toMcpTools, toOpenApiOperation } from '@ultimat3/action';

@@ -125,7 +125,7 @@ Removing the key is a real option, not a hedge: inference (steps 2–4) still ap
 | Consequence | Detail |
 |---|---|
 | Repo methods | inject the tenant predicate from `ctx.actor.orgId`; a raw `db.*` call in a service is a boundary error |
-| Cache keys | framework-generated and include the actor's tenant + policy scope, so a hit can never cross tenants |
+| Cache keys | framework-generated from the query name, its parsed input and its tags — never hand-built. The tenant reaches the key through the **input**, so a `cache:` read must take it there ([Caching and invalidation](Caching-And-Invalidation)) |
 | Live queries | the tenant predicate is part of the matcher, not a post-filter |
 | Vector search | tenant + policy filters applied **in SQL**, so similarity search cannot leak across tenants |
 

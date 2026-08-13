@@ -33,11 +33,11 @@ Every projection is a method on the query itself. A query has no `.def`.
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
 | `liveFeed.describe()` | the manifest row |
 
-The route on the other end of that client is `toQueryRoute(liveFeed)`, and `x dev` and a
-container both mount it for every registered read — the framework's job, not the app's. The
-search string is coerced at the wire and validated by the read's own schema, so a bad `orgId`
-is the query's `X_INPUT_INVALID` and a 400; the answer is `no-store`, because the URL names no
-actor while the rows are scoped to one.
+The route on the other end of that client is `toQueryRoute(liveFeed)`, and — `As of 2026-08` —
+`x dev` and a container both mount it for every registered read, the framework's job, not the
+app's. The search string is coerced at the wire and validated by the read's own schema, so a bad
+`orgId` is the query's `X_INPUT_INVALID` and a 400; the answer is `no-store`, because the URL
+names no actor while the rows are scoped to one.
 
 The declaration is lifted too: `.input`, `.policy`, `.cache`, `.mcp`, `.isLive`. `sql` is not
 among them — it lives in a private store inside `read.ts`, so `sourceFor` is the only thing

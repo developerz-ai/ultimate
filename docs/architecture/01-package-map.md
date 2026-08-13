@@ -48,7 +48,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `i18n` | 1 | translator, catalog flattening, locale negotiation, loud misses | `t()`, catalog format, `⟦key⟧` rendering, plural selection via CLDR | read a request object; format money |
 | `money` | 1 | integer minor units with an attached currency | `Money`, arithmetic, `allocate`, ISO exponent table, `Intl` formatting | floats; cross-currency arithmetic; a bare number as a total |
 | `time` | 1 | UTC instants, zone math, cron, durations | `Instant`, `ZonedFormat`, cron parse/next, duration parse (`'3d'`) | format without an explicit IANA `timeZone` |
-| `cache` | 1 | four cache tiers behind one tagged invalidation graph | tag algebra, key derivation from actor scope, tier drivers | hold business logic; accept a hand-built key |
+| `cache` | 1 | four cache tiers behind one tagged invalidation graph | tag algebra, tag serialization, tier drivers | hold business logic; accept a hand-built key |
 | `seo` | 1 | metadata, typed JSON-LD, sitemap/robots/feeds, SEO checks | `ld.*`, `<head>` model, sitemap splitting, the SEO check set | render pages; fetch data |
 | `db` | 1 | Postgres access, transactions, migrations, drift detection | `sql` binding, `DbClient`, `withTransaction`, the migration ledger, branch/introspect | import `entity` — an entity snapshot arrives as a parameter, never as an import |
 | `storage` | 1 | named disks over `Bun.file` and `Bun.s3` | disk registry, safe keys, signed URLs, sniffed uploads | let a call site name a driver instead of a disk |

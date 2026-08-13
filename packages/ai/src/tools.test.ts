@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
+import { forbidden } from '@ultimat3/policy';
 import type { ProjectableAction } from './tools';
 import { runLlmToolCall, toLlmTool, toLlmTools } from './tools';
 
@@ -93,13 +94,11 @@ describe('exposure is opt-in, the same opt-in MCP reads', () => {
 });
 
 describe('runLlmToolCall renders a failure the model can act on', () => {
+  // The real denial an action's policy gate throws, not a hand-rolled lookalike: a duck-typed
+  // `{ code, cause, fix }` would keep passing after `PolicyError` stopped carrying one of them.
   test('a framework error keeps its code, cause and fix', async () => {
     const denied = projectable('publishPost', { expose: true }, async () => {
-      throw Object.assign(new Error('denied'), {
-        code: 'X_FORBIDDEN',
-        cause: 'post:publish is not held',
-        fix: 'grant post:publish',
-      });
+      throw forbidden('post:publish', 'actor lacks post:publish');
     });
     const result = await runLlmToolCall(
       [denied],
@@ -108,14 +107,23 @@ describe('runLlmToolCall renders a failure the model can act on', () => {
     );
     expect(result).toEqual({
       toolUseId: 'call-3',
-      content: 'X_FORBIDDEN: post:publish is not held (fix: grant post:publish)',
+      content:
+        'X_FORBIDDEN: post:publish denied: actor lacks post:publish ' +
+        '(fix: x policy explain post:publish --json   # shows which clause decided and why)',
       isError: true,
     });
   });
 
+  // A throw from outside the framework — an SDK, a driver — is what this branch exists for, so
+  // the test has to raise one. It carries no `code`, which is the whole subject: an
+  // `UltimateError` here would exercise the branch above instead.
+  class ThirdPartySdkError extends Error {
+    override readonly name = 'ThirdPartySdkError';
+  }
+
   test('a foreign throw is reported without inventing a code', async () => {
     const boom = projectable('publishPost', { expose: true }, async () => {
-      throw new Error('kaboom');
+      throw new ThirdPartySdkError('kaboom');
     });
     const result = await runLlmToolCall(
       [boom],

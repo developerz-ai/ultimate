@@ -15,7 +15,7 @@ v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading))
 
 Read order is **1 → 2 → 3 → origin**. A tier is never consulted for a request whose `policy` has not already passed.
 
-**Cache keys always include the actor's tenant and policy scope**, so a cache hit can never leak across tenants. Keys are framework-generated from the query name, its parsed input, and the resolved actor scope.
+**A cache key is framework-generated, never hand-built.** `As of 2026-08` it is the query name, a fingerprint of the parsed input, and the read's sorted tag keys — `cacheKeyFor` in `@ultimat3/query`. The actor is **not** one of its parts, so what separates one tenant's entry from another's is the **input**: `feed({ orgId })` is one key per org. Policy still runs on every read before a tier is consulted, but it decides whether *this* caller may ask — not which rows the entry holds. So a read whose answer differs by actor for the same input must not declare `cache:`; tier 1 is keyed by `Ctx` identity and already separates it.
 
 | Tier | Opt-out / requirement |
 |---|---|
@@ -96,7 +96,7 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Stale page after publish | forgot one `revalidate` call | tags are declared on the route, resolved from the graph |
 | Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
-| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from actor scope |
+| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from the query name, its parsed input and its tags — the tenant reaches the key through the input, which is why a read scoped by actor rather than by input must not declare `cache:` |
 | Stale forever | a query whose tables no tag covers | the tag rule — **not yet a gate**: `X_CACHE_UNTAGGED_QUERY` is reserved `As of 2026-08` and nothing raises it, so a cached query no tag covers is cached and never invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) |
 | Silent typo | `invalidates: [tag.pots]` | `X_CACHE_TAG_UNKNOWN`, or a compile error against the generated registry |
 
