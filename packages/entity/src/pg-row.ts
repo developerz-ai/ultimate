@@ -5,6 +5,7 @@
 // as a string, timestamptz may arrive as one, and a silent `NaN` is worse than a loud throw.
 
 import { snake } from './column';
+import { narrowMoney } from './columns';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import type { AnyColumn, MoneyValue } from './types';
@@ -61,7 +62,9 @@ export const bindValues = <Row>(
   values: Partial<Row>,
 ): ReadonlyMap<string, unknown> => {
   const bound = new Map<string, unknown>();
-  const record = values as Readonly<Record<string, unknown>>;
+  // `MoneyInput` lets a writer hand a `bigint`; the row type is `MoneyValue`. `memoryRepo` calls
+  // the same narrowing before it stores, so what the two drivers write is one value.
+  const record = narrowMoney(entity.$columns, values) as Readonly<Record<string, unknown>>;
   for (const [property, column] of Object.entries(entity.$columns)) {
     if (!Object.hasOwn(record, property)) continue;
     const value = record[property];

@@ -129,7 +129,8 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 - **No hardcoded user-facing strings.** Everything through `t()`.
 - **No raw colours.** Semantic tokens only, in every component and stylesheet.
 - **No date formatted without an explicit IANA `timeZone`.** No ambient default, anywhere.
-- **No float money.** `Money = { minor: number; currency: string }`, always both.
+- **No float money.** `Money = { readonly minor: number; readonly currency: string }`, always both — one
+  declaration in `@ultimat3/schema`, aliased by `money` and `entity`, never restated and never a `bigint`.
 
 ## Conventions
 

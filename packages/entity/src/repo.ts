@@ -8,6 +8,7 @@
 //     position in the sort order, not a row count.
 
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
+import { narrowMoney } from './columns';
 import { countsFrom, groupColumnOf } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -240,7 +241,11 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
     return { plan, found: rowsOf(plan, args) };
   };
 
-  const write = (row: Row, options: RepoOptions | undefined): Row => {
+  const write = (given: Row, options: RepoOptions | undefined): Row => {
+    // `MoneyInput` lets a writer hand a `bigint`; a stored row holds the value type. The Postgres
+    // driver narrows in `bindValues` and reads its answer back through `returning *`, so without
+    // this an in-memory row would be the one row in the framework `JSON.stringify` refuses.
+    const row = narrowMoney(entity.$columns, given);
     entity.$assert(row);
     const key = keyOf(row);
     const previous = rows.get(key);

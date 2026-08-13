@@ -1,7 +1,16 @@
 # @ultimat3/money — agent notes
 
 **Tier 1.** May import `@ultimat3/core`, `@ultimat3/schema`. No external deps, ever.
-`Money = { minor: number; currency: string }` is the shape the whole framework passes around.
+`Money = { readonly minor: number; readonly currency: string }` is the shape the whole framework
+passes around.
+
+**`Money` is an alias, not a declaration.** It is `@ultimat3/schema`'s `MoneyValue` — tier 0, the
+only tier every package may import — and `@ultimat3/entity`'s `MoneyValue` is the same alias. Never
+restate the shape here: it was three structural copies, the entity layer's had a `bigint` `minor`,
+and a row that layer decoded therefore threw inside `JSON.stringify` and failed `t.money`. That is
+also why `minor` is a `number` and stays one — money crosses every wire this framework projects,
+and `JSON.stringify` refuses a bigint. `packages/entity/src/type-pins.ts` fails the build if the
+alias is re-declared, if `minor` widens back to a `bigint`, or if either field loses `readonly`.
 
 ## Boundary
 

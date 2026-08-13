@@ -5,6 +5,7 @@
 // enforcement this repo counts (axiom 3).
 
 import type { Id } from '@ultimat3/core';
+import type { MoneyValue as SchemaMoneyValue } from '@ultimat3/schema';
 import type { uuid } from './columns';
 import type { EntitySet } from './database';
 import type { Entity, EntityCore, EntityInit } from './entity';
@@ -12,7 +13,7 @@ import type { ColumnExpr, InvariantColumns } from './expr';
 import type { Invariant, InvariantDef } from './invariants';
 import type { Table } from './query';
 import type { Repo } from './repo';
-import type { AnyColumn, IdOf, Insertable, RowOf } from './types';
+import type { AnyColumn, IdOf, Insertable, MoneyInput, MoneyValue, RowOf } from './types';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -231,3 +232,38 @@ type _BatchDisposes = Assert<[BatchPin] extends [AsyncDisposable] ? true : false
 type _BatchYieldsBatches = Assert<[BatchPin] extends [AsyncIterable<BrandRow>] ? false : true>;
 
 type _RowAgnosticIdStaysAString = Assert<[string] extends [IdOf<unknown>] ? true : false>;
+
+// --- Money is one declaration, and the wide half is the write half -----------
+// `MoneyValue` was a third structural restatement of `Money` whose `minor` was a `bigint`, so a
+// row this package decoded satisfied neither `t.money` nor `JSON.stringify` — the shape the whole
+// framework passes around was not the shape its own driver produced. It is now an alias of
+// `@ultimat3/schema`'s declaration, which is also what `@ultimat3/money`'s `Money` is; these pins
+// are what stops the next edit from re-declaring it here and re-opening the same gap.
+
+/**
+ * Identity, not mutual assignability: `extends` ignores `readonly`, so the weaker test would pass
+ * against a mutable restatement — which is exactly the drift being pinned against.
+ */
+type Identical<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
+
+type _MoneyValueIsSchemasDeclaration = Assert<Identical<MoneyValue, SchemaMoneyValue>>;
+
+/** The value type is a `number`. A `bigint` here is the regression, not a widening. */
+type _MoneyMinorIsANumber = Assert<[MoneyValue['minor']] extends [number] ? true : false>;
+
+/** Immutable, enforced: a mutable `minor` is a rounding bug with a place to hide. */
+type _MoneyIsReadonly = Assert<
+  Identical<MoneyValue, { readonly minor: number; readonly currency: string }>
+>;
+
+/**
+ * A writer may still hand a `bigint` — that is the additive half, and it is what lets a minor unit
+ * read straight off a `bigint` column reach an insert without a conversion at the call site.
+ */
+type _MoneyInputTakesABigInt = Assert<
+  [{ readonly minor: bigint; readonly currency: string }] extends [MoneyInput] ? true : false
+>;
+
+/** And a row value is always a legal input: read a row, write it back. */
+type _MoneyValueIsMoneyInput = Assert<[MoneyValue] extends [MoneyInput] ? true : false>;

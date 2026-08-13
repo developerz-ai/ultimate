@@ -2,12 +2,16 @@
 
 ```ts
 export interface Money {
-  minor: number;
-  currency: string;
+  readonly minor: number;
+  readonly currency: string;
 }
 ```
 
 Integer minor units + ISO-4217 alphabetic code. Never a float, never a `number` in a column, never a currency-less amount.
+
+**One declaration, three names.** `@ultimat3/schema`'s `MoneyValue` is the type; `@ultimat3/money`'s `Money` and `@ultimat3/entity`'s `MoneyValue` are aliases of it, not restatements of its shape. It lives at tier 0 because that is the only tier every package may import. A row a `money()` column decodes therefore *is* a `Money` — pass it to `add()`, `formatMoney()` or `<Money>` with no conversion and no cast.
+
+`minor` is a `number`, not a `bigint`, because money is projected onto every wire this framework generates: `JSON.stringify` refuses a bigint, and `t.money` is also the OpenAPI contract. The column is still `bigint` — see the range rule under [Storage](#storage).
 
 `{ minor: 1999, currency: 'USD' }` is $19.99. `{ minor: 1999, currency: 'JPY' }` is ¥1999. The exponent comes from the currency table, never from an assumed `/ 100`.
 
@@ -39,6 +43,10 @@ Two columns per amount. No JSON blob, no `numeric` amount, no float.
 | Minor units with no currency column | the amount is meaningless the day a second currency appears |
 
 Entities declare a money field once and the generated migration emits both columns plus the check. See [Entities and migrations](Entities-And-Migrations).
+
+**The column is wider than the value, and the gap is a refusal.** `bigint` holds more than a JS number does, so a `<name>_minor` past ±2^53 — written by a psql session, a backfill, another service, never by this framework — is refused when it is read (`X_INVARIANT_VIOLATED`, naming the value). It is never rounded into the row, and never carried as a `bigint` that would crash the response three layers later. `@ultimat3/realtime` refuses the identical value for the identical reason, so the two readers of one column agree.
+
+A **writer** may still hand a `bigint` — `MoneyInput` is `{ minor: bigint | number; currency: string }`, so a minor unit read straight off a `bigint` column reaches an insert with no conversion at the call site. Both drivers narrow it to the value type before storing, so what a row holds never depends on which one you built.
 
 ## Operations
 
@@ -157,9 +165,9 @@ Full list: [Error codes](Error-Codes).
 
 ## Rules
 
-- `Money = { minor: number; currency: string }`. No other money type exists.
-- Never a float. Never a bare `number` for an amount.
-- Two columns: integer minor + `char(3)` currency.
+- `Money = { readonly minor: number; readonly currency: string }`. No other money type exists — `MoneyValue` in `@ultimat3/schema` and in `@ultimat3/entity` is the same declaration under another name.
+- Never a float. Never a bare `number` for an amount. Never a `bigint` on a row.
+- Two columns: integer minor + `char(3)` currency. A stored minor unit past ±2^53 is refused on read, never rounded.
 - Same currency or throw. No implicit conversion, ever.
 - A non-integer multiplier requires an explicit rounding mode.
 - `allocate` distributes the remainder; the parts always sum to the whole.

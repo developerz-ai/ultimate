@@ -108,7 +108,7 @@ describe('findById coalescing', () => {
         repo().findById(idAt(11), { orgId: ORG }),
       ]),
     );
-    expect(row?.total).toEqual({ minor: 100n, currency: 'EUR' });
+    expect(row?.total).toEqual({ minor: 100, currency: 'EUR' });
     expect(row?.deletedAt).toBeNull();
   });
 

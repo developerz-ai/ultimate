@@ -99,9 +99,11 @@ const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
   id: '00000000-0000-4000-8000-000000000001',
   orgId: '00000000-0000-4000-8000-000000000002',
   title: 'valid title',
-  // \`money()\` puts \`MoneyValue\` on the row, whose minor units are bigint — the column is a
-  // Postgres bigint, and a JS number would silently lose precision above 2^53 minor units.
-  price: { minor: 1000n, currency: 'USD' },
+  // \`money()\` puts \`MoneyValue\` on the row — the same type \`@ultimat3/money\`'s \`Money\` is,
+  // so this value goes straight to \`add()\`, \`formatMoney()\` and \`<Money>\` with no conversion.
+  // Integer minor units, never a float; the column is a Postgres bigint and a stored value past
+  // ±2^53 is refused when it is read rather than rounded into the row.
+  price: { minor: 1000, currency: 'USD' },
   createdAt: new Date(0),
   ...over,
 });
@@ -135,7 +137,7 @@ unitTest('${name.pascal}View projects the row an action returns, without the ten
 unitTest('${name.camel} invariants reject a blank title and a negative price', () => {
   expect(() => ${name.camel}.$assert(row())).not.toThrow();
   expect(() => ${name.camel}.$assert(row({ title: '   ' }))).toThrow();
-  expect(() => ${name.camel}.$assert(row({ price: { minor: -1n, currency: 'USD' } }))).toThrow();
+  expect(() => ${name.camel}.$assert(row({ price: { minor: -1, currency: 'USD' } }))).toThrow();
 });
 
 unitTest('${name.camel} parses a row through its own columns', () => {

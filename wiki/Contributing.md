@@ -101,7 +101,7 @@ In a generated app the same mechanism enforces `site/` cannot import `app/`, rou
 | i18n-ready | zero hardcoded user-facing strings — everything through `t()` | `x verify` (i18n check) |
 | Dark-theme-ready | every colour a semantic token, never a raw hex | `x verify` lint stage |
 | tz-ready | never format a date without an explicit IANA `timeZone` | `x verify` lint stage, `X_TIME_NO_ZONE` at runtime |
-| Money as minor units | `Money = { minor: number; currency: string }`. Never a float | types + `X_MONEY_NOT_INTEGER` |
+| Money as minor units | `Money = { readonly minor: number; readonly currency: string }` — one declaration in `@ultimat3/schema`, aliased by `money` and `entity`, never restated. Never a float, never a `bigint` on a row | types + `type-pins.ts` + `X_MONEY_NOT_INTEGER` |
 
 TypeScript strictness comes from [`tsconfig.base.json`](https://github.com/developerz-ai/ultimate/blob/main/tsconfig.base.json) and is not negotiable per package: `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noPropertyAccessFromIndexSignature`, `exactOptionalPropertyTypes`, `isolatedModules`, `verbatimModuleSyntax`, `composite`. `noNonNullAssertion` is a Biome **warning** — treat it as an error in review; a `!` is almost always a missing narrow.
 

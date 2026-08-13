@@ -28,13 +28,26 @@ export interface ReferenceOptions {
   readonly onDelete?: OnDelete;
 }
 
-/** The single value a money column puts on the row. Two physical columns back it. */
-export interface MoneyValue {
-  readonly minor: bigint;
-  readonly currency: string;
-}
+/**
+ * The single value a money column puts on the row. Two physical columns back it.
+ *
+ * An **alias** of `@ultimat3/schema`'s declaration, which is also what `@ultimat3/money`'s `Money`
+ * is — so a row this package decodes IS a `Money`, assignable to `add()`, `formatMoney()` and
+ * `<Money>` without a cast. It used to be a third, structurally different interface whose `minor`
+ * was a `bigint`, and that was a live defect rather than a stylistic one: `JSON.stringify` throws
+ * on a bigint, so returning a row with a money column from an action crashed the response, and
+ * `t.money` — the schema node that becomes the OpenAPI contract — rejected the framework's own row.
+ */
+import type { MoneyValue } from '@ultimat3/schema';
 
-/** What a writer may hand a money column. An integer `number` widens; a float throws. */
+export type { MoneyValue };
+
+/**
+ * What a writer may hand a money column. An integer `number` is the value type; a `bigint` is
+ * accepted so a minor unit read straight off a `bigint` column (hand-written SQL, a backfill)
+ * needs no conversion at the call site. A float throws, and so does a `bigint` past
+ * `Number.MAX_SAFE_INTEGER` — see `parseMinor` in `columns.ts`.
+ */
 export interface MoneyInput {
   readonly minor: bigint | number;
   readonly currency: string;

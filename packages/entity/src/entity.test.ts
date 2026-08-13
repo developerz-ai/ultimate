@@ -40,7 +40,7 @@ const sample: Post = {
   id: '00000000-0000-7000-8000-000000000001',
   orgId: '00000000-0000-7000-8000-0000000000a1',
   title: 'Tenancy is a column',
-  price: { minor: 1900n, currency: 'USD' },
+  price: { minor: 1900, currency: 'USD' },
   likeCount: 0,
   status: 'published',
   publishedAt: new Date('2026-03-02T13:00:00Z'),
@@ -77,7 +77,7 @@ describe('entity()', () => {
     expect(parsed.publishedAt).toBeNull();
     // A generated uuid v7 primary key, because the column said so — not because a seed did.
     expect(parsed.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(parsed.price.minor).toBe(1900n);
+    expect(parsed.price.minor).toBe(1900);
     expect(() => posts.$parse({ ...sample, likeCount: 1.5 })).toThrow(/safe integer/);
     expect(() => posts.$parse({ ...sample, price: { minor: 19.5, currency: 'USD' } })).toThrow(
       /float/,

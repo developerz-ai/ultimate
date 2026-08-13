@@ -123,7 +123,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     db().invoices.insert({
       orgId,
       reference,
-      total: { minor: 1000n, currency: 'USD' },
+      total: { minor: 1000, currency: 'USD' },
       ...patch,
     });
 
@@ -178,11 +178,11 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
 
   test('a row survives the round trip through real column types', async () => {
     const written = await write(acme, 'INV-round-trip', {
-      total: { minor: 12_500n, currency: 'EUR' },
+      total: { minor: 12_500, currency: 'EUR' },
     });
 
     // Every one of these came back from Postgres, not from the object that was passed in.
-    expect(written.total).toEqual({ minor: 12_500n, currency: 'EUR' });
+    expect(written.total).toEqual({ minor: 12_500, currency: 'EUR' });
     expect(written.paid).toBe(false);
     expect(written.note).toBeNull();
     expect(written.issuedAt).toBeInstanceOf(Date);
@@ -190,7 +190,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(written.id).toMatch(/^[0-9a-f-]{36}$/);
 
     const read = await repo().findById(written.id, { orgId: acme });
-    expect(read?.total).toEqual({ minor: 12_500n, currency: 'EUR' });
+    expect(read?.total).toEqual({ minor: 12_500, currency: 'EUR' });
     expect(read?.reference).toBe('INV-round-trip');
   });
 
@@ -225,13 +225,13 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     const written = await write(acme, 'INV-update');
     const updated = await repo().update(
       written.id,
-      { paid: true, note: 'settled', total: { minor: 999n, currency: 'GBP' } },
+      { paid: true, note: 'settled', total: { minor: 999, currency: 'GBP' } },
       { orgId: acme },
     );
 
     expect(updated.paid).toBe(true);
     expect(updated.note).toBe('settled');
-    expect(updated.total).toEqual({ minor: 999n, currency: 'GBP' });
+    expect(updated.total).toEqual({ minor: 999, currency: 'GBP' });
     expect((await repo().findById(written.id, { orgId: acme }))?.note).toBe('settled');
   });
 

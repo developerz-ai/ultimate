@@ -19,7 +19,19 @@ import {
 import type { SchemaNode } from './node';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
 
-/** Structurally identical to `Money` in `@ultimat3/money`. Never a float. */
+/**
+ * The framework's ONE declaration of a money value. `@ultimat3/money`'s `Money` and
+ * `@ultimat3/entity`'s `MoneyValue` are aliases of this type, not copies of its shape — three
+ * structural restatements are how `minor` became a `number` here and a `bigint` there, which made
+ * a row the entity layer produced fail `t.money` and throw inside `JSON.stringify`.
+ *
+ * It lives at tier 0 because that is the only tier every other package may import, and `number`
+ * rather than `bigint` because money crosses the wire on every surface this framework projects —
+ * `JSON.stringify` refuses a bigint, and this node is also the OpenAPI contract. A stored value
+ * past `Number.MAX_SAFE_INTEGER` is refused where it is decoded, loudly; it is never widened here.
+ *
+ * Never a float, and never an amount without its currency.
+ */
 export interface MoneyValue {
   readonly minor: number;
   readonly currency: string;

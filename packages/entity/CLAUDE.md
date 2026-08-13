@@ -338,8 +338,24 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   every identifier through the entity, so a column name can only be one the entity declared.
   `raw()` appears exactly three times, for `asc|desc`, the seek operator and the `default` cell of a
   many-row `values` list — each a closed set of one word.
-- **Money is `bigint` minor units + `char(3)` currency.** A float throws. Never one column,
-  never an implied single currency.
+- **Money is a `bigint` + `char(3)` column pair, and a `number` + `char(3)` VALUE.** A float throws.
+  Never one column, never an implied single currency — and never two declarations of the shape.
+  `MoneyValue` is re-exported from `@ultimat3/schema`, which is also what `@ultimat3/money`'s
+  `Money` is: **one** declaration, at the only tier every package may import. It was three
+  structural restatements, and the entity layer's copy had a `bigint` `minor` — so a row this
+  package decoded threw inside `JSON.stringify` (an action returning it crashed the response) and
+  failed `t.money`, the node that becomes the OpenAPI contract. `type-pins.ts` fails the build if
+  the alias is ever re-declared here, if `minor` widens back to a `bigint`, or if either field
+  loses `readonly`. **The column is wider than the value on purpose, and the gap is a refusal, not
+  a rounding**: `parseMinor` (`columns.ts`) takes the `bigint`, the `number` and the string int8
+  arrives as, and refuses anything past ±2^53 with `X_INVARIANT_VIOLATED` naming the value — the
+  same value `@ultimat3/realtime` refuses for the same reason, so the two readers of one column
+  agree. **The write half stays wide**: `MoneyInput` takes a `bigint`, so a minor unit read off a
+  `bigint` column needs no conversion at the call site — and `narrowMoney` is called by
+  **both** drivers, `bindValues` before a statement and `memoryRepo`'s `write` before it stores, so
+  a row's money never depends on which driver produced it. Applying it to one of them only is the
+  drift the two-driver split exists to prevent: it would leave the in-memory row the one row in
+  the framework `JSON.stringify` refuses.
 - **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
 - **A tenant column means every query needs an org predicate** — runtime guard, not convention.
   Missing ⇒ `X_TENANCY_UNSCOPED`. `tenant: 'orgId'` declares it; omitted, inference still applies
@@ -385,7 +401,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | File | Job |
 |---|---|
 | `types.ts` | `Column`, `RowOf`, `Insertable`, `IdOf` — the type derivation |
-| `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders |
+| `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders; `narrowMoney`, the one write-side narrowing both drivers run |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |

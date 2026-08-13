@@ -21,6 +21,13 @@ carries a duplicate of these titles and registers them unconditionally, so every
 real titles just by importing core. Add a code here **and** update that duplicate in the same
 change — `schema-error-codes-pin.test.ts` in `@ultimat3/cli` fails the build if they disagree.
 
+`MoneyValue` in `validators.ts` is the framework's **one** declaration of a money value — tier 0 is
+the only tier every package may import, and `@ultimat3/money`'s `Money` and `@ultimat3/entity`'s
+`MoneyValue` are aliases of it. Never let either restate the shape: it was three structural copies,
+entity's had a `bigint` `minor`, and a row that layer decoded then failed both `t.money` and
+`JSON.stringify`. `minor` stays a `number` for the same reason it is a `number` here — this node is
+the OpenAPI contract, and money crosses every wire the framework projects.
+
 `t` delegates through `schemaProvider()` on every property access — that is what makes
 `configureSchemaProvider()` work for modules that already imported `t`. Do not cache members.
 

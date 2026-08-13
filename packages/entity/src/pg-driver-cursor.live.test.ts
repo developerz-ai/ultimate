@@ -118,7 +118,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     db().invoices.insert({
       orgId,
       reference,
-      total: { minor: 1000n, currency: 'USD' },
+      total: { minor: 1000, currency: 'USD' },
       ...patch,
     });
 
