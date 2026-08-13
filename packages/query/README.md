@@ -132,6 +132,19 @@ The memo entry is the read **in flight**, not its value, so "twice" covers reads
 well as reads that follow: five holes rendering concurrently share one execution and one tier
 round trip. A rejection is evicted — a failed read is not the request's answer.
 
+| Layer | Applies to | Lifetime |
+|---|---|---|
+| request memo (`readOnce`) | **every** query, `cache:` or not | the request — a `Ctx`'s identity is the key |
+| tag-keyed tier (`readThrough`) | a query that declares `cache:` | `ttlMs`, or until an `invalidates` fan-out drops the tag |
+
+`cache:` buys the tier, never the memo: an uncached lookup called once per row of a list would
+otherwise cost one round trip per row. Parsing, the policy and `sql()` still run on every call —
+the memo holds the execution, not the decision — and `.as()` reads in a child context, so an
+impersonated read never joins one made as someone else.
+
+`fresh: true` skips both, the memo included. It is how a caller reads past a write made earlier
+in the same request: invalidation drops tier entries, not memo entries.
+
 ## Errors
 
 | Code | When | Fix |

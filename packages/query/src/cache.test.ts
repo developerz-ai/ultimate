@@ -7,7 +7,14 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createContext } from '@ultimat3/core';
 import type { ReadCache, ReadCacheEntry } from './cache';
-import { getReadCache, MemoryReadCache, readThrough, requestMemo, setReadCache } from './cache';
+import {
+  getReadCache,
+  MemoryReadCache,
+  readOnce,
+  readThrough,
+  requestMemo,
+  setReadCache,
+} from './cache';
 
 /** Counts the tier round trips a read costs, so "one round trip" is a number, not a claim. */
 class CountingCache implements ReadCache {
@@ -60,6 +67,108 @@ describe('requestMemo', () => {
 
     expect(requestMemo(a)).toBe(requestMemo(a));
     expect(requestMemo(a)).not.toBe(requestMemo(b));
+  });
+});
+
+describe('readOnce', () => {
+  test('runs the source once for two reads that race in the same tick, tier untouched', async () => {
+    const ctx = createContext({});
+    const source = gate();
+    let calls = 0;
+    const run = async (): Promise<string> => {
+      calls += 1;
+      await source.wait;
+      return 'rows';
+    };
+
+    const first = readOnce(ctx, 'k', run);
+    const second = readOnce(ctx, 'k', run);
+    source.open();
+
+    expect(await first).toBe('rows');
+    expect(await second).toBe('rows');
+    expect(calls).toBe(1);
+    // The memo is the whole of it: a query with no `cache:` block must not reach the tier.
+    expect(tier.gets).toBe(0);
+    expect(tier.sets).toBe(0);
+  });
+
+  test('answers a later read in the same request from the memo', async () => {
+    const ctx = createContext({});
+    let calls = 0;
+    const run = async (): Promise<string> => {
+      calls += 1;
+      return 'rows';
+    };
+
+    expect(await readOnce(ctx, 'k', run)).toBe('rows');
+    expect(await readOnce(ctx, 'k', run)).toBe('rows');
+    expect(calls).toBe(1);
+    expect(tier.gets).toBe(0);
+  });
+
+  test('keys the memo by ctx, so another request reads for itself', async () => {
+    let calls = 0;
+    const run = async (): Promise<string> => {
+      calls += 1;
+      return 'rows';
+    };
+
+    await readOnce(createContext({}), 'k', run);
+    await readOnce(createContext({}), 'k', run);
+    expect(calls).toBe(2);
+  });
+
+  test('keeps two keys apart inside one request', async () => {
+    const ctx = createContext({});
+    let calls = 0;
+    const run = async (): Promise<number> => {
+      calls += 1;
+      return calls;
+    };
+
+    expect(await readOnce(ctx, 'a', run)).toBe(1);
+    expect(await readOnce(ctx, 'b', run)).toBe(2);
+  });
+
+  test('memoizes a result that is legitimately undefined', async () => {
+    const ctx = createContext({});
+    let calls = 0;
+    const run = async (): Promise<undefined> => {
+      calls += 1;
+      return undefined;
+    };
+
+    expect(await readOnce(ctx, 'k', run)).toBeUndefined();
+    expect(await readOnce(ctx, 'k', run)).toBeUndefined();
+    expect(calls).toBe(1);
+  });
+
+  test('does not memoize a rejection: the next read in the request retries', async () => {
+    const ctx = createContext({});
+    let calls = 0;
+    const run = async (): Promise<string> => {
+      calls += 1;
+      if (calls === 1) throw new Error('boom');
+      return 'rows';
+    };
+
+    await expect(readOnce(ctx, 'k', run)).rejects.toThrow('boom');
+    expect(requestMemo(ctx).has('k')).toBe(false);
+    expect(await readOnce(ctx, 'k', run)).toBe('rows');
+    expect(calls).toBe(2);
+  });
+
+  // A `run` that throws before it ever returns a promise leaves nothing to join, so the memo must
+  // not be holding a key either — the next read has to start the work over.
+  test('memoizes nothing when the read throws synchronously', async () => {
+    const ctx = createContext({});
+    const run = (): Promise<string> => {
+      throw new Error('boom');
+    };
+
+    await expect(readOnce(ctx, 'k', run)).rejects.toThrow('boom');
+    expect(requestMemo(ctx).has('k')).toBe(false);
   });
 });
 

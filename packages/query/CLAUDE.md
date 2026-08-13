@@ -73,12 +73,25 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown
   by core's `CursorInvalidError`, which `errors.ts` re-exports so the name stays on this surface.
-- **The request memo holds the read, not the rows.** `readThrough` publishes the in-flight promise
+- **The request memo holds the read, not the rows.** `readOnce` publishes the in-flight promise
   before its first await, so two reads of one key in one request are one execution and one tier
   round trip whether the second follows the first or races it. A value-keyed map could not express
   that, and could not tell a memoized `undefined` from a miss either. A rejection is evicted — a
   failed read is not the request's answer, and the next read retries. `requestMemo(ctx)` is
   therefore `Map<string, Promise<unknown>>`; never put a settled value in it.
+- **Every read is memoized; only a `cache:` read goes through the tier.** `readThrough` is
+  `readOnce` plus `fill` and nothing else, and `readRows` picks between them on `def.cache` alone.
+  The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
+  every row otherwise, which is the N+1 this collapses. Never gate `readOnce` on `def.cache`
+  again, and never let a second key function grow beside `cacheKeyFor`.
+- **The memo holds an execution, never a decision.** `readRows` runs `buildSource` — parse, guard,
+  `sql()` — *before* it reaches the memo, on every call, and `.as()` reads in a child context whose
+  identity is its own memo. So a memoized answer is still one this actor was allowed to ask for,
+  and no impersonated read can join a read made as someone else. Moving the memo above
+  `buildSource` would turn it into an authz bypass.
+- **`fresh: true` skips the memo too**, because a memo is a cache whose lifetime is the request.
+  It is the one way to read past a write made earlier in the same request: invalidation drops tier
+  entries, not memo entries.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
   `@ultimat3/policy`; a live denial keeps its 4403 close code on `QueryDeniedError.denial`.
   `policy-gate.ts` is the only file that imports the policy package.

@@ -102,14 +102,17 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 
 | Property | Behavior |
 |---|---|
-| Store | AsyncLocalStorage, keyed by query name + parsed `input` + actor tenant + policy scope |
+| Coverage | every query, `cache:` or not. `cache:` buys the tier behind the memo, never the memo itself |
+| Store | a map per request context, keyed by query name + `input` fingerprint + the query's tags |
 | Lifetime | one request. No cross-request reuse, no eviction policy to tune |
 | Hit cost | ~0 |
 | Concurrency | the entry is the read *in flight*, so a caller that races the first one joins it instead of starting a competing read |
-| Scope safety | two actors in the same process never share an entry — the scope is in the key |
-| Invalidation | dropped immediately when a write in the same request invalidates a tag it carries |
+| Scope safety | two actors never share an entry — each request has its own context, and `.as()` reads in a child of it |
+| Authorization | parsing, the policy and `sql` run on every call. What the memo holds is the execution, never the decision |
+| Failure | a rejection is evicted, so the next read in the request retries rather than replaying one failure |
+| Invalidation | none — a write in the same request drops tier entries, not memo entries. `fresh: true` is the read-past |
 
-Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres.
+Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres. The same memo is what keeps an uncached lookup called once per row of a list to one round trip — `As of 2026-08`, per row is what it used to cost.
 
 ## Every cached query carries a tag
 

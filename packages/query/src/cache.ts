@@ -1,9 +1,10 @@
 /**
- * Read caching, two layers: a per-request memo (same query twice in one render
- * costs one round trip, whether the second read follows the first or races it)
- * and a tag-keyed tier behind the `ReadCache` interface. Invalidation is never
- * local — it goes through @ultimat3/cache so an action's `invalidates` and a
- * query's `tags` meet in one graph.
+ * Read caching, two layers: a per-request memo (`readOnce` — same query twice in one render
+ * costs one execution, whether the second read follows the first or races it) and, for a query
+ * that declares `cache:`, a tag-keyed tier behind the `ReadCache` interface (`readThrough`).
+ * Every read gets the memo; the tier is the half a query opts into. Invalidation is never
+ * local — it goes through @ultimat3/cache so an action's `invalidates` and a query's `tags`
+ * meet in one graph.
  */
 
 import type { CacheTag } from '@ultimat3/cache';
@@ -80,13 +81,13 @@ export function cacheKeyFor(name: string, input: unknown, tags: readonly CacheTa
   return `query:${name}:${fingerprint(input)}:${tagKeys(tags).join(',')}`;
 }
 
-/** Memo first, then the tier, then the source. */
-export async function readThrough<T>(
-  ctx: Ctx,
-  key: string,
-  ttlMs: number | null,
-  run: () => Promise<T>,
-): Promise<T> {
+/**
+ * One execution per key per request: the first caller runs it, every caller after joins it.
+ *
+ * This is the layer a query gets whether or not it declares `cache:` — an uncached read asked
+ * once per row of a list is the N+1 the memo exists to collapse.
+ */
+export async function readOnce<T>(ctx: Ctx, key: string, run: () => Promise<T>): Promise<T> {
   const memo = requestMemo(ctx);
   const joined = memo.get(key);
   // Already answered or already being answered: the second reader waits on the first read
@@ -94,16 +95,26 @@ export async function readThrough<T>(
   if (joined !== undefined) return (await joined) as T;
 
   // Published before the first await, so a reader arriving in the same tick finds this read.
-  const flight = fill(key, ttlMs, run);
+  const flight = run();
   memo.set(key, flight);
   try {
-    return (await flight) as T;
+    return await flight;
   } catch (error) {
     // A rejection is not an answer. Drop it so a later read in the same request retries
     // instead of replaying one failure until the request ends.
     if (memo.get(key) === flight) memo.delete(key);
     throw error;
   }
+}
+
+/** Memo first, then the tier, then the source — what a query with `cache:` reads through. */
+export function readThrough<T>(
+  ctx: Ctx,
+  key: string,
+  ttlMs: number | null,
+  run: () => Promise<T>,
+): Promise<T> {
+  return readOnce(ctx, key, () => fill(key, ttlMs, run));
 }
 
 /** The read itself — tier, then the source. Runs once per key per request; the rest join it. */

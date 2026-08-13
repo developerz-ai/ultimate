@@ -53,7 +53,11 @@ export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> 
 export interface QueryOptions {
   readonly ctx?: Ctx;
   readonly surface?: QuerySurface;
-  /** Skips the cache tiers for this call. Live fanout always reads fresh. */
+  /**
+   * Skips every cache for this call — the request memo as well as the tiers, since a memo is a
+   * cache with a request's lifetime. The one way to read past a write made earlier in the same
+   * request. Live fanout always reads fresh.
+   */
   readonly fresh?: boolean;
   /**
    * Run as someone else. Omitted keeps the context's own actor; `null` is the

@@ -15,6 +15,7 @@ export {
   getReadCache,
   invalidateQueryTags,
   MemoryReadCache,
+  readOnce,
   readThrough,
   requestMemo,
   setReadCache,

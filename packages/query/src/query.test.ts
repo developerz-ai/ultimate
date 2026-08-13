@@ -33,6 +33,41 @@ const defineFeed = () =>
     sql: ({ orgId }) => from<Post>('posts', posts).where({ orgId }).orderBy('createdAt').limit(50),
   });
 
+/** A promise plus its resolver, so a test can hold a read open and prove a second one joined it. */
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * A query with no `cache:` block whose executions are countable — the memo's whole job is that
+ * number. `built` counts `sql()` calls, which is how a test tells "answered from the memo" from
+ * "skipped the front half": validation and policy run before `sql()` on every call.
+ */
+function defineCounted(hold?: Promise<void>) {
+  const counts = { built: 0, executed: 0 };
+  const entered = deferred();
+  const target = query({
+    input: Input,
+    policy: can('feed:read'),
+    sql: ({ orgId }) => {
+      counts.built += 1;
+      return from<Post>('posts', async () => {
+        counts.executed += 1;
+        entered.resolve();
+        if (hold !== undefined) await hold;
+        return posts;
+      })
+        .where({ orgId })
+        .orderBy('createdAt');
+    },
+  }).named('countedFeed');
+  return { target, counts, entered: entered.promise };
+}
+
 describe('query', () => {
   beforeEach(() => {
     resetRegistry();
@@ -150,5 +185,59 @@ describe('query', () => {
       'select * from "posts" where "orgId" = $1 order by "createdAt" asc limit 50',
     );
     expect(explained.params).toEqual([ORG]);
+  });
+});
+
+// A `cache:` block buys the tier. It never bought the request memo — that one is every read's,
+// or a list rendering one uncached lookup per row pays for every row.
+describe('a query with no cache block', () => {
+  test('is read once however many times one request asks', async () => {
+    const { target, counts } = defineCounted();
+    const ctx = createContext({ actor: readerActor });
+
+    const first = await runQuery(target, { orgId: ORG }, { ctx });
+    const second = await runQuery(target, { orgId: ORG }, { ctx });
+
+    expect(second).toEqual(first);
+    expect(counts.executed).toBe(1);
+    // The memo holds the execution, never the decision: input parsing, the policy and `sql()`
+    // run on every call, so a memoized answer is still one this actor was allowed to ask for.
+    expect(counts.built).toBe(2);
+  });
+
+  test('is read once by a second reader that arrives while the first read is in flight', async () => {
+    const hold = deferred();
+    const { target, counts, entered } = defineCounted(hold.promise);
+    const ctx = createContext({ actor: readerActor });
+
+    const first = runQuery(target, { orgId: ORG }, { ctx });
+    await entered;
+    const second = runQuery(target, { orgId: ORG }, { ctx });
+    hold.resolve();
+
+    expect(await second).toEqual(await first);
+    expect(counts.executed).toBe(1);
+  });
+
+  test('is read again for a different input, and for another request', async () => {
+    const { target, counts } = defineCounted();
+    const ctx = createContext({ actor: readerActor });
+    const other = '00000000-0000-4000-8000-000000000002';
+
+    await runQuery(target, { orgId: ORG }, { ctx });
+    await runQuery(target, { orgId: other }, { ctx });
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: readerActor }) });
+
+    expect(counts.executed).toBe(3);
+  });
+
+  test('is read again when the caller asks for it fresh', async () => {
+    const { target, counts } = defineCounted();
+    const ctx = createContext({ actor: readerActor });
+
+    await runQuery(target, { orgId: ORG }, { ctx });
+    await runQuery(target, { orgId: ORG }, { ctx, fresh: true });
+
+    expect(counts.executed).toBe(2);
   });
 });
