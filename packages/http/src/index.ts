@@ -34,12 +34,14 @@ export {
   bodyInvalid,
   buildSkew,
   errorStatusInvalid,
+  finalizeFailed,
   forbidden,
   HTTP_ERROR_CODES,
   HTTP_ERROR_TITLES,
   HttpError,
   methodNotAllowed,
   noRequest,
+  pathInvalid,
   pipelineNoResponse,
   rateLimited,
   routeConflict,
@@ -76,6 +78,7 @@ export type {
 export { createPipeline, PIPELINE_STAGES } from './pipeline';
 export type {
   Bucket,
+  MemoryRateLimitStore,
   RateLimitConfig,
   RateLimitDecision,
   RateLimiter,
@@ -84,6 +87,7 @@ export type {
 } from './rate-limit';
 export {
   createRateLimiter,
+  DEFAULT_MAX_RATE_LIMIT_KEYS,
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   rateLimitKey,

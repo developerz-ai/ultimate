@@ -12,6 +12,9 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // @ultimat3/http
   X_ROUTE_NOT_FOUND: 404,
   X_METHOD_NOT_ALLOWED: 405,
+  // The request line itself is unreadable, so there is nothing to route: 400, and never a 500 —
+  // a malformed escape is the caller's typo, not this server's defect.
+  X_PATH_INVALID: 400,
   X_BODY_INVALID: 422,
   X_UNAUTHENTICATED: 401,
   X_FORBIDDEN: 403,
@@ -20,6 +23,9 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   X_ROUTE_CONFLICT: 500,
   X_SERVER_NOT_STARTED: 500,
   X_PIPELINE_NO_RESPONSE: 500,
+  // The request was answered and the answer could not be finished: the caller gets nothing usable
+  // either way, so this is the server's failure, never the caller's.
+  X_PIPELINE_FINALIZE_FAILED: 500,
   // Both are wiring bugs, never a caller's mistake: reading a cookie where no request exists,
   // and declaring a status the framework already owns. 500 is the honest answer to either.
   X_NO_REQUEST: 500,

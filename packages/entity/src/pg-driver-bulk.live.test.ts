@@ -66,7 +66,7 @@ type Invoice = typeof invoices.$row;
 const DROP =
   'drop table if exists "pg_bulk_live_tags", "pg_bulk_live_invoices", "pg_bulk_live_orgs" cascade';
 
-const MONEY = { minor: 12_500n, currency: 'EUR' };
+const MONEY = { minor: 12_500, currency: 'EUR' };
 
 const UNIQUE_INDEX = 'pg_bulk_live_invoices_org_id_reference_key';
 
@@ -183,7 +183,7 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
     expect(written.map((row) => row.reference)).toEqual(['BULK-1', 'BULK-2', 'BULK-3']);
     for (const row of written) {
       // Every one of these came back from Postgres, not from the object that was passed in.
-      expect(row.total).toEqual({ minor: 12_500n, currency: 'EUR' });
+      expect(row.total).toEqual({ minor: 12_500, currency: 'EUR' });
       expect(row.paid).toBe(false);
       expect(row.note).toBeNull();
       expect(row.issuedAt).toBeInstanceOf(Date);
@@ -250,7 +250,7 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
           id: incoming,
           orgId: org,
           reference: 'UP-1',
-          total: { minor: 900n, currency: 'GBP' },
+          total: { minor: 900, currency: 'GBP' },
           note: 'settled',
           paid: true,
         },
@@ -264,7 +264,7 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
     expect(written?.id).not.toBe(incoming);
     expect(written?.note).toBe('settled');
     expect(written?.paid).toBe(true);
-    expect(written?.total).toEqual({ minor: 900n, currency: 'GBP' });
+    expect(written?.total).toEqual({ minor: 900, currency: 'GBP' });
     // One row, not two: the upsert landed on the stored one rather than beside it.
     expect(await repo().count({ orgId: org })).toBe(1);
 

@@ -67,7 +67,7 @@ const ROW: Invoice = {
   id: idAt(101),
   orgId: ORG,
   reference: 'INV-101',
-  total: { minor: 129900n, currency: 'EUR' },
+  total: { minor: 129900, currency: 'EUR' },
   paid: false,
   note: null,
   issuedAt: STAMPED,
@@ -166,11 +166,11 @@ describe('a batch is one statement, and both drivers mean the same by it', () =>
   });
 
   test('money binds as two parameters, in the positions its two columns occupy', async () => {
-    await repo().insertAll([invoice(2), invoice(3, { total: { minor: 5n, currency: 'USD' } })]);
+    await repo().insertAll([invoice(2), invoice(3, { total: { minor: 5, currency: 'USD' } })]);
 
     expect(lastText()).toContain('"total_minor", "total_currency"');
-    expect(lastValues().slice(3, 5)).toEqual([129900n, 'EUR']);
-    expect(lastValues().slice(12, 14)).toEqual([5n, 'USD']);
+    expect(lastValues().slice(3, 5)).toEqual([129900, 'EUR']);
+    expect(lastValues().slice(12, 14)).toEqual([5, 'USD']);
   });
 
   test('no rows is no statement, and one row is the statement insert always sent', async () => {

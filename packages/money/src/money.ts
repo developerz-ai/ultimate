@@ -3,12 +3,21 @@
  * There is no float anywhere in this package, and no amount without a currency.
  */
 
+import type { MoneyValue } from '@ultimat3/schema';
 import { assertCurrency, type CurrencyCode, exponentOf, scaleOf } from './currency';
 import { decimalNotNumeric, decimalTooPrecise, moneyNotInteger } from './errors';
 import { type RoundingMode, roundToInteger } from './rounding';
 
-/** `{ minor: 129900, currency: 'EUR' }` is €1,299.00. Treat instances as immutable. */
-export type Money = { minor: number; currency: string };
+/**
+ * `{ minor: 129900, currency: 'EUR' }` is €1,299.00. Instances are immutable, and now enforced
+ * rather than asked for: both fields are `readonly`.
+ *
+ * An **alias**, never a restatement. `@ultimat3/schema`'s `MoneyValue` is the framework's one
+ * declaration (tier 0, so every package may reach it) and `@ultimat3/entity`'s `MoneyValue` is
+ * the same alias — a second structural copy is what let `minor` drift to `bigint` in the entity
+ * layer, so a row it decoded satisfied neither `t.money` nor `JSON.stringify`.
+ */
+export type Money = MoneyValue;
 
 const DECIMAL = /^([+-])?(\d+)(?:\.(\d+))?$/;
 

@@ -50,6 +50,30 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `config.dev && wantsOverlay` branch: the overlay is a notice's only surface, so a production
   process, or an agent that asked for problem+json, must not pay a diagnostic's per-request cost
   for findings nothing renders. No notices means no card, byte for byte.
+- **`matchRoute` never throws — a pathname is whatever the client typed.** `decodeURIComponent`
+  is called only through `router.ts`'s guarded `decodeSegment`, and a segment that will not decode
+  answers `{ reason: 'path-invalid', segment }` → `X_PATH_INVALID` → 400. A bare `URIError` here
+  reached `factsOf` as `X_INTERNAL`, so a `%ZZ` answered 500 and paged the on-call for a typo.
+  Only the branch that would have decoded fails: static segments are compared raw, so a path that
+  reaches no param or wildcard is still a 404 and precedence is unchanged.
+- **`handle()` resolves to a Response or the server has no answer at all.** The request phases are
+  guarded by `execute`'s own `try`; the two that run after them are guarded in `finalize.ts`, and
+  neither guard is optional. A finalize stage that refuses the response it was handed degrades to
+  `X_PIPELINE_FINALIZE_FAILED` (500), and the chain runs a **second** pass over that problem
+  document — whose headers are writable — so the request id, CORS and the security headers still
+  reach the client. Two passes, never a loop. A throw inside the recover stage (an app's `onError`,
+  a `devNotices` producer) is answered with the problem document for the error the request actually
+  hit: the stage that renders a throw has nothing left to render its own. Every degraded answer goes
+  *through* the recover stage, never around it — reporting, logging and the overlay each keep one
+  call site.
+- **The memory rate-limit store is bounded, and the eviction order is part of the guarantee.**
+  The key falls back to the connection address (`rateLimitKey`), so a scan rotating through an
+  IPv6 /64 mints one entry per request — an unbounded map hands the flood the process. Every
+  entry carries `forgetAtMs`, the instant a refilled bucket becomes indistinguishable from a
+  missing one, and the sweep drops those for free. `DEFAULT_MAX_RATE_LIMIT_KEYS` is the backstop,
+  and it evicts the entries **closest to full** first: throwing away a spent bucket is a free
+  reset for whoever spent it, so the most-throttled key is the last one to go. Never swap that
+  comparator for insertion order or an LRU — recency is not the same as worthlessness here.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -71,7 +95,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | File | Job |
 |---|---|
 | `pipeline.ts` | the ordered lifecycle; the framework's guarantee |
-| `router.ts` | trie matcher, precedence static > param > wildcard |
+| `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
+| `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
 | `error-map.ts` | code → status table + `factsOf()` |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |

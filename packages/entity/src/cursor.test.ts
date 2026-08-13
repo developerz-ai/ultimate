@@ -30,8 +30,12 @@ const AT = new Date('2026-03-01T12:00:00.000Z');
 const id = (index: number): string =>
   `00000000-0000-7000-8000-0000000002${String(index).padStart(2, '0')}`;
 
-/** Past 2^53 on purpose: a minor unit revived as a `Number` would round, and so would the sort. */
-const MINOR = 9007199254740993n;
+/**
+ * The largest minor unit a `Money` holds exactly. Big on purpose — a cursor that revived it
+ * through a narrower path would round it, and so would the sort — but a `number`, because that
+ * is what `MoneyValue.minor` is; `columns.test.ts` pins the refusal for anything past it.
+ */
+const MINOR = Number.MAX_SAFE_INTEGER;
 
 /** `[column, direction]` pairs: the sort order is what these tests are about, not the shape. */
 const by = (...keys: readonly (readonly [string, SortDirection])[]): readonly SortKey[] =>
@@ -150,9 +154,10 @@ describe('the round trip', () => {
     expect(unpinned).toBe(false);
   });
 
-  test('money rides as its two parts — minor as bigint, currency as text', () => {
-    // Money is one property over two physical columns, so a sort path names the part. The minor
-    // unit has to stay a bigint: it is the only sort key that can exceed what a Number holds.
+  test('money rides as its two parts — minor as a number, currency as text', () => {
+    // Money is one property over two physical columns, so a sort path names the part. `minor`
+    // revives as the kind the ROW holds (a number), not as the physical column's `bigint`: a
+    // cursor value of the wrong type compares against the property it is seeking past.
     const plan: QueryPlan = {
       ...BASE,
       orderBy: by(['price.minor', 'asc'], ['price.currency', 'asc'], ['id', 'asc']),
@@ -162,6 +167,7 @@ describe('the round trip', () => {
     const [minor, currency] =
       seekFrom(posts, { ...plan, cursor: cursorFor(posts, plan, ROW, ROW.id) }) ?? [];
     expect(minor).toBe(MINOR);
+    expect(typeof minor).toBe('number');
     expect(currency).toBe('EUR');
   });
 

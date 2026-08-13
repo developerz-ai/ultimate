@@ -7,6 +7,7 @@ import {
   bodyInvalid,
   buildSkew,
   errorStatusInvalid,
+  finalizeFailed,
   forbidden,
   HTTP_BORROWED_ERROR_CODES,
   HTTP_ERROR_CODES,
@@ -15,6 +16,7 @@ import {
   HttpError,
   methodNotAllowed,
   noRequest,
+  pathInvalid,
   pipelineNoResponse,
   rateLimited,
   routeConflict,
@@ -32,6 +34,18 @@ describe('routeNotFound', () => {
     expect(error.cause).toContain('/x');
     expect(error.fix).toBe('x routes list --json   # then: x g route /x');
     expect(error.docs).toBe('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
+  });
+});
+
+describe('pathInvalid', () => {
+  test('names the segment that would not decode and how to send it instead', () => {
+    const error = pathInvalid('/posts/%ZZ', '%ZZ');
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.code).toBe('X_PATH_INVALID');
+    expect(error.cause).toContain('/posts/%ZZ');
+    expect(error.cause).toContain('%ZZ');
+    expect(error.fix).toContain('encodeURIComponent');
+    expect(error.docs).toBe('https://ultimate.dev/errors/X_PATH_INVALID');
   });
 });
 
@@ -144,6 +158,25 @@ describe('pipelineNoResponse', () => {
   });
 });
 
+describe('finalizeFailed', () => {
+  test('cause names the stage and quotes the throw it wrapped', () => {
+    const error = finalizeFailed('response', new TypeError('immutable headers'));
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.code).toBe('X_PIPELINE_FINALIZE_FAILED');
+    expect(error.cause).toContain('"response"');
+    expect(error.cause).toContain('immutable headers');
+    expect(error.fix).toContain('redirect()');
+    expect(error.docs).toBe('https://ultimate.dev/errors/X_PIPELINE_FINALIZE_FAILED');
+  });
+
+  // A stage may throw anything at all — the cause line has to read as an instruction regardless.
+  test('a non-Error throwable is still quoted, not rendered as [object Object]', () => {
+    expect(finalizeFailed('cache-headers', 'headers are sealed').cause).toContain(
+      'headers are sealed',
+    );
+  });
+});
+
 describe('routeConflict', () => {
   test('cause carries the path and the conflict detail', () => {
     const error = routeConflict('/posts/:id', 'GET /posts/:id already registered');
@@ -200,12 +233,13 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 12 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(12);
+  test('contains exactly the 14 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(14);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
         'X_METHOD_NOT_ALLOWED',
+        'X_PATH_INVALID',
         'X_BODY_INVALID',
         'X_UNAUTHENTICATED',
         'X_FORBIDDEN',
@@ -214,6 +248,7 @@ describe('HTTP_ERROR_CODES', () => {
         'X_ROUTE_CONFLICT',
         'X_SERVER_NOT_STARTED',
         'X_PIPELINE_NO_RESPONSE',
+        'X_PIPELINE_FINALIZE_FAILED',
         'X_NO_REQUEST',
         'X_ERROR_STATUS_INVALID',
       ].sort(),

@@ -250,6 +250,93 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`LruCache.clear()` now resets `hits`/`misses`/`evictions` along with entries and bytes.** `stats()` after a `clear()` used to keep reporting whatever the cache had accumulated before the clear — a fresh cache with stale lifetime counters. `clear()` is a reset, and `stats()` now reads as one.
+
+- **A drain that times out no longer leaks its waiter.** `waitForIdle()` pushed a closure onto `idleWaiters` and relied on the eventual `beginWork()` completion to remove it; a drain that gave up at the deadline resolved its own promise but left that closure in the array forever, to be invoked (harmlessly, but pointlessly) whenever in-flight work eventually finished. The timeout branch now removes its own waiter. `@ultimat3/core` exports a test-only `idleWaiterCount()` so this stays provable.
+
+- **A storage disk's `get()`/`list()` now return the `cacheControl`/`metadata` a `put()` wrote.** `StorageObject` gained optional `cacheControl`/`metadata` fields, and the local driver's sidecar parser — which validated only `contentType`/`etag` — now preserves both, closing the round trip `packages/storage/CLAUDE.md` already promised ("`get` must round-trip exactly what `put` was handed"). The s3 driver's `list()` still reports `DEFAULT_CONTENT_TYPE` for every entry; that one is commented, not fixed — ListObjectsV2 does not return Content-Type, and reading it for real would cost one HeadObject per listed row.
+
+- **`HttpServer.stop()` no longer leaves its shutdown hooks registered when `drain()` throws.** `unregister()`/`unregisterClose()` ran after `await drain('manual')`, so a rejecting drain skipped both — the next drain in this process would still find and re-run this handle's hooks against a server that already tore down. Both now run in a `finally`.
+
+- **Nine call sites across `entity` and `db` read the ambient wall clock instead of `@ultimat3/core`'s `Clock`.** Column defaults, `onUpdate` stamps, soft-delete writes, and three `now?: Date` fallbacks called `new Date()` directly, in violation of the framework's "only `clock.ts` calls `new Date()`" rule. All now read `systemClock.now()` — a behavior-preserving substitution, not a new injection seam; `now?: Date` overrides are unchanged.
+
+- **A row with a money column can be returned from an action again — `Money` is one declaration, and its `minor` is a `number` everywhere.** The framework carried three structural restatements of one shape: `Money` in `@ultimat3/money`, `MoneyValue` in `@ultimat3/schema`, and a third in `@ultimat3/entity` whose `minor` was a `bigint`. The third was not a stylistic difference. `JSON.stringify` throws on a bigint, so returning a decoded row from an `action`, a `query`, a job payload or an MCP tool result **crashed the response**; `t.money` — the node that becomes the OpenAPI contract — rejected the row this framework's own driver produced; and `@ultimat3/realtime` normalised the *same column* to a `number`, so two readers of one column disagreed about what it held.
+
+  `number` is the decision, and it is the one every other surface already made: `@ultimat3/money`'s whole arithmetic, allocation and `Intl` surface, `t.money`'s IR, `@ultimat3/ai`'s budgets, `@ultimat3/ui`'s `<Money>`, `@ultimat3/admin`'s widgets, the `x new` scaffold and this repo's own root convention. `@ultimat3/schema` (tier 0 — the only tier every package may import) now owns the single declaration; `Money` and `entity`'s `MoneyValue` are **aliases** of it, so a row a `money()` column decodes *is* a `Money` and goes to `add()`, `formatMoney()` or `<Money>` with no cast.
+
+  What the wide column bought is kept, honestly. `<name>_minor` is still `bigint`, and a stored value past ±2^53 — written by a psql session, a backfill, another service — is now **refused where it is read** (`X_INVARIANT_VIOLATED`, naming the value it could not carry) rather than rounded into the row or carried as a bigint that crashes three layers later. That is the same refusal `@ultimat3/realtime` already made, so the two readers agree.
+
+  Additive on the write side: `MoneyInput` still takes a `bigint | number`, so a minor unit read straight off a `bigint` column reaches an insert with no conversion at the call site. `narrowMoney` is called by **both** drivers — `bindValues` before a statement, `memoryRepo`'s `write` before it stores — so a row's money never depends on which driver produced it; previously the in-memory driver stored the caller's bigint verbatim and produced the one row in the framework `JSON.stringify` refused.
+
+  `Money.minor` and `Money.currency` are now `readonly`, which the type's own documentation had asked for and nothing enforced. Type-only, and pinned in `packages/entity/src/type-pins.ts`: re-declaring the alias, widening `minor` back to a `bigint`, or dropping either `readonly` is a build error rather than a review comment.
+
+- **A rotating-address scan can no longer grow a rate limiter until the process dies.** Both in-memory limiters keyed a `Map` by the connection address and never removed an entry: `@ultimat3/http`'s `memoryRateLimitStore` only deleted on an explicit `reset(key)`, and `@ultimat3/auth`'s `createAuthLimiter` only on a successful login. A scan walking an IPv6 /64 mints a fresh key per request against both, so the table grew for as long as the scan ran — the throttle that exists to survive a flood was the thing the flood consumed. Neither had a sweep, and neither had a cap.
+
+  Both now hold one rule: **an entry that answers exactly as a missing one is forgotten, not evicted.** Each entry carries the instant it reaches that state — a token bucket back at capacity, or an auth key whose failure window has emptied *and* whose lockout has expired — and a sweep drops everything past it. That alone flattens a scan: a one-request bucket on the default route refills in half a second.
+
+  The cap is the backstop for what the sweep cannot claim, and it decides *which* live entry goes with the same care, because getting that backwards is a rate-limit bypass. The entries nearest to being forgotten anyway go first, so the most-throttled key is the last to go — and in `@ultimat3/auth` a live lockout outranks its own deadline, so filling the table is not a way to buy back attempts against the account you just locked:
+
+  ```ts
+  memoryRateLimitStore({ maxKeys: 20_000 });                      // DEFAULT_MAX_RATE_LIMIT_KEYS
+  createAuthLimiter(clock, { ...DEFAULT_AUTH_RATE_LIMIT, maxKeys: 10_000 });
+  ```
+
+  Defaults are `DEFAULT_MAX_RATE_LIMIT_KEYS` (20,000 — an http key is `route|subject`, so one subject throttled on N routes is N entries) and `DEFAULT_MAX_AUTH_LIMIT_KEYS` (10,000 — an auth key is one identity). A few megabytes, held, instead of an unbounded map. Both are also observable now: `memoryRateLimitStore()` and `createAuthLimiter()` return their interface plus a `size`, so the bound is something a test can assert rather than something a comment claims. Sweeping is amortized — a sort is paid once per 10% of the cap, never per request — and a key that is dropped throttles again from a clean bucket, never a half-written one. Nothing about the decisions themselves changed: same buckets, same window, same lockout, same headers.
+
+- **`{constructor}` in a translated string no longer renders a function's source into the page.** `interpolate` read a variable as `vars?.[name]`, an ordinary property access, so every member of `Object.prototype` was a variable a catalog could reach: `{constructor}` rendered `function Object() { [native code] }`, `{toString}`, `{valueOf}` and `{hasOwnProperty}` rendered their own source, and `{__proto__}` rendered `[object Object]` — all through the path that is supposed to render `⟦name⟧` for anything the caller did not pass. Only an **own** property is a variable now, which is the guard `catalog.ts` already applies from the other side by nesting keys into null-prototype nodes. A caller that genuinely passes `{ toString: 'ok' }` still gets `ok`.
+
+  The same function's fast path returned early on a template with no `{`, which skipped `}}` un-escaping — so one escape had two meanings: `'{{a}}b'` collapsed to `'{a}b'` while `'a}}b'` came back untouched. It now tests both braces.
+
+- **One bad date no longer takes the whole feed down.** `buildFeed` parsed item timestamps straight into `new Date(...).toISOString()`, so a `published` that would not parse — a CMS column holding prose, a hand-typed front-matter line — reached `toISOString()` as `NaN` and threw a bare `RangeError` out of the feed route. The same line spread its work into `Math.max(...times)`, one argument per item, so a feed that grew past the engine's argument limit crashed in proportion to how well the blog did; and the empty-feed branch called `Date.now()` directly, the one clock read in the package no test could freeze.
+
+  All three are gone. `feed-dates.ts` is now the only place a feed timestamp is parsed or formatted, `buildFeed` resolves every date once, and the three builders only ever see instants:
+
+  ```ts
+  const feed = buildFeed(channel, [{ ...post, published: 'sometime last spring' }]);
+  // renders: the item keeps its title, link and guid — only the date is missing
+  ```
+
+  A date that will not parse is treated as **absent**, never invented: RSS drops that item's `<pubDate>`, Atom drops its `<published>`, JSON Feed drops `date_published`, and Atom's *required* `<updated>` falls back to the feed's own instant, which is always real. An unparseable date sorts last instead of turning the comparator into `NaN` and handing the feed's order to the engine's sort. An unparseable `channel.updated` falls back to the newest item rather than poisoning `lastBuildDate`. Every timestamp the three formats emit is now normalised to UTC from one instant, so an offset-bearing input means the same moment in all three.
+
+  "Now" is a seam: `buildFeed(channel, items, { clock })` takes a `Clock` — `frozenClock(at)` makes a feed with no usable dates byte-for-byte reproducible — and defaults to `systemClock`.
+
+- **`Pipeline.handle()` keeps its one promise: a Response, always.** The lifecycle absorbed a throw from every stage that runs *before* the response exists, and then ran the two that finish it — `cache-headers` and `response` — in a bare loop outside that guard. A stage refusing the response it was handed (headers that cannot be set, on a `Response.redirect` or anything else a handler returned) rejected `handle()` against the contract written on it, and the caller got whatever the runtime prints instead of a document naming the defect. The recover stage had the same hole from the other side: it is the single place a throw becomes a status, so an app's `onError` sink or a `devNotices` producer throwing inside it left nothing to render its own throw.
+
+  Both are now guarded in `finalize.ts`, and a refusal degrades to the new **`X_PIPELINE_FINALIZE_FAILED`** — 500, with the stage name and the underlying message in `cause`:
+
+  ```json
+  { "code": "X_PIPELINE_FINALIZE_FAILED",
+    "cause": "the \"response\" stage threw while finishing the response: immutable headers" }
+  ```
+
+  The degraded answer is finished, not shipped bare: the finalize chain runs a second time over the problem document, whose headers *are* writable, so `x-request-id`, CORS and the security headers still reach the client that has to report this. A second failure keeps its 500 and stops — two passes, never a loop. The failure travels through the recover stage rather than around it, so it is reported, logged and rendered by this package's one call site for each, and `x dev` still shows it in the overlay. A request the stages *can* finish is byte for byte what it was.
+
+- **A mis-encoded path is a 400, not a 500 and a page for the on-call.** `decodeURIComponent('%ZZ')` throws a bare `URIError`, and the router called it unguarded on every `:param` and `*wildcard` segment it walked past. A client typo — a lone `%`, a truncated `%A`, a value concatenated into a URL instead of run through `encodeURIComponent` — escaped `matchRoute` as an uncoded throw, so the pipeline mapped it to `X_INTERNAL`, answered **500**, and reported it to the error monitor (`error-map` pages on `status >= 500`). The caller was told nothing about a request only the caller could fix.
+
+  `matchRoute` now answers with the fourth `MatchResult` variant instead of throwing, and the pipeline turns it into the new **`X_PATH_INVALID`** — 400, with the offending segment in `cause` and `encodeURIComponent` in `fix`:
+
+  ```ts
+  const match = matchRoute(table, 'GET', '/posts/%ZZ');
+  // { ok: false, reason: 'path-invalid', segment: '%ZZ' }
+  ```
+
+  Only the branch that would have decoded can fail: static segments are compared raw, so a path that reaches no param or wildcard is the 404 it always was, a static route still wins the precedence it always won, and a sibling that does match still wins over one that could not decode. `X_PATH_INVALID` is registered in `HTTP_ERROR_TITLES` and mapped to 400 in `ERROR_STATUS`; `pathInvalid()` is exported for a host that matches routes itself.
+
+- **`verifySignedUrl` keeps its promise never to throw.** `parseConstraints` decoded each key segment with a bare `decodeURIComponent`, so a signed URL whose path carried `%ZZ` raised a `URIError` out of a function whose header says verification never throws — an uncoded 500 on the storage read path, for a URL this package would never have minted (`buildSignedUrl` percent-encodes every segment). A segment that will not decode is now `'malformed'`, already a `SIGNED_URL_FAILURES` member, and it is refused before the signature is computed. Nothing is loosened: the reason is the same one an off-base URL gets, and it leaks nothing about the secret.
+
+- **A cache tier that refuses no longer fails the read it was supposed to speed up.** `createCacheStack` walked the ladder with every tier call unguarded, so a tier throwing anywhere on the value path threw straight out of `read()` — the caller saw a failed business read where the source had already answered correctly. The common one needs no outage to reproduce: `LruCache.set` raises `X_CACHE_TOO_LARGE` for any entry over the tier's whole byte budget, so a page that grew past `maxBytes` stopped *loading* rather than stopping *caching*. A `get` was the same shape — a Redis with no socket failed every read that walked past it, including ones the memo or the LRU would have answered.
+
+  Every `get`/`set`/`del` the stack makes now goes through `bestEffort()`, which reads a refusal as "that tier did not answer": the walk continues, later tiers are still populated, `write` and `drop` still reach the tiers behind the refusing one, and the value still comes back.
+
+  ```ts
+  const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
+  if (hit === undefined) continue;                  // a miss and a refusal read the same here
+  ...
+  const value = await load();                       // the one call still left to throw
+  ```
+
+  `load()` stays unguarded on purpose — it *is* the business read, and absorbing it would hand back `undefined` as though it were the value. Silence is the other half of the bug, so the absorbed refusals are readable: **`recentTierFailures()`** returns the last 100, newest first, each carrying the tier, the operation, the key, the message and the `X_*` code when there is one, and each one is logged as `cache.tier.failed`. That is `report.errors` applied to the path that has no report to return, and `resetTiers()` clears it alongside the invalidation log. `LruCache.set` is unchanged and still throws for a direct caller: the stack is the layer that degrades, not the tier.
+
 - **Two identical reads in one request are one read, even when they race.** The request memo behind a cached `query` stored the *value*, and stored it only after the read had settled — so two holes rendering concurrently both missed the memo, both asked the cache tier, and both executed the source. The memo now holds the read **in flight**, published before `readThrough`'s first await: the second reader joins the first instead of starting a competing one, and five concurrent readers cost one execution and one tier round trip.
 
   ```ts
@@ -354,6 +441,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`Invariant<T>.holds` is a method, not a function-typed property.** A property is checked contravariantly, so `Invariant<Post>` was not assignable to `Invariant<unknown>`, `Entity<Post, C>` did not satisfy `EntityCore`, and every `database({ posts, orgs })` call silently degraded to `Table<unknown>` — 36 cascading errors in the reference app from one position.
 - Both regressions are pinned by `packages/entity/src/type-pins.ts`, which is source rather than a test: `tsconfig.json` excludes `src/**/*.test.ts`, so a type-level assertion written in a test file is never read by `tsc` and can never fail.
 - `KNOWN_GAPS` in the scaffold typecheck gate is **empty**: every file `x new` and `x g` write now compiles with no diagnostic to excuse.
+- **One `timingSafeEqual`, not two.** `@ultimat3/auth`'s `tokens.ts` and `@ultimat3/storage`'s `signed-url.ts` carried byte-identical constant-time string comparisons — the kind of duplication that drifts silently, since a fix to one copy's branch-free XOR loop would say nothing about the other. The implementation now lives in `@ultimat3/core` (`timingSafeEqual`), tier 0 and reachable from both; each package re-exports it so every existing `from '@ultimat3/auth'` and `from '@ultimat3/storage'` import keeps working unchanged.
+- **`@ultimat3/schema`'s error codes render their real titles in every process, not just the CLI's.** `X_VALIDATION_FAILED` and `X_SCHEMA_UNSUPPORTED` were exported as data from `SCHEMA_ERROR_CODES` and registered nowhere except `@ultimat3/cli`'s `error-catalog.ts` — a process that never loads the CLI (a worker, a job runner, a plain script importing `@ultimat3/schema` on its own) rendered the humanised fallback (`X_VALIDATION_FAILED: validation failed`) instead of the authored title. `@ultimat3/core` now registers both at import time (`schema-error-codes.ts`) — every process gets them just by importing core, which is unconditional. Schema is tier 0 alongside core and cannot register its own codes or have core import it back to read them, so the titles are a deliberate, tested duplicate: `schema-error-codes-pin.test.ts` (in `@ultimat3/cli`, a package that may import both) pins core's copy equal to schema's own declarations. `error-catalog.ts`'s CLI-only registration is gone — it is now redundant with what core already does for every process.
 
 ## 1.2.0
 

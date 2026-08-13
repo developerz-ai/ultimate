@@ -28,6 +28,12 @@ describe('error -> status', () => {
     expect(statusFor('X_BUILD_SKEW')).toBe(409);
   });
 
+  // The client wrote the path. A `%ZZ` used to reach `factsOf` as an unmapped `URIError` and take
+  // the 500 default — which pages the on-call for someone else's typo.
+  test('a path the client mis-encoded blames the caller, not the server', () => {
+    expect(statusFor('X_PATH_INVALID')).toBe(400);
+  });
+
   test('codes owned by other packages are mapped here, not there', () => {
     expect(statusFor('X_NOT_FOUND')).toBe(404);
     expect(statusFor('X_INVARIANT_VIOLATED')).toBe(422);
@@ -44,6 +50,12 @@ describe('error -> status', () => {
 
   test('an unmapped code is a loud 500, never a quiet 200', () => {
     expect(statusFor('X_SOMETHING_NEW')).toBe(500);
+  });
+
+  // A request the server answered and then could not finish is the server's failure — mapped, so
+  // it never rides the default and never reads as an app code someone forgot to register.
+  test('a response the pipeline could not finish is the server’s 500', () => {
+    expect(statusFor('X_PIPELINE_FINALIZE_FAILED')).toBe(500);
   });
 });
 

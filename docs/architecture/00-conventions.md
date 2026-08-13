@@ -106,7 +106,7 @@ These four are the framework's promise. Violating one is a build failure, not a 
 | **i18n** | no hardcoded user-facing strings; everything through `t()` | a key missing from a shipped locale |
 | **Theming** | semantic tokens only, both schemes | a raw hex or a named colour in any component or stylesheet |
 | **Timezones** | store UTC; format with an explicit IANA zone | a formatter call with no `timeZone`; a cron with no `tz` |
-| **Money** | `{ minor: number; currency: string }` | a float amount; a bare `/ 100`; cross-currency arithmetic |
+| **Money** | `{ readonly minor: number; readonly currency: string }` — `@ultimat3/schema`'s `MoneyValue`, aliased by `@ultimat3/money` and `@ultimat3/entity` | a float amount; a bare `/ 100`; cross-currency arithmetic; a second declaration of the shape; a `bigint` `minor` |
 
 Details and the enforcement mechanisms: [`10-cross-cutting.md`](10-cross-cutting.md).
 

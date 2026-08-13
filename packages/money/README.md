@@ -1,8 +1,15 @@
 # 💶 @ultimat3/money
 
 **Golden rule: integer minor units, currency always attached, `Intl` at the edge.**
-`0.1 + 0.2 !== 0.3`, so no amount is ever a float. `Money` is `{ minor, currency }` — the
-two travel together, and arithmetic across two currencies throws instead of guessing.
+`0.1 + 0.2 !== 0.3`, so no amount is ever a float. `Money` is `{ readonly minor, readonly currency }`
+— the two travel together, and arithmetic across two currencies throws instead of guessing.
+
+`Money` **is** `@ultimat3/schema`'s `MoneyValue`, and so is `@ultimat3/entity`'s: one declaration
+at tier 0, aliased twice, never restated. A row a `money()` column decodes is therefore a `Money`
+already — `add(row.price, shipping)` and `formatMoney(row.price, locale)` take it with no cast.
+`minor` is a `number` because money is projected onto every wire the framework generates and
+`JSON.stringify` refuses a bigint; the `bigint` column that backs it refuses a value past ±2^53 on
+read rather than rounding it. → [Money](https://github.com/developerz-ai/ultimate/wiki/Money)
 
 | Concern | Store | Format |
 |---|---|---|

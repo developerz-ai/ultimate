@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { t } from '@ultimat3/schema';
 import {
   boolean,
   enumerated,
   integer,
   locale,
   money,
+  narrowMoney,
   text,
   timestamp,
   tz,
@@ -13,6 +15,7 @@ import {
 } from './columns';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
+import type { MoneyValue } from './types';
 
 afterAll(() => {
   // The registry is process-global; a leaked entity breaks an unrelated package's tests.
@@ -31,13 +34,73 @@ describe('money', () => {
   });
 
   test('the message tells an agent exactly what to send instead', () => {
-    expect(() => price.$parse({ minor: 12.34, currency: 'EUR' })).toThrow(/1234n/);
+    expect(() => price.$parse({ minor: 12.34, currency: 'EUR' })).toThrow(/1234, not 12\.34/);
   });
 
-  test('accepts bigint, integer number and integer string', () => {
-    expect(price.$parse({ minor: 1234n, currency: 'EUR' }).minor).toBe(1234n);
-    expect(price.$parse({ minor: 1234, currency: 'EUR' }).minor).toBe(1234n);
-    expect(price.$parse({ minor: '-1234', currency: 'EUR' }).minor).toBe(-1234n);
+  test('accepts bigint, integer number and integer string — all land on one `number`', () => {
+    // The column is `bigint` and a writer may hand one, but the VALUE is `@ultimat3/schema`'s
+    // `MoneyValue`, whose `minor` is a number: the same amount read three ways is one row value.
+    expect(price.$parse({ minor: 1234n, currency: 'EUR' }).minor).toBe(1234);
+    expect(price.$parse({ minor: 1234, currency: 'EUR' }).minor).toBe(1234);
+    expect(price.$parse({ minor: '-1234', currency: 'EUR' }).minor).toBe(-1234);
+    for (const minor of [1234n, 1234, '1234']) {
+      expect(typeof price.$parse({ minor, currency: 'EUR' }).minor).toBe('number');
+    }
+  });
+
+  test('a minor unit past ±2^53 is refused, never rounded into the row', () => {
+    // The `bigint` column holds more than a JS number does, so this is the one narrowing in the
+    // package that can lose information — and the only honest answer is a coded refusal. Rounding
+    // it would write a wrong amount; carrying it as a bigint is what broke `JSON.stringify`.
+    const beyond = 9_007_199_254_740_993n;
+    expect(() => price.$parse({ minor: beyond, currency: 'EUR' })).toThrow(/past ±2\^53/);
+    expect(() => price.$parse({ minor: String(beyond), currency: 'EUR' })).toThrow(/past ±2\^53/);
+    expect(() => price.$parse({ minor: -beyond, currency: 'EUR' })).toThrow(/past ±2\^53/);
+    // The largest amount that IS exact still reads back exactly.
+    expect(price.$parse({ minor: 9_007_199_254_740_991n, currency: 'EUR' }).minor).toBe(
+      Number.MAX_SAFE_INTEGER,
+    );
+  });
+
+  test('a row value is a `Money`: it survives JSON and its own schema node', () => {
+    // The defect this representation closed. A bigint `minor` made `JSON.stringify` throw, so an
+    // action returning a row with a money column crashed the response, and `t.money` — the node
+    // that becomes the OpenAPI contract — rejected the row this framework's own driver produced.
+    const value = price.$parse({ minor: '129900', currency: 'EUR' });
+    expect(JSON.parse(JSON.stringify({ price: value }))).toEqual({
+      price: { minor: 129_900, currency: 'EUR' },
+    });
+    expect(t.money.safeParse(value)).toEqual({ value: { minor: 129_900, currency: 'EUR' } });
+    const asMoney: MoneyValue = value;
+    expect(asMoney.currency).toBe('EUR');
+  });
+
+  test('narrowMoney is the write-side half, and it leaves an already-narrow row alone', () => {
+    // Both drivers call it — `bindValues` before a statement, `memoryRepo` before it stores — so
+    // a row's money never depends on which one produced it. Identity on the common path is the
+    // point: a write with nothing to narrow must not allocate a second row to say so.
+    const columns = { id: text(), price: money(), other: integer() };
+    const narrow = { id: 'a', price: { minor: 1234, currency: 'EUR' }, other: 7 };
+    expect(narrowMoney(columns, narrow)).toBe(narrow);
+
+    const wide = { id: 'a', price: { minor: 1234n, currency: 'EUR' }, other: 7 };
+    expect(narrowMoney(columns, wide)).toEqual(narrow);
+    // The caller's object is theirs; narrowing copies rather than mutating it.
+    expect(wide.price.minor).toBe(1234n);
+
+    // A patch that names no money column, and a nullable money column left null, both pass through.
+    const patch = { other: 9 };
+    expect(narrowMoney(columns, patch)).toBe(patch);
+    const absent = { id: 'a', price: null };
+    expect(narrowMoney(columns, absent)).toBe(absent);
+
+    // And the refusals are the read path's, not a second set: one message per mistake.
+    expect(() => narrowMoney(columns, { price: { minor: 12.34, currency: 'EUR' } })).toThrow(
+      /1234, not 12\.34/,
+    );
+    expect(() =>
+      narrowMoney(columns, { price: { minor: 9_007_199_254_740_993n, currency: 'EUR' } }),
+    ).toThrow(/past ±2\^53/);
   });
 
   test('is minor units plus an ISO-4217 code — never one column, never a float', () => {

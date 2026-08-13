@@ -5,6 +5,7 @@
 
 import { cp, mkdir, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { systemClock } from '@ultimat3/core';
 import type { BranchInfo } from './branch';
 import { assertBranchName } from './branch';
 import { branchExists, dbNotImplemented, dbUnavailable } from './errors';
@@ -77,7 +78,7 @@ export async function branchPglite(
 
   return {
     name: branch,
-    createdAt: (options.now ?? new Date()).toISOString(),
+    createdAt: (options.now ?? systemClock.now()).toISOString(),
     dataDir: to,
     sizeBytes: await directorySize(to),
   };

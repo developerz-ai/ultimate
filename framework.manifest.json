@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "12aeb7605243fce2cfeee8d747a82082015382e3fe28bcc595c9c29f4132a656",
+  "buildId": "86b874b65c2afb2c2dc5316afe31434c911c56aa3e0be7d4fd37d5aa57ca0159",
   "tiers": {
     "0": [
       "core",
@@ -1056,9 +1056,19 @@
       "at": "packages/entity/src/errors.ts"
     },
     {
+      "code": "X_PATH_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
       "code": "X_PERMISSION_UNKNOWN",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
+    },
+    {
+      "code": "X_PIPELINE_FINALIZE_FAILED",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_PIPELINE_NO_RESPONSE",

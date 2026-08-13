@@ -61,7 +61,7 @@ still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 |---|---|---|
 | `uuid()`, `uuid<PostId>()` | `uuid`; `.primaryKey()` defaults to v7 | time-ordered keys keep the pk index append-friendly; the optional brand is declared once and survives to every signature |
 | `timestamp()` | `timestamptz` | UTC storage is not a per-table decision; there is no naive variant |
-| `money()` | `<name>_minor bigint` + `<name>_currency char(3)` | never a float, never one implied currency |
+| `money()` | `<name>_minor bigint` + `<name>_currency char(3)` | never a float, never one implied currency. The row value is `@ultimat3/schema`'s `MoneyValue` — the same declaration `@ultimat3/money`'s `Money` is — so a decoded row goes straight to `add()`/`formatMoney()`. A writer may hand a `bigint`; a stored minor unit past ±2^53 is refused on read, never rounded |
 | `enumerated(v)` | `text` + CHECK | a variant is a one-line migration, not `ALTER TYPE` |
 | `tz(zones)`, `locale(tags)` | `text` + CHECK, `Intl`-validated at declaration | an offset is not a time zone |
 | `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too |

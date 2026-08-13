@@ -173,11 +173,12 @@ export {
   actorFromUser,
   resolveActor,
 } from './policy-bridge';
-export type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
+export type { AuthLimiter, AuthRateLimitPolicy, MemoryAuthLimiter } from './rate-limit';
 export {
   accountKey,
   createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
+  DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
   loginFailed,
 } from './rate-limit';

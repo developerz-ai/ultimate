@@ -74,7 +74,7 @@ const ROW: Invoice = {
   id: ID,
   orgId: ORG,
   reference: 'INV-1',
-  total: { minor: 129900n, currency: 'EUR' },
+  total: { minor: 129900, currency: 'EUR' },
   paid: false,
   note: null,
   issuedAt: new Date('2026-01-02T03:04:05.000Z'),

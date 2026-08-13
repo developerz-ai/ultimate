@@ -1,7 +1,13 @@
 // Single responsibility: the secret primitives every other file in this package shares —
-// CSPRNG tokens, SHA-256 hashing and a comparison whose duration does not depend on where
-// two strings first differ. Centralised so no call site can quietly reach for `===` on a
-// secret, which leaks the shared prefix length one request at a time.
+// CSPRNG tokens and SHA-256 hashing. Centralised so no call site can quietly reach for `===` on
+// a secret, which leaks the shared prefix length one request at a time. The constant-time
+// comparison itself lives in `@ultimat3/core` (`timingSafeEqual`) — `@ultimat3/storage` needs the
+// exact same one, and re-exporting it here keeps every existing `from '@ultimat3/auth'` import
+// working.
+
+import { timingSafeEqual } from '@ultimat3/core';
+
+export { timingSafeEqual };
 
 const BASE64URL_UNSAFE = /[+/=]/g;
 const BASE64URL_REPLACEMENTS: Readonly<Record<string, string>> = { '+': '-', '/': '_', '=': '' };
@@ -29,20 +35,6 @@ export function sha256Hex(value: string): string {
 
 export function sha256Bytes(value: string): Uint8Array {
   return Uint8Array.from(new Bun.CryptoHasher('sha256').update(value).digest());
-}
-
-/**
- * Length is compared first and non-constant-time on purpose: every secret this package
- * compares is a fixed-width hash or token, so the length carries no information, and the
- * XOR accumulator below is what has to be branch-free.
- */
-export function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  }
-  return diff === 0;
 }
 
 /** Hash-then-compare. The plaintext never has to be held next to the stored value. */

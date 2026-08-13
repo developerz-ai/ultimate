@@ -4,9 +4,13 @@
 // a 2GB executable. Verification never throws and never short-circuits on expiry before the
 // signature, so a forged URL can never learn "the signature was fine, just late".
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { SignedUrlMethod } from './driver';
 import { assertSafeKey, isSafeKey } from './path';
+
+/** Re-exported so every existing `from '@ultimat3/storage'` import keeps working — the
+ * implementation now lives in `@ultimat3/core`, shared with `@ultimat3/auth`. */
+export { timingSafeEqual };
 
 export const SIGNED_URL_VERSION = 'v1';
 export const DEFAULT_SIGNED_URL_TTL_MS = 900_000;
@@ -84,16 +88,6 @@ export async function signConstraints(
   return [...new Uint8Array(mac)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** Length is public (fixed-width hex); the byte comparison must not early-exit. */
-export function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  }
-  return diff === 0;
-}
-
 const trimBase = (base: string): string => base.replace(/\/+$/, '');
 const encodeKey = (key: string): string => key.split('/').map(encodeURIComponent).join('/');
 
@@ -135,13 +129,29 @@ const fail = (reason: SignedUrlFailure, detail: string): SignedUrlVerification =
   detail,
 });
 
+/**
+ * `undefined` instead of the bare `URIError` `decodeURIComponent('%ZZ')` throws. The URL is
+ * attacker-supplied and the header's promise is that verification never throws — an exception
+ * here would escape as an uncoded 500 for a caller whose URL is simply malformed. Nothing is
+ * loosened: `buildSignedUrl` percent-encodes every segment, so a segment that will not decode
+ * was never minted by this package.
+ */
+const decodeSegment = (segment: string): string | undefined => {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+};
+
 function parseConstraints(url: URL, base: string): SignedUrlConstraints | SignedUrlFailure {
   if (!url.pathname.startsWith(`${base}/`)) return 'malformed';
-  const key = url.pathname
+  const segments = url.pathname
     .slice(base.length + 1)
     .split('/')
-    .map(decodeURIComponent)
-    .join('/');
+    .map(decodeSegment);
+  if (segments.includes(undefined)) return 'malformed';
+  const key = segments.join('/');
   if (!isSafeKey(key)) return 'unsafe-key';
   const method = url.searchParams.get(SIGNED_URL_PARAMS.method) ?? 'GET';
   if (method !== 'GET' && method !== 'PUT') return 'malformed';

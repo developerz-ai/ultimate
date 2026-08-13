@@ -52,7 +52,7 @@ const ROW: Invoice = {
   id: ID,
   orgId: ORG,
   reference: 'INV-1',
-  total: { minor: 129900n, currency: 'EUR' },
+  total: { minor: 129900, currency: 'EUR' },
   paid: false,
   note: null,
   issuedAt: new Date('2026-01-02T03:04:05.000Z'),
@@ -112,7 +112,7 @@ describe('postgresRepo() reads', () => {
   test('a row from the driver is re-parsed by the column that declared it', async () => {
     client.on('select', { rows: [physical()] });
     const [row] = (await repo().findMany({ orgId: ORG })).rows;
-    expect(row?.total).toEqual({ minor: 129900n, currency: 'EUR' });
+    expect(row?.total).toEqual({ minor: 129900, currency: 'EUR' });
     expect(row?.issuedAt).toBeInstanceOf(Date);
     expect(row?.issuedAt.toISOString()).toBe('2026-01-02T03:04:05.000Z');
     expect(row?.note).toBeNull();
@@ -157,9 +157,35 @@ describe('postgresRepo() writes', () => {
     const row = await repo().insert(ROW);
     expect(lastText()).toContain('"total_minor", "total_currency"');
     expect(lastText()).toEndWith('returning *');
-    expect(lastValues()).toContain(129900n);
+    expect(lastValues()).toContain(129900);
     expect(lastValues()).toContain('EUR');
-    expect(row.total).toEqual({ minor: 129900n, currency: 'EUR' });
+    expect(row.total).toEqual({ minor: 129900, currency: 'EUR' });
+  });
+
+  test('a writer may still hand a bigint, and both drivers store the value type', async () => {
+    // The write half stays wide on purpose: a minor unit read straight off a `bigint` column —
+    // hand-written SQL, a backfill — reaches an insert with no conversion at the call site. What
+    // it must NOT do is reach the statement or the row still a bigint, because the value type is
+    // `@ultimat3/schema`'s `MoneyValue` and every surface downstream of here serialises it.
+    const wide = { ...ROW, total: { minor: 129900n, currency: 'EUR' } };
+    client.on('insert into', { rows: [physical()] });
+    const written = await repo().insert(wide);
+    expect(lastValues()).toContain(129900);
+    expect(lastValues().every((value) => typeof value !== 'bigint')).toBe(true);
+
+    // Parity: `narrowMoney` is the one rule, so the in-memory row is the same row. Without it the
+    // memory driver would store the caller's bigint and `JSON.stringify` would refuse that row.
+    const stored = await memoryRepo(invoices).insert(wide);
+    expect(stored.total).toEqual({ minor: 129900, currency: 'EUR' });
+    expect(stored.total).toEqual(written.total);
+    expect(JSON.parse(JSON.stringify(stored)).total).toEqual({ minor: 129900, currency: 'EUR' });
+  });
+
+  test('a stored minor unit past ±2^53 is refused, never rounded into the row', async () => {
+    // The column holds it; no JS number does. Answering with a rounded amount would be a wrong
+    // number nobody can see, so the read refuses and names the value it could not carry.
+    client.on('select', { rows: [physical({ total_minor: '9007199254740993' })] });
+    await expect(repo().findMany({ orgId: ORG })).rejects.toBeUltimateError('X_INVARIANT_VIOLATED');
   });
 
   test('update sets only the patched columns and scopes by tenant', async () => {

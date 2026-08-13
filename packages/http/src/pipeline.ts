@@ -20,11 +20,13 @@ import {
   bodyInvalid,
   forbidden,
   methodNotAllowed,
+  pathInvalid,
   pipelineNoResponse,
   rateLimited,
   routeNotFound,
   unauthenticated,
 } from './errors';
+import { recoverWith, runFinalize } from './finalize';
 import type { ServerHooks } from './hooks';
 import { negotiateLocale, readCookie, resolveTimeZone } from './locale';
 import { compose, type Middleware } from './middleware';
@@ -195,6 +197,7 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
       const match = matchRoute(deps.table, ctx.method, pathname);
       if (!match.ok) {
         if (match.reason === 'not-found') throw routeNotFound(ctx.method, pathname);
+        if (match.reason === 'path-invalid') throw pathInvalid(pathname, match.segment);
         ctx.headers.set('allow', match.allow.join(', '));
         throw methodNotAllowed(ctx.method, pathname, match.allow);
       }
@@ -380,7 +383,11 @@ export interface HandleInit {
 export interface Pipeline {
   readonly stages: readonly Stage[];
   readonly config: HttpConfig;
-  /** Runs the full lifecycle for one request and always resolves to a Response. */
+  /**
+   * Runs the full lifecycle for one request and always resolves to a Response — a stage that
+   * throws after the handler, or while rendering another stage's throw, degrades to the coded
+   * 500 (`X_PIPELINE_FINALIZE_FAILED`) rather than rejecting. A caller has a socket open.
+   */
   handle(request: Request, init: HandleInit): Promise<Response>;
 }
 
@@ -395,7 +402,7 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
   const requestStages = byPhase('request');
   const finalizeStages = byPhase('finalize');
   const terminal = stages.find((stage) => stage.phase === 'terminal');
-  const recover = stages.find((stage) => stage.phase === 'recover');
+  const recovered = recoverWith(stages.find((stage) => stage.phase === 'recover'));
 
   const execute = async (request: UltimateRequest, ctx: RequestContext): Promise<Response> => {
     try {
@@ -411,14 +418,12 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
       }
     } catch (error) {
       ctx.error = error;
-      ctx.response =
-        (recover === undefined ? undefined : await recover.run(request, ctx)) ??
-        problem(error, { instance: ctx.url.pathname, requestId: ctx.requestId });
+      ctx.response = await recovered(request, ctx);
     }
-    for (const stage of finalizeStages) {
-      const replaced = await stage.run(request, ctx);
-      if (replaced !== undefined) ctx.response = replaced;
-    }
+    // `finalize.ts`, not a loop here: these two stages run after the request is already answered
+    // or already failed, so a throw of their own has nothing left to catch it — and `handle`
+    // promises a Response.
+    await runFinalize(finalizeStages, request, ctx, recovered);
     return ctx.response ?? problem(pipelineNoResponse('response'));
   };
 
@@ -446,10 +451,10 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
           `${ctx.method} ${url.pathname}`,
           async (span) => {
             // This package's ONE metrics call site. `finally`, not the happy line: `execute`
-            // absorbs app throws into a problem response, but a finalize stage can still throw on
-            // its own (immutable headers on a `Response.redirect`), and a counter that skips the
-            // requests the server handled worst is the one an autoscaler must not have. 500 is the
-            // status such a request gets from the caller either way.
+            // answers every stage's throw with a problem response, but a counter that skipped the
+            // requests the server handled worst is the one an autoscaler must not have — so a
+            // rejection nothing here predicted still counts, at the 500 such a request gets from
+            // the caller either way.
             let status = 500;
             try {
               const response = await execute(request, ctx);

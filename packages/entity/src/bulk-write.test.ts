@@ -77,7 +77,7 @@ describe('the columns a batch writes', () => {
 
   test('the physical width is what the chunker divides, not the property count', () => {
     const properties = namedProperties(items, [
-      { ...item, serial: null, unitPrice: { minor: 1234n, currency: 'EUR' } },
+      { ...item, serial: null, unitPrice: { minor: 1234, currency: 'EUR' } },
     ]);
     expect(properties).toHaveLength(6);
     expect(insertColumns(items, properties)).toHaveLength(7);

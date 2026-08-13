@@ -228,6 +228,20 @@ describe('writes', () => {
     await repo.delete(ids[0] ?? '', { orgId: org(1) });
     expect(await repo.count({ orgId: org(1) })).toBe(3);
     expect(await repo.count({ orgId: org(1), includeDeleted: true })).toBe(4);
+    // `delete()`'s soft-delete write stamps a real `Date`, read through `systemClock.now()`
+    // rather than an ambient `new Date()`.
+    const stamped = (
+      await repo.findMany({ orgId: org(1), includeDeleted: true, limit: 10 })
+    ).rows.find((row) => row.id === (ids[0] ?? ''));
+    expect(stamped?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  test('deleteWhere() stamps a real Date on every row it soft-deletes', async () => {
+    const repo = memoryRepo(notes, seed);
+    expect(await repo.deleteWhere({ orgId: org(1) })).toBe(4);
+    const all = (await repo.findMany({ orgId: org(1), includeDeleted: true, limit: 10 })).rows;
+    expect(all).toHaveLength(4);
+    for (const row of all) expect(row.deletedAt).toBeInstanceOf(Date);
   });
 
   test('a failed transaction undoes its writes', async () => {

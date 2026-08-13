@@ -268,4 +268,20 @@ describe('generateMigration', () => {
     const migration = generateMigration({ entities, name: 'create posts', now: at });
     expect(diffSchema(migration.snapshot, snapshotOf(entities)).ok).toBe(true);
   });
+
+  test('omitting `now` still stamps the id with a valid, current timestamp', () => {
+    const entities = [posts([column('id', { kind: 'uuid', primaryKey: true })])];
+    const before = Date.now();
+    const migration = generateMigration({ entities, name: 'create posts' });
+    const after = Date.now();
+
+    const [stamp] = migration.id.split('_');
+    expect(stamp).toMatch(/^\d{14}$/);
+    const stampMs = Date.parse(
+      `${stamp?.slice(0, 4)}-${stamp?.slice(4, 6)}-${stamp?.slice(6, 8)}T` +
+        `${stamp?.slice(8, 10)}:${stamp?.slice(10, 12)}:${stamp?.slice(12, 14)}Z`,
+    );
+    expect(stampMs).toBeGreaterThanOrEqual(before - 1000);
+    expect(stampMs).toBeLessThanOrEqual(after + 1000);
+  });
 });

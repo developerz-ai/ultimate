@@ -8,6 +8,7 @@ import { currentSpan, logger, systemClock, withSpan } from '@ultimat3/core';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
 import { assertKnownTags, parseTag, serializeTags } from './tags';
+import { resetTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
 import { sortTiers } from './tiers';
 
@@ -76,11 +77,15 @@ export function registeredTiers(): readonly CacheTier[] {
   return sortTiers(registry);
 }
 
-/** Test seam: drops every registered tier, the revalidator, and the invalidation log. */
+/**
+ * Test seam: drops every registered tier, the revalidator, the invalidation log and the
+ * swallowed-failure log. One reset, so a suite cannot clear half the recorded state.
+ */
 export function resetTiers(): void {
   registry.length = 0;
   revalidator = undefined;
   invalidationLog.length = 0;
+  resetTierFailures();
 }
 
 export function registerRevalidator(next: Revalidator): void {

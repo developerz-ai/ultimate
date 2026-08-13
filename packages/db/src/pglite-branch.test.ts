@@ -57,6 +57,18 @@ describe('branchPglite', () => {
     expect(await Bun.file(join(info.dataDir, 'base', '1247')).text()).toBe('x'.repeat(64));
   });
 
+  test('omitting `now` still stamps createdAt with a valid, current timestamp', async () => {
+    await seedDataDir();
+    const before = Date.now();
+    const info = await branchPglite('feature_x', { from });
+    const after = Date.now();
+
+    const createdAtMs = Date.parse(info.createdAt ?? '');
+    expect(Number.isNaN(createdAtMs)).toBe(false);
+    expect(createdAtMs).toBeGreaterThanOrEqual(before);
+    expect(createdAtMs).toBeLessThanOrEqual(after);
+  });
+
   test('an explicit target wins over the default layout', async () => {
     await seedDataDir();
     const to = join(root, 'elsewhere', 'copy');

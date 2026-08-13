@@ -387,6 +387,7 @@
       "version": "1.2.0",
       "dependencies": {
         "@ultimat3/core": "1.2.0",
+        "@ultimat3/schema": "1.2.0",
       },
     },
     "packages/policy": {

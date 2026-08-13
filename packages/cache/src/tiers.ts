@@ -5,6 +5,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import type { CacheTag } from './tags';
+import { bestEffort } from './tier-failures';
 
 export type TierName = 'request-memo' | 'lru' | 'redis' | 'cdn';
 
@@ -65,6 +66,11 @@ export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
   return [...tiers].sort((a, b) => TIER_ORDER.indexOf(a.name) - TIER_ORDER.indexOf(b.name));
 }
 
+/**
+ * Every tier call here goes through `bestEffort`: a tier that refuses is a tier that did not
+ * answer, never a failed business read. `load()` is the one call left unguarded — it *is* the
+ * business read, and swallowing it would return `undefined` as if it were the value.
+ */
 export function createCacheStack(tiers: readonly CacheTier[]): CacheStack {
   const ordered = sortTiers(tiers);
 
@@ -75,26 +81,36 @@ export function createCacheStack(tiers: readonly CacheTier[]): CacheStack {
       for (let i = 0; i < ordered.length; i += 1) {
         const tier = ordered[i];
         if (tier === undefined) continue;
-        const hit = await tier.get<T>(key);
+        const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
         if (hit === undefined) continue;
         // Populate every tier we walked past, closest-first on the next read.
         for (let up = 0; up < i; up += 1) {
-          await ordered[up]?.set(key, hit.value, { ...options, tags: hit.tags });
+          const closer = ordered[up];
+          if (closer === undefined) continue;
+          await bestEffort(closer.name, 'set', key, () =>
+            closer.set(key, hit.value, { ...options, tags: hit.tags }),
+          );
         }
         return hit.value;
       }
 
       const value = await load();
-      for (const tier of ordered) await tier.set(key, value, options);
+      for (const tier of ordered) {
+        await bestEffort(tier.name, 'set', key, () => tier.set(key, value, options));
+      }
       return value;
     },
 
     async write<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {
-      for (const tier of ordered) await tier.set(key, value, options);
+      for (const tier of ordered) {
+        await bestEffort(tier.name, 'set', key, () => tier.set(key, value, options));
+      }
     },
 
     async drop(key: string): Promise<void> {
-      for (const tier of ordered) await tier.del(key);
+      for (const tier of ordered) {
+        await bestEffort(tier.name, 'del', key, () => tier.del(key));
+      }
     },
   };
 }

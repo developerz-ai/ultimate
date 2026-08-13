@@ -30,6 +30,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "1.2.0"
+    "@ultimat3/core": "1.2.0",
+    "@ultimat3/schema": "1.2.0"
   }
 }

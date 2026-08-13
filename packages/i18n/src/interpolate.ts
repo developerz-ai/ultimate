@@ -22,14 +22,22 @@ const PLACEHOLDER = /\{\{|\}\}|\{([^{}\s]+)\}/g;
  * Replace `{name}` with `vars.name`. `{{` and `}}` escape a literal brace.
  * An unknown variable renders loudly as `⟦name⟧` for the same reason a missing key
  * does: a silently blank slot ships to production, a bracketed one does not.
+ *
+ * Only an OWN property of `vars` is a variable. A plain object inherits `constructor`,
+ * `toString` and the rest, so `{constructor}` would have rendered a function's source into a
+ * page — the same prototype walk `catalog.ts` avoids by nesting into null-prototype nodes.
+ *
+ * The fast path tests both braces because `}}` un-escapes without a `{` in sight: skipping on
+ * `{` alone left `'a}}b'` unchanged while `'{{a}}b'` collapsed, which is one escape with two
+ * meanings.
  */
 export function interpolate(template: string, vars?: InterpolationVars): string {
-  if (!template.includes('{')) return template;
+  if (!template.includes('{') && !template.includes('}')) return template;
   return template.replace(PLACEHOLDER, (match, name: string | undefined) => {
     if (match === '{{') return '{';
     if (match === '}}') return '}';
     if (name === undefined) return match;
-    const value = vars?.[name];
+    const value = vars !== undefined && Object.hasOwn(vars, name) ? vars[name] : undefined;
     if (value === undefined) return `⟦${name}⟧`;
     return String(value);
   });

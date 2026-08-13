@@ -5,7 +5,14 @@
 import { uuid as uuidV7 } from '@ultimat3/core';
 import { BARE, column, GENERATED_UUID, makeColumn, makeTimestamp } from './column';
 import { invariantViolated } from './errors';
-import type { Column, MoneyInput, MoneyValue, TimestampColumn, UuidColumn } from './types';
+import type {
+  Column,
+  ColumnMap,
+  MoneyInput,
+  MoneyValue,
+  TimestampColumn,
+  UuidColumn,
+} from './types';
 
 const reject = (rule: string, detail: string): never => {
   throw invariantViolated('column', rule, detail);
@@ -175,19 +182,40 @@ export const locale = <const L extends readonly string[]>(locales: L): Column<L[
   );
 };
 
-const parseMinor = (value: unknown): bigint => {
-  if (typeof value === 'bigint') return value;
-  if (typeof value === 'number') {
-    if (!Number.isInteger(value)) {
-      return reject(
-        'money-minor-units',
-        `got the float ${value}; money is integer minor units — 12.34 EUR is 1234n, not 12.34`,
-      );
-    }
-    return BigInt(value);
+/**
+ * The column is `bigint` and the value type is a `number`, which is the one narrowing in this
+ * package that can lose information — so it is the one narrowing that refuses rather than rounds.
+ *
+ * `number` is not a compromise here: money is projected onto every wire this framework generates,
+ * and `JSON.stringify` throws on a bigint. What the wide column buys is the ability to *hold* a
+ * value written by something that is not this framework — a psql session, a backfill, another
+ * service — and the honest answer to reading one back is a coded refusal naming the row, not a
+ * `minor` that silently rounds and not a `bigint` that crashes the response three layers later.
+ * `@ultimat3/realtime` refuses the identical value for the identical reason (`pg-entity-row.ts`),
+ * so the two readers of one column agree.
+ */
+const parseMinor = (value: unknown): number => {
+  const minor =
+    typeof value === 'bigint' || (typeof value === 'string' && /^-?\d+$/.test(value))
+      ? Number(value)
+      : value;
+  if (typeof minor !== 'number' || !Number.isFinite(minor)) {
+    return reject('money-minor-units', `expected integer minor units, got ${String(value)}`);
   }
-  if (typeof value === 'string' && /^-?\d+$/.test(value)) return BigInt(value);
-  return reject('money-minor-units', `expected integer minor units, got ${String(value)}`);
+  if (!Number.isInteger(minor)) {
+    return reject(
+      'money-minor-units',
+      `got the float ${minor}; money is integer minor units — 12.34 EUR is 1234, not 12.34`,
+    );
+  }
+  if (!Number.isSafeInteger(minor)) {
+    return reject(
+      'money-minor-units',
+      `${String(value)} is past ±2^53 and no JS number holds it exactly — money is minor units ` +
+        'inside that range; store the overflow in its own column or split the amount',
+    );
+  }
+  return minor;
 };
 
 const parseCurrency = (value: unknown): string =>
@@ -209,6 +237,36 @@ const parseMoney = (value: unknown): MoneyValue => {
  * rounding bug nobody wants to debug.
  */
 export const money = (): Column<MoneyValue> => column<MoneyValue>('money', parseMoney);
+
+/**
+ * Money is the one column whose write type is wider than its row type — `MoneyInput` takes a
+ * `bigint` so a minor unit read straight off a `bigint` column needs no conversion at the call
+ * site — so it is the one column where "the caller's value" and "the row's value" can differ.
+ * This is where they stop differing, and BOTH drivers call it: `bindValues` before a statement,
+ * `memoryRepo`'s `write` before it stores. A rule applied to one of them and not the other is
+ * exactly the drift the two-driver split exists to prevent — here it would mean an in-memory row
+ * holding a `bigint` that `JSON.stringify` refuses while the Postgres row holds a `number`.
+ *
+ * Every other kind is returned untouched: writes are asserted, not parsed, and money is the only
+ * kind that widens. A value already holding safe-integer minor units is left alone — that is the
+ * overwhelmingly common case and it costs one `typeof`-grade check and no allocation (axiom 6);
+ * everything else goes through `parseMinor`, so a `bigint` narrows and a float is refused with
+ * the same message it would get coming back from the database.
+ */
+export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
+  let narrowed: Record<string, unknown> | undefined;
+  const record = row as Readonly<Record<string, unknown>>;
+  for (const [property, column] of Object.entries(columns)) {
+    if (column.$meta.kind !== 'money') continue;
+    const value = record[property] as Partial<MoneyInput> | null | undefined;
+    if (value === null || value === undefined || Number.isSafeInteger(value.minor)) continue;
+    // Spread rather than rebuild: `currency` is the column's to validate on read and Postgres's
+    // to CHECK on write, and narrowing a minor unit is not the place to start refusing one.
+    narrowed ??= { ...record };
+    narrowed[property] = { ...value, minor: parseMinor(value.minor) };
+  }
+  return (narrowed ?? row) as Row;
+};
 
 /** The CHECK that stops a psql session writing a currency the app would refuse. */
 export const currencyCheck = (currencyColumn: string): string => `${currencyColumn} ~ '^[A-Z]{3}$'`;

@@ -28,8 +28,12 @@ Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs
 One S3 driver covers all three backends — the difference is `endpoint` + `forcePathStyle`.
 Credentials are **env var NAMES** (`accessKeyIdEnv`, default `S3_ACCESS_KEY_ID`), never
 literals: a key in `app.config.ts` is a key in git. Missing ones throw `X_ENV_MISSING`.
-`localDriver` keeps content type and etag in a `<root>/.meta/` sidecar so `get()` round-trips
-`put()`; sidecars never appear in `list()`.
+`localDriver` keeps content type, etag, `cacheControl` and `metadata` in a `<root>/.meta/`
+sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars never appear in
+`list()`. `s3Driver` cannot: it refuses `cacheControl`/`metadata` on `put()` (`X_NOT_IMPLEMENTED`,
+Bun exposes no header hook yet), and its `list()` always reports `DEFAULT_CONTENT_TYPE` — S3's
+`ListObjectsV2` does not return Content-Type, and reading it for real would cost one `HeadObject`
+per listed row.
 
 ## Keys
 

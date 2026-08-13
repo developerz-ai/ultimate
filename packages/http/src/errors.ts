@@ -7,12 +7,14 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 export const HTTP_OWNED_ERROR_CODES = [
   'X_ROUTE_NOT_FOUND',
   'X_METHOD_NOT_ALLOWED',
+  'X_PATH_INVALID',
   'X_BODY_INVALID',
   'X_RATE_LIMITED',
   'X_BUILD_SKEW',
   'X_ROUTE_CONFLICT',
   'X_SERVER_NOT_STARTED',
   'X_PIPELINE_NO_RESPONSE',
+  'X_PIPELINE_FINALIZE_FAILED',
   'X_NO_REQUEST',
   'X_ERROR_STATUS_INVALID',
 ] as const;
@@ -35,12 +37,14 @@ export type HttpErrorCode = (typeof HTTP_ERROR_CODES)[number];
 export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_ROUTE_NOT_FOUND: 'no route matches this request',
   X_METHOD_NOT_ALLOWED: 'route exists but not for this method',
+  X_PATH_INVALID: 'a path segment is not valid percent-encoding',
   X_BODY_INVALID: 'request body failed its schema',
   X_RATE_LIMITED: 'rate limit exhausted for this key',
   X_BUILD_SKEW: 'client build id does not match the server build id',
   X_ROUTE_CONFLICT: 'two routes claim the same path',
   X_SERVER_NOT_STARTED: 'server handle used before start()',
   X_PIPELINE_NO_RESPONSE: 'a pipeline stage produced no response',
+  X_PIPELINE_FINALIZE_FAILED: 'a finalize stage threw instead of finishing the response',
   X_NO_REQUEST: 'the inbound request is not in scope here',
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
 };
@@ -84,6 +88,18 @@ export const methodNotAllowed = (
     code: 'X_METHOD_NOT_ALLOWED',
     cause: `${pathname} accepts ${allow.join(', ')} but the request used ${method}`,
     fix: `add a ${method} route for ${pathname} or call it with ${allow[0] ?? 'GET'}`,
+  });
+
+/**
+ * The client wrote the path, so the client is who can fix it — 400, not the 500 the bare
+ * `URIError` from `decodeURIComponent` used to produce. `X_INTERNAL` reported a typo to the error
+ * monitor (`pipeline.ts` pages on `status >= 500`) and told the caller nothing.
+ */
+export const pathInvalid = (pathname: string, segment: string): HttpError =>
+  new HttpError({
+    code: 'X_PATH_INVALID',
+    cause: `${pathname} contains "${segment}", which is not valid percent-encoding`,
+    fix: 'send the segment percent-encoded — encodeURIComponent(value); a literal % is %25',
   });
 
 export const bodyInvalid = (pathname: string, issues: readonly string[]): HttpError =>
@@ -133,6 +149,20 @@ export const pipelineNoResponse = (stage: string): HttpError =>
     code: 'X_PIPELINE_NO_RESPONSE',
     cause: `the pipeline finished at stage "${stage}" without a response`,
     fix: 'return a Response from the route handler, or a Response from the stage that short-circuits',
+  });
+
+/**
+ * A finalize stage threw on the response it was handed. `Pipeline.handle` promises a Response to
+ * every caller, so the throw becomes this — a 500 the client can read and report — instead of a
+ * rejected promise the server has nothing to send for.
+ */
+export const finalizeFailed = (stage: string, cause: unknown): HttpError =>
+  new HttpError({
+    code: 'X_PIPELINE_FINALIZE_FAILED',
+    cause: `the "${stage}" stage threw while finishing the response: ${
+      cause instanceof Error ? cause.message : String(cause)
+    }`,
+    fix: 'return a Response built here — json(), text(), html() or redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
   });
 
 /**

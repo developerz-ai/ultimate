@@ -12,7 +12,14 @@ import { invariantViolated } from './errors';
 import type { QueryPlan } from './tenancy';
 import type { AnyColumn, ColumnKind } from './types';
 
-const MONEY_PARTS: Readonly<Record<string, ColumnKind>> = { minor: 'bigint', currency: 'char' };
+/**
+ * The kind a money part is *revived* as, which is the kind the row property holds — not the
+ * physical column's. `<p>_minor` is a `bigint` column, but `MoneyValue.minor` is a `number`
+ * (`@ultimat3/schema` owns that declaration), and a cursor whose value came back a `bigint`
+ * would compare against a `number` property in the memory driver and mint a seek bind of the
+ * wrong type in the other. The narrowing itself is guarded once, where the row is decoded.
+ */
+const MONEY_PARTS: Readonly<Record<string, ColumnKind>> = { minor: 'integer', currency: 'char' };
 
 /** Resolves `price.minor` as well as `title`; money is the one property with two parts. */
 const partsOf = (path: string): { readonly property: string; readonly part?: string } => {

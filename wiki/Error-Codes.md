@@ -113,6 +113,7 @@ The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the 
 |---|---|---|---|
 | `X_ROUTE_NOT_FOUND` | no route matches this request | path typo, or the route was never generated | `x routes --json`, then `x g route <path>` |
 | `X_METHOD_NOT_ALLOWED` | route exists but not for this method | GET against an action endpoint | call it with the method in `cause`, or add that method |
+| `X_PATH_INVALID` | a path segment is not valid percent-encoding | a hand-built URL, or a value concatenated into a path instead of run through `encodeURIComponent` — `%ZZ`, a lone `%`, a truncated `%A`. Answers 400: the client wrote the path, so the client is who can fix it, and the request never reaches a handler | send the segment percent-encoded — `encodeURIComponent(value)`; a literal `%` is `%25` |
 | `X_ROUTE_CONFLICT` | two routes claim the same path | a copied route file | `x routes --json`, then remove or rename one |
 | `X_BODY_INVALID` | request body failed its schema | client sent the wrong shape | `x actions describe <name> --json`, then match the input schema |
 | `X_UNAUTHENTICATED` | route requires an authenticated actor | no session cookie or bearer token | send credentials, or set the route's `auth` to `'public'` |
@@ -121,6 +122,7 @@ The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the 
 | `X_BUILD_SKEW` | client build id does not match the server build id | a tab open across an incompatible deploy | reload; the SW fetches the new build manifest. See [PWA and offline](PWA-And-Offline) |
 | `X_SERVER_NOT_STARTED` | server handle used before `start()` | reading `url()` too early in a test | `await createServer({ … }).start()` first |
 | `X_PIPELINE_NO_RESPONSE` | a pipeline stage produced no response | a middleware returned `undefined` | return a `Response` from the stage or from the handler |
+| `X_PIPELINE_FINALIZE_FAILED` | a finalize stage threw instead of finishing the response | the response cannot take the headers the pipeline puts on it — a `Response.redirect()`, or a frozen or proxied `Response` a handler returned. `handle()` answers this 500 rather than rejecting, and the `cause` names the stage | return a Response built here — `json()`, `text()`, `html()` or `redirect()` from `@ultimat3/http` |
 | `X_NO_REQUEST` | the inbound request is not in scope here | `useRequestCookie()` / `setRedirect()` called from a job, a task or a module body | read it inside a route handler, an action or a page; a job gets the value from its payload |
 | `X_ERROR_STATUS_INVALID` | an error code cannot be mapped to that status | `registerErrorStatus()` given a framework-owned code, a status outside 100–599, or a second, different status for one code | `x errors list --json`, then map a code this app owns to a status the framework does not already hold |
 

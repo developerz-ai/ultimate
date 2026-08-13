@@ -40,7 +40,7 @@ const sample: Post = {
   id: '00000000-0000-7000-8000-000000000001',
   orgId: '00000000-0000-7000-8000-0000000000a1',
   title: 'Tenancy is a column',
-  price: { minor: 1900n, currency: 'USD' },
+  price: { minor: 1900, currency: 'USD' },
   likeCount: 0,
   status: 'published',
   publishedAt: new Date('2026-03-02T13:00:00Z'),
@@ -77,11 +77,24 @@ describe('entity()', () => {
     expect(parsed.publishedAt).toBeNull();
     // A generated uuid v7 primary key, because the column said so — not because a seed did.
     expect(parsed.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(parsed.price.minor).toBe(1900n);
+    expect(parsed.price.minor).toBe(1900);
     expect(() => posts.$parse({ ...sample, likeCount: 1.5 })).toThrow(/safe integer/);
     expect(() => posts.$parse({ ...sample, price: { minor: 19.5, currency: 'USD' } })).toThrow(
       /float/,
     );
+  });
+
+  test('a defaultNow() column omitted from the input is stamped with the current instant', () => {
+    // Exercises `defaultValue()`'s non-uuid branch (entity.ts), which reads the clock through
+    // `systemClock.now()` rather than an ambient `new Date()`. The clock is frozen under the
+    // test preload, so "now" is an exact value, not a range.
+    const parsed = posts.$parse({
+      orgId: sample.orgId,
+      title: 'Stamped by the entity, not the caller',
+      price: { minor: 500, currency: 'USD' },
+    });
+    expect(parsed.createdAt).toEqual(new Date());
+    expect(parsed.updatedAt).toEqual(new Date());
   });
 
   test('the columns are on the entity, so a reference is a column and not a string', () => {

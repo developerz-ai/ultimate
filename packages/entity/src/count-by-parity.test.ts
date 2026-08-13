@@ -79,7 +79,7 @@ const like = (index: number, over: Partial<Like> = {}): Like => ({
   count: 1,
   weight: 10n,
   payload: {},
-  total: { minor: 0n, currency: 'EUR' },
+  total: { minor: 0, currency: 'EUR' },
   createdAt: new Date('2026-01-02T03:04:05.000Z'),
   deletedAt: null,
   ...over,

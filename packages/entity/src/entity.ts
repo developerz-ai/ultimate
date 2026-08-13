@@ -3,6 +3,7 @@
 // (the typed db handle, migrations, cache tags, the admin UI, the manifest) is projected from
 // this one call.
 
+import { systemClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { bindColumn, snake } from './column';
 import { newId } from './columns';
@@ -105,7 +106,7 @@ const defaultValue = (meta: ColumnMeta): unknown => {
   const declared = meta.default;
   if (declared === undefined) return undefined;
   if (declared.kind === 'value') return declared.value;
-  return declared.by === 'uuid-v7' ? newId() : new Date();
+  return declared.by === 'uuid-v7' ? newId() : systemClock.now();
 };
 
 export const entity = <const C extends ColumnMap>(
