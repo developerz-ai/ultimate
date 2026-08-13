@@ -63,6 +63,31 @@ describe('LruCache byte budget', () => {
     expect(cache.get('a')).toBeUndefined();
     expect(cache.stats().entries).toBe(0);
   });
+
+  test('clear() resets hit/miss/eviction counters along with entries and bytes', () => {
+    const cache = new LruCache({ maxBytes: 400, defaultTtlMs: 0 });
+    cache.set('a', filler(100));
+    cache.set('b', filler(100));
+    cache.set('c', filler(100));
+    expect(cache.get('a')).toBeDefined(); // a hit; also re-touches 'a' so 'b' is evicted next
+    cache.set('d', filler(100)); // evicts 'b'
+    expect(cache.get('b')).toBeUndefined(); // a miss
+    const before = cache.stats();
+    expect(before.evictions).toBeGreaterThan(0);
+    expect(before.hits).toBeGreaterThan(0);
+    expect(before.misses).toBeGreaterThan(0);
+
+    cache.clear();
+
+    expect(cache.stats()).toEqual({
+      entries: 0,
+      bytes: 0,
+      maxBytes: 400,
+      hits: 0,
+      misses: 0,
+      evictions: 0,
+    });
+  });
 });
 
 describe('LruCache tag invalidation', () => {

@@ -87,6 +87,11 @@ export function inflightCount(): number {
   return inflight;
 }
 
+/** Test-only: drains still waiting on in-flight work. A count stuck above zero is a leak. */
+export function idleWaiterCount(): number {
+  return idleWaiters.length;
+}
+
 /** Register a drain hook. Returns an unregister function. */
 export function onShutdown(
   name: string,
@@ -127,11 +132,18 @@ export function isDraining(): boolean {
 function waitForIdle(timeoutMs: number): Promise<boolean> {
   if (inflight === 0) return Promise.resolve(true);
   return new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs);
-    idleWaiters.push(() => {
+    const waiter = (): void => {
       clearTimeout(timer);
       resolve(true);
-    });
+    };
+    // A drain that times out must not leave its waiter in the queue forever — the next
+    // `beginWork()` to reach zero would still hold and invoke it, a dangling closure over a
+    // promise nothing is awaiting anymore.
+    const timer = setTimeout(() => {
+      idleWaiters = idleWaiters.filter((candidate) => candidate !== waiter);
+      resolve(false);
+    }, timeoutMs);
+    idleWaiters.push(waiter);
   });
 }
 

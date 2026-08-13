@@ -84,6 +84,19 @@ describe('entity()', () => {
     );
   });
 
+  test('a defaultNow() column omitted from the input is stamped with the current instant', () => {
+    // Exercises `defaultValue()`'s non-uuid branch (entity.ts), which reads the clock through
+    // `systemClock.now()` rather than an ambient `new Date()`. The clock is frozen under the
+    // test preload, so "now" is an exact value, not a range.
+    const parsed = posts.$parse({
+      orgId: sample.orgId,
+      title: 'Stamped by the entity, not the caller',
+      price: { minor: 500, currency: 'USD' },
+    });
+    expect(parsed.createdAt).toEqual(new Date());
+    expect(parsed.updatedAt).toEqual(new Date());
+  });
+
   test('the columns are on the entity, so a reference is a column and not a string', () => {
     expect(posts.orgId.$meta.tenant).toBe(true);
     expect(orgs.name.$meta.kind).toBe('text');

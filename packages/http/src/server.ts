@@ -176,11 +176,17 @@ export const createServer = (options: ServerOptions): ServerHandle => {
     },
     async stop() {
       if (server === undefined) return;
-      // Delegate to core so a manual stop() and a real SIGTERM take the identical
-      // three-phase path. The drain deadline is core's, not ours.
-      await drain('manual');
-      unregister?.();
-      unregisterClose?.();
+      try {
+        // Delegate to core so a manual stop() and a real SIGTERM take the identical
+        // three-phase path. The drain deadline is core's, not ours.
+        await drain('manual');
+      } finally {
+        // A throwing drain() must not leave this handle's hooks registered against a server
+        // that is going away — core would still call them, against `server` fields already
+        // torn down below, on the next drain this process runs.
+        unregister?.();
+        unregisterClose?.();
+      }
       // Idempotent: the close hook already released, unless the drain deadline cut it short.
       stopListening?.();
       stopListening = undefined;

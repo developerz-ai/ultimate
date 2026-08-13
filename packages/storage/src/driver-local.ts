@@ -43,13 +43,27 @@ interface Sidecar {
   readonly metadata?: Readonly<Record<string, string>> | undefined;
 }
 
+const isStringRecord = (value: unknown): value is Readonly<Record<string, string>> =>
+  typeof value === 'object' &&
+  value !== null &&
+  Object.values(value as Record<string, unknown>).every((entry) => typeof entry === 'string');
+
 function parseSidecar(raw: unknown): Sidecar | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const record = raw as Record<string, unknown>;
   const contentType = record['contentType'];
   const etag = record['etag'];
   if (typeof contentType !== 'string' || typeof etag !== 'string') return undefined;
-  return { contentType, etag };
+  // `put()` writes cacheControl/metadata into the same sidecar (below) — dropping them here
+  // silently truncated what was just written, even though `Sidecar` itself declares both.
+  const cacheControl = record['cacheControl'];
+  const metadata = record['metadata'];
+  return {
+    contentType,
+    etag,
+    ...(typeof cacheControl === 'string' ? { cacheControl } : {}),
+    ...(isStringRecord(metadata) ? { metadata } : {}),
+  };
 }
 
 export function localDriver(options: LocalDriverOptions): StorageDriver {
@@ -87,6 +101,8 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       contentType: sidecar?.contentType ?? DEFAULT_CONTENT_TYPE,
       etag,
       lastModified: new Date(file.lastModified),
+      ...(sidecar?.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
+      ...(sidecar?.metadata === undefined ? {} : { metadata: sidecar.metadata }),
     };
   };
 
@@ -115,6 +131,8 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         contentType: sidecar.contentType,
         etag: sidecar.etag,
         lastModified: clock.now(),
+        ...(sidecar.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
+        ...(sidecar.metadata === undefined ? {} : { metadata: sidecar.metadata }),
       };
     },
 

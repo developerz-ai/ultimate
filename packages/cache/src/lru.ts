@@ -185,6 +185,11 @@ export class LruCache {
     this.head = undefined;
     this.tail = undefined;
     this.bytes = 0;
+    // Stats describe THIS cache's lifetime, not the process's — a cleared cache is a fresh one,
+    // so `stats()` after `clear()` must not still show hits/evictions from what is now gone.
+    this.hits = 0;
+    this.misses = 0;
+    this.evictions = 0;
   }
 
   stats(): LruStats {

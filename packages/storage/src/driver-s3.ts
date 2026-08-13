@@ -220,6 +220,10 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         objects.push({
           key: entry.key,
           size: entry.size ?? 0,
+          // ListObjectsV2 does not return Content-Type — unlike the local driver's `list()`,
+          // which reads it back from the `.meta/` sidecar per entry. Getting the real value
+          // here would cost one HeadObject per listed row, defeating what `list()` is for; a
+          // caller that needs the real type calls `get()` on that one key instead.
           contentType: DEFAULT_CONTENT_TYPE,
           etag: entry.eTag ?? '',
           lastModified: toDate(entry.lastModified),

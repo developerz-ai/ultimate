@@ -4,6 +4,7 @@ import {
   configureLifecycle,
   drain,
   healthzPayload,
+  idleWaiterCount,
   inflightCount,
   isDraining,
   lifecycleState,
@@ -100,6 +101,19 @@ describe('lifecycle', () => {
 
     expect(lifecycleState()).toBe('stopped');
     expect(lines.some((line) => line.includes('X_SHUTDOWN_TIMEOUT'))).toBe(true);
+  });
+
+  test('a timed-out waiter does not linger after the drain gives up', async () => {
+    configureLifecycle({ deadlineMs: 10 });
+    markReady();
+    beginWork(); // never completed — forces waitForIdle to time out, not resolve early
+
+    await drain('SIGTERM');
+
+    expect(lifecycleState()).toBe('stopped');
+    // Before the fix this stayed 1 forever: the timeout branch resolved the promise but never
+    // removed its own closure from `idleWaiters`, so a later `finish()` would still invoke it.
+    expect(idleWaiterCount()).toBe(0);
   });
 
   test('concurrent signals join the same drain and a failing hook does not stop it', async () => {

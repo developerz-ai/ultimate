@@ -7,6 +7,7 @@
 //     table silently skips and repeats rows. A keyset cursor is stable because it names a
 //     position in the sort order, not a row count.
 
+import { systemClock } from '@ultimat3/core';
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { narrowMoney } from './columns';
 import { countsFrom, groupColumnOf } from './count-by';
@@ -360,7 +361,7 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
       const current = addressed(id, options, 'delete');
       // Soft delete hides the row without losing it; the column's presence is the switch.
       if (entity.$softDelete) {
-        write(Object.assign({}, current, { [SOFT_DELETE_COLUMN]: new Date() }), options);
+        write(Object.assign({}, current, { [SOFT_DELETE_COLUMN]: systemClock.now() }), options);
         return;
       }
       const key = keyOf(current);
@@ -376,7 +377,7 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
       const doomed = rowsOf(deletePlan(entity, filter, options, 'deleteWhere'), {});
       for (const row of doomed) {
         if (entity.$softDelete) {
-          write(Object.assign({}, row, { [SOFT_DELETE_COLUMN]: new Date() }), options);
+          write(Object.assign({}, row, { [SOFT_DELETE_COLUMN]: systemClock.now() }), options);
           continue;
         }
         const key = keyOf(row);

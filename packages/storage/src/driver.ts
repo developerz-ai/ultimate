@@ -10,6 +10,9 @@ export interface StorageObject {
   readonly contentType: string;
   readonly etag: string;
   readonly lastModified: Date;
+  /** Present only when the driver actually stored what `put()` was handed — never invented. */
+  readonly cacheControl?: string | undefined;
+  readonly metadata?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface PutOptions {

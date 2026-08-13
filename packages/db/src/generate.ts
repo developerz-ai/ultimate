@@ -3,6 +3,7 @@
 // the CLI passes `describeEntities()` and the types below mirror `EntityDescription` field for
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
+import { systemClock } from '@ultimat3/core';
 import { migrationIrreversible } from './errors';
 import {
   type ColumnDescription,
@@ -302,7 +303,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     plan.down.push(`-- "${table.name}" cannot be restored; recover it from a backup`);
   }
 
-  const id = `${migrationStamp(options.now ?? new Date())}_${slugify(options.name)}`;
+  const id = `${migrationStamp(options.now ?? systemClock.now())}_${slugify(options.name)}`;
   return {
     id,
     name: options.name,

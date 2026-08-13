@@ -54,6 +54,23 @@ describe('localDriver', () => {
     expect((await driver.list({ prefix: 'org/org-1/' })).objects).toEqual([]);
   });
 
+  test('get and list round-trip cacheControl and metadata written by put()', async () => {
+    const key = 'org/org-1/docs/report.pdf';
+    await driver.put(key, bytesOf('pdf-bytes'), {
+      contentType: 'application/pdf',
+      cacheControl: 'public, max-age=3600',
+      metadata: { uploadedBy: 'user-1' },
+    });
+
+    const read = await driver.get(key);
+    expect(read.object.cacheControl).toBe('public, max-age=3600');
+    expect(read.object.metadata).toEqual({ uploadedBy: 'user-1' });
+
+    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).objects;
+    expect(listed?.cacheControl).toBe('public, max-age=3600');
+    expect(listed?.metadata).toEqual({ uploadedBy: 'user-1' });
+  });
+
   test('get on a missing key is X_STORAGE_NOT_FOUND', async () => {
     let caught: unknown;
     try {

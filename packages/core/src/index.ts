@@ -245,6 +245,7 @@ export {
   drain,
   healthReport,
   healthzPayload,
+  idleWaiterCount,
   inflightCount,
   installSignalHandlers,
   isDraining,
