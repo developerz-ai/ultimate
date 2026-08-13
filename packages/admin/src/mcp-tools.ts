@@ -127,6 +127,11 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
       out.push({ tool, gate: (ctx) => decideOperation(resource, op, ctx) });
     }
     for (const action of resource.actions) {
+      // The one surface in the framework that does NOT call `isMcpExposed`, on purpose: every
+      // tool in this catalog is already gated on an admin permission, and the CRUD tools above
+      // carry no `mcp` block at all — so opt-in here would list `admin.posts.delete` and hide
+      // the button next to it. `expose: false` withdraws one. Stated in `wiki/Admin-Dashboard.md`
+      // and in core's `mcp-exposure.ts`; nothing else may grow a second default.
       if (action.mcp?.expose === false) continue;
       out.push({
         tool: {
@@ -161,6 +166,7 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
   });
 
   for (const action of app.globalActions) {
+    // Same opt-out default as a resource action above, for the same reason.
     if (action.mcp?.expose === false) continue;
     out.push({
       tool: {

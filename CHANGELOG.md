@@ -250,6 +250,49 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **Docs: a read's cache key does not include the actor, and six pages said it did.** "Cache keys always include the actor's tenant and policy scope, so a cache hit can never leak across tenants" was a guarantee an app could have designed around. `cacheKeyFor` in `@ultimat3/query` is `query:<name>:<parsed-input fingerprint>:<sorted tag keys>` and has never carried the actor. The rule that actually holds: the tenant reaches the key through the read's **input**, so `feed({ orgId })` is one entry per org, and a `cache:` read whose answer varies by actor for one input must not declare `cache:` — tier 1, the request memo, is keyed by `Ctx` identity and already separates it. Policy still runs on every read before a tier is consulted; it decides whether *this* caller may ask, not which rows the entry holds. Corrected in `wiki/Caching-And-Invalidation.md`, `wiki/Queries-And-Live-Queries.md`, `wiki/Entities-And-Migrations.md`, `docs/architecture/01-package-map.md`, `03-request-lifecycle.md` and `06-data-layer.md`; `docs/idea/05-caching.md` keeps the scoped key as the design intent and now names the gap rather than claiming it shipped. No code changed.
+
+- **MCP exposure has one answer, `isMcpExposed`, and the contract stops publishing tools nothing serves.** Six readers across five packages decided `mcp: { expose }` three ways: `=== true` where a tool is actually built (`@ultimat3/action`'s `toMcpTools`, `@ultimat3/query`'s, `@ultimat3/mcp`'s two projections), `!== false` in the OpenAPI operation's `x-ultimate.mcpTool`, and `?? true` in `describeAction`'s manifest fact. So an action with **no `mcp` block at all** was published as a tool by `x.manifest.json` and by `openapi.json`, and refused by every surface an agent could call — and the first honest `mcp: { expose: false }` an author wrote then read as a *withdrawn* capability, which `x verify`'s contract diff classifies as breaking and demands a major version bump for.
+
+  `isMcpExposed(declared)` in `@ultimat3/core` is now the single predicate. Core owns it because the readers span tiers 3–5 and this is the only tier all of them reach — the same reason `timingSafeEqual` lives there. Opt-in is unchanged and unchanged everywhere: an absent block, an omitted `expose` and a literal `false` are one answer.
+
+  ```jsonc
+  // an action declaring no mcp block, in openapi.json
+  "x-ultimate": { "mcpTool": "publish_post" }   // before — a tool no catalog listed
+  "x-ultimate": { "mcpTool": null }             // after
+  ```
+
+  `diffManifest` reads both sides through the same predicate, so a manifest parsed off disk whose `mcp.expose` is absent or non-boolean reads as un-exposed rather than as a third state. **Upgrading:** run `x manifest` once — an app whose actions never declared `mcp.expose` will see those facts flip `true → false`, which is the correction, not a withdrawal; re-commit the regenerated file before the next `x verify`.
+
+  `@ultimat3/admin`'s own catalog keeps the opposite default on purpose and says so in code: every tool there is already gated on an admin permission and its CRUD tools carry no `mcp` block at all, so opt-in would list `admin.posts.delete` while hiding the action button beside it. That exception is the only one, and `packages/cli/src/mcp-exposure-pin.test.ts` pins every other reader to one answer.
+
+- **`query.client()` now reaches a route. Reads are served over HTTP, in `x dev` and in a container alike.** `@ultimat3/query` derived `/_x/query/<kebab>` in `naming.ts`, `client.ts` fetched exactly that URL, and nothing anywhere built or mounted a route for it — so every typed read compiled, shipped, and 404'd, while the README and the wiki documented the projection as shipped.
+
+  `toQueryRoute(target)` in `packages/query/src/http.ts` is that projection, mirroring `@ultimat3/action`'s `toRoute`:
+
+  ```ts
+  GET /_x/query/live-feed?orgId=…   // the URL liveFeed.client({ baseUrl }) already derived
+  ```
+
+  Three decisions it makes, each for a reason a read has and a write does not. The search string is **coerced** at the boundary (`@ultimat3/schema`'s `coerceQuery`, the one HTTP-boundary decoder) and **validated** by `runQuery` — one parser, so a bad `orgId` is the read's own `X_INPUT_INVALID` with the line that prints its schema, never the pipeline's `X_BODY_INVALID`. `meta.input` is therefore absent: the pipeline validates it against a *body*, and a GET has none. The answer is `no-store` — the URL names no actor while the rows are scoped to one — and `enforcedBy: 'handler'`, because `runQuery` is the read's one policy evaluation and it holds the parsed input; an authz stage deciding first would be a second authz system deciding from raw strings.
+
+  `@ultimat3/cli`'s new `apiRoutes()` is what mounts it, and it is now the **one** composition of the app's HTTP API — both `x dev` and `serve.ts` mount it, so a read cannot answer in one and 404 in the other. `@ultimat3/query` gains a dependency on `@ultimat3/http` (tier 3 → tier 2, downward).
+
+- **`useLiveFeed({ orgId })` exists. The typed client hook the wiki has always documented is a projection you can bind.** [Queries and live queries](https://github.com/developerz-ai/ultimate/wiki/Queries-And-Live-Queries) listed a typed client hook among a query's five projections and showed exactly that line; no `useLiveFeed`, `useQuery` or `createLiveQuery` existed in any package. What shipped was `useLive(query, input)` — untyped on both sides, because its `query` parameter is anything carrying a `name`, so neither the input nor the row type could come off the declaration.
+
+  `liveHookFor` (`@ultimat3/realtime`) is the missing projection: one declared `query({ live: true })` bound to one named hook, in one line, with no generated file.
+
+  ```ts
+  export const useLiveFeed = liveHookFor(liveFeed);  // app/feed/hooks.ts
+
+  const feed = useLiveFeed({ orgId: actor.orgId });  // feed()[0].title typechecks
+  useLiveFeed({ orgIdd: actor.orgId });              // does not compile
+  ```
+
+  It **binds** `useLive` rather than re-implementing it — one subscribe path, given the query's name and types, because two of those is two places a subscription can be opened wrong. `LiveQuerySource` names `Query`'s shape structurally instead of importing `@ultimat3/query` as a value: a hook is browser code, and a value import would carry the server's read path into the bundle. The name is read **per call**, never captured at bind time, because a module-level binding runs at import and `registerQueries()` stamps the name at boot — later. Binding a query with no `live: true` is the new `X_QUERY_NOT_SUBSCRIBABLE`, thrown where the binding is written rather than at the first render: a read that never patches has no subscription for a hook to hold, and the non-live read from a component is `query.client({ baseUrl })` over the route above. `LiveRows`'s row parameter widens from the wire's `Row` to `object` so a query's own row type survives; the four type claims are pinned in `packages/realtime/src/type-pins.ts`, which `tsc` checks and a `.test.ts` could not.
+
+- **`X_INPUT_INVALID` is a 400 over HTTP, not a 500.** The code had no row in `error-map.ts`, so it took the 500 default on every surface that throws it — an action route and now a query read alike. A caller's typo'd uuid was answered as a server fault *and* reported to the error monitor by the `error-map` stage, which pages the on-call for someone else's mistake. 400 is also what the published OpenAPI operation has always promised for it.
+
 - **`LruCache.clear()` now resets `hits`/`misses`/`evictions` along with entries and bytes.** `stats()` after a `clear()` used to keep reporting whatever the cache had accumulated before the clear — a fresh cache with stale lifetime counters. `clear()` is a reset, and `stats()` now reads as one.
 
 - **A drain that times out no longer leaks its waiter.** `waitForIdle()` pushed a closure onto `idleWaiters` and relied on the eventual `beginWork()` completion to remove it; a drain that gave up at the deadline resolved its own promise but left that closure in the array forever, to be invoked (harmlessly, but pointlessly) whenever in-flight work eventually finished. The timeout branch now removes its own waiter. `@ultimat3/core` exports a test-only `idleWaiterCount()` so this stays provable.

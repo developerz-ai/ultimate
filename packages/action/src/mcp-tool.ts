@@ -4,6 +4,7 @@
  * endpoint and cannot acquire a second authz path. One authz system, never two.
  */
 import type { Ctx } from '@ultimat3/core';
+import { isMcpExposed } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { actionName, defOf, invoke } from './invoke';
 import { type JsonSchemaObject, mcpSchemaOf, sortSchema } from './json-schema';
@@ -56,10 +57,11 @@ export function toMcpTool(target: AnyAction): McpToolDescriptor {
  * It read `!== false` until 2026-08, which made writing an action silently hand every agent a
  * new write capability — and disagreed with `@ultimat3/mcp`'s `exposedPrimitives`, the projection
  * that actually builds a catalog. Two functions answering "is this a tool?" differently is the
- * ambiguity axiom 1 rejects, so the fail-closed one wins.
+ * ambiguity axiom 1 rejects, so the fail-closed one wins — and `isMcpExposed` from
+ * `@ultimat3/core` is now the single answer every reader in the framework asks.
  */
 export function isExposed(target: AnyAction): boolean {
-  return target.mcp?.expose === true;
+  return isMcpExposed(target.mcp);
 }
 
 /** Deterministic order — the tool list is part of the agent-visible contract. */

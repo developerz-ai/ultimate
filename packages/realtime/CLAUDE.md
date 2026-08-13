@@ -59,6 +59,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `@ultimat3/action` `Mutator` assigns with no cast — a function-typed property would not.
 - `useLive`'s thunk input is read once, at subscribe time. There is no reactive runtime here to
   re-run it, and pretending otherwise would be a silently stale subscription.
+- `liveHookFor(query)` is the typed projection the wiki promises as `useLiveFeed({ orgId })`. It
+  **binds** `useLive` — it never re-implements a subscribe path, because two of those is two places
+  a subscription can be opened wrong. It names `Query`'s shape structurally (`LiveQuerySource`)
+  rather than importing `@ultimat3/query` as a value: a hook is browser code, and a value import
+  would pull the server's read path into the bundle.
+- The query's name is read **per call**, never captured at bind time. `export const useLiveFeed =
+  liveHookFor(liveFeed)` runs at import; `registerQueries()` stamps the name later, at boot.
+- Type claims about the hook go in `type-pins.ts`, never in a `.test.ts` — `tsconfig.json` excludes
+  test files, so `tsc -b` never reads one and an assertion written there can never fail.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
@@ -79,6 +88,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
 | `client.ts` / `sync-node.ts` | the two halves |
 | `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
+| `query-hook.ts` | the typed projection: one declared query bound to one named hook |
+| `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |
 | `policy-gate.ts` | the only authz seam |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |

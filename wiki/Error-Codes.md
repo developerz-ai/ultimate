@@ -179,13 +179,13 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_ACTION_DUPLICATE` | two actions registered under one name | duplicate export names across features | rename one; names are global. `x actions list --json` |
-| `X_INPUT_INVALID` | input failed the action's schema | wrong shape from a client or an agent | `x actions describe <name> --json` |
+| `X_INPUT_INVALID` | input failed the primitive's schema — an action's, and a query's too | wrong shape from a client or an agent; over HTTP it is a **400**, never a 500 | `x actions describe <name> --json` (`x queries describe <name> --json` for a read) |
 | `X_OUTPUT_INVALID` | the handler returned a value its `output` schema rejects | the handler drifted from the declared output | `x actions describe <name> --json`, then fix the handler or the schema |
 | `X_ACTION_FOREIGN` | a value that is not an action was projected as one | a hand-rolled object with `kind: 'action'`, or an action from a duplicated copy of `@ultimat3/action` | declare it as `export const name = action({ input, output, policy, handle })` |
 | `X_ACTION_UNREGISTERED` | an action was projected before it was registered, so it has no name | `.tool()` / `.client()` / `.job()` / `.openapi()` on an action `registerActions()` never named | `registerActions(await import('./actions'))` at boot, before mounting routes |
 | `X_IDEMPOTENCY_CONFLICT` | idempotency key reused with a different payload, or still in flight | a retried request mutated its body | send a fresh `Idempotency-Key` for a different payload; otherwise retry after the first settles |
 | `X_CONTRACT_DRIFT` | the published contract changed | input/output shape moved without a version bump | give new inputs a `.default()`, or bump the package version |
-| `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, or a non-JSON response | check the gateway, then `x actions describe <name> --json` (`x queries describe` for a read) |
+| `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, or a non-JSON response | check the gateway, then `x actions describe <name> --json` (`x queries describe <name> --json` for a read) |
 
 ## Queries and live queries
 
@@ -223,6 +223,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_REPLICATION_PROTOCOL` | the WAL stream cannot be decoded | a server or `pgoutput` version this build does not speak, or a proxy on the replication port | `x doctor db` — point the URL at postgres itself, on a server ≥ 14 |
 | `X_REPLICATOR_SLOT_HELD` | another replicator already owns this database | `replicator` scaled to more than one replica, or a rolling deploy started the new replicator before the old one exited — nothing is wrong with this process, the database already has its one replicator | scale the replicator to 1 per database: `kubectl scale deploy/replicator --replicas=1` |
 | `X_LIVE_CLIENT_MISSING` | a realtime hook ran with no `LiveClient` registered | `useLive` / `useConnection` / `useMutation` / `useMutationQueue` on a page whose entry never registered one | `setLiveClient(new LiveClient({ signal: createSignal, connect, buildId }))` in the app entry, above the first render |
+| `X_QUERY_NOT_SUBSCRIBABLE` | a hook was bound to a query that is not declared live | `liveHookFor(orgPosts)` where `orgPosts` has no `live: true` — there is no subscription for the hook to read, so it could only ever answer an empty set | add `live: true` to the query declaration, or read it once through `query.client({ baseUrl })` |
 | `X_LIVE_ROW_UNIDENTIFIED` | a live query returned a row with no id | a `live: true` read whose projection selects columns but not the primary key — patches, cursors and the local store all address a row by `id` | select the primary key in that query's `sql()`, or drop `live: true` from it |
 
 ## Cache

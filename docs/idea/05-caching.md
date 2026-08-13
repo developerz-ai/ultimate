@@ -11,7 +11,9 @@ Four tiers, one invalidation graph. You declare what a write touches; the framew
 | 3 | **shared** (`Bun.redis`) | cross-instance, TTL + tag sets | ~1ms | shared query results, rendered fragments, session-adjacent data |
 | 4 | **CDN / HTTP headers** | client + edge | `Cache-Control`, `ETag`, `stale-while-revalidate` | static + ISR pages, images, assets |
 
-Every tier is read in order 1 → 2 → 3 → origin. A tier is never consulted for a request whose `policy` has not already passed — **cache keys always include the actor's tenant and policy scope**, so a cache hit can never leak across tenants.
+Every tier is read in order 1 → 2 → 3 → origin. A tier is never consulted for a request whose `policy` has not already passed.
+
+**Cache keys should carry the actor's tenant and policy scope**, so that a cache hit cannot leak across tenants. `As of 2026-08` they do **not**: `cacheKeyFor` in `packages/query/src/cache.ts` is the query name, a fingerprint of the parsed input, and the read's sorted tag keys. The tenant therefore reaches the key only through the input — which is the shape every scoped read already has (`feed({ orgId })`) — and a `cache:` read whose answer varies by actor for one input is a cross-tenant hit. Tier 1 is keyed by `Ctx` identity and is not affected. Closing this means the key derives the scope itself; until then the rule is the one the wiki states.
 
 Tier 2 is optional per entry (`local: false` for large or per-tenant-unbounded values). Tier 3 is required for any entry an ISR page depends on, because regeneration happens on a different instance than the write.
 
@@ -95,7 +97,7 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Stale page after publish | forgot one `revalidate` call | tags are declared on the route, resolved from the graph |
 | Purging too much | uncertainty → `flushAll` | narrow `tag.post.id(x)` is the ergonomic default |
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
-| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from actor scope |
+| Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated — `As of 2026-08` from the query name, the parsed input and the tags, not yet from actor scope, so the read must take the tenant as input |
 
 This is [wrap, don't reinvent](./00-thesis.md#wrap-dont-reinvent) applied to eviction: the tiers are `Bun.redis` and standard CDN headers, and what the wrapper deletes is the decision about which of them to clear. A wrapper that only renamed `DEL` would have earned nothing.
 

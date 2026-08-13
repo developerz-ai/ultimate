@@ -5,6 +5,7 @@
  */
 
 import type { Actor, Ctx } from '@ultimat3/core';
+import { isMcpExposed } from '@ultimat3/core';
 import type { JsonSchema } from '@ultimat3/schema';
 import { toMcpInputSchema } from '@ultimat3/schema';
 import { toToolName } from './naming';
@@ -57,11 +58,12 @@ export function toQueryTool(target: AnyQuery): QueryToolDescriptor {
 }
 
 /**
- * Opt-in, unlike an action's tool: a read hands rows to an agent, so silence
- * exposes nothing. `mcp: { expose: true }` is the whole opt-in.
+ * Opt-in: a read hands rows to an agent, so silence exposes nothing. `mcp: { expose: true }` is
+ * the whole opt-in — `isMcpExposed` from `@ultimat3/core` is the framework's one answer, and an
+ * action's tool is now decided by the same call rather than by a second, looser rule.
  */
 export function isExposed(target: AnyQuery): boolean {
-  return target.mcp?.expose === true;
+  return isMcpExposed(target.mcp);
 }
 
 /** Deterministic order — the tool list is part of the agent-visible contract. */

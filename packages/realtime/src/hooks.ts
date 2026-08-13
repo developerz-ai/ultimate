@@ -55,8 +55,12 @@ export type LiveInput = JsonValue | (() => JsonValue);
 /**
  * A callable result set: `feed()` are the rows, `feed.state()` / `feed.cursor()` /
  * `feed.unsubscribe()` are the rest of the `LiveHandle` hanging off it.
+ *
+ * `R` is only constrained to `object`: on the wire every row is a `Row`, but a hook bound to a
+ * declared query (`query-hook.ts`) answers in that query's own row type, which is whatever its
+ * `sql` returns. The three members hanging off the accessor are the same for every `R`.
  */
-export type LiveRows<R extends Row = Row> = (() => readonly R[]) & Omit<LiveHandle<R>, 'rows'>;
+export type LiveRows<R extends object = Row> = (() => readonly R[]) & Omit<LiveHandle, 'rows'>;
 
 /**
  * Subscribe to a live query. `query` is anything carrying a `name`, which a `@ultimat3/query`

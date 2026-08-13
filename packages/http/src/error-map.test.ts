@@ -34,6 +34,13 @@ describe('error -> status', () => {
     expect(statusFor('X_PATH_INVALID')).toBe(400);
   });
 
+  // The input a primitive declared and the caller got wrong. Unmapped it was a 500, so every
+  // action route and every query read answered a typo'd uuid by blaming the server — and the
+  // `error-map` stage reports 5xx, so the on-call heard about it too.
+  test('input the caller got wrong blames the caller, not the server', () => {
+    expect(statusFor('X_INPUT_INVALID')).toBe(400);
+  });
+
   test('codes owned by other packages are mapped here, not there', () => {
     expect(statusFor('X_NOT_FOUND')).toBe(404);
     expect(statusFor('X_INVARIANT_VIOLATED')).toBe(422);

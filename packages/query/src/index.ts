@@ -40,6 +40,8 @@ export {
   QueryRequestFailedError,
   QueryUnregisteredError,
 } from './errors';
+/** The HTTP projection: `GET /_x/query/<kebab>`, the URL `client()` derives. */
+export { toQueryRoute } from './http';
 export type { LiveCursor, LiveQuery, ResumeMode, ResumePlan, ToLiveOptions } from './live';
 export { advanceCursor, liveEpoch, planResume, seekOf, toLiveQuery } from './live';
 export type { ChangeEvent, ChangeOp, Patch } from './matcher';

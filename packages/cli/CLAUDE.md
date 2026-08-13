@@ -191,6 +191,7 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 
 | File | Job |
 |---|---|
+| `api-routes.ts` | the app's API over HTTP: every registered action AND every registered query |
 | `dev-services.ts` | resolve which service each binding points at — embedded or external |
 | `dev-queue.ts` | the db + queue pair alone, and the one place that takes `db()` and `jobDriver()` back |
 | `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
@@ -211,6 +212,14 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for codes no command loads |
 | `mcp-test-output.ts` | reading `bun test`'s own summary back into a `TestRun` |
 | `cmd-mcp.ts` | `x mcp serve`: the two transports, and the local developer's caller |
+
+`api-routes.ts` is the app's own API surface, composed **once** and mounted by both `cmd-dev.ts`
+and `serve.ts`: `listActions().map(toRoute)` from `@ultimat3/action` plus
+`listQueries().map(toQueryRoute)` from `@ultimat3/query`. Two lists is how `query.client()`
+shipped deriving `/_x/query/<kebab>` against a route neither file mounted — a typed read that
+compiled everywhere and 404'd everywhere — and a surface that answers in `x dev` and not in the
+container is the same failure one release later. It reads the registries at call time, never at
+import: importing the app IS the registration, and it happens after this module loads.
 
 `startWeb` warns when the route table declares `auth: 'required'` and the app configured no
 authenticator: `hooks.authenticate` is the only place an actor can come from, so such a process

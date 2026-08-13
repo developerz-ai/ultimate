@@ -9,6 +9,7 @@
 // `x verify` fails on a breaking change without a major version bump. Additive and internal
 // changes never fail, which is what makes the gate credible enough to leave on.
 
+import { isMcpExposed } from '@ultimat3/core';
 import { canonical } from './build';
 import type { ActionFact, JobFact, Manifest, QueryFact, RouteFact } from './schema';
 
@@ -91,12 +92,18 @@ function diffActions(
         detail: `policy ${action.policy ?? 'none'} -> ${next.policy ?? 'none'}`,
       });
     }
-    if (action.mcp.expose !== next.mcp.expose) {
+    // Through `isMcpExposed`, not the raw field: `before` is a file parsed from disk, so an
+    // older or hand-trimmed manifest can carry an absent, `null` or non-boolean `expose` that
+    // `!==` would read as a change and classify from. One predicate, the same one the tool
+    // projection asks, is what makes this verdict match what the surface actually serves.
+    const exposed = isMcpExposed(action.mcp);
+    const nextExposed = isMcpExposed(next.mcp);
+    if (exposed !== nextExposed) {
       // Widening the surface is additive; withdrawing a tool an agent depends on is not.
       changes.push({
-        kind: next.mcp.expose ? 'additive' : 'breaking',
+        kind: nextExposed ? 'additive' : 'breaking',
         path: `${path}.mcp.expose`,
-        detail: `mcp exposure ${String(action.mcp.expose)} -> ${String(next.mcp.expose)}`,
+        detail: `mcp exposure ${String(exposed)} -> ${String(nextExposed)}`,
       });
     }
     if (canonical(action.cacheInvalidates) !== canonical(next.cacheInvalidates)) {

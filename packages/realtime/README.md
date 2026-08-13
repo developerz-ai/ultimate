@@ -58,6 +58,7 @@ frame handler is unchanged between rungs.
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
 | hooks | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue` |
+| the typed projection | `liveHookFor` — one query bound to one named hook |
 
 ## The four hooks
 
@@ -82,6 +83,26 @@ const queue = useMutationQueue();                               // .pending .fai
 | `pending` / `failed` are read off the queue, through an invalidation signal refreshed on each `mutate` and `drain` | the count is never a second copy of the queue, and `OfflineQueue` holds arrays, not signals |
 
 Tier 2 has no queue, so `pending` is `0` there — stated, not guessed.
+
+### The typed one: `liveHookFor`
+
+`useLive(query, input)` takes any object carrying a `name`, so it cannot type either side.
+`liveHookFor` binds one declared `query({ live: true })` to one named hook and carries both types
+through — the query's `input` in, its row type out. It is not a second subscribe path: it *is*
+`useLive`, with the name and the types already bound.
+
+```ts
+export const useLiveFeed = liveHookFor(liveFeed); // app/feed/hooks.ts — one line, no codegen
+
+const feed = useLiveFeed({ orgId: actor.orgId }); // feed()[0].title typechecks
+useLiveFeed({ orgIdd: actor.orgId });             // does not compile
+```
+
+The query's name is read **per call**, never at bind time: `registerQueries()` stamps it at boot,
+after a module-level binding has already run. Binding a query with no `live: true` is
+`X_QUERY_NOT_SUBSCRIBABLE`, thrown where the binding is written — a read that never patches has no
+subscription to hold, and the non-live read from a component is `query.client({ baseUrl })`.
+`type-pins.ts` fails the build if the hook ever widens either type.
 
 Authz goes through `@ultimat3/query`'s `guard`, which is the only contact with `@ultimat3/policy`.
 One authz system, never two: `policy` is evaluated **once per subscriber**, never once per query.

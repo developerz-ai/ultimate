@@ -63,7 +63,7 @@ mcp: { expose: true, description: 'Publish a draft post' },
 | Tool list is generated | adding a feature adds a capability; deleting one removes it |
 | Projected tools declare no MCP scope | adding one would be a second gate in front of the only gate that matters |
 | Ships on | day-one agent access to operations, not a v3 roadmap item |
-| Exposure | two surfaces, two defaults. Inside the admin's own catalog a registered action becomes a tool unless it sets `mcp: { expose: false }`. Projecting an `action` into an **app** MCP surface with `defineAppMcp` is opt-in: only `mcp: { expose: true }` makes a tool, and naming an un-exposed primitive there is `X_MCP_TOOL_UNDECLARED` at boot ([Actions](Actions)) |
+| Exposure | two surfaces, two defaults — and this catalog is the **only** exception in the framework. Inside the admin's own catalog a registered action becomes a tool unless it sets `mcp: { expose: false }`, because every tool here is already gated on an admin permission and the CRUD tools carry no `mcp` block at all. Everywhere else — the app MCP surface (`defineAppMcp`), the LLM tool list, `openapi.json`'s `x-ultimate.mcpTool` and `x.manifest.json` — one predicate decides, and it is opt-in: only `mcp: { expose: true }` makes a tool, and naming an un-exposed primitive in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot ([Actions](Actions)) |
 
 The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy evaluation lives inside `run`, so there is nothing to keep in sync. Details: [MCP and AI](MCP-And-AI).
 
@@ -126,7 +126,7 @@ See [Deployment](Deployment).
 - Read-only SQL, capped. No write console.
 - Keyset pagination only.
 - Every write emits an audit diff with `sensitive` fields redacted.
-- MCP runs with the human's own permissions. Projecting an `action` into an app MCP surface is opt-in — `mcp: { expose: true }`; inside the admin's own catalog a registered action opts out with `mcp: { expose: false }`.
+- MCP runs with the human's own permissions. Projecting an `action` into an app MCP surface is opt-in — `mcp: { expose: true }`, the one rule every other surface reads too; inside the admin's own catalog, and nowhere else, a registered action opts *out* with `mcp: { expose: false }`.
 - Extend by adding routes to `apps/admin/`, never by forking `@ultimat3/admin`.
 
 Source: [`packages/admin/src`](https://github.com/developerz-ai/ultimate/blob/main/packages/admin/src)

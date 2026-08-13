@@ -55,10 +55,49 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | Projection | Derived from | Shape |
 |---|---|---|
 | HTTP GET | name + `input` | `GET /_x/query/live-feed?orgId=…`, errors as `UltimateError` JSON |
-| Typed client hook | `input` + `sql` return type | `const feed = useLiveFeed({ orgId })` in `app/` — no fetch, no codegen step |
+| Typed client hook | `input` + `sql` return type | `const feed = useLiveFeed({ orgId })` in `app/` — no fetch, no codegen step. Bound once with `liveHookFor`, below |
 | Live subscription | `live: true` | WS frames `{qid, op, row, lsn}` patched into a Solid signal |
-| Cache entry | tags from `sql` | key includes actor tenant + policy scope; see [Caching and invalidation](Caching-And-Invalidation) |
+| Cache entry | tags from `sql` | key is the query name + a fingerprint of the parsed input + the sorted tag keys — the actor is not in it; see [Caching and invalidation](Caching-And-Invalidation) |
 | MCP read tool | `input` + `policy` + name | one read tool per query, identical authz. See [MCP and AI](MCP-And-AI) |
+
+### The typed client hook, precisely
+
+`liveHookFor` (`@ultimat3/realtime`) binds one live query to one named hook. The binding is a line in `app/`, not a generated file — the types come off the declaration, so a wrong input key is a compile error in the component.
+
+```ts
+// app/feed/hooks.ts
+import { liveHookFor } from '@ultimat3/realtime';
+import { liveFeed } from '../posts/live';
+
+export const useLiveFeed = liveHookFor(liveFeed);
+```
+
+```tsx
+const feed = useLiveFeed({ orgId: actor.orgId }); // feed(), feed.state(), feed.cursor(), feed.unsubscribe()
+```
+
+| Fact | Rule |
+|---|---|
+| Types | the query's own `input` and row type. `useLiveFeed({ orgIdd })` does not compile, and `feed()[0].titel` does not compile |
+| Transport | the subscription, not a fetch — the hook *is* `useLive` with the query's name and types already bound. One subscribe path, never two |
+| Input | a value or a thunk, read **once**, at subscribe time. There is no reactive runtime at tier 3 to re-run it; new input is a new subscription |
+| Naming | read per call, never at bind time — `registerQueries()` stamps the name at boot, after the module-level binding has already run |
+| Lifetime | the caller owns `unsubscribe()`. This layer does not know what a mount is |
+| A query without `live: true` | `X_QUERY_NOT_SUBSCRIBABLE`, thrown where the binding is written. A non-live read from a component is `query.client({ baseUrl })` over the HTTP GET below — a read that never patches has no subscription for a hook to hold |
+| No registered client | `X_LIVE_CLIENT_MISSING`. One `setLiveClient` per app, in the entry, above the first render |
+
+### The HTTP GET, precisely
+
+Mounted for every registered query by `x dev` and by a container, from one composition — nothing to wire in the app.
+
+| Fact | Rule |
+|---|---|
+| Method + path | `GET /_x/query/<kebab-export-name>`, the URL `.client()` derives with no server import |
+| Input | the search string, coerced at the boundary (`t.number` from `"12"`) then validated by the query's own schema. Repeated keys are an array, and keys are sorted so one input is one URL |
+| Bad input | **400** `X_INPUT_INVALID`, with `x queries describe <name> --json` as the fix — the same code and line every other surface of that read answers |
+| Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |
+| Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
+| Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
 
 ## Owns / never
 

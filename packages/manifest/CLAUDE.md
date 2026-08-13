@@ -29,6 +29,10 @@ by the CLI, not imported.
 - `agents-md.ts` **never writes**. Generated prose lowers agent task success; facts go in
   `x.manifest.json` and conventions stay human-authored.
 - A new manifest field ⇒ bump `MANIFEST_VERSION` and add a `diff.ts` rule for it.
+- `diff.ts` reads `mcp.expose` through `isMcpExposed` from `@ultimat3/core`, on **both** sides.
+  `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or
+  non-boolean value that `!==` would classify from; and the fact `sources.ts` publishes has to be
+  the answer `toMcpTools` gives, or the gate demands a major bump for a tool that never existed.
 
 ## Commands
 

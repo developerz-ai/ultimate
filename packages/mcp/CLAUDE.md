@@ -59,6 +59,10 @@ import. The CLI wires it.
   actually declares (`defineAppMcp` projecting real actions and queries). Extend them, never
   weaken them. A gate can only refuse what a declaration can reach, so a new gate needs a test
   in BOTH: the registry half passes while the declaration surface silently drops the field.
+- **`isExposed` and `exposureOf` both delegate to `isMcpExposed` in `@ultimat3/core`.** That is the
+  framework's one answer to "did this opt in?", shared with `action`, `query`, `ai` and `manifest`
+  — five packages that cannot import each other, which is how three spellings of the check shipped
+  and why the pin lives in `@ultimat3/cli`. Never spell `=== true` inline here again.
 - Exposure is declared at the primitive, never in `defineAppMcp`. A primitive NAMED in
   `actions:`/`queries:` without `mcp: { expose: true }` is `X_MCP_TOOL_UNDECLARED` at boot —
   a written-out list is a request, so filtering it would ship a catalog missing a tool its
