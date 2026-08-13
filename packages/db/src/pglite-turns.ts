@@ -5,10 +5,15 @@
 // gives `withTransaction` and `readOnlyQuery` on a real server.
 
 /**
- * Gives the connection back. Idempotent for free: it is a settled promise's `resolve`, not a
- * counter, so a second call cannot hand out a second turn — the next caller is already awake.
+ * Gives the connection back. `release()` is idempotent for free: it is a settled promise's
+ * `resolve`, not a counter, so a second call cannot hand out a second turn — the next caller is
+ * already awake. `Disposable`, so `using turn = await queue.take()` gives it back on every exit
+ * path — the same shape as `DbConnection` in `client.ts`, and `[Symbol.dispose]` is `release()`
+ * itself, never a second code path.
  */
-export type Turn = () => void;
+export interface Turn extends Disposable {
+  release(): void;
+}
 
 export interface TurnQueue {
   /** Wait for the connection, then keep it until the returned `Turn` is called. */
@@ -35,16 +40,14 @@ export function createTurnQueue(): TurnQueue {
     // other, not both read the same tail and run at once.
     tail = mine.then(() => held);
     await mine;
-    return release;
+    return { release, [Symbol.dispose]: release };
   }
 
   async function run<T>(work: () => Promise<T>): Promise<T> {
-    const turn = await take();
-    try {
-      return await work();
-    } finally {
-      turn();
-    }
+    // `using`, not `try`/`finally`: the turn must go back on every exit path, including one a
+    // future edit adds above a hand-rolled `finally` that forgot it — see `client.ts`.
+    using _turn = await take();
+    return await work();
   }
 
   return { take, run };

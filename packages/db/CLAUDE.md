@@ -37,6 +37,14 @@ a reservation runs direct **only while its turn is held**, re-queueing through `
 first two are pinned by live tests in `pglite.test.ts` and a fake driver cannot catch either; the
 third is a fake-driver test, because it is about ordering, not SQL.
 
+`Turn` (`pglite-turns.ts`) is `Disposable`, same shape as `DbConnection`: `release()` and
+`[Symbol.dispose]` are the same call, idempotent for free because it is a settled promise's
+`resolve`, not a counter. `TurnQueue.run()` holds its turn with `using`, not a hand-rolled
+`try`/`finally` — the pattern this package uses everywhere a scope-bound resource must go back on
+every exit. `reserve()` in `pglite.ts` cannot use `using` for the turn it takes: the turn outlives
+that function, released later by the caller's own `release()`/`[Symbol.dispose]`, so it calls
+`turn.release()` explicitly instead.
+
 The third rule is **both** drivers', not PGlite's alone: `client.ts`'s pinned handle also runs
 direct only while it is held, and once `release()` has been called a late statement goes back
 through the pool for a connection of its own. On a server the leak is quieter than on PGlite and

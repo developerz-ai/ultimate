@@ -27,7 +27,7 @@ describe('createTurnQueue', () => {
 
     await Bun.sleep(5);
     expect(ran).toBe(false);
-    turn();
+    turn.release();
     await next;
     expect(ran).toBe(true);
   });
@@ -43,7 +43,7 @@ describe('createTurnQueue', () => {
     const release = await first;
     await Bun.sleep(5);
     expect(secondTaken).toBe(false);
-    release();
+    release.release();
     await second;
     expect(secondTaken).toBe(true);
   });
@@ -55,6 +55,39 @@ describe('createTurnQueue', () => {
         throw new Error('statement failed');
       }),
     ).rejects.toThrow('statement failed');
+
+    expect(await queue.run(async () => 'next')).toBe('next');
+  });
+
+  test('`using` gives the turn back on the way out of the block', async () => {
+    const queue = createTurnQueue();
+    let ran = false;
+    let next: Promise<void> | undefined;
+
+    {
+      using turn = await queue.take();
+      next = queue.run(async () => {
+        ran = true;
+      });
+      await Bun.sleep(5);
+      expect(ran).toBe(false);
+      expect(turn.release).toBeInstanceOf(Function);
+    }
+
+    await next;
+    expect(ran).toBe(true);
+  });
+
+  test('`using` gives the turn back even when the block throws', async () => {
+    const queue = createTurnQueue();
+
+    await expect(
+      (async () => {
+        using turn = await queue.take();
+        void turn;
+        throw new Error('block failed');
+      })(),
+    ).rejects.toThrow('block failed');
 
     expect(await queue.run(async () => 'next')).toBe('next');
   });
