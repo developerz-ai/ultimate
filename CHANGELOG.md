@@ -156,7 +156,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   setStatementObserver(undefined);   // production, and what every test must leave behind
   ```
 
-  `attribution` — the `{ entity, op }` pair that would let a report read `50× findById on members` instead of 50 copies of one `select` — is declared and **not yet produced**: both funnels omit it, so every event today carries `attribution: undefined`. Its producer is `@ultimat3/entity`'s `postgresDriver()`, the last caller that still knows the entity and the operation once the SQL exists; until it lands, read the field as reserved rather than optional.
+  `attribution` — the `{ entity, op }` pair that lets a report read `50× findById on members` instead of 50 copies of one `select` — is produced, `As of 2026-08`: `@ultimat3/entity`'s `postgresRepo` is the one producer, the last caller that still knows both once the SQL exists, and it wraps every repository method around its send through `withStatementAttribution()`. Hand-written SQL, a migration, a health probe and `@ultimat3/jobs`' own queue statements still carry none — nothing above them knows an entity to name — which is why the field stays optional rather than required.
 
   Uninstalled costs one property read and one branch, which is why the accessor hands back the installed observer itself instead of notifying through a wrapper: no event object is built for nobody to receive (axiom 6). One observer, not a list — a second install replaces the first, so "which diagnostic saw this statement" is never order-dependent, and the one consumer that needs several composes them itself, where that order is reviewable. A throw from `onStatement` reaches whoever ran the statement, deliberately: strict test mode is an observer that fails the test its N+1 happened in, and containment here would make that impossible.
 
@@ -176,6 +176,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   One mechanism, and deliberately not two: no comment pragma, no config list of exempt call sites, no per-code threshold table (axiom 1) — each of those puts the argument somewhere other than the loop it defends, where the next reader will not find it. `reason` is required and non-blank (`X_INVARIANT` otherwise), because an exemption with no argument is a pragma with extra steps.
 
   The scope rides an `AsyncLocalStorage`, so it survives every `await` at any depth and two loops running at once never read each other. Both funnels stamp the innermost reason onto the `StatementEvent` as `expected` at settle time — captured with the statement rather than read later, because a diagnostic that judges a whole request judges it after every scope in it has closed. What is suppressed is a **verdict**, never a statement: the SQL is still sent, still observed, still a span on the trace, so everything that measures still sees the loop and only the thing that warns is told the author already answered. Production is unchanged: the reason is read inside the branch that already checks for an installed observer, so an app with no diagnostic pays nothing.
+
+- **`withStatementAttribution(entity, op, fn)` — the `{ entity, op }` pair behind `StatementEvent.attribution`, produced.** The field shipped with `setStatementObserver()` (above) and no producer: every event in every running process read `attribution: undefined`. `@ultimat3/entity`'s `postgresRepo` is now the one producer — the last caller that still knows both once the SQL exists — and every repository method wraps its send:
+
+  ```ts
+  const attributed = <T>(op: string, send: () => Promise<T>) =>
+    withStatementAttribution(entity.$name, op, send);
+
+  async findById(id, options) {
+    const op = 'findById';   // the same string idPlan(entity, id, options, op) reports on refusal
+    return attributed(op, () => coalesceFindById(entity, client(), plan, shapeOf(args), id) ?? one(plan, args));
+  }
+  ```
+
+  A scope, not a parameter: the statement leaves several frames and at least one microtask below the repository call that caused it — the coalescer flushes its batch from a `queueMicrotask`, a wide write is a chunked loop, a preload sends through `readByIds` — and threading a parameter through all of those is the same fact written five times, with every path an author forgot it emitting unattributed SQL instead. `withStatementAttribution` rides an `AsyncLocalStorage`, `expectedQueryLoop`'s own shape, so it survives every one of those `await`s; nesting keeps the innermost pair for the same reason `expectedQueryLoop` keeps the innermost reason — a relation preloaded during `findMany` reads through the *related* repository, so its statement is attributed to the related entity and its own operation, never to the read that triggered the preload. `findById`'s coalesced batch is flushed from a microtask scheduled inside the scope, so the one statement sent on behalf of fifty lookups carries the pair every one of those fifty would have carried.
+
+  With no observer installed the scope is never entered — one property read, one branch, no object allocated, on the path every statement in the process takes (axiom 6), which is also why the pair arrives as two strings rather than a `StatementAttribution` literal: a literal at the call site would be allocated before the branch could decline it. An observer installed *during* `fn` therefore sees the statements that follow unattributed — installation happens once, at boot. Both funnels call `statementAttribution()` inside the branch that already found an observer, next to `expectedQueryLoopReason()`, and stamp it onto the event on **both** settle paths — the same argument as `expected`: a diagnostic that judges a whole request runs long after every scope in it closed. Hand-written SQL, a migration, a health probe, `x db` commands and `@ultimat3/jobs`' own queue statements stay unattributed — nothing above them knows an entity to name, which is why the field stays optional and a detector must still fall back to the statement text. Additive — nothing reads `attribution` yet; the N+1 detector is what will.
 
 ### Fixed
 

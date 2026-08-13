@@ -104,6 +104,41 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   hands back the row it stores and attaching directly would leak the relation into the table
   itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
   relation; `count()`, `countBy()` and `plan()` do not, since none reads a row to attach one to.
+- **Every repository method attributes the statement it sends, and each op is named exactly
+  once.** `postgresRepo`'s `attributed(op, send)` wraps `findById`, `findMany`, `insert`,
+  `insertAll`, `upsertAll`, `update`, `delete`, `deleteWhere`, `updateWhere`, `count` and
+  `countBy` — every method, not a subset — through `@ultimat3/db`'s
+  `withStatementAttribution(entity.$name, op, send)`. Each method declares `const op = 'findById'`
+  (or its own name) once, and that same local is what everything else downstream of it gets too:
+  the plan builder (`idPlan(entity, id, options, op)`, `readPlan(entity, args, op)`,
+  `deletePlan`/`updatePlan`), and in `countBy`, `groupColumnOf` and `countsFrom` besides — so the
+  operation a refusal names and the operation a diagnostic reports can never drift apart, one
+  string read as many times as a method needs it and never retyped by hand a second time. The
+  three insert paths do not call `attributed` themselves: `writeRows(op, batch, conflict)` does,
+  once, because a batch wide enough to split (past `MAX_BIND_PARAMETERS`) is several statements
+  sent inside its own loop and every one of them belongs to the call that asked for it — `op` is
+  therefore `writeRows`'s own parameter, passed as the literal `'insert'`, `'insertAll'` or
+  `'upsertAll'` by each of the three callers, never a constant closed over the helper. **The scope
+  is never entered with no observer installed** — `withStatementAttribution` reads
+  `statementObserver()` first, so an app running with no diagnostic pays the one property read and
+  one branch every other statement on this path already pays, and nothing more (axiom 6). **A
+  preloaded relation is attributed to the related entity and its own operation, never to the read
+  that triggered it** — `preload()`'s related read (`preloaded()` in `preload.ts`) calls
+  `target.repo.findMany(...)`, the related entity's own `postgresRepo`, so a `posts` page's
+  preloaded author carries `{ members, findMany }`, never `{ posts, findMany }` borrowed from the
+  page: it is a full call through that entity's own repo, not a fact copied across. **`findById`'s
+  coalesced flush carries its opener's pair without anyone threading it there** — `coalesce.ts`'s
+  `queueMicrotask` inside `openBatch` is scheduled synchronously while `coalesceFindById` is still
+  running inside `attributed('findById', …)`'s scope, so the statement the flush eventually sends
+  on behalf of every lookup that shared the microtask is attributed exactly as each of them would
+  have been alone. **This is the one rule the two drivers do not share**, and not a drift:
+  `memoryRepo` sends no statement, so there is nothing for a pair to name — the parity bar
+  (`*-parity.test.ts`) applies to what a call *answers*, and attribution changes no answer.
+  `pg-driver-attribution.test.ts` is the pin: a client that reads `statementAttribution()` at send
+  time, one case per method — a twelfth method added without `attributed` is a failing test, not a
+  review comment — plus the coalesced flush, the sibling preload, a relation's own read, a chunked
+  batch's every statement, hand-written SQL (no pair), a refusal (no statement) and the
+  no-observer-installed branch.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -335,7 +370,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `batch.ts` | `inBatches(size)` — the chain's page in a loop, closed by the loop that reads it |
-| `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
+| `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` — attributes every statement it sends |
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
 | `bulk-write.ts` | what a many-row write is made of — the column list, the conflict plan, the bind-count chunking |

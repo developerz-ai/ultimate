@@ -8,12 +8,12 @@
  * repository operation. It is the difference between "50× `select … where id = $1`" and "50×
  * `findById` on `members`" in a diagnostic's report.
  *
- * **Nothing produces one yet** — `As of 2026-08` both funnels omit the field, so every event in a
- * running process carries `attribution: undefined`, and the only values this type has ever held are
- * the ones a test supplied. The producer is `@ultimat3/entity`'s `postgresDriver()` (tier 2, so
- * importing this is downward): it is the one caller that still knows the entity and the operation
- * by the time the SQL exists. Hand-written SQL, a migration and a health probe stay unattributed
- * even then, which is why the field is optional rather than required.
+ * Produced by `@ultimat3/entity`'s `postgresRepo` (tier 2, so importing this is downward): it is
+ * the last caller that still knows the entity and the operation by the time the SQL exists, and it
+ * declares both through `withStatementAttribution` (`attribution.ts`) around each repository call.
+ * Hand-written SQL, a migration, a health probe and the job queue's own statements are unattributed
+ * — nothing above them knows an entity to name — which is why the field is optional rather than
+ * required, and why a diagnostic must fall back to the statement text.
  */
 export interface StatementAttribution {
   /** Entity name as declared, e.g. `members` — never a table name. */
@@ -34,7 +34,12 @@ export interface StatementEvent {
   readonly rows: number;
   /** The rejection, already wrapped as `X_DB_UNAVAILABLE` by the funnel. */
   readonly error?: unknown;
-  /** Who compiled this statement. Always absent today — see `StatementAttribution`. */
+  /**
+   * Who compiled this statement, absent when nothing above the SQL knew — see
+   * `StatementAttribution`. Stamped by the funnel from the scope open at send time, for the same
+   * reason `expected` is: a diagnostic that judges a whole request runs long after every scope in
+   * it closed.
+   */
   readonly attribution?: StatementAttribution | undefined;
   /**
    * The reason of the innermost `expectedQueryLoop()` this statement was issued inside, absent
