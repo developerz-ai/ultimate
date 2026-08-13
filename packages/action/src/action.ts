@@ -6,6 +6,7 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
+import { isMcpExposed } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
@@ -286,7 +287,11 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     invalidates: tagKeys(def.cache?.invalidates ?? []),
     idempotent: def.idempotent === true,
     mcp: {
-      expose: mcp?.expose ?? true,
+      // `isMcpExposed`, not `?? true`: this fact is what the manifest publishes and what the
+      // contract diff classifies, so it has to be the answer the tool projection actually gives.
+      // Fail-open here published every action as a tool no surface would ever serve, which made
+      // a first honest `expose: false` read as a withdrawn capability and demand a major bump.
+      expose: isMcpExposed(mcp),
       tool: toToolName(name),
       description: mcp?.description ?? null,
     },

@@ -66,6 +66,15 @@ the pin (`schema-error-codes-pin.test.ts`) lives in `@ultimat3/cli`, which may l
 `@ultimat3/storage` both need — core is the lowest tier both can reach, so the shared code lives
 here rather than in either package copying the other's file.
 
+`mcp-exposure.ts` is the same shape for a declaration rather than an algorithm: `isMcpExposed` is
+the ONE answer to "did this primitive opt into being an MCP tool?", asked by `action`, `query`
+(t3), `mcp`, `ai`, `manifest` (t4) — five packages that cannot import each other, so core is the
+only tier all of them reach. Three spellings of the same question shipped before it (`=== true`,
+`!== false`, `?? true`), which published tools in `openapi.json` and `x.manifest.json` that no
+surface would serve. Never add a second reader: `@ultimat3/cli`'s `mcp-exposure-pin.test.ts` is
+what makes "one predicate" checkable, since no single package below tier 5 can. The one deliberate
+exception is `@ultimat3/admin`'s own catalog, which is opt-OUT and says why in `mcp-tools.ts`.
+
 Metrics mirror tracing exactly — `metrics.ts` is to `telemetry.ts` what a counter is to a span:
 always on, no-op exporter by default, driver on the wire. `runtime-metrics.ts` is the only place
 that names a series the deploy chart reads (`http_requests_total`, `connections`, `queue_depth`);

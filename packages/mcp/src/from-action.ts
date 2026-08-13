@@ -13,6 +13,7 @@
 // JSON Schema); this file owns the execution half.
 
 import type { Actor } from '@ultimat3/core';
+import { isMcpExposed } from '@ultimat3/core';
 import { McpToolUndeclaredError } from './errors';
 import type { AnyMcpTool, McpCaller, McpRole, McpToolResult, ToolArgs } from './registry';
 import { jsonResult } from './registry';
@@ -56,9 +57,13 @@ export interface ProjectablePrimitive {
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
 }
 
-/** True when the primitive opted into MCP. Opt-in, never opt-out: silence exposes nothing. */
+/**
+ * True when the primitive opted into MCP. Opt-in, never opt-out: silence exposes nothing.
+ * `isMcpExposed` from `@ultimat3/core` is the one predicate — the manifest fact, the OpenAPI
+ * hint and both tool projections all ask it, so none of them can answer differently.
+ */
 export function isExposed(primitive: ProjectablePrimitive): boolean {
-  return primitive.mcp?.expose === true;
+  return isMcpExposed(primitive.mcp);
 }
 
 /**

@@ -3,8 +3,8 @@ import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { action } from './action';
-import { toRoute } from './http';
+import { action, describeAction } from './action';
+import { toOpenApiOperation, toRoute } from './http';
 import { isExposed, toMcpTool, toMcpTools } from './mcp-tool';
 
 const Input = t.object({ postId: t.uuid });
@@ -113,5 +113,32 @@ describe('exposure is opt-in', () => {
     expect(toMcpTools([declaring({ expose: true })]).map((tool) => tool.action)).toEqual([
       'publishPost',
     ]);
+  });
+
+  // The two readers that fail-opened until 2026-08. Both are CONTRACT surfaces — the manifest
+  // fact `x verify` diffs, and the OpenAPI operation an agent reads — so publishing a tool the
+  // catalog refuses to serve is worse than not publishing one at all.
+  test('describeAction reports the exposure the tool projection actually gives', () => {
+    expect(describeAction(declaring()).mcp.expose).toBe(false);
+    expect(describeAction(declaring({ expose: false })).mcp.expose).toBe(false);
+    expect(describeAction(declaring({ expose: true })).mcp.expose).toBe(true);
+  });
+
+  test('the OpenAPI operation names a tool only when one exists', () => {
+    expect(toOpenApiOperation(declaring())['x-ultimate']['mcpTool']).toBe(null);
+    expect(toOpenApiOperation(declaring({ expose: false }))['x-ultimate']['mcpTool']).toBe(null);
+    expect(toOpenApiOperation(declaring({ expose: true }))['x-ultimate']['mcpTool']).toBe(
+      'publish_post',
+    );
+  });
+
+  test('every reader of one declaration agrees, whatever it says', () => {
+    for (const mcp of [undefined, { expose: false }, { expose: true }] as const) {
+      const target = declaring(mcp);
+      const exposed = isExposed(target);
+      expect(describeAction(target).mcp.expose).toBe(exposed);
+      expect(toOpenApiOperation(target)['x-ultimate']['mcpTool'] !== null).toBe(exposed);
+      expect(toMcpTools([target]).length > 0).toBe(exposed);
+    }
   });
 });

@@ -5,7 +5,7 @@
  * there is no way to mount an action without them.
  */
 
-import { isUltimateError } from '@ultimat3/core';
+import { isMcpExposed, isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { json, problem, redirect, takeRedirect } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
@@ -127,7 +127,10 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       capability: policyCapability(def.policy),
       idempotent,
       invalidates: tagKeys(def.cache?.invalidates ?? []),
-      mcpTool: def.mcp?.expose === false ? null : toToolName(name),
+      // The tool name an agent would call, or `null` when there is no tool. `!== false` here
+      // advertised one for every action, so an agent reading the spec asked for a tool the MCP
+      // catalog never listed — `isMcpExposed` is the same answer `toMcpTool` gives.
+      mcpTool: isMcpExposed(def.mcp) ? toToolName(name) : null,
       rateLimit: rateLimitMeta(def.rateLimit),
     },
   };

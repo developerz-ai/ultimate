@@ -46,7 +46,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - `isLive` is the declared boolean, `live()` is the subscription. Never name one after the other.
   `QueryDescriptor.live` keeps its name — `@ultimat3/manifest` and `@ultimat3/admin` read it.
 - `mcp` is opt-in (`expose: true`), exactly as it is for an action: rows reach an agent only when
-  the author said so.
+  the author said so. `isExposed` here delegates to `isMcpExposed` in `@ultimat3/core` — the one
+  predicate every reader in the framework asks — rather than spelling `=== true` a second time.
 - `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
   is the same tier, so its naming is ported here, never imported.
 - **`toQueryRoute` is the other half of `client()`, and the two derive the same URL from the same

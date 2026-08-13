@@ -250,6 +250,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **MCP exposure has one answer, `isMcpExposed`, and the contract stops publishing tools nothing serves.** Six readers across five packages decided `mcp: { expose }` three ways: `=== true` where a tool is actually built (`@ultimat3/action`'s `toMcpTools`, `@ultimat3/query`'s, `@ultimat3/mcp`'s two projections), `!== false` in the OpenAPI operation's `x-ultimate.mcpTool`, and `?? true` in `describeAction`'s manifest fact. So an action with **no `mcp` block at all** was published as a tool by `x.manifest.json` and by `openapi.json`, and refused by every surface an agent could call — and the first honest `mcp: { expose: false }` an author wrote then read as a *withdrawn* capability, which `x verify`'s contract diff classifies as breaking and demands a major version bump for.
+
+  `isMcpExposed(declared)` in `@ultimat3/core` is now the single predicate. Core owns it because the readers span tiers 3–5 and this is the only tier all of them reach — the same reason `timingSafeEqual` lives there. Opt-in is unchanged and unchanged everywhere: an absent block, an omitted `expose` and a literal `false` are one answer.
+
+  ```jsonc
+  // an action declaring no mcp block, in openapi.json
+  "x-ultimate": { "mcpTool": "publish_post" }   // before — a tool no catalog listed
+  "x-ultimate": { "mcpTool": null }             // after
+  ```
+
+  `diffManifest` reads both sides through the same predicate, so a manifest parsed off disk whose `mcp.expose` is absent or non-boolean reads as un-exposed rather than as a third state. **Upgrading:** run `x manifest` once — an app whose actions never declared `mcp.expose` will see those facts flip `true → false`, which is the correction, not a withdrawal; re-commit the regenerated file before the next `x verify`.
+
+  `@ultimat3/admin`'s own catalog keeps the opposite default on purpose and says so in code: every tool there is already gated on an admin permission and its CRUD tools carry no `mcp` block at all, so opt-in would list `admin.posts.delete` while hiding the action button beside it. That exception is the only one, and `packages/cli/src/mcp-exposure-pin.test.ts` pins every other reader to one answer.
+
 - **`query.client()` now reaches a route. Reads are served over HTTP, in `x dev` and in a container alike.** `@ultimat3/query` derived `/_x/query/<kebab>` in `naming.ts`, `client.ts` fetched exactly that URL, and nothing anywhere built or mounted a route for it — so every typed read compiled, shipped, and 404'd, while the README and the wiki documented the projection as shipped.
 
   `toQueryRoute(target)` in `packages/query/src/http.ts` is that projection, mirroring `@ultimat3/action`'s `toRoute`:

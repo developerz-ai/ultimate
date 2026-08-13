@@ -43,6 +43,12 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
+- **MCP exposure is read through `isMcpExposed` from `@ultimat3/core`, in all three places.**
+  `toMcpTools` builds the tool, `describeAction` publishes the manifest fact and
+  `toOpenApiOperation` publishes `x-ultimate.mcpTool` — the last two fail-opened (`?? true`,
+  `!== false`) until 2026-08, so an action with no `mcp` block was advertised as a tool by both
+  contract artifacts and refused by the only surface that could serve one. A contract that
+  disagrees with the runtime is worse than no contract; never spell the check inline again.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.

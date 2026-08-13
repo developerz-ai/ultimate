@@ -7,7 +7,9 @@ Declared today: `action` (the primitive `llm()` returns), `cache` (semantic cach
 `db` (pgvector), `money`, `policy`, `schema`, `time`.
 
 `mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`
-rather than imported. Same contract, two wire formats.
+rather than imported. Same contract, two wire formats — and the same *decision*: `toLlmTools` and
+`runLlmToolCall` ask `isMcpExposed` from `@ultimat3/core` (tier 0, reachable by both), never a
+local `=== true`. An in-app agent and an external one must be offered exactly the same tools.
 
 ## Owns
 

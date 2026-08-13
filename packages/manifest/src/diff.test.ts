@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
 import { diffManifest } from './diff';
+import type { Manifest } from './schema';
 import { verifyContract } from './verify';
 
 const action = (name: string, policy: string, expose = true) => ({
@@ -90,6 +91,28 @@ describe('classification', () => {
       'actions.publishPost.mcp.expose',
     );
     expect(diffManifest(withdrawn, before).additive.map((c) => c.path)).toContain(
+      'actions.publishPost.mcp.expose',
+    );
+  });
+
+  // `before` is a file read off disk, so nothing checked its types first. An older or
+  // hand-trimmed manifest whose `expose` is absent must read as "not exposed" — the same answer
+  // `isMcpExposed` gives every other surface — rather than as a third state `!==` calls a change.
+  test('a manifest that omits mcp.expose reads as un-exposed, not as a change', () => {
+    const unexposed = withActions([
+      action('publishPost', 'post:publish', false),
+      action('archivePost', 'post:archive', false),
+    ]);
+    const parsed = JSON.parse(JSON.stringify(unexposed)) as Manifest;
+    for (const fact of parsed.actions) {
+      delete (fact.mcp as { expose?: boolean }).expose;
+    }
+
+    expect(diffManifest(parsed, unexposed).changes.map((c) => c.path)).not.toContain(
+      'actions.publishPost.mcp.expose',
+    );
+    // And opting in from that same file is still the additive change it really is.
+    expect(diffManifest(parsed, buildManifest(base)).additive.map((c) => c.path)).toContain(
       'actions.publishPost.mcp.expose',
     );
   });

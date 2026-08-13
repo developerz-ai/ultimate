@@ -10,6 +10,7 @@
 // boundary error. Both packages describe the same structural contract.
 
 import type { Actor } from '@ultimat3/core';
+import { isMcpExposed } from '@ultimat3/core';
 
 /** The JSON Schema subset the framework emits for tool arguments. */
 export interface JsonSchema {
@@ -76,10 +77,14 @@ export function toLlmTool(action: ProjectableAction): LlmTool {
   };
 }
 
-/** Every exposed action as a tool definition, in stable name order. */
+/**
+ * Every exposed action as a tool definition, in stable name order. The gateway and MCP ask
+ * `isMcpExposed` — @ultimat3/core's one predicate — so an in-app agent and an external one are
+ * offered exactly the same tools.
+ */
 export function toLlmTools(actions: readonly ProjectableAction[]): readonly LlmTool[] {
   return actions
-    .filter((a) => a.mcp?.expose === true)
+    .filter((a) => isMcpExposed(a.mcp))
     .map(toLlmTool)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
@@ -93,7 +98,7 @@ export async function runLlmToolCall(
   call: LlmToolCall,
   actor: Actor,
 ): Promise<LlmToolResult> {
-  const action = actions.find((a) => a.name === call.name && a.mcp?.expose === true);
+  const action = actions.find((a) => a.name === call.name && isMcpExposed(a.mcp));
   if (action === undefined) {
     return { toolUseId: call.id, content: `unknown tool: ${call.name}`, isError: true };
   }

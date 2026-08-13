@@ -5,7 +5,7 @@
 
 import type { AnyAction } from '@ultimat3/action';
 import { actionName, invoke, isAction } from '@ultimat3/action';
-import { withChildContext } from '@ultimat3/core';
+import { isMcpExposed, withChildContext } from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
 import { isQuery, queryName, sourceFor } from '@ultimat3/query';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
@@ -73,8 +73,9 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
 
 /**
  * An action and a query declare MCP exposure with the same fields, so one typed path reads
- * both. Narrow on purpose: only a literal `expose: true` counts, so nothing is exposed by
- * accident — an undeclared `mcp` block yields no exposure at all.
+ * both. Narrow on purpose, through `@ultimat3/core`'s `isMcpExposed`: only a literal
+ * `expose: true` counts, so nothing is exposed by accident — an undeclared `mcp` block yields
+ * no exposure at all.
  *
  * `visibleTo` travels with it, and must: it is OUTCOME 1's only declaration surface for a
  * projected primitive. Dropping it here — which this function did until 2026-08 — left
@@ -85,7 +86,7 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
 function exposureOf(declared: DeclaredMcp | undefined): McpExposure | undefined {
   if (declared === undefined) return undefined;
   return {
-    expose: declared.expose === true,
+    expose: isMcpExposed(declared),
     ...(declared.description === undefined ? {} : { description: declared.description }),
     ...(declared.visibleTo === undefined ? {} : { visibleTo: declared.visibleTo }),
   };

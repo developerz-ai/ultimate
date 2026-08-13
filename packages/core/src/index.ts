@@ -272,6 +272,8 @@ export {
   redactKeys,
   setLoggerContextFields,
 } from './logger';
+export type { McpExposureDeclaration } from './mcp-exposure';
+export { isMcpExposed } from './mcp-exposure';
 export type {
   Counter,
   Gauge,
