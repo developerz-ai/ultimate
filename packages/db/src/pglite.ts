@@ -8,6 +8,7 @@ import { DbError, dbUnavailable } from './errors';
 import { statementObserver } from './observe';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
+import { withStatementSpan } from './statement-span';
 import { currentTx } from './transaction';
 
 /** What PGlite answers with. `rows` is empty for a write, which is why the count is separate. */
@@ -146,8 +147,9 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
   /**
    * The funnel — queued, in-transaction and pinned statements all arrive here, so the observer
    * hangs off this one function and nowhere else. Uninstalled it costs one property read and one
-   * branch: no clock read, no event object, and `send` receives exactly the call `statement` made
-   * before the seam existed (axiom 6). Same shape as `runOn` in `client.ts`, one driver up.
+   * branch: no clock read, no span, no event object, and `send` receives exactly the call
+   * `statement` made before the seam existed (axiom 6). Same shape as `runOn` in `client.ts`, one
+   * driver up.
    */
   async function statement(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
     const observer = statementObserver();
@@ -155,7 +157,9 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     const started = performance.now();
     let result: PgliteResult;
     try {
-      result = await send(driver, fragment);
+      // The span wraps the send and nothing else, so its duration is the statement's and the
+      // observer's own work is not charged to the database.
+      result = await withStatementSpan(fragment.text, () => send(driver, fragment));
     } catch (error) {
       // The failing path is observed too — the error is already `X_DB_UNAVAILABLE`, and a throw
       // from `onStatement` replaces it, which is why `observe.ts` says a reporting-only observer

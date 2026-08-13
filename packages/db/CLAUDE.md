@@ -134,6 +134,19 @@ observer that only reports must not throw. `rows` comes from the same helper `ex
 (`affectedBy` in `client.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
 report and the return value cannot disagree about one statement.
 
+`statement-span.ts` is the other half of the observed shell: `withStatementSpan` wraps the **send
+alone**, so the span's duration is the statement's and the observer's own work is not charged to
+the database. Three decisions, each load-bearing. **`db.<verb>`** (`db.select`, `db.begin`; a text
+opening with a comment is `db.statement`) — `@ultimat3/cli`'s `dev-traces.ts` reads the `/_x` panel
+kind off the name prefix like it does for `query.`/`cache.`/`job.`, and this package is tier 1 and
+cannot name a tier-5 vocabulary. **The text is `db.statement`**, OTel's own attribute and the one
+`dev-traces.ts` prefers over the span name — a repository loop is then fifty rows of one SQL text
+in `repeatedSql`, not one `query.feed`. **It opens only when an observer is installed**, inside the
+guarded branch that already exists: installing an observer is the single switch that turns
+statement instrumentation on, event and span together (axiom 1), and an uninstalled process mints
+no span id and allocates no span object per statement — which on this path is every statement in
+the process. The OTel `kind` is `client`; the database is the remote peer.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

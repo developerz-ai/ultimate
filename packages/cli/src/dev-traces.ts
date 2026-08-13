@@ -23,6 +23,10 @@ export interface TraceRecorder {
  * prefix IS the kind — no registry of names to keep in step with the packages that emit them.
  */
 const KIND_BY_PREFIX: readonly (readonly [string, SpanKind])[] = [
+  // Two producers of `sql`, one axis: `db.` is the statement itself (`db.select`, carrying its
+  // text), `query.` is the read that compiled it. The panel counts repeats of the detail, so a
+  // repository loop shows up as one SQL text fifty times and not as one `query.feed`.
+  ['db.', 'sql'],
   ['query.', 'sql'],
   ['cache.', 'cache'],
   ['action.', 'action'],
@@ -89,8 +93,9 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
           name: span.name,
           startMs: Math.max(0, span.startedAt - origin),
           durationMs: span.durationMs,
-          // The panel counts repeats of `detail` to find the N+1, and a framework span's name is
-          // exactly the identity that repeats — `query.feed` twice is two reads of one query.
+          // The panel counts repeats of `detail` to find the N+1. A statement states its own
+          // identity (`db.statement`, set by `@ultimat3/db`'s funnels); for every other span the
+          // name is that identity — `query.feed` twice is two reads of one query.
           detail: attrString(span, 'db.statement') ?? span.name,
         }),
       )

@@ -7,6 +7,7 @@ import { type Role, resolveRole } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
 import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
+import { withStatementSpan } from './statement-span';
 import { currentTx } from './transaction';
 
 export interface DbClient {
@@ -150,8 +151,8 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
   /**
    * The funnel — pooled and pinned statements both arrive here, which is why the observer hangs
    * off this one function and nowhere else. Uninstalled it costs one property read and one
-   * branch: no clock read, no event object, and `sendOn` receives exactly the call `runOn` made
-   * before the seam existed (axiom 6).
+   * branch: no clock read, no span, no event object, and `sendOn` receives exactly the call `runOn`
+   * made before the seam existed (axiom 6).
    */
   async function runOn(
     driver: Pick<BunSqlDriver, 'unsafe'>,
@@ -162,7 +163,9 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     const started = performance.now();
     let result: unknown;
     try {
-      result = await sendOn(driver, fragment);
+      // The span wraps the send and nothing else, so its duration is the statement's and the
+      // observer's own work is not charged to the database.
+      result = await withStatementSpan(fragment.text, () => sendOn(driver, fragment));
     } catch (error) {
       // A statement that failed is still a statement: fifty identical timeouts are an N+1 of
       // timeouts. The error is already `X_DB_UNAVAILABLE`, so the event carries what the caller

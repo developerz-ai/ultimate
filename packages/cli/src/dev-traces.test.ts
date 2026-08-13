@@ -21,6 +21,7 @@ function request(
   clock: FrozenClock,
   facts: { id: string; method?: string; path: string; status?: number },
   children: readonly string[] = [],
+  statements: readonly string[] = [],
 ): void {
   withSpan(
     `${facts.method ?? 'GET'} ${facts.path}`,
@@ -29,6 +30,18 @@ function request(
         withSpan(name, () => {
           clock.advance(5);
         });
+      }
+      // Exactly the shape `@ultimat3/db`'s funnels open: `db.<verb>`, kind `client`, text on the
+      // span. Anything else here would be a recorder tested against SQL nothing actually emits.
+      for (const text of statements) {
+        withSpan(
+          'db.select',
+          (statement) => {
+            statement.setAttribute('db.statement', text);
+            clock.advance(2);
+          },
+          { kind: 'client' },
+        );
       }
       clock.advance(1);
       span.setAttributes({
@@ -155,5 +168,32 @@ describe('unit · the /_x timeline source', () => {
       .filter((span) => span.kind === 'sql')
       .map((span) => span.detail);
     expect(details).toEqual(['query.feed', 'query.feed', 'query.author']);
+  });
+
+  // The read loop the panel exists to name: one `query.feed`, then a statement per row. Grouping
+  // on the name would count one query and see nothing; grouping on the text counts the loop.
+  test('a statement is an sql span whose detail is its text, not its name', () => {
+    const { recorder, clock } = install();
+    request(
+      clock,
+      { id: 'req_1', path: '/feed' },
+      ['query.feed'],
+      [
+        'select * from authors where id = $1',
+        'select * from authors where id = $1',
+        'select * from posts where org = $1',
+      ],
+    );
+
+    const sqlSpans = (recorder.traces()[0]?.spans ?? []).filter((span) => span.kind === 'sql');
+    expect(sqlSpans.map((span) => span.detail)).toEqual([
+      'query.feed',
+      'select * from authors where id = $1',
+      'select * from authors where id = $1',
+      'select * from posts where org = $1',
+    ]);
+    expect(sqlSpans.every((span) => span.name === 'db.select' || span.name === 'query.feed')).toBe(
+      true,
+    );
   });
 });
