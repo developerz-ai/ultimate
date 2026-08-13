@@ -28,6 +28,12 @@ describe('error -> status', () => {
     expect(statusFor('X_BUILD_SKEW')).toBe(409);
   });
 
+  // The client wrote the path. A `%ZZ` used to reach `factsOf` as an unmapped `URIError` and take
+  // the 500 default — which pages the on-call for someone else's typo.
+  test('a path the client mis-encoded blames the caller, not the server', () => {
+    expect(statusFor('X_PATH_INVALID')).toBe(400);
+  });
+
   test('codes owned by other packages are mapped here, not there', () => {
     expect(statusFor('X_NOT_FOUND')).toBe(404);
     expect(statusFor('X_INVARIANT_VIOLATED')).toBe(422);

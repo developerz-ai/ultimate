@@ -50,6 +50,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `config.dev && wantsOverlay` branch: the overlay is a notice's only surface, so a production
   process, or an agent that asked for problem+json, must not pay a diagnostic's per-request cost
   for findings nothing renders. No notices means no card, byte for byte.
+- **`matchRoute` never throws — a pathname is whatever the client typed.** `decodeURIComponent`
+  is called only through `router.ts`'s guarded `decodeSegment`, and a segment that will not decode
+  answers `{ reason: 'path-invalid', segment }` → `X_PATH_INVALID` → 400. A bare `URIError` here
+  reached `factsOf` as `X_INTERNAL`, so a `%ZZ` answered 500 and paged the on-call for a typo.
+  Only the branch that would have decoded fails: static segments are compared raw, so a path that
+  reaches no param or wildcard is still a 404 and precedence is unchanged.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -71,7 +77,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | File | Job |
 |---|---|
 | `pipeline.ts` | the ordered lifecycle; the framework's guarantee |
-| `router.ts` | trie matcher, precedence static > param > wildcard |
+| `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
 | `error-map.ts` | code → status table + `factsOf()` |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |
 | `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |

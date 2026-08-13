@@ -7,6 +7,7 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 export const HTTP_OWNED_ERROR_CODES = [
   'X_ROUTE_NOT_FOUND',
   'X_METHOD_NOT_ALLOWED',
+  'X_PATH_INVALID',
   'X_BODY_INVALID',
   'X_RATE_LIMITED',
   'X_BUILD_SKEW',
@@ -35,6 +36,7 @@ export type HttpErrorCode = (typeof HTTP_ERROR_CODES)[number];
 export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_ROUTE_NOT_FOUND: 'no route matches this request',
   X_METHOD_NOT_ALLOWED: 'route exists but not for this method',
+  X_PATH_INVALID: 'a path segment is not valid percent-encoding',
   X_BODY_INVALID: 'request body failed its schema',
   X_RATE_LIMITED: 'rate limit exhausted for this key',
   X_BUILD_SKEW: 'client build id does not match the server build id',
@@ -84,6 +86,18 @@ export const methodNotAllowed = (
     code: 'X_METHOD_NOT_ALLOWED',
     cause: `${pathname} accepts ${allow.join(', ')} but the request used ${method}`,
     fix: `add a ${method} route for ${pathname} or call it with ${allow[0] ?? 'GET'}`,
+  });
+
+/**
+ * The client wrote the path, so the client is who can fix it — 400, not the 500 the bare
+ * `URIError` from `decodeURIComponent` used to produce. `X_INTERNAL` reported a typo to the error
+ * monitor (`pipeline.ts` pages on `status >= 500`) and told the caller nothing.
+ */
+export const pathInvalid = (pathname: string, segment: string): HttpError =>
+  new HttpError({
+    code: 'X_PATH_INVALID',
+    cause: `${pathname} contains "${segment}", which is not valid percent-encoding`,
+    fix: 'send the segment percent-encoded — encodeURIComponent(value); a literal % is %25',
   });
 
 export const bodyInvalid = (pathname: string, issues: readonly string[]): HttpError =>

@@ -40,6 +40,7 @@ export {
   HttpError,
   methodNotAllowed,
   noRequest,
+  pathInvalid,
   pipelineNoResponse,
   rateLimited,
   routeConflict,

@@ -84,7 +84,9 @@ export type MatchResult =
       readonly ok: false;
       readonly reason: 'method-not-allowed';
       readonly allow: readonly HttpMethod[];
-    };
+    }
+  /** A param or wildcard segment the request wrote as invalid percent-encoding. */
+  | { readonly ok: false; readonly reason: 'path-invalid'; readonly segment: string };
 
 interface TrieNode {
   readonly statics: Map<string, TrieNode>;
@@ -164,34 +166,65 @@ interface Candidate {
   readonly params: RouteParams;
 }
 
+/** The walk's accumulator: the terminals it reached, and why a branch it could not take failed. */
+interface Search {
+  readonly out: Candidate[];
+  /** First raw segment that would not percent-decode. Only set where a decode was attempted. */
+  undecodable: string | undefined;
+}
+
+/**
+ * `undefined` instead of the bare `URIError` `decodeURIComponent('%ZZ')` throws. A pathname is
+ * whatever the client typed, and an exception from the match would leave the pipeline with
+ * `X_INTERNAL` — a 500, and a page for the on-call, for a request only the caller can fix.
+ */
+const decodeSegment = (segment: string): string | undefined => {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+};
+
 /** Terminal nodes reachable for `segments`, in precedence order. */
 const candidates = (
   current: TrieNode,
   segments: readonly string[],
   index: number,
   params: RouteParams,
-  out: Candidate[],
+  search: Search,
 ): void => {
   if (index === segments.length) {
-    if (current.routes.size > 0) out.push({ node: current, params });
+    if (current.routes.size > 0) search.out.push({ node: current, params });
     return;
   }
   const segment = segments[index];
   if (segment === undefined) return;
 
+  // Static segments are compared raw, never decoded, so a malformed escape only ever fails the
+  // branch that would have decoded it: a path that reaches no param or wildcard is the 404 it
+  // always was, and a static route still wins the precedence it always won.
   const staticChild = current.statics.get(segment);
-  if (staticChild !== undefined) candidates(staticChild, segments, index + 1, params, out);
+  if (staticChild !== undefined) candidates(staticChild, segments, index + 1, params, search);
 
   if (current.param !== undefined) {
-    const next = { ...params, [current.param.name]: decodeURIComponent(segment) };
-    candidates(current.param.node, segments, index + 1, next, out);
+    const value = decodeSegment(segment);
+    if (value === undefined) search.undecodable ??= segment;
+    else {
+      const next = { ...params, [current.param.name]: value };
+      candidates(current.param.node, segments, index + 1, next, search);
+    }
   }
 
   if (current.wildcard !== undefined) {
-    const rest = segments.slice(index).map(decodeURIComponent).join('/');
-    const next = { ...params, [current.wildcard.name]: rest };
-    if (current.wildcard.node.routes.size > 0) {
-      out.push({ node: current.wildcard.node, params: next });
+    const tail = segments.slice(index);
+    const decoded = tail.map(decodeSegment);
+    // `-1` indexes to `undefined`, so this is "the first segment that failed, or none".
+    const bad = tail[decoded.indexOf(undefined)];
+    if (bad !== undefined) search.undecodable ??= bad;
+    else if (current.wildcard.node.routes.size > 0) {
+      const next = { ...params, [current.wildcard.name]: decoded.join('/') };
+      search.out.push({ node: current.wildcard.node, params: next });
     }
   }
 };
@@ -206,9 +239,17 @@ const routeFor = (candidate: Candidate, method: HttpMethod): Route | undefined =
 
 export const matchRoute = (table: RouteTable, method: string, pathname: string): MatchResult => {
   const segments = segmentsOf(pathname);
-  const found: Candidate[] = [];
-  candidates(table.root, segments, 0, {}, found);
-  if (found.length === 0) return { ok: false, reason: 'not-found' };
+  const search: Search = { out: [], undecodable: undefined };
+  candidates(table.root, segments, 0, {}, search);
+  const found = search.out;
+  // A refused decode is only the answer when nothing matched: another branch reaching a route
+  // means the request named something real, and the failed decode was a road not taken.
+  if (found.length === 0) {
+    const { undecodable } = search;
+    if (undecodable !== undefined)
+      return { ok: false, reason: 'path-invalid', segment: undecodable };
+    return { ok: false, reason: 'not-found' };
+  }
 
   const wanted = method.toUpperCase() as HttpMethod;
   for (const candidate of found) {

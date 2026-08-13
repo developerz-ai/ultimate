@@ -20,6 +20,7 @@ import {
   bodyInvalid,
   forbidden,
   methodNotAllowed,
+  pathInvalid,
   pipelineNoResponse,
   rateLimited,
   routeNotFound,
@@ -195,6 +196,7 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
       const match = matchRoute(deps.table, ctx.method, pathname);
       if (!match.ok) {
         if (match.reason === 'not-found') throw routeNotFound(ctx.method, pathname);
+        if (match.reason === 'path-invalid') throw pathInvalid(pathname, match.segment);
         ctx.headers.set('allow', match.allow.join(', '));
         throw methodNotAllowed(ctx.method, pathname, match.allow);
       }

@@ -69,6 +69,9 @@ Gotchas:
   `fit: 'cover'` — core's `contain` letterboxes to the requested box, this API fits inside it.
 - Bun's S3 flag is `virtualHostedStyle`; our `forcePathStyle` is its inverse.
 - The signature check runs BEFORE the expiry check. Do not reorder.
+- `verifySignedUrl` never throws, and `parseConstraints` is where that is kept: the key is decoded
+  through the guarded `decodeSegment`, so a `%ZZ` in the path is `'malformed'` rather than the bare
+  `URIError` `decodeURIComponent` raises. Same shape as `@ultimat3/auth`'s `decodeCookieValue`.
 - `acceptSignedUpload` refuses a URL signed with **no** content type (`unconstrained`). `grantUpload`
   always sets one, so such a URL is hand-rolled, and trusting the uploader's header instead is the
   only other option.

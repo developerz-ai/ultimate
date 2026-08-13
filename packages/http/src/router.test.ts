@@ -60,6 +60,50 @@ describe('params', () => {
   });
 });
 
+// A pathname is whatever the client typed. `decodeURIComponent('%ZZ')` throws a bare `URIError`,
+// which used to escape the match as `X_INTERNAL` — a 500 and an error-monitor page for a typo.
+describe('invalid percent-encoding', () => {
+  test('a param segment that will not decode is path-invalid, not a throw', () => {
+    const result = matchRoute(table, 'GET', '/posts/%ZZ');
+    expect(result.ok).toBe(false);
+    if (result.ok || result.reason !== 'path-invalid') throw new Error('expected path-invalid');
+    expect(result.segment).toBe('%ZZ');
+  });
+
+  test('a lone %, and a truncated escape, are both refused the same way', () => {
+    for (const bad of ['%', '%A', 'a%2']) {
+      const result = matchRoute(table, 'GET', `/posts/${bad}`);
+      expect(result.ok ? '' : result.reason).toBe('path-invalid');
+    }
+  });
+
+  test('a wildcard reports the first bad segment of the tail', () => {
+    const result = matchRoute(table, 'GET', '/files/ok/%E0%A4%A/tail');
+    expect(result.ok).toBe(false);
+    if (result.ok || result.reason !== 'path-invalid') throw new Error('expected path-invalid');
+    expect(result.segment).toBe('%E0%A4%A');
+  });
+
+  // Static segments are compared raw, so only the branch that would have decoded can fail.
+  test('a path that reaches no param or wildcard is the 404 it always was', () => {
+    expect(matchRoute(table, 'GET', '/%ZZ')).toEqual({ ok: false, reason: 'not-found' });
+  });
+
+  test('a matching branch wins over a sibling that could not decode', () => {
+    const both = createRouter([
+      route('GET', '/posts/%ZZ', 'posts.literal'),
+      route('GET', '/posts/:id'),
+    ]);
+    const result = matchRoute(both, 'GET', '/posts/%ZZ');
+    expect(result.ok ? result.route.meta.name : '').toBe('posts.literal');
+  });
+
+  test('the method is still judged for a path that decodes', () => {
+    const result = matchRoute(table, 'DELETE', '/posts/a%20b');
+    expect(result.ok ? '' : result.reason).toBe('method-not-allowed');
+  });
+});
+
 describe('methods', () => {
   test('unknown path is not-found, known path with wrong method is 405 data', () => {
     expect(matchRoute(table, 'GET', '/nope')).toEqual({ ok: false, reason: 'not-found' });

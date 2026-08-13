@@ -135,13 +135,29 @@ const fail = (reason: SignedUrlFailure, detail: string): SignedUrlVerification =
   detail,
 });
 
+/**
+ * `undefined` instead of the bare `URIError` `decodeURIComponent('%ZZ')` throws. The URL is
+ * attacker-supplied and the header's promise is that verification never throws — an exception
+ * here would escape as an uncoded 500 for a caller whose URL is simply malformed. Nothing is
+ * loosened: `buildSignedUrl` percent-encodes every segment, so a segment that will not decode
+ * was never minted by this package.
+ */
+const decodeSegment = (segment: string): string | undefined => {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return undefined;
+  }
+};
+
 function parseConstraints(url: URL, base: string): SignedUrlConstraints | SignedUrlFailure {
   if (!url.pathname.startsWith(`${base}/`)) return 'malformed';
-  const key = url.pathname
+  const segments = url.pathname
     .slice(base.length + 1)
     .split('/')
-    .map(decodeURIComponent)
-    .join('/');
+    .map(decodeSegment);
+  if (segments.includes(undefined)) return 'malformed';
+  const key = segments.join('/');
   if (!isSafeKey(key)) return 'unsafe-key';
   const method = url.searchParams.get(SIGNED_URL_PARAMS.method) ?? 'GET';
   if (method !== 'GET' && method !== 'PUT') return 'malformed';

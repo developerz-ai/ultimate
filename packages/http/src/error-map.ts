@@ -12,6 +12,9 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // @ultimat3/http
   X_ROUTE_NOT_FOUND: 404,
   X_METHOD_NOT_ALLOWED: 405,
+  // The request line itself is unreadable, so there is nothing to route: 400, and never a 500 —
+  // a malformed escape is the caller's typo, not this server's defect.
+  X_PATH_INVALID: 400,
   X_BODY_INVALID: 422,
   X_UNAUTHENTICATED: 401,
   X_FORBIDDEN: 403,

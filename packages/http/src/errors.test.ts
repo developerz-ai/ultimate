@@ -15,6 +15,7 @@ import {
   HttpError,
   methodNotAllowed,
   noRequest,
+  pathInvalid,
   pipelineNoResponse,
   rateLimited,
   routeConflict,
@@ -32,6 +33,18 @@ describe('routeNotFound', () => {
     expect(error.cause).toContain('/x');
     expect(error.fix).toBe('x routes list --json   # then: x g route /x');
     expect(error.docs).toBe('https://ultimate.dev/errors/X_ROUTE_NOT_FOUND');
+  });
+});
+
+describe('pathInvalid', () => {
+  test('names the segment that would not decode and how to send it instead', () => {
+    const error = pathInvalid('/posts/%ZZ', '%ZZ');
+    expect(error).toBeInstanceOf(HttpError);
+    expect(error.code).toBe('X_PATH_INVALID');
+    expect(error.cause).toContain('/posts/%ZZ');
+    expect(error.cause).toContain('%ZZ');
+    expect(error.fix).toContain('encodeURIComponent');
+    expect(error.docs).toBe('https://ultimate.dev/errors/X_PATH_INVALID');
   });
 });
 
@@ -200,12 +213,13 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 12 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(12);
+  test('contains exactly the 13 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(13);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
         'X_METHOD_NOT_ALLOWED',
+        'X_PATH_INVALID',
         'X_BODY_INVALID',
         'X_UNAUTHENTICATED',
         'X_FORBIDDEN',

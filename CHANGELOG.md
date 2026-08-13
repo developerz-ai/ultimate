@@ -250,6 +250,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A mis-encoded path is a 400, not a 500 and a page for the on-call.** `decodeURIComponent('%ZZ')` throws a bare `URIError`, and the router called it unguarded on every `:param` and `*wildcard` segment it walked past. A client typo — a lone `%`, a truncated `%A`, a value concatenated into a URL instead of run through `encodeURIComponent` — escaped `matchRoute` as an uncoded throw, so the pipeline mapped it to `X_INTERNAL`, answered **500**, and reported it to the error monitor (`error-map` pages on `status >= 500`). The caller was told nothing about a request only the caller could fix.
+
+  `matchRoute` now answers with the fourth `MatchResult` variant instead of throwing, and the pipeline turns it into the new **`X_PATH_INVALID`** — 400, with the offending segment in `cause` and `encodeURIComponent` in `fix`:
+
+  ```ts
+  const match = matchRoute(table, 'GET', '/posts/%ZZ');
+  // { ok: false, reason: 'path-invalid', segment: '%ZZ' }
+  ```
+
+  Only the branch that would have decoded can fail: static segments are compared raw, so a path that reaches no param or wildcard is the 404 it always was, a static route still wins the precedence it always won, and a sibling that does match still wins over one that could not decode. `X_PATH_INVALID` is registered in `HTTP_ERROR_TITLES` and mapped to 400 in `ERROR_STATUS`; `pathInvalid()` is exported for a host that matches routes itself.
+
+- **`verifySignedUrl` keeps its promise never to throw.** `parseConstraints` decoded each key segment with a bare `decodeURIComponent`, so a signed URL whose path carried `%ZZ` raised a `URIError` out of a function whose header says verification never throws — an uncoded 500 on the storage read path, for a URL this package would never have minted (`buildSignedUrl` percent-encodes every segment). A segment that will not decode is now `'malformed'`, already a `SIGNED_URL_FAILURES` member, and it is refused before the signature is computed. Nothing is loosened: the reason is the same one an off-base URL gets, and it leaks nothing about the secret.
+
 - **A cache tier that refuses no longer fails the read it was supposed to speed up.** `createCacheStack` walked the ladder with every tier call unguarded, so a tier throwing anywhere on the value path threw straight out of `read()` — the caller saw a failed business read where the source had already answered correctly. The common one needs no outage to reproduce: `LruCache.set` raises `X_CACHE_TOO_LARGE` for any entry over the tier's whole byte budget, so a page that grew past `maxBytes` stopped *loading* rather than stopping *caching*. A `get` was the same shape — a Redis with no socket failed every read that walked past it, including ones the memo or the LRU would have answered.
 
   Every `get`/`set`/`del` the stack makes now goes through `bestEffort()`, which reads a refusal as "that tier did not answer": the walk continues, later tiers are still populated, `write` and `drop` still reach the tiers behind the refusing one, and the value still comes back.

@@ -87,6 +87,27 @@ describe('verifySignedUrl', () => {
     expect(result.ok ? '' : result.reason).toBe('malformed');
   });
 
+  // The header's promise is that verification never throws. `decodeURIComponent('%ZZ')` is a bare
+  // `URIError`, and the URL here is whatever the caller sent — it used to escape as an uncoded 500.
+  test('a key segment that will not percent-decode is malformed, not a throw', async () => {
+    const clock = frozenClock(START);
+    const url = await putUrl(clock);
+    for (const bad of ['%ZZ', '%', '%A', '%E0%A4%A']) {
+      const tampered = url.replace('a.png', bad);
+      const result = await verifySignedUrl({ url: tampered, secret: SECRET, clock });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? '' : result.reason).toBe('malformed');
+    }
+  });
+
+  test('a malformed escape anywhere in the key is refused, not just in the last segment', async () => {
+    const clock = frozenClock(START);
+    const url = await putUrl(clock);
+    const tampered = url.replace('avatars', '%ZZ');
+    const result = await verifySignedUrl({ url: tampered, secret: SECRET, clock });
+    expect(result.ok ? '' : result.reason).toBe('malformed');
+  });
+
   test('an absolute URL from a browser verifies identically', async () => {
     const clock = frozenClock(START);
     const url = await putUrl(clock);

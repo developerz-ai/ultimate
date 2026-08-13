@@ -113,6 +113,7 @@ The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the 
 |---|---|---|---|
 | `X_ROUTE_NOT_FOUND` | no route matches this request | path typo, or the route was never generated | `x routes --json`, then `x g route <path>` |
 | `X_METHOD_NOT_ALLOWED` | route exists but not for this method | GET against an action endpoint | call it with the method in `cause`, or add that method |
+| `X_PATH_INVALID` | a path segment is not valid percent-encoding | a hand-built URL, or a value concatenated into a path instead of run through `encodeURIComponent` — `%ZZ`, a lone `%`, a truncated `%A`. Answers 400: the client wrote the path, so the client is who can fix it, and the request never reaches a handler | send the segment percent-encoded — `encodeURIComponent(value)`; a literal `%` is `%25` |
 | `X_ROUTE_CONFLICT` | two routes claim the same path | a copied route file | `x routes --json`, then remove or rename one |
 | `X_BODY_INVALID` | request body failed its schema | client sent the wrong shape | `x actions describe <name> --json`, then match the input schema |
 | `X_UNAUTHENTICATED` | route requires an authenticated actor | no session cookie or bearer token | send credentials, or set the route's `auth` to `'public'` |
