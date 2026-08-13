@@ -262,6 +262,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
   `@ultimat3/cli`'s new `apiRoutes()` is what mounts it, and it is now the **one** composition of the app's HTTP API — both `x dev` and `serve.ts` mount it, so a read cannot answer in one and 404 in the other. `@ultimat3/query` gains a dependency on `@ultimat3/http` (tier 3 → tier 2, downward).
 
+- **`useLiveFeed({ orgId })` exists. The typed client hook the wiki has always documented is a projection you can bind.** [Queries and live queries](https://github.com/developerz-ai/ultimate/wiki/Queries-And-Live-Queries) listed a typed client hook among a query's five projections and showed exactly that line; no `useLiveFeed`, `useQuery` or `createLiveQuery` existed in any package. What shipped was `useLive(query, input)` — untyped on both sides, because its `query` parameter is anything carrying a `name`, so neither the input nor the row type could come off the declaration.
+
+  `liveHookFor` (`@ultimat3/realtime`) is the missing projection: one declared `query({ live: true })` bound to one named hook, in one line, with no generated file.
+
+  ```ts
+  export const useLiveFeed = liveHookFor(liveFeed);  // app/feed/hooks.ts
+
+  const feed = useLiveFeed({ orgId: actor.orgId });  // feed()[0].title typechecks
+  useLiveFeed({ orgIdd: actor.orgId });              // does not compile
+  ```
+
+  It **binds** `useLive` rather than re-implementing it — one subscribe path, given the query's name and types, because two of those is two places a subscription can be opened wrong. `LiveQuerySource` names `Query`'s shape structurally instead of importing `@ultimat3/query` as a value: a hook is browser code, and a value import would carry the server's read path into the bundle. The name is read **per call**, never captured at bind time, because a module-level binding runs at import and `registerQueries()` stamps the name at boot — later. Binding a query with no `live: true` is the new `X_QUERY_NOT_SUBSCRIBABLE`, thrown where the binding is written rather than at the first render: a read that never patches has no subscription for a hook to hold, and the non-live read from a component is `query.client({ baseUrl })` over the route above. `LiveRows`'s row parameter widens from the wire's `Row` to `object` so a query's own row type survives; the four type claims are pinned in `packages/realtime/src/type-pins.ts`, which `tsc` checks and a `.test.ts` could not.
+
 - **`X_INPUT_INVALID` is a 400 over HTTP, not a 500.** The code had no row in `error-map.ts`, so it took the 500 default on every surface that throws it — an action route and now a query read alike. A caller's typo'd uuid was answered as a server fault *and* reported to the error monitor by the `error-map` stage, which pages the on-call for someone else's mistake. 400 is also what the published OpenAPI operation has always promised for it.
 
 - **`LruCache.clear()` now resets `hits`/`misses`/`evictions` along with entries and bytes.** `stats()` after a `clear()` used to keep reporting whatever the cache had accumulated before the clear — a fresh cache with stale lifetime counters. `clear()` is a reset, and `stats()` now reads as one.

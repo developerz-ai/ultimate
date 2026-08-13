@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "86b874b65c2afb2c2dc5316afe31434c911c56aa3e0be7d4fd37d5aa57ca0159",
+  "buildId": "2958671cff28c4e656cf944e6f1f0f9a3cba5e037054302fe5484651e9c85d18",
   "tiers": {
     "0": [
       "core",
@@ -1149,6 +1149,11 @@
       "code": "X_QUERY_NOT_PAGEABLE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_NOT_SUBSCRIBABLE",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
     },
     {
       "code": "X_QUERY_POLICY_MISSING",

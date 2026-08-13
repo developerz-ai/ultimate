@@ -29,7 +29,12 @@ const ORIGINAL_MEMBERS = [
 ];
 
 /** Codes added since the refactor. A shipped code is forever, so this list only ever grows. */
-const ADDED_SINCE = ['X_LIVE_CLIENT_MISSING', 'X_REPLICATOR_SLOT_HELD', 'X_LIVE_ROW_UNIDENTIFIED'];
+const ADDED_SINCE = [
+  'X_LIVE_CLIENT_MISSING',
+  'X_REPLICATOR_SLOT_HELD',
+  'X_LIVE_ROW_UNIDENTIFIED',
+  'X_QUERY_NOT_SUBSCRIBABLE',
+];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
 const EVERY_CODE: readonly string[] = REALTIME_ERROR_CODES;

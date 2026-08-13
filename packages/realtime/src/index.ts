@@ -75,6 +75,7 @@ export {
   LiveRowUnidentifiedError,
   NotImplementedError,
   ProtocolVersionError,
+  QueryNotSubscribableError,
   REALTIME_ERROR_CODES,
   REALTIME_ERROR_TITLES,
   RealtimeError,
@@ -232,6 +233,12 @@ export {
   PresenceRegistry,
   presenceFrame,
 } from './presence';
+/** The typed projection: one query bound to one named hook, `useLiveFeed({ orgId })`. */
+export {
+  type LiveQueryHook,
+  type LiveQuerySource,
+  liveHookFor,
+} from './query-hook';
 export {
   type ConflictStrategy,
   type CustomMerge,

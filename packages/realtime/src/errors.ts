@@ -17,6 +17,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
   'X_LIVE_ROW_UNIDENTIFIED',
+  'X_QUERY_NOT_SUBSCRIBABLE',
 ] as const;
 
 /**
@@ -76,6 +77,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
+  X_QUERY_NOT_SUBSCRIBABLE: 'a hook was bound to a query that is not declared live',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -265,6 +267,23 @@ export class LiveRowUnidentifiedError extends RealtimeError {
       code: 'X_LIVE_ROW_UNIDENTIFIED',
       cause: `live query "${args.query}" returned a row with no id (columns: ${args.keys.join(', ') || 'none'})`,
       fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
+    });
+  }
+}
+
+/**
+ * `liveHookFor` was handed a read that never patches. Refused where the binding is written rather
+ * than at the first render, because a hook over a non-live query has nothing to subscribe to — it
+ * would return an empty set forever and look like a policy denial or an empty table.
+ */
+export class QueryNotSubscribableError extends RealtimeError {
+  constructor(args: { name: string }) {
+    super({
+      code: 'X_QUERY_NOT_SUBSCRIBABLE',
+      // Empty at module load, when the binding runs and `registerQueries()` has not stamped a
+      // name yet — say so rather than printing `query ""`.
+      cause: `query ${args.name === '' ? '<unregistered>' : `"${args.name}"`} is not declared live: true, so it has no subscription for a hook to read`,
+      fix: 'add live: true to the query declaration, or read it once through query.client({ baseUrl }) — wiki/Queries-And-Live-Queries.md',
     });
   }
 }
