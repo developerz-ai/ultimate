@@ -18,6 +18,25 @@ export interface ColumnDescription {
   readonly references: string | null;
 }
 
+/**
+ * One `references()`, resolved: both ends, both names. `ColumnDescription.references` renders
+ * this as `"<table>.<column>"` for the migration generator (tier 1, which cannot import this
+ * package) and the manifest — physical names, which is their whole vocabulary. A traversal needs
+ * the row *properties* too, so it reads the record; the string is written, never parsed back.
+ */
+export interface ReferenceDescription {
+  /** Property key on the declaring row — what a JS caller reads and a preload collects. */
+  readonly property: string;
+  /** Physical column on the declaring table — what SQL names. */
+  readonly column: string;
+  /** The key accepts null, so a target that resolves to nothing is data, not a broken key. */
+  readonly nullable: boolean;
+  /** The entity referenced. Not necessarily registered — an entity may point outside a set. */
+  readonly targetEntity: string;
+  readonly targetProperty: string;
+  readonly targetColumn: string;
+}
+
 export interface InvariantDescription {
   readonly name: string;
   readonly kind: InvariantKind;
@@ -44,9 +63,16 @@ export interface RegistryEntry {
   readonly name: string;
   readonly tableName: string;
   describe(): EntityDescription;
+  /**
+   * The foreign keys this entity declares, resolved. This is how a relation reaches query time:
+   * a method and not a field because a `references()` thunk may point at an entity declared
+   * later in an import cycle, so resolving at registration would read a half-evaluated module.
+   */
+  references(): readonly ReferenceDescription[];
 }
 
 const entities = new Map<string, RegistryEntry>();
+let generation = 0;
 
 export const registerEntity = <E extends RegistryEntry>(entry: E): E => {
   const existing = entities.get(entry.name);
@@ -54,6 +80,7 @@ export const registerEntity = <E extends RegistryEntry>(entry: E): E => {
     throw entityDuplicate(entry.name, existing.tableName);
   }
   entities.set(entry.name, entry);
+  generation += 1;
   return entry;
 };
 
@@ -61,13 +88,26 @@ export const getEntity = (name: string): RegistryEntry | undefined => entities.g
 
 export const entityNames = (): readonly string[] => [...entities.keys()].sort();
 
-/** Deterministic order: the manifest is a build artefact and must diff cleanly. */
-export const describeEntities = (): readonly EntityDescription[] =>
+/**
+ * Bumped by every mutation. A projection of the WHOLE registry — the relation map — caches
+ * against it, so a module imported late registers one more entity and invalidates that cache
+ * instead of being missed by it.
+ */
+export const registryGeneration = (): number => generation;
+
+/** Deterministic order: every projection of the registry is a build input and must diff cleanly. */
+export const registeredEntities = (): readonly RegistryEntry[] =>
   entityNames().map((name) => {
     const entry = entities.get(name);
     if (entry === undefined) throw entityDuplicate(name, 'unknown');
-    return entry.describe();
+    return entry;
   });
 
+export const describeEntities = (): readonly EntityDescription[] =>
+  registeredEntities().map((entry) => entry.describe());
+
 /** Test seam. Production code never unregisters an entity. */
-export const clearRegistry = (): void => entities.clear();
+export const clearRegistry = (): void => {
+  entities.clear();
+  generation += 1;
+};

@@ -37,6 +37,7 @@ const CORE_MEMBERS = [
   '$assert',
   '$migration',
   '$describe',
+  '$references',
 ] as const;
 
 // Built once, like `entity.test.ts` does: `entity()` registers by name, so calling it

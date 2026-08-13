@@ -146,6 +146,45 @@ and never unwritten.
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
 
+## Relations are the foreign keys, read twice
+
+```ts
+relationMap().posts;
+// { org:     { kind: 'belongsTo', to: 'orgs',    localKey: 'orgId',    remoteKey: 'id' },
+//   author:  { kind: 'belongsTo', to: 'members', localKey: 'authorId', remoteKey: 'id' },
+//   likes:   { kind: 'hasMany',   to: 'likes',   localKey: 'id',       remoteKey: 'postId' } }
+
+relationsFor('posts');              // one entity's relations, by name
+relationNamed('posts', 'author');   // one relation, or X_PRELOAD_UNKNOWN_RELATION listing the rest
+```
+
+`.references(() => members.id)` already says a post has an author and a member has posts. There
+is no second declaration syntax for associations and there will not be one: the map reads the keys
+that exist. `belongsTo` comes from an entity's own foreign keys, `hasMany` from the inbound ones —
+so the two sides can never disagree, and neither can drift from the constraint the migration emits.
+
+| Rule | Detail |
+|---|---|
+| Names | `authorId` ⇒ `author`; a `hasMany` is named for the entity the rows come from |
+| Collisions | two keys wanting one name ⇒ **both** take the long form (`author` / `authorId`, `postsByAuthor` / `postsByReviewer`), so a name never depends on declaration order |
+| Ambiguity | two keys that differ only by an `Id` suffix ⇒ `X_INVARIANT_VIOLATED` naming both columns, never one relation silently swallowing the other |
+| Unknown name | `X_PRELOAD_UNKNOWN_RELATION`, whose `fix` is a `relationNamed()` call on one that exists plus the rest by name — they are derived, so there is no schema file listing them to go and read |
+| Keys | `local*` is always on `from`, `remote*` on `to`, whichever side the edge is read from |
+| Money | no relation: one property, two physical columns, so neither is the key |
+
+**Where they come from.** `RegistryEntry.references()` — every `entity()` call leaves one behind, so
+a consumer walks the whole domain without importing a schema module. A method rather than a field:
+a `references()` thunk may point at an entity that two modules of an import cycle have not finished
+evaluating. `relationMap()` derives the whole registry and memoises against its generation, so a
+schema module imported late is rebuilt into the map instead of being missed by it, and a read that
+changed nothing costs one integer compare. `relationsOf(entries)` is the same derivation over a
+named subset — a `belongsTo` to an entity outside it is still reported, a `hasMany` needs both
+sides. An entity holding its own keys reads `entity.$references()`: same closure, so a foreign key
+is read once and not twice.
+
+Nothing consumes the map yet — a preload is the next slice. It is exported because the derivation
+is a fact about the schema, not an implementation detail of whoever traverses it first.
+
 ## Two drivers, one meaning
 
 ```ts

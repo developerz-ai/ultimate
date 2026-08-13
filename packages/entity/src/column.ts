@@ -56,6 +56,30 @@ export const bindColumn = (column: AnyColumn, table: string, property: string): 
 
 export const bindingOf = (column: AnyColumn): Binding | undefined => bindings.get(column);
 
+/**
+ * A declared foreign key, resolved to where its target actually landed — `null` when the column
+ * declares none. The thunk exists because two schema modules import each other in a cycle, so
+ * this can only be answered after both have evaluated; it is answered in ONE place so the DDL
+ * projection (`describe.ts`) and the relation map (`relations.ts`) can never disagree about what
+ * a `references()` points at.
+ */
+export const referenceBinding = (
+  entityName: string,
+  property: string,
+  meta: ColumnMeta,
+): Binding | null => {
+  if (meta.references === undefined) return null;
+  const target = bindingOf(meta.references());
+  if (target === undefined) {
+    throw invariantViolated(
+      entityName,
+      property,
+      'references a column that belongs to no entity — pass a column of an entity() result',
+    );
+  }
+  return target;
+};
+
 const literal = (value: unknown): ColumnDefault => {
   if (value === null) return { kind: 'value', value: null };
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {

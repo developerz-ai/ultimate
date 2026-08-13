@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d81764af9495992edd84cfbd75582d4aa9e719c2ac148ef84ebdd0b37b9037ba",
+  "buildId": "0809c791a787062e582150e34168415005277b9dbb2746bf702c5cb389019f8e",
   "tiers": {
     "0": [
       "core",
@@ -1069,6 +1069,11 @@
       "code": "X_PORT_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PRELOAD_UNKNOWN_RELATION",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     },
     {
       "code": "X_PRERENDER_FAILED",

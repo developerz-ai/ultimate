@@ -47,6 +47,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`relationMap()` — the foreign keys an entity already declared, readable at query time.** `ColumnMeta.references` was resolved in exactly one place, `describe.ts`, to spell a DDL constraint; at query time nothing could answer "what is a post's author". `@ultimat3/entity` now derives a named map from the same thunks — `belongsTo` from an entity's own foreign keys, `hasMany` from the inbound ones:
+
+  ```ts
+  relationMap().posts;
+  // { org:    { kind: 'belongsTo', to: 'orgs',    localKey: 'orgId',    remoteKey: 'id' },
+  //   author: { kind: 'belongsTo', to: 'members', localKey: 'authorId', remoteKey: 'id' },
+  //   likes:  { kind: 'hasMany',   to: 'likes',   localKey: 'id',       remoteKey: 'postId' } }
+
+  relationsFor('posts');              // one entity's relations
+  relationNamed('posts', 'author');   // one relation, or X_PRELOAD_UNKNOWN_RELATION listing the rest
+  ```
+
+  No new declaration syntax, and there will not be one: a `hasMany: […]` init key would be a second copy of a fact the foreign key already states, free to drift from the constraint the migration emits. `local*` is always a property of `from` and `remote*` of `to`, so a traversal reads the same in both directions. Names come off the key (`authorId` ⇒ `author`) and, for a `hasMany`, off the entity the rows come from; when two keys want one name **every** member of that group takes its long form (`author`/`authorId`, `postsByAuthor`/`postsByReviewer`), so adding a second foreign key never renames an existing relation by declaration order. Two keys differing only by an `Id` suffix are `X_INVARIANT_VIOLATED` naming both columns, never one relation swallowing the other. A money column declares no relation, since one property is two physical columns.
+
+  The relations reach query time through the registry, not through a list the caller assembles: `RegistryEntry` gains `references()`, the resolved records, and `ColumnDescription.references` is now *rendered* from them, so the `"<table>.<column>"` string a migration reads and the record a traversal reads cannot disagree. It is a method because a `references()` thunk may point at an entity two modules of an import cycle have not finished evaluating. `relationMap()` memoises against a registry generation, so a schema module imported late rebuilds the map instead of being missed by it; `relationsOf(entries)` is the same derivation over a named subset. A name that resolves to nothing is `X_PRELOAD_UNKNOWN_RELATION`, and its `fix` is a `relationNamed()` call on one that does exist with the rest named after it — they are derived, so there is no schema file listing them to go and read; an entity with no foreign key at all gets `x entities list --json`, since the declaration it needs names a target the error cannot know. Additive — nothing consumes the map yet; a preload is what will.
 - **`x.verify.json` — the suite floor, so a step that once applied must keep applying.** Counting the skips made a vacuous gate visible; nothing made one fail. Delete a suite and its step goes from passing to skipped, and `x verify` still exits 0. The floor is this repo's committed claim about which steps it already runs — hand-written, read by the gate, written by nothing, because a gate that edits its own floor ratchets both ways:
 
   ```json
