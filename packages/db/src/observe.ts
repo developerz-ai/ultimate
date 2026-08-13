@@ -29,6 +29,14 @@ export interface StatementEvent {
   /** The rejection, already wrapped as `X_DB_UNAVAILABLE` by the funnel. */
   readonly error?: unknown;
   readonly attribution?: StatementAttribution | undefined;
+  /**
+   * The reason of the innermost `expectedQueryLoop()` this statement was issued inside, absent
+   * outside every such scope. Stamped by the funnel at settle time rather than read later, because
+   * a diagnostic that judges a whole request at the end of it runs long after the scope closed. A
+   * detector counting repeats must not warn about these; everything that only measures — the span,
+   * the timeline, a metric — treats them like any other statement.
+   */
+  readonly expected?: string | undefined;
 }
 
 /**

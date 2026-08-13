@@ -5,6 +5,7 @@
 
 import { type Role, resolveRole } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
+import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
 import { withStatementSpan } from './statement-span';
@@ -160,6 +161,9 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
   ): Promise<unknown> {
     const observer = statementObserver();
     if (observer === undefined) return sendOn(driver, fragment);
+    // Read here, not by the consumer: the scope is gone by the time a per-request detector judges
+    // what it collected, so the reason has to be captured with the statement it defends.
+    const expected = expectedQueryLoopReason();
     const started = performance.now();
     let result: unknown;
     try {
@@ -177,6 +181,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
         durationMs: performance.now() - started,
         rows: 0,
         error,
+        expected,
       });
       throw error;
     }
@@ -187,6 +192,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       values: fragment.values,
       durationMs: performance.now() - started,
       rows: affectedBy(result),
+      expected,
     });
     return result;
   }

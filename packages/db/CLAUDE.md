@@ -147,6 +147,27 @@ statement instrumentation on, event and span together (axiom 1), and an uninstal
 no span id and allocates no span object per statement — which on this path is every statement in
 the process. The OTel `kind` is `client`; the database is the remote peer.
 
+`expected-loop.ts` is the **only** suppression mechanism, and the reason it is a scope rather than
+a pragma or a list is the same reason `observe.ts` is one observer: a second path is the tax
+(axiom 1). `expectedQueryLoop(reason, fn)` rides an `AsyncLocalStorage`, so it survives every
+`await` at any depth and two loops running concurrently never read each other; nesting keeps the
+innermost reason, because the closest scope is the one describing this loop. A blank reason is
+`X_INVARIANT` through core's `assert` — no new code for it, and an exemption with no argument is a
+pragma with extra steps. Three rules. **The funnel stamps, the consumer reads** — `runOn` and
+`statement()` call `expectedQueryLoopReason()` inside the branch that already found an observer and
+put the answer on the event as `expected`; a detector that judges a whole request runs long after
+every scope in it closed, so reading the ALS later would find nothing. **It suppresses a verdict,
+not a statement** — the SQL is still sent, still observed, and the span still opens, so anything
+that measures still sees the loop and only the thing that warns is told the author already
+answered. **It costs nothing uninstalled** — the read lives inside the observer branch, so the
+production path is still one property read and one branch.
+
+The framework's own deliberate loops declare themselves at source, and new ones must: `migrate()`
+and `rollback()` (`migrate.ts`) apply and reverse one migration per transaction so a failure leaves
+an exact ledger, and `@ultimat3/admin`'s `search.ts` runs one indexed lookup per text field. Adding
+a `db` dependency to `admin` for that one import is deliberate — the alternative is re-exporting the
+scope from a package `admin` already imports, which is the second path this rule forbids.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

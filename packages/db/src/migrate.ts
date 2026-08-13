@@ -5,6 +5,7 @@
 
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { migrationConflict } from './errors';
+import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
 import { raw, sql } from './sql';
 import { withTransaction } from './transaction';
@@ -188,29 +189,39 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
     auditLedger(ledger, options.migrations, appVersion);
 
     const pending = pendingMigrations(ledger, options.migrations);
-    const applied: AppliedMigration[] = [];
-    for (const migration of pending) {
-      const at = performance.now();
-      await withTransaction(
-        async (tx) => {
-          await tx.execute(raw(migration.up));
-          const durationMs = Math.round(performance.now() - at);
-          await tx.execute(sql`
-            insert into ${raw(LEDGER_TABLE)} (id, name, checksum, app_version, duration_ms)
-            values (${migration.id}, ${migration.name}, ${migrationChecksum(migration)},
-                    ${appVersion}, ${durationMs})
-          `);
-        },
-        // The lock's own session: a migration applied on another connection is not covered by the
-        // lock at all, and on `ROLE=migrate` there is no other connection to apply it on.
-        { client: session },
-      );
-      applied.push({
-        id: migration.id,
-        name: migration.name,
-        durationMs: Math.round(performance.now() - at),
-      });
-    }
+    // A statement per migration and a transaction per migration is the point, not an N+1 to batch:
+    // one failed `up` must leave the ledger describing exactly the migrations that did run, and a
+    // batch commits or loses all of them together. Declared here so a diagnostic reports the loops
+    // nobody argued for and stays quiet about this one.
+    const applied = await expectedQueryLoop(
+      'each migration applies in its own transaction, so a failure leaves an exact ledger',
+      async () => {
+        const done: AppliedMigration[] = [];
+        for (const migration of pending) {
+          const at = performance.now();
+          await withTransaction(
+            async (tx) => {
+              await tx.execute(raw(migration.up));
+              const durationMs = Math.round(performance.now() - at);
+              await tx.execute(sql`
+                insert into ${raw(LEDGER_TABLE)} (id, name, checksum, app_version, duration_ms)
+                values (${migration.id}, ${migration.name}, ${migrationChecksum(migration)},
+                        ${appVersion}, ${durationMs})
+              `);
+            },
+            // The lock's own session: a migration applied on another connection is not covered by
+            // the lock at all, and on `ROLE=migrate` there is no other connection to apply it on.
+            { client: session },
+          );
+          done.push({
+            id: migration.id,
+            name: migration.name,
+            durationMs: Math.round(performance.now() - at),
+          });
+        }
+        return done;
+      },
+    );
 
     return {
       applied,
@@ -241,25 +252,32 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
   return withAdvisoryLock(client, options.lock !== false, async (session) => {
     const ledger = await readLedger(session);
     const targets = [...ledger].reverse().slice(0, steps);
-    const reverted: string[] = [];
 
-    for (const row of targets) {
-      const migration = known.get(row.id);
-      if (migration === undefined) {
-        throw migrationConflict(
-          `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
-          `x db status --json   # deploy the build that shipped "${row.id}" and roll back there`,
-        );
-      }
-      await withTransaction(
-        async (tx) => {
-          await tx.execute(raw(migration.down));
-          await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
-        },
-        { client: session },
-      );
-      reverted.push(row.id);
-    }
-    return reverted;
+    // The same deliberate loop as `migrate`, read backwards: one transaction per `down`, newest
+    // first, so a `down` that fails leaves every migration before it still applied and recorded.
+    return expectedQueryLoop(
+      'each migration reverses in its own transaction, newest first, so a failure stops exactly there',
+      async () => {
+        const reverted: string[] = [];
+        for (const row of targets) {
+          const migration = known.get(row.id);
+          if (migration === undefined) {
+            throw migrationConflict(
+              `migration "${row.id}" is in the ledger but not in this build, so its down SQL is unknown`,
+              `x db status --json   # deploy the build that shipped "${row.id}" and roll back there`,
+            );
+          }
+          await withTransaction(
+            async (tx) => {
+              await tx.execute(raw(migration.down));
+              await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
+            },
+            { client: session },
+          );
+          reverted.push(row.id);
+        }
+        return reverted;
+      },
+    );
   });
 }

@@ -4,6 +4,7 @@
 // every hand-written fixture in this package happily supplied.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { expectedQueryLoopReason } from '@ultimat3/db';
 import {
   clearRegistry,
   entity,
@@ -195,6 +196,42 @@ describe('the derived admin reads and writes real rows', () => {
 
     expect(found.searched).toEqual(['admin_reg_post']);
     expect(found.hits.map((hit) => hit.label)).toEqual(['First post']);
+  });
+
+  // One indexed lookup per text field is the argued-for shape, and the argument is declared to
+  // the runtime: a statement diagnostic must be able to tell this loop from an unconsidered N+1.
+  test('search declares its per-field loop, and the scope ends with it', async () => {
+    const store = new Map([[POST_ID, row()]]);
+    const reasons: (string | undefined)[] = [];
+    const app = defineAdmin({
+      entities: [orgs, posts],
+      resources: {
+        admin_reg_post: {
+          repo: {
+            ...repoOver(store),
+            list: async (): Promise<readonly AdminRow[]> => {
+              reasons.push(expectedQueryLoopReason());
+              return [...store.values()];
+            },
+          },
+        },
+      },
+      auth: { actor: (): AdminActor => actor, authz: staticAuthz(GRANTS) },
+    });
+
+    const found = await adminSearch({
+      term: 'First',
+      resources: [app.resource('admin_reg_post')],
+      ctx: ctx(),
+    });
+
+    expect(found.hits).toHaveLength(1);
+    // Two text fields, two lookups, both carrying the reason the loop is optimal.
+    expect(reasons).toHaveLength(2);
+    expect(reasons.every((reason) => reason?.includes('one indexed lookup per text field'))).toBe(
+      true,
+    );
+    expect(expectedQueryLoopReason()).toBeUndefined();
   });
 
   test('the MCP tools carry the derived form fields', () => {

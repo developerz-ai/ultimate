@@ -5,6 +5,7 @@
 
 import type { DbConnection, ReservableClient } from './client';
 import { DbError, dbUnavailable } from './errors';
+import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
@@ -154,6 +155,9 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
   async function statement(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
     const observer = statementObserver();
     if (observer === undefined) return send(driver, fragment);
+    // Read here for the same reason as `runOn`: the scope is gone by the time a per-request
+    // detector judges what it collected, so the reason travels with the statement it defends.
+    const expected = expectedQueryLoopReason();
     const started = performance.now();
     let result: PgliteResult;
     try {
@@ -170,6 +174,7 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
         durationMs: performance.now() - started,
         rows: 0,
         error,
+        expected,
       });
       throw error;
     }
@@ -180,6 +185,7 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       values: fragment.values,
       durationMs: performance.now() - started,
       rows: rowsOf(result),
+      expected,
     });
     return result;
   }

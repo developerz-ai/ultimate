@@ -54,6 +54,7 @@ export {
   readonlyViolation,
   sqlUnsafe,
 } from './errors';
+export { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
 export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
 export { createRecordingClient } from './fake';
 export type {

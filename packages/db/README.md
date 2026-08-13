@@ -38,6 +38,7 @@ await withTransaction(async (tx) => {
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `setStatementObserver()` / `statementObserver()` | one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
+| `expectedQueryLoop()` / `expectedQueryLoopReason()` | the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only
@@ -170,6 +171,30 @@ migration inside its own transaction. It refuses **before applying anything** wh
 - an applied migration's `up` SQL no longer matches its recorded checksum.
 
 Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durationMs, appVersion }`.
+
+## A loop of queries that is deliberate says so
+
+```ts
+return expectedQueryLoop('one indexed lookup per text field beats one unindexed OR', async () => {
+  for (const field of fields) hits.push(...(await repo.list({ where: [match(field)] })));
+  return hits;
+});
+```
+
+One mechanism, and only one: no comment pragma, no config list of exempt call sites (axiom 1).
+`reason` is required and non-blank — an exemption with no argument is a pragma, and the next
+reader cannot tell a considered loop from a silenced one.
+
+| | |
+|---|---|
+| Scope | an `AsyncLocalStorage`: it survives every `await` at any depth, and two loops running at once never read each other. Nesting keeps the innermost reason |
+| What it carries | `StatementEvent.expected`, stamped by both funnels at settle time — a diagnostic judging a whole request runs after every scope in it closed |
+| What it suppresses | a **verdict**, never a statement. The SQL is still sent, still observed, still a span: only the thing that warns is told the author already answered |
+| What it costs | nothing without a diagnostic — the reason is read inside the branch that already checks for an installed observer |
+
+The framework's own deliberate loops declare themselves at source: `migrate()` and `rollback()`
+(one transaction per migration, so a failure leaves an exact ledger) and `@ultimat3/admin`'s
+cross-entity search (one indexed lookup per text field).
 
 ## Error codes
 
