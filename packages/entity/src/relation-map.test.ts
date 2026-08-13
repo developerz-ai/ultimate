@@ -100,17 +100,39 @@ describe('relationsFor() and relationNamed()', () => {
     expect(relationNamed(books.$name, 'author').remoteColumn).toBe('id');
   });
 
-  test('refuses an unknown name, listing the ones that exist', () => {
+  test('refuses an unknown name with the call that reads a declared one', () => {
     const error = caught(() => relationNamed(books.$name, 'writer'));
     expect(error).toBeUltimateError('X_PRELOAD_UNKNOWN_RELATION');
     expect(error?.cause).toContain('"writer"');
-    expect(error?.fix).toContain('author');
+    expect(error?.fix).toContain(`relationNamed('${books.$name}', 'author')`);
   });
 
-  test('names the declaration to write when the entity declares no foreign key at all', () => {
+  test('the fix runs: pasting it back returns the relation it names', () => {
+    const error = caught(() => relationNamed(books.$name, 'writer'));
+    const [, entityName, relation] = error?.fix.match(/relationNamed\('(\w+)', '(\w+)'\)/) ?? [];
+    expect(relationNamed(entityName ?? '', relation ?? '').name).toBe('author');
+  });
+
+  test('carries the names the pasted call does not, and no comment when there are none', () => {
+    const singles = entity('relation_map_singles', {
+      columns: { id: uuid().primaryKey(), bookId: uuid().references(() => books.id) },
+    });
+    expect(caught(() => relationNamed(singles.$name, 'nope'))?.fix).not.toContain('#');
+    const shelves = entity('relation_map_shelves', {
+      columns: {
+        id: uuid().primaryKey(),
+        bookId: uuid().references(() => books.id),
+        ownerId: uuid().references(() => authors.id),
+      },
+    });
+    expect(caught(() => relationNamed(shelves.$name, 'nope'))?.fix).toContain('   # or: owner');
+  });
+
+  test('names the command that lists targets when the entity declares no foreign key at all', () => {
     const loners = entity('relation_map_loners', { columns: { id: uuid().primaryKey() } });
     const error = caught(() => relationNamed(loners.$name, 'anything'));
     expect(error).toBeUltimateError('X_PRELOAD_UNKNOWN_RELATION');
-    expect(error?.fix).toContain('.references(() => <entity>.id)');
+    expect(error?.fix).toContain('x entities list --json');
+    expect(error?.fix).toContain('.references(() => <target>.id)');
   });
 });

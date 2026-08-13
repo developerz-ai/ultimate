@@ -59,9 +59,13 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   method, not a field: a thunk may point at an entity two modules of an import cycle have not
   finished evaluating. `relationMap()` memoises the whole-registry derivation against
   `registryGeneration()`, which every registration bumps — a schema module imported late must
-  rebuild the map, never be missed by it. `relationNamed()` refuses an unknown name with
-  `X_PRELOAD_UNKNOWN_RELATION` listing the declared ones; a relation is derived, so there is no
-  file a reader could open to find them.
+  rebuild the map, never be missed by it. The derivation is **one pass** over the foreign keys,
+  filed under both ends as it goes — a rescan per entity is the schema squared, paid again after
+  every late registration. `relationNamed()` refuses an unknown name with
+  `X_PRELOAD_UNKNOWN_RELATION` whose `fix` is a `relationNamed()` call on a relation that does
+  exist, the rest by name after it; a relation is derived, so there is no file a reader could open
+  to find them. An entity with no foreign key at all gets `x entities list --json` instead — the
+  declaration it needs names a target this error cannot know.
 - **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
   that reason alone: `$parse` throws, and a call site should not need two error paths for one
   mistake.

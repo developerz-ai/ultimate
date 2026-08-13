@@ -168,7 +168,7 @@ so the two sides can never disagree, and neither can drift from the constraint t
 | Names | `authorId` ⇒ `author`; a `hasMany` is named for the entity the rows come from |
 | Collisions | two keys wanting one name ⇒ **both** take the long form (`author` / `authorId`, `postsByAuthor` / `postsByReviewer`), so a name never depends on declaration order |
 | Ambiguity | two keys that differ only by an `Id` suffix ⇒ `X_INVARIANT_VIOLATED` naming both columns, never one relation silently swallowing the other |
-| Unknown name | `X_PRELOAD_UNKNOWN_RELATION`, with the declared names in the `fix` — they are derived, so there is no schema file listing them to go and read |
+| Unknown name | `X_PRELOAD_UNKNOWN_RELATION`, whose `fix` is a `relationNamed()` call on one that exists plus the rest by name — they are derived, so there is no schema file listing them to go and read |
 | Keys | `local*` is always on `from`, `remote*` on `to`, whichever side the edge is read from |
 | Money | no relation: one property, two physical columns, so neither is the key |
 

@@ -151,13 +151,25 @@ export const relationsOf = (entries: readonly RegistryEntry[]): RelationMap => {
   // By name: the registry already refuses two entities with one name, so the same entry handed
   // in twice is one entity — not two sets of foreign keys colliding with themselves.
   const unique = new Map(entries.map((entry) => [entry.name, entry]));
-  const keys = [...unique.values()].flatMap(foreignKeysOf);
+  // One pass, filed under both ends as it goes. Rescanning every foreign key once per entity is
+  // the whole schema squared, paid again on the first read after every late registration.
+  const outbound = new Map<string, Candidate[]>();
+  const inbound = new Map<string, Candidate[]>();
+  for (const name of unique.keys()) {
+    outbound.set(name, []);
+    inbound.set(name, []);
+  }
+  for (const entry of unique.values()) {
+    for (const fk of foreignKeysOf(entry)) {
+      outbound.get(fk.entity)?.push(belongsTo(fk));
+      // A target outside the set contributes no `hasMany`: nothing here holds its inbound keys.
+      inbound.get(fk.targetEntity)?.push(hasMany(fk));
+    }
+  }
   const map: Record<string, EntityRelations> = {};
   for (const name of [...unique.keys()].sort()) {
-    map[name] = named(name, [
-      ...keys.filter((fk) => fk.entity === name).map(belongsTo),
-      ...keys.filter((fk) => fk.targetEntity === name).map(hasMany),
-    ]);
+    // Outbound before inbound, so a collision resolves the same way whichever pass found it.
+    map[name] = named(name, [...(outbound.get(name) ?? []), ...(inbound.get(name) ?? [])]);
   }
   return map;
 };

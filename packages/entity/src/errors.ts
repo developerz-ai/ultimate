@@ -127,22 +127,29 @@ export const writeUnfiltered = (
 /**
  * The declared names go in the `fix` because there is nowhere to go and read them: a relation is
  * derived from a `references()` column, never declared, so a schema file lists foreign keys and
- * not relation names. An entity with none is the other mistake — the column was never pointed at
- * anything — and gets the declaration to write instead of an empty list to pick from.
+ * not relation names. The first one is spelled as a call the reader can paste — a name alone
+ * still leaves them writing the expression — and the rest follow it.
+ *
+ * An entity with no foreign key at all is the other mistake, and the declaration it needs names an
+ * entity this error cannot know. So it leads with the command that lists the ones to pick from
+ * rather than with a placeholder nobody can resolve.
  */
 export const preloadUnknownRelation = (
   entityName: string,
   relation: string,
   declared: readonly string[],
-): EntityError =>
-  new EntityError({
+): EntityError => {
+  const [first, ...rest] = declared;
+  return new EntityError({
     code: 'X_PRELOAD_UNKNOWN_RELATION',
     cause: `${entityName} has no relation named "${relation}"`,
     fix:
-      declared.length === 0
-        ? `${entityName} declares no foreign key: add .references(() => <entity>.id) to the column that points at one`
-        : `preload('<name>') with one of: ${declared.join(', ')}`,
+      first === undefined
+        ? `x entities list --json   # then add .references(() => <target>.id) to the ${entityName} column that points at one`
+        : `relationNamed('${entityName}', '${first}')` +
+          (rest.length === 0 ? '' : `   # or: ${rest.join(', ')}`),
   });
+};
 
 export const patchEmpty = (
   entityName: string,
