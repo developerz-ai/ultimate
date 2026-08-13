@@ -175,6 +175,18 @@ tally rather than filtering the bounded global list, so the overlay still names 
 already dropped. `serve.ts` supplies no `devNotices`, so the seam it boots through is a key that is
 absent, not a hook answering an empty list.
 
+`dev-n-plus-one.test.ts` and `statement-loop.test.ts` drive the ledger and the projection with
+hand-built `StatementEvent`s — fast, and enough to pin every rule above. `n-plus-one-detector.test.ts`
+proves the loop those events stand in for: real `posts`/`authors` entities, `postgresRepo` and
+`createPgliteClient` (an injected fake driver so no `@electric-sql/pglite` build is needed, but a
+real client — `createRecordingClient` implements `DbClient` on its own and never reaches the
+observer, so it cannot stand in here) — a naive per-row `findById` loop trips `X_N_PLUS_ONE_QUERY`
+with the exact `preload('author')` line, the `preload()` form of the same read stays quiet,
+`expectedQueryLoop` silences the naive form without stopping it from running, and a naive per-row
+`delete` loop trips `X_N_PLUS_ONE_WRITE`. Its describe block spells the pattern `n1`, matching
+`packages/entity/src/n-plus-one.test.ts`'s own fixture prefix, because `bun test -t 'n+1'` is a
+regex and `+` is a quantifier — `n1` is what actually selects these tests.
+
 ## `x dev` boots the app; it does not simulate one
 
 | File | Job |
