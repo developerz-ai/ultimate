@@ -2,6 +2,7 @@
 // search config to drift from the entities, and no result an actor could not have opened —
 // the same `admin:read` + `<entity>:read` pair gates the hit and the detail page it links to.
 
+import { expectedQueryLoop } from '@ultimat3/db';
 import type { CrudCtx } from './crud';
 import { canOperate } from './crud';
 import type { AdminFilter, AdminRow } from './registry';
@@ -41,6 +42,11 @@ export interface AdminSearchInput {
  * One query per searchable field rather than one query with an OR: the admin's query IR is
  * a conjunction by design (each filter maps to an indexed predicate), and three small
  * indexed lookups beat one unindexed disjunction.
+ *
+ * That argument is declared to the runtime and not only to the reader — `expectedQueryLoop`
+ * carries it onto every statement the loop issues, so a statement diagnostic reports the loops
+ * nobody argued for and never this one. At most `MAX_FIELDS_PER_RESOURCE` queries, and the scope
+ * ends with the loop: anything the repo does afterwards is judged normally.
  */
 async function searchResource(
   resource: AdminResource,
@@ -52,24 +58,29 @@ async function searchResource(
   const seen = new Set<string>();
   const hits: AdminSearchHit[] = [];
 
-  for (const field of fields) {
-    const where: readonly AdminFilter[] = [{ field: field.name, op: 'contains', value: term }];
-    const rows = await repo.list({ where, sort: resource.defaultSort, limit });
-    for (const row of rows) {
-      const id = rowId(row, resource.idField);
-      if (id === '' || seen.has(id)) continue;
-      seen.add(id);
-      hits.push({
-        entity: resource.name,
-        id,
-        label: labelOf(row, resource),
-        matchedField: field.name,
-        href: `${resource.path}/${id}`,
-      });
-      if (hits.length >= limit) return hits;
-    }
-  }
-  return hits;
+  return expectedQueryLoop(
+    'admin search runs one indexed lookup per text field, which beats one unindexed OR',
+    async () => {
+      for (const field of fields) {
+        const where: readonly AdminFilter[] = [{ field: field.name, op: 'contains', value: term }];
+        const rows = await repo.list({ where, sort: resource.defaultSort, limit });
+        for (const row of rows) {
+          const id = rowId(row, resource.idField);
+          if (id === '' || seen.has(id)) continue;
+          seen.add(id);
+          hits.push({
+            entity: resource.name,
+            id,
+            label: labelOf(row, resource),
+            matchedField: field.name,
+            href: `${resource.path}/${id}`,
+          });
+          if (hits.length >= limit) return hits;
+        }
+      }
+      return hits;
+    },
+  );
 }
 
 function labelOf(row: AdminRow, resource: AdminResource): string {

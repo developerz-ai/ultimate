@@ -63,6 +63,19 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 (`toMs`, `defaultCronResolver`) and the scheduler's resolver is injectable, so a signature
 change in `@ultimat3/time` is a one-line fix, not a sweep.
 
+`driver-pg.ts`'s `PgExecutor` (`:38-41`) is a two-method duck-typed interface — this package still
+has no `@ultimat3/db` dependency, and nothing here knows what an observer, a span or
+`expectedQueryLoop` is. But `packages/cli/src/dev-queue.ts` is the only boot code in the repo that
+ever builds one, and it wraps a real `@ultimat3/db` client's `.query()` — reached by every role in
+production, not just `x dev`. So a queue statement issued through the framework's own wiring does
+pass through `@ultimat3/db`'s statement observer today, with no `attribution` — and that is not a
+gap here: **no producer of the `{entity, op}` pair exists in any package yet**, so every event in
+every process reads `attribution: undefined`. That visibility is a
+property of what `dev-queue.ts` happened to hand over, never of this package's own contract — an
+executor backed by something else (a raw driver, `driver-redis`, `driver-nats`) is invisible to it,
+same as before this seam existed. See `packages/db/CLAUDE.md`'s `observe.ts` section for the full
+picture from the other side.
+
 ## Files
 
 | File | Owns |

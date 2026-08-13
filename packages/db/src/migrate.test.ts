@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type DbClient, type DbConnection, type ReservableClient, setDbClient } from './client';
+import { expectedQueryLoopReason } from './expected-loop';
 import { createRecordingClient, type RecordingClient } from './fake';
 import {
   auditLedger,
@@ -81,6 +82,51 @@ function pinnable(inner: DbClient): PinnablePool {
     },
   };
 }
+
+interface Witness {
+  readonly client: DbClient;
+  readonly statements: readonly { readonly text: string; readonly reason: string | undefined }[];
+}
+
+/**
+ * Every statement paired with the `expectedQueryLoop` reason in force when it was issued. The
+ * recording client cannot answer this: it never passes a funnel, so the observer never fires and
+ * the scope has to be read where the statement is sent.
+ */
+function witnessed(inner: DbClient): Witness {
+  const statements: { text: string; reason: string | undefined }[] = [];
+  const note = (text: string): void => {
+    statements.push({ text: squash(text), reason: expectedQueryLoopReason() });
+  };
+  return {
+    statements,
+    client: {
+      query: (fragment) => {
+        note(fragment.text);
+        return inner.query(fragment);
+      },
+      one: (fragment) => {
+        note(fragment.text);
+        return inner.one(fragment);
+      },
+      execute: (fragment) => {
+        note(fragment.text);
+        return inner.execute(fragment);
+      },
+    },
+  };
+}
+
+/**
+ * Fails when nothing matched instead of answering `undefined` for it. `find(...)?.reason` alone
+ * collapses two different facts into one value — "this statement ran outside every scope" and
+ * "this statement never ran" — and the `toBeUndefined()` assertions below are the load-bearing
+ * half of both test names, so a reworded ledger read would leave them passing on the wrong one.
+ */
+const reasonFor = (witness: Witness, needle: string): string | undefined => {
+  expect(witness.statements.map((statement) => statement.text).join(' | ')).toContain(needle);
+  return witness.statements.find((statement) => statement.text.includes(needle))?.reason;
+};
 
 describe('migrate', () => {
   test('refuses and applies nothing when the ledger belongs to another app version', async () => {
@@ -238,6 +284,36 @@ describe('the migration advisory lock', () => {
     expect(pool.events.some((event) => event.includes('drop table "posts"'))).toBe(false);
     expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
     expect(pool.events.at(-1)).toBe('release');
+  });
+
+  // The framework's own deliberate loops declare themselves at source, so an N+1 detector reports
+  // the ones nobody argued for. A migration per transaction is the point, not a batch to be found.
+  test('the apply loop declares itself, and the ledger read before it does not', async () => {
+    client.on(/from x_migrations/, { rows: [] });
+    client.on('insert into x_migrations', { affected: 1 });
+    const witness = witnessed(client);
+
+    await migrate({
+      migrations: [addPosts],
+      appVersion: '1.5.0',
+      client: witness.client,
+      lock: false,
+    });
+
+    expect(reasonFor(witness, 'from x_migrations')).toBeUndefined();
+    expect(reasonFor(witness, 'create table "posts"')).toContain('its own transaction');
+    expect(reasonFor(witness, 'insert into x_migrations')).toContain('its own transaction');
+  });
+
+  test('the rollback loop declares itself too, with its own reason', async () => {
+    client.on(/from x_migrations/, { rows: [ledgerRow()] });
+    const witness = witnessed(client);
+
+    await rollback({ migrations: [addPosts], client: witness.client, lock: false });
+
+    expect(reasonFor(witness, 'from x_migrations')).toBeUndefined();
+    expect(reasonFor(witness, 'drop table "posts"')).toContain('newest first');
+    expect(reasonFor(witness, 'delete from x_migrations')).toContain('newest first');
   });
 
   test('rollback with lock: false takes no lock, for a private branch database', async () => {

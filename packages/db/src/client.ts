@@ -5,7 +5,10 @@
 
 import { type Role, resolveRole } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
+import { expectedQueryLoopReason } from './expected-loop';
+import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
+import { withStatementSpan } from './statement-span';
 import { currentTx } from './transaction';
 
 export interface DbClient {
@@ -108,10 +111,14 @@ function rowsOf<T>(result: unknown): readonly T[] {
   return Array.isArray(result) ? (result as readonly T[]) : [];
 }
 
+// The command tag only when it counted something, exactly like `rowsOf` in `pglite.ts` — one rule
+// across both drivers, so `execute()` and the observer's event cannot answer differently for the
+// same statement depending on which database is behind them. A driver that tags a read `0` while
+// returning rows would otherwise report 0 here and the row count there.
 function affectedBy(result: unknown): number {
   if (!Array.isArray(result)) return 0;
   const count = (result as { count?: unknown }).count;
-  return typeof count === 'number' ? count : result.length;
+  return typeof count === 'number' && count > 0 ? count : result.length;
 }
 
 export interface PostgresClient extends ReservableClient {
@@ -134,7 +141,8 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     return driver;
   }
 
-  async function runOn(
+  /** The send itself: one statement on one handle, every driver failure typed on the way out. */
+  async function sendOn(
     driver: Pick<BunSqlDriver, 'unsafe'>,
     fragment: SqlFragment,
   ): Promise<unknown> {
@@ -143,6 +151,54 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     } catch (error) {
       throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
     }
+  }
+
+  /**
+   * The funnel — pooled and pinned statements both arrive here, which is why the observer hangs
+   * off this one function and nowhere else. Uninstalled it costs one property read and one
+   * branch: no clock read, no span, no event object, and `sendOn` receives exactly the call `runOn`
+   * made before the seam existed (axiom 6).
+   */
+  async function runOn(
+    driver: Pick<BunSqlDriver, 'unsafe'>,
+    fragment: SqlFragment,
+  ): Promise<unknown> {
+    const observer = statementObserver();
+    if (observer === undefined) return sendOn(driver, fragment);
+    // Read here, not by the consumer: the scope is gone by the time a per-request detector judges
+    // what it collected, so the reason has to be captured with the statement it defends.
+    const expected = expectedQueryLoopReason();
+    const started = performance.now();
+    let result: unknown;
+    try {
+      // The span wraps the send and nothing else, so its duration is the statement's and the
+      // observer's own work is not charged to the database.
+      result = await withStatementSpan(fragment.text, () => sendOn(driver, fragment));
+    } catch (error) {
+      // A statement that failed is still a statement: fifty identical timeouts are an N+1 of
+      // timeouts. The error is already `X_DB_UNAVAILABLE`, so the event carries what the caller
+      // is about to be thrown — and an observer that throws here replaces it, which is why
+      // `observe.ts` says a reporting-only observer must not throw.
+      observer.onStatement({
+        text: fragment.text,
+        values: fragment.values,
+        durationMs: performance.now() - started,
+        rows: 0,
+        error,
+        expected,
+      });
+      throw error;
+    }
+    // Outside the `try` deliberately: a throw from `onStatement` is the observer's, not the
+    // database's, and catching it above would report a statement that succeeded as failed.
+    observer.onStatement({
+      text: fragment.text,
+      values: fragment.values,
+      durationMs: performance.now() - started,
+      rows: affectedBy(result),
+      expected,
+    });
+    return result;
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {

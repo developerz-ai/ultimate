@@ -35,6 +35,7 @@
     "@ultimat3/ai": "1.2.0",
     "@ultimat3/cache": "1.2.0",
     "@ultimat3/core": "1.2.0",
+    "@ultimat3/db": "1.2.0",
     "@ultimat3/entity": "1.2.0",
     "@ultimat3/i18n": "1.2.0",
     "@ultimat3/jobs": "1.2.0",

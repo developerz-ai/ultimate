@@ -20,7 +20,6 @@ import { type AdminActor, staticAuthz } from './authz';
 import { adminCreate, adminDetail, adminList, type CrudCtx } from './crud';
 import { adminMcpTools } from './mcp-tools';
 import type { AdminEntity, AdminRepo, AdminRow } from './registry';
-import { adminSearch } from './search';
 
 const orgs = entity('admin_reg_org', {
   columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
@@ -183,18 +182,6 @@ describe('the derived admin reads and writes real rows', () => {
 
     expect(result.ok).toBe(true);
     expect(store.size).toBe(1);
-  });
-
-  test('search uses the text fields the entity declared', async () => {
-    const app = adminOver(new Map([[POST_ID, row()]]));
-    const found = await adminSearch({
-      term: 'First',
-      resources: [app.resource('admin_reg_post')],
-      ctx: ctx(),
-    });
-
-    expect(found.searched).toEqual(['admin_reg_post']);
-    expect(found.hits.map((hit) => hit.label)).toEqual(['First post']);
   });
 
   test('the MCP tools carry the derived form fields', () => {

@@ -123,6 +123,15 @@ roles — a verdict re-derived here would be the second authz the framework exis
 `subscribers` is the one source left unwired: `@ultimat3/realtime` retains no matcher trace, and
 that trace is the live panel's question, so the panel degrades to its own note instead.
 
+`dev-traces.ts` reads a span's panel kind off its **name prefix** — a subsystem that starts emitting
+spans adds its prefix to `KIND_BY_PREFIX` or its work is filed under `action`. `db.` is there
+because `@ultimat3/db`'s two funnels open one span per statement (`db.select`, `db.begin`), and a
+statement is the one span that states its own identity — `STATEMENT_ATTRIBUTE`, **imported** from
+`@ultimat3/db` by both `dev-traces.ts` and its test rather than spelled as a literal, which the
+recorder prefers over the name, so the timeline's `repeatedSql` groups SQL texts and not span names. Those spans
+exist only where a `StatementObserver` is installed, so a trace with no DB children is a process
+with no statement diagnostic, not a broken recorder.
+
 ## `x dev` boots the app; it does not simulate one
 
 | File | Job |

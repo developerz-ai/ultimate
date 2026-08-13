@@ -34,8 +34,10 @@ a reservation runs direct **only while its turn is held**, re-queueing through `
 `release()` has been called. Drop the first and a rollback is silently lost; drop the second and
 `enqueue(input, { outbox: false })` inside `withTransaction` hangs forever; drop the third and a
 `tx` handle leaked past its scope writes into whichever transaction holds the connection next. The
-first two are pinned by live tests in `pglite.test.ts` and a fake driver cannot catch either; the
-third is a fake-driver test, because it is about ordering, not SQL.
+first two are pinned by real-database tests in `pglite-embedded.test.ts` and a fake driver cannot
+catch either; the third is a fake-driver test in `pglite.test.ts`, because it is about ordering,
+not SQL. That is the split between the two files: `pglite.test.ts` pins the adapter against fakes,
+`pglite-embedded.test.ts` boots the WASM module once and pins the binding.
 
 `Turn` (`pglite-turns.ts`) is `Disposable`, same shape as `DbConnection`: `release()` and
 `[Symbol.dispose]` are the same call, idempotent for free because it is a settled promise's
@@ -99,10 +101,104 @@ after the await left the corpse cached for the next `connect()`, and a second `c
 the same place rather than clearing it. The rejection still reaches the caller on `client.ts`
 (`pglite.ts` swallows a failed *boot*, which is a different thing: there is nothing to close).
 
-`execute()` trusts `affectedRows` only when it is `> 0`: PGlite counts MODIFIED rows, so a SELECT
-that returned rows is tagged `0`, and `??` would report 0 for every read while
-`PostgresClient.execute` reported the row count. A write that modified nothing returned no rows
-either, so the fallback stays 0 there.
+`execute()` trusts the command tag only when it is `> 0`, in **both** drivers — `rowsOf`
+(`pglite.ts`) and `affectedBy` (`client.ts`) are one rule written twice, not two rules. PGlite
+counts MODIFIED rows, so a SELECT that returned rows is tagged `0` and `??` would report 0 for
+every read; a driver that tags a read `0` on the pooled side would have diverged from PGlite the
+same way, and the same guard closes both. A write that modified nothing returned no rows either, so
+the fallback stays 0 there.
+
+`observe.ts` is the seam a statement-level diagnostic installs into: one process-wide `StatementObserver`, installed with
+`setStatementObserver()` and read with `statementObserver()`, the same ambient shape as
+`setDbClient()`. Three rules, each load-bearing. **Guard at the call site** — read the accessor,
+branch on `undefined`, and only then build the `StatementEvent`; a `notify(event)` wrapper would
+allocate an event per statement for nobody to receive, and this seam is on the path every statement
+in the process takes. **One observer, not a list** — a second install replaces the first (axiom 1);
+a consumer needing several composes them itself. **The accessor returns the installed identity and
+the seam swallows nothing** — a throw from `onStatement` is how strict test mode fails the test its
+N+1 happened in, so a guarding facade here would silently delete that mode. `onStatement` is
+synchronous, runs on the caller's stack after the statement settled, and must not issue SQL: a
+statement from inside it re-enters the funnel and observes itself. Only two places may invoke it —
+`runOn` (`client.ts`) and `statement()` (`pglite.ts`), the funnels every statement already passes
+through. Reserving a connection, booting PGlite and closing a pool are not statements and stay out.
+
+Both funnels are now split in two, and the split is the whole design: `sendOn`/`send` is the raw
+statement plus the `X_DB_UNAVAILABLE` wrap — byte-identical to what the funnel used to be — and
+`runOn`/`statement` is the observed shell around it. Three rules hold, in both drivers:
+**guard first** — read the accessor, and with nothing installed hand straight to `sendOn`/`send`,
+no clock read and no event; **observe both settle paths** — a failed statement is an event with
+`rows: 0` and the already-wrapped error the caller is about to be thrown, because fifty identical
+timeouts are still fifty statements; **notify outside the statement's own `try`** — a throw from
+`onStatement` on the success path is the observer's, and catching it there would wrap a statement
+that succeeded as `X_DB_UNAVAILABLE` and delete strict test mode's failure. On the failing path
+the observer's throw replaces the DB error instead, which is the price of never swallowing — an
+observer that only reports must not throw. `rows` comes from the same helper `execute()` uses
+(`affectedBy` in `client.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
+report and the return value cannot disagree about one statement.
+
+`StatementEvent.attribution` is the one field on that event **nothing produces yet**: both funnels
+omit it, so every event in every running process reads `undefined`, and the only values the type
+has held are a test's. Its producer is `@ultimat3/entity`'s `postgresDriver()` — the last caller
+that still knows the entity and the op once the SQL exists. Say that plainly wherever it comes up
+rather than describing the field as threaded; a seam nobody fills is a claim, not a feature.
+
+`statement-span.ts` is the other half of the observed shell: `withStatementSpan` wraps the **send
+alone**, so the span's duration is the statement's and the observer's own work is not charged to
+the database. Three decisions, each load-bearing. **`db.<verb>`** (`db.select`, `db.begin`; a text
+opening with a comment is `db.statement`) — `@ultimat3/cli`'s `dev-traces.ts` reads the `/_x` panel
+kind off the name prefix like it does for `query.`/`cache.`/`job.`, and this package is tier 1 and
+cannot name a tier-5 vocabulary. **The text is `STATEMENT_ATTRIBUTE`** — `db.statement`, OTel's own
+attribute and the one `dev-traces.ts` prefers over the span name, so a repository loop is fifty rows
+of one SQL text in `repeatedSql` and not one `query.feed`. It is **exported** and re-exported from
+`src/index.ts` precisely because it is a contract across two packages: `dev-traces.ts` and its test
+import it, so renaming it here is a compile error there rather than a panel that quietly groups
+nothing while every test stays green. **It opens only when an observer is installed**, inside the
+guarded branch that already exists: installing an observer is the single switch that turns
+statement instrumentation on, event and span together (axiom 1), and an uninstalled process mints
+no span id and allocates no span object per statement — which on this path is every statement in
+the process. The OTel `kind` is `client`; the database is the remote peer.
+
+`expected-loop.ts` is the **only** suppression mechanism, and the reason it is a scope rather than
+a pragma or a list is the same reason `observe.ts` is one observer: a second path is the tax
+(axiom 1). `expectedQueryLoop(reason, fn)` rides an `AsyncLocalStorage`, so it survives every
+`await` at any depth and two loops running concurrently never read each other; nesting keeps the
+innermost reason, because the closest scope is the one describing this loop. A blank reason is
+`X_INVARIANT` through core's `assert` — no new code for it, and an exemption with no argument is a
+pragma with extra steps. Three rules. **The funnel stamps, the consumer reads** — `runOn` and
+`statement()` call `expectedQueryLoopReason()` inside the branch that already found an observer and
+put the answer on the event as `expected`; a detector that judges a whole request runs long after
+every scope in it closed, so reading the ALS later would find nothing. **It suppresses a verdict,
+not a statement** — the SQL is still sent, still observed, and the span still opens, so anything
+that measures still sees the loop and only the thing that warns is told the author already
+answered. **It costs nothing uninstalled** — the read lives inside the observer branch, so the
+production path is still one property read and one branch.
+
+The framework's own deliberate loops declare themselves at source, and new ones must: `migrate()`
+and `rollback()` (`migrate.ts`) apply and reverse one migration per transaction so a failure leaves
+an exact ledger, and `@ultimat3/admin`'s `search.ts` runs one indexed lookup per text field. Adding
+a `db` dependency to `admin` for that one import is deliberate — the alternative is re-exporting the
+scope from a package `admin` already imports, which is the second path this rule forbids.
+
+**`@ultimat3/jobs` never imports this package** (`packages/jobs/CLAUDE.md`), so nothing about the
+observer, the span or `expectedQueryLoop` is this package's concern *from inside* `jobs` —
+`driver-pg.ts` speaks only the two-method `PgExecutor` it declares itself, satisfied by anything
+shaped like `query(sql, params)`. That is a statement about the package boundary, not about what a
+running process does with it: `packages/cli/src/dev-queue.ts`'s `startQueue` — the only place in
+the repo that builds a `PgExecutor`, reached by every role through `dev-runtime.ts`'s
+`startServices` and by `migrate` through `serve.ts`'s `runMigrations` — wraps a real
+`PostgresClient`/`PgliteClient` `.query()` call for it. So today, in this framework's own boot
+code, every job-driver statement (claim, ack, nack, enqueue, heartbeat, step read/write) **does**
+pass through `runOn`/`statement()` and is visible to an installed `StatementObserver` and traced
+exactly like any other statement — just with no `attribution`, which is not a `jobs` gap: **no
+producer of that pair exists anywhere yet** (`observe.ts`), so every event in every process today
+reads `attribution: undefined`. This is incidental, not guaranteed:
+`PgExecutor` is duck-typed, so a deployment that hands `createPgDriver` an executor not backed by
+this package — a raw `Bun.SQL` instance, a hand-rolled pool, `driver-redis`/`driver-nats` (which do
+not touch Postgres at all) — gets zero observation of its queue traffic, and nothing here or in
+`jobs` enforces otherwise. A detector reading `attribution` (PR 9's N+1 work) will see a claim loop
+as anonymous SQL, never as a `job` statement, until `@ultimat3/entity`'s `postgresDriver()` — the
+one caller that still knows the entity and the op when the SQL exists — produces the pair, and
+`jobs` then threads its own.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
