@@ -129,6 +129,88 @@ Removing the key is a real option, not a hedge: inference (steps 2–4) still ap
 | Live queries | the tenant predicate is part of the matcher, not a post-filter |
 | Vector search | tenant + policy filters applied **in SQL**, so similarity search cannot leak across tenants |
 
+## Point lookups batch themselves
+
+`findById` called several times in one microtask of one request is **one** statement, `As of 2026-08`:
+
+```ts
+// One `select … where "id" in ($1, $2, $3, …)`, not one statement per post.
+const authors = await Promise.all(posts.map((post) => users.findById(post.authorId, { orgId })));
+```
+
+Nothing to opt into — no `dataloader()`, no `batch()`. `findById` keeps its signature and its meaning, which is the only way the fix reaches code that is already written.
+
+| Property | Behavior |
+|---|---|
+| Window | one microtask, closed before the statement goes out. A sequential `for … of` loop shares no microtask — its `await` ends the window — so what batches one is the page it is looping over (below) |
+| Lifetime | one request. The batch is keyed by context identity, so it dies with the request and never crosses one |
+| Never shared with | another tenant, another soft-delete visibility, another projection, another entity, another client. The coalesced statement has to be one each single lookup would have been served by |
+| Scope | the tenant predicate and `deleted_at is null` are **inside** the statement, so an id that is missing, soft-deleted or another tenant's still reads as `null` — never another caller's row |
+| Wide batches | past 500 ids, several whole statements rather than one Postgres refuses for its bind count |
+| Outside a request | a job, a script, a migration: the single statement it always was |
+
+## A page batches the loop it causes
+
+A `for … of` loop awaits between iterations, so no two of its lookups share a microtask. The page
+they came from batches them instead, `As of 2026-08`:
+
+```ts
+const page = await db.posts.findMany({ orgId });
+for (const post of page.rows) {
+  // Two statements for the whole loop: the page, then one `where "id" in (…)` over every author
+  // on it. Every lookup after the first is memory.
+  const author = await db.users.findById(post.authorId, { orgId });
+}
+```
+
+Nothing new to write, and nothing to opt into: the relation is the `references()` the column
+already declares, so the fix reaches loops that are already written.
+
+| Property | Behavior |
+|---|---|
+| Trigger | the first `findById` whose id is a foreign key value on a page this request read. It resolves that key for **every** row of the page, in one statement |
+| Never shared with | a different scope key (another tenant, another soft-delete visibility, another projection, another entity), another client, or the same entity after a write to it |
+| Scope | the tenant predicate and `deleted_at is null` are inside the preload statement — it is the statement each single lookup would have sent, widened to the page's ids — so a page's ids can never resolve rows outside the reader's own scope |
+| A write | drops what was preloaded for that entity before the statement goes out, so a row this request changed is re-read, never served from a page read before it |
+| Lifetime | one request. What is held is the ids, not the rows, keyed by context identity |
+| Wide pages | past 500 ids, whole statements — the same bound the microtask batch has |
+| Outside a request | a job, a script: a page leaves nothing behind, and every lookup is the statement it always was |
+
+## Preload states a relation the loop would infer
+
+The eager, declarative third of the family: the relation is named on the chain and resolved
+before the caller sees a row, `As of 2026-08`:
+
+```ts
+export const db = database({ orgs, posts, members });
+
+// Two statements: the page, then one `select … where "id" in (…)` over its authors.
+const page = await db.posts.where({ orgId }).preload('author').page();
+page.rows[0].author;        // the member row, or null — always present
+```
+
+Nothing new to declare: `'author'` is the relation the `authorId` foreign key on `posts` already
+produces — `preload()` names it, it does not define it. A name no foreign key produces is
+`X_PRELOAD_UNKNOWN_RELATION`, resolved and thrown when `preload()` is called, on the chain and not
+a page later.
+
+| Property | Behavior |
+|---|---|
+| Shape | a `belongsTo` attaches the row or `null`; a `hasMany` attaches an array, empty when there are none. Always present, so "no author" and "nobody preloaded the author" cannot read the same |
+| Statements | one extra statement per named relation, resolved **concurrently** — two `preload()` calls are two statements in flight, never one after the other. Naming one relation twice is one statement |
+| Terminals | `page()`, `all()`, `one()` resolve every named relation. `count()` and `plan()` do not — a count reads no rows |
+| Projection | attached after `select()`. `select()` is widened internally with the relation's own key, so a projection can drop neither the key the preload reads nor the relation it attaches — `plan().select` reports the widened list, the one that actually ran |
+| Tenancy | the page's own tenant predicate carries onto the related read only when **both** entities are scoped by a column of that same name — a value that scopes one entity is a guess on another, and a source scoped by `workspaceId` may carry an ordinary `orgId` predicate that is a filter and not its tenancy. Carrying nothing is not silence: the related read builds its own plan, so it is refused as `X_TENANCY_UNSCOPED` rather than answered with a guess |
+| Soft delete | the related read is `findMany`, so `deleted_at is null` applies exactly as it does to any other read |
+| Wide relations | past 500 ids, whole statements — the same bound the two batches above share. A `hasMany` wider than one page costs another keyset page rather than a silent truncation |
+| Reach | a table reads only the entities its own `database()` call named. A relation to one outside the set is `X_INVARIANT_VIOLATED`; the fix names the missing entity in that same `database({ … })` call |
+
+Reach for it when the relation is part of what the page *is* — a list rendered with its authors,
+rows handed to something that will not call back into the repo, or a read a reviewer should see
+stated rather than inferred from a loop. The other two members of the family ask for nothing:
+`findById` batches a same-microtask fan-out for itself, and a `for … of` loop over a page is
+already two statements, above.
+
 ## Invariants
 
 | Rule | Behavior |
@@ -223,5 +305,6 @@ The same clone mechanism powers test parallelism: `bun test --workers 8` gives e
 | `X_ENTITY_DUPLICATE` | two entities on the same table | rename one, or merge them |
 | `X_INVARIANT_VIOLATED` | a write broke a named invariant | fix the caller, or change the invariant and generate a migration |
 | `X_TENANCY_UNSCOPED` | a query without a tenant predicate | go through the repo |
+| `X_PRELOAD_UNKNOWN_RELATION` | `preload('<name>')` named a relation no `references()` produces | pick one of the relation names the error lists, or add the `.references()` call that creates it |
 
 Full list with `--json` shapes: [Error codes](Error-Codes). Source: [`docs/idea/02-primitives.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/02-primitives.md), [`docs/idea/10-testing.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/10-testing.md).

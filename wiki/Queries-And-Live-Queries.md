@@ -24,7 +24,7 @@ export const liveFeed = query({
 | `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
 | `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. v2 |
-| `sql` | yes | `(input) => SqlSource`. Built with `from()` from `@ultimat3/query` or an `@ultimat3/entity` repo plan — no ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
+| `sql` | yes | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
@@ -141,6 +141,8 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 | Invalidation | none — a write in the same request drops tier entries, not memo entries. `fresh: true` is the read-past, and what it read replaces the memo entry, so the next plain read of that key sees the write too |
 
 Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres. The same memo is what keeps an uncached lookup called once per row of a list to one round trip — `As of 2026-08`, per row is what it used to cost.
+
+The memo collapses the *same* read asked twice. Fifty *different* row lookups collapse one layer down, in the repo: `findById` issued across one microtask of a request is one `where "id" in (…)` ([Entities and migrations → Point lookups batch themselves](Entities-And-Migrations#point-lookups-batch-themselves)) — or, named on the chain instead of inferred from a loop, one `preload()` per relation ([Entities and migrations → Preload states a relation the loop would infer](Entities-And-Migrations#preload-states-a-relation-the-loop-would-infer)).
 
 ## Every cached query carries a tag
 

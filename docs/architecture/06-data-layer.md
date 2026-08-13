@@ -49,8 +49,9 @@ Generated per entity. The **only** place SQL lives.
 
 | Method | Notes |
 |---|---|
-| `findById(id)` | tenant filter applied automatically; returns `null`, never throws on miss |
-| `findMany(args)` | cursor-paginated only (below) |
+| `findById(id)` | tenant filter applied automatically; returns `null`, never throws on miss. Inside a request, the calls issued in one microtask are **one** `where "id" in (…)` ([`coalesce.ts`](../../packages/entity/src/coalesce.ts)) — same scope, same soft-delete filter, one round trip. An id that is a foreign key on a page this request read resolves that key for the whole page instead ([`jit-preload.ts`](../../packages/entity/src/jit-preload.ts)), which is what batches a sequential `for … of` loop |
+| `findMany(args)` | cursor-paginated only (below); leaves its page's foreign key values behind for the preload above |
+| `preload(name)` | not on `Repo<T>` — a `ReadBuilder` chain method, `db.<table>.preload('<relation>')`, resolved by `page()`/`all()`/`one()`. One more `where <key> in (…)` per named relation, over the page `findMany` already read ([`preload.ts`](../../packages/entity/src/preload.ts)); several relations resolve concurrently, and naming one twice is one statement |
 | `insert(values)` / `update(id, patch)` | invariants run before the statement |
 | `delete(id)` | soft-deletes when the entity declares `deletedAt`, hard-deletes when it does not |
 | `deleteWhere(filter)` | delete by equality filter; resolves with the **number of rows removed** |
@@ -58,6 +59,16 @@ Generated per entity. The **only** place SQL lives.
 | `count(args)` | the same plan as `findMany`, without the page |
 | `Transactor.run(fn)` | joins the ambient transaction if one exists, opens one otherwise |
 | custom | added in the feature's `repo.ts`, returning schema-parsed rows |
+
+One family, three members:
+
+| Path | Trigger | Cost |
+|---|---|---|
+| Microtask coalescing ([`coalesce.ts`](../../packages/entity/src/coalesce.ts)) | several `findById` calls land in one microtask | one `where id in (…)` — nothing to opt into |
+| Sibling JIT preload ([`jit-preload.ts`](../../packages/entity/src/jit-preload.ts)) | the first `findById` whose id is a foreign key on a page this request read | one `where <key> in (…)` for the whole page; every later lookup in the loop is memory — nothing to opt into, and `postgresDriver({ jitPreload: false })` is the one switch that turns it off |
+| Eager preload ([`preload.ts`](../../packages/entity/src/preload.ts)) | `.preload('<relation>')` named on the chain | one `where <key> in (…)` per relation, resolved before the caller sees a row |
+
+Reach for `preload()` when the relation is part of what the page *is* — a list rendered with its authors, rows handed to something that will not call back into the repo, or a read a reviewer should see stated rather than inferred from a loop. The other two ask for nothing: a same-microtask fan-out and a sequential `for … of` loop already get them for free. All three read their keys through one file ([`batch-read.ts`](../../packages/entity/src/batch-read.ts)) — one spelling of a key, one 500-id bind cap — so a bound and a key's identity cannot disagree between them. What each may widen is its own: the two implicit paths share a scope key and refuse to widen across a tenant, a soft-delete visibility, a projection or an entity, because they answer a statement the caller already sent; `preload()` sends its own, so it carries the chain's tenant predicate onto it and refuses when it cannot.
 
 The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. Four properties make them safe to be the only filtered writes:
 

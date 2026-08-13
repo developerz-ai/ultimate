@@ -28,6 +28,75 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   that is how a `unique()` column shipped a migration failing on `42P07` and money's currency
   shipped as `char(1)`. A new operator, column kind or write path is not done until it round-trips
   there.
+- **A point lookup batches itself, and the batch is never wider than the statement it replaces.**
+  `findById` called several times in one microtask of one request is one `select … where "id" in
+  (…)` — `coalesce.ts`, keyed by ctx identity (a `WeakMap`, so the batch dies with the request, the
+  shape `@ultimat3/query`'s request memo has one tier up) and by a scope key covering **every**
+  input to the statement except the id. Two tenants, two soft-delete visibilities, two projections,
+  two entities or two clients therefore never share one: a coalesced statement has to be one each
+  of the singles would have been served by, or a caller is answered with rows their own statement
+  could never have returned. It declines rather than guesses — no request in scope, a composite
+  key, a predicate value it cannot render — and declining is just the statement `findById` always
+  sent, which is why `findById` keeps its signature and there is no `batch()` to opt into. The
+  window closes before the statement goes out, so a lookup arriving mid-flight opens the next batch
+  instead of joining ids already on the wire, and past `MAX_IDS_PER_STATEMENT` a batch becomes
+  several whole statements rather than one Postgres refuses for its bind count. A sequential
+  `for … of` loop shares no microtask — its `await` ends the window — which is what the sibling
+  preload below is for.
+- **A page batches the loop it causes, and a preloaded row is only ever served to the statement
+  that read it.** `findMany` leaves its page's foreign key *values* behind (`jit-preload.ts`,
+  `tagSiblings`), so the first `findById` for any one of them resolves that key for every row of
+  the page in one `in` statement and the rest of a `for … of` loop is memory. Five rules, none
+  optional. **The scope guard is a security boundary**: a preloaded row is served only under the
+  *same* `scopeKey` the coalescer uses — same tenant predicate, same soft-delete visibility, same
+  projection, same entity — and the preload statement is that scope widened to the page's ids, so
+  a page read under one tenant can never resolve another tenant's rows, whichever tenant asks.
+  **Same client, or nothing**: a bucket filled through the ambient pool is not read through a
+  pinned one, which is also what stops a row read inside a transaction being served after it —
+  `db()` hands back a different client once the transaction is over, rolled back or not.
+  **A write drops it**: `postgresRepo`'s `writing()` is the one place every write goes out, and it
+  calls `forgetPreloaded(entity.$name)` *before* the statement, so a row a request changed is
+  re-read and never served from a page read before it. **Values, not rows**: the index is keyed by
+  id and holds ids, so a page early in a long request pins its keys and not its rows, and it dies
+  with the request like every other per-ctx store here. **Declining is the old behaviour**: no
+  request in scope, an id no page indexed, a key that resolved to nothing — the caller reads the
+  statement it always read. `MAX_IDS_PER_STATEMENT` bounds the preload exactly as it bounds a
+  batch. What both share — the scope key, `keyOf`, the one `in` statement — lives in
+  `batch-read.ts` so the two can never disagree about when a shared statement is legal.
+  **One switch, where the driver is built**: `postgresDriver({ jitPreload: false })` /
+  `postgresRepo(entity, { jitPreload: false })` turns the tagging off. Never an `app.config.ts`
+  key — nothing reads config at the seam that builds a repository, so a `database.jitPreload`
+  field would be a switch the framework cannot read, which is a switch that does nothing.
+- **`preload(name)` shares `batch-read.ts` with the coalescer and the JIT preload above, but
+  keeps no request-scoped cache of its own.** `keyOf`, `MAX_IDS_PER_STATEMENT` and
+  `statementChunks` come from the same file, so a bind-count bound and a key's identity can
+  never disagree across the three — but `preload()` reads its scope straight off the chain's
+  own `where` and issues its statement every call; nothing here declines to an old statement
+  the way the coalescer or the JIT preload can, because there is no old statement to decline
+  to — a chain that calls `preload('author')` always gets the extra statement. **Tenancy is
+  carried, never inferred, and that is a security boundary, not a convenience**:
+  `tenantScope()` carries the page's own tenant predicate onto the related read only when
+  **both** entities are scoped by a column of that same name — a value that scopes one entity
+  is a guess on another, and serving a guessed scope is a cross-tenant read. Both ends are
+  checked, never the target's alone: a source scoped by `workspaceId` may still carry an
+  ordinary `orgId` predicate of its own, and matching on the target's column name would lift
+  that filter into the target's tenant scope and attach rows from a tenant nobody proved this
+  reader owns. A differently-named column carries nothing, on purpose, so the related read
+  builds an unscoped plan of its own and `assertScoped` refuses it as `X_TENANCY_UNSCOPED`
+  rather than let it pass. **Reach is the same `database()` set the two bullets above already answer
+  to**: `RelatedTables` is the resolver `database()` hands every table it builds, an
+  entity-name → `{ entity, repo }` map closed over the same call, so `preload('author')`
+  resolves `author` only when that call named the entity the relation points at — outside it
+  is `X_INVARIANT_VIOLATED`, never a reach around the handle. `tableFor(entity, repo)` built
+  by hand takes no `related` resolver, so the identical call fails the identical way with
+  `related` itself `undefined`. **A projection cannot drop what a preload needs**:
+  `select()` widens its own field list with each preloaded relation's local key, so
+  `plan().select` — the projection that actually runs — always carries it, though the row
+  type the caller sees still names only what they picked. **Attachment copies, never
+  mutates**: a preloaded relation is written onto `{ ...row }`, because the in-memory driver
+  hands back the row it stores and attaching directly would leak the relation into the table
+  itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
+  relation; `count()` and `plan()` do not, since neither reads a row to attach one to.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -155,6 +224,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
+| `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
+| `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
+| `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
+| `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |

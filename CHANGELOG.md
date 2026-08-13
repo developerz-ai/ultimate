@@ -47,6 +47,37 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`findById` batches itself — one microtask of point lookups is one `where "id" in (…)`.** A page that resolves an author per row sent one `select … where "id" = $1` per row. Inside a request, `postgresRepo()` now collects the lookups issued in the same microtask and sends one statement for all of them:
+
+  ```ts
+  // One statement, not one per post. findById's signature and its meaning are unchanged.
+  const authors = await Promise.all(posts.map((post) => users.findById(post.authorId, { orgId })));
+  ```
+
+  No `dataloader()`, no `batch()`, nothing to opt into: the capability lives inside the method that already exists, which is the only place it can reach code already written. The batch is keyed by context identity — a `WeakMap`, so it dies with the request, the shape `@ultimat3/query`'s request memo has one tier up — and by a scope key covering every input to the statement except the id, so another tenant, another soft-delete visibility, another projection, another entity or another client is a different statement and never joins one. What goes out is the statement each single lookup would have been served by, `in` instead of `=`: the tenant predicate and the `deleted_at is null` clause are inside it, so an id whose row is missing, soft-deleted or another tenant's still reads as `null`. Past 500 ids it becomes several whole statements rather than one Postgres refuses for its bind count, and it declines outright — sending exactly what it always sent — with no request in scope (a job, a script), on a composite primary key, or on a scope it cannot compare. The window is one microtask and closes before the statement is sent, so a sequential `for … of` loop shares nothing through this path — what batches one is the sibling preload below. Proved against a real Postgres in `pg-driver.live.test.ts`: five lookups, one statement, the same five answers.
+- **A `for … of` loop over a page is two statements — the sibling-aware preload.** A microtask window cannot see a sequential loop: its `await` closes the window before the next lookup exists. `findMany` now leaves its page's foreign key **values** behind for the request, so the first `findById` for any one of them resolves that key for **every** row of the page in one statement and the rest of the loop is served from memory. On by default; `postgresDriver({ jitPreload: false })` is the one switch that turns it off, where the driver is already constructed — not an `app.config.ts` key, because nothing reads config at the seam that builds a repository and a switch the framework cannot read is a switch that does nothing:
+
+  ```ts
+  const page = await posts.findMany({ orgId });
+  for (const post of page.rows) {
+    // Two statements for the whole loop: the page, then one `select … where "id" in (…)` over
+    // every author on it. Every lookup after the first is memory.
+    const author = await users.findById(post.authorId, { orgId });
+  }
+  ```
+
+  Nothing new to write — the relation is the `references()` already declared, and `findById` keeps its signature, so the fix reaches loops that are already written. The scope guard is a security boundary, not a tuning knob: a preloaded row is served only to a lookup with the same scope key the batch above uses (tenant predicate, soft-delete visibility, projection, entity), the same client, and no write to that entity since — anything else reads the statement it always read. The preload statement is that same statement widened to the page's ids, so its tenant predicate and `deleted_at is null` clause are in the SQL Postgres runs; a page's ids can therefore never resolve rows outside the reader's own scope. The index holds values and not rows, keyed by context identity, so it pins nothing and dies with the request; a page of a hundred rows by one author is still one bind; a nullable key that resolved to nothing is not a row to go looking for; past 500 ids it becomes whole statements; and with no request in scope (a job, a script) a page leaves nothing behind at all.
+- **`preload(name)` — the join a `for … of` loop would have earned, without writing the loop.** The two paths above catch a lookup pattern already written; `preload()` is the same join, named on the chain instead of triggered by a loop:
+
+  ```ts
+  export const db = database({ orgs, posts, members });
+
+  // Two statements: the page, then one `select … where "id" in (…)` over its authors.
+  const page = await db.posts.where({ orgId }).preload('author').page();
+  page.rows[0].author;        // the member row, or null — always present
+  ```
+
+  One vocabulary, `preload('<relation>')` — no `include`, `join` or `with`, and nothing new to declare: the name is the `references()` already written, resolved by `relationNamed()` when `preload()` is called, so an unknown one is `X_PRELOAD_UNKNOWN_RELATION` on the chain and not a page later. A `belongsTo` attaches the row or `null`, a `hasMany` an array — always present, so "no author" and "nobody preloaded the author" never read the same. Several `preload()` calls resolve concurrently, never one after the other, and naming one relation twice is one statement; keys are chunked at `MAX_IDS_PER_STATEMENT` (500) exactly as a coalesced point read already is, so past 500 keys a relation costs several statements rather than one Postgres refuses for its bind count, and a relation with more rows than one page holds costs another keyset page rather than a silent truncation. The page's own tenant predicate carries onto the related read only when the other entity's tenant column has the same name — a value that scopes one entity is a guess on another, and a guess here is a cross-tenant read — so a differently-named tenant column carries nothing, and carrying nothing is not silent: the related read builds its own plan and `assertScoped` refuses it there as `X_TENANCY_UNSCOPED`. The related read is `findMany`, so `deleted_at is null` applies exactly as it does anywhere else. Attached to a copy of each row — `{ ...row }`, because the in-memory driver hands back the row it stores — after `select()`, which is widened internally with the relation's local key so a projection can drop neither the key a preload reads nor the relation it attaches; `plan().select` reports the widened list. `page()`, `all()` and `one()` preload; `count()` and `plan()` do not, since a count reads no rows. A table reaches only the entities its own `database()` call named, through the driver that call was given, so a preload against memory means what a preload against Postgres means — a relation whose other end is outside the set is `X_INVARIANT_VIOLATED` naming the `database({ … })` call that fixes it, and `tableFor(entity, repo)` built by hand reaches no other table. `preload('author')` returns `ReadBuilder<Row & { readonly author: unknown }>` — `unknown`, not a generated type, because the name is a string resolved at runtime and the row on the other side is parsed by its own entity.
 - **`relationMap()` — the foreign keys an entity already declared, readable at query time.** `ColumnMeta.references` was resolved in exactly one place, `describe.ts`, to spell a DDL constraint; at query time nothing could answer "what is a post's author". `@ultimat3/entity` now derives a named map from the same thunks — `belongsTo` from an entity's own foreign keys, `hasMany` from the inbound ones:
 
   ```ts

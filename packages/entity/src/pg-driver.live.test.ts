@@ -10,13 +10,14 @@
 // `db-integration.test.ts`; CI's `postgres` service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { isUltimateError } from '@ultimat3/core';
+import { createContext, isUltimateError, runWithContext } from '@ultimat3/core';
 import {
   createPostgresClient,
   generateMigration,
   type PostgresClient,
   raw,
   setDbClient,
+  setStatementObserver,
 } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -241,6 +242,95 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(await repo().findById(written.id, { orgId: acme })).toBeNull();
     const revealed = await repo().findById(written.id, { orgId: acme, includeDeleted: true });
     expect(revealed?.deletedAt).toBeInstanceOf(Date);
+  });
+
+  test('point lookups in one request are one statement, and it answers like the singles did', async () => {
+    const first = await write(acme, 'INV-batch-1');
+    const second = await write(acme, 'INV-batch-2');
+    const hidden = await write(acme, 'INV-batch-3');
+    await repo().delete(hidden.id, { orgId: acme });
+    const foreign = await write(other, 'INV-batch-4');
+
+    // The observer is how "one statement" is asserted against a real server: there is no
+    // recording client here, and the count is the whole claim.
+    const reads: string[] = [];
+    setStatementObserver({
+      onStatement: (event) => {
+        if (event.text.includes('from "pg_live_invoices"')) reads.push(event.text);
+      },
+    });
+    try {
+      const rows = await runWithContext(createContext(), () =>
+        Promise.all([
+          repo().findById(first.id, { orgId: acme }),
+          repo().findById(second.id, { orgId: acme }),
+          repo().findById(hidden.id, { orgId: acme }),
+          repo().findById(foreign.id, { orgId: acme }),
+          repo().findById(first.id, { orgId: acme }),
+        ]),
+      );
+
+      expect(reads).toHaveLength(1);
+      // Five lookups, four binds: the repeated id is one of them.
+      expect(reads[0]).toContain('"id" in ($1, $2, $3, $4)');
+      // Every answer is the one the single statement gave — Postgres applied the tenant predicate
+      // and the `deleted_at is null` clause inside the coalesced statement, not the process after.
+      expect(rows.map((row) => row?.reference ?? null)).toEqual([
+        'INV-batch-1',
+        'INV-batch-2',
+        null,
+        null,
+        'INV-batch-1',
+      ]);
+    } finally {
+      setStatementObserver(undefined);
+    }
+  });
+
+  test('a sequential loop over a page of tags is two statements against the invoices it points at', async () => {
+    // The JIT-preload half of the same claim, against a real server: `findMany` on `invoiceTags`
+    // leaves its page's `invoiceId` values behind, so a `for … of` loop that follows — one
+    // `await` per iteration, no two lookups sharing a microtask — costs one widened `in` query
+    // for the whole page, not one `select` per row.
+    const org = await newOrg('jit-live');
+    const tags = () => postgresRepo(invoiceTags);
+    const written = await Promise.all(
+      ['JIT-1', 'JIT-2', 'JIT-3'].map((reference) => write(org, reference)),
+    );
+    for (const invoice of written) {
+      await tags().insert({ invoiceId: invoice.id, orgId: org, label: 'primary', note: null });
+    }
+
+    // Filtered to the two tables under test, as the sibling test above is: any incidental
+    // statement in this window — a connection-checkout `set`, a pool keepalive, a `begin` — would
+    // otherwise read as "expected 2, got 3" with nothing naming the intruder.
+    const statements: string[] = [];
+    setStatementObserver({
+      onStatement: (event) => {
+        if (/from "pg_live_(?:invoice_tags|invoices)"/.test(event.text))
+          statements.push(event.text);
+      },
+    });
+    try {
+      const references = await runWithContext(createContext(), async () => {
+        const page = await tags().findMany({ orgId: org });
+        const seen: string[] = [];
+        for (const tagRow of page.rows) {
+          const invoice = await repo().findById(tagRow.invoiceId, { orgId: org });
+          seen.push(invoice?.reference ?? 'missing');
+        }
+        return seen;
+      });
+
+      // The tags page, and one `in (…)` statement for the three invoices it named — never three.
+      expect(statements).toHaveLength(2);
+      const invoiceReads = statements.filter((text) => text.includes('from "pg_live_invoices"'));
+      expect(invoiceReads).toHaveLength(1);
+      expect(invoiceReads[0]).toContain('"id" in ($1, $2, $3)');
+      expect(references.slice().sort()).toEqual(['JIT-1', 'JIT-2', 'JIT-3']);
+    } finally {
+      setStatementObserver(undefined);
+    }
   });
 
   test('delete on an entity without a soft-delete column removes the row', async () => {
