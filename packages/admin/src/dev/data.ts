@@ -27,6 +27,7 @@ import type {
   RequestTrace,
   RouteFact,
   SqlResult,
+  StatementLoopFact,
   TableFact,
   TaskFact,
 } from './facts';
@@ -38,6 +39,8 @@ export function staticDevSources(facts: Partial<DevSources> = {}): DevSources {
   return {
     routes: facts.routes ?? ((): Promise<readonly RouteFact[]> => empty([])),
     traces: facts.traces ?? ((): Promise<readonly RequestTrace[]> => empty([])),
+    statementLoops:
+      facts.statementLoops ?? ((): Promise<readonly StatementLoopFact[]> => empty([])),
     liveQueries: facts.liveQueries ?? ((): Promise<readonly LiveQueryFact[]> => empty([])),
     subscribers: facts.subscribers ?? ((): Promise<readonly LiveSubscriberFact[]> => empty([])),
     jobDefs: facts.jobDefs ?? ((): Promise<readonly JobDefFact[]> => empty([])),
@@ -145,6 +148,11 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
     },
 
     traces: unwired<readonly RequestTrace[]>('traces', 'timeline'),
+
+    // The verdicts belong to the one statement ledger `x dev` installs, so a host without it
+    // refuses here rather than answering `[]`: an empty list claims "no N+1 in this request",
+    // which is a different and unearned answer — the same argument `subscribers` and `mail` make.
+    statementLoops: unwired<readonly StatementLoopFact[]>('statementLoops', 'timeline'),
 
     async liveQueries(): Promise<readonly LiveQueryFact[]> {
       const { describeQueries } = await import('@ultimat3/query');

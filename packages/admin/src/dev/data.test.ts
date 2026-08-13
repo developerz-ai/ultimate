@@ -4,7 +4,7 @@ import { can } from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry as resetQueryRegistry } from '@ultimat3/query';
 import { type AdminActor, staticAuthz } from '../authz';
 import { defaultDevSources, staticDevSources } from './data';
-import type { CacheEdgeFact, MailFact } from './facts';
+import type { CacheEdgeFact, MailFact, StatementLoopFact } from './facts';
 import { cachePanel } from './panel-cache';
 
 // Both registries are process-global (`@ultimat3/action`, `@ultimat3/query`): this file is the
@@ -35,6 +35,19 @@ describe('unwired sources reject instead of throwing', () => {
     expect(caught.fix).toContain('defaultDevSources');
     expect(caught.fix).toContain('mail');
     // The default phrasing is still real code an agent can paste and run.
+    expect(() => new Function(caught.fix)).not.toThrow();
+  });
+
+  // `[]` here would read as "the detector ran and this request was clean" — a verdict this
+  // process never earned, since only `x dev` installs the statement ledger that counts one.
+  test('statementLoops refuses when no detector is installed, rather than answering []', async () => {
+    const caught = (await defaultDevSources()
+      .statementLoops()
+      .catch((error: unknown) => error)) as { cause: string; fix: string };
+
+    expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(caught.cause).toContain('statementLoops');
+    expect(caught.fix).toContain('statementLoops');
     expect(() => new Function(caught.fix)).not.toThrow();
   });
 });
@@ -155,6 +168,7 @@ describe('staticDevSources', () => {
 
     await expect(sources.routes()).resolves.toEqual([]);
     await expect(sources.traces()).resolves.toEqual([]);
+    await expect(sources.statementLoops()).resolves.toEqual([]);
     await expect(sources.liveQueries()).resolves.toEqual([]);
     await expect(sources.subscribers()).resolves.toEqual([]);
     await expect(sources.jobDefs()).resolves.toEqual([]);
@@ -173,5 +187,24 @@ describe('staticDevSources', () => {
       elapsedMs: 0,
     });
     await expect(sources.manifest()).resolves.toEqual({ emitted: null, committed: null, diff: [] });
+  });
+
+  test('an injected fixture is the answer — the explicit path is the only detector here', async () => {
+    const loops: readonly StatementLoopFact[] = [
+      {
+        requestId: 'req_1',
+        code: 'X_N_PLUS_ONE_QUERY',
+        cause: '50 identical statements on members via findById',
+        fix: "posts.preload('author')",
+        docs: 'https://example.test/n-plus-one',
+        subject: 'members.findById',
+        count: 50,
+        sample: 'select * from members where id = $1',
+      },
+    ];
+
+    expect(await staticDevSources({ statementLoops: async () => loops }).statementLoops()).toEqual(
+      loops,
+    );
   });
 });

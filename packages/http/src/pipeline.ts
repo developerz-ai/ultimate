@@ -328,11 +328,16 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
       });
       if (toSignIn !== undefined) return redirect(toSignIn.location, toSignIn.status);
       if (config.dev && wantsOverlay(request.raw)) {
+        // Asked for inside the branch, never above it: the overlay is the only surface a notice
+        // has, so a production process — or an agent that asked for json — must not pay a
+        // diagnostic's per-request cost to produce findings nothing will render.
+        const notices = hooks.devNotices?.(ctx) ?? [];
         return overlayResponse(error, {
           requestId: ctx.requestId,
           method: ctx.method,
           path: ctx.url.pathname,
           buildId: config.buildId,
+          ...(notices.length === 0 ? {} : { notices }),
         });
       }
       const retryAfter =

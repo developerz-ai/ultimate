@@ -23,6 +23,7 @@ export type {
   RouteFact,
   SpanKind,
   SqlResult,
+  StatementLoopFact,
   TableFact,
   TaskFact,
   TimelineSpan,

@@ -152,6 +152,24 @@ the author already answered. A shape is promoted to a verdict exactly once, on t
 crosses the threshold, and its count keeps rising: a loop of fifty is one report reading fifty. The
 report list is bounded and drops its oldest.
 
+`statement-loop.ts` is the **one** projection those verdicts reach four surfaces through, and the
+reason there is only one is that four renderings of one loop must be one sentence. It hands a
+verdict to `@ultimat3/entity`'s `nPlusOne()` — the `fix:` speaks that package's vocabulary and is
+derived from the relations the schema already declared — and each surface takes a field of what
+comes back: `cmd-dev.ts` appends `loopFinding` to the `findings` getter (text and `--json` render it
+for free), `dev-dashboard.ts` supplies `statementLoops` so `/_x/timeline` shows `nPlusOne` for the
+request on screen, `cmd-dev.ts` again passes `devNotices` down `startRoles` so the browser overlay
+renders the loop under the error, and the ledger itself emits `warnLoop` — one `logger.warn` per
+request per code, the ids riding along from core's `setLoggerContextFields`.
+
+Two rules about *when* a count is read. **A surface reads it live**: the finding, the panel row and
+the notice all say `ran 50 times` because they ask after the loop finished, while the log line says
+`ran 5 times` because it was written the moment the threshold was crossed — same verdict, two
+honest moments. **A verdict belongs to its request**: `repeatsFor(ctx)` reads the request's own
+tally rather than filtering the bounded global list, so the overlay still names a loop the bound
+already dropped. `serve.ts` supplies no `devNotices`, so the seam it boots through is a key that is
+absent, not a hook answering an empty list.
+
 ## `x dev` boots the app; it does not simulate one
 
 | File | Job |
@@ -167,6 +185,7 @@ report list is bounded and drops its oldest.
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
 | `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |
 | `dev-n-plus-one.ts` | statement shapes counted per request, and the ones that repeat past the threshold |
+| `statement-loop.ts` | one verdict → the finding, the panel fact, the overlay notice and the log line |
 | `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
 | `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |

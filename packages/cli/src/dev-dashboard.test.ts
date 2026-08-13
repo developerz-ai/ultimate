@@ -9,11 +9,18 @@ import { join } from 'node:path';
 import type { DevPanel } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
 import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
-import { configureTelemetry, resetTelemetry, withSpan } from '@ultimat3/core';
+import {
+  configureTelemetry,
+  createContext,
+  resetTelemetry,
+  runWithContext,
+  withSpan,
+} from '@ultimat3/core';
 import type { MailMessage, MemoryMailDriver, SendResult, SentMail } from '@ultimat3/mail';
 import { appManifest, writeAppManifest } from './app-manifest';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels, devSources } from './dev-dashboard';
+import { createStatementLedger } from './dev-n-plus-one';
 import type { RunningServices } from './dev-runtime';
 import type { DevServices, ServiceBinding } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
@@ -300,6 +307,58 @@ describe('unit · x dev mounts the dashboard', () => {
       expect(payload.ok ? payload.data.requests.map((entry) => entry.requestId) : []).toEqual([
         'req_1',
       ]);
+    } finally {
+      resetTelemetry();
+    }
+  });
+
+  test('a host that installed no ledger refuses the verdicts rather than calling the page clean', async () => {
+    const recorder = createTraceRecorder();
+    const payload = await panelPayload(
+      timelinePanel,
+      devSources({ ...inputFor(), traces: recorder }),
+      new URLSearchParams(),
+    );
+
+    expect(payload.ok).toBe(true);
+    // `null`, not `[]`: "nobody counted" and "this request was clean" are different answers, and
+    // the panel can only tell them apart because the unwired source rejects.
+    expect(payload.ok ? payload.data.nPlusOne : undefined).toBeNull();
+  });
+
+  test("the ledger x dev installs becomes the timeline's verdicts, scoped to the request shown", async () => {
+    const recorder = createTraceRecorder();
+    const ledger = createStatementLedger({ threshold: 2 });
+    const input: DevDashboardInput = { ...inputFor(), traces: recorder, statements: ledger };
+    configureTelemetry({ exporter: recorder.exporter });
+    try {
+      runWithContext(createContext({ requestId: 'req_loop' }), () => {
+        withSpan('GET /feed', (span) => {
+          span.setAttributes({ 'http.request_id': 'req_loop', 'http.status_code': 200 });
+        });
+        for (let sent = 0; sent < 6; sent += 1) {
+          ledger.observer.onStatement({
+            text: 'select "id" from "members" where "id" = $1',
+            values: [],
+            durationMs: 1,
+            rows: 1,
+            attribution: { entity: 'members', op: 'findById' },
+          });
+        }
+      });
+
+      const payload = await panelPayload(
+        timelinePanel,
+        devSources(input),
+        new URLSearchParams([['requestId', 'req_loop']]),
+      );
+      expect(payload.ok).toBe(true);
+      const loops = payload.ok ? (payload.data.nPlusOne ?? []) : [];
+      expect(loops.map((loop) => loop.code)).toEqual(['X_N_PLUS_ONE_QUERY']);
+      // The `fix:` is `@ultimat3/entity`'s, so the panel shows the line an author pastes.
+      expect(loops[0]?.fix).toContain("db.members.andWhere('id', 'in', ids).all()");
+      expect(loops[0]?.count).toBe(6);
+      expect(loops[0]?.subject).toBe('members.findById');
     } finally {
       resetTelemetry();
     }

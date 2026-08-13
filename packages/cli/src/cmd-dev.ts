@@ -11,7 +11,8 @@ import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { configureTelemetry, METRICS_PATH, noopExporter } from '@ultimat3/core';
 import { setStatementObserver } from '@ultimat3/db';
-import type { Route } from '@ultimat3/http';
+import type { OverlayNotice, RequestContext, Route } from '@ultimat3/http';
+import { asCtx } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { loadSignInPath } from './app-auth';
@@ -37,6 +38,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagString } from './parse';
+import { loopFacts, loopFinding, loopNotice } from './statement-loop';
 
 const DEFAULT_PORT = 3000;
 
@@ -46,7 +48,11 @@ export interface DevServer {
   readonly roles: readonly Role[];
   /** The manifest as it stands now — a reload that registers a new route moves it. */
   readonly buildId: string;
-  /** Modules that would not import, primitives that would not register, reloads that would not build. */
+  /**
+   * Modules that would not import, primitives that would not register, reloads that would not
+   * build — and the statement loops this process has counted so far, which is what puts an N+1 in
+   * `x dev`'s own output and in `--json` without a channel of its own.
+   */
   readonly findings: readonly Finding[];
   readonly running: RunningRoles;
   readonly runtime: RunningServices;
@@ -144,6 +150,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       reloads: state.reloads,
     }),
     traces,
+    statements,
     ...envOf(options.env),
   };
   const panels = devPanels(dashboard).map((panel) => panel.key);
@@ -174,6 +181,12 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // app's own surfaces itself. `x dev` sends the policy report-only, so an uncovered `<style>`
     // here is a console report rather than a blank page — which is how this reached production.
     inlineStyles: [await devShellStyle()],
+    // The fourth surface, and the only one an author sees without leaving the page they broke:
+    // the overlay renders this request's own loops under the error it is already showing.
+    // `serve.ts` boots through the same `startRoles` and passes nothing, so production has no
+    // diagnostic to call.
+    devNotices: (ctx: RequestContext): readonly OverlayNotice[] =>
+      statements.repeatsFor(asCtx(ctx)).map(loopFacts).map(loopNotice),
   });
 
   const stopWatching = watchApp(options.root, (file) => {
@@ -199,12 +212,15 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     get buildId(): string {
       return state.manifest.buildId;
     },
-    // A getter, not a snapshot: `/_x` and `--json` must show the reload that just failed, not the
-    // findings as they were when the route table was built.
+    // A getter, not a snapshot: `/_x` and `--json` must show the reload that just failed and the
+    // loop the last request tripped, not the findings as they were when the route table was built.
+    // The loops come last and carry their request id, so a boot report reads as a boot report and
+    // a diagnostic that arrived a minute later reads as one too.
     get findings(): readonly Finding[] {
+      const loops = statements.repeats().map(loopFacts).map(loopFinding);
       return state.reloadFinding === undefined
-        ? app.findings
-        : [...app.findings, state.reloadFinding];
+        ? [...app.findings, ...loops]
+        : [...app.findings, state.reloadFinding, ...loops];
     },
     running,
     runtime,

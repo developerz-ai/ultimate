@@ -3,8 +3,9 @@
 // one on purpose — "per request" is the whole mechanism, and a fake context would prove a tally
 // nothing in a running process keys the same way.
 
-import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { Ctx } from '@ultimat3/core';
+import { createContext, logger, runWithContext } from '@ultimat3/core';
 import type { StatementAttribution, StatementEvent } from '@ultimat3/db';
 import { createStatementLedger, DEFAULT_REPEAT_THRESHOLD } from './dev-n-plus-one';
 
@@ -28,9 +29,29 @@ const FIND_BY_ID: StatementAttribution = { entity: 'members', op: 'findById' };
 const SELECT_ONE = 'select "id" from "members" where "id" = $1';
 
 /** One request, one context — the unit the threshold is counted over. */
-function request<T>(fn: () => T): T {
-  return runWithContext(createContext({}), fn);
+function request<T>(fn: (ctx: Ctx) => T): T {
+  const ctx = createContext({});
+  return runWithContext(ctx, () => fn(ctx));
 }
+
+// Every promotion emits a line, so the whole file captures rather than printing a wall of JSON at
+// whoever runs the suite; the tests that assert ON the lines read this same array. Installed and
+// restored per test, never once at module scope — `bun test` runs this file in the same process as
+// its neighbours, and a patched logger left behind is their problem, not this file's.
+const warnings: string[] = [];
+let printWarning = logger.warn;
+
+beforeEach(() => {
+  printWarning = logger.warn;
+  warnings.length = 0;
+  logger.warn = (line: string): void => {
+    warnings.push(line);
+  };
+});
+
+afterEach(() => {
+  logger.warn = printWarning;
+});
 
 describe('unit · the N+1 ledger counts one shape per request', () => {
   test('four of a shape is four reads; the fifth is the loop', () => {
@@ -299,5 +320,123 @@ describe('unit · the ledger is bounded and configurable', () => {
       caught = error;
     }
     expect(caught).toBeUltimateError('X_INVARIANT');
+  });
+});
+
+describe('unit · the verdicts of one request, for the page that request answered', () => {
+  test("repeatsFor answers the loops of that context and nobody else's", () => {
+    const ledger = createStatementLedger({ threshold: 2 });
+    const looped = request((ctx) => {
+      ledger.observer.onStatement(statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+      ledger.observer.onStatement(statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+      return ctx;
+    });
+    const quiet = request((ctx) => {
+      ledger.observer.onStatement(statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+      return ctx;
+    });
+
+    expect(ledger.repeatsFor(looped).map((repeat) => repeat.fingerprint)).toEqual([
+      'members.findById',
+    ]);
+    // One below the threshold is not a loop, and a request with no tally at all is not an error.
+    expect(ledger.repeatsFor(quiet)).toEqual([]);
+    expect(ledger.repeatsFor(createContext({}))).toEqual([]);
+  });
+
+  test('a verdict the bound already dropped is still on the request it happened in', () => {
+    const ledger = createStatementLedger({ threshold: 1, limit: 1 });
+    const ctx = request((current) => {
+      ledger.observer.onStatement(statement('select 1 from "a"'));
+      ledger.observer.onStatement(statement('select 1 from "b"'));
+      return current;
+    });
+
+    // The global list keeps one; the request's own page must still name both loops it tripped.
+    expect(ledger.repeats()).toHaveLength(1);
+    expect(
+      ledger
+        .repeatsFor(ctx)
+        .map((repeat) => repeat.fingerprint)
+        .sort(),
+    ).toEqual(['select 1 from "a"', 'select 1 from "b"']);
+  });
+
+  test('a shape still counting reports its live count, on both readers', () => {
+    const ledger = createStatementLedger({ threshold: 2 });
+    const ctx = request((current) => {
+      for (let sent = 0; sent < 9; sent += 1) {
+        ledger.observer.onStatement(statement(SELECT_ONE));
+      }
+      return current;
+    });
+
+    expect(ledger.repeats()[0]?.count).toBe(9);
+    expect(ledger.repeatsFor(ctx)[0]?.count).toBe(9);
+  });
+});
+
+describe('unit · one log line per request per code', () => {
+  test('a second shape of the same kind does not warn twice in one request', () => {
+    const ledger = createStatementLedger({ threshold: 1 });
+    request(() => {
+      ledger.observer.onStatement(statement('select 1 from "a"'));
+      ledger.observer.onStatement(statement('select 1 from "b"'));
+      ledger.observer.onStatement(statement('select 1 from "c"'));
+    });
+
+    expect(ledger.repeats()).toHaveLength(3);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('X_N_PLUS_ONE_QUERY: ');
+  });
+
+  test('a read loop and a write loop are two codes, so they are two lines', () => {
+    const ledger = createStatementLedger({ threshold: 1 });
+    request(() => {
+      ledger.observer.onStatement(statement(SELECT_ONE));
+      ledger.observer.onStatement(statement('insert into "posts" ("id") values ($1)'));
+    });
+
+    expect(warnings.map((line) => line.split(':')[0])).toEqual([
+      'X_N_PLUS_ONE_QUERY',
+      'X_N_PLUS_ONE_WRITE',
+    ]);
+  });
+
+  test('the next request warns again — the rule is per request, not per process', () => {
+    const ledger = createStatementLedger({ threshold: 1 });
+    request(() => {
+      ledger.observer.onStatement(statement(SELECT_ONE));
+    });
+    request(() => {
+      ledger.observer.onStatement(statement(SELECT_ONE));
+    });
+
+    expect(warnings).toHaveLength(2);
+  });
+
+  test('the line carries the fix, and a shape counted past the threshold does not warn again', () => {
+    const ledger = createStatementLedger({ threshold: 2 });
+    request(() => {
+      for (let sent = 0; sent < 20; sent += 1) {
+        ledger.observer.onStatement(statement(SELECT_ONE, { attribution: FIND_BY_ID }));
+      }
+    });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('members.findById ran 2 times');
+    expect(warnings[0]).toContain(" — fix: db.members.andWhere('id', 'in', ids).all()");
+  });
+
+  test('an expected loop is not counted, so it is not logged either', () => {
+    const ledger = createStatementLedger({ threshold: 1 });
+    request(() => {
+      ledger.observer.onStatement(
+        statement(SELECT_ONE, { expected: 'one indexed read per field' }),
+      );
+    });
+
+    expect(ledger.repeats()).toEqual([]);
+    expect(warnings).toEqual([]);
   });
 });

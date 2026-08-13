@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import { bodyInvalid, routeNotFound } from './errors';
+import type { OverlayNotice } from './overlay';
 import { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
 import { cspHashSource } from './security-headers';
 import { createServer } from './server';
@@ -94,6 +95,98 @@ describe('renderOverlay', () => {
   });
 });
 
+/**
+ * The error card carries a docs link and a fix of its own, so every assertion about a NOTICE's
+ * link or fix has to be scoped to the notices card — otherwise it passes on the error's markup
+ * and the whole block proves nothing.
+ */
+const noticesCardOf = (markup: string): string => {
+  const start = markup.indexOf('<section class="card notices">');
+  return start === -1 ? '' : markup.slice(start, markup.indexOf('</section>', start));
+};
+
+/** The exact bytes that join the card above the terminal card to it. */
+const TERMINAL_JOIN = '  </section>\n  <section class="card">\n    <h2>terminal</h2>';
+
+describe('renderOverlay notices', () => {
+  const error = routeNotFound('GET', '/missing');
+  const nPlusOne: OverlayNotice = {
+    code: 'X_N_PLUS_ONE_QUERY',
+    cause: '31 identical selects on post.author in one request',
+    fix: 'x db preload post.author',
+  };
+
+  test('a request with no findings renders the overlay that shipped before notices existed', () => {
+    const meta = { method: 'GET', path: '/missing', requestId: 'req-1' };
+    const absent = renderOverlay(error, meta);
+
+    expect(renderOverlay(error, { ...meta, notices: [] })).toBe(absent);
+    expect(absent).not.toContain('<h2>notices</h2>');
+    // Byte-level, because an empty card is not the only way to make a host pay: a stray blank
+    // line at the insertion point is a diff in every dev overlay the framework has ever rendered.
+    expect(absent).toContain(TERMINAL_JOIN);
+  });
+
+  test('a notice renders the same code/cause/fix contract the error card does', () => {
+    const card = noticesCardOf(renderOverlay(error, { notices: [nPlusOne] }));
+
+    expect(card).toContain('<h2>notices</h2>');
+    expect(card).toContain('<dt>X_N_PLUS_ONE_QUERY</dt>');
+    expect(card).toContain('31 identical selects on post.author in one request');
+    expect(card).toContain('<code>x db preload post.author</code>');
+  });
+
+  test('two notices both render, in the order the host reported them', () => {
+    const write: OverlayNotice = {
+      code: 'X_N_PLUS_ONE_WRITE',
+      cause: '31 identical inserts into comments',
+      fix: 'x db batch comments',
+    };
+    const card = noticesCardOf(renderOverlay(error, { notices: [nPlusOne, write] }));
+
+    expect(card).toContain('X_N_PLUS_ONE_QUERY');
+    expect(card).toContain('X_N_PLUS_ONE_WRITE');
+    expect(card.indexOf('X_N_PLUS_ONE_QUERY')).toBeLessThan(card.indexOf('X_N_PLUS_ONE_WRITE'));
+  });
+
+  test('the card sits between the error and the terminal, never after the json dump', () => {
+    const markup = renderOverlay(error, { notices: [nPlusOne] });
+
+    expect(markup.indexOf('<h1>')).toBeLessThan(markup.indexOf('<h2>notices</h2>'));
+    expect(markup.indexOf('<h2>notices</h2>')).toBeLessThan(markup.indexOf('<h2>terminal</h2>'));
+    expect(markup).toContain(TERMINAL_JOIN);
+  });
+
+  test('docs is a link when the notice carries one, and no anchor at all when it does not', () => {
+    const url = 'https://ultimate.dev/errors/X_N_PLUS_ONE_QUERY';
+    const linked = noticesCardOf(renderOverlay(error, { notices: [{ ...nPlusOne, docs: url }] }));
+    expect(linked).toContain(`<a href="${url}">${url}</a>`);
+
+    const bare = noticesCardOf(renderOverlay(error, { notices: [nPlusOne] }));
+    expect(bare).not.toContain('<a href');
+  });
+
+  test('html in a notice is escaped — a diagnostic is not a way to script the overlay', () => {
+    const markup = renderOverlay(error, {
+      notices: [
+        {
+          code: '<script>alert(1)</script>',
+          cause: '<img src=x onerror=alert(2)>',
+          fix: 'x fix "<b>now</b>"',
+          docs: 'https://x.test/?a="b"&c=<d>',
+        },
+      ],
+    });
+
+    expect(markup).not.toContain('<script>');
+    expect(markup).not.toContain('<img src=x');
+    expect(markup).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(markup).toContain('&lt;img src=x onerror=alert(2)&gt;');
+    expect(markup).toContain('x fix &quot;&lt;b&gt;now&lt;/b&gt;&quot;');
+    expect(markup).toContain('https://x.test/?a=&quot;b&quot;&amp;c=&lt;d&gt;');
+  });
+});
+
 describe('overlayResponse', () => {
   test('mirrors renderOverlay in a Response with the right status and headers', async () => {
     const error = bodyInvalid('/x', ['title: required']);
@@ -106,6 +199,18 @@ describe('overlayResponse', () => {
 
     const body = await response.text();
     expect(body).toBe(renderOverlay(error, meta));
+  });
+
+  test('notices reach the body through the same meta object, unwrapped', async () => {
+    const meta = {
+      path: '/x',
+      notices: [{ code: 'X_N_PLUS_ONE_QUERY', cause: '31 selects', fix: 'x db preload' }],
+    };
+    const body = await overlayResponse(bodyInvalid('/x', ['title: required']), meta).text();
+
+    expect(body).toContain('<h2>notices</h2>');
+    expect(body).toContain('X_N_PLUS_ONE_QUERY');
+    expect(body).toContain('<code>x db preload</code>');
   });
 });
 

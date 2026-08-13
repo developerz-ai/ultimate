@@ -33,10 +33,22 @@ function policyFor(path: string): Policy<unknown, unknown> | undefined {
  * Read here rather than captured at module load so a test — and a watch-mode restart — sees the
  * function the app configured, not the one that was absent when this module first evaluated.
  */
-export function devHooks(): ServerHooks {
+export interface DevHookOptions {
+  /**
+   * Dev-only findings this process accumulated for the request being answered — `x dev`'s N+1
+   * ledger, and nothing else today. Passed rather than read from a module-global for the reason
+   * `authorize` is passed a route: a hook that reached for the ledger itself would make every host
+   * that starts a web role — `serve.ts` included — carry a diagnostic only one of them installs.
+   */
+  readonly devNotices?: ServerHooks['devNotices'];
+}
+
+export function devHooks(options: DevHookOptions = {}): ServerHooks {
   const authenticate = configuredAuthenticator();
+  const devNotices = options.devNotices;
   return {
     ...(authenticate === undefined ? {} : { authenticate }),
+    ...(devNotices === undefined ? {} : { devNotices }),
     authorize: (route, _request, ctx): AuthzDecision => {
       // An action route never arrives here: it carries `enforcedBy: 'handler'`, so the pipeline
       // never asks. `invoke` is its one evaluation, and the only one holding the row a row-level

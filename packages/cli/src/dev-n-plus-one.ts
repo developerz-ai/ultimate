@@ -2,10 +2,13 @@
 // the threshold. Counting state hangs off the request's own `Ctx` in a `WeakMap`, so it is
 // collected with the request and never swept. Installed by `x dev` and by nothing else — a
 // production process pays the one `undefined` branch `@ultimat3/db`'s seam already costs (axiom 6).
+// It counts and it warns once; what a verdict *means* — which code, which `fix:` — is
+// `statement-loop.ts`'s, so all four surfaces read one answer.
 
 import type { Ctx } from '@ultimat3/core';
 import { assert, tryUseContext } from '@ultimat3/core';
 import type { StatementAttribution, StatementEvent, StatementObserver } from '@ultimat3/db';
+import { loopFacts, warnLoop } from './statement-loop';
 
 /**
  * Statements of one shape in one request before the loop is worth reporting. Five, because a page
@@ -40,6 +43,11 @@ export interface StatementLedger {
   readonly observer: StatementObserver;
   /** Shapes that crossed the threshold, newest first. */
   repeats(): readonly RepeatedStatement[];
+  /**
+   * The same verdicts, for one request. What the browser overlay shows next to an error: a page
+   * that looped names its loop on the page, not only in a terminal the author is not looking at.
+   */
+  repeatsFor(ctx: Ctx): readonly RepeatedStatement[];
   reset(): void;
 }
 
@@ -59,7 +67,20 @@ interface RepeatGroup {
   readonly requestId: string;
   readonly traceId: string;
   count: number;
+  /** Whether this shape is already a verdict. The flag, not the count, so a `threshold` of 1 works. */
+  promoted: boolean;
 }
+
+/** The verdict a surface reads, without the bookkeeping the group keeps for the ledger itself. */
+const snapshot = (group: RepeatGroup): RepeatedStatement => ({
+  fingerprint: group.fingerprint,
+  kind: group.kind,
+  attribution: group.attribution,
+  sample: group.sample,
+  count: group.count,
+  requestId: group.requestId,
+  traceId: group.traceId,
+});
 
 const WHITESPACE = /\s+/g;
 const LEADING_WORD = /^[A-Za-z]+/;
@@ -120,6 +141,12 @@ function kindOf(text: string): 'read' | 'write' {
  * **A shape is promoted exactly once**, on the statement that crosses the threshold, and the group
  * behind it keeps counting — so a loop of fifty is one verdict reading `count: 50`, not
  * forty-six verdicts. The report list is bounded and drops its oldest entry.
+ *
+ * Promotion is also the moment the log line goes out, and it is **one line per request per code**:
+ * a request that loops three different shapes of read has three verdicts and one `X_N_PLUS_ONE_QUERY`
+ * warning, because a log is read to learn that this request looped and the three shapes are what
+ * `x dev`'s findings, `/_x` and the overlay are for. The line names the count as it stood when the
+ * threshold was crossed; every other surface reads the count as it stands when asked.
  */
 export function createStatementLedger(options: StatementLedgerOptions = {}): StatementLedger {
   const threshold = options.threshold ?? DEFAULT_REPEAT_THRESHOLD;
@@ -135,7 +162,23 @@ export function createStatementLedger(options: StatementLedgerOptions = {}): Sta
     'pass how many verdicts to retain: createStatementLedger({ limit: 50 })',
   );
   const byRequest = new WeakMap<Ctx, Map<string, RepeatGroup>>();
+  // Which codes this request has already warned about. Its own map rather than a field on the
+  // groups: the rule is one line per *code*, and the groups are per shape — three shapes of read
+  // in one request share one warning and each keeps its own verdict.
+  const warned = new WeakMap<Ctx, Set<string>>();
   const reported: RepeatGroup[] = [];
+
+  const warnOnce = (ctx: Ctx, group: RepeatGroup): void => {
+    const facts = loopFacts(snapshot(group));
+    let codes = warned.get(ctx);
+    if (codes === undefined) {
+      codes = new Set();
+      warned.set(ctx, codes);
+    }
+    if (codes.has(facts.code)) return;
+    codes.add(facts.code);
+    warnLoop(facts);
+  };
 
   const onStatement = (event: StatementEvent): void => {
     if (event.expected !== undefined) return;
@@ -157,15 +200,18 @@ export function createStatementLedger(options: StatementLedgerOptions = {}): Sta
         requestId: ctx.requestId,
         traceId: ctx.traceId,
         count: 0,
+        promoted: false,
       };
       groups.set(fingerprint, group);
     }
     // A statement that threw is still a statement: fifty identical timeouts are still a loop, and
     // one that reports them as four is a loop nobody is told about.
     group.count += 1;
-    if (group.count !== threshold) return;
+    if (group.promoted || group.count < threshold) return;
+    group.promoted = true;
     reported.push(group);
     if (reported.length > limit) reported.shift();
+    warnOnce(ctx, group);
   };
 
   return {
@@ -173,7 +219,14 @@ export function createStatementLedger(options: StatementLedgerOptions = {}): Sta
     repeats(): readonly RepeatedStatement[] {
       // Snapshotted, because the groups behind these are still counting — and newest first,
       // matching the trace recorder: the loop that just happened is the one being looked at.
-      return reported.map((group) => ({ ...group })).reverse();
+      return reported.map(snapshot).reverse();
+    },
+    repeatsFor(ctx: Ctx): readonly RepeatedStatement[] {
+      // Read off this request's own tally rather than filtered out of `reported`, so a verdict the
+      // bound already dropped is still shown on the page it happened on.
+      const groups = byRequest.get(ctx);
+      if (groups === undefined) return [];
+      return [...groups.values()].filter((group) => group.promoted).map(snapshot);
     },
     reset(): void {
       reported.length = 0;

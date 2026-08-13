@@ -154,3 +154,25 @@ describe('unit · x dev fills both seams, not one', () => {
     expect(devHooks().authenticate).toBeDefined();
   });
 });
+
+// The third seam, and the one that is not a decision: a dev diagnostic's findings, rendered by the
+// overlay next to the error. `serve.ts` boots through the same `startWeb` and passes nothing, so
+// the absent key is what keeps a production process from paying for a diagnostic it never installed.
+describe('unit · the dev-notice seam is passed in, never reached for', () => {
+  test('nothing supplied: the key is absent, not a function answering an empty list', () => {
+    expect('devNotices' in devHooks()).toBe(false);
+  });
+
+  test('what x dev supplies is what the server is handed, by identity', () => {
+    const devNotices = (): readonly [] => [];
+    expect(devHooks({ devNotices }).devNotices).toBe(devNotices);
+  });
+
+  test('supplying it does not disturb the other two seams', () => {
+    configureAuthenticator(() => null);
+    const hooks = devHooks({ devNotices: () => [] });
+    expect(hooks.authenticate).toBeDefined();
+    expect(hooks.authorize).toBeDefined();
+    resetAuthenticator();
+  });
+});
