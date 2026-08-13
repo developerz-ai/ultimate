@@ -131,6 +131,21 @@ That is a **denial**. A gate that never reached a decision — a rule whose look
 | `deliver` patch | dropped, or a `delete` when the subscriber holds the row | that one subscriber is desynced and re-snapshotted next flush; the fanout to the rest completes |
 | `reauthorize` | unsubscribed, sid returned in `dropped` | the subscription survives, desynced — the row gate still decides every row under the new actor, from the same policy `authorize` consults |
 
+### One lane per query id
+
+The shared window is a read-modify-write across awaits — match, apply the patches, append to the retained buffer, then one policy pass per subscriber — and nothing upstream orders the callers. The `sync` node fires `void registry.deliver(change)` off its bus subscription, because the handler has to return before the next change arrives. Two changes back to back therefore both start, and an interleaved fanout hands one subscriber lsn 2 and then asks it to fold lsn 1 on top: the row settles at the older value, and the cursor is rewound to 1, so the next reconnect replays it again.
+
+`WindowLock` gives every entry a FIFO lane and `deliver` takes one entry's lane at a time. Across query ids nothing is ordered and nothing needs to be — a qid pins the query *and* its input, so two entries share no state. Two properties make the lane safe to hold:
+
+| Property | Why |
+|---|---|
+| One lane held at a time, entries always visited in the same order | a queue behind one entry can never be a cycle with the queue behind another |
+| Each task chains on a settled shadow, never on its own promise | one fanout that threw rejects its own caller; the changes queued behind it still run |
+
+The definition's read shares the same lane and the same rule. It happens **once per entry**: a cold subscriber arriving while another's read is in flight joins it rather than issuing a second one, then runs its own policy pass over the result — the read is shared, the authz is not. It is a share and not a cache; the in-flight promise is cleared as it settles, so a subscriber arriving later reads current rows. And the window it produces is assigned in the lane and only ever forwards: a snapshot that resolved after a newer change had already been fanned out is discarded, because writing it back would hand that subscriber rows the fanout has moved past, at a cursor behind the change that would have corrected them.
+
+The one gate pass outside the lane is a resume, and it reads the live window deliberately: the window can only have moved forwards, and a row whose grant was revoked in the meantime is one the pass must refuse rather than replay from the state it had at the cursor's lsn.
+
 ## Cursor and reconnect
 
 Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a delta instead of a refetch.

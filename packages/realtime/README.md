@@ -148,6 +148,13 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
   it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next flush re-snapshots rather than diverging.
+- **Deliveries are serialized per query id, not per node.** A change is fanned out inside that
+  query's own FIFO lane, so two changes off the bus cannot interleave: the window one of them
+  writes is the window every subscriber's gate reads, and patch frames leave in lsn order. Across
+  query ids there is no ordering and none is wanted — a qid pins both the query and its input.
+- **A cold subscribe reads once per query id.** Subscribers arriving during a read join it and each
+  runs its own policy pass over the result. A read that resolves behind a change already fanned out
+  is discarded rather than written back: the window only ever moves forwards.
 - **A denial drops a row; a gate that could not decide does not.** A policy answer (`X_FORBIDDEN`,
   `X_UNAUTHENTICATED`) is a decision and costs the row, counted as `rowsDenied`. Anything else a
   gate throws — a rule whose lookup timed out, a predicate with a typo — is counted as

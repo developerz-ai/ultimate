@@ -37,7 +37,27 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   keeps the subscription — destroying it would report a timeout as a revoked grant, and a client
   does not resubscribe to a denial. Every failure is counted as `gateFailures` and reported through
   `onGateFailed`, never through `onRowDenied`: an alert fires on one of them.
+- **One serial lane per query id, and it is the only thing that orders a fanout.** Nothing upstream
+  does: `sync` fires `void registry.deliver(change)` straight off the bus subscription, so two
+  changes arriving back to back both start, both write `entry.rows`/`entry.lsn`, and both await
+  their way through a per-subscriber gate in between. Unordered, a subscriber is handed lsn 2 and
+  then asked to fold lsn 1 on top of it, its cursor rewound to 1 — a reconnect then replays what it
+  already applied, over newer state, and the row stays at the older value. `WindowLock` (`run`)
+  gives each entry a FIFO lane; `deliver` takes one entry's lane at a time, never two at once, and
+  every caller visits entries in the same order, so a queue is never a cycle. The lane chains on a
+  settled shadow of each task: one fanout that threw must not reject every fanout behind it.
+- **The definition's read is once per entry, not once per subscriber.** A cold subscriber arriving
+  while another's read is in flight joins that read — N cold subscribers on one query id being N
+  reads is the shared window not existing. It is a share, not a cache: the in-flight promise is
+  cleared as it settles, so a later subscriber reads current rows rather than a window that has
+  been drifting since boot. The result lands **in the lane and never backwards**: a snapshot that
+  resolved after a newer change was already fanned out is discarded and its caller is served from
+  the newer window, because rewinding hands that subscriber rows the fanout has moved past and a
+  cursor behind the change that would have corrected them.
 - The retained change window stores **pre-policy** patches; resume re-filters them per subscriber.
+- A resume is the one gate pass that runs **outside** the lane, and it reads the live window on
+  purpose: the window can only have moved forwards, and a row whose grant was revoked in the
+  meantime is one that pass must refuse rather than replay from its state at the cursor's lsn.
 - Truth is the server. A client is never the merge authority.
 - Presence lives in `transport.shared`, never in a node's heap — it must survive a node loss.
 - The `sync` node is `PresenceRegistry`'s only caller. Subscribing to a topic **is** joining its
@@ -113,6 +133,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
 | `query-hook.ts` | the typed projection: one declared query bound to one named hook |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |
+| `window-lock.ts` | one FIFO lane per query id — the only thing that orders a fanout |
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
