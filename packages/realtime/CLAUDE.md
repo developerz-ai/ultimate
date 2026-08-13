@@ -25,6 +25,18 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - Every policy call in `live-query.ts` takes a `Subscriber`. That is the enforcement: there is no
   path through the gate that reads a query id and no actor.
 - The row policy always sees the *whole* row from the shared window, never a partial patch.
+- **A denial is a decision; everything else is a failure, and the two never share an answer.** A
+  bare `catch { return false }` in the row gate read a dead pool as "you may not see this row" —
+  the rows left the screen, `live.rows_denied` counted the drop, and the outage shipped as a
+  permission change. `visibleWithPolicy` matches `QueryDeniedError` (the only thing `guard` throws
+  for a decision) and rethrows the rest; `subscriber-gate.ts` and `reauthorize` ask
+  `isPolicyDenial(error)` instead, because `authorize` and `visible` are caller-supplied functions
+  and the answer has to come off the error's code. What a failure costs is decided per surface: a
+  snapshot **raises** out of `subscribe` (a short result set is indistinguishable from a correct
+  one), a delivery desyncs that **one** subscriber and lets the fanout finish, and a `reauthorize`
+  keeps the subscription — destroying it would report a timeout as a revoked grant, and a client
+  does not resubscribe to a denial. Every failure is counted as `gateFailures` and reported through
+  `onGateFailed`, never through `onRowDenied`: an alert fires on one of them.
 - The retained change window stores **pre-policy** patches; resume re-filters them per subscriber.
 - Truth is the server. A client is never the merge authority.
 - Presence lives in `transport.shared`, never in a node's heap — it must survive a node loss.
@@ -102,6 +114,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `query-hook.ts` | the typed projection: one declared query bound to one named hook |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |
 | `policy-gate.ts` | the only authz seam |
+| `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
 

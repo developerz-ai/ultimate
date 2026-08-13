@@ -16,7 +16,7 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
-import { ProtocolVersionError, SubscriptionLimitError } from './errors';
+import { isPolicyDenial, ProtocolVersionError, SubscriptionLimitError } from './errors';
 import { canonicalJson, fnv1a, type JsonValue, type Row, type RowPatch } from './json';
 import {
   applyToWindow,
@@ -25,6 +25,7 @@ import {
   type SubscriptionShape,
 } from './matcher-bridge';
 import type { SyncSocket } from './socket';
+import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 /** `qid` = hash(query name, input). Fanout subjects and change windows are keyed by it. */
@@ -69,36 +70,13 @@ export interface LiveSubscription {
   cursor: LiveCursor;
 }
 
-export interface LiveQueryRegistryOptions {
+export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly source: ResumeSource;
   readonly budget?: ReconnectBudget;
   readonly clock?: Clock;
   readonly maxPerSocket?: number;
   readonly maxPerTenant?: number;
   readonly tenantOf?: (actor: Actor | null) => string | null;
-  /**
-   * `live.rows_denied`. A row an actor's policy refuses is dropped, never sent and never turned
-   * into an error — telling a client "there is a row you may not see" is itself the leak. Dropped
-   * silently it is also invisible, so the drop is a metric instead.
-   */
-  readonly onRowDenied?: (event: RowDenied) => void;
-}
-
-/** One row withheld from one subscriber. Carries no row payload: the ids are the whole point. */
-export interface RowDenied {
-  readonly qid: string;
-  readonly sid: string;
-  readonly actorId: string | null;
-  readonly rowId: string;
-}
-
-/**
- * Who a decision is being made for. Every policy call in this file takes one, which is the shape
- * of the rule: there is no path through the gate that reads a query id and no actor.
- */
-interface Subscriber {
-  readonly sid: string;
-  readonly actor: Actor | null;
 }
 
 interface QueryEntry {
@@ -122,16 +100,22 @@ export class LiveQueryRegistry {
   readonly #bySid = new Map<string, LiveSubscription>();
   readonly #options: LiveQueryRegistryOptions;
   readonly #clock: Clock;
-  #rowsDenied = 0;
+  readonly #gate: SubscriberGate;
 
   constructor(options: LiveQueryRegistryOptions) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
+    this.#gate = new SubscriberGate(options);
   }
 
   /** `live.rows_denied` for this node: rows a subscriber's policy refused since boot. */
   get rowsDenied(): number {
-    return this.#rowsDenied;
+    return this.#gate.rowsDenied;
+  }
+
+  /** `live.gate_failed` for this node: gates that raised instead of deciding. Never a denial. */
+  get gateFailures(): number {
+    return this.#gate.gateFailures;
   }
 
   register(definition: LiveQueryDefinition): this {
@@ -189,11 +173,11 @@ export class LiveQueryRegistry {
         snapshot: async () => await this.#read(entry, { sid, actor: args.socket.actor }),
       });
       if (resumed.kind === 'delta') {
-        const patches = await this.#filterPatches(
+        const patches = await this.#gate.filterPatches(
           entry,
           { sid, actor: args.socket.actor },
           resumed.patches,
-          args.cursor,
+          new Set(args.cursor.ids),
         );
         const subscription = this.#attach(entry, args.socket, sid, resumed.cursor);
         return {
@@ -245,7 +229,8 @@ export class LiveQueryRegistry {
   /**
    * Actor changed mid-connection (login, logout, role change): re-run subscribe-time authz and drop
    * what is no longer allowed. Survivors are marked desynced so the next flush re-snapshots them
-   * under the new actor's row policy.
+   * under the new actor's row policy. Returns the sids that were dropped — a denial and nothing
+   * else, so a caller may tell the client "you may no longer see this" and be right.
    */
   async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
     const dropped: string[] = [];
@@ -256,11 +241,24 @@ export class LiveQueryRegistry {
           actor: socket.actor,
           input: subscription.input,
         });
-        socket.markDesynced(subscription.sid);
-      } catch {
-        this.unsubscribe(subscription.sid);
-        dropped.push(subscription.sid);
+      } catch (error) {
+        if (isPolicyDenial(error)) {
+          this.unsubscribe(subscription.sid);
+          dropped.push(subscription.sid);
+          continue;
+        }
+        // Not a decision — the gate never reached one. Destroying the subscription would report a
+        // database timeout as a revoked grant, and a client does not resubscribe to a denial. It
+        // survives, desynced: nothing is delivered from the window built under the old actor, and
+        // the row gate still decides every row under the new one, from the same policy `authorize`
+        // consults. The failure is counted and reported rather than silently absorbed.
+        this.#gate.failedAuthorize(
+          subscription.qid,
+          { sid: subscription.sid, actor: socket.actor },
+          error,
+        );
       }
+      socket.markDesynced(subscription.sid);
     }
     return dropped;
   }
@@ -286,15 +284,21 @@ export class LiveQueryRegistry {
           continue;
         }
         const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
-        const allowed: RowPatch[] = [];
-        for (const patch of result.patches) {
-          const gated = await this.#gate(
+        let allowed: readonly RowPatch[];
+        try {
+          allowed = await this.#gate.filterPatches(
             entry,
             who,
-            patch,
-            subscription.cursor.ids.includes(patch.id),
+            result.patches,
+            new Set(subscription.cursor.ids),
           );
-          if (gated) allowed.push(gated);
+        } catch {
+          // Already counted and reported as a gate failure. Degrade this one subscriber the way a
+          // lost window tail degrades them — desynced, re-snapshotted on the next flush — because
+          // rejecting here would abandon the fanout to every other subscriber over one actor's
+          // broken rule, and delivering the patches anyway would be the leak.
+          subscription.socket.markDesynced(subscription.sid);
+          continue;
         }
         if (allowed.length === 0) continue;
         const frame: Frame = {
@@ -362,66 +366,16 @@ export class LiveQueryRegistry {
     return created;
   }
 
-  /** One read, then one policy pass per subscriber. Never one read per subscriber. */
+  /**
+   * One read, then one policy pass per subscriber. Never one read per subscriber — and never a
+   * partial pass: a gate that fails raises out of `subscribe`, because a snapshot missing the rows
+   * nobody could decide about is a short result set this subscriber would render as the whole one.
+   */
   async #read(entry: QueryEntry, who: Subscriber): Promise<SnapshotResult> {
     const result = await entry.definition.snapshot({ input: entry.input });
     entry.rows = result.rows;
     entry.lsn = result.lsn;
-    const rows: Row[] = [];
-    for (const row of result.rows) {
-      if (await entry.definition.visible({ actor: who.actor, row, input: entry.input })) {
-        rows.push(row);
-      } else {
-        this.#denied(entry, who, row.id);
-      }
-    }
-    return { rows, lsn: result.lsn };
-  }
-
-  async #filterPatches(
-    entry: QueryEntry,
-    who: Subscriber,
-    patches: readonly RowPatch[],
-    cursor: LiveCursor,
-  ): Promise<RowPatch[]> {
-    const held = new Set(cursor.ids);
-    const out: RowPatch[] = [];
-    for (const patch of patches) {
-      const allowed = await this.#gate(entry, who, patch, held.has(patch.id));
-      if (allowed) out.push(allowed);
-    }
-    return out;
-  }
-
-  /**
-   * Row-level authz. A row that becomes invisible is converted to a `delete` when the subscriber
-   * holds it — otherwise a revoked grant would leave a stale row on screen forever.
-   */
-  async #gate(
-    entry: QueryEntry,
-    who: Subscriber,
-    patch: RowPatch,
-    holds: boolean,
-  ): Promise<RowPatch | null> {
-    if (patch.op === 'delete' || patch.row === null) return patch;
-    // The policy always sees the whole row from the shared window — a patch carries changed
-    // columns only, and authorizing a partial row is how a row policy silently starts failing.
-    const full = entry.rows.find((row) => row.id === patch.id);
-    const row: Row = { ...(full ?? {}), ...patch.row, id: patch.id };
-    if (await entry.definition.visible({ actor: who.actor, row, input: entry.input })) return patch;
-    this.#denied(entry, who, patch.id);
-    return holds ? { op: 'delete', id: patch.id, row: null, lsn: patch.lsn } : null;
-  }
-
-  /** `live.rows_denied`. Counted here and nowhere else, so every drop is one increment. */
-  #denied(entry: QueryEntry, who: Subscriber, rowId: string): void {
-    this.#rowsDenied += 1;
-    this.#options.onRowDenied?.({
-      qid: entry.qid,
-      sid: who.sid,
-      actorId: who.actor === null ? null : who.actor.id,
-      rowId,
-    });
+    return { rows: await this.#gate.filterRows(entry, who, result.rows), lsn: result.lsn };
   }
 
   #assertLimits(socket: SyncSocket): void {

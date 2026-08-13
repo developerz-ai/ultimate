@@ -136,7 +136,6 @@ export {
   type LiveQueryRegistryOptions,
   type LiveSubscription,
   qidOf,
-  type RowDenied,
   type SnapshotResult,
 } from './live-query';
 // ---- tier 3: local-first ------------------------------------------------------------------------
@@ -274,6 +273,13 @@ export {
   type SyncSocketOptions,
   type WsLike,
 } from './socket';
+export type {
+  GateFailed,
+  GateStage,
+  RowDenied,
+  Subscriber,
+  SubscriberGateOptions,
+} from './subscriber-gate';
 export {
   createSyncNode,
   type ListenOptions,

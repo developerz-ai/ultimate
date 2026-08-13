@@ -28,31 +28,52 @@ export const REALTIME_OWNED_ERROR_CODES = [
 export const REALTIME_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
 
 /**
+ * The two codes an authz **decision** carries. Everything else a gate throws — a rule that reached
+ * for a row and timed out, a predicate with a typo in it — is a failure to reach a decision at all,
+ * and reading one as "denied" publishes an outage as a permission change: rows leave the screen,
+ * `live.rows_denied` ticks up, and nothing ever pages anyone.
+ */
+export const POLICY_DENIAL_CODES: ReadonlySet<string> = new Set([
+  'X_FORBIDDEN',
+  'X_UNAUTHENTICATED',
+]);
+
+/**
  * The sync protocol's answer to "which of these is a 4xx". A denied topic, a subscription cap, a
  * skewed protocol version and a cursor that fell out of the buffer are all conditions the CLIENT
  * caused and the ack frame already explains — so an error monitor that held them would be a log
  * nobody reads. Everything else, including an accidental `TypeError`, is this node's fault.
- * Kept beside the code list so the two cannot drift.
+ * Kept beside the code list so the two cannot drift, and it spreads the denial codes rather than
+ * respelling them: a denial is always the client's own condition.
  */
 export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
+  ...POLICY_DENIAL_CODES,
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
   'X_PROTOCOL_VERSION',
   'X_CURSOR_STALE',
   'X_REBASE_CONFLICT',
-  'X_FORBIDDEN',
-  'X_UNAUTHENTICATED',
 ]);
 
 /** True when the client is the one who can fix it, so the node must not page anyone about it. */
 export function isClientFault(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    REALTIME_CLIENT_FAULT_CODES.has((error as { code: string }).code)
-  );
+  return REALTIME_CLIENT_FAULT_CODES.has(codeOf(error) ?? '');
+}
+
+/**
+ * True when a gate **decided** against the actor, false when it never got that far. The gates take
+ * arbitrary functions — `LiveQueryDefinition.authorize` and `.visible` are supplied by the caller —
+ * so the question is asked of the error's code rather than of a class this package could import.
+ */
+export function isPolicyDenial(error: unknown): boolean {
+  return POLICY_DENIAL_CODES.has(codeOf(error) ?? '');
+}
+
+/** The `X_*` code an unknown throw carries, or `null` — the one place that reads it off `unknown`. */
+function codeOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return null;
+  const code = (error as { code: unknown }).code;
+  return typeof code === 'string' ? code : null;
 }
 
 /** Every code realtime can throw through `RealtimeError`: the ones it owns plus the borrowed one. */

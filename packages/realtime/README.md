@@ -148,6 +148,13 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
   it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next flush re-snapshots rather than diverging.
+- **A denial drops a row; a gate that could not decide does not.** A policy answer (`X_FORBIDDEN`,
+  `X_UNAUTHENTICATED`) is a decision and costs the row, counted as `rowsDenied`. Anything else a
+  gate throws — a rule whose lookup timed out, a predicate with a typo — is counted as
+  `gateFailures` and reported through `onGateFailed`, never as a denial: it raises out of
+  `subscribe`, desyncs exactly the one subscriber it happened to during a delivery, and leaves a
+  subscription standing at `reauthorize`. Reading a timeout as "you may no longer see this" is an
+  outage published as a permission change.
 - **`PgLogicalReplicationFeed` decodes `pgoutput` off a real slot** — its own Postgres v3 client
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication and the slot, creates the slot when there is none, and confirms the slot as it goes so
