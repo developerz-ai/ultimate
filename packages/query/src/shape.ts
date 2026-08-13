@@ -57,6 +57,23 @@ export function seekKeyOf(
   };
 }
 
+/** Appended by `totalOrder`. Ascending whatever the declared keys do — so is the seek predicate. */
+const ID_TIEBREAK: OrderKey = { column: 'id', direction: 'asc' };
+
+/**
+ * The ordering a read is actually served in: the declared keys, then `id` to make it total.
+ *
+ * Two rows sharing every declared sort value have no order at all without it — the database
+ * returns them either way round while `isAfterKey` decides the next page as though `id` had
+ * settled it. `Builder.seek()` compiles this list, `paginate()` sorts by it, and the matcher
+ * places a row by it: a row inserted at the end of a tie group is a row the next re-read finds
+ * somewhere else. An ordering that already names `id` is total, and adding a second `id` term
+ * would compare the key to itself.
+ */
+export function totalOrder(orderBy: readonly OrderKey[]): readonly OrderKey[] {
+  return orderBy.some((key) => key.column === 'id') ? orderBy : [...orderBy, ID_TIEBREAK];
+}
+
 /**
  * SQL NULL, as a row spells it. A column the row simply omits reads `undefined` here and NULL
  * in Postgres, so both are the same absence — otherwise a fixture row without `deletedAt` and

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Filter, OrderKey } from './shape';
-import { compareRows, compareValues, isNull, matchesFilter } from './shape';
+import { compareRows, compareValues, isNull, matchesFilter, totalOrder } from './shape';
 
 interface Post {
   readonly id: string;
@@ -103,6 +103,25 @@ describe('NULL sorts after every value', () => {
     ];
     const sorted = [...rows].sort((a, b) => compareRows(a, b, asc));
     expect(sorted.map((row) => row.id)).toEqual(['d', 'a', 'b', 'c']);
+  });
+});
+
+// The order a page is served in, and the one the matcher and `isAfterKey` have to read too.
+describe('totalOrder', () => {
+  test('appends `id asc` so two rows with the same sort value have an order at all', () => {
+    expect(totalOrder([{ column: 'createdAt', direction: 'desc' }])).toEqual([
+      { column: 'createdAt', direction: 'desc' },
+      { column: 'id', direction: 'asc' },
+    ]);
+  });
+
+  test('an ordering that already names id is total — a second term compares the key to itself', () => {
+    const byId: readonly OrderKey[] = [{ column: 'id', direction: 'desc' }];
+    expect(totalOrder(byId)).toEqual(byId);
+  });
+
+  test('an unordered read still gets a tiebreak to make one out of', () => {
+    expect(totalOrder([])).toEqual([{ column: 'id', direction: 'asc' }]);
   });
 });
 

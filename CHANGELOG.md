@@ -137,6 +137,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
   A generated `order by` now carries `nulls last`/`nulls first` explicitly. It is Postgres' own default — no plan changes, and `asc nulls last` is still the default btree order — but an assertion on exact SQL text needs updating.
 
+- **The live matcher places a new row where the database would put it.** A page is served `order by <declared keys>, "id" asc` and `isAfterKey` reads the next one the same way, but the incremental matcher compared the declared keys alone — so a row tied on every one of them was appended after the whole tie group rather than placed by its id. The client rendered an order no re-read agrees with, and the cursor cut from that window's tail skipped every tie the matcher had pushed past it.
+
+  `totalOrder(orderBy)` is now the one definition of that list — the declared keys, then `id asc` unless the ordering already names `id` — and `positionFor`, `Builder.seek()` and the in-memory sort all read it:
+
+  ```ts
+  // window [b(t=10), c(t=10)], insert a(t=10)
+  positionFor(shape, window, a);   // 0, was 2 — the database returns a, b, c
+  ```
+
+  A row with no `id` is now `X_QUERY_NOT_PAGEABLE` at the matcher, as it already was at `seekKeyOf`: `String(undefined)` is `"undefined"`, an id every id-less row shares, so one row's patch landed on another's position and a `remove` named a row no client held. An unordered query still appends — SQL promises no position there to get wrong. `totalOrder` is exported for the reason `isNull` and `isAfterKey` are: a custom `SqlSource` has to serve the order the cursor assumes rather than re-decide it.
+
 - **A `BEGIN` that fails no longer leaks the connection it was going to run on.** `withTransaction` reserved a connection, ran `BEGIN` *above* its `try`, and released the pin in the block's `finally` — so the one statement that opens the transaction was the one statement not covered by the guard that closes it. A `BEGIN` that rejected (a connection killed mid-pool, a server in recovery, `statement_timeout` on a hung `SET`) returned the pin to nobody: one leaked pool connection per failure on Postgres, and on PGlite the single session's turn, which every later statement in the process then waits for forever.
 
   The pin is now held by a `using` declaration and `BEGIN` runs inside the guarded scope — the shape `readOnlyQuery` already had, and it too is converted, so both sites read the same:

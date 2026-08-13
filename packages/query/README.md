@@ -116,10 +116,12 @@ gone. A row with no `id` cannot name a position at all: that is `X_QUERY_NOT_PAG
 cursor signed over `"undefined"`.
 
 Because the predicate always carries that id, the ordering carries it too: a paged read is served
-`order by <declared keys>, "id" asc`, and the in-memory path sorts by the same list. Ordering by
-the declared keys alone leaves rows with equal sort values in whatever order the database chose,
-while the cursor reads them as if id had decided — so one of a tied pair comes back on both pages
-and the other on neither.
+`order by <declared keys>, "id" asc` — that list is `totalOrder(orderBy)`, exported for the reason
+`isAfterKey` is — and the in-memory sort and the live matcher's insertion position read the same
+one. Ordering by the declared keys alone leaves rows with equal sort values in whatever order the
+database chose, while the cursor reads them as if id had decided — so one of a tied pair comes back
+on both pages and the other on neither, and a row the matcher appends after a tie group is a
+position no re-read returns.
 
 ## NULL
 

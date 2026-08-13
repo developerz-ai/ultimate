@@ -78,8 +78,17 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   string `"null"` again — `compareRows`, `isAfterKey` and the matcher's insertion position all
   read it, so one string compare moves rows on three surfaces.
 - **The id is the tiebreak that makes the order total.** A row without one is
-  `X_QUERY_NOT_PAGEABLE` at `seekKeyOf`, never `String(undefined)`: `"undefined"` is a position
-  every row matches, signed and opaque, so page two would be page one forever.
+  `X_QUERY_NOT_PAGEABLE` at `seekKeyOf` **and** at the matcher's `idOf`, never `String(undefined)`:
+  `"undefined"` is a position every row matches, signed and opaque, so page two would be page one
+  forever and one row's patch would land on another's index.
+- **`totalOrder` is the order a read is served in, and all three readers use it.** The declared
+  keys then `id asc`, unless the ordering already names `id` — `Builder.pageOrder()` compiles it,
+  the in-memory sort applies it, and `positionFor` places a row by it. The matcher comparing
+  `shape.orderBy` alone appended a tied row after its whole tie group, which is a position no
+  re-read returns and a cursor that skips every tie it was pushed past. `SeekKey` is the same list
+  decomposed — `key` for the declared part, `id` for the tiebreak — so never add `id` to
+  `QueryShape.orderBy` to get it: `seekKeyOf` would then sign the id twice. An unordered query
+  appends, because SQL promises no position there to get wrong.
 - The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown

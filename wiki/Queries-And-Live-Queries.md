@@ -80,6 +80,11 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | No `now()`, `random()`, or non-deterministic function | the same `(input, row)` must always yield the same membership answer | `x verify` error naming the expression |
 | No cross-tenant predicate | tenant scoping comes from `ctx`, not from `input` | `X_FORBIDDEN` at subscribe |
 
+A page is served `order by <declared keys>, "id" asc`, and the matcher places an arriving row by
+that same list: a row tied on every declared key lands where its id puts it, not after the tie
+group. `x queries describe <name> --json` prints the order. A row that reaches the matcher with no
+`id` is `X_QUERY_NOT_PAGEABLE`, never a patch aimed at a position no client holds.
+
 A non-live query has none of these constraints — it is just a read.
 
 ## Row-level policy filtering
@@ -195,4 +200,6 @@ x verify              # runs all six test types
 - A cache miss must be correct and merely slower. No query may depend on a hit.
 - NULL is a value to `=`/`!=`/`in`, unknown to `>`/`<`, and the largest value to `orderBy`. Never
   write a filter that reads a NULL a fourth way.
+- One order, three readers: the generated SQL, the cursor and the live matcher all serve
+  `<declared keys>, "id" asc`. Never sort a window by the declared keys alone.
 - Cache keys are framework-generated. A hand-built key is a rejected PR.

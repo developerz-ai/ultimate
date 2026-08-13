@@ -5,7 +5,7 @@
  * answer these four questions.
  */
 import type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
-import { compareRows, compareValues, isNull, matchesFilters } from './shape';
+import { compareRows, compareValues, isNull, matchesFilters, totalOrder } from './shape';
 import { columnOf } from './stable';
 
 /** Nothing matches. `in ()` is a syntax error in Postgres, so an empty set needs a constant. */
@@ -122,20 +122,14 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   }
 
   /**
-   * The ordering a page is actually served in: the declared keys, then `id` to make it total.
-   *
-   * Without the tiebreak the database is free to return two rows with the same sort value in
-   * either order, while `seekClause()` decides the next page as if they had been ordered by id —
-   * so one of the pair comes back twice and the other never does. `execute()` had the same split,
-   * sorting by the declared keys and then filtering with the id-aware predicate. One order, read
-   * by the SQL, the in-memory sort and the predicate alike, is what closes it.
+   * The ordering a page is actually served in — `totalOrder`, so the SQL, the in-memory sort,
+   * `seekClause()` and the matcher all read one list.
    *
    * Only a paged read pays for it: an unpaginated `from()` over rows that have no `id` must keep
    * generating exactly the SQL it was asked for.
    */
   private pageOrder(): readonly OrderKey[] {
-    if (!this.paged || this.ordersById) return this.order;
-    return [...this.order, { column: 'id', direction: 'asc' }];
+    return this.paged ? totalOrder(this.order) : this.order;
   }
 
   /**

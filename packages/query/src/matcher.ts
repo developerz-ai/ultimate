@@ -4,9 +4,9 @@
  * filters + orderBy + limit; anything else throws X_MATCHER_UNSUPPORTED, because
  * an honest refusal beats a silently wrong result set.
  */
-import { MatcherUnsupportedError } from './errors';
+import { MatcherUnsupportedError, QueryNotPageableError } from './errors';
 import type { QueryShape } from './shape';
-import { compareRows, matchesFilters } from './shape';
+import { compareRows, matchesFilters, totalOrder } from './shape';
 import { columnOf } from './stable';
 
 export type ChangeOp = 'insert' | 'update' | 'delete';
@@ -55,8 +55,8 @@ export function match<TRow extends object>(
   assertMatchable(name, shape);
   if (event.entity !== shape.entity) return [];
 
-  const id = idOf(event.row);
-  const index = rows.findIndex((row) => idOf(row) === id);
+  const id = idOf(event.row, shape.entity);
+  const index = rows.findIndex((row) => idOf(row, shape.entity) === id);
   const inSet = index >= 0;
   const belongs = event.op !== 'delete' && matchesFilters(event.row, shape.filters);
 
@@ -91,7 +91,7 @@ function insert<TRow extends object>(
   if (shape.limit !== null && rows.length >= shape.limit) {
     const evicted = rows[shape.limit - 1];
     if (evicted !== undefined) {
-      patches.push({ kind: 'remove', position: shape.limit, id: idOf(evicted) });
+      patches.push({ kind: 'remove', position: shape.limit, id: idOf(evicted, shape.entity) });
     }
   }
   return patches;
@@ -109,18 +109,35 @@ function removeAt<TRow extends object>(
   return patches;
 }
 
-/** Insertion index under the query's ordering; append when the query is unordered. */
+/**
+ * Insertion index under the ordering the source serves — `totalOrder`, not the declared keys.
+ *
+ * A page arrives as `order by <declared keys>, "id" asc` and `isAfterKey` reads the next one the
+ * same way, so a row tied on every declared key belongs where its id puts it. Placing it at the
+ * end of the tie group instead is a position the database would never return: the client renders
+ * one order, a re-read answers another, and the cursor cut from the window's tail skips the ties
+ * the matcher pushed past it.
+ *
+ * An unordered query has no position to get wrong — SQL promises none — so it appends.
+ */
 export function positionFor<TRow extends object>(
   shape: QueryShape,
   rows: readonly TRow[],
   row: TRow,
 ): number {
   if (shape.orderBy.length === 0) return rows.length;
-  const found = rows.findIndex((current) => compareRows(row, current, shape.orderBy) < 0);
+  const order = totalOrder(shape.orderBy);
+  const found = rows.findIndex((current) => compareRows(row, current, order) < 0);
   return found === -1 ? rows.length : found;
 }
 
-function idOf(row: object): string {
+/**
+ * The row's identity, and the tiebreak `positionFor` sorts by. Refused when absent for the reason
+ * `seekKeyOf` refuses it: `String(undefined)` is `"undefined"`, an id every id-less row shares, so
+ * one row's patch lands on another's position and a `remove` names a row no client holds.
+ */
+function idOf(row: object, entity: string): string {
   const value = columnOf(row, 'id');
+  if (value === undefined || value === null) throw new QueryNotPageableError(entity);
   return typeof value === 'string' ? value : String(value);
 }
