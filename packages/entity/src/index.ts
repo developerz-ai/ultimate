@@ -31,6 +31,7 @@ export {
   invariantViolated,
   notFound,
   patchEmpty,
+  preloadUnknownRelation,
   tenancyUnscoped,
   writeUnfiltered,
 } from './errors';
@@ -51,6 +52,7 @@ export type {
   ColumnDescription,
   EntityDescription,
   InvariantDescription,
+  ReferenceDescription,
   RegistryEntry,
 } from './registry';
 export {
@@ -59,9 +61,10 @@ export {
   entityNames,
   getEntity,
   registerEntity,
+  registeredEntities,
 } from './registry';
 export type { EntityRelations, Relation, RelationKind, RelationMap } from './relations';
-export { relationsOf } from './relations';
+export { relationMap, relationNamed, relationsFor, relationsOf } from './relations';
 export type { FindManyArgs, Page, Repo, RepoOptions, Transactor, Tx } from './repo';
 export { memoryRepo, memoryTransactor } from './repo';
 export type { Seed, SeedContext, SeedOptions } from './seed';

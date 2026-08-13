@@ -2,13 +2,17 @@
 // an association; reading it as both is what lets a preload exist with no second declaration
 // syntax to keep in sync with the first — the FK already written IS the relation.
 //
-// Derivation only. This file names and shapes the edges; who collects the entities and who
-// traverses an edge are separate decisions, made by their own callers.
+// Derivation, plus the one place that reads the registry for it: a `hasMany` is a fact about the
+// whole set, and no single entity can see the foreign keys pointing AT it. How an edge is
+// traversed is a separate decision, made by its own caller.
+//
+// The edges come in already resolved, as `RegistryEntry.references()` records. Nothing here
+// parses `describe()`'s `"<table>.<column>"` rendering: that string carries physical names only,
+// and a traversal reads row properties.
 
-import type { Binding } from './column';
-import { referenceBinding, snake } from './column';
-import type { EntityCore } from './entity';
-import { invariantViolated } from './errors';
+import { invariantViolated, preloadUnknownRelation } from './errors';
+import type { ReferenceDescription, RegistryEntry } from './registry';
+import { registeredEntities, registryGeneration } from './registry';
 
 export type RelationKind = 'belongsTo' | 'hasMany';
 
@@ -40,13 +44,9 @@ export type EntityRelations = Readonly<Record<string, Relation>>;
 /** Keyed by entity name, in sorted order — a projection is a build input and must diff cleanly. */
 export type RelationMap = Readonly<Record<string, EntityRelations>>;
 
-interface ForeignKey {
+interface ForeignKey extends ReferenceDescription {
   /** The entity that declared `references()`. Never the target. */
   readonly entity: string;
-  readonly property: string;
-  readonly column: string;
-  readonly nullable: boolean;
-  readonly target: Binding;
 }
 
 interface Candidate {
@@ -67,25 +67,8 @@ const withoutId = (property: string): string =>
 
 const capitalize = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 
-const foreignKeysOf = (entity: EntityCore): readonly ForeignKey[] =>
-  Object.entries(entity.$columns).flatMap(([property, column]) => {
-    const meta = column.$meta;
-    // Money is two physical columns, so `snake(property)` names neither of them. The DDL
-    // projection drops a reference there for the same reason; a relation and a foreign-key
-    // constraint must not disagree about which columns exist.
-    if (meta.kind === 'money') return [];
-    const target = referenceBinding(entity.$name, property, meta);
-    if (target === null) return [];
-    return [
-      {
-        entity: entity.$name,
-        property,
-        column: snake(property),
-        nullable: !meta.notNull,
-        target,
-      },
-    ];
-  });
+const foreignKeysOf = (entry: RegistryEntry): readonly ForeignKey[] =>
+  entry.references().map((reference) => ({ entity: entry.name, ...reference }));
 
 const belongsTo = (fk: ForeignKey): Candidate => ({
   preferred: withoutId(fk.property),
@@ -93,11 +76,11 @@ const belongsTo = (fk: ForeignKey): Candidate => ({
   relation: {
     kind: 'belongsTo',
     from: fk.entity,
-    to: fk.target.table,
+    to: fk.targetEntity,
     localKey: fk.property,
     localColumn: fk.column,
-    remoteKey: fk.target.property,
-    remoteColumn: fk.target.name,
+    remoteKey: fk.targetProperty,
+    remoteColumn: fk.targetColumn,
     nullable: fk.nullable,
   },
 });
@@ -107,10 +90,10 @@ const hasMany = (fk: ForeignKey): Candidate => ({
   fallback: `${fk.entity}By${capitalize(withoutId(fk.property))}`,
   relation: {
     kind: 'hasMany',
-    from: fk.target.table,
+    from: fk.targetEntity,
     to: fk.entity,
-    localKey: fk.target.property,
-    localColumn: fk.target.name,
+    localKey: fk.targetProperty,
+    localColumn: fk.targetColumn,
     remoteKey: fk.property,
     remoteColumn: fk.column,
     nullable: fk.nullable,
@@ -164,17 +147,54 @@ const named = (entityName: string, candidates: readonly Candidate[]): EntityRela
  * is outside the set — the caller resolves `to` when it traverses. A `hasMany` is a fact about a
  * pair, so only the inbound keys of entities that were passed in can produce one.
  */
-export const relationsOf = (entities: readonly EntityCore[]): RelationMap => {
-  // By name: the registry already refuses two entities with one name, so the same entity handed
+export const relationsOf = (entries: readonly RegistryEntry[]): RelationMap => {
+  // By name: the registry already refuses two entities with one name, so the same entry handed
   // in twice is one entity — not two sets of foreign keys colliding with themselves.
-  const unique = new Map(entities.map((entity) => [entity.$name, entity]));
+  const unique = new Map(entries.map((entry) => [entry.name, entry]));
   const keys = [...unique.values()].flatMap(foreignKeysOf);
   const map: Record<string, EntityRelations> = {};
   for (const name of [...unique.keys()].sort()) {
     map[name] = named(name, [
       ...keys.filter((fk) => fk.entity === name).map(belongsTo),
-      ...keys.filter((fk) => fk.target.table === name).map(hasMany),
+      ...keys.filter((fk) => fk.targetEntity === name).map(hasMany),
     ]);
   }
   return map;
+};
+
+/** Rebuilt on the first read after any registration, never on a read that changed nothing. */
+let cached: { readonly generation: number; readonly map: RelationMap } | undefined;
+
+/**
+ * The relations of every registered entity — the set query time means by "the relations".
+ *
+ * Memoised against the registry generation rather than computed once: a schema module imported
+ * after the first read registers one more entity, and a `hasMany` that entity contributes would
+ * otherwise be missing for the rest of the process. Deriving costs one pass over the foreign keys,
+ * so a read that follows a registration simply pays it again.
+ */
+export const relationMap = (): RelationMap => {
+  const generation = registryGeneration();
+  if (cached !== undefined && cached.generation === generation) return cached.map;
+  const map = relationsOf(registeredEntities());
+  cached = { generation, map };
+  return map;
+};
+
+/** Every relation reachable from one entity. An unregistered name has none — that is not an error. */
+export const relationsFor = (entityName: string): EntityRelations =>
+  relationMap()[entityName] ?? {};
+
+/**
+ * One relation, by the name a caller wrote. A preload names its relation as a *string*, so an
+ * unknown one is only actionable if the refusal carries the names that do exist — and they exist
+ * nowhere to go and read, being derived from `references()` rather than declared.
+ */
+export const relationNamed = (entityName: string, name: string): Relation => {
+  const relations = relationsFor(entityName);
+  const relation = relations[name];
+  if (relation === undefined) {
+    throw preloadUnknownRelation(entityName, name, Object.keys(relations));
+  }
+  return relation;
 };

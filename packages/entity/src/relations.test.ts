@@ -4,8 +4,10 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { money, text, timestamp, uuid } from './columns';
+import type { EntityCore } from './entity';
 import { entity } from './entity';
-import { clearRegistry } from './registry';
+import type { RegistryEntry } from './registry';
+import { clearRegistry, getEntity } from './registry';
 import { relationsOf } from './relations';
 
 const orgs = entity('relations_test_orgs', {
@@ -61,7 +63,14 @@ const comments = entity('relations_test_comments', {
   },
 });
 
-const ALL = [orgs, members, posts, likes, comments];
+/** The registry entry `entity()` left behind — the resolved foreign keys the map is derived from. */
+const entriesOf = (...entities: readonly EntityCore[]): readonly RegistryEntry[] =>
+  entities.flatMap((one) => {
+    const entry = getEntity(one.$name);
+    return entry === undefined ? [] : [entry];
+  });
+
+const ALL = entriesOf(orgs, members, posts, likes, comments);
 
 afterAll(() => {
   clearRegistry();
@@ -156,7 +165,7 @@ describe('relationsOf()', () => {
   });
 
   test('keeps a belongsTo whose target is outside the set, and no hasMany for it', () => {
-    const map = relationsOf([posts]);
+    const map = relationsOf(entriesOf(posts));
     expect(Object.keys(map)).toEqual(['relations_test_posts']);
     expect(map.relations_test_posts?.org?.to).toBe('relations_test_orgs');
     expect(map.relations_test_posts?.relations_test_likes).toBeUndefined();
@@ -164,7 +173,7 @@ describe('relationsOf()', () => {
 
   test('is keyed in sorted order and unaffected by the order it was handed', () => {
     const forward = relationsOf(ALL);
-    const shuffled = relationsOf([comments, posts, orgs, likes, members]);
+    const shuffled = relationsOf(entriesOf(comments, posts, orgs, likes, members));
     expect(Object.keys(forward)).toEqual([
       'relations_test_comments',
       'relations_test_likes',
@@ -176,7 +185,9 @@ describe('relationsOf()', () => {
   });
 
   test('counts the same entity handed in twice as one', () => {
-    expect(relationsOf([posts, members, posts])).toEqual(relationsOf([posts, members]));
+    expect(relationsOf(entriesOf(posts, members, posts))).toEqual(
+      relationsOf(entriesOf(posts, members)),
+    );
   });
 });
 
@@ -197,7 +208,7 @@ describe('relation names under collision', () => {
   });
 
   test('the whole colliding group falls back — not whichever key was declared second', () => {
-    const relations = relationsOf([users, tickets])[users.$name] ?? {};
+    const relations = relationsOf(entriesOf(users, tickets))[users.$name] ?? {};
     expect(Object.keys(relations)).toEqual([
       'relations_collide_ticketsByAssignee',
       'relations_collide_ticketsByReporter',
@@ -206,7 +217,7 @@ describe('relation names under collision', () => {
   });
 
   test('the uncontested side keeps the short name', () => {
-    const relations = relationsOf([users, tickets])[tickets.$name] ?? {};
+    const relations = relationsOf(entriesOf(users, tickets))[tickets.$name] ?? {};
     expect(Object.keys(relations)).toEqual(['assignee', 'reporter']);
   });
 
@@ -222,7 +233,7 @@ describe('relation names under collision', () => {
         relations_collide_cartsId: uuid().references(() => carts.id),
       },
     });
-    const relations = relationsOf([carts, shops])[shops.$name] ?? {};
+    const relations = relationsOf(entriesOf(carts, shops))[shops.$name] ?? {};
     expect(Object.keys(relations)).toEqual([
       'relations_collide_cartsByShop',
       'relations_collide_cartsId',
@@ -230,7 +241,7 @@ describe('relation names under collision', () => {
     expect(relations.relations_collide_cartsId?.kind).toBe('belongsTo');
     expect(relations.relations_collide_cartsByShop?.kind).toBe('hasMany');
     // The other side is uncontested and keeps the short name.
-    expect(Object.keys(relationsOf([carts, shops])[carts.$name] ?? {})).toEqual([
+    expect(Object.keys(relationsOf(entriesOf(carts, shops))[carts.$name] ?? {})).toEqual([
       'relations_collide_shops',
       'shop',
     ]);
@@ -247,12 +258,15 @@ describe('relation names under collision', () => {
         badgeId: uuid().references(() => badges.id),
       },
     });
-    const error = caught(() => relationsOf([badges, holders]));
+    const error = caught(() => relationsOf(entriesOf(badges, holders)));
     expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
     expect(String(error)).toContain('relations_bad_holders.badge');
     expect(String(error)).toContain('relations_bad_holders.badgeId');
     // The owning side is fine: `badge` and `badgeId` are two distinct fallbacks.
-    expect(Object.keys(relationsOf([holders])[holders.$name] ?? {})).toEqual(['badge', 'badgeId']);
+    expect(Object.keys(relationsOf(entriesOf(holders))[holders.$name] ?? {})).toEqual([
+      'badge',
+      'badgeId',
+    ]);
   });
 
   test('refuses a reference to a column that belongs to no entity', () => {
@@ -260,6 +274,6 @@ describe('relation names under collision', () => {
     const strays = entity('relations_bad_strays', {
       columns: { id: uuid().primaryKey(), looseId: uuid().references(() => loose) },
     });
-    expect(caught(() => relationsOf([strays]))).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(caught(() => relationsOf(entriesOf(strays)))).toBeUltimateError('X_INVARIANT_VIOLATED');
   });
 });

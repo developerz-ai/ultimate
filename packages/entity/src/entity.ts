@@ -6,13 +6,13 @@
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { bindColumn, snake } from './column';
 import { newId } from './columns';
-import { describeEntity } from './describe';
+import { describeEntity, describeReferences } from './describe';
 import { invariantViolated } from './errors';
 import type { Expr, InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
 import type { Invariant, InvariantDef } from './invariants';
 import { assertInvariants, bindInvariant, invariantsToSql } from './invariants';
-import type { EntityDescription } from './registry';
+import type { EntityDescription, ReferenceDescription } from './registry';
 import { registerEntity } from './registry';
 import { resolveTenantColumn } from './tenancy';
 import type { AnyColumn, ColumnMap, ColumnMeta, IndexDef, RowOf } from './types';
@@ -86,6 +86,12 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   /** The CHECK/UNIQUE statements the migration emits for this entity. */
   $migration(): string;
   $describe(): EntityDescription;
+  /**
+   * The foreign keys this entity declares, resolved — one record per `references()`, both ends
+   * named. The relation map reads it off the registry entry; a consumer holding the entity
+   * itself reads it here. Same closure, so there is one reading of a foreign key, not two.
+   */
+  $references(): readonly ReferenceDescription[];
 }
 
 export type Entity<Row, C extends ColumnMap = ColumnMap> = EntityCore<Row, C> & C;
@@ -205,6 +211,7 @@ export const entity = <const C extends ColumnMap>(
       softDelete,
       tenantColumn,
     });
+  const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);
 
   const parse = (value: unknown): Row => {
     if (typeof value !== 'object' || value === null) {
@@ -264,9 +271,10 @@ export const entity = <const C extends ColumnMap>(
     $assert: (row) => assertInvariants(name, invariants, row),
     $migration: () => invariantsToSql(name, invariants),
     $describe: describe,
+    $references: references,
   };
 
-  registerEntity({ name, tableName: name, describe });
+  registerEntity({ name, tableName: name, describe, references });
   // The columns land on the entity itself so `orgs.id` is a column reference; every framework
   // member is `$`-prefixed, which is why a column may be called `name`.
   return Object.assign(core, init.columns);

@@ -11,6 +11,7 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_NOT_FOUND',
   'X_WRITE_UNFILTERED',
   'X_PATCH_EMPTY',
+  'X_PRELOAD_UNKNOWN_RELATION',
 ] as const;
 
 /**
@@ -36,6 +37,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_NOT_FOUND: 'no row for that id',
   X_WRITE_UNFILTERED: 'a filtered write named no filter columns',
   X_PATCH_EMPTY: 'a filtered update named no columns to write',
+  X_PRELOAD_UNKNOWN_RELATION: 'no relation of that name on this entity',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the
@@ -122,6 +124,26 @@ export const writeUnfiltered = (
  * reduces to `{}`. Reporting "n rows updated" for a statement that wrote nothing is exactly the
  * silent no-op the count was added to make impossible.
  */
+/**
+ * The declared names go in the `fix` because there is nowhere to go and read them: a relation is
+ * derived from a `references()` column, never declared, so a schema file lists foreign keys and
+ * not relation names. An entity with none is the other mistake — the column was never pointed at
+ * anything — and gets the declaration to write instead of an empty list to pick from.
+ */
+export const preloadUnknownRelation = (
+  entityName: string,
+  relation: string,
+  declared: readonly string[],
+): EntityError =>
+  new EntityError({
+    code: 'X_PRELOAD_UNKNOWN_RELATION',
+    cause: `${entityName} has no relation named "${relation}"`,
+    fix:
+      declared.length === 0
+        ? `${entityName} declares no foreign key: add .references(() => <entity>.id) to the column that points at one`
+        : `preload('<name>') with one of: ${declared.join(', ')}`,
+  });
+
 export const patchEmpty = (
   entityName: string,
   operation: string,

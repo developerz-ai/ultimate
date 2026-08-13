@@ -51,6 +51,17 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   name, **every** member of that group takes its long form, so declaring a second foreign key
   never renames the first relation behind a caller's back. What the two tiers cannot separate is
   refused with `X_INVARIANT_VIOLATED` naming both columns — never collapsed into one relation.
+- **Relations reach query time through `RegistryEntry.references()`, and the DDL string is
+  rendered from it.** The resolved records are the source; `ColumnDescription.references` spells
+  `"<table>.<column>"` out of one for the migration generator, which is in tier 1 and cannot
+  import this package. Never parse that string back — it carries physical names and a traversal
+  reads row *properties*, so the parse would be a second, lossy resolver. `references()` is a
+  method, not a field: a thunk may point at an entity two modules of an import cycle have not
+  finished evaluating. `relationMap()` memoises the whole-registry derivation against
+  `registryGeneration()`, which every registration bumps — a schema module imported late must
+  rebuild the map, never be missed by it. `relationNamed()` refuses an unknown name with
+  `X_PRELOAD_UNKNOWN_RELATION` listing the declared ones; a relation is derived, so there is no
+  file a reader could open to find them.
 - **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
   that reason alone: `$parse` throws, and a call site should not need two error paths for one
   mistake.
@@ -141,8 +152,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
-| `registry.ts` | duplicate detection + `describeEntities()` for the manifest |
-| `relations.ts` | `relationsOf(entities)` — the FK thunks read as a named `belongsTo`/`hasMany` map |
+| `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
+| `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 
 ## Commands
