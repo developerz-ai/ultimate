@@ -218,6 +218,12 @@ export const postgresRepo = <Row>(
 
     // No `X_NOT_FOUND` here: a filter that matches nothing is a fact the caller asked for, not a
     // failed address. The count is the answer, which is why it is a `number` and not `void`.
+    //
+    // `deleteWhere`/`updateWhere` are the bulk forms of `delete(id)`/`update(id, patch)` — same
+    // role `insertAll`/`upsertAll` play for a per-row insert loop, one statement instead of one
+    // per row. They are also the *only* filtered writes a composite-key entity has: `likes`,
+    // `blocks`, `participants`, any join table has no single-column id for `delete`/`update` to
+    // address, so without this pair such an entity would be create-only.
     async deleteWhere(filter, options) {
       // The plan is built before the write is announced: a refused filter never happened.
       const plan = deletePlan(entity, filter, options, 'deleteWhere');

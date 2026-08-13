@@ -103,7 +103,7 @@ for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0
 
 A collision overwrites every column the batch writes minus two closed sets — the conflict target, which is how the row was found, and the primary key, which is where it lives. A null anywhere in the target collides with nothing, in both drivers, because a Postgres unique index is `NULLS DISTINCT`.
 
-The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. Four properties make them safe to be the only filtered writes:
+The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. They double as the bulk forms of `delete`/`update` in the ordinary case, too — one statement for a loop that would otherwise delete or patch a row at a time, the same role `insertAll`/`upsertAll` play for a per-row insert loop. Four properties make them safe to be the only filtered writes:
 
 | Property | Mechanism |
 |---|---|

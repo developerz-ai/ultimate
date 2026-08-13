@@ -176,6 +176,11 @@ for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0
 
 ## Writing by filter
 
+`deleteWhere`/`updateWhere` are the bulk forms of `delete`/`update` — the same fix `insertAll` is
+for a per-row insert loop, applied to the two write shapes a composite-key entity cannot address
+one row at a time: a `for … of` deleting or patching one row per iteration is one statement here,
+not `n`.
+
 ```ts
 db.posts.delete(id);                                        // by a single primary key
 db.posts.update(id, { title });                             // ditto
@@ -235,7 +240,7 @@ caller counts what it actually inserted.
 | Uneven batches | under `'update'` every row must name the same columns: `excluded.<column>` for a row that omitted one is that column's *default*, not "leave it alone". Under `'nothing'` and under `insertAll`, an omitted column is `default` in its cell, which is what the same row means on its own |
 | Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
 | Size | past 65535 bind parameters the batch is several statements, never one the server refuses. Wrap the call in `withTransaction` when all-or-nothing matters |
-| Filtered writes | `updateWhere` / `deleteWhere` above are the bulk forms of `update` and `delete`; there is no `updateAll` |
+| Filtered writes | `updateWhere` / `deleteWhere` above are the bulk forms of `update` and `delete` — one statement for a loop that would otherwise call either per row; there is no `updateAll` |
 
 ## Relations are the foreign keys, read twice
 

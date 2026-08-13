@@ -197,7 +197,11 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   are bounded by construction.** `delete(id)` and `update(id, patch)` need a single-column primary
   key, so on a composite key — `likes`, `blocks`, `participants`, any join table — the filtered
   pair is the only write path that exists; without them the entity is create-only and a row can be
-  written and never unwritten. Properties, none of them optional:
+  written and never unwritten. They are also the bulk forms of `delete`/`update` for the ordinary
+  case — one statement for a `for … of` loop that would otherwise delete or patch one row at a
+  time — the same role `insertAll`/`upsertAll` (below) play for a per-row insert loop; a
+  write-loop detector's `fix:` names one of these four, never a hand-rolled loop. Properties, none
+  of them optional:
   - an empty filter is `X_WRITE_UNFILTERED` and never every row; an empty patch is `X_PATCH_EMPTY`
     and never a counted no-op. An `undefined` value is dropped *before* either count, so a
     forgotten variable lands on the error rather than on the table.
