@@ -23,6 +23,12 @@ Imported by every package that renders a string.
 - Reading: `t('ns.key')` for one string, `useI18n<AppCatalog>()` where the keys must be typed.
   There is no `currentTranslator`; `useI18n` replaced it.
 - A miss renders `⟦key⟧`. Never add a fallback locale chain — it hides gaps.
+- Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.
+  A plain object inherits `constructor`, `toString`, `valueOf` and `__proto__`, so a bare
+  `vars[name]` rendered a function's source into the page for a template nobody wrote a variable
+  for. Same reach `catalog.ts` shuts off by nesting into null-prototype nodes; never reintroduce
+  either. The `interpolate` fast path must test **both** braces: `}}` un-escapes with no `{` in
+  sight, and a `{`-only check gave one escape two meanings.
 - Plural selection is `Intl.PluralRules`. Never `count === 1`. Variants are underscore suffixes on
   the leaf — a CLDR category (`_zero _one _two _few _many _other`), or `n` / `n_plural` as the
   two-form shortcut; pair `n_one` with `n_other`, never with `n_plural`. Never a nested

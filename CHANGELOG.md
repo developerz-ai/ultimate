@@ -250,6 +250,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A rotating-address scan can no longer grow a rate limiter until the process dies.** Both in-memory limiters keyed a `Map` by the connection address and never removed an entry: `@ultimat3/http`'s `memoryRateLimitStore` only deleted on an explicit `reset(key)`, and `@ultimat3/auth`'s `createAuthLimiter` only on a successful login. A scan walking an IPv6 /64 mints a fresh key per request against both, so the table grew for as long as the scan ran — the throttle that exists to survive a flood was the thing the flood consumed. Neither had a sweep, and neither had a cap.
+
+  Both now hold one rule: **an entry that answers exactly as a missing one is forgotten, not evicted.** Each entry carries the instant it reaches that state — a token bucket back at capacity, or an auth key whose failure window has emptied *and* whose lockout has expired — and a sweep drops everything past it. That alone flattens a scan: a one-request bucket on the default route refills in half a second.
+
+  The cap is the backstop for what the sweep cannot claim, and it decides *which* live entry goes with the same care, because getting that backwards is a rate-limit bypass. The entries nearest to being forgotten anyway go first, so the most-throttled key is the last to go — and in `@ultimat3/auth` a live lockout outranks its own deadline, so filling the table is not a way to buy back attempts against the account you just locked:
+
+  ```ts
+  memoryRateLimitStore({ maxKeys: 20_000 });                      // DEFAULT_MAX_RATE_LIMIT_KEYS
+  createAuthLimiter(clock, { ...DEFAULT_AUTH_RATE_LIMIT, maxKeys: 10_000 });
+  ```
+
+  Defaults are `DEFAULT_MAX_RATE_LIMIT_KEYS` (20,000 — an http key is `route|subject`, so one subject throttled on N routes is N entries) and `DEFAULT_MAX_AUTH_LIMIT_KEYS` (10,000 — an auth key is one identity). A few megabytes, held, instead of an unbounded map. Both are also observable now: `memoryRateLimitStore()` and `createAuthLimiter()` return their interface plus a `size`, so the bound is something a test can assert rather than something a comment claims. Sweeping is amortized — a sort is paid once per 10% of the cap, never per request — and a key that is dropped throttles again from a clean bucket, never a half-written one. Nothing about the decisions themselves changed: same buckets, same window, same lockout, same headers.
+
+- **`{constructor}` in a translated string no longer renders a function's source into the page.** `interpolate` read a variable as `vars?.[name]`, an ordinary property access, so every member of `Object.prototype` was a variable a catalog could reach: `{constructor}` rendered `function Object() { [native code] }`, `{toString}`, `{valueOf}` and `{hasOwnProperty}` rendered their own source, and `{__proto__}` rendered `[object Object]` — all through the path that is supposed to render `⟦name⟧` for anything the caller did not pass. Only an **own** property is a variable now, which is the guard `catalog.ts` already applies from the other side by nesting keys into null-prototype nodes. A caller that genuinely passes `{ toString: 'ok' }` still gets `ok`.
+
+  The same function's fast path returned early on a template with no `{`, which skipped `}}` un-escaping — so one escape had two meanings: `'{{a}}b'` collapsed to `'{a}b'` while `'a}}b'` came back untouched. It now tests both braces.
+
 - **One bad date no longer takes the whole feed down.** `buildFeed` parsed item timestamps straight into `new Date(...).toISOString()`, so a `published` that would not parse — a CMS column holding prose, a hand-typed front-matter line — reached `toISOString()` as `NaN` and threw a bare `RangeError` out of the feed route. The same line spread its work into `Math.max(...times)`, one argument per item, so a feed that grew past the engine's argument limit crashed in proportion to how well the blog did; and the empty-feed branch called `Date.now()` directly, the one clock read in the package no test could freeze.
 
   All three are gone. `feed-dates.ts` is now the only place a feed timestamp is parsed or formatted, `buildFeed` resolves every date once, and the three builders only ever see instants:

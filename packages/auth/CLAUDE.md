@@ -18,6 +18,14 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 - Every credential failure throws `loginFailed()` — one code, one cause, one fix. Adding a
   parameter to it re-opens account enumeration.
+- The limiter's table is **bounded**, and the eviction order is part of the guarantee. `ipKey`
+  mints one entry per source address, so half the keys are attacker-chosen and a spray from an
+  IPv6 /64 is a fresh key per attempt. Every bucket carries `forgetAtMs` — window emptied *and*
+  lockout expired, the instant it answers exactly as a missing one — and the sweep drops those
+  for free. `policy.maxKeys` (`DEFAULT_MAX_AUTH_LIMIT_KEYS`) is the backstop, and a **live
+  lockout outranks its own deadline** in the comparator: without that rank a spray recorded a
+  second later sorts ahead of the account it just locked, and filling the table becomes a way to
+  buy attempts back. Never reduce that sort to recency.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent. `usesPkce: false` is not a valid provider config.
 - The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`

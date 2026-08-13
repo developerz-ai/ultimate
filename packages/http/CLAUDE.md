@@ -66,6 +66,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   hit: the stage that renders a throw has nothing left to render its own. Every degraded answer goes
   *through* the recover stage, never around it — reporting, logging and the overlay each keep one
   call site.
+- **The memory rate-limit store is bounded, and the eviction order is part of the guarantee.**
+  The key falls back to the connection address (`rateLimitKey`), so a scan rotating through an
+  IPv6 /64 mints one entry per request — an unbounded map hands the flood the process. Every
+  entry carries `forgetAtMs`, the instant a refilled bucket becomes indistinguishable from a
+  missing one, and the sweep drops those for free. `DEFAULT_MAX_RATE_LIMIT_KEYS` is the backstop,
+  and it evicts the entries **closest to full** first: throwing away a spent bucket is a free
+  reset for whoever spent it, so the most-throttled key is the last one to go. Never swap that
+  comparator for insertion order or an LRU — recency is not the same as worthlessness here.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.

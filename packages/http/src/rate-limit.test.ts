@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { createRateLimiter, DEFAULT_RATE_LIMIT, rateLimitKey } from './rate-limit';
+import {
+  type Bucket,
+  createRateLimiter,
+  DEFAULT_MAX_RATE_LIMIT_KEYS,
+  DEFAULT_RATE_LIMIT,
+  memoryRateLimitStore,
+  rateLimitKey,
+} from './rate-limit';
 
 const limiterAt = (clock: { ms: number }, capacity: number, refillPerSecond: number) =>
   createRateLimiter({
@@ -59,6 +66,85 @@ describe('token bucket', () => {
     const clock = { ms: 0 };
     const limiter = limiterAt(clock, 1, 1);
     expect((await limiter.check('k', 'does-not-exist')).limit).toBe(1);
+  });
+});
+
+// A key falls back to the connection address, so a scan rotating through an IPv6 /64 mints one
+// entry per request. These pin the two rules that keep the table flat.
+describe('the memory store is bounded', () => {
+  const FAST: Bucket = { capacity: 1, refillPerSecond: 1 };
+
+  test('forgets a bucket once it has refilled, without waiting for the cap', async () => {
+    const store = memoryRateLimitStore();
+    await store.take('scanner', FAST, 1, 0);
+    expect(store.size).toBe(1);
+
+    // Past the refill AND past the sweep interval: the entry now answers as a missing one would.
+    await store.take('other', FAST, 1, 120_000);
+    expect(store.size).toBe(1);
+  });
+
+  test('holds a bucket that is still spent', async () => {
+    const store = memoryRateLimitStore();
+    await store.take('victim', { capacity: 10, refillPerSecond: 0.001 }, 10, 0);
+    await store.take('other', FAST, 1, 120_000);
+    expect(store.size).toBe(2);
+  });
+
+  test('a rotating-address scan cannot grow the table past its cap', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 10 });
+    for (let index = 0; index < 500; index += 1) {
+      await store.take(`r|ip:2001:db8::${index.toString(16)}`, FAST, 1, 0);
+      expect(store.size).toBeLessThanOrEqual(10);
+    }
+  });
+
+  test('the cap evicts the least-throttled key, never the most', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 4 });
+    const slow: Bucket = { capacity: 1, refillPerSecond: 0.001 };
+    const roomy: Bucket = { capacity: 100, refillPerSecond: 10 };
+
+    // Spent, and 1000s from refilling: the entry worth keeping.
+    expect((await store.take('victim', slow, 1, 0)).allowed).toBe(true);
+    // Barely touched, 100ms from refilling: the entries worth forgetting.
+    for (let index = 0; index < 200; index += 1) {
+      await store.take(`scan-${index}`, roomy, 1, 0);
+    }
+
+    expect(store.size).toBeLessThanOrEqual(4);
+    // Still denied — the scan did not buy the victim its bucket back.
+    expect((await store.take('victim', slow, 1, 0)).allowed).toBe(false);
+  });
+
+  test('a bucket that never refills is forgettable only by the cap', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 2 });
+    const stuck: Bucket = { capacity: 1, refillPerSecond: 0 };
+    await store.take('stuck', stuck, 1, 0);
+    // A year later it is still denied: nothing refilled it, so the sweep may not drop it.
+    expect((await store.take('stuck', stuck, 1, 31_536_000_000)).allowed).toBe(false);
+    expect(store.size).toBe(1);
+  });
+
+  test('reset() drops the key, and a nonsense cap still holds one entry', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 0 });
+    await store.take('k', FAST, 1, 0);
+    expect(store.size).toBe(1);
+    await store.reset('k');
+    expect(store.size).toBe(0);
+  });
+
+  test('the shipped cap is a few megabytes, not unbounded', () => {
+    expect(DEFAULT_MAX_RATE_LIMIT_KEYS).toBeGreaterThan(1_000);
+    expect(Number.isFinite(DEFAULT_MAX_RATE_LIMIT_KEYS)).toBe(true);
+  });
+
+  test('a swept key throttles again from a full bucket, not a corrupt one', async () => {
+    const store = memoryRateLimitStore({ maxKeys: 1 });
+    await store.take('a', FAST, 1, 0);
+    await store.take('b', FAST, 1, 0);
+    const fresh = await store.take('a', FAST, 1, 0);
+    expect(fresh.allowed).toBe(true);
+    expect(fresh.limit).toBe(1);
   });
 });
 
