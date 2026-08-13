@@ -118,7 +118,68 @@ these filters, this sort order. A tampered cursor, or one taken from another lis
 `X_CURSOR_INVALID` rather than a silent page one. The page size is deliberately outside the scope:
 asking for a bigger next page is the same query.
 
+## Iterating every row
+
+`As of 2026-08`. A page is bounded on purpose, so reading a whole table is a loop — and the loop is
+the terminal, not something the caller writes around `page()`:
+
+```ts
+// One statement per batch, one page of rows in memory at a time.
+for await (const batch of db.posts.where({ orgId }).preload('author').inBatches(500)) {
+  await search.index(batch);
+}
+
+// Stopping early is cheap: the position survives, so the next run resumes where this one stopped.
+await using batches = db.posts.where({ orgId }).after(checkpoint).inBatches(500);
+for await (const batch of batches) {
+  await search.index(batch);
+  if (ctx.clock.now() > deadline) break;
+}
+await db.checkpoints.update(id, { cursor: batches.cursor });
+```
+
+Every batch is the page `page()` would have returned at that position — same filters, same tenancy,
+same soft-delete visibility, same `select()`, same `preload()` — so there is no second read path to
+learn or to drift.
+
+| | |
+|---|---|
+| Statements | one per batch, each asking for one row past it, exactly as `page()` does. An empty batch is never yielded |
+| Position | keyset, never OFFSET: a row written mid-iteration cannot make the loop skip or repeat one. `after(cursor)` starts it, `.cursor` is where it stopped, `null` once exhausted |
+| Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle kept in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
+| Refusals | on the chain, not one batch later: a size that is not a whole number of rows, a `limit()` on the same chain (one number, two meanings), and an ordering no cursor can carry — a nullable sort column, which a result that fits in one batch would otherwise hide until the table grew |
+| Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
+
+## Counting by a column
+
+`As of 2026-08`. `count()` answers one number, so a screen or a backfill that needs one per row
+asks N times. `countBy(column)` is that whole loop as one statement, keyed by the value:
+
+```ts
+// One statement for every post in `ids`, not one `select count(*)` each.
+const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
+for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
+```
+
+`ReadonlyMap<Row[K], number>`, keyed by the column named — the chain knows the row, so
+`counts.get(postId)` is a `number | undefined` and the `undefined` is load-bearing.
+
+| | |
+|---|---|
+| Counts | the whole predicate, exactly as `count()` does: the chain's filters, its tenancy and its soft-delete visibility. `limit()` and `after()` bound the page, never the count |
+| A value nothing matched | absent, never `0` — that is what `group by` returns, and it is what tells "none" apart from "never asked". The default is the caller's `?? 0` |
+| NULL | one group, keyed `null`, in both drivers. `0`, `''` and `false` stay the values they are |
+| Order | biggest group first, ties by the value (numbers and bigints numerically, everything else by its text), `null` last — applied after the rows are in, since a hash aggregate and a `Map` filled row by row have no order to inherit |
+| Groupable columns | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A timestamp, a `jsonb` or `money` is `X_INVARIANT_VIOLATED` naming one of this entity's columns that is: a `Map` compares a non-primitive key by identity, so such a map could only ever answer `undefined` |
+| More than 1000 groups | `X_INVARIANT_VIOLATED`, never a truncated map — the statement asks for one group past the bound, exactly as a page reads one row past its limit. The `fix` spells the `andWhere('<column>', 'in', <values>)` that bounds it |
+| Statement | `select "post_id" as group_value, count(*) as group_count … group by "post_id"`. Both names are fixed aliases, so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it |
+
 ## Writing by filter
+
+`deleteWhere`/`updateWhere` are the bulk forms of `delete`/`update` — the same fix `insertAll` is
+for a per-row insert loop, applied to the two write shapes a composite-key entity cannot address
+one row at a time: a `for … of` deleting or patching one row per iteration is one statement here,
+not `n`.
 
 ```ts
 db.posts.delete(id);                                        // by a single primary key
@@ -145,6 +206,42 @@ and never unwritten.
 | Tenancy | the plan a read builds, through `assertScoped` — the org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row |
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
+
+## Writing many rows
+
+```ts
+await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
+
+await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
+  onConflict: ['orgId', 'postId', 'memberId'],
+  onMatch: 'nothing',
+});
+
+await db.counters.upsertAll(rows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
+```
+
+`insertAll` is `insert` in bulk and nothing else: rows are `Insertable`, each one goes through
+`$parse`, so declared defaults are filled here rather than by the caller. `upsertAll` adds the one
+thing a per-row loop cannot do without a read first — resolve a collision — and stamps
+`onUpdateNow()` columns through the same `touch()` `update(id, patch)` uses, because an upsert that
+lands on a stored row *is* an update.
+
+Both resolve with **the rows this call wrote**, in order. Under `onMatch: 'nothing'` a row already
+stored is skipped and absent from the result, exactly as `returning *` reports it — which is how a
+caller counts what it actually inserted.
+
+| | |
+|---|---|
+| One builder | `insertStatement` compiles every insert in the framework, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
+| What a collision overwrites | every column the batch writes, minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| A soft-deleted row it lands on | stays deleted, and takes the batch's other columns. The stamped row still occupies its conflict target — that index is not partial — so `excluded."deleted_at"` would resurrect it; `$parse` fills `deletedAt: null` into every row before the plan is built, so the stamp is dropped from the set list rather than refused. `insertAll` still writes the stamp a new row carries |
+| Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
+| Tenancy | on a tenant-scoped entity `onMatch: 'update'` requires the tenant column *in the conflict target*, else `X_TENANCY_UNSCOPED`: a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
+| A batch that repeats itself | two rows with one conflict target under `'update'` is refused. Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |
+| Uneven batches | under `'update'` every row must name the same columns: `excluded.<column>` for a row that omitted one is that column's *default*, not "leave it alone". Under `'nothing'` and under `insertAll`, an omitted column is `default` in its cell, which is what the same row means on its own |
+| Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
+| Size | past 65535 bind parameters the batch is several statements, never one the server refuses. Wrap the call in `withTransaction` when all-or-nothing matters |
+| Filtered writes | `updateWhere` / `deleteWhere` above are the bulk forms of `update` and `delete` — one statement for a loop that would otherwise call either per row; there is no `updateAll` |
 
 ## Relations are the foreign keys, read twice
 
@@ -206,7 +303,7 @@ page.rows[0].author;        // the member row, or null — always present
 | Shape | `belongsTo` attaches the row or `null`; `hasMany` an array — always present |
 | Statements | one extra per relation, resolved concurrently; naming one twice is one statement |
 | Tenancy | carried onto the related read only when the other entity's tenant column shares the name; otherwise `X_TENANCY_UNSCOPED` refuses the related read rather than guess |
-| Terminals | `page()`, `all()`, `one()` preload; `count()` and `plan()` don't — neither reads a row |
+| Terminals | `page()`, `all()`, `one()` preload; `count()`, `countBy()` and `plan()` don't — none reads a row to attach one to |
 
 ## Two drivers, one meaning
 

@@ -1,15 +1,18 @@
 // The chainable read. Every chain terminates in a cursor page — `page()` returns rows plus the
-// cursor for the next one, and `all()`/`one()` are that page's rows. There is no `offset()` and
-// there will not be one: under concurrent writes an insert before the offset shifts every later
-// page, so a client silently skips and repeats rows.
+// cursor for the next one, `all()`/`one()` are that page's rows, and `inBatches()` is that page
+// repeated until the cursor runs out. There is no `offset()` and there will not be one: under
+// concurrent writes an insert before the offset shifts every later page, so a client silently
+// skips and repeats rows.
 
+import type { BatchIterator } from './batch';
+import { assertBatchable, batchIterator } from './batch';
 import type { EntityCore } from './entity';
-import { namedColumns } from './plan';
+import { DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import type { RelatedTables } from './preload';
 import { preloaded } from './preload';
 import type { Relation } from './relations';
 import { relationNamed } from './relations';
-import type { Page, Repo, RepoOptions } from './repo';
+import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import type { ColumnMap, IdOf, Insertable } from './types';
 
@@ -43,17 +46,64 @@ export interface ReadBuilder<Row> {
    * `select()` narrows the columns, never the relations.
    */
   preload<Name extends string>(relation: Name): ReadBuilder<Row & Preloaded<Name>>;
+  /**
+   * Every row the chain matches, `size` at a time and one statement per batch — the terminal a
+   * `for await` consumes instead of holding a whole table in memory. A batch is the page `page()`
+   * would have returned at that position, so filters, tenancy, soft delete, the projection and
+   * every `preload()` mean here what they mean there, and an empty batch is never yielded.
+   *
+   * Keyset, never OFFSET: each batch resumes from the cursor the previous one ended on, so a row
+   * written mid-iteration cannot make the loop skip or repeat one. `after(cursor)` is where it
+   * starts and `.cursor` is where it stopped — persist that and a job resumes the iteration.
+   *
+   * The loop closes it: `break`, `return` and a throw all stop the next statement, and
+   * `await using` does the same for a handle kept in a variable. A chain that cannot carry a
+   * cursor — a nullable sort column — and a chain that also called `limit()` are refused here,
+   * not one batch later.
+   */
+  inBatches(size: number): BatchIterator<Row>;
   /** The terminal: one bounded page and the cursor that continues it. */
   page(): Promise<Page<Row>>;
   all(): Promise<readonly Row[]>;
   one(): Promise<Row | null>;
   count(): Promise<number>;
+  /**
+   * The grouped count: one statement, one entry per distinct value of `column`, keyed by that
+   * value — the aggregate a `count()` per row is the N+1 of. `recount every post's likes` is one
+   * `likes.andWhere('postId', 'in', ids).countBy('postId')`, not one statement per post.
+   *
+   * Counts the whole predicate, exactly as `count()` does: the chain's filters, its tenancy and
+   * its soft-delete visibility, never its page. A value nothing matched is absent rather than `0`,
+   * which is what `group by` returns and what lets a caller tell "none" from "never asked".
+   * Entries come back biggest group first, ties by the value, `null` — the group every row without
+   * one shares — last.
+   *
+   * Refused rather than answered: a column whose values a map cannot be keyed by (a timestamp, a
+   * jsonb, money), and a chain matching more distinct values than one statement should answer with.
+   */
+  countBy<K extends keyof Row & string>(column: K): Promise<ReadonlyMap<Row[K], number>>;
   /** The plan this chain describes. Safe to log — `describePlan()` elides values. */
   plan(): QueryPlan;
 }
 
 export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder<Row> {
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;
+  /**
+   * Many rows, one statement — the bulk write a per-row `insert` loop is the N+1 of, and the line
+   * an N+1 warning on a write loop names. Every row is parsed and asserted exactly as `insert`
+   * parses one, so declared defaults are filled here and not by the caller. Resolves with the rows
+   * as stored, in order; `insertAll([])` writes nothing. A collision is an error — `upsertAll` is
+   * the call that tolerates one.
+   */
+  insertAll(rows: readonly Insertable<C>[], options?: RepoOptions): Promise<readonly Row[]>;
+  /**
+   * `insertAll` that resolves a collision instead of failing on it: `on conflict (…) do update`,
+   * or `do nothing` with `onMatch: 'nothing'`. Resolves with the rows this call actually wrote, so
+   * a row left alone is absent from the result — which is how a caller counts what it inserted.
+   * The conflict target and the primary key are never overwritten: they are how the stored row was
+   * found and where it lives.
+   */
+  upsertAll(rows: readonly Insertable<C>[], args: UpsertArgs<Row>): Promise<readonly Row[]>;
   /** `IdOf<Row>`: an entity that declared `uuid<PostId>()` is addressed by a `PostId` only. */
   update(id: IdOf<Row>, patch: Partial<Row>, options?: RepoOptions): Promise<Row>;
   delete(id: IdOf<Row>, options?: RepoOptions): Promise<void>;
@@ -75,7 +125,12 @@ export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder
 interface State {
   readonly where: readonly Predicate[];
   readonly orderBy: readonly SortKey[];
-  readonly limit: number;
+  /**
+   * `undefined` until `limit()` is called, and not the default spelled a second time: the driver
+   * already defaults an unnamed page to `DEFAULT_PAGE_SIZE`, and only "the caller named a page
+   * size" tells `inBatches()` it was handed one number for two jobs.
+   */
+  readonly limit: number | undefined;
   readonly cursor: string | null;
   readonly select: readonly string[] | undefined;
   /** Resolved when `preload()` was called, so an unknown name fails at the chain and not a page later. */
@@ -85,7 +140,7 @@ interface State {
 const EMPTY: State = {
   where: [],
   orderBy: [],
-  limit: 50,
+  limit: undefined,
   cursor: null,
   select: undefined,
   preload: [],
@@ -117,7 +172,9 @@ const builder = <Source, Row>(
   const args = () => ({
     where: state.where,
     orderBy: state.orderBy,
-    limit: state.limit,
+    // Sent only when the caller named one: an unnamed page is the driver's default, and passing
+    // it from here would be the same number written in two files.
+    ...(state.limit === undefined ? {} : { limit: state.limit }),
     cursor: state.cursor,
     ...(selected === undefined ? {} : { select: selected }),
   });
@@ -183,6 +240,19 @@ const builder = <Source, Row>(
       );
     },
 
+    inBatches(size) {
+      assertBatchable(entity, size, state);
+      return batchIterator<Row>({
+        from: state.cursor,
+        // The chain's own arguments with the batch as the page size and the iteration's position
+        // in place of the chain's: one statement per batch, and the same one `page()` sends.
+        page: async (cursor) => {
+          const result = await repo.findMany({ ...args(), limit: size, cursor });
+          return { rows: await attach(result.rows), nextCursor: result.nextCursor };
+        },
+      });
+    },
+
     page: async () => {
       const result = await repo.findMany(args());
       return { rows: await attach(result.rows), nextCursor: result.nextCursor };
@@ -198,11 +268,19 @@ const builder = <Source, Row>(
 
     count: () => repo.count(args()),
 
+    async countBy<K extends keyof Row & string>(column: K) {
+      // The one cast on this terminal, and it is the same seam `select()` has: the driver contract
+      // is row-agnostic because a column name is a runtime string there, while the chain knows
+      // which property it just named and therefore what the map is keyed by.
+      return (await repo.countBy(column, args())) as ReadonlyMap<Row[K], number>;
+    },
+
     plan: (): QueryPlan => ({
       entity: entity.$name,
       where: state.where,
       orderBy: state.orderBy,
-      limit: state.limit,
+      // The page that will actually run, so an unnamed one still reads as the bound it has.
+      limit: state.limit ?? DEFAULT_PAGE_SIZE,
       ...(state.cursor === null ? {} : { cursor: state.cursor }),
       // The projection actually sent, preload keys included: a plan that is safe to log is only
       // useful if it is the plan that ran.
@@ -221,7 +299,7 @@ const builder = <Source, Row>(
  * column, and `X_PATCH_EMPTY` downstream would never see it — so whether the refusal fires would
  * depend on the schema rather than on the call.
  */
-const touch = <Row>(entity: EntityCore<Row>, patch: Partial<Row>): Partial<Row> => {
+const touch = <Row, Patch>(entity: EntityCore<Row>, patch: Patch): Patch => {
   if (namedColumns(patch).length === 0) return patch;
   const stamped: Record<string, unknown> = {};
   for (const [property, column] of Object.entries(entity.$columns)) {
@@ -241,6 +319,19 @@ export const tableFor = <Row, C extends ColumnMap>(
 ): Table<Row, C> => ({
   ...builder<Row, Row>(entity, repo, EMPTY, (row) => row, related),
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
+  insertAll: async (rows, options) =>
+    repo.insertAll(
+      rows.map((row) => entity.$parse(row)),
+      options,
+    ),
+  // `touch` and not `$parse` alone: an upsert that lands on a stored row IS an update, so an
+  // `onUpdateNow()` column has to move exactly as `update(id, patch)` moves it — and stamping it
+  // in a second place is how one of the two ends up writing a stale `updatedAt`.
+  upsertAll: async (rows, args) =>
+    repo.upsertAll(
+      rows.map((row) => touch(entity, entity.$parse(row))),
+      args,
+    ),
   update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
   delete: async (id, options) => repo.delete(id, options),
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),

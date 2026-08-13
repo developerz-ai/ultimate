@@ -51,12 +51,16 @@ Generated per entity. The **only** place SQL lives.
 |---|---|
 | `findById(id)` | tenant filter applied automatically; returns `null`, never throws on miss. Inside a request, the calls issued in one microtask are **one** `where "id" in (…)` ([`coalesce.ts`](../../packages/entity/src/coalesce.ts)) — same scope, same soft-delete filter, one round trip. An id that is a foreign key on a page this request read resolves that key for the whole page instead ([`jit-preload.ts`](../../packages/entity/src/jit-preload.ts)), which is what batches a sequential `for … of` loop |
 | `findMany(args)` | cursor-paginated only (below); leaves its page's foreign key values behind for the preload above |
+| `inBatches(size)` | not on `Repo<T>` — a `ReadBuilder` terminal, `for await (const batch of db.<table>.where({ … }).inBatches(500))`. `findMany` in a loop over its own cursor ([`batch.ts`](../../packages/entity/src/batch.ts)), so a batch **is** the page `page()` would have returned at that position and there is no second read path. The handle is the iteration: `break`, a throw and `await using` all stop the next statement, and `.cursor` is where it stopped — `.after(cursor)` resumes it |
 | `preload(name)` | not on `Repo<T>` — a `ReadBuilder` chain method, `db.<table>.preload('<relation>')`, resolved by `page()`/`all()`/`one()`. One more `where <key> in (…)` per named relation, over the page `findMany` already read ([`preload.ts`](../../packages/entity/src/preload.ts)); several relations resolve concurrently, and naming one twice is one statement |
 | `insert(values)` / `update(id, patch)` | invariants run before the statement |
+| `insertAll(rows)` | many rows, one `insert into … values (…), (…) returning *` ([`pg-sql.ts`](../../packages/entity/src/pg-sql.ts) builds *every* insert, so `insertAll([row])` is the text `insert(row)` produced). Resolves with the rows as stored; past 65535 bind parameters it is several statements, so all-or-nothing is `withTransaction`'s |
+| `upsertAll(rows, args)` | `insertAll` that resolves a collision — `on conflict (…) do update set …`, or `do nothing`. Resolves with the rows this call **wrote**, so a skipped row is absent. What both drivers must agree on lives in [`bulk-write.ts`](../../packages/entity/src/bulk-write.ts) |
 | `delete(id)` | soft-deletes when the entity declares `deletedAt`, hard-deletes when it does not |
 | `deleteWhere(filter)` | delete by equality filter; resolves with the **number of rows removed** |
 | `updateWhere(filter, patch)` | update by equality filter; resolves with the **number of rows written** |
 | `count(args)` | the same plan as `findMany`, without the page |
+| `countBy(column, args)` | the grouped count — one entry per distinct value of `column`, over exactly the rows `count(args)` counts, in one `group by` statement where a `count()` per row was N. What both drivers must agree on lives in [`count-by.ts`](../../packages/entity/src/count-by.ts) |
 | `Transactor.run(fn)` | joins the ambient transaction if one exists, opens one otherwise |
 | custom | added in the feature's `repo.ts`, returning schema-parsed rows |
 
@@ -70,7 +74,36 @@ One family, three members:
 
 Reach for `preload()` when the relation is part of what the page *is* — a list rendered with its authors, rows handed to something that will not call back into the repo, or a read a reviewer should see stated rather than inferred from a loop. The other two ask for nothing: a same-microtask fan-out and a sequential `for … of` loop already get them for free. All three read their keys through one file ([`batch-read.ts`](../../packages/entity/src/batch-read.ts)) — one spelling of a key, one 500-id bind cap — so a bound and a key's identity cannot disagree between them. What each may widen is its own: the two implicit paths share a scope key and refuse to widen across a tenant, a soft-delete visibility, a projection or an entity, because they answer a statement the caller already sent; `preload()` sends its own, so it carries the chain's tenant predicate onto it and refuses when it cannot.
 
-The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. Four properties make them safe to be the only filtered writes:
+That family collapses one *lookup* repeated per row. The other repeated statement is an aggregate — one `count()` per row, the shape `recountLikes` had — and no batch reaches it, because each of those statements asks a different question. `countBy(column)` asks all of them at once:
+
+```ts
+// One statement for every post in `ids`, not one `select count(*)` each.
+const counts = await db.likes.where({ orgId }).andWhere('postId', 'in', ids).countBy('postId');
+for (const id of ids) await db.posts.update(id, { likeCount: counts.get(id) ?? 0 });
+```
+
+| Rule | Mechanism |
+|---|---|
+| Counts the predicate, never the page | the plan `count(args)` builds, so the filters, the tenant predicate and `deleted_at is null` are in the statement Postgres runs and `limit`/`after` bound nothing |
+| A value nothing matched is absent, never `0` | what `group by` returns, and the only way a caller can tell "none" from "never asked". The `?? 0` is the caller's |
+| NULL is one group, keyed `null` | the memory driver reads the property as `?? null`, so it lands where Postgres puts its NULL rows. `0`, `''` and `false` stay the values they are |
+| Ordered biggest group first | ties by the value, `null` last — applied in [`count-by.ts`](../../packages/entity/src/count-by.ts) *after* the rows are in, because a hash aggregate returns groups in whatever order it built them and a `Map` filled row by row returns insertion order, so an `order by` in the statement would let the two drivers disagree about a result they agree on |
+| Groupable columns are a closed set | `uuid`, `text`, `char`, `boolean`, `integer`, `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object, `money` is two columns — a `Map` compares those by identity, so the map could only ever answer `undefined`. `X_INVARIANT_VIOLATED` naming a column of that entity that is groupable |
+| The group count is bounded, and the bound is a refusal | `MAX_GROUPS` (1000). The statement asks for one group past it, exactly as a page reads one row past its limit; the extra group is `X_INVARIANT_VIOLATED` spelling `andWhere('<column>', 'in', <values>)`. A truncated map reads exactly like a complete one, and a caller recounting from it writes the wrong number to every row it missed |
+| One statement, fixed output names | `select "post_id" as group_value, count(*) as group_count … group by "post_id" limit $n` ([`pg-sql.ts`](../../packages/entity/src/pg-sql.ts)) — aliased so an entity may still declare a column called `count`, and the grouped value is re-parsed by the column that declared it, since `int8` arrives as a string |
+
+`upsertAll` refuses four things before a statement exists, each of them otherwise a `42P10`, a cross-tenant write, a `21000` or a silent surprise:
+
+| Refusal | Why it is not the server's job |
+|---|---|
+| A conflict target no declared unique constraint matches | Postgres answers `42P10`, which arrives as `X_DB_UNAVAILABLE` and names nothing to edit. The entity already holds `$primaryKey`, `$indexes` and `$invariants`, so the target is checkable at the seam. All three spellings of one constraint count — the key, `unique()`/`indexes:`, and `invariant(name, c.unique([…]))` — or the refusal would ask for a second declaration of a constraint that exists. A partial unique index is not a target on any of them, since `on conflict` would have to repeat its predicate |
+| A target omitting the tenant column under `onMatch: 'update'` | `X_TENANCY_UNSCOPED`. `upsertAll` builds no read plan, so nothing else puts an org predicate in the statement: a target that omits the tenant column matches a row stored by another tenant and rewrites it, tenant column included. `'nothing'` stays legal — it writes nothing to a row it does not own |
+| A batch repeating one conflict target under `'update'` | `ON CONFLICT DO UPDATE command cannot affect row a second time` (`21000`) on the server, and a silent last-one-wins in memory. The two drivers have to mean one thing |
+| An uneven batch under `'update'` | `excluded.<column>` for a row that omitted the column is that column's *default*, not the stored value, so "leave the others alone" is not what runs. `insertAll` and `'nothing'` accept one and render `default` in the missing cell, which is what the same row means on its own |
+
+A collision overwrites every column the batch writes minus three closed sets — the conflict target, which is how the row was found, the primary key, which is where it lives, and the soft-delete stamp, which is whether the row is there at all. A soft-deleted row still occupies its conflict target, so `excluded."deleted_at"` would clear a delete the app made; excluded from the set list rather than refused, since `$parse` fills that `deletedAt: null` in before the plan is built. A null anywhere in the target collides with nothing, in both drivers, because a Postgres unique index is `NULLS DISTINCT`.
+
+The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. They double as the bulk forms of `delete`/`update` in the ordinary case, too — one statement for a loop that would otherwise delete or patch a row at a time, the same role `insertAll`/`upsertAll` play for a per-row insert loop. Four properties make them safe to be the only filtered writes:
 
 | Property | Mechanism |
 |---|---|

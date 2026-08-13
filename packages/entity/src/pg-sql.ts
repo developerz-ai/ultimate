@@ -135,14 +135,86 @@ export const countStatement = <Row>(
 ): SqlFragment =>
   sql`select count(*) as count from ${identifier(entity.$table)} where ${conditions(entity, plan, shape)}`;
 
+/** What a grouped count comes back as. Both names are fixed, so neither can be a column's. */
+export interface GroupRow {
+  readonly group_value: unknown;
+  readonly group_count: unknown;
+}
+
+/**
+ * The grouped count: one row per distinct value of one column, over exactly the rows
+ * `countStatement` would have counted — the same predicates, the same soft-delete filter, one
+ * `group by` more. `limit` bounds the groups, not the rows, which is what turns a whole-table
+ * breakdown into a refusal instead of a result set nobody sized.
+ *
+ * Both output names are aliases and fixed, so they cannot collide with each other whatever the
+ * table declares: an entity is free to have a column called `count`, and the un-aliased form would
+ * then return two outputs of one name.
+ */
+export const countByStatement = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  shape: ReadShape,
+  column: string,
+  limit: number,
+): SqlFragment => {
+  const grouped = columnRef(entity, column);
+  return sql`select ${grouped} as group_value, count(*) as group_count from ${identifier(
+    entity.$table,
+  )} where ${conditions(entity, plan, shape)} group by ${grouped} limit ${limit}`;
+};
+
+/** `on conflict (…) do update set …`, or `do nothing` when there is nothing to overwrite. */
+export interface ConflictTarget {
+  /** Physical columns of the unique index a collision is judged against. */
+  readonly columns: readonly string[];
+  /** Physical columns a colliding row takes from the incoming one. Empty is `do nothing`. */
+  readonly set: readonly string[];
+}
+
+export interface InsertShape {
+  /** Every physical column written — one list, shared by every row of the statement. */
+  readonly columns: readonly string[];
+  /** How a collision resolves. Absent, it is the caller's error, exactly as it is for one row. */
+  readonly conflict?: ConflictTarget | undefined;
+}
+
+/**
+ * The cell of a row that did not name this column. `default` is the third and last `raw()` in this
+ * file and, like the other two, a closed set of one word: it is what makes a row inside a many-row
+ * `insert` mean what the same row means on its own, where an unnamed column is simply left out.
+ */
+const DEFAULT_CELL = raw('default');
+
+const conflictSql = (conflict: ConflictTarget): SqlFragment => {
+  const target = join(conflict.columns.map(identifier));
+  return conflict.set.length === 0
+    ? sql` on conflict (${target}) do nothing`
+    : sql` on conflict (${target}) do update set ${join(
+        conflict.set.map((column) => sql`${identifier(column)} = excluded.${identifier(column)}`),
+      )}`;
+};
+
+/**
+ * One statement for any number of rows. A single row compiles to exactly the text it always did,
+ * which is the point: `insertAll([row])` and `insert(row)` are one code path, so there is no
+ * second insert builder for the two to drift apart in.
+ */
 export const insertStatement = <Row>(
   entity: EntityCore<Row>,
-  values: ReadonlyMap<string, unknown>,
+  rows: readonly ReadonlyMap<string, unknown>[],
+  shape: InsertShape,
 ): SqlFragment => {
-  const entries = [...values];
+  const tuples = rows.map(
+    (row) =>
+      sql`(${join(
+        shape.columns.map((column) => (row.has(column) ? sql`${row.get(column)}` : DEFAULT_CELL)),
+      )})`,
+  );
+  const conflict = shape.conflict === undefined ? sql`` : conflictSql(shape.conflict);
   return sql`insert into ${identifier(entity.$table)} (${join(
-    entries.map(([column]) => identifier(column)),
-  )}) values (${join(entries.map(([, value]) => sql`${value}`))}) returning *`;
+    shape.columns.map(identifier),
+  )}) values ${join(tuples)}${conflict} returning *`;
 };
 
 export const updateStatement = <Row>(

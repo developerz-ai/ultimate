@@ -14,8 +14,16 @@ import {
   type TransactionOptions,
   withTransaction,
 } from '@ultimat3/db';
+import {
+  conflictKeys,
+  insertChunks,
+  insertColumns,
+  namedProperties,
+  upsertPlan,
+} from './bulk-write';
 import { coalesceFindById } from './coalesce';
 import { snake } from './column';
+import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -23,15 +31,18 @@ import { notFound } from './errors';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { bindValues, decodeRow, type PhysicalRow } from './pg-row';
 import {
+  type ConflictTarget,
+  countByStatement,
   countStatement,
   deleteStatement,
+  type GroupRow,
   insertStatement,
   type ReadShape,
   selectStatement,
   updateStatement,
 } from './pg-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
-import type { FindManyArgs, Repo, Transactor } from './repo';
+import type { FindManyArgs, Repo, Transactor, UpsertArgs } from './repo';
 import type { QueryPlan } from './tenancy';
 
 export interface PostgresDriverOptions {
@@ -95,6 +106,35 @@ export const postgresRepo = <Row>(
     return send();
   };
 
+  /**
+   * The one insert path, for one row or ten thousand: the batch's own column list, split into as
+   * many statements as Postgres's bind count allows, and the rows the server stored. `insert(row)`
+   * comes through here too, so there is no second builder for the two to drift apart in — and a
+   * batch wide enough to split is several statements, which is why an all-or-nothing caller wraps
+   * the call in `withTransaction` rather than trusting one statement's atomicity.
+   */
+  const writeRows = async (
+    batch: readonly Row[],
+    conflict: ConflictTarget | undefined,
+  ): Promise<readonly Row[]> => {
+    if (batch.length === 0) return [];
+    for (const row of batch) entity.$assert(row);
+    const columns = insertColumns(entity, namedProperties(entity, batch));
+    const bound = batch.map((row) => bindValues(entity, row));
+    const shape = { columns, ...(conflict === undefined ? {} : { conflict }) };
+    const written: Row[] = [];
+    await writing(async () => {
+      for (const chunk of insertChunks(bound, columns.length)) {
+        for (const row of await client().query<PhysicalRow>(
+          insertStatement(entity, chunk, shape),
+        )) {
+          written.push(decodeRow(entity, row));
+        }
+      }
+    });
+    return written;
+  };
+
   return {
     async findById(id, options) {
       const plan = idPlan(entity, id, options, 'findById');
@@ -129,12 +169,24 @@ export const postgresRepo = <Row>(
     },
 
     async insert(values) {
-      entity.$assert(values);
-      const written = await writing(() =>
-        client().one<PhysicalRow>(insertStatement(entity, bindValues(entity, values))),
-      );
+      const [written] = await writeRows([values], undefined);
       // `returning *` is the row Postgres actually stored, defaults included.
-      return written === null ? values : decodeRow(entity, written);
+      return written ?? values;
+    },
+
+    async insertAll(batch) {
+      return writeRows(batch, undefined);
+    },
+
+    async upsertAll(batch, args: UpsertArgs<Row>) {
+      const plan = upsertPlan(entity, batch, args.onConflict, args.onMatch ?? 'update');
+      // Refused here, not by the server: a batch that repeats a conflict target is `21000` in
+      // Postgres and a silent overwrite in memory, and the two drivers have to mean one thing.
+      conflictKeys(entity, plan, batch);
+      return writeRows(batch, {
+        columns: insertColumns(entity, plan.on),
+        set: insertColumns(entity, plan.set),
+      });
     },
 
     async update(id, patch, options) {
@@ -166,6 +218,12 @@ export const postgresRepo = <Row>(
 
     // No `X_NOT_FOUND` here: a filter that matches nothing is a fact the caller asked for, not a
     // failed address. The count is the answer, which is why it is a `number` and not `void`.
+    //
+    // `deleteWhere`/`updateWhere` are the bulk forms of `delete(id)`/`update(id, patch)` — same
+    // role `insertAll`/`upsertAll` play for a per-row insert loop, one statement instead of one
+    // per row. They are also the *only* filtered writes a composite-key entity has: `likes`,
+    // `blocks`, `participants`, any join table has no single-column id for `delete`/`update` to
+    // address, so without this pair such an entity would be create-only.
     async deleteWhere(filter, options) {
       // The plan is built before the write is announced: a refused filter never happened.
       const plan = deletePlan(entity, filter, options, 'deleteWhere');
@@ -192,6 +250,23 @@ export const postgresRepo = <Row>(
         countStatement(entity, plan, shapeOf(args)),
       );
       return Number(row?.count ?? 0);
+    },
+
+    async countBy(column, args = {}) {
+      const grouped = groupColumnOf(entity, column, 'countBy');
+      const plan = readPlan(entity, args, 'countBy');
+      // One group past the bound, for the same reason a page reads one row past its limit: the
+      // presence of that group is what says the answer was never going to fit, and `countsFrom`
+      // refuses it rather than hand back a breakdown missing its tail.
+      const rows = await client().query<GroupRow>(
+        countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1),
+      );
+      return countsFrom(
+        entity,
+        column,
+        'countBy',
+        rows.map((row) => [groupValue(grouped, row.group_value), Number(row.group_count)] as const),
+      );
     },
   };
 };

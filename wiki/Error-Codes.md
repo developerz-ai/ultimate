@@ -132,7 +132,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 |---|---|---|---|
 | `X_POLICY_MISSING` | an action was declared without a policy | a new action shipped with no `policy:` | add `policy: can('<resource>:<verb>')`, or `allow('public')` to say so explicitly |
 | `X_PERMISSION_UNKNOWN` | permission string is not in the permission set | typo, or a permission never declared | add it to `definePermissions([…])` |
-| `X_TENANCY_UNSCOPED` | a tenant-scoped query has no org predicate | a repo call that forgot the tenant | pass `{ orgId }`, or wrap the plan with `orgScoped(entity, orgId, plan)` |
+| `X_TENANCY_UNSCOPED` | a tenant-scoped query has no org predicate | a repo call that forgot the tenant, or an `upsertAll(rows, { onMatch: 'update' })` whose `onConflict` omits the tenant column — a collision there lands on another tenant's row | pass `{ orgId }`, wrap the plan with `orgScoped(entity, orgId, plan)`, or put the tenant column in `onConflict` |
 | `X_ACTION_POLICY_MISSING` | an action was registered without a policy | build-time check on the action registry | add `policy: can('<name>')` to the declaration |
 | `X_QUERY_POLICY_MISSING` | a query was registered without a policy | same, for reads | add `policy: can('<name>')` to the query |
 | `X_QUERY_NOT_PAGEABLE` | a read returned rows with no id, so a cursor cannot name a position | a projection or aggregate that drops the primary key — the id is the tiebreak that makes the sort order total | return the key from the query's `sql:`, e.g. `db.posts.select({ id: true, … })` |

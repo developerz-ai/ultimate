@@ -20,7 +20,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   sort order, page size), `cursor.ts` (one codec, values included) and the `Repo` contract, so a
   test that passes against memory says something about Postgres. A guard, an operator or a sort
   rule added to one and not the other is the bug this split exists to prevent — `pg-driver.test.ts`
-  pins the parity.
+  pins the parity, and every bulk method added since carries the same two files: a
+  `*-parity.test.ts` seeding identical rows into both drivers and asserting identical output
+  (`batch-parity.test.ts`, `preload-parity.test.ts`, `count-by-parity.test.ts`, and the
+  `insertAll`/`upsertAll` cross-driver assertions inside `pg-driver-bulk.test.ts`), and a
+  `pg-driver-<feature>.live.test.ts` proving the same call against a real server
+  (`pg-driver-batch.live.test.ts`, `pg-driver-preload.live.test.ts`, `pg-driver-count.live.test.ts`,
+  `pg-driver-bulk.live.test.ts`). A method with only the first is unproven against Postgres itself;
+  a method with only the second is unproven against memory. Both are the bar, not either one.
 - **The Postgres driver is proved against a real Postgres, not only against a recording client.**
   `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
   `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
@@ -96,12 +103,63 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   mutates**: a preloaded relation is written onto `{ ...row }`, because the in-memory driver
   hands back the row it stores and attaching directly would leak the relation into the table
   itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
-  relation; `count()` and `plan()` do not, since neither reads a row to attach one to.
+  relation; `count()`, `countBy()` and `plan()` do not, since none reads a row to attach one to.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
   total. The cursor carries the sort **values**, not just an id — seeking by an id that was
   deleted between two requests would restart pagination at the top.
+- **`inBatches(size)` is that same page in a loop, and the loop owns it.** `batch.ts` holds no
+  driver of its own: a batch is the `findMany` the chain would have sent at that position, so
+  filters, tenancy, soft delete, the projection and every `preload()` mean there what they mean in
+  `page()` and there is no second read path to drift. Properties, none optional. **The handle is
+  the iteration**: it is its own iterator, so `break`, `return`, a throw and `await using` all stop
+  the *next* statement — `close()` is `AsyncGenerator.return()` and therefore idempotent by
+  construction, never a flag two paths could disagree about — and a second `for await` continues it
+  instead of re-reading the table from the top. **The position is readable**: `.cursor` is where
+  the next batch starts, advanced *before* the yield, so a consumer that breaks reads the position
+  it stopped at and `.after(cursor).inBatches(size)` resumes it; stopping early is then cheap
+  rather than wasted. **An empty batch is never yielded** — a consumer forced to check
+  `batch.length` is reading around the iterator. **Three refusals, all on the chain**: a size that
+  is not a whole number of rows ≥ 1, a chain that also called `limit()` (one number, two meanings —
+  honouring it reads a fraction of a batch, dropping it reads the whole table the caller thought
+  they had bounded), and an ordering no cursor can carry. That last one is why
+  `totalOrder(entity, orderBy)` is exported from `plan.ts` rather than inlined in `planFor`: the
+  guard has to judge the order the driver will *send*, primary key included, and a result that fits
+  in one batch mints no cursor — so a nullable sort key would otherwise pass in every test and fail
+  once the table grew. `State.limit` is `number | undefined` for the same reason: only "the caller
+  named a page size" can be told apart from the default, which the driver already applies.
+- **A grouped count means one thing in both drivers, and `count-by.ts` is where that one thing is
+  written.** `countBy(column)` is the aggregate a `count()` per row is the N+1 of, so both drivers
+  call `groupColumnOf` before their statement exists and `countsFrom` after their rows are in — a
+  rule added to `pg-driver.ts` or to `repo.ts` alone is exactly the drift that file exists to
+  prevent. **Groupable kinds are a closed set**: `uuid`, `text`, `char`, `boolean`, `integer`,
+  `bigint`. A `timestamptz` is a `Date`, a `jsonb` is an object and `money` is two physical columns
+  — a `Map` compares a non-primitive key by identity, so any of those would file rows under a key
+  no caller can look up again and the result would be a map that only ever answers `undefined`. The
+  refusal is `X_INVARIANT_VIOLATED` naming a column of *this* entity that is groupable, never
+  `x entity explain`: what repairs it is one edit to the call, and the entity is the only place the
+  replacement column lives. **The bound is a refusal, not a truncation.** The statement asks for
+  `MAX_GROUPS + 1` groups — the trick a page already uses when it reads one row past its limit — and
+  that extra group is what says the answer was never going to fit, so `countsFrom` throws with the
+  `andWhere(…, 'in', <values>)` that bounds it. Truncating would hand back a map that reads exactly
+  like a complete one, and a caller recounting from it would write the wrong number to every row it
+  missed. **Absent is not `0`**: a value nothing matched has no entry, because that is what
+  `group by` returns and it is the only way a caller can tell "none" from "never asked" — the
+  `?? 0` is theirs to write, and inventing it here would answer for keys the table has never seen.
+  **NULL is one group**, keyed `null`: the memory driver reads the property as `?? null` so it lands
+  where Postgres puts its NULL rows, while `0`, `''` and `false` stay the values they are. **The
+  order is applied after the rows are in, never in SQL** — a hash aggregate returns groups in
+  whatever order it built them and a `Map` filled row by row returns insertion order, so an
+  `order by` in the statement would let the two drivers disagree about a result they agree on;
+  sorting groups (never rows) costs nothing at this size and is what puts the largest bucket at the
+  front. **Both output names are fixed aliases** — `group_value` and `group_count` in
+  `countByStatement` (`pg-sql.ts`) — because an entity is free to declare a column called `count`,
+  and the un-aliased form would then return two outputs of one name; the grouped value is re-parsed
+  by the column that declared it, since `int8` arrives as a string and would otherwise key the map
+  by text where memory keys it by a `bigint`. **Nothing new to declare**: no `groupBy()` builder and
+  no error code of its own — it is a terminal on the chain that already exists, over exactly the
+  rows `count()` counts.
 - **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
   `cursorFor(entity, plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. Both call
   `assertSeekable`, so an ordering that cannot carry a position — a nullable key, an undeclared
@@ -146,7 +204,11 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   are bounded by construction.** `delete(id)` and `update(id, patch)` need a single-column primary
   key, so on a composite key — `likes`, `blocks`, `participants`, any join table — the filtered
   pair is the only write path that exists; without them the entity is create-only and a row can be
-  written and never unwritten. Properties, none of them optional:
+  written and never unwritten. They are also the bulk forms of `delete`/`update` for the ordinary
+  case — one statement for a `for … of` loop that would otherwise delete or patch one row at a
+  time — the same role `insertAll`/`upsertAll` (below) play for a per-row insert loop; a
+  write-loop detector's `fix:` names one of these four, never a hand-rolled loop. Properties, none
+  of them optional:
   - an empty filter is `X_WRITE_UNFILTERED` and never every row; an empty patch is `X_PATCH_EMPTY`
     and never a counted no-op. An `undefined` value is dropped *before* either count, so a
     forgotten variable lands on the error rather than on the table.
@@ -166,9 +228,58 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   ends up writing a stale `updatedAt`. It returns an empty patch untouched, so whether
   `X_PATCH_EMPTY` fires depends on the call and not on whether the entity happens to declare the
   column.
+- **A many-row write is one statement, and every refusal it needs happens before that statement
+  exists.** `insertStatement` (`pg-sql.ts`) builds *every* insert in the framework — one row or ten
+  thousand — so `insertAll([row])` compiles to exactly the text `insert(row)` always compiled to
+  and there is no second builder for the two to drift apart in. What both drivers have to agree on
+  lives in `bulk-write.ts`, decided in **property** space and projected to physical columns for the
+  SQL: the column list a batch writes (`Object.hasOwn`, exactly as `bindValues` decides it), what a
+  collision overwrites, the conflict key, and the chunking. Rules, none optional. **A collision
+  overwrites every column in the batch except three closed sets** — the conflict target, which is
+  how the stored row was found, the primary key, which is where it lives, and the soft-delete
+  stamp, which is whether the row is there at all; an upsert that moved either of the first two
+  would move a row nobody asked to move and every foreign key already pointing at that id would
+  miss it. **The stamp is the third because a soft-deleted row still occupies its conflict target**
+  — the index it collides with is not partial — so `excluded."deleted_at"` would clear a delete the
+  app made and hand the row back holding the batch's values, which is the resurrection
+  `update(id, patch)` and `updateWhere` refuse by carrying `deleted_at is null` and an
+  `on conflict` clause cannot carry. Excluded from the set list rather than refused, because
+  `$parse` fills every declared column before a row reaches `upsertPlan`: that `deletedAt: null` is
+  the framework's and not the caller's, so refusing it would make `onMatch: 'update'` impossible on
+  every soft-deleting entity. `insertAll` is untouched — a row colliding with nothing writes the
+  stamp it carries, exactly as `insert` does. **The conflict target must be a declared unique
+  constraint** — because a target
+  Postgres cannot infer an index for is `42P10` wrapped as `X_DB_UNAVAILABLE`, which names nothing
+  the author can act on. All **three** of this framework's spellings of one count, or the refusal
+  would tell an author to declare a constraint they already declared and ship two indexes: the
+  primary key, a non-partial `unique: true` entry in `$indexes` (`unique()` on a column and
+  `indexes:` both land there), and a `kind: 'unique'` entry in `$invariants`
+  (`invariant(name, c.unique([…]))`, whose `CREATE UNIQUE INDEX` never touches `$indexes`). A
+  partial one is deliberately not a target on either list, since its predicate would have to be
+  repeated in the `on conflict` clause and this layer does not spell one — which is also why a
+  soft-deleting entity's `c.unique()` invariant, stamped `deleted_at is null` by `bindInvariant`,
+  is excluded by that same rule. **The tenant column is part of that
+  constraint or `onMatch: 'update'` is refused** (`X_TENANCY_UNSCOPED`) — this is a security
+  boundary, not ergonomics: `upsertAll` builds no read plan, so nothing else puts an org predicate
+  in the statement, and a target that omits the tenant column matches a row stored by another tenant
+  and rewrites it, tenant column included. `'nothing'` stays legal on such a target because it
+  writes nothing to a row it does not own. **A batch that repeats one conflict target is refused
+  under `'update'`** — Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect
+  row a second time`, so passing it in memory and failing in production is the exact drift the two
+  drivers exist to prevent — and **an uneven batch is refused under `'update'`** for the same
+  reason: `excluded.<column>` for a row that omitted it is that column's *default*, not the stored
+  value, so "leave it alone" is not what happens. `insertAll` and `'nothing'` accept an uneven batch
+  and render `default` in the missing cell, which is what the same row means on its own.
+  **Null is not a value here**: a null anywhere in the conflict target means the row collides with
+  nothing, in both drivers, because a Postgres unique index is `NULLS DISTINCT`. **The memory
+  driver judges the whole batch before storing any of it** — `$assert` over every row first — since
+  Postgres refuses the statement as one and a half-applied batch would make the two disagree about
+  what one call did. Past `MAX_BIND_PARAMETERS` (65535) the batch is several whole statements, so
+  atomicity across them is `withTransaction`'s and never one statement's.
 - **Nothing is interpolated into SQL.** `pg-sql.ts` binds every value through `sql` and resolves
   every identifier through the entity, so a column name can only be one the entity declared.
-  `raw()` appears exactly twice, for `asc|desc` and the seek operator — both closed sets.
+  `raw()` appears exactly three times, for `asc|desc`, the seek operator and the `default` cell of a
+  many-row `values` list — each a closed set of one word.
 - **Money is `bigint` minor units + `char(3)` currency.** A float throws. Never one column,
   never an implied single currency.
 - **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
@@ -223,9 +334,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
+| `batch.ts` | `inBatches(size)` — the chain's page in a loop, closed by the loop that reads it |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
+| `bulk-write.ts` | what a many-row write is made of — the column list, the conflict plan, the bind-count chunking |
+| `count-by.ts` | what a grouped count is made of — the groupable kinds, the group bound, the key's decoding, the order |
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
