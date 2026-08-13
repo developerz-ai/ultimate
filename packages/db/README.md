@@ -37,6 +37,7 @@ await withTransaction(async (tx) => {
 | `readOnly()` | mutation-rejecting wrapper |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
+| `setStatementObserver()` / `statementObserver()` | the seam a dev diagnostic hangs statements off; uninstalled is one branch |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only

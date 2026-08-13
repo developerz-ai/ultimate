@@ -59,6 +59,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   ```
 
   A step named there that reports nothing to check is recorded **failed and not skipped**, with `X_VERIFY_SUITE_VANISHED` and both edits that resolve it — so it lands in the failure count, in `data.failed`, and in every step table another gate parses. Not a breaking change for an existing app: a repo that commits no floor is not ratcheted and behaves exactly as before. A floor naming a step the gate does not run enforces nothing and is refused by the `manifest` step (`X_CONFIG_INVALID`), because a typo covering no suite is the same false green. This repo's own floor pins 12 of 17; `job`, `eval`, `drift`, `contract-diff` and `budgets` are the honest skips.
+- **`setStatementObserver()` — the seam a statement-level diagnostic installs into.** `@ultimat3/db` emits no span, no counter and no log for a statement, so nothing above it can count one: the dev timeline's `repeatedSql` groups span names and has never seen a repository read, which makes an N+1 invisible by construction. The seam is one process-wide observer, the `setDbClient` shape, with a `StatementEvent` carrying `{ text, values, durationMs, rows, error?, attribution? }` — `attribution` is the `{ entity, op }` pair only the layer that compiled the statement knows, so a report can read `50× findById on members` instead of 50 copies of one `select`:
+
+  ```ts
+  setStatementObserver({ onStatement: (e) => ledger.count(e.attribution ?? e.text) });
+  setStatementObserver(undefined);   // production, and what every test must leave behind
+  ```
+
+  Uninstalled costs one property read and one branch, which is why the accessor hands back the installed observer itself instead of notifying through a wrapper: no event object is built for nobody to receive (axiom 6). One observer, not a list — a second install replaces the first, so "which diagnostic saw this statement" is never order-dependent, and the one consumer that needs several composes them itself, where that order is reviewable. A throw from `onStatement` reaches whoever ran the statement, deliberately: strict test mode is an observer that fails the test its N+1 happened in, and containment here would make that impossible.
 
 ### Fixed
 

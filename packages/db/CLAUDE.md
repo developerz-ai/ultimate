@@ -104,6 +104,20 @@ that returned rows is tagged `0`, and `??` would report 0 for every read while
 `PostgresClient.execute` reported the row count. A write that modified nothing returned no rows
 either, so the fallback stays 0 there.
 
+`observe.ts` is a seam and nothing more: one process-wide `StatementObserver`, installed with
+`setStatementObserver()` and read with `statementObserver()`, the same ambient shape as
+`setDbClient()`. Three rules, each load-bearing. **Guard at the call site** — read the accessor,
+branch on `undefined`, and only then build the `StatementEvent`; a `notify(event)` wrapper would
+allocate an event per statement for nobody to receive, and this seam is on the path every statement
+in the process takes. **One observer, not a list** — a second install replaces the first (axiom 1);
+a consumer needing several composes them itself. **The accessor returns the installed identity and
+the seam swallows nothing** — a throw from `onStatement` is how strict test mode fails the test its
+N+1 happened in, so a guarding facade here would silently delete that mode. `onStatement` is
+synchronous, runs on the caller's stack after the statement settled, and must not issue SQL: a
+statement from inside it re-enters the funnel and observes itself. Only two places may invoke it —
+`runOn` (`client.ts`) and `statement()` (`pglite.ts`), the funnels every statement already passes
+through. Reserving a connection and closing a pool are not statements and stay out.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

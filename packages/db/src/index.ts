@@ -100,6 +100,8 @@ export {
   rollback,
   runningAppVersion,
 } from './migrate';
+export type { StatementAttribution, StatementEvent, StatementObserver } from './observe';
+export { setStatementObserver, statementObserver } from './observe';
 export type {
   PgliteClient,
   PgliteDriver,
