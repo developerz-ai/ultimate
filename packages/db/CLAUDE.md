@@ -168,6 +168,24 @@ an exact ledger, and `@ultimat3/admin`'s `search.ts` runs one indexed lookup per
 a `db` dependency to `admin` for that one import is deliberate — the alternative is re-exporting the
 scope from a package `admin` already imports, which is the second path this rule forbids.
 
+**`@ultimat3/jobs` never imports this package** (`packages/jobs/CLAUDE.md`), so nothing about the
+observer, the span or `expectedQueryLoop` is this package's concern *from inside* `jobs` —
+`driver-pg.ts` speaks only the two-method `PgExecutor` it declares itself, satisfied by anything
+shaped like `query(sql, params)`. That is a statement about the package boundary, not about what a
+running process does with it: `packages/cli/src/dev-queue.ts`'s `startQueue` — the only place in
+the repo that builds a `PgExecutor`, reached by every role through `dev-runtime.ts`'s
+`startServices` and by `migrate` through `serve.ts`'s `runMigrations` — wraps a real
+`PostgresClient`/`PgliteClient` `.query()` call for it. So today, in this framework's own boot
+code, every job-driver statement (claim, ack, nack, enqueue, heartbeat, step read/write) **does**
+pass through `runOn`/`statement()` and is visible to an installed `StatementObserver` and traced
+exactly like any other statement — just with no `attribution`, because that pair is threaded by
+`@ultimat3/entity`'s driver and `driver-pg.ts` never calls it. This is incidental, not guaranteed:
+`PgExecutor` is duck-typed, so a deployment that hands `createPgDriver` an executor not backed by
+this package — a raw `Bun.SQL` instance, a hand-rolled pool, `driver-redis`/`driver-nats` (which do
+not touch Postgres at all) — gets zero observation of its queue traffic, and nothing here or in
+`jobs` enforces otherwise. A detector reading `attribution` (PR 9's N+1 work) will see a claim loop
+as anonymous SQL, never as a `job` statement, until `jobs` threads its own attribution through.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

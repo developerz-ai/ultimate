@@ -1,11 +1,17 @@
 // Single responsibility: tests for the statement observer seam itself — install, replace,
 // uninstall, and the two guarantees the funnels are written against. Uninstalled must read
 // `undefined` (the production path), and an installed observer must be handed back by identity:
-// a wrapper here would swallow the throw strict test mode depends on.
+// a wrapper here would swallow the throw strict test mode depends on. The last block is the
+// capstone the seam promises but no single-file test proves alone: with nothing installed, both
+// funnels (`client.ts`, `pglite.ts`) never read a clock — the one signal that an event was about
+// to be assembled — and a statement returns exactly what it returned before the seam existed.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { createPostgresClient } from './client';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver, statementObserver } from './observe';
+import { createPgliteClient, type PgliteDriver } from './pglite';
+import { sql } from './sql';
 
 function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
   const seen: StatementEvent[] = [];
@@ -24,7 +30,28 @@ const EVENT: StatementEvent = {
   rows: 1,
 };
 
+const TEST_URL = 'postgres://app@127.0.0.1:5432/ultimate_test';
+
+// `Bun.SQL` is writable but not configurable, so the seam is assignment plus an afterEach restore.
+const host = globalThis as unknown as { Bun: { SQL: unknown } };
+const realBunSql = host.Bun.SQL;
+
+function installFakeSql(rows: readonly unknown[] = []): void {
+  host.Bun.SQL = class {
+    async unsafe(): Promise<unknown> {
+      return rows;
+    }
+    async close(): Promise<void> {}
+  };
+}
+
+const fakePgliteDriver = (rows: readonly Record<string, unknown>[] = []): PgliteDriver => ({
+  query: async () => ({ rows }),
+  close: async () => undefined,
+});
+
 afterEach(() => {
+  host.Bun.SQL = realBunSql;
   setStatementObserver(undefined);
 });
 
@@ -85,5 +112,58 @@ describe('statementObserver', () => {
     expect(observer.seen).toEqual([event]);
     expect(observer.seen[0]?.attribution?.entity).toBe('members');
     expect(observer.seen[0]?.error).toBe(failure);
+  });
+});
+
+// The guarantee `client.ts` and `pglite.ts` document: uninstalled, `runOn`/`statement` costs one
+// property read and one branch — no clock read, no span, no event object — and hand straight to
+// `sendOn`/`send`. `observer.seen` staying empty (asserted in `client.test.ts`/`pglite.test.ts`)
+// proves nothing built reached the observer; it does not prove nothing was built at all. Reading
+// the clock is the first thing either funnel does once it decides to assemble an event, so a
+// `performance.now()` spy is the closest a unit test gets to proving the allocation itself never
+// happened, on the exact same fake statement, with only the installed-or-not bit changed.
+describe('the production path — no observer installed', () => {
+  test('the pooled client never reads the clock', async () => {
+    installFakeSql();
+    const clock = spyOn(performance, 'now');
+
+    await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
+
+    expect(clock).not.toHaveBeenCalled();
+    clock.mockRestore();
+  });
+
+  test('the embedded client never reads the clock', async () => {
+    const clock = spyOn(performance, 'now');
+
+    await createPgliteClient({ driver: fakePgliteDriver() }).query(sql`select 1`);
+
+    expect(clock).not.toHaveBeenCalled();
+    clock.mockRestore();
+  });
+
+  test('installing an observer is what makes the clock read happen at all', async () => {
+    installFakeSql();
+    setStatementObserver({ onStatement: () => undefined });
+    const clock = spyOn(performance, 'now');
+
+    await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
+
+    // Proves the two tests above are a real fork in the code, not an unreachable spy.
+    expect(clock).toHaveBeenCalled();
+    clock.mockRestore();
+  });
+
+  test('a silent observer changes nothing about what a statement returns', async () => {
+    installFakeSql([{ id: 1 }]);
+    const bare = await createPostgresClient({ url: TEST_URL }).query(sql`select ${1}`);
+
+    installFakeSql([{ id: 1 }]);
+    setStatementObserver({ onStatement: () => undefined });
+    const observed = await createPostgresClient({ url: TEST_URL }).query(sql`select ${1}`);
+
+    // Byte-identical `runOn` behavior: the observed shell hands `sendOn` the same call and returns
+    // exactly what it returned, whether or not anything is installed to watch it happen.
+    expect(observed).toEqual(bare);
   });
 });
