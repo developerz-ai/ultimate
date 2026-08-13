@@ -132,6 +132,26 @@ recorder prefers over the name, so the timeline's `repeatedSql` groups SQL texts
 exist only where a `StatementObserver` is installed, so a trace with no DB children is a process
 with no statement diagnostic, not a broken recorder.
 
+`dev-n-plus-one.ts` is that observer, and `cmd-dev.ts` is the **only** place that installs it —
+`serve.ts` installs neither it nor the span exporter, the same line that file already draws for
+`/_x`. Installing one is the single switch that turns statement instrumentation on at all, which is
+why the ledger and the exporter go in together and come out together in `stop()`: the timeline's
+SQL rows and the repeat counts are one feature with one toggle, and a production process keeps
+paying the one `undefined` branch the seam costs uninstalled (axiom 6).
+
+Three rules hold the ledger, each load-bearing. **Per request, keyed by the `Ctx` object** — a
+`WeakMap` whose entry dies with the request, so nothing sweeps and nothing accumulates across a dev
+session; a statement issued outside a request is not counted at all, because "five of one shape"
+only means something inside one unit of work. The price of keying on identity is that a
+`withChildContext` scope is its own tally. **A shape is `entity.op` when attributed**, the
+statement's own text with whitespace collapsed when it is not — `members.findById` fifty times is
+what an author can act on, and grouping fifty point lookups by their SQL would report bind values.
+**An expected statement is not counted** — `expectedQueryLoop` suppresses a verdict and this ledger
+is the verdict, so the span and the timeline still show the loop while the thing that warns is told
+the author already answered. A shape is promoted to a verdict exactly once, on the statement that
+crosses the threshold, and its count keeps rising: a loop of fifty is one report reading fifty. The
+report list is bounded and drops its oldest.
+
 ## `x dev` boots the app; it does not simulate one
 
 | File | Job |
@@ -146,6 +166,7 @@ with no statement diagnostic, not a broken recorder.
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
 | `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |
+| `dev-n-plus-one.ts` | statement shapes counted per request, and the ones that repeat past the threshold |
 | `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
 | `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |

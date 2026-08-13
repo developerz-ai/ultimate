@@ -10,6 +10,7 @@ import { listActions, toRoute } from '@ultimat3/action';
 import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { configureTelemetry, METRICS_PATH, noopExporter } from '@ultimat3/core';
+import { setStatementObserver } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
@@ -21,6 +22,7 @@ import type { CliCommand, CommandContext } from './command';
 import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels } from './dev-dashboard';
+import { createStatementLedger } from './dev-n-plus-one';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
@@ -108,6 +110,13 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // what configures one, which is the whole reason `/_x/timeline` has anything to draw.
   const traces = createTraceRecorder();
   configureTelemetry({ exporter: traces.exporter });
+  // Installed at the same moment and for the same reason: an observer is the single switch that
+  // turns statement instrumentation on at all (`@ultimat3/db`'s `observe.ts`), so the timeline's
+  // SQL rows and the repeat counts arrive together rather than through two toggles. `serve.ts`
+  // installs neither — a production process pays the one `undefined` branch the seam costs
+  // uninstalled, and nothing more (axiom 6).
+  const statements = createStatementLedger();
+  setStatementObserver(statements.observer);
   const app = await loadApp(options.root);
   const state: DevState = {
     manifest: (await appManifest(options.root)).manifest,
@@ -209,6 +218,12 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
       // leaving it in place would keep every span of the next `startDev` in this process's buffer.
       configureTelemetry({ exporter: noopExporter });
       traces.reset();
+      // Released with the exporter, after the roles, for the same reason: a statement still in
+      // flight is observed by the ledger that counted the rest of its request. Leaving it
+      // installed would keep every statement of the next `startDev` in this process's counts —
+      // and, worse, keep instrumentation on in a process that is no longer a dev server.
+      setStatementObserver(undefined);
+      statements.reset();
     },
   };
   return server;

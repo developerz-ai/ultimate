@@ -11,6 +11,7 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
+import { statementObserver } from '@ultimat3/db';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { cspHashSource } from '@ultimat3/http';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
@@ -264,6 +265,31 @@ describe('unit · x dev boots the app', () => {
     expect(served?.requestId.length).toBeGreaterThan(0);
     expect(payload.data.selected?.spans.some((span) => span.kind === 'http')).toBe(true);
     expect(Object.keys(payload.data.totalsByKind)).toContain('http');
+  });
+
+  // Installing a `StatementObserver` is the single switch that turns statement instrumentation on
+  // (`@ultimat3/db`'s `observe.ts`), and `x dev` is what throws it — `serve.ts` never does. Until
+  // it did, the timeline had no DB children at all and `repeatedSql` grouped span names, which is
+  // what made an N+1 invisible in the one panel built to show it.
+  test('x dev installs the statement ledger, so the timeline has SQL children', async () => {
+    expect(statementObserver()).toBeDefined();
+    await fetchDev('/_x/db?json=1&sql=select%201%20as%20n');
+
+    const payload = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
+      data: { requests: { requestId: string; path: string }[] };
+    };
+    const read = payload.data.requests.find((entry) => entry.path === '/_x/db');
+    expect(read).toBeDefined();
+
+    const trace = (await (
+      await fetchDev(`/_x/timeline?json=1&requestId=${read?.requestId ?? ''}`)
+    ).json()) as {
+      data: { selected: { spans: { kind: string; name: string; detail: string }[] } | null };
+    };
+    const sql = trace.data.selected?.spans.filter((span) => span.kind === 'sql') ?? [];
+    expect(sql.length).toBeGreaterThan(0);
+    // The statement states its own identity: the span's detail is the SQL, not `db.select`.
+    expect(sql.some((span) => span.name.startsWith('db.') && span.detail !== span.name)).toBe(true);
   });
 
   test("/_x/policy is the app's real matrix: one column per declared role", async () => {
