@@ -403,9 +403,11 @@ statement that repeated.
 | `insert` / `update` / `delete` per row | `db.<entity>.insertAll(rows)` / `.updateWhere(filter, patch)` / `.deleteWhere(filter)` |
 | hand-written SQL, attributed to no entity | the statement's own `any($1)` form, or `expectedQueryLoop('<why>', fn)` |
 
-Nothing here counts, thresholds or installs anything: `x dev` owns the ledger, `expectedQueryLoop`
-from `@ultimat3/db` is the one way to declare a loop deliberate, and a production process pays the
-one branch the observer seam costs uninstalled.
+Nothing here counts or installs anything: `x dev` owns the ledger, `@ultimat3/testing`'s `statements`
+fixture owns the strict one, `expectedQueryLoop` from `@ultimat3/db` is the one way to declare a loop
+deliberate, and a production process pays the one branch the observer seam costs uninstalled. The
+one number both detectors read *is* here — `N_PLUS_ONE_THRESHOLD` (5), next to the codes whose `fix`
+it triggers, so a loop that fails a test and a loop that warns in dev are the same loop.
 
 ## Tenancy is a guard
 

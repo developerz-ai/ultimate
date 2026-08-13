@@ -229,6 +229,25 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
   New seam, dev-only: `ServerHooks.devNotices` in `@ultimat3/http`, called **inside** the `config.dev && wantsOverlay` branch and nowhere else, so a production process and an agent asking for `problem+json` never pay for it. `OverlayNotice` is declared structurally there for the reason `AuthzDecision` is — tier 2 can never import the package that owns the codes. `x dev` is the only host that supplies one; `serve.ts` boots through the same `startRoles` and passes nothing.
 
+- **`statements` — the fixture that fails a test on its own N+1.** A warning in a dev server is a warning nobody is looking at during CI. Destructuring `statements` installs the detector in **throw** mode for the length of one test, and the loop's fifth statement rejects where it was issued:
+
+  ```ts
+  import { expect, test } from '@ultimat3/testing';
+
+  test('the feed reads its authors once', async ({ statements }) => {
+    await renderFeed();                              // a per-row findById throws here:
+    //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
+    //   fix: db.posts.preload('author')   # one statement for the whole page
+    expect(statements.count('posts.findMany')).toBe(1);
+  });
+  ```
+
+  Opting in is naming it: a fixture nobody destructures is a fixture nobody built, so there is no `strict: true` to remember and no suite-wide switch to forget. The threshold is `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity` — the same number `x dev` warns at, now exported, because a loop that fails a test and a loop that warns in dev have to be the same loop — and the error is `nPlusOne()`'s, so the `fix:` names the `preload()` the schema's own relations spell.
+
+  Two differences from the dev ledger, both deliberate. **The unit of work is the test, not the request**: the ledger keys its tally on the `Ctx` object and ignores a statement issued outside a request, and a unit test calling `posts.findById(id)` with no request anywhere is exactly the loop it was written to catch. **It throws once per shape and keeps counting**, so a test that catches the error gets one failure at the statement that crossed the threshold rather than one per statement after it — and `statements.all()`, `.count(fingerprint?)` and `.shapes()` still measure the whole loop, expected statements included. `expectedQueryLoop(reason, fn)` remains the one way to declare a loop deliberate: it suppresses the verdict, never the measurement. The seam is handed back on disposal like `network` and `runJobs` — the observer that was installed before, not a fixed default.
+
+- **`statementFingerprint()`, `statementKind()` and `statementVerb()` from `@ultimat3/db`.** What shape a statement is — `entity.op` when attributed, its own whitespace-collapsed text when not; read or write from the leading verb — is now one rule next to the `StatementEvent` it reads, rather than a copy per detector. `x dev`'s ledger and the `statements` fixture group by the same identity by construction, and `statementSpanName` reads its verb from the same scanner.
+
 ### Fixed
 
 - **Two identical reads in one request are one read, even when they race.** The request memo behind a cached `query` stored the *value*, and stored it only after the read had settled — so two holes rendering concurrently both missed the memo, both asked the cache tier, and both executed the source. The memo now holds the read **in flight**, published before `readThrough`'s first await: the second reader joins the first instead of starting a competing one, and five concurrent readers cost one execution and one tier round trip.

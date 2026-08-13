@@ -7,6 +7,7 @@ import { DRIVER_FIXTURE_NAMES, driverFixtures } from './fixture-drivers';
 import { createRunJobs } from './fixture-jobs';
 import { createTestMail } from './fixture-mail';
 import { createTestNetwork } from './fixture-network';
+import { createTestStatements } from './fixture-statements';
 import { defineFixtures } from './fixtures';
 
 /**
@@ -15,7 +16,13 @@ import { defineFixtures } from './fixtures';
  * installs. See `fixture-drivers.ts` for why a declared-and-unavailable fixture beats an
  * unregistered name.
  */
-export const FRAMEWORK_FIXTURE_NAMES = ['clock', 'mail', 'network', 'runJobs'] as const;
+export const FRAMEWORK_FIXTURE_NAMES = [
+  'clock',
+  'mail',
+  'network',
+  'runJobs',
+  'statements',
+] as const;
 
 export { DRIVER_FIXTURE_NAMES };
 
@@ -38,5 +45,6 @@ export function registerFrameworkFixtures(): void {
     mail: createTestMail,
     network: createTestNetwork,
     runJobs: createRunJobs,
+    statements: createTestStatements,
   });
 }

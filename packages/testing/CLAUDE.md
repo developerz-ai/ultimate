@@ -2,8 +2,12 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps: `core` (tier 0), plus `time`, `jobs` and `mail` — imported **dynamically inside the fixture
-factories only**, so a test that never destructures `mail` never loads the mail package.
+Deps: `core` (tier 0), plus `time`, `jobs`, `mail`, `db` and `entity` — imported **dynamically
+inside the fixture factories only**, so a test that never destructures `mail` never loads the mail
+package and a `packages/core` test never loads the entity registry. `entity` is a dependency for
+exactly one call: `nPlusOne()`, so the strict fixture reports the error `x dev` reports, with the
+`fix:` the schema's own relations spell. A second N+1 code owned here would be a second answer to
+one condition.
 
 | Rule | Detail |
 |---|---|
@@ -19,7 +23,12 @@ factories only**, so a test that never destructures `mail` never loads the mail 
 | Test names | the filename picks the step; `testName(type, name)` on the outer `describe` puts that type on every failure line under it. Never on the inner `test` too — the prefix would print twice |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers the whole framework bag — an app registers only what the framework cannot know (`seed`, `actorFor`) |
-| Built vs declared | `clock` `mail` `network` `runJobs` are built in-process; `page` `budget` `signIn` `deploy` `subscribe` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`) |
+| Built vs declared | `clock` `mail` `network` `runJobs` `statements` are built in-process; `page` `budget` `signIn` `deploy` `subscribe` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`) |
+| Strict is opt-in by destructuring | `statements` installs the N+1 detector in throw mode for one test. A fixture nobody names is a fixture nobody built, so there is no `strict: true` and no suite-wide switch — and no way to leave it on for the next file |
+| One threshold, one error | `N_PLUS_ONE_THRESHOLD` and `nPlusOne()` are `@ultimat3/entity`'s. A number or a message written here would make a loop that fails a test a different loop from the one `x dev` warns about |
+| The unit of work is the test | `x dev`'s ledger tallies per `Ctx` and ignores a statement issued outside a request; this counts every statement from build to disposal, because `posts.findById(id)` in a unit test has no request and is exactly the loop worth catching |
+| Throws once per shape | the failing line is the loop's own statement (the seam lets `onStatement` throw for this reason alone). It keeps counting after, so a body that catches the error still reports the whole loop through `shapes()` — the same hole Bullet's `raise` has, named rather than papered over |
+| Measure vs judge | `all()` `count()` `shapes()` count `expectedQueryLoop` statements too; only the verdict honours the suppression, so "this page issues two statements" never depends on who declared what |
 | One seam for drivers | a driver registers over a declaration with `defineFixtures` — merges, last wins. Never a second registration mechanism |
 | A driver arrives whole | `defineFixtures` holds every name `Fixtures` declares to its declared type, so a half-built `page` is a compile error at the registration, not a missing method three awaits later |
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |

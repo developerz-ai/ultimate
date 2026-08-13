@@ -146,6 +146,11 @@ only means something inside one unit of work. The price of keying on identity is
 `withChildContext` scope is its own tally. **A shape is `entity.op` when attributed**, the
 statement's own text with whitespace collapsed when it is not — `members.findById` fifty times is
 what an author can act on, and grouping fifty point lookups by their SQL would report bind values.
+That rule is **not written here**: `statementFingerprint`/`statementKind` are `@ultimat3/db`'s and
+the threshold is `@ultimat3/entity`'s `N_PLUS_ONE_THRESHOLD`, because `@ultimat3/testing`'s
+`statements` fixture is a second detector and a copy of either would let a loop that fails a test be
+a different loop from the one this ledger warns about. What stays here is what only a dev *server*
+knows: the request as the unit of work, the bound report list, one log line per request per code.
 **An expected statement is not counted** — `expectedQueryLoop` suppresses a verdict and this ledger
 is the verdict, so the span and the timeline still show the loop while the thing that warns is told
 the author already answered. A shape is promoted to a verdict exactly once, on the statement that

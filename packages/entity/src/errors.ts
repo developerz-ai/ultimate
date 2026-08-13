@@ -230,8 +230,9 @@ const bulkWriteCall = (entityName: string, op: string | undefined): string => {
 };
 
 /**
- * A read issued once per row of a page. Dev-only: nothing throws this, it is reported as a
- * `Finding` by whatever installed the statement observer — which is why the count is in the cause
+ * A read issued once per row of a page. Reported as a `Finding` by whatever installed the statement
+ * observer — `x dev`, which never throws it, and `@ultimat3/testing`'s `statements` fixture, which
+ * throws it at the statement that crossed the threshold — which is why the count is in the cause
  * rather than a threshold in the fix, and why the fix is a chain and never a flag to turn the
  * warning off. `expectedQueryLoop(reason, fn)` is the one way to say a loop is deliberate, and it
  * silences the count upstream of this error rather than answering it.

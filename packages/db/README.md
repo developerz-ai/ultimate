@@ -41,6 +41,7 @@ await withTransaction(async (tx) => {
 | `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
 | `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `StatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
 | `STATEMENT_ATTRIBUTE` | `As of 2026-08`: `db.statement`, the OTel attribute each span carries its text under — declared here, read by `x dev`'s timeline |
+| `statementFingerprint()` / `statementKind()` / `statementVerb()` | `As of 2026-08`: what shape a statement is — `entity.op` when attributed else its own collapsed text, read or write from the leading verb. One rule, so two detectors group identically |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only

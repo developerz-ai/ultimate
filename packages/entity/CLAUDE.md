@@ -148,8 +148,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   returns the error. **The relation is derived, never invented** — `preloadsFor()` reads the same
   `relationMap()` `preload()` resolves against, so the pasted line compiles; the operation picks
   the side (`findById` → `belongsTo`, `findMany` → `hasMany`), and anything else takes the `in`
-  form rather than a relation that would attach the wrong rows. **Edges are read by their `to`
-  end**, because the loop repeated on the entity being looked up and the ledger never saw the
+  form rather than a relation that would attach the wrong rows. **The threshold is owned here too** —
+  `N_PLUS_ONE_THRESHOLD` (5) sits with the codes because it is the number that decides a *verdict*,
+  and there are two detectors reading it: `x dev`'s ledger and `@ultimat3/testing`'s `statements`
+  fixture. Two numbers would make a loop that fails a test a different loop from one that warns in
+  dev. What a *unit of work* is stays each detector's — a request there, one test here. **Edges are
+  read by their `to` end**, because the loop repeated on the entity being looked up and the ledger never saw the
   `for … of` above it — so every page that could preload it is named, first one pasteable and the
   rest after it, exactly as `preloadUnknownRelation` spells its names. **A schema whose relations
   cannot be named still reports the loop**: `relationMap()` throws `X_INVARIANT_VIOLATED` on two

@@ -128,6 +128,7 @@ The `job` example is the one that matters: it asserts the durability guarantee, 
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` | the preload |
 | `runJobs` | enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| `statements` | `all()` · `count(fingerprint?)` · `shapes()` — and an N+1 fails the test | the preload |
 | `page` | `goto` · `gotoStreamed` · `getByRole` · `evaluate` · `waitForServiceWorker` | a browser driver |
 | `budget` | `jsBytes(route)` off the built output | a browser driver |
 | `signIn` | put the browser session in a member's shoes | a browser driver |
@@ -145,6 +146,35 @@ defineFixtures({ page: () => openBrowserPage(), seed: () => loadSeed });
 `defineFixtures` merges and the last registration wins, so a driver replaces the declaration it was waiting on. There is no second seam.
 
 `network.offline()` fails every request ahead of the mocks, so the app's own offline path runs instead of a branch written for the test; `drop()` is the same for a request but tells a subscriber its connection was cut rather than closed, which is what separates a resume from a resubscribe.
+
+## An N+1 fails the test it happened in
+
+`x dev` warns about a query loop; CI is where nobody is watching. Destructuring `statements` installs the same detector in **throw** mode for the length of one test:
+
+```ts
+test('the feed reads its authors once', async ({ statements }) => {
+  await renderFeed();
+  //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
+  //   fix: db.posts.preload('author')   # one statement for the whole page
+  expect(statements.count('posts.findMany')).toBe(1);
+});
+```
+
+The loop's fifth statement is what rejects, so the failing line is the loop's own — not a summary at teardown. Opting in is naming the fixture: there is no `strict: true` to remember and no switch left on for the next file.
+
+| | |
+|---|---|
+| **The unit of work is the test** | not the request. A `posts.findById(id)` loop in a unit test has no request anywhere, and that is the loop worth catching |
+| **The threshold is the dev one** | 5 statements of one shape, `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity`. A loop that fails a test and a loop that warns in `x dev` are the same loop |
+| **The fix is the schema's** | the same `nPlusOne()` error `x dev` renders, so the `fix:` names the `preload()` your `references()` columns already spell |
+| **Once per shape** | a body that catches the error gets one failure, not one per statement after it — and `shapes()` still reports the whole loop |
+| **Measurement is not the verdict** | `all()`, `count()` and `shapes()` count every statement, including ones inside `expectedQueryLoop`; only the verdict honours the suppression |
+
+A deliberate loop is declared where it is written, never silenced at the test:
+
+```ts
+await expectedQueryLoop('one indexed lookup per searchable field', () => searchEachField(term));
+```
 
 ## Factories
 

@@ -10,6 +10,19 @@ import { nPlusOneQuery, nPlusOneWrite } from './errors';
 import type { RelationKind } from './relations';
 import { relationMap } from './relations';
 
+/**
+ * Statements of one shape, in one unit of work, before the loop is worth reporting. Five, because a
+ * page that reads the same shape four times is a page with four reads and one that reads it fifty
+ * times is a loop over rows — and the threshold has to sit far enough above the first number that a
+ * fixed-arity render never trips it.
+ *
+ * It lives here, with the codes and the fix, because it is the number that decides a *verdict*: the
+ * dev ledger (`x dev`) and the strict test fixture (`@ultimat3/testing`) are two detectors, and two
+ * numbers would mean a loop that fails a test and a loop that warns in dev are different loops.
+ * What a unit of work *is* stays each detector's — a request there, one test here.
+ */
+export const N_PLUS_ONE_THRESHOLD = 5;
+
 /** One statement shape, repeated inside one request — a ledger's verdict, as this layer reads it. */
 export interface StatementLoop {
   /** Which of the two codes this is: decided from the statement, upstream, never re-derived here. */

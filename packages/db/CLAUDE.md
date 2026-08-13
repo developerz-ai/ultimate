@@ -159,6 +159,17 @@ in it closed. `@ultimat3/entity`'s `postgresRepo` is the one producer — the la
 knows both once the SQL exists (`packages/entity/CLAUDE.md`) — and an observer installed *during*
 `fn` sees the statements that follow unattributed, since installation happens once, at boot.
 
+`statement-shape.ts` is what a statement's *identity* is, and it lives here because its only input
+is a `StatementEvent`. `statementFingerprint(event)` is `entity.op` when the event is attributed and
+the event's own whitespace-collapsed text when it is not; `statementKind(text)` is read or write off
+`statementVerb(text)`, a closed set of verbs and never a set of repository operations — a soft delete
+is an `update`, an op list would drift with `@ultimat3/entity`'s method names, and hand-written SQL
+carries no operation at all. Two detectors group by that identity (`x dev`'s ledger,
+`@ultimat3/testing`'s `statements` fixture) and `statementSpanName` reads the same verb, so the rule
+is written once — a second copy is two answers to "is this the same statement again". Nothing here
+counts: the threshold is `@ultimat3/entity`'s `N_PLUS_ONE_THRESHOLD`, next to the codes whose `fix`
+depends on it.
+
 `statement-span.ts` is the other half of the observed shell: `withStatementSpan` wraps the **send
 alone**, so the span's duration is the statement's and the observer's own work is not charged to
 the database. Three decisions, each load-bearing. **`db.<verb>`** (`db.select`, `db.begin`; a text

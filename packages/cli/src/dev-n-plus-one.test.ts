@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { createContext, logger, runWithContext } from '@ultimat3/core';
 import type { StatementAttribution, StatementEvent } from '@ultimat3/db';
-import { createStatementLedger, DEFAULT_REPEAT_THRESHOLD } from './dev-n-plus-one';
+import { N_PLUS_ONE_THRESHOLD } from '@ultimat3/entity';
+import { createStatementLedger } from './dev-n-plus-one';
 
 /** Everything a funnel puts on an event that this ledger reads; the rest is fixed. */
 interface Sent {
@@ -57,19 +58,19 @@ describe('unit · the N+1 ledger counts one shape per request', () => {
   test('four of a shape is four reads; the fifth is the loop', () => {
     const ledger = createStatementLedger();
     request(() => {
-      for (let sent = 0; sent < DEFAULT_REPEAT_THRESHOLD - 1; sent += 1) {
+      for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD - 1; sent += 1) {
         ledger.observer.onStatement(statement(SELECT_ONE));
       }
     });
     expect(ledger.repeats()).toEqual([]);
 
     request(() => {
-      for (let sent = 0; sent < DEFAULT_REPEAT_THRESHOLD; sent += 1) {
+      for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD; sent += 1) {
         ledger.observer.onStatement(statement(SELECT_ONE));
       }
     });
     expect(ledger.repeats()).toHaveLength(1);
-    expect(ledger.repeats()[0]?.count).toBe(DEFAULT_REPEAT_THRESHOLD);
+    expect(ledger.repeats()[0]?.count).toBe(N_PLUS_ONE_THRESHOLD);
   });
 
   // A verdict per statement past the threshold would report a loop of fifty forty-six times, and
@@ -100,7 +101,7 @@ describe('unit · the N+1 ledger counts one shape per request', () => {
     const ledger = createStatementLedger();
     for (let visit = 0; visit < 2; visit += 1) {
       request(() => {
-        for (let sent = 0; sent < DEFAULT_REPEAT_THRESHOLD - 1; sent += 1) {
+        for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD - 1; sent += 1) {
           ledger.observer.onStatement(statement(SELECT_ONE));
         }
       });
@@ -147,7 +148,7 @@ describe('unit · the fingerprint is what the author can act on', () => {
   test('an attributed statement groups by entity and operation, not by its SQL', () => {
     const ledger = createStatementLedger();
     request(() => {
-      for (let sent = 0; sent < DEFAULT_REPEAT_THRESHOLD; sent += 1) {
+      for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD; sent += 1) {
         ledger.observer.onStatement(
           statement(`select "id" from "members" where "id" = $1 /* ${sent} */`, {
             attribution: FIND_BY_ID,
@@ -251,7 +252,7 @@ describe('unit · a declared loop is measured and not judged', () => {
   test('an expected statement cannot push an unargued shape over the line', () => {
     const ledger = createStatementLedger();
     request(() => {
-      for (let sent = 0; sent < DEFAULT_REPEAT_THRESHOLD - 1; sent += 1) {
+      for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD - 1; sent += 1) {
         ledger.observer.onStatement(statement(SELECT_ONE));
       }
       for (let sent = 0; sent < 10; sent += 1) {
@@ -268,13 +269,13 @@ describe('unit · a declared loop is measured and not judged', () => {
   test('a statement that threw is still a statement', () => {
     const ledger = createStatementLedger();
     request(() => {
-      for (let sent = 0; sent < DEFAULT_REPEAT_THRESHOLD; sent += 1) {
+      for (let sent = 0; sent < N_PLUS_ONE_THRESHOLD; sent += 1) {
         ledger.observer.onStatement(
           statement(SELECT_ONE, { error: new Error('connection lost'), rows: 0 }),
         );
       }
     });
-    expect(ledger.repeats()[0]?.count).toBe(DEFAULT_REPEAT_THRESHOLD);
+    expect(ledger.repeats()[0]?.count).toBe(N_PLUS_ONE_THRESHOLD);
   });
 });
 

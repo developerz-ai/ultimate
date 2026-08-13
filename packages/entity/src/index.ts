@@ -53,7 +53,7 @@ export {
   toSql,
 } from './invariants';
 export type { StatementLoop } from './n-plus-one';
-export { nPlusOne, preloadsFor } from './n-plus-one';
+export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export type { PostgresDriverOptions } from './pg-driver';
 export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
 export type { RelatedTable, RelatedTables } from './preload';
