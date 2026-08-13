@@ -128,6 +128,10 @@ Request memo (same read twice in one render ⇒ one round trip), then the tier b
 `cache.invalidates` and a query's `cache.tags` meet in the one graph owned by
 `@ultimat3/cache`.
 
+The memo entry is the read **in flight**, not its value, so "twice" covers reads that race as
+well as reads that follow: five holes rendering concurrently share one execution and one tier
+round trip. A rejection is evicted — a failed read is not the request's answer.
+
 ## Errors
 
 | Code | When | Fix |

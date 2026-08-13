@@ -105,6 +105,7 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 | Store | AsyncLocalStorage, keyed by query name + parsed `input` + actor tenant + policy scope |
 | Lifetime | one request. No cross-request reuse, no eviction policy to tune |
 | Hit cost | ~0 |
+| Concurrency | the entry is the read *in flight*, so a caller that races the first one joins it instead of starting a competing read |
 | Scope safety | two actors in the same process never share an entry — the scope is in the key |
 | Invalidation | dropped immediately when a write in the same request invalidates a tag it carries |
 

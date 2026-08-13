@@ -1,8 +1,9 @@
 /**
  * Read caching, two layers: a per-request memo (same query twice in one render
- * costs one round trip) and a tag-keyed tier behind the `ReadCache` interface.
- * Invalidation is never local — it goes through @ultimat3/cache so an action's
- * `invalidates` and a query's `tags` meet in one graph.
+ * costs one round trip, whether the second read follows the first or races it)
+ * and a tag-keyed tier behind the `ReadCache` interface. Invalidation is never
+ * local — it goes through @ultimat3/cache so an action's `invalidates` and a
+ * query's `tags` meet in one graph.
  */
 
 import type { CacheTag } from '@ultimat3/cache';
@@ -55,14 +56,21 @@ export function getReadCache(): ReadCache {
   return tier;
 }
 
-/** Request-scoped memo. Keyed by ctx identity so it dies with the request. */
-const memos = new WeakMap<object, Map<string, unknown>>();
+/**
+ * Request-scoped memo. Keyed by ctx identity so it dies with the request.
+ *
+ * An entry is the read *in flight*, not its value: unsettled it is the answer a caller is
+ * already waiting for, settled it is the answer. That is what makes two concurrent identical
+ * reads one round trip — and it is why no sentinel is needed for a legitimately `undefined`
+ * value, which a value-keyed memo cannot tell apart from a miss. A promise is never `undefined`.
+ */
+const memos = new WeakMap<object, Map<string, Promise<unknown>>>();
 
-export function requestMemo(ctx: Ctx): Map<string, unknown> {
+export function requestMemo(ctx: Ctx): Map<string, Promise<unknown>> {
   const key: object = ctx;
   const existing = memos.get(key);
   if (existing !== undefined) return existing;
-  const created = new Map<string, unknown>();
+  const created = new Map<string, Promise<unknown>>();
   memos.set(key, created);
   return created;
 }
@@ -80,17 +88,30 @@ export async function readThrough<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   const memo = requestMemo(ctx);
-  const memoized = memo.get(key);
-  if (memoized !== undefined) return memoized as T;
+  const joined = memo.get(key);
+  // Already answered or already being answered: the second reader waits on the first read
+  // rather than starting a competing one. Awaiting a settled promise costs a microtask.
+  if (joined !== undefined) return (await joined) as T;
 
-  const cached = await tier.get(key);
-  if (cached !== undefined) {
-    memo.set(key, cached.value);
-    return cached.value as T;
+  // Published before the first await, so a reader arriving in the same tick finds this read.
+  const flight = fill(key, ttlMs, run);
+  memo.set(key, flight);
+  try {
+    return (await flight) as T;
+  } catch (error) {
+    // A rejection is not an answer. Drop it so a later read in the same request retries
+    // instead of replaying one failure until the request ends.
+    if (memo.get(key) === flight) memo.delete(key);
+    throw error;
   }
+}
+
+/** The read itself — tier, then the source. Runs once per key per request; the rest join it. */
+async function fill<T>(key: string, ttlMs: number | null, run: () => Promise<T>): Promise<T> {
+  const cached = await tier.get(key);
+  if (cached !== undefined) return cached.value as T;
 
   const value = await run();
-  memo.set(key, value);
   await tier.set(key, { value, expiresAt: ttlMs === null ? null : Date.now() + ttlMs });
   return value;
 }
