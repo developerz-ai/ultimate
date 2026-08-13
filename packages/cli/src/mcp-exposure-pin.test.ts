@@ -45,7 +45,10 @@ const queryDeclaring = (mcp?: { readonly expose: boolean }) =>
     sql: ({ id }) => from<{ id: string }>('posts', [{ id }]).where({ id }).orderBy('id'),
   }).named('orgFeed');
 
-describe('one predicate decides MCP exposure', () => {
+// Lowercase on purpose — `bun test -t 'mcp expos'` is a substring match against the full test
+// name, and a capitalized "MCP" would not have matched. Same lesson as `n-plus-one-detector.test.ts`'s
+// `n1` describe prefix: pick the describe text so the command an author would actually type works.
+describe('one predicate decides mcp exposure', () => {
   for (const { label, mcp, exposed } of DECLARATIONS) {
     test(`an action declaring ${label} is exposed=${exposed} on every surface`, () => {
       const target = actionDeclaring(mcp);
