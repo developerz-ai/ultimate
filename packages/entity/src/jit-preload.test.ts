@@ -124,7 +124,7 @@ describe('a page batches the lookups it causes', () => {
     expect(names).toEqual(['U-20', 'U-21', 'U-22']);
   });
 
-  test('a hundred rows by one author is one bind, not a hundred statements', async () => {
+  test('forty rows by one author is one bind, not forty statements', async () => {
     client.on('from "jit_test_posts"', {
       rows: Array.from({ length: 40 }, (_, index) => postRow(idAt(100 + index), idAt(20))),
     });
@@ -269,6 +269,8 @@ describe('the scope a preloaded row may be served to', () => {
     // page, preload, update, and the read the update forced.
     expect(client.statements).toHaveLength(4);
     expect(client.texts[3]).toContain('"id" in');
+    // `U-20`, not `renamed`: the forced re-read matches the `from "jit_test_users"` stub, which
+    // never learned about the update. The statement count above is what proves the invalidation.
     expect(after?.name).toBe('U-20');
   });
 

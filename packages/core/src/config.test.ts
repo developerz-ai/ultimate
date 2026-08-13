@@ -17,7 +17,6 @@ describe('defineConfig', () => {
       poolSize: 10,
       ssl: false,
       schema: 'public',
-      jitPreload: true,
     });
     expect(config.jobs.queues).toEqual(['myapp-default']);
     expect(config.ai.mcp).toEqual({ expose: true, path: '/mcp' });

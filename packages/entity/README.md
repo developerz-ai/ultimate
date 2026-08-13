@@ -187,8 +187,8 @@ schema, not an implementation detail of whoever traverses it first.
 
 ## Preloading a relation
 
-A single `findById` batches itself, and a `for … of` loop over a page batches the loop it
-causes — reach for `preload()` to carry the relation from the start, without waiting on
+`As of 2026-08`. A single `findById` batches itself, and a `for … of` loop over a page batches the
+loop it causes — reach for `preload()` to carry the relation from the start, without waiting on
 either pattern to trigger it:
 
 ```ts
@@ -233,6 +233,8 @@ name can only be one the entity declared and a row value can never become SQL.
 
 ## Point lookups batch themselves
 
+`As of 2026-08`:
+
 ```ts
 const repo = postgresRepo(users);
 // One statement, not one per post: the lookups issued in this microtask are one `in`.
@@ -254,9 +256,9 @@ job, a script — it is the single statement it always was.
 
 ## A page batches the loop it causes
 
-A sequential loop shares no microtask — its `await` ends the window before the next lookup exists.
-So a page leaves its foreign key values behind, and the first lookup for any one of them resolves
-that key for every row of the page:
+`As of 2026-08`. A sequential loop shares no microtask — its `await` ends the window before the
+next lookup exists. So a page leaves its foreign key values behind, and the first lookup for any
+one of them resolves that key for every row of the page:
 
 ```ts
 const page = await postgresRepo(posts).findMany({ orgId });
@@ -275,6 +277,7 @@ Nothing new to write: the relation is the `references()` the column already decl
 | A write | drops what was preloaded for that entity, before the statement goes out, so a changed row is re-read and never served from before it |
 | Held | the ids, never the rows; keyed by context identity, so it dies with the request |
 | Declines to the old statement | no request in scope, an id no page indexed, a key that resolved to nothing |
+| Switched off | `postgresDriver({ jitPreload: false })`, where the driver is constructed — the one switch. Not an `app.config.ts` key: nothing reads config at the seam that builds a repository |
 
 ## Tenancy is a guard
 

@@ -1,3 +1,7 @@
+// What one microtask of point lookups buys a request: one statement, an answer per id, and the
+// scope that statement carried. The scope guard is the claim — a coalesced row is served only to a
+// lookup the statement WAS, so a batch can never answer with rows its caller's own could not.
+
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createContext, runWithContext } from '@ultimat3/core';
 import {

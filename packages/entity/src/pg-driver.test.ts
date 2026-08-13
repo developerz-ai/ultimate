@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { createContext, runWithContext } from '@ultimat3/core';
 import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -29,8 +30,9 @@ const invoices = entity('pg_test_invoices', {
 type Invoice = typeof invoices.$row;
 
 const ORG = '00000000-0000-7000-8000-0000000000a1';
-const _OTHER_ORG = '00000000-0000-7000-8000-0000000000a2';
+const OTHER_ORG = '00000000-0000-7000-8000-0000000000a2';
 const ID = '00000000-0000-7000-8000-000000000101';
+const OTHER_ID = '00000000-0000-7000-8000-000000000102';
 
 /** What Bun.SQL hands back: snake_case names, int8 as a string, timestamptz as an ISO string. */
 const physical = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -308,25 +310,37 @@ describe('composition', () => {
 });
 
 describe('postgresRepo() jitPreload config', () => {
-  test('defaults to enabled, tagging siblings on findMany', async () => {
-    client.on('select', {
-      rows: [physical({ id: ID }), physical({ id: '00000000-0000-7000-8000-000000000102' })],
+  /**
+   * A page of invoices carries `orgId`, a foreign key to `orgs`, so an enabled page leaves both
+   * org ids behind and the sequential loop that follows costs one widened statement for the two of
+   * them. Disabled, it is the two statements a loop always sent — which is the only difference the
+   * switch makes, and the reason this counts statements rather than asserting the page came back.
+   */
+  const pageThenLoop = async (jitPreload: boolean): Promise<number> => {
+    client.on('from "pg_test_invoices"', {
+      rows: [physical({ id: ID }), physical({ id: OTHER_ID, org_id: OTHER_ORG })],
     });
-    const repo = postgresRepo(invoices, { jitPreload: true });
-    const result = await repo.findMany({ orgId: ORG, limit: 2 });
-    // With jitPreload enabled, findMany succeeds and returns the page.
-    expect(result.rows).toHaveLength(2);
-    expect(lastText()).toContain('select');
+    client.on('from "pg_test_orgs"', {
+      rows: [
+        { id: ORG, slug: 'ours' },
+        { id: OTHER_ORG, slug: 'theirs' },
+      ],
+    });
+    await runWithContext(createContext(), async () => {
+      const page = await postgresRepo(invoices, { jitPreload }).findMany({ orgId: ORG, limit: 2 });
+      // A `for … of` awaits between iterations, so no two of these share a microtask: only the
+      // page they came from can batch them.
+      for (const invoice of page.rows) await postgresRepo(orgs).findById(invoice.orgId);
+    });
+    return client.statements.length;
+  };
+
+  test('defaults to enabled, so the page batches the loop that follows it', async () => {
+    expect(await pageThenLoop(true)).toBe(2);
+    expect(lastText()).toContain('"id" in ($1, $2)');
   });
 
-  test('can be disabled, skipping sibling tagging on findMany', async () => {
-    client.on('select', {
-      rows: [physical({ id: ID }), physical({ id: '00000000-0000-7000-8000-000000000102' })],
-    });
-    const repo = postgresRepo(invoices, { jitPreload: false });
-    const result = await repo.findMany({ orgId: ORG, limit: 2 });
-    // With jitPreload disabled, findMany still works but does not tag siblings.
-    expect(result.rows).toHaveLength(2);
-    expect(lastText()).toContain('select');
+  test('disabled, the loop after the page is the statements it always sent', async () => {
+    expect(await pageThenLoop(false)).toBe(3);
   });
 });

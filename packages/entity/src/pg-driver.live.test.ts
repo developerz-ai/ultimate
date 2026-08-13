@@ -301,8 +301,16 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       await tags().insert({ invoiceId: invoice.id, orgId: org, label: 'primary', note: null });
     }
 
+    // Filtered to the two tables under test, as the sibling test above is: any incidental
+    // statement in this window — a connection-checkout `set`, a pool keepalive, a `begin` — would
+    // otherwise read as "expected 2, got 3" with nothing naming the intruder.
     const statements: string[] = [];
-    setStatementObserver({ onStatement: (event) => statements.push(event.text) });
+    setStatementObserver({
+      onStatement: (event) => {
+        if (/from "pg_live_(?:invoice_tags|invoices)"/.test(event.text))
+          statements.push(event.text);
+      },
+    });
     try {
       const references = await runWithContext(createContext(), async () => {
         const page = await tags().findMany({ orgId: org });
@@ -316,8 +324,9 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
 
       // The tags page, and one `in (…)` statement for the three invoices it named — never three.
       expect(statements).toHaveLength(2);
-      expect(statements[1]).toContain('from "pg_live_invoices"');
-      expect(statements[1]).toContain('"id" in ($1, $2, $3)');
+      const invoiceReads = statements.filter((text) => text.includes('from "pg_live_invoices"'));
+      expect(invoiceReads).toHaveLength(1);
+      expect(invoiceReads[0]).toContain('"id" in ($1, $2, $3)');
       expect(references.slice().sort()).toEqual(['JIT-1', 'JIT-2', 'JIT-3']);
     } finally {
       setStatementObserver(undefined);

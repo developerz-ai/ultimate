@@ -39,19 +39,29 @@ const unreachable = (entityName: string, relation: Relation): EntityError =>
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.preload('${relation.name}') reads ${relation.to}, which this table cannot reach — a table reads the entities its own database() call named`,
-    fix: `database({ ${entityName}, ${relation.to} }, { driver })   # name ${relation.to} in the same call, then preload through db.${entityName}`,
+    fix: `x entities list --json   # then widen the database() call that built db.${entityName} to database({ ${entityName}, ${relation.to} }, options)`,
   });
 
 /**
- * The tenant predicate the page was read under, carried onto the related read when the other
- * entity is scoped by a column of the same name. Never across two differently-named tenant
- * columns: a value that scopes one entity is a guess on another, and a guess here is a
- * cross-tenant read. Carrying nothing is not a failure of this function — the related read builds
- * its own plan, so `assertScoped` refuses it there, in the words a caller can act on.
+ * The tenant predicate the page was read under, carried onto the related read when BOTH entities
+ * are scoped by a column of that same name. Never across two differently-named tenant columns: a
+ * value that scopes one entity is a guess on another, and a guess here is a cross-tenant read.
+ *
+ * Both ends are checked, not just the target's. A source scoped by `workspaceId` may still carry
+ * an ordinary `orgId` predicate of its own — a filter, not its tenancy — and matching on the
+ * target's column name alone would lift that filter into the target's tenant scope and hand the
+ * preload rows from a tenant nobody proved this reader owns.
+ *
+ * Carrying nothing is not a failure of this function — the related read builds its own plan, so
+ * `assertScoped` refuses it there, in the words a caller can act on.
  */
-const tenantScope = (target: EntityCore, where: readonly Predicate[]): readonly Predicate[] => {
+const tenantScope = (
+  source: EntityCore,
+  target: EntityCore,
+  where: readonly Predicate[],
+): readonly Predicate[] => {
   const column = target.$tenantColumn;
-  if (column === null) return [];
+  if (column === null || source.$tenantColumn !== column) return [];
   const carried = where.find((predicate) => predicate.column === column && predicate.op === 'eq');
   return carried === undefined ? [] : [carried];
 };
@@ -92,11 +102,11 @@ const indexed = async (
   relation: Relation,
   kind: string,
   values: readonly unknown[],
-  where: readonly Predicate[],
+  scope: readonly Predicate[],
 ): Promise<ReadonlyMap<string, readonly unknown[]>> => {
   const index = new Map<string, unknown[]>();
   if (values.length === 0) return index;
-  const found = await relatedRows(target, relation, values, tenantScope(target.entity, where));
+  const found = await relatedRows(target, relation, values, scope);
   for (const row of found) {
     const at = keyOf(kind, valueAt(row, relation.remoteKey));
     const bucket = index.get(at);
@@ -153,7 +163,8 @@ export const preloaded = async <Source, Row>(
       // of the edge are spelled the way a batched point read already spells them.
       const kind = read.entity.$columns[relation.localKey]?.$meta.kind ?? '';
       const keys = source.map((row) => valueAt(row, relation.localKey));
-      const index = await indexed(target, relation, kind, distinctKeys(kind, keys), read.where);
+      const scope = tenantScope(read.entity, target.entity, read.where);
+      const index = await indexed(target, relation, kind, distinctKeys(kind, keys), scope);
       return { relation, kind, keys, index };
     }),
   );

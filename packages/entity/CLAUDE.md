@@ -63,6 +63,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   statement it always read. `MAX_IDS_PER_STATEMENT` bounds the preload exactly as it bounds a
   batch. What both share — the scope key, `keyOf`, the one `in` statement — lives in
   `batch-read.ts` so the two can never disagree about when a shared statement is legal.
+  **One switch, where the driver is built**: `postgresDriver({ jitPreload: false })` /
+  `postgresRepo(entity, { jitPreload: false })` turns the tagging off. Never an `app.config.ts`
+  key — nothing reads config at the seam that builds a repository, so a `database.jitPreload`
+  field would be a switch the framework cannot read, which is a switch that does nothing.
 - **`preload(name)` shares `batch-read.ts` with the coalescer and the JIT preload above, but
   keeps no request-scoped cache of its own.** `keyOf`, `MAX_IDS_PER_STATEMENT` and
   `statementChunks` come from the same file, so a bind-count bound and a key's identity can
@@ -71,12 +75,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   the way the coalescer or the JIT preload can, because there is no old statement to decline
   to — a chain that calls `preload('author')` always gets the extra statement. **Tenancy is
   carried, never inferred, and that is a security boundary, not a convenience**:
-  `tenantScope()` carries the page's own tenant predicate onto the related read only when the
-  other entity's tenant column has the *same name* as this one's — a value that scopes one
-  entity is a guess on another, and serving a guessed scope is a cross-tenant read. A
-  differently-named column carries nothing, on purpose, so the related read builds an
-  unscoped plan of its own and `assertScoped` refuses it as `X_TENANCY_UNSCOPED` rather than
-  let it pass. **Reach is the same `database()` set the two bullets above already answer
+  `tenantScope()` carries the page's own tenant predicate onto the related read only when
+  **both** entities are scoped by a column of that same name — a value that scopes one entity
+  is a guess on another, and serving a guessed scope is a cross-tenant read. Both ends are
+  checked, never the target's alone: a source scoped by `workspaceId` may still carry an
+  ordinary `orgId` predicate of its own, and matching on the target's column name would lift
+  that filter into the target's tenant scope and attach rows from a tenant nobody proved this
+  reader owns. A differently-named column carries nothing, on purpose, so the related read
+  builds an unscoped plan of its own and `assertScoped` refuses it as `X_TENANCY_UNSCOPED`
+  rather than let it pass. **Reach is the same `database()` set the two bullets above already answer
   to**: `RelatedTables` is the resolver `database()` hands every table it builds, an
   entity-name → `{ entity, repo }` map closed over the same call, so `preload('author')`
   resolves `author` only when that call named the entity the relation points at — outside it

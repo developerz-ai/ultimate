@@ -47,14 +47,6 @@ export interface DatabaseConfig {
   readonly poolSize: number;
   readonly ssl: boolean;
   readonly schema: string;
-  /**
-   * Preload foreign keys resolved by a page into a request-scoped cache, so the first
-   * `findById` for any one of them resolves that key for the whole page in one statement.
-   * A sequential `for … of` loop awaits between iterations, so batching is not possible
-   * without this; enabling it collapses N+1 loops to one statement after the page. Default:
-   * true.
-   */
-  readonly jitPreload: boolean;
 }
 
 export interface CacheConfig {
@@ -190,7 +182,6 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       poolSize: 10,
       ssl: false,
       schema: 'public',
-      jitPreload: true,
     },
     cache: { driver: 'memory', urlEnv: undefined, defaultTtlMs: 60_000, tiers: ['memo', 'lru'] },
     jobs: {

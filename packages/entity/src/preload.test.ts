@@ -50,6 +50,20 @@ const audits = entity('preload_test_audits', {
   },
 });
 
+/**
+ * Scoped by `workspaceId`, and carrying an ordinary `orgId` column that is a filter and not its
+ * tenancy — the one shape where matching the target's column name alone would carry a predicate
+ * nobody proved this reader owns.
+ */
+const tickets = entity('preload_test_tickets', {
+  columns: {
+    id: uuid().primaryKey(),
+    workspaceId: uuid().tenant(),
+    orgId: uuid(),
+    memberId: uuid().references(() => members.id),
+  },
+});
+
 const idAt = (index: number): string =>
   `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`;
 
@@ -69,7 +83,8 @@ const THEIRS = idAt(12);
 
 type Db = ReturnType<typeof handle>;
 
-const handle = () => database({ orgs, members, posts, audits }, { driver: memoryDriver() });
+const handle = () =>
+  database({ orgs, members, posts, audits, tickets }, { driver: memoryDriver() });
 
 let db: Db;
 
@@ -208,6 +223,19 @@ describe('the refusals', () => {
     await db.audits.insert({ id: idAt(30), memberId: ANA, action: 'login' });
 
     await expect(db.audits.preload('member').all()).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+  });
+
+  test('a predicate that only shares the target’s column name is not this source’s tenancy', async () => {
+    // `tickets` is scoped by `workspaceId`; its `orgId` is an ordinary filter. Carrying it would
+    // scope the members read to a tenant the reader never proved they own.
+    await db.tickets.insert({ id: idAt(31), workspaceId: idAt(3), orgId: ORG, memberId: ANA });
+
+    await expect(
+      db.tickets
+        .where({ workspaceId: idAt(3), orgId: ORG })
+        .preload('member')
+        .all(),
+    ).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
   });
 });
 
