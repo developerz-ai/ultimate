@@ -39,7 +39,9 @@ await withTransaction(async (tx) => {
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
 | `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
+| `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `StatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
 | `STATEMENT_ATTRIBUTE` | `As of 2026-08`: `db.statement`, the OTel attribute each span carries its text under — declared here, read by `x dev`'s timeline |
+| `statementFingerprint()` / `statementKind()` / `statementVerb()` | `As of 2026-08`: what shape a statement is — `entity.op` when attributed else its own collapsed text, read or write from the leading verb. One rule, so two detectors group identically |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only
@@ -198,6 +200,27 @@ reader cannot tell a considered loop from a silenced one.
 The framework's own deliberate loops declare themselves at source: `migrate()` and `rollback()`
 (one transaction per migration, so a failure leaves an exact ledger) and `@ultimat3/admin`'s
 cross-entity search (one indexed lookup per text field).
+
+## A statement knows who compiled it
+
+`As of 2026-08`: `StatementEvent.attribution` is no longer always `undefined`.
+
+```ts
+return withStatementAttribution('members', 'findById', () =>
+  client.query(sql`select * from members where id = any(${ids})`),
+);
+```
+
+| | |
+|---|---|
+| Scope | an `AsyncLocalStorage`, `expectedQueryLoop()`'s own shape: it survives every `await` at any depth, and nesting keeps the innermost pair |
+| What it carries | `StatementEvent.attribution`, stamped by both funnels at settle time, next to `expected` |
+| Producer | `@ultimat3/entity`'s `postgresRepo` — the last caller that still knows the entity and the operation once the SQL exists |
+| What it costs | nothing uninstalled — `statementObserver()` is read first, and with nothing installed `fn` runs directly; no scope entered, no object allocated |
+
+Hand-written SQL, a migration, a health probe, `x db` commands and `@ultimat3/jobs`' own queue
+statements still carry no `attribution` — nothing above them knows an entity to name, so the field
+is optional and a detector must fall back to the statement text either way.
 
 ## Error codes
 

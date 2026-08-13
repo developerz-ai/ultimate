@@ -135,7 +135,7 @@ answer:
 | Panel | Kills the question |
 |---|---|
 | `routes` | which URL renders how, with which budget |
-| `timeline` | where did this request spend its milliseconds |
+| `timeline` | where did this request spend its milliseconds, and did it loop |
 | `live` | why did this subscriber not get the row |
 | `jobs` | which step failed, and what is queued |
 | `db` | what is in the table, and does the schema match the migrations (read-only SQL) |
@@ -154,6 +154,15 @@ report `invalidateTags()` already built, kept by `@ultimat3/cache`; `policy` is
 against one actor per role the app declared with `defineRoles` plus the anonymous caller — never
 a second reading of the actor. The matrix is evaluated with no row, and each cell's trace says so:
 a row-level rule decides again on the real request.
+
+`timeline` carries two SQL facts and they are not the same fact. `repeatedSql` is a **measurement**
+over the trace: every statement text that appeared twice. `nPlusOne` is the **verdict** — one entry
+per statement shape this request repeated past five, each carrying `X_N_PLUS_ONE_QUERY` or
+`X_N_PLUS_ONE_WRITE` with the runnable `fix:`, counted with attribution applied and
+`expectedQueryLoop` honoured. Only `x dev` installs the ledger behind it; a host that did not
+answers `nPlusOne: null`, which is "nobody counted" and not "this request was clean". The same
+verdicts reach three more places, never re-counted: `x dev`'s own findings (text and `--json`), the
+browser error overlay for the request that looped, and one `logger.warn` per request per code.
 
 `live` lists the registered live queries and notes that no subscriber list is attached —
 `@ultimat3/realtime` does not retain a subscriber's matcher trace, which is the rest of that

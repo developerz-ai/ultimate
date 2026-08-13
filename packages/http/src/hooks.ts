@@ -1,9 +1,11 @@
-// The two seams the HTTP layer cannot own itself: who the actor is (auth lives in
-// `@ultimat3/auth`, tier 3) and whether a policy allows the call (`@ultimat3/policy`
-// is a sibling tier, so it cannot be imported here). Both are declared structurally,
-// which keeps the import boundary intact and keeps the pipeline testable.
+// The seams the HTTP layer cannot own itself: who the actor is (auth lives in `@ultimat3/auth`,
+// tier 3), whether a policy allows the call (`@ultimat3/policy` is a sibling tier, so it cannot
+// be imported here), and — a seam of a different kind, deciding nothing — what a dev diagnostic
+// found. All three are declared structurally, which keeps the import boundary intact and keeps
+// the pipeline testable.
 import type { Actor } from '@ultimat3/core';
 import type { RequestContext } from './context';
+import type { OverlayNotice } from './overlay';
 import type { UltimateRequest } from './request';
 import type { Route } from './router';
 
@@ -29,6 +31,12 @@ export interface ServerHooks {
   ) => Promise<AuthzDecision> | AuthzDecision;
   /** Observability sink; the pipeline still maps the error to a response itself. */
   readonly onError?: (error: unknown, ctx: RequestContext) => void;
+  /**
+   * Dev-only: non-fatal findings a diagnostic accumulated for this request, rendered next to the
+   * error in the overlay. Consulted ONLY on the overlay path (`config.dev` and an HTML caller), so
+   * a production process never calls it; `x dev` is the only host that supplies one.
+   */
+  readonly devNotices?: (ctx: RequestContext) => readonly OverlayNotice[];
 }
 
 export type Authenticator = NonNullable<ServerHooks['authenticate']>;

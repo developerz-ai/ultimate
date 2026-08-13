@@ -12,6 +12,7 @@ import {
   db,
   type SqlFragment,
   type TransactionOptions,
+  withStatementAttribution,
   withTransaction,
 } from '@ultimat3/db';
 import {
@@ -70,6 +71,25 @@ export const postgresRepo = <Row>(
   config: PostgresDriverOptions = {},
 ): Repo<Row> => {
   const client = (): DbClient => config.client ?? db();
+
+  /**
+   * Every statement a repository call sends carries the entity and the operation that compiled it,
+   * which is what turns "50× `select … where "id" = $1`" into "50× `findById` on `members`" in a
+   * diagnostic. This is the last frame that knows both: below it there is only SQL.
+   *
+   * It wraps the whole call rather than the `client()` handle because the statement is often sent
+   * well below — inside the coalescer's microtask flush, inside a chunked write, inside the
+   * preload's `readByIds` — and threading a parameter through all of them is the same fact written
+   * five times. The scope is an `AsyncLocalStorage` in `@ultimat3/db` (tier 1, downward), so it
+   * survives every one of those awaits, and with no observer installed it is not entered at all:
+   * one property read and one branch on the production path (axiom 6).
+   *
+   * `op` is the string the plan builder was already given, named once per method so the operation
+   * a refusal reports and the operation a diagnostic reports cannot drift.
+   */
+  const attributed = <T>(op: string, send: () => Promise<T>): Promise<T> =>
+    withStatementAttribution(entity.$name, op, send);
+
   const idOf = (row: Row): string =>
     entity.$primaryKey.map((property) => String(valueAt(row, property))).join('');
 
@@ -114,6 +134,7 @@ export const postgresRepo = <Row>(
    * the call in `withTransaction` rather than trusting one statement's atomicity.
    */
   const writeRows = async (
+    op: string,
     batch: readonly Row[],
     conflict: ConflictTarget | undefined,
   ): Promise<readonly Row[]> => {
@@ -123,35 +144,50 @@ export const postgresRepo = <Row>(
     const bound = batch.map((row) => bindValues(entity, row));
     const shape = { columns, ...(conflict === undefined ? {} : { conflict }) };
     const written: Row[] = [];
-    await writing(async () => {
-      for (const chunk of insertChunks(bound, columns.length)) {
-        for (const row of await client().query<PhysicalRow>(
-          insertStatement(entity, chunk, shape),
-        )) {
-          written.push(decodeRow(entity, row));
+    // Attributed here rather than in each of the three callers: a batch wide enough to split is
+    // several statements sent inside this loop, and every one of them belongs to the call that
+    // asked for it — `insert`, `insertAll` or `upsertAll`, which is why the op is a parameter.
+    await attributed(op, () =>
+      writing(async () => {
+        for (const chunk of insertChunks(bound, columns.length)) {
+          for (const row of await client().query<PhysicalRow>(
+            insertStatement(entity, chunk, shape),
+          )) {
+            written.push(decodeRow(entity, row));
+          }
         }
-      }
-    });
+      }),
+    );
     return written;
   };
 
   return {
     async findById(id, options) {
-      const plan = idPlan(entity, id, options, 'findById');
+      const op = 'findById';
+      const plan = idPlan(entity, id, options, op);
       const args = options ?? {};
       // Every point lookup a request issues in one microtask is one statement: a page that
       // resolves an author per row pays for one round trip, not one per row. The statement is the
       // one this call would have sent — same scope, same soft-delete filter, `in` instead of `=` —
       // and with no request in scope (a job, a script) it is exactly that statement, alone.
-      return coalesceFindById(entity, client(), plan, shapeOf(args), id) ?? one(plan, args);
+      //
+      // The batch is flushed from a microtask scheduled inside this scope, so the statement one
+      // lookup sends for fifty carries the pair every one of those fifty would have carried.
+      return attributed(
+        op,
+        () => coalesceFindById(entity, client(), plan, shapeOf(args), id) ?? one(plan, args),
+      );
     },
 
     async findMany(args = {}) {
-      const plan = readPlan(entity, args, 'findMany');
+      const op = 'findMany';
+      const plan = readPlan(entity, args, op);
       // One row past the page: the presence of that row is what says there is a next cursor,
       // and it costs one row instead of a second `count(*)` over the same predicate.
-      const found = await client().query<PhysicalRow>(
-        selectStatement(entity, plan, shapeOf(args, seekFrom(entity, plan)), plan.limit + 1),
+      const found = await attributed(op, () =>
+        client().query<PhysicalRow>(
+          selectStatement(entity, plan, shapeOf(args, seekFrom(entity, plan)), plan.limit + 1),
+        ),
       );
       const rows = found.slice(0, plan.limit).map((row) => decodeRow(entity, row));
       // What the page leaves behind: its foreign key values, so the first `findById` for any one
@@ -169,13 +205,13 @@ export const postgresRepo = <Row>(
     },
 
     async insert(values) {
-      const [written] = await writeRows([values], undefined);
+      const [written] = await writeRows('insert', [values], undefined);
       // `returning *` is the row Postgres actually stored, defaults included.
       return written ?? values;
     },
 
     async insertAll(batch) {
-      return writeRows(batch, undefined);
+      return writeRows('insertAll', batch, undefined);
     },
 
     async upsertAll(batch, args: UpsertArgs<Row>) {
@@ -183,22 +219,27 @@ export const postgresRepo = <Row>(
       // Refused here, not by the server: a batch that repeats a conflict target is `21000` in
       // Postgres and a silent overwrite in memory, and the two drivers have to mean one thing.
       conflictKeys(entity, plan, batch);
-      return writeRows(batch, {
+      return writeRows('upsertAll', batch, {
         columns: insertColumns(entity, plan.on),
         set: insertColumns(entity, plan.set),
       });
     },
 
     async update(id, patch, options) {
-      const plan = idPlan(entity, id, options, 'update');
+      const op = 'update';
+      const plan = idPlan(entity, id, options, op);
       const values = bindValues(entity, patch);
+      // The read an empty patch degrades to is still this call: attributed to `update`, because
+      // that is the line an author would go and change.
       if (values.size === 0) {
-        const current = await one(plan, options ?? {});
+        const current = await attributed(op, () => one(plan, options ?? {}));
         if (current === null) throw notFound(entity.$name, id);
         return current;
       }
-      const written = await writing(() =>
-        client().one<PhysicalRow>(updateStatement(entity, plan, values, shapeOf(options ?? {}))),
+      const written = await attributed(op, () =>
+        writing(() =>
+          client().one<PhysicalRow>(updateStatement(entity, plan, values, shapeOf(options ?? {}))),
+        ),
       );
       if (written === null) throw notFound(entity.$name, id);
       const after = decodeRow(entity, written);
@@ -210,8 +251,9 @@ export const postgresRepo = <Row>(
     },
 
     async delete(id, options) {
-      const plan = idPlan(entity, id, options, 'delete');
-      if ((await writing(() => client().execute(removal(plan)))) === 0) {
+      const op = 'delete';
+      const plan = idPlan(entity, id, options, op);
+      if ((await attributed(op, () => writing(() => client().execute(removal(plan))))) === 0) {
         throw notFound(entity.$name, id);
       }
     },
@@ -225,13 +267,15 @@ export const postgresRepo = <Row>(
     // `blocks`, `participants`, any join table has no single-column id for `delete`/`update` to
     // address, so without this pair such an entity would be create-only.
     async deleteWhere(filter, options) {
+      const op = 'deleteWhere';
       // The plan is built before the write is announced: a refused filter never happened.
-      const plan = deletePlan(entity, filter, options, 'deleteWhere');
-      return writing(() => client().execute(removal(plan)));
+      const plan = deletePlan(entity, filter, options, op);
+      return attributed(op, () => writing(() => client().execute(removal(plan))));
     },
 
     async updateWhere(filter, patch, options) {
-      const plan = updatePlan(entity, filter, patch, options, 'updateWhere');
+      const op = 'updateWhere';
+      const plan = updatePlan(entity, filter, patch, options, op);
       // `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)` already carries,
       // so a soft-deleted row is not silently patched back into shape.
       const statement = updateStatement(entity, plan, bindValues(entity, patch), shapeOf({}));
@@ -239,32 +283,38 @@ export const postgresRepo = <Row>(
       // re-asserts every row it writes, and a JS-only invariant (`kind: 'assert'`, `sql: null`)
       // has no CHECK for Postgres to have enforced. Inside `withTransaction` the throw takes the
       // whole statement with it.
-      const written = await writing(() => client().query<PhysicalRow>(statement));
+      const written = await attributed(op, () =>
+        writing(() => client().query<PhysicalRow>(statement)),
+      );
       for (const row of written) entity.$assert(decodeRow(entity, row));
       return written.length;
     },
 
     async count(args = {}) {
-      const plan = readPlan(entity, args, 'count');
-      const row = await client().one<{ count: unknown }>(
-        countStatement(entity, plan, shapeOf(args)),
+      const op = 'count';
+      const plan = readPlan(entity, args, op);
+      const row = await attributed(op, () =>
+        client().one<{ count: unknown }>(countStatement(entity, plan, shapeOf(args))),
       );
       return Number(row?.count ?? 0);
     },
 
     async countBy(column, args = {}) {
-      const grouped = groupColumnOf(entity, column, 'countBy');
-      const plan = readPlan(entity, args, 'countBy');
+      const op = 'countBy';
+      const grouped = groupColumnOf(entity, column, op);
+      const plan = readPlan(entity, args, op);
       // One group past the bound, for the same reason a page reads one row past its limit: the
       // presence of that group is what says the answer was never going to fit, and `countsFrom`
       // refuses it rather than hand back a breakdown missing its tail.
-      const rows = await client().query<GroupRow>(
-        countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1),
+      const rows = await attributed(op, () =>
+        client().query<GroupRow>(
+          countByStatement(entity, plan, shapeOf(args), column, MAX_GROUPS + 1),
+        ),
       );
       return countsFrom(
         entity,
         column,
-        'countBy',
+        op,
         rows.map((row) => [groupValue(grouped, row.group_value), Number(row.group_count)] as const),
       );
     },

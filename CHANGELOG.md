@@ -156,7 +156,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   setStatementObserver(undefined);   // production, and what every test must leave behind
   ```
 
-  `attribution` — the `{ entity, op }` pair that would let a report read `50× findById on members` instead of 50 copies of one `select` — is declared and **not yet produced**: both funnels omit it, so every event today carries `attribution: undefined`. Its producer is `@ultimat3/entity`'s `postgresDriver()`, the last caller that still knows the entity and the operation once the SQL exists; until it lands, read the field as reserved rather than optional.
+  `attribution` — the `{ entity, op }` pair that lets a report read `50× findById on members` instead of 50 copies of one `select` — is produced, `As of 2026-08`: `@ultimat3/entity`'s `postgresRepo` is the one producer, the last caller that still knows both once the SQL exists, and it wraps every repository method around its send through `withStatementAttribution()`. Hand-written SQL, a migration, a health probe and `@ultimat3/jobs`' own queue statements still carry none — nothing above them knows an entity to name — which is why the field stays optional rather than required.
 
   Uninstalled costs one property read and one branch, which is why the accessor hands back the installed observer itself instead of notifying through a wrapper: no event object is built for nobody to receive (axiom 6). One observer, not a list — a second install replaces the first, so "which diagnostic saw this statement" is never order-dependent, and the one consumer that needs several composes them itself, where that order is reviewable. A throw from `onStatement` reaches whoever ran the statement, deliberately: strict test mode is an observer that fails the test its N+1 happened in, and containment here would make that impossible.
 
@@ -176,6 +176,77 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   One mechanism, and deliberately not two: no comment pragma, no config list of exempt call sites, no per-code threshold table (axiom 1) — each of those puts the argument somewhere other than the loop it defends, where the next reader will not find it. `reason` is required and non-blank (`X_INVARIANT` otherwise), because an exemption with no argument is a pragma with extra steps.
 
   The scope rides an `AsyncLocalStorage`, so it survives every `await` at any depth and two loops running at once never read each other. Both funnels stamp the innermost reason onto the `StatementEvent` as `expected` at settle time — captured with the statement rather than read later, because a diagnostic that judges a whole request judges it after every scope in it has closed. What is suppressed is a **verdict**, never a statement: the SQL is still sent, still observed, still a span on the trace, so everything that measures still sees the loop and only the thing that warns is told the author already answered. Production is unchanged: the reason is read inside the branch that already checks for an installed observer, so an app with no diagnostic pays nothing.
+
+- **`withStatementAttribution(entity, op, fn)` — the `{ entity, op }` pair behind `StatementEvent.attribution`, produced.** The field shipped with `setStatementObserver()` (above) and no producer: every event in every running process read `attribution: undefined`. `@ultimat3/entity`'s `postgresRepo` is now the one producer — the last caller that still knows both once the SQL exists — and every repository method wraps its send:
+
+  ```ts
+  const attributed = <T>(op: string, send: () => Promise<T>) =>
+    withStatementAttribution(entity.$name, op, send);
+
+  async findById(id, options) {
+    const op = 'findById';   // the same string idPlan(entity, id, options, op) reports on refusal
+    return attributed(op, () => coalesceFindById(entity, client(), plan, shapeOf(args), id) ?? one(plan, args));
+  }
+  ```
+
+  A scope, not a parameter: the statement leaves several frames and at least one microtask below the repository call that caused it — the coalescer flushes its batch from a `queueMicrotask`, a wide write is a chunked loop, a preload sends through `readByIds` — and threading a parameter through all of those is the same fact written five times, with every path an author forgot it emitting unattributed SQL instead. `withStatementAttribution` rides an `AsyncLocalStorage`, `expectedQueryLoop`'s own shape, so it survives every one of those `await`s; nesting keeps the innermost pair for the same reason `expectedQueryLoop` keeps the innermost reason — a relation preloaded during `findMany` reads through the *related* repository, so its statement is attributed to the related entity and its own operation, never to the read that triggered the preload. `findById`'s coalesced batch is flushed from a microtask scheduled inside the scope, so the one statement sent on behalf of fifty lookups carries the pair every one of those fifty would have carried.
+
+  With no observer installed the scope is never entered — one property read, one branch, no object allocated, on the path every statement in the process takes (axiom 6), which is also why the pair arrives as two strings rather than a `StatementAttribution` literal: a literal at the call site would be allocated before the branch could decline it. An observer installed *during* `fn` therefore sees the statements that follow unattributed — installation happens once, at boot. Both funnels call `statementAttribution()` inside the branch that already found an observer, next to `expectedQueryLoopReason()`, and stamp it onto the event on **both** settle paths — the same argument as `expected`: a diagnostic that judges a whole request runs long after every scope in it closed. Hand-written SQL, a migration, a health probe, `x db` commands and `@ultimat3/jobs`' own queue statements stay unattributed — nothing above them knows an entity to name, which is why the field stays optional and a detector must still fall back to the statement text. Additive — nothing reads `attribution` yet; the N+1 detector is what will.
+
+- **`x dev` counts repeated statement shapes per request — and it is the only process that does.** `x dev` now installs a `StatementObserver` at boot, next to the span exporter and for the same reason: an installed observer is the single switch that turns statement instrumentation on at all, so the `/_x` timeline's SQL rows and the repeat counts arrive together instead of through two toggles. `serve.ts` installs neither — a production process still pays the one `undefined` branch the seam costs uninstalled, and nothing more (axiom 6), which is the same line `serve.ts` already draws for `/_x` itself.
+
+  The visible half is immediate: **`/_x/timeline` has DB children.** Before this, no process in the framework installed an observer, so `@ultimat3/db`'s funnels opened no span, the panel's `repeatedSql` grouped span names, and a repository loop was invisible in the one panel built to show it. A `x dev` trace now carries one `db.<verb>` span per statement with the SQL under `db.statement`.
+
+  The ledger behind it counts one shape per request. A shape is `entity.op` when the statement is attributed — `members.findById` fifty times is the report an author can act on, and the SQL is one sample of it — and the statement's own text, whitespace collapsed, when it is not. Counting state hangs off the request's own `Ctx` in a `WeakMap`, so it is collected with the request and never swept, and a statement issued outside a request (a migration, a boot probe, a script) is not counted at all: "five of one shape" only means something inside one unit of work. Five is the default threshold, a shape is promoted to a verdict exactly once — a loop of fifty is one verdict reading `count: 50`, not forty-six verdicts — and the verdict list is bounded so a dev server up for a week retains the recent loops rather than every loop it ever saw. `expectedQueryLoop` silences the verdict and nothing else: the statement is still sent, still observed and still a span, because that scope suppresses a judgement and this ledger *is* the judgement. A statement that threw still counts — fifty identical timeouts are fifty statements, and a detector that went quiet there would go quiet exactly when the loop cost the most.
+
+  What renders those verdicts is the entry below: the ledger counts and warns once, and the four surfaces read one projection of it.
+
+- **`X_N_PLUS_ONE_QUERY` and `X_N_PLUS_ONE_WRITE`, whose `fix` is a line that already compiles.** Both are owned by `@ultimat3/entity`, because the fix speaks that package's vocabulary — `preload`, `insertAll`, `updateWhere` — and a code owned by the process that detects loops would put the one sentence an author acts on in a package the entity layer cannot see. `nPlusOne(loop)` takes a ledger's verdict and returns the error; it counts nothing, holds no threshold and installs no observer.
+
+  ```ts
+  nPlusOne({ kind: 'read', subject: 'members.findById', count: 50, entity: 'members', op: 'findById' });
+  // X_N_PLUS_ONE_QUERY: a read repeated once per row
+  //   cause: members.findById ran 50 times in one request — one read per row
+  //   fix:   db.posts.preload('author')   # one statement for the whole page
+  ```
+
+  The relation in that `fix` is **derived, never invented**: `preloadsFor(entity, op)` reads the same `relationMap()` `preload()` resolves against, so the pasted line resolves against the schema that produced the loop. The operation picks the side — a point lookup per row is the `belongsTo` edge (`posts.preload('author')`), a filtered read per row the `hasMany` edge (`posts.preload('comments')`) — and every other operation falls back to the batched form of the statement that repeated, `db.members.andWhere('id', 'in', ids).all()`. Edges are read by their `to` end, because the loop repeated on the entity being *looked up* and the ledger only ever saw the statement, never the `for … of` above it: two entities may both reference it, so both pages are named, the first pasteable and the rest after it, exactly as `X_PRELOAD_UNKNOWN_RELATION` spells its names. A write loop names the bulk form of the same call — `insertAll(rows)`, `updateWhere(filter, patch)`, `deleteWhere(filter)`, and both of the first two when the operation has no single bulk form of its own — and hand-written SQL, which is attributed to no entity, names the statement's own `any($1)` form instead of a chain that does not exist.
+
+  A schema whose relations cannot be named still reports the loop it was asked about: `relationMap()` throws `X_INVARIANT_VIOLATED` on two foreign keys it cannot tell apart, and a diagnostic that let that escape would replace the N+1 with a schema complaint the loop did not cause — in a dev process, as an uncaught throw — so the derivation falls back to the `in` form. Neither code is ever thrown and neither carries a flag to turn the warning off: `expectedQueryLoop(reason, fn)` from `@ultimat3/db` is the one way to declare a loop deliberate, and it silences the count upstream of the error rather than answering it.
+
+- **A loop in `x dev` reaches four surfaces, and no surface counts a second time.** The ledger's verdicts now arrive wherever a diagnostic is already read, through the channels that already existed:
+
+  | Surface | What it shows |
+  |---|---|
+  | `x dev` findings | the verdict as a `Finding`, located by request id — text and `--json` render it for free |
+  | `/_x/timeline` | `nPlusOne`, the loops of the request on screen, beside the flame that drew them |
+  | the browser overlay | the same code/cause/fix under the error, on the page the author is looking at |
+  | the log | one `logger.warn` per request per code, carrying `requestId`/`traceId` automatically |
+
+  **One detector, four renderers.** `statement-loop.ts` in `@ultimat3/cli` is the single projection: it hands a verdict to `nPlusOne()` and every surface reads what comes back, so the `fix:` the timeline prints is the `fix:` the terminal prints is the `fix:` in the log. The count is read when a surface asks, not frozen at promotion — a loop of fifty reads `ran 50 times` — while the log line names the count at the moment the threshold was crossed, because that is when it was emitted.
+
+  The timeline keeps **two** fields on purpose. `repeatedSql` stays what it was, a measurement over the recorded trace: every SQL text that appeared twice. `nPlusOne` is the verdict, counted per request with attribution applied and `expectedQueryLoop` honoured. A measurement that started warning would be a second detector — blind to a declared loop, grouping fifty point lookups by their bind values — disagreeing with the one whose `fix:` an author pastes. A host that installed no ledger gets `null` there, never `[]`: "nobody counted" is not "this request was clean".
+
+  New seam, dev-only: `ServerHooks.devNotices` in `@ultimat3/http`, called **inside** the `config.dev && wantsOverlay` branch and nowhere else, so a production process and an agent asking for `problem+json` never pay for it. `OverlayNotice` is declared structurally there for the reason `AuthzDecision` is — tier 2 can never import the package that owns the codes. `x dev` is the only host that supplies one; `serve.ts` boots through the same `startRoles` and passes nothing.
+
+- **`statements` — the fixture that fails a test on its own N+1.** A warning in a dev server is a warning nobody is looking at during CI. Destructuring `statements` installs the detector in **throw** mode for the length of one test, and the loop's fifth statement rejects where it was issued:
+
+  ```ts
+  import { expect, test } from '@ultimat3/testing';
+
+  test('the feed reads its authors once', async ({ statements }) => {
+    await renderFeed();                              // a per-row findById throws here:
+    //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
+    //   fix: db.posts.preload('author')   # one statement for the whole page
+    expect(statements.count('posts.findMany')).toBe(1);
+  });
+  ```
+
+  Opting in is naming it: a fixture nobody destructures is a fixture nobody built, so there is no `strict: true` to remember and no suite-wide switch to forget. The threshold is `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity` — the same number `x dev` warns at, now exported, because a loop that fails a test and a loop that warns in dev have to be the same loop — and the error is `nPlusOne()`'s, so the `fix:` names the `preload()` the schema's own relations spell.
+
+  Two differences from the dev ledger, both deliberate. **The unit of work is the test, not the request**: the ledger keys its tally on the `Ctx` object and ignores a statement issued outside a request, and a unit test calling `posts.findById(id)` with no request anywhere is exactly the loop it was written to catch. **It throws once per shape and keeps counting**, so a test that catches the error gets one failure at the statement that crossed the threshold rather than one per statement after it — and `statements.all()`, `.count(fingerprint?)` and `.shapes()` still measure the whole loop, expected statements included. `expectedQueryLoop(reason, fn)` remains the one way to declare a loop deliberate: it suppresses the verdict, never the measurement. The seam is handed back on disposal like `network` and `runJobs` — the observer that was installed before, not a fixed default.
+
+- **`statementFingerprint()`, `statementKind()` and `statementVerb()` from `@ultimat3/db`.** What shape a statement is — `entity.op` when attributed, its own whitespace-collapsed text when not; read or write from the leading verb — is now one rule next to the `StatementEvent` it reads, rather than a copy per detector. `x dev`'s ledger and the `statements` fixture group by the same identity by construction, and `statementSpanName` reads its verb from the same scanner.
 
 ### Fixed
 

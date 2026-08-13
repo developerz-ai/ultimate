@@ -83,6 +83,8 @@ export type { MailRef, TestMail } from './fixture-mail';
 export { createTestMail } from './fixture-mail';
 export type { TestNetwork } from './fixture-network';
 export { createTestNetwork } from './fixture-network';
+export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
+export { createTestStatements } from './fixture-statements';
 export { fixtureTest as test } from './fixtures';
 export {
   ALL_FIXTURE_NAMES,

@@ -4,8 +4,10 @@
 // as an untyped driver error instead of X_DB_UNAVAILABLE.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { withStatementAttribution } from './attribution';
 import { createPostgresClient } from './client';
 import { DbError } from './errors';
+import { expectedQueryLoop } from './expected-loop';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
 import { sql } from './sql';
@@ -341,5 +343,51 @@ describe('the statement observer', () => {
     await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
 
     expect(observer.seen).toEqual([]);
+  });
+
+  test('carries the attribution declared by the scope, undefined outside every scope', async () => {
+    const observer = recorder();
+    setStatementObserver(observer);
+    installFakeSql();
+    const client = createPostgresClient({ url: TEST_URL });
+
+    await withStatementAttribution('members', 'findById', () => client.query(sql`select 1`));
+    await client.query(sql`select 2`);
+
+    expect(observer.seen.map((event) => event.attribution)).toEqual([
+      { entity: 'members', op: 'findById' },
+      undefined,
+    ]);
+  });
+
+  test('the failing statement path still carries the attribution', async () => {
+    const observer = recorder();
+    setStatementObserver(observer);
+    installFakeSql({ statementError: new DriverFailure('deadlock detected') });
+    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+
+    const caught = await rejection(
+      withStatementAttribution('members', 'findById', () => connection.query(sql`select 1`)),
+    );
+
+    expect((caught as DbError).code).toBe('X_DB_UNAVAILABLE');
+    expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findById' });
+    expect(observer.seen[0]?.rows).toBe(0);
+    connection.release();
+  });
+
+  // Two independent scopes: an expected-loop reason does not crowd out the attribution.
+  test('attribution and an expected-loop reason are stamped together, independently', async () => {
+    const observer = recorder();
+    setStatementObserver(observer);
+    installFakeSql();
+    const client = createPostgresClient({ url: TEST_URL });
+
+    await withStatementAttribution('members', 'findMany', () =>
+      expectedQueryLoop('one lookup per id', () => client.query(sql`select 1`)),
+    );
+
+    expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findMany' });
+    expect(observer.seen[0]?.expected).toBe('one lookup per id');
   });
 });

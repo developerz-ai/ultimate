@@ -36,4 +36,8 @@ pre { background: var(--x-code-bg); border-radius: 6px; padding: .75rem;
       margin: 0; overflow-x: auto; }
 a { color: var(--x-accent); }
 .title { color: var(--x-muted); font-weight: normal; }
+/* A notice's term is an X_ code, not a five-character label: at the shared 5rem the codes this
+   card exists to show would sit on top of their own causes. */
+.notices dl { grid-template-columns: 14rem 1fr; }
+.notices dt { overflow-wrap: anywhere; }
 `;

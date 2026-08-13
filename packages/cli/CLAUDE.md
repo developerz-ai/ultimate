@@ -132,6 +132,61 @@ recorder prefers over the name, so the timeline's `repeatedSql` groups SQL texts
 exist only where a `StatementObserver` is installed, so a trace with no DB children is a process
 with no statement diagnostic, not a broken recorder.
 
+`dev-n-plus-one.ts` is that observer, and `cmd-dev.ts` is the **only** place that installs it —
+`serve.ts` installs neither it nor the span exporter, the same line that file already draws for
+`/_x`. Installing one is the single switch that turns statement instrumentation on at all, which is
+why the ledger and the exporter go in together and come out together in `stop()`: the timeline's
+SQL rows and the repeat counts are one feature with one toggle, and a production process keeps
+paying the one `undefined` branch the seam costs uninstalled (axiom 6).
+
+Three rules hold the ledger, each load-bearing. **Per request, keyed by the `Ctx` object** — a
+`WeakMap` whose entry dies with the request, so nothing sweeps and nothing accumulates across a dev
+session; a statement issued outside a request is not counted at all, because "five of one shape"
+only means something inside one unit of work. The price of keying on identity is that a
+`withChildContext` scope is its own tally. **A shape is `entity.op` when attributed**, the
+statement's own text with whitespace collapsed when it is not — `members.findById` fifty times is
+what an author can act on, and grouping fifty point lookups by their SQL would report bind values.
+That rule is **not written here**: `statementFingerprint`/`statementKind` are `@ultimat3/db`'s and
+the threshold is `@ultimat3/entity`'s `N_PLUS_ONE_THRESHOLD`, because `@ultimat3/testing`'s
+`statements` fixture is a second detector and a copy of either would let a loop that fails a test be
+a different loop from the one this ledger warns about. What stays here is what only a dev *server*
+knows: the request as the unit of work, the bound report list, one log line per request per code.
+**An expected statement is not counted** — `expectedQueryLoop` suppresses a verdict and this ledger
+is the verdict, so the span and the timeline still show the loop while the thing that warns is told
+the author already answered. A shape is promoted to a verdict exactly once, on the statement that
+crosses the threshold, and its count keeps rising: a loop of fifty is one report reading fifty. The
+report list is bounded and drops its oldest.
+
+`statement-loop.ts` is the **one** projection those verdicts reach four surfaces through, and the
+reason there is only one is that four renderings of one loop must be one sentence. It hands a
+verdict to `@ultimat3/entity`'s `nPlusOne()` — the `fix:` speaks that package's vocabulary and is
+derived from the relations the schema already declared — and each surface takes a field of what
+comes back: `cmd-dev.ts` appends `loopFinding` to the `findings` getter (text and `--json` render it
+for free), `dev-dashboard.ts` supplies `statementLoops` so `/_x/timeline` shows `nPlusOne` for the
+request on screen, `cmd-dev.ts` again passes `devNotices` down `startRoles` so the browser overlay
+renders the loop under the error, and the ledger itself emits `warnLoop` — one `logger.warn` per
+request per code, the ids riding along from core's `setLoggerContextFields`.
+
+Two rules about *when* a count is read. **A surface reads it live**: the finding, the panel row and
+the notice all say `ran 50 times` because they ask after the loop finished, while the log line says
+`ran 5 times` because it was written the moment the threshold was crossed — same verdict, two
+honest moments. **A verdict belongs to its request**: `repeatsFor(ctx)` reads the request's own
+tally rather than filtering the bounded global list, so the overlay still names a loop the bound
+already dropped. `serve.ts` supplies no `devNotices`, so the seam it boots through is a key that is
+absent, not a hook answering an empty list.
+
+`dev-n-plus-one.test.ts` and `statement-loop.test.ts` drive the ledger and the projection with
+hand-built `StatementEvent`s — fast, and enough to pin every rule above. `n-plus-one-detector.test.ts`
+proves the loop those events stand in for: real `posts`/`authors` entities, `postgresRepo` and
+`createPgliteClient` (an injected fake driver so no `@electric-sql/pglite` build is needed, but a
+real client — `createRecordingClient` implements `DbClient` on its own and never reaches the
+observer, so it cannot stand in here) — a naive per-row `findById` loop trips `X_N_PLUS_ONE_QUERY`
+with the exact `preload('author')` line, the `preload()` form of the same read stays quiet,
+`expectedQueryLoop` silences the naive form without stopping it from running, and a naive per-row
+`delete` loop trips `X_N_PLUS_ONE_WRITE`. Its describe block spells the pattern `n1`, matching
+`packages/entity/src/n-plus-one.test.ts`'s own fixture prefix, because `bun test -t 'n+1'` is a
+regex and `+` is a quantifier — `n1` is what actually selects these tests.
+
 ## `x dev` boots the app; it does not simulate one
 
 | File | Job |
@@ -146,6 +201,8 @@ with no statement diagnostic, not a broken recorder.
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
 | `dev-traces.ts` | core's spans → the `/_x` timeline's request traces |
+| `dev-n-plus-one.ts` | statement shapes counted per request, and the ones that repeat past the threshold |
+| `statement-loop.ts` | one verdict → the finding, the panel fact, the overlay notice and the log line |
 | `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
 | `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |

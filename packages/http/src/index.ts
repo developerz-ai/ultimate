@@ -60,7 +60,7 @@ export {
 } from './locale';
 export type { Middleware } from './middleware';
 export { compose } from './middleware';
-export type { OverlayMeta } from './overlay';
+export type { OverlayMeta, OverlayNotice } from './overlay';
 export { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
 export { OVERLAY_STYLE } from './overlay-style';
 export type {

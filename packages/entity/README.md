@@ -376,6 +376,39 @@ Nothing new to write: the relation is the `references()` the column already decl
 | Declines to the old statement | no request in scope, an id no page indexed, a key that resolved to nothing |
 | Switched off | `postgresDriver({ jitPreload: false })`, where the driver is constructed — the one switch. Not an `app.config.ts` key: nothing reads config at the seam that builds a repository |
 
+## A loop that got past all of that is reported, with the fix already written
+
+`As of 2026-08`. The three batching paths above are what a loop *should* have taken; `nPlusOne()`
+is what an author is handed when it did not. It takes a repeated statement — the verdict a ledger
+reached, never a count this package keeps — and returns the error every surface renders:
+
+```ts
+nPlusOne({ kind: 'read', subject: 'members.findById', count: 50, entity: 'members', op: 'findById' });
+// X_N_PLUS_ONE_QUERY: a read repeated once per row
+//   cause: members.findById ran 50 times in one request — one read per row
+//   fix:   db.posts.preload('author')   # one statement for the whole page
+```
+
+The relation in that `fix` is derived, never invented: `preloadsFor(entity, op)` reads the same
+`relationMap()` `preload()` resolves against, so the line pastes into a chain that already
+compiles. Which edge answers which loop follows from the operation — a point lookup per row is the
+`belongsTo` side (`posts.preload('author')`), a filtered read per row the `hasMany` side
+(`posts.preload('comments')`), and every other operation falls back to the batched form of the
+statement that repeated.
+
+| The loop | The `fix` |
+|---|---|
+| `findById` / `findMany` with a relation pointing at it | `db.<page>.preload('<relation>')`, the first candidate pasteable and the rest listed — the ledger saw the statement, never the `for … of` above it |
+| a read with no such relation, or an operation no preload answers | `db.<entity>.andWhere('id', 'in', ids).all()` |
+| `insert` / `update` / `delete` per row | `db.<entity>.insertAll(rows)` / `.updateWhere(filter, patch)` / `.deleteWhere(filter)` |
+| hand-written SQL, attributed to no entity | the statement's own `any($1)` form, or `expectedQueryLoop('<why>', fn)` |
+
+Nothing here counts or installs anything: `x dev` owns the ledger, `@ultimat3/testing`'s `statements`
+fixture owns the strict one, `expectedQueryLoop` from `@ultimat3/db` is the one way to declare a loop
+deliberate, and a production process pays the one branch the observer seam costs uninstalled. The
+one number both detectors read *is* here — `N_PLUS_ONE_THRESHOLD` (5), next to the codes whose `fix`
+it triggers, so a loop that fails a test and a loop that warns in dev are the same loop.
+
 ## Tenancy is a guard
 
 `tenant: 'orgId'` on the entity names the column outright. Omit it and it is inferred — a
@@ -395,7 +428,8 @@ the invariants, which makes a seed a test of the schema as well.
 ## Errors
 
 `X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` · `X_DB_DRIFT` ·
-`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` · `X_PRELOAD_UNKNOWN_RELATION`
+`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` · `X_PRELOAD_UNKNOWN_RELATION` ·
+`X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE`
 
 ## Boundaries
 

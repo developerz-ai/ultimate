@@ -4,6 +4,7 @@
 // never opens a socket (the CLI imports it to print help).
 
 import { type Role, resolveRole } from '@ultimat3/core';
+import { statementAttribution } from './attribution';
 import { dbUnavailable } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
@@ -168,6 +169,10 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     // Read here, not by the consumer: the scope is gone by the time a per-request detector judges
     // what it collected, so the reason has to be captured with the statement it defends.
     const expected = expectedQueryLoopReason();
+    // Same moment, same argument: `postgresRepo` is several frames and a microtask above this one,
+    // and what it knows — the entity and the operation — is what turns fifty identical `select`s
+    // into "50× findById on members". Absent for hand-written SQL, a migration, a health probe.
+    const attribution = statementAttribution();
     const started = performance.now();
     let result: unknown;
     try {
@@ -185,6 +190,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
         durationMs: performance.now() - started,
         rows: 0,
         error,
+        attribution,
         expected,
       });
       throw error;
@@ -196,6 +202,7 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       values: fragment.values,
       durationMs: performance.now() - started,
       rows: affectedBy(result),
+      attribution,
       expected,
     });
     return result;

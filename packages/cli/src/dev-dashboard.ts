@@ -12,6 +12,7 @@ import type {
   PolicyFact,
   RequestTrace,
   SqlResult,
+  StatementLoopFact,
 } from '@ultimat3/admin/dev';
 import { DEV_BASE_PATH, DEV_PANELS, defaultDevSources, devDashboard } from '@ultimat3/admin/dev';
 import { recentInvalidations } from '@ultimat3/cache';
@@ -23,11 +24,13 @@ import { isMemoryDriver } from '@ultimat3/mail';
 import type { Manifest } from '@ultimat3/manifest';
 import { checkAppBoundaries } from './app-boundaries';
 import { appManifest, readAppManifest } from './app-manifest';
+import type { StatementLedger } from './dev-n-plus-one';
 import { devPolicyMatrix } from './dev-policy';
 import type { RunningServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
 import type { TraceRecorder } from './dev-traces';
 import type { Finding } from './output';
+import { loopFacts } from './statement-loop';
 
 export interface DevStatus {
   readonly url: string;
@@ -46,6 +49,8 @@ export interface DevDashboardInput {
   readonly env?: string | undefined;
   /** The spans this process recorded. Absent when `x dev` did not install the exporter. */
   readonly traces?: TraceRecorder | undefined;
+  /** The statement shapes this process counted. Absent when `x dev` did not install the observer. */
+  readonly statements?: StatementLedger | undefined;
 }
 
 /**
@@ -127,6 +132,7 @@ const invalidationFacts = (): readonly InvalidationFact[] =>
  */
 export function devSources(input: DevDashboardInput): DevSources {
   const traces = input.traces;
+  const statements = input.statements;
   // Only the memory driver retains what it accepted. Once a credential selects a real transport
   // the messages are at the provider, so the hook is omitted rather than answered with `[]` —
   // an empty outbox claims nobody was mailed, which is a different and unearned answer.
@@ -148,6 +154,15 @@ export function devSources(input: DevDashboardInput): DevSources {
       ...(traces === undefined
         ? {}
         : { traces: (): Promise<readonly RequestTrace[]> => Promise.resolve(traces.traces()) }),
+      // Same rule, same reason: the timeline panel answers `null` for a host that counted nothing,
+      // and an empty list here would instead claim every request on screen was clean. The verdicts
+      // are read at request time, so a loop that just happened is on the panel without a remount.
+      ...(statements === undefined
+        ? {}
+        : {
+            statementLoops: (): Promise<readonly StatementLoopFact[]> =>
+              Promise.resolve(statements.repeats().map(loopFacts)),
+          }),
     },
   });
 }

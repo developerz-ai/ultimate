@@ -43,6 +43,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A single value,
   not a list — two answers to "who is this?" is two identities per request. `@ultimat3/auth` is
   the same tier and can never import this package, so the app is what wires them together.
+- **`hooks.devNotices` is dev-only, and the overlay path is the only place it is called.**
+  `OverlayNotice` is declared structurally in `overlay.ts` because the packages that produce one
+  — `@ultimat3/entity`'s N+1 codes, reported by `x dev` — are this tier or above and can never be
+  imported here, exactly as `AuthzDecision` is. The call sits INSIDE the
+  `config.dev && wantsOverlay` branch: the overlay is a notice's only surface, so a production
+  process, or an agent that asked for problem+json, must not pay a diagnostic's per-request cost
+  for findings nothing renders. No notices means no card, byte for byte.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -66,7 +73,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `pipeline.ts` | the ordered lifecycle; the framework's guarantee |
 | `router.ts` | trie matcher, precedence static > param > wildcard |
 | `error-map.ts` | code → status table + `factsOf()` |
-| `hooks.ts` | the two seams: `authenticate`, `authorize` + the app's `configureAuthenticator()` |
+| `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |
+| `overlay.ts` | the dev error page: the same code/cause/fix as the terminal, plus any notices |
+| `overlay-style.ts` | the overlay's one stylesheet, split out so `security-headers.ts` hashes it |
 | `context.ts` | `RequestContext` + the single `Ctx` adapter (`asCtx`) + the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |

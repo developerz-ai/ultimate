@@ -46,9 +46,15 @@ const message = (mailId: string) => ({
 });
 
 describe(testName('unit', 'the framework fixture bag'), () => {
-  bunTest('builds exactly clock, mail, network and runJobs in-process', () => {
+  bunTest('builds exactly clock, mail, network, runJobs and statements in-process', () => {
     registerFrameworkFixtures();
-    expect([...FRAMEWORK_FIXTURE_NAMES]).toEqual(['clock', 'mail', 'network', 'runJobs']);
+    expect([...FRAMEWORK_FIXTURE_NAMES]).toEqual([
+      'clock',
+      'mail',
+      'network',
+      'runJobs',
+      'statements',
+    ]);
   });
 
   // The bag is the contract: a name the reference app destructures and the framework never

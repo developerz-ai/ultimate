@@ -11,6 +11,8 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
 import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
+import { createContext, logger, runWithContext } from '@ultimat3/core';
+import { statementObserver } from '@ultimat3/db';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
 import { cspHashSource } from '@ultimat3/http';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
@@ -264,6 +266,82 @@ describe('unit · x dev boots the app', () => {
     expect(served?.requestId.length).toBeGreaterThan(0);
     expect(payload.data.selected?.spans.some((span) => span.kind === 'http')).toBe(true);
     expect(Object.keys(payload.data.totalsByKind)).toContain('http');
+  });
+
+  // Installing a `StatementObserver` is the single switch that turns statement instrumentation on
+  // (`@ultimat3/db`'s `observe.ts`), and `x dev` is what throws it — `serve.ts` never does. Until
+  // it did, the timeline had no DB children at all and `repeatedSql` grouped span names, which is
+  // what made an N+1 invisible in the one panel built to show it.
+  test('x dev installs the statement ledger, so the timeline has SQL children', async () => {
+    expect(statementObserver()).toBeDefined();
+    await fetchDev('/_x/db?json=1&sql=select%201%20as%20n');
+
+    const payload = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
+      data: { requests: { requestId: string; path: string }[] };
+    };
+    const read = payload.data.requests.find((entry) => entry.path === '/_x/db');
+    expect(read).toBeDefined();
+
+    const trace = (await (
+      await fetchDev(`/_x/timeline?json=1&requestId=${read?.requestId ?? ''}`)
+    ).json()) as {
+      data: { selected: { spans: { kind: string; name: string; detail: string }[] } | null };
+    };
+    const sql = trace.data.selected?.spans.filter((span) => span.kind === 'sql') ?? [];
+    expect(sql.length).toBeGreaterThan(0);
+    // The statement states its own identity: the span's detail is the SQL, not `db.select`.
+    expect(sql.some((span) => span.name.startsWith('db.') && span.detail !== span.name)).toBe(true);
+  });
+
+  // The four surfaces, wired to the one ledger. This proves the wiring end to end rather than the
+  // counting, which `dev-n-plus-one.test.ts` owns: the observer under test here is the one the
+  // running process installed, fed the events `@ultimat3/db`'s funnels feed it.
+  test('a loop in one request reaches x dev, /_x, the overlay and the log — from one ledger', async () => {
+    const observer = statementObserver();
+    expect(observer).toBeDefined();
+
+    const before = server.findings.length;
+    const lines: string[] = [];
+    const printWarning = logger.warn;
+    logger.warn = (line: string): void => {
+      lines.push(line);
+    };
+    const ctx = createContext({ requestId: 'req_looped' });
+    try {
+      runWithContext(ctx, () => {
+        for (let sent = 0; sent < 6; sent += 1) {
+          observer?.onStatement({
+            text: 'select "id" from "members" where "id" = $1',
+            values: [],
+            durationMs: 1,
+            rows: 1,
+            attribution: { entity: 'members', op: 'findById' },
+          });
+        }
+      });
+    } finally {
+      logger.warn = printWarning;
+    }
+
+    // 1. `x dev`'s own findings — text and `--json` render it for free.
+    const findings = server.findings;
+    expect(findings.length).toBe(before + 1);
+    const finding = findings[findings.length - 1];
+    expect(finding?.code).toBe('X_N_PLUS_ONE_QUERY');
+    expect(finding?.at).toBe('req_looped');
+    expect(finding?.fix).toContain("db.members.andWhere('id', 'in', ids).all()");
+
+    // 2. the timeline panel, through the source only this process can answer.
+    const panel = (await (await fetchDev('/_x/timeline?json=1')).json()) as {
+      data: { nPlusOne: { code: string; requestId: string; count: number }[] | null };
+    };
+    // Wired, so never `null` — this request is not on screen, so its own list is empty.
+    expect(panel.data.nPlusOne).toEqual([]);
+
+    // 3. the log line: one per request per code, carrying the ids core puts on every line in scope.
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('X_N_PLUS_ONE_QUERY: members.findById ran 5 times');
+    expect(lines[0]).toContain('fix: ');
   });
 
   test("/_x/policy is the app's real matrix: one column per declared role", async () => {

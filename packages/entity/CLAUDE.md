@@ -104,6 +104,64 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   hands back the row it stores and attaching directly would leak the relation into the table
   itself. **Preloading terminals only**: `page()`, `all()` and `one()` resolve every named
   relation; `count()`, `countBy()` and `plan()` do not, since none reads a row to attach one to.
+- **Every repository method attributes the statement it sends, and each op is named exactly
+  once.** `postgresRepo`'s `attributed(op, send)` wraps `findById`, `findMany`, `insert`,
+  `insertAll`, `upsertAll`, `update`, `delete`, `deleteWhere`, `updateWhere`, `count` and
+  `countBy` — every method, not a subset — through `@ultimat3/db`'s
+  `withStatementAttribution(entity.$name, op, send)`. Each method declares `const op = 'findById'`
+  (or its own name) once, and that same local is what everything else downstream of it gets too:
+  the plan builder (`idPlan(entity, id, options, op)`, `readPlan(entity, args, op)`,
+  `deletePlan`/`updatePlan`), and in `countBy`, `groupColumnOf` and `countsFrom` besides — so the
+  operation a refusal names and the operation a diagnostic reports can never drift apart, one
+  string read as many times as a method needs it and never retyped by hand a second time. The
+  three insert paths do not call `attributed` themselves: `writeRows(op, batch, conflict)` does,
+  once, because a batch wide enough to split (past `MAX_BIND_PARAMETERS`) is several statements
+  sent inside its own loop and every one of them belongs to the call that asked for it — `op` is
+  therefore `writeRows`'s own parameter, passed as the literal `'insert'`, `'insertAll'` or
+  `'upsertAll'` by each of the three callers, never a constant closed over the helper. **The scope
+  is never entered with no observer installed** — `withStatementAttribution` reads
+  `statementObserver()` first, so an app running with no diagnostic pays the one property read and
+  one branch every other statement on this path already pays, and nothing more (axiom 6). **A
+  preloaded relation is attributed to the related entity and its own operation, never to the read
+  that triggered it** — `preload()`'s related read (`preloaded()` in `preload.ts`) calls
+  `target.repo.findMany(...)`, the related entity's own `postgresRepo`, so a `posts` page's
+  preloaded author carries `{ members, findMany }`, never `{ posts, findMany }` borrowed from the
+  page: it is a full call through that entity's own repo, not a fact copied across. **`findById`'s
+  coalesced flush carries its opener's pair without anyone threading it there** — `coalesce.ts`'s
+  `queueMicrotask` inside `openBatch` is scheduled synchronously while `coalesceFindById` is still
+  running inside `attributed('findById', …)`'s scope, so the statement the flush eventually sends
+  on behalf of every lookup that shared the microtask is attributed exactly as each of them would
+  have been alone. **This is the one rule the two drivers do not share**, and not a drift:
+  `memoryRepo` sends no statement, so there is nothing for a pair to name — the parity bar
+  (`*-parity.test.ts`) applies to what a call *answers*, and attribution changes no answer.
+  `pg-driver-attribution.test.ts` is the pin: a client that reads `statementAttribution()` at send
+  time, one case per method — a twelfth method added without `attributed` is a failing test, not a
+  review comment — plus the coalesced flush, the sibling preload, a relation's own read, a chunked
+  batch's every statement, hand-written SQL (no pair), a refusal (no statement) and the
+  no-observer-installed branch.
+- **The two N+1 codes are owned here, and their `fix` is a call the schema already answers.**
+  `X_N_PLUS_ONE_QUERY` and `X_N_PLUS_ONE_WRITE` live in this package rather than in the process
+  that detects them, because the fix speaks this package's vocabulary — `preload`, `insertAll`,
+  `updateWhere` — and a code owned by the CLI would put the one sentence an author acts on in a
+  package the entity layer cannot see. **Detection is somebody else's**: `n-plus-one.ts` counts
+  nothing, holds no threshold and installs no observer; it takes a verdict (`StatementLoop`) and
+  returns the error. **The relation is derived, never invented** — `preloadsFor()` reads the same
+  `relationMap()` `preload()` resolves against, so the pasted line compiles; the operation picks
+  the side (`findById` → `belongsTo`, `findMany` → `hasMany`), and anything else takes the `in`
+  form rather than a relation that would attach the wrong rows. **The threshold is owned here too** —
+  `N_PLUS_ONE_THRESHOLD` (5) sits with the codes because it is the number that decides a *verdict*,
+  and there are two detectors reading it: `x dev`'s ledger and `@ultimat3/testing`'s `statements`
+  fixture. Two numbers would make a loop that fails a test a different loop from one that warns in
+  dev. What a *unit of work* is stays each detector's — a request there, one test here. **Edges are
+  read by their `to` end**, because the loop repeated on the entity being looked up and the ledger never saw the
+  `for … of` above it — so every page that could preload it is named, first one pasteable and the
+  rest after it, exactly as `preloadUnknownRelation` spells its names. **A schema whose relations
+  cannot be named still reports the loop**: `relationMap()` throws `X_INVARIANT_VIOLATED` on two
+  keys it cannot tell apart, and a diagnostic that let that escape would replace the N+1 with a
+  schema complaint the loop did not cause — in a dev process, as an uncaught throw — so the
+  derivation falls back to the `in` form. **`expectedQueryLoop` is the only way to declare a loop
+  deliberate**, and it silences the count upstream; there is no flag on these errors and no fix
+  that turns the warning off.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -335,7 +393,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `batch.ts` | `inBatches(size)` — the chain's page in a loop, closed by the loop that reads it |
-| `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
+| `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` — attributes every statement it sends |
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
 | `bulk-write.ts` | what a many-row write is made of — the column list, the conflict plan, the bind-count chunking |
@@ -345,6 +403,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
+| `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 
 ## Commands

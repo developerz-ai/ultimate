@@ -3,6 +3,7 @@
 // The module is resolved at first query and never at import: it is an OPTIONAL peer, and an image
 // that only ever talks to a managed Postgres must not carry 26 MB of WASM it will never load.
 
+import { statementAttribution } from './attribution';
 import type { DbConnection, ReservableClient } from './client';
 import { DbError, dbUnavailable } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
@@ -158,6 +159,9 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     // Read here for the same reason as `runOn`: the scope is gone by the time a per-request
     // detector judges what it collected, so the reason travels with the statement it defends.
     const expected = expectedQueryLoopReason();
+    // And the pair `postgresRepo` left above this frame, for the same reason again: it is what
+    // reports a repository loop as "50× findById on members" rather than as fifty rows of SQL.
+    const attribution = statementAttribution();
     const started = performance.now();
     let result: PgliteResult;
     try {
@@ -174,6 +178,7 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
         durationMs: performance.now() - started,
         rows: 0,
         error,
+        attribution,
         expected,
       });
       throw error;
@@ -185,6 +190,7 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       values: fragment.values,
       durationMs: performance.now() - started,
       rows: rowsOf(result),
+      attribution,
       expected,
     });
     return result;

@@ -5,6 +5,7 @@
 // before the seam existed.
 
 import { withSpan } from '@ultimat3/core';
+import { statementVerb } from './statement-shape';
 
 /**
  * OTel's name for the statement itself. Exported because it is a contract across two packages, not
@@ -13,19 +14,16 @@ import { withSpan } from '@ultimat3/core';
  */
 export const STATEMENT_ATTRIBUTE = 'db.statement';
 
-const LEADING_WORD = /^[A-Za-z]+/;
-
 /**
  * `db.select`, `db.insert`, `db.begin` — low cardinality on purpose, so the flame reads at a glance
  * and a trace backend can still aggregate by name. The full text rides on the span, never in it.
  *
- * The verb is the first word and nothing cleverer: a statement opening with a comment is
- * `db.statement`, because the kind and the detail are what a consumer reads, and stripping comments
- * here would be a second SQL scanner living next to `inspectStatement` for the sake of one label.
+ * The verb is `statement-shape.ts`'s, the same read the N+1 detectors classify a statement with: a
+ * text with no leading word is `db.statement` here and a read there, one scanner and two labels.
  */
 export function statementSpanName(text: string): string {
-  const verb = LEADING_WORD.exec(text.trimStart())?.[0] ?? 'statement';
-  return `db.${verb.toLowerCase()}`;
+  const verb = statementVerb(text);
+  return `db.${verb === '' ? 'statement' : verb}`;
 }
 
 /**

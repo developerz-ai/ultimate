@@ -8,7 +8,7 @@
 
 import type { Role } from '@ultimat3/core';
 import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
-import type { Route, ServerHandle } from '@ultimat3/http';
+import type { Route, ServerHandle, ServerHooks } from '@ultimat3/http';
 import { configuredAuthenticator, createServer, defineHttpConfig } from '@ultimat3/http';
 import type { Scheduler, Worker } from '@ultimat3/jobs';
 import { createScheduler, createWorker } from '@ultimat3/jobs';
@@ -71,6 +71,12 @@ export interface StartRolesOptions {
    * serves: that policy is what rendered every deployed app completely unstyled.
    */
   readonly inlineStyles?: readonly string[];
+  /**
+   * Non-fatal findings the browser overlay shows next to an error, for the request being answered.
+   * Only `x dev` supplies one — `serve.ts` boots through this same function and omits it, so a
+   * production process never has a diagnostic to call (axiom 6).
+   */
+  readonly devNotices?: ServerHooks['devNotices'];
   /**
    * Where the scrape listener binds. Defaults to `DEFAULT_METRICS_PORT`, except when `port` is 0
    * — a caller asking the kernel for an ephemeral HTTP port is a test, and a test that grabbed
@@ -165,7 +171,7 @@ function startWeb(options: StartRolesOptions): ServerHandle {
   return createServer({
     routes: options.routes,
     role: 'web',
-    hooks: devHooks(),
+    hooks: devHooks(options.devNotices === undefined ? {} : { devNotices: options.devNotices }),
     config: defineHttpConfig({
       port: options.port,
       dev: binding.dev,

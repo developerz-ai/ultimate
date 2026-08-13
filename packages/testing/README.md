@@ -18,7 +18,7 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `test-types.ts` | the six test types and their helpers |
 | `matchers.ts` | `toBeUltimateError` `toDenyPolicy` `toEmitSteps` `toMatchOpenApi` `toBeWithinBudget` `toRejectInput` |
 | `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
-| `fixture-{clock,mail,jobs,network}.ts` | the four fixtures the framework builds in-process |
+| `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
 | `preload.ts` | the bunfig preload that installs all of the above |
@@ -53,6 +53,7 @@ test('the three-day sleep releases the worker', async ({ clock, runJobs }) => {
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` over an in-memory transport | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` over the sealed network | the preload |
 | `runJobs` | a worker: call it to enqueue+drain, then `drain()` `due()` `inFlight()` `depth()` | the preload |
+| `statements` | every statement the test issued: `all()` `count(fingerprint?)` `shapes()` — and an N+1 throws | the preload |
 | `page` | the browser: `goto` `gotoStreamed` `getByRole` `evaluate` `waitForServiceWorker` | a browser driver |
 | `budget` | `jsBytes(route)` measured off the built output | a browser driver |
 | `signIn` | put the browser session in a member's shoes | a browser driver |
@@ -87,6 +88,33 @@ Destructuring a name nobody registered fails with `X_TEST_FIXTURE_UNKNOWN`, whic
 that *is* registered — never `undefined is not an object` from inside the body. A name that is
 registered but has no driver fails with `X_TEST_FIXTURE_UNAVAILABLE` instead; the two are different
 instructions, so they are different codes.
+
+## An N+1 fails the test it happened in
+
+```ts
+test('the feed reads its authors once', async ({ statements }) => {
+  await renderFeed();                              // a per-row findById throws here:
+  //   X_N_PLUS_ONE_QUERY: members.findById ran 5 times in one request — one read per row
+  //   fix: db.posts.preload('author')   # one statement for the whole page
+  expect(statements.count('posts.findMany')).toBe(1);
+  expect(statements.shapes()[0]?.count).toBe(1);
+});
+```
+
+Opting in is naming it. `statements` installs `@ultimat3/db`'s statement observer for the length of
+one test and hands the seam back afterwards, so there is no `strict: true` to remember and no
+suite-wide switch to forget.
+
+| | |
+|---|---|
+| **the unit of work is the test** | `x dev`'s ledger counts per request and skips a statement issued outside one; a unit test calling `posts.findById(id)` has no request anywhere, and that is the loop it was written to catch |
+| **one threshold** | `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity`, the number `x dev` warns at. A loop that fails a test and a loop that warns in dev are the same loop |
+| **one error** | `nPlusOne()`'s, so the `fix:` is the `preload()` the schema's own relations spell — never a line this package composes |
+| **it throws where it happened** | the loop's fifth statement rejects, so the failing line is the loop's own. Once per shape: a body that catches it gets one failure, not one per statement after it |
+| **measurement ≠ verdict** | `all()` `count()` `shapes()` count every statement, `expectedQueryLoop` ones included; only the verdict honours the suppression |
+
+`expectedQueryLoop(reason, fn)` from `@ultimat3/db` stays the one way to declare a loop deliberate —
+there is no flag on the fixture and no code to silence.
 
 ## The six test types
 

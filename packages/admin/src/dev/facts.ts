@@ -39,6 +39,28 @@ export interface RequestTrace {
   readonly spans: readonly TimelineSpan[];
 }
 
+/**
+ * One statement shape repeated inside one request past the detector's threshold — a verdict,
+ * already carrying the error a host renders. The count, the attribution and the suppression rule
+ * are the detector's (`x dev`'s statement ledger); nothing here re-derives them from the spans,
+ * because a second count blind to `expectedQueryLoop` would disagree with the one that warns.
+ */
+export interface StatementLoopFact {
+  /** The request the loop happened in — how a trace and its verdicts are matched up. */
+  readonly requestId: string;
+  /** `X_N_PLUS_ONE_QUERY` or `X_N_PLUS_ONE_WRITE`. */
+  readonly code: string;
+  readonly cause: string;
+  /** Runnable, and the whole point: the `preload`/`insertAll` line that ends the loop. */
+  readonly fix: string;
+  readonly docs: string | null;
+  /** What repeated: `members.findById` when a repository sent it, else the statement's own text. */
+  readonly subject: string;
+  readonly count: number;
+  /** One of the statements, verbatim. */
+  readonly sample: string;
+}
+
 export interface LiveSubscriberFact {
   readonly id: string;
   readonly query: string;
@@ -163,6 +185,7 @@ export interface ManifestFact {
 export interface DevSources {
   routes(): Promise<readonly RouteFact[]>;
   traces(): Promise<readonly RequestTrace[]>;
+  statementLoops(): Promise<readonly StatementLoopFact[]>;
   liveQueries(): Promise<readonly LiveQueryFact[]>;
   subscribers(): Promise<readonly LiveSubscriberFact[]>;
   jobDefs(): Promise<readonly JobDefFact[]>;

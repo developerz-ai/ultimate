@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { withStatementAttribution } from './attribution';
 import { isReservable, setDbClient } from './client';
+import { expectedQueryLoop } from './expected-loop';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
 import {
@@ -449,5 +451,48 @@ describe('the statement observer', () => {
     await createPgliteClient({ driver: fakeDriver({ rows: [] }) }).query(sql`select 1`);
 
     expect(observer.seen).toEqual([]);
+  });
+
+  test('carries the attribution declared by the scope, undefined outside every scope', async () => {
+    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
+    const observer = recorder();
+    setStatementObserver(observer);
+
+    await withStatementAttribution('members', 'findById', () => client.query(sql`select 1`));
+    await client.query(sql`select 2`);
+
+    expect(observer.seen.map((event) => event.attribution)).toEqual([
+      { entity: 'members', op: 'findById' },
+      undefined,
+    ]);
+  });
+
+  test('the failing statement path still carries the attribution', async () => {
+    const client = createPgliteClient({
+      driver: { query: () => Promise.reject(new Error('boom')), close: async () => undefined },
+    });
+    const observer = recorder();
+    setStatementObserver(observer);
+
+    await failure(() =>
+      withStatementAttribution('members', 'findById', () => client.query(sql`selct 1`)),
+    );
+
+    expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findById' });
+    expect(observer.seen[0]?.rows).toBe(0);
+  });
+
+  // Two independent scopes: an expected-loop reason does not crowd out the attribution.
+  test('attribution and an expected-loop reason are stamped together, independently', async () => {
+    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
+    const observer = recorder();
+    setStatementObserver(observer);
+
+    await withStatementAttribution('members', 'findMany', () =>
+      expectedQueryLoop('one lookup per id', () => client.query(sql`select 1`)),
+    );
+
+    expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findMany' });
+    expect(observer.seen[0]?.expected).toBe('one lookup per id');
   });
 });

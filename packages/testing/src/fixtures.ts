@@ -15,6 +15,7 @@ import type { SignIn, Subscribe, TestBudget, TestDeploy } from './fixture-driver
 import type { RunJobs } from './fixture-jobs';
 import type { TestMail } from './fixture-mail';
 import type { TestNetwork } from './fixture-network';
+import type { TestStatements } from './fixture-statements';
 import type { PageLike } from './test-types';
 
 /** Built once per test, on first use. */
@@ -44,6 +45,7 @@ export interface Fixtures {
   readonly mail: TestMail;
   readonly network: TestNetwork;
   readonly runJobs: RunJobs;
+  readonly statements: TestStatements;
   readonly budget: TestBudget;
   readonly deploy: TestDeploy;
   readonly page: PageLike;

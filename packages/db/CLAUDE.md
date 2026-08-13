@@ -136,11 +136,39 @@ observer that only reports must not throw. `rows` comes from the same helper `ex
 (`affectedBy` in `client.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
 report and the return value cannot disagree about one statement.
 
-`StatementEvent.attribution` is the one field on that event **nothing produces yet**: both funnels
-omit it, so every event in every running process reads `undefined`, and the only values the type
-has held are a test's. Its producer is `@ultimat3/entity`'s `postgresDriver()` — the last caller
-that still knows the entity and the op once the SQL exists. Say that plainly wherever it comes up
-rather than describing the field as threaded; a seam nobody fills is a claim, not a feature.
+`attribution.ts` is `StatementEvent.attribution`'s producer: `withStatementAttribution(entity, op,
+fn)` runs `fn` with every statement it issues — at any depth, across every `await` — attributed to
+that pair, on an `AsyncLocalStorage` the same shape `expected-loop.ts` already uses. Four rules,
+none optional. **Guard first** — it reads `statementObserver()` before touching the scope at all
+and, with nothing installed, hands straight to `fn`: one property read, one branch, no object
+allocated, on the path every statement in the process takes (axiom 6) — which is also why the pair
+arrives as two strings rather than a `StatementAttribution` literal, since a literal at the call
+site would be allocated before the branch could decline it. **A scope, not a parameter** — the
+statement leaves several frames and at least one microtask below the repository call that caused
+it: the coalescer flushes its batch from a `queueMicrotask` (`coalesce.ts`), a wide write is a
+chunked loop, a preload sends through `readByIds`, and threading a parameter through all of those
+is the same fact written five times, with every path an author forgot it emitting unattributed SQL.
+**Nesting keeps the innermost pair**, exactly as `expectedQueryLoop` keeps the innermost reason: a
+relation preloaded during `findMany` reads through the *related* repository, so its statement is
+attributed to that entity and its own operation, not to the read that triggered the preload.
+**The funnels stamp, on both settle paths** — `runOn` (`client.ts`) and `statement()` (`pglite.ts`)
+read `statementAttribution()` inside the branch that already found an observer, next to
+`expectedQueryLoopReason()`, and put it on the event whether the statement succeeded or failed, the
+same argument as `expected`: a diagnostic that judges a whole request runs long after every scope
+in it closed. `@ultimat3/entity`'s `postgresRepo` is the one producer — the last caller that still
+knows both once the SQL exists (`packages/entity/CLAUDE.md`) — and an observer installed *during*
+`fn` sees the statements that follow unattributed, since installation happens once, at boot.
+
+`statement-shape.ts` is what a statement's *identity* is, and it lives here because its only input
+is a `StatementEvent`. `statementFingerprint(event)` is `entity.op` when the event is attributed and
+the event's own whitespace-collapsed text when it is not; `statementKind(text)` is read or write off
+`statementVerb(text)`, a closed set of verbs and never a set of repository operations — a soft delete
+is an `update`, an op list would drift with `@ultimat3/entity`'s method names, and hand-written SQL
+carries no operation at all. Two detectors group by that identity (`x dev`'s ledger,
+`@ultimat3/testing`'s `statements` fixture) and `statementSpanName` reads the same verb, so the rule
+is written once — a second copy is two answers to "is this the same statement again". Nothing here
+counts: the threshold is `@ultimat3/entity`'s `N_PLUS_ONE_THRESHOLD`, next to the codes whose `fix`
+depends on it.
 
 `statement-span.ts` is the other half of the observed shell: `withStatementSpan` wraps the **send
 alone**, so the span's duration is the statement's and the observer's own work is not charged to
@@ -189,16 +217,20 @@ the repo that builds a `PgExecutor`, reached by every role through `dev-runtime.
 `PostgresClient`/`PgliteClient` `.query()` call for it. So today, in this framework's own boot
 code, every job-driver statement (claim, ack, nack, enqueue, heartbeat, step read/write) **does**
 pass through `runOn`/`statement()` and is visible to an installed `StatementObserver` and traced
-exactly like any other statement — just with no `attribution`, which is not a `jobs` gap: **no
-producer of that pair exists anywhere yet** (`observe.ts`), so every event in every process today
-reads `attribution: undefined`. This is incidental, not guaranteed:
+exactly like any other statement — just with no `attribution`, which is not a `jobs` gap now
+either: `@ultimat3/entity`'s `postgresRepo` is `attribution.ts`'s producer (above), but `jobs`' own
+statements never reach it — `driver-pg.ts` compiles its SQL directly against `PgExecutor`, not
+through a repository, so nothing calls `withStatementAttribution` on a claim, an ack, a nack or a
+heartbeat's behalf, and every one of those events still reads `attribution: undefined`. An entity
+read or write sharing the same process now carries the pair; a job-driver statement does not, and
+the gap is real, just narrower than it was. This is incidental, not guaranteed:
 `PgExecutor` is duck-typed, so a deployment that hands `createPgDriver` an executor not backed by
 this package — a raw `Bun.SQL` instance, a hand-rolled pool, `driver-redis`/`driver-nats` (which do
 not touch Postgres at all) — gets zero observation of its queue traffic, and nothing here or in
-`jobs` enforces otherwise. A detector reading `attribution` (PR 9's N+1 work) will see a claim loop
-as anonymous SQL, never as a `job` statement, until `@ultimat3/entity`'s `postgresDriver()` — the
-one caller that still knows the entity and the op when the SQL exists — produces the pair, and
-`jobs` then threads its own.
+`jobs` enforces otherwise. A detector reading `attribution` (PR 9's N+1 work) sees a claim loop as
+anonymous SQL, never as a `job` statement, and will keep seeing it that way until `jobs` threads its
+own pair through `driver-pg.ts` the way `postgresRepo` now threads entity's — that is still future
+work, not something this change reaches.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
