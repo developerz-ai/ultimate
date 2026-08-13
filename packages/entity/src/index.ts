@@ -60,6 +60,8 @@ export {
   getEntity,
   registerEntity,
 } from './registry';
+export type { EntityRelations, Relation, RelationKind, RelationMap } from './relations';
+export { relationsOf } from './relations';
 export type { FindManyArgs, Page, Repo, RepoOptions, Transactor, Tx } from './repo';
 export { memoryRepo, memoryTransactor } from './repo';
 export type { Seed, SeedContext, SeedOptions } from './seed';

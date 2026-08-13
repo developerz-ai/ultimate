@@ -5,9 +5,8 @@
 // Money is the one place the projection is not one-to-one: one property becomes the two
 // physical columns that back it.
 
-import { bindingOf, snake } from './column';
+import { referenceBinding, snake } from './column';
 import { currencyCheck } from './columns';
-import { invariantViolated } from './errors';
 import type { Invariant } from './invariants';
 import type { ColumnDescription, EntityDescription } from './registry';
 import type { AnyColumn, ColumnMeta, IndexDef } from './types';
@@ -25,16 +24,8 @@ export interface DescribeInput<Row> {
 }
 
 const referenceOf = (entityName: string, property: string, meta: ColumnMeta): string | null => {
-  if (meta.references === undefined) return null;
-  const target = bindingOf(meta.references());
-  if (target === undefined) {
-    throw invariantViolated(
-      entityName,
-      property,
-      'references a column that belongs to no entity — pass a column of an entity() result',
-    );
-  }
-  return `${target.table}.${target.name}`;
+  const target = referenceBinding(entityName, property, meta);
+  return target === null ? null : `${target.table}.${target.name}`;
 };
 
 const describeColumn = <Row>(

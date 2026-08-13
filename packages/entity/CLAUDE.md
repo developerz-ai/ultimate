@@ -42,6 +42,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   hashed. Not the page size (a bigger next page is the same query) and not `select` (a projection
   cannot move a row). A cursor that fails either the signature or the scope is `X_CURSOR_INVALID`;
   it must never decode to "start from the top", which is what the old codec's `null` did.
+- **A relation is a foreign key read a second way, never a second declaration.** `relations.ts`
+  derives `belongsTo` from an entity's own `references()` columns and `hasMany` from the inbound
+  ones; there is no `hasMany: […]` init key and adding one would put two declarations of one fact
+  in the schema. A thunk is resolved in exactly one place — `referenceBinding()` in `column.ts` —
+  so the DDL projection (`describe.ts`) and the relation map can never disagree about what a
+  `references()` points at. Naming is order-independent by construction: when two keys want one
+  name, **every** member of that group takes its long form, so declaring a second foreign key
+  never renames the first relation behind a caller's back. What the two tiers cannot separate is
+  refused with `X_INVARIANT_VIOLATED` naming both columns — never collapsed into one relation.
 - **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
   that reason alone: `$parse` throws, and a call site should not need two error paths for one
   mistake.
@@ -133,6 +142,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection + `describeEntities()` for the manifest |
+| `relations.ts` | `relationsOf(entities)` — the FK thunks read as a named `belongsTo`/`hasMany` map |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 
 ## Commands
