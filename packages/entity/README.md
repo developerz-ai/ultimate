@@ -229,8 +229,29 @@ job, a script — it is the single statement it always was.
 | Wider than 500 ids | several whole statements, never one Postgres refuses |
 | An id with no row | `null`, exactly as the single statement answered |
 
-A sequential `for … of` loop still costs one statement per row — its `await` ends the window, and
-`Promise.all` over the rows is the form that batches.
+## A page batches the loop it causes
+
+A sequential loop shares no microtask — its `await` ends the window before the next lookup exists.
+So a page leaves its foreign key values behind, and the first lookup for any one of them resolves
+that key for every row of the page:
+
+```ts
+const page = await postgresRepo(posts).findMany({ orgId });
+for (const post of page.rows) {
+  // Two statements for the whole loop: the page, then one `in` over every author on it.
+  const author = await postgresRepo(users).findById(post.authorId, { orgId });
+}
+```
+
+Nothing new to write: the relation is the `references()` the column already declares.
+
+| | |
+|---|---|
+| Served to | a lookup with the same scope key, the same client, and no write to that entity since — the preload statement *is* the statement it was widened from |
+| Scope | the tenant predicate and `deleted_at is null` are in the preload statement, so a page's ids can never resolve rows outside the reader's own scope |
+| A write | drops what was preloaded for that entity, before the statement goes out, so a changed row is re-read and never served from before it |
+| Held | the ids, never the rows; keyed by context identity, so it dies with the request |
+| Declines to the old statement | no request in scope, an id no page indexed, a key that resolved to nothing |
 
 ## Tenancy is a guard
 

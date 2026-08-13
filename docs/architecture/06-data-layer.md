@@ -49,8 +49,8 @@ Generated per entity. The **only** place SQL lives.
 
 | Method | Notes |
 |---|---|
-| `findById(id)` | tenant filter applied automatically; returns `null`, never throws on miss. Inside a request, the calls issued in one microtask are **one** `where "id" in (…)` ([`coalesce.ts`](../../packages/entity/src/coalesce.ts)) — same scope, same soft-delete filter, one round trip |
-| `findMany(args)` | cursor-paginated only (below) |
+| `findById(id)` | tenant filter applied automatically; returns `null`, never throws on miss. Inside a request, the calls issued in one microtask are **one** `where "id" in (…)` ([`coalesce.ts`](../../packages/entity/src/coalesce.ts)) — same scope, same soft-delete filter, one round trip. An id that is a foreign key on a page this request read resolves that key for the whole page instead ([`jit-preload.ts`](../../packages/entity/src/jit-preload.ts)), which is what batches a sequential `for … of` loop |
+| `findMany(args)` | cursor-paginated only (below); leaves its page's foreign key values behind for the preload above |
 | `insert(values)` / `update(id, patch)` | invariants run before the statement |
 | `delete(id)` | soft-deletes when the entity declares `deletedAt`, hard-deletes when it does not |
 | `deleteWhere(filter)` | delete by equality filter; resolves with the **number of rows removed** |

@@ -6,7 +6,7 @@ import {
   type RecordingClient,
   setDbClient,
 } from '@ultimat3/db';
-import { MAX_IDS_PER_STATEMENT } from './coalesce';
+import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';

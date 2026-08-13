@@ -1,36 +1,25 @@
 // Single responsibility: collapse the point lookups one request issues in the same microtask into
-// a single `where id in (…)`. A list that resolves an author per row is the N+1 this removes, and
-// it removes it without adding a second way to read — `findById` keeps its signature and its
-// meaning, and pays for one round trip instead of one per row.
+// a single `where id in (…)`, and hand a lookup a page already answered straight to the preload.
+// A list that resolves an author per row is the N+1 this removes, and it removes it without adding
+// a second way to read — `findById` keeps its signature and its meaning, and pays for one round
+// trip instead of one per row.
 
 import { type Ctx, tryUseContext } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
+import {
+  type Answer,
+  type KeyColumn,
+  keyOf,
+  type PointRead,
+  readByIds,
+  scopeKey,
+  statementChunks,
+} from './batch-read';
 import type { EntityCore } from './entity';
-import { decodeRow, type PhysicalRow, physicalName } from './pg-row';
-import { type ReadShape, selectStatement } from './pg-sql';
+import { preloadedFindById } from './jit-preload';
+import { physicalName } from './pg-row';
+import type { ReadShape } from './pg-sql';
 import type { QueryPlan } from './tenancy';
-
-/**
- * Postgres binds at most 65535 parameters, so a batch wider than this becomes several statements
- * rather than one the driver refuses. Splitting can only cost round trips; not splitting would
- * fail reads that succeeded one at a time, and a coalescer that breaks a working program is worse
- * than no coalescer.
- */
-export const MAX_IDS_PER_STATEMENT = 500;
-
-/** The primary key, in the three spellings a batch needs: the plan's, the table's, and the type. */
-interface KeyColumn {
-  readonly property: string;
-  readonly column: string;
-  readonly kind: string;
-}
-
-/**
- * One row, or the failure decoding it. A column the table no longer matches is that row's
- * problem: a caller whose own row decoded must still be handed it, exactly as it would have been
- * by the statement it did not share.
- */
-type Answer = { readonly row: unknown } | { readonly error: unknown };
 
 /** One caller's lookup: the row it asked for, and the two ends of the promise it is holding. */
 interface Pending {
@@ -50,16 +39,6 @@ interface Batch {
   readonly pending: Map<string, Pending>;
   readonly load: (ids: readonly unknown[]) => Promise<ReadonlyMap<string, Answer>>;
 }
-
-/**
- * The string both sides of a batch are filed under — the requested id, and the key of a row that
- * came back. Postgres compares a `uuid` as a value and prints it lower-cased, so an id handed in
- * upper case matches the row *there* and would miss it here, which would make an answer depend on
- * whether some other lookup shared the microtask. Every other kind compares by its bytes, and
- * lower-casing a text key would merge two rows Postgres keeps apart.
- */
-const keyOf = (kind: string, value: unknown): string =>
-  kind === 'uuid' ? String(value).toLowerCase() : String(value);
 
 /**
  * Per request, keyed by ctx identity, so a batch dies with the request that opened it — the shape
@@ -89,77 +68,6 @@ const pendingFor = (id: unknown, key: string): Pending => {
   return { id, key, row, settle, fail };
 };
 
-/** A scope value has to be comparable as a string, or two scopes cannot be told apart. */
-const scopeValue = (value: unknown): string | undefined => {
-  if (value === null || value === undefined) return 'null';
-  if (value instanceof Date) return `date:${value.getTime()}`;
-  const kind = typeof value;
-  return kind === 'string' || kind === 'number' || kind === 'bigint' || kind === 'boolean'
-    ? `${kind}:${String(value)}`
-    : undefined;
-};
-
-/**
- * Everything about the read except the id. Two lookups may share one statement only when this
- * matches: another tenant's predicate, a different projection or a different soft-delete
- * visibility is a different query, and merging them would answer a caller with rows the statement
- * they asked for could never have returned.
- *
- * `undefined` when a predicate value cannot be rendered — an object scope is one this cannot prove
- * two lookups share, and a batch is only ever an optimisation, so it declines instead of guessing.
- */
-const scopeKey = <Row>(
-  entity: EntityCore<Row>,
-  scoped: QueryPlan,
-  shape: ReadShape,
-): string | undefined => {
-  const predicates: string[][] = [];
-  for (const predicate of scoped.where) {
-    const value = scopeValue(predicate.value);
-    if (value === undefined) return undefined;
-    predicates.push([predicate.column, predicate.op, value]);
-  }
-  // JSON rather than a joined string: a value carrying the separator cannot forge a boundary.
-  return JSON.stringify([
-    entity.$name,
-    entity.$table,
-    shape.includeDeleted,
-    scoped.select ?? null,
-    predicates,
-  ]);
-};
-
-/** The one statement, filed by key — the same builder, the same scope, `in` instead of `=`. */
-const readByIds = async <Row>(
-  entity: EntityCore<Row>,
-  client: DbClient,
-  scoped: QueryPlan,
-  shape: ReadShape,
-  key: KeyColumn,
-  ids: readonly unknown[],
-): Promise<ReadonlyMap<string, Answer>> => {
-  const found = await client.query<PhysicalRow>(
-    selectStatement(
-      entity,
-      { ...scoped, where: [{ column: key.property, op: 'in', value: ids }, ...scoped.where] },
-      shape,
-      ids.length,
-    ),
-  );
-  const answers = new Map<string, Answer>();
-  for (const physical of found) {
-    // Filed under the value the statement matched on, which is readable whether or not the rest
-    // of the row decodes — so a drifted column fails one caller instead of everyone in the batch.
-    const filedAt = keyOf(key.kind, physical[key.column]);
-    try {
-      answers.set(filedAt, { row: decodeRow(entity, physical) });
-    } catch (error) {
-      answers.set(filedAt, { error });
-    }
-  }
-  return answers;
-};
-
 const openBatch = (
   batches: Map<string, Batch>,
   key: string,
@@ -182,8 +90,7 @@ const flush = async (batch: Batch): Promise<void> => {
   const waiting = [...batch.pending.values()];
   batch.pending.clear();
   // One statement at a time: a batch wide enough to split must not take the pool with it.
-  for (let from = 0; from < waiting.length; from += MAX_IDS_PER_STATEMENT) {
-    const chunk = waiting.slice(from, from + MAX_IDS_PER_STATEMENT);
+  for (const chunk of statementChunks(waiting)) {
     try {
       const answers = await batch.load(chunk.map((entry) => entry.id));
       for (const entry of chunk) {
@@ -203,9 +110,12 @@ const flush = async (batch: Batch): Promise<void> => {
 };
 
 /**
- * The batch this lookup joins, or `undefined` when there is none to join: no request in scope, a
- * composite key, a scope this cannot compare, or a client the open batch does not read from.
- * Declining is always correct — the caller sends the one statement it always sent.
+ * The shared read this lookup joins, or `undefined` when there is none to join: no request in
+ * scope, a composite key, a scope this cannot compare, or a client the open batch does not read
+ * from. Declining is always correct — the caller sends the one statement it always sent.
+ *
+ * Two shapes, one seam. A page already read answers first (one statement for a whole sequential
+ * loop), and what no page can answer joins the microtask batch.
  */
 export const coalesceFindById = <Row>(
   entity: EntityCore<Row>,
@@ -237,21 +147,23 @@ export const coalesceFindById = <Row>(
   const key = scopeKey(entity, scoped, shape);
   if (key === undefined) return undefined;
 
-  const batches = batchesFor(ctx);
-  const open = batches.get(key);
-  // A pinned client and the ambient pool are two places to read from, and a batch is one
-  // statement: a lookup that does not share the open batch's client sends its own.
-  if (open !== undefined && open.client !== client) return undefined;
   const keyColumnRef: KeyColumn = {
     property: keyColumn,
     column: physicalName(entity, keyColumn),
     kind: declared.$meta.kind,
   };
-  const batch =
-    open ??
-    openBatch(batches, key, client, (ids) =>
-      readByIds(entity, client, scoped, shape, keyColumnRef, ids),
-    );
+  const read: PointRead<Row> = { entity, client, scoped, shape, key: keyColumnRef };
+  // A page whose foreign keys this id is one of answers for every row of that page at once, which
+  // is the only thing that batches a `for … of` loop: its `await` already ended the microtask.
+  const preloaded = preloadedFindById<Row>(ctx, read, key, id);
+  if (preloaded !== undefined) return preloaded;
+
+  const batches = batchesFor(ctx);
+  const open = batches.get(key);
+  // A pinned client and the ambient pool are two places to read from, and a batch is one
+  // statement: a lookup that does not share the open batch's client sends its own.
+  if (open !== undefined && open.client !== client) return undefined;
+  const batch = open ?? openBatch(batches, key, client, (ids) => readByIds(read, ids));
 
   const filedAt = keyOf(keyColumnRef.kind, id);
   const already = batch.pending.get(filedAt);

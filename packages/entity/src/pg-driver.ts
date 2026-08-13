@@ -20,6 +20,7 @@ import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
+import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { bindValues, decodeRow, type PhysicalRow } from './pg-row';
 import {
   countStatement,
@@ -77,6 +78,17 @@ export const postgresRepo = <Row>(
         )
       : deleteStatement(entity, plan);
 
+  /**
+   * Every write goes out through here, which makes it the ONE place the request's preloaded rows
+   * are dropped: a row this statement changes must not be served afterwards from a page read
+   * before it. Before the statement, not after — a row read back afterwards is the row this write
+   * left, and one read concurrently with it was concurrent either way.
+   */
+  const writing = <T>(send: () => Promise<T>): Promise<T> => {
+    forgetPreloaded(entity.$name);
+    return send();
+  };
+
   return {
     async findById(id, options) {
       const plan = idPlan(entity, id, options, 'findById');
@@ -96,6 +108,10 @@ export const postgresRepo = <Row>(
         selectStatement(entity, plan, shapeOf(args, seekFrom(entity, plan)), plan.limit + 1),
       );
       const rows = found.slice(0, plan.limit).map((row) => decodeRow(entity, row));
+      // What the page leaves behind: its foreign key values, so the first `findById` for any one
+      // of them resolves the key for the whole page. A `for … of` loop over these rows costs one
+      // statement, not one per row — its `await` already ended the coalescing window.
+      tagSiblings(entity, rows);
       const last = rows.at(-1);
       return {
         rows,
@@ -108,8 +124,8 @@ export const postgresRepo = <Row>(
 
     async insert(values) {
       entity.$assert(values);
-      const written = await client().one<PhysicalRow>(
-        insertStatement(entity, bindValues(entity, values)),
+      const written = await writing(() =>
+        client().one<PhysicalRow>(insertStatement(entity, bindValues(entity, values))),
       );
       // `returning *` is the row Postgres actually stored, defaults included.
       return written === null ? values : decodeRow(entity, written);
@@ -123,8 +139,8 @@ export const postgresRepo = <Row>(
         if (current === null) throw notFound(entity.$name, id);
         return current;
       }
-      const written = await client().one<PhysicalRow>(
-        updateStatement(entity, plan, values, shapeOf(options ?? {})),
+      const written = await writing(() =>
+        client().one<PhysicalRow>(updateStatement(entity, plan, values, shapeOf(options ?? {}))),
       );
       if (written === null) throw notFound(entity.$name, id);
       const after = decodeRow(entity, written);
@@ -137,13 +153,17 @@ export const postgresRepo = <Row>(
 
     async delete(id, options) {
       const plan = idPlan(entity, id, options, 'delete');
-      if ((await client().execute(removal(plan))) === 0) throw notFound(entity.$name, id);
+      if ((await writing(() => client().execute(removal(plan)))) === 0) {
+        throw notFound(entity.$name, id);
+      }
     },
 
     // No `X_NOT_FOUND` here: a filter that matches nothing is a fact the caller asked for, not a
     // failed address. The count is the answer, which is why it is a `number` and not `void`.
     async deleteWhere(filter, options) {
-      return client().execute(removal(deletePlan(entity, filter, options, 'deleteWhere')));
+      // The plan is built before the write is announced: a refused filter never happened.
+      const plan = deletePlan(entity, filter, options, 'deleteWhere');
+      return writing(() => client().execute(removal(plan)));
     },
 
     async updateWhere(filter, patch, options) {
@@ -155,7 +175,7 @@ export const postgresRepo = <Row>(
       // re-asserts every row it writes, and a JS-only invariant (`kind: 'assert'`, `sql: null`)
       // has no CHECK for Postgres to have enforced. Inside `withTransaction` the throw takes the
       // whole statement with it.
-      const written = await client().query<PhysicalRow>(statement);
+      const written = await writing(() => client().query<PhysicalRow>(statement));
       for (const row of written) entity.$assert(decodeRow(entity, row));
       return written.length;
     },

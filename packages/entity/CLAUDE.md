@@ -41,7 +41,28 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   window closes before the statement goes out, so a lookup arriving mid-flight opens the next batch
   instead of joining ids already on the wire, and past `MAX_IDS_PER_STATEMENT` a batch becomes
   several whole statements rather than one Postgres refuses for its bind count. A sequential
-  `for … of` loop still pays one statement per row — its `await` ends the window.
+  `for … of` loop shares no microtask — its `await` ends the window — which is what the sibling
+  preload below is for.
+- **A page batches the loop it causes, and a preloaded row is only ever served to the statement
+  that read it.** `findMany` leaves its page's foreign key *values* behind (`jit-preload.ts`,
+  `tagSiblings`), so the first `findById` for any one of them resolves that key for every row of
+  the page in one `in` statement and the rest of a `for … of` loop is memory. Five rules, none
+  optional. **The scope guard is a security boundary**: a preloaded row is served only under the
+  *same* `scopeKey` the coalescer uses — same tenant predicate, same soft-delete visibility, same
+  projection, same entity — and the preload statement is that scope widened to the page's ids, so
+  a page read under one tenant can never resolve another tenant's rows, whichever tenant asks.
+  **Same client, or nothing**: a bucket filled through the ambient pool is not read through a
+  pinned one, which is also what stops a row read inside a transaction being served after it —
+  `db()` hands back a different client once the transaction is over, rolled back or not.
+  **A write drops it**: `postgresRepo`'s `writing()` is the one place every write goes out, and it
+  calls `forgetPreloaded(entity.$name)` *before* the statement, so a row a request changed is
+  re-read and never served from a page read before it. **Values, not rows**: the index is keyed by
+  id and holds ids, so a page early in a long request pins its keys and not its rows, and it dies
+  with the request like every other per-ctx store here. **Declining is the old behaviour**: no
+  request in scope, an id no page indexed, a key that resolved to nothing — the caller reads the
+  statement it always read. `MAX_IDS_PER_STATEMENT` bounds the preload exactly as it bounds a
+  batch. What both share — the scope key, `keyOf`, the one `in` statement — lives in
+  `batch-read.ts` so the two can never disagree about when a shared statement is legal.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -170,6 +191,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
+| `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
+| `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |

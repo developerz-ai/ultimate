@@ -142,12 +142,39 @@ Nothing to opt into — no `dataloader()`, no `batch()`. `findById` keeps its si
 
 | Property | Behavior |
 |---|---|
-| Window | one microtask, closed before the statement goes out. A sequential `for … of` loop still costs one statement per row — its `await` ends the window, and `Promise.all` is the form that batches |
+| Window | one microtask, closed before the statement goes out. A sequential `for … of` loop shares no microtask — its `await` ends the window — so what batches one is the page it is looping over (below) |
 | Lifetime | one request. The batch is keyed by context identity, so it dies with the request and never crosses one |
 | Never shared with | another tenant, another soft-delete visibility, another projection, another entity, another client. The coalesced statement has to be one each single lookup would have been served by |
 | Scope | the tenant predicate and `deleted_at is null` are **inside** the statement, so an id that is missing, soft-deleted or another tenant's still reads as `null` — never another caller's row |
 | Wide batches | past 500 ids, several whole statements rather than one Postgres refuses for its bind count |
 | Outside a request | a job, a script, a migration: the single statement it always was |
+
+## A page batches the loop it causes
+
+A `for … of` loop awaits between iterations, so no two of its lookups share a microtask. The page
+they came from batches them instead, `As of 2026-08`:
+
+```ts
+const page = await db.posts.findMany({ orgId });
+for (const post of page.rows) {
+  // Two statements for the whole loop: the page, then one `where "id" in (…)` over every author
+  // on it. Every lookup after the first is memory.
+  const author = await db.users.findById(post.authorId, { orgId });
+}
+```
+
+Nothing new to write, and nothing to opt into: the relation is the `references()` the column
+already declares, so the fix reaches loops that are already written.
+
+| Property | Behavior |
+|---|---|
+| Trigger | the first `findById` whose id is a foreign key value on a page this request read. It resolves that key for **every** row of the page, in one statement |
+| Never shared with | a different scope key (another tenant, another soft-delete visibility, another projection, another entity), another client, or the same entity after a write to it |
+| Scope | the tenant predicate and `deleted_at is null` are inside the preload statement — it is the statement each single lookup would have sent, widened to the page's ids — so a page's ids can never resolve rows outside the reader's own scope |
+| A write | drops what was preloaded for that entity before the statement goes out, so a row this request changed is re-read, never served from a page read before it |
+| Lifetime | one request. What is held is the ids, not the rows, keyed by context identity |
+| Wide pages | past 500 ids, whole statements — the same bound the microtask batch has |
+| Outside a request | a job, a script: a page leaves nothing behind, and every lookup is the statement it always was |
 
 ## Invariants
 
