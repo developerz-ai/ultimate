@@ -256,6 +256,35 @@ describe('withTransaction and the reserved connection', () => {
 
     expect(client.texts).toEqual(['BEGIN', 'select 1', 'COMMIT']);
   });
+
+  // A nested `withTransaction` reuses `outer.connection` (`runNested`, transaction.ts:80) rather
+  // than reserving again — that sharing is what makes SAVEPOINT/RELEASE land on the same physical
+  // connection BEGIN did. A second `reserve()` per level would pin a second connection per
+  // SAVEPOINT, and the root's `using` would only ever give one of them back: a leak per nesting
+  // depth, invisible to every test above because none of them nest three deep under a pin.
+  test('nesting three deep still takes and releases exactly one pin', async () => {
+    const { client: reservable, pins } = reservableOver(client);
+    const undone: string[] = [];
+
+    await expect(
+      withTransaction(
+        async (outer) => {
+          outer.onRollback(() => undone.push('outer'));
+          await withTransaction(async (inner) => {
+            inner.onRollback(() => undone.push('inner'));
+            await withTransaction(async (innermost) => {
+              innermost.onRollback(() => undone.push('innermost'));
+              throw new Error('deep failure');
+            });
+          });
+        },
+        { client: reservable },
+      ),
+    ).rejects.toThrow('deep failure');
+
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
+    expect(undone).toEqual(['innermost', 'inner', 'outer']);
+  });
 });
 
 describe('withTransaction rollback failures', () => {

@@ -293,6 +293,29 @@ describe('createPgliteClient', () => {
     ]);
   });
 
+  // The RAII rewrite moved BEGIN inside the guarded scope precisely so a rejecting first statement
+  // still gives the turn back — before that fix the turn stayed with a reservation nobody could
+  // reach, and every later statement in the process queued behind it forever.
+  test('a failed BEGIN does not wedge the queue — a second statement still runs', async () => {
+    const driver: PgliteDriver = {
+      async query(text) {
+        if (text === 'begin') throw new Error('connection reset');
+        return { rows: [] };
+      },
+      async close() {},
+    };
+    const client = createPgliteClient({ driver });
+
+    const failed = (async () => {
+      using reserved = await client.reserve();
+      await reserved.execute(sql`begin`);
+    })();
+    await expect(failed).rejects.toThrow();
+
+    // Bounded by the test's own timeout: a wedged queue hangs here rather than failing loud.
+    await expect(client.execute(sql`insert into t values (1)`)).resolves.toBeDefined();
+  });
+
   test('releasing after disposal is a no-op, not a second turn', async () => {
     const driver = fakeDriver({ rows: [] });
     const client = createPgliteClient({ driver });

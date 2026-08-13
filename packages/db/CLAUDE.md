@@ -79,6 +79,13 @@ No other role and no test has that. The pin is therefore also why the lock scope
 cannot come back until the migration blocking on it finishes. `lock: false` (`x db branch`, a
 private database) reserves nothing and takes no lock, exactly as before.
 
+Pinned by `migrate.live.test.ts` against a real Postgres: two concurrent `migrate()` calls (one
+applies, the other skips — never both, never a unique-violation crash) and a migration that fails
+mid-run (the next `migrate()` still finishes in ~0.3s instead of hanging on a lock the failure
+left stuck). Both are invisible to a recording client, which cannot tell a pinned session from a
+pooled one apart — the statement text is identical either way. Skips unless `TEST_DATABASE_URL` is
+set.
+
 Every transaction-control statement is `.catch`ed exactly where a failure would *mask* the error
 that caused it, and nowhere else: `ROLLBACK` and `ROLLBACK TO SAVEPOINT` are best-effort, while
 `SAVEPOINT` and `RELEASE SAVEPOINT` are deliberately uncaught — a savepoint that was never taken
