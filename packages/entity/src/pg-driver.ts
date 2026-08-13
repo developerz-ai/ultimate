@@ -41,6 +41,12 @@ export interface PostgresDriverOptions {
    * globally with `setDbClient()`.
    */
   readonly client?: DbClient | undefined;
+  /**
+   * Preload foreign keys resolved by a page into a request-scoped cache, so the first
+   * `findById` for any one of them resolves that key for the whole page in one statement.
+   * Default: true.
+   */
+  readonly jitPreload?: boolean | undefined;
 }
 
 const shapeOf = (args: FindManyArgs, seek?: readonly unknown[]): ReadShape => ({
@@ -111,7 +117,7 @@ export const postgresRepo = <Row>(
       // What the page leaves behind: its foreign key values, so the first `findById` for any one
       // of them resolves the key for the whole page. A `for … of` loop over these rows costs one
       // statement, not one per row — its `await` already ended the coalescing window.
-      tagSiblings(entity, rows);
+      if (config.jitPreload !== false) tagSiblings(entity, rows);
       const last = rows.at(-1);
       return {
         rows,

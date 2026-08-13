@@ -306,3 +306,27 @@ describe('composition', () => {
     expect(client.texts).not.toContain('COMMIT');
   });
 });
+
+describe('postgresRepo() jitPreload config', () => {
+  test('defaults to enabled, tagging siblings on findMany', async () => {
+    client.on('select', {
+      rows: [physical({ id: ID }), physical({ id: '00000000-0000-7000-8000-000000000102' })],
+    });
+    const repo = postgresRepo(invoices, { jitPreload: true });
+    const result = await repo.findMany({ orgId: ORG, limit: 2 });
+    // With jitPreload enabled, findMany succeeds and returns the page.
+    expect(result.rows).toHaveLength(2);
+    expect(lastText()).toContain('select');
+  });
+
+  test('can be disabled, skipping sibling tagging on findMany', async () => {
+    client.on('select', {
+      rows: [physical({ id: ID }), physical({ id: '00000000-0000-7000-8000-000000000102' })],
+    });
+    const repo = postgresRepo(invoices, { jitPreload: false });
+    const result = await repo.findMany({ orgId: ORG, limit: 2 });
+    // With jitPreload disabled, findMany still works but does not tag siblings.
+    expect(result.rows).toHaveLength(2);
+    expect(lastText()).toContain('select');
+  });
+});
