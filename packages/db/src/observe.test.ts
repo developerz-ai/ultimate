@@ -50,9 +50,17 @@ const fakePgliteDriver = (rows: readonly Record<string, unknown>[] = []): Pglite
   close: async () => undefined,
 });
 
+/** Assigned by the block below, restored here: `performance.now` is process-wide like the other two. */
+let clock: ReturnType<typeof spyOn<Performance, 'now'>> | undefined;
+
 afterEach(() => {
   host.Bun.SQL = realBunSql;
   setStatementObserver(undefined);
+  // Not after the `expect`: a failed assertion throws first, and a spy left on the clock rewrites
+  // it for every test after this one — so the next failure names a test two files down from the
+  // real one.
+  clock?.mockRestore();
+  clock = undefined;
 });
 
 describe('statementObserver', () => {
@@ -96,6 +104,9 @@ describe('statementObserver', () => {
     expect(observer.seen).toHaveLength(0);
   });
 
+  // `attribution` is supplied here and nowhere else in a running process: no funnel sets it yet
+  // (`observe.ts`). What this pins is the seam's passthrough — a field the seam dropped would be
+  // invisible to a funnel test, because a funnel has nothing to drop.
   test('carries the full event through untouched, attribution and error included', () => {
     const observer = recorder();
     setStatementObserver(observer);
@@ -125,33 +136,30 @@ describe('statementObserver', () => {
 describe('the production path — no observer installed', () => {
   test('the pooled client never reads the clock', async () => {
     installFakeSql();
-    const clock = spyOn(performance, 'now');
+    clock = spyOn(performance, 'now');
 
     await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
 
     expect(clock).not.toHaveBeenCalled();
-    clock.mockRestore();
   });
 
   test('the embedded client never reads the clock', async () => {
-    const clock = spyOn(performance, 'now');
+    clock = spyOn(performance, 'now');
 
     await createPgliteClient({ driver: fakePgliteDriver() }).query(sql`select 1`);
 
     expect(clock).not.toHaveBeenCalled();
-    clock.mockRestore();
   });
 
   test('installing an observer is what makes the clock read happen at all', async () => {
     installFakeSql();
     setStatementObserver({ onStatement: () => undefined });
-    const clock = spyOn(performance, 'now');
+    clock = spyOn(performance, 'now');
 
     await createPostgresClient({ url: TEST_URL }).query(sql`select 1`);
 
     // Proves the two tests above are a real fork in the code, not an unreachable spy.
     expect(clock).toHaveBeenCalled();
-    clock.mockRestore();
   });
 
   test('a silent observer changes nothing about what a statement returns', async () => {

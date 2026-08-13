@@ -117,8 +117,16 @@ function witnessed(inner: DbClient): Witness {
   };
 }
 
-const reasonFor = (witness: Witness, needle: string): string | undefined =>
-  witness.statements.find((statement) => statement.text.includes(needle))?.reason;
+/**
+ * Fails when nothing matched instead of answering `undefined` for it. `find(...)?.reason` alone
+ * collapses two different facts into one value — "this statement ran outside every scope" and
+ * "this statement never ran" — and the `toBeUndefined()` assertions below are the load-bearing
+ * half of both test names, so a reworded ledger read would leave them passing on the wrong one.
+ */
+const reasonFor = (witness: Witness, needle: string): string | undefined => {
+  expect(witness.statements.map((statement) => statement.text).join(' | ')).toContain(needle);
+  return witness.statements.find((statement) => statement.text.includes(needle))?.reason;
+};
 
 describe('migrate', () => {
   test('refuses and applies nothing when the ledger belongs to another app version', async () => {

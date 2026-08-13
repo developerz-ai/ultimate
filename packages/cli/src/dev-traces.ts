@@ -5,6 +5,9 @@
 
 import type { RequestTrace, SpanKind, TimelineSpan } from '@ultimat3/admin/dev';
 import type { ReadableSpan, SpanExporter } from '@ultimat3/core';
+// The attribute name is `@ultimat3/db`'s to declare — this reads it rather than restating it, so
+// renaming it there is a compile error here instead of a panel that silently groups nothing.
+import { STATEMENT_ATTRIBUTE } from '@ultimat3/db';
 
 /** Traces retained. A dev panel shows recent requests; it does not page through history. */
 const DEFAULT_LIMIT = 50;
@@ -94,9 +97,9 @@ function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTra
           startMs: Math.max(0, span.startedAt - origin),
           durationMs: span.durationMs,
           // The panel counts repeats of `detail` to find the N+1. A statement states its own
-          // identity (`db.statement`, set by `@ultimat3/db`'s funnels); for every other span the
-          // name is that identity — `query.feed` twice is two reads of one query.
-          detail: attrString(span, 'db.statement') ?? span.name,
+          // identity (`STATEMENT_ATTRIBUTE`, set by `@ultimat3/db`'s funnels); for every other span
+          // the name is that identity — `query.feed` twice is two reads of one query.
+          detail: attrString(span, STATEMENT_ATTRIBUTE) ?? span.name,
         }),
       )
       .sort((a, b) => a.startMs - b.startMs),

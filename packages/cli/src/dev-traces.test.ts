@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { FrozenClock } from '@ultimat3/core';
 import { configureTelemetry, frozenClock, resetTelemetry, withSpan } from '@ultimat3/core';
+import { STATEMENT_ATTRIBUTE } from '@ultimat3/db';
 import { createTraceRecorder } from './dev-traces';
 
 const install = (
@@ -31,13 +32,14 @@ function request(
           clock.advance(5);
         });
       }
-      // Exactly the shape `@ultimat3/db`'s funnels open: `db.<verb>`, kind `client`, text on the
-      // span. Anything else here would be a recorder tested against SQL nothing actually emits.
+      // Exactly the shape `@ultimat3/db`'s funnels open: `db.<verb>`, kind `client`, text under the
+      // attribute that package declares. Anything else here would be a recorder tested against SQL
+      // nothing actually emits — a literal third copy of the key is that bug with extra steps.
       for (const text of statements) {
         withSpan(
           'db.select',
           (statement) => {
-            statement.setAttribute('db.statement', text);
+            statement.setAttribute(STATEMENT_ATTRIBUTE, text);
             clock.advance(2);
           },
           { kind: 'client' },

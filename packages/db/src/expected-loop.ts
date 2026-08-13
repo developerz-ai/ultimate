@@ -3,6 +3,9 @@
 // A scope with a written reason — never a comment pragma and never a config list of exempt call
 // sites (axiom 1), because both put the argument somewhere other than the loop it defends.
 
+// `node:` because Bun exposes no native async-context primitive: the reason has to outlive every
+// `await` inside the scope, and `AsyncLocalStorage` is the only thing that carries a value across
+// them. A module-scope variable would be shared by two concurrent loops.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { assert } from '@ultimat3/core';
 

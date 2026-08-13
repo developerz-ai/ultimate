@@ -6,8 +6,12 @@
 
 import { withSpan } from '@ultimat3/core';
 
-/** OTel's name for the statement itself. `packages/cli/src/dev-traces.ts` reads it as the detail. */
-const STATEMENT_ATTRIBUTE = 'db.statement';
+/**
+ * OTel's name for the statement itself. Exported because it is a contract across two packages, not
+ * a local constant: `packages/cli/src/dev-traces.ts` reads it as a span's detail, so a rename that
+ * only landed here would leave the timeline grouping span names again with every test still green.
+ */
+export const STATEMENT_ATTRIBUTE = 'db.statement';
 
 const LEADING_WORD = /^[A-Za-z]+/;
 

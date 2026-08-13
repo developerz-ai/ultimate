@@ -37,8 +37,9 @@ await withTransaction(async (tx) => {
 | `readOnly()` | mutation-rejecting wrapper |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
-| `setStatementObserver()` / `statementObserver()` | one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
-| `expectedQueryLoop()` / `expectedQueryLoopReason()` | the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
+| `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
+| `expectedQueryLoop()` / `expectedQueryLoopReason()` | `As of 2026-08`: the one way to declare a loop of queries deliberate — the reason rides on every statement it issues as `StatementEvent.expected` |
+| `STATEMENT_ATTRIBUTE` | `As of 2026-08`: `db.statement`, the OTel attribute each span carries its text under — declared here, read by `x dev`'s timeline |
 | `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only
@@ -173,6 +174,8 @@ migration inside its own transaction. It refuses **before applying anything** wh
 Report (`--json`): `{ applied: [{ id, name, durationMs }], skipped: [id], durationMs, appVersion }`.
 
 ## A loop of queries that is deliberate says so
+
+`As of 2026-08`:
 
 ```ts
 return expectedQueryLoop('one indexed lookup per text field beats one unindexed OR', async () => {

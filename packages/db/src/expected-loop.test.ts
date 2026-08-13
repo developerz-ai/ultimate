@@ -4,12 +4,13 @@
 // diagnostic that judges a request after its scopes have all closed and so has to guess.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createPostgresClient } from './client';
+import { createPostgresClient, setDbClient } from './client';
 import { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
 import { createPgliteClient, type PgliteDriver } from './pglite';
 import { sql } from './sql';
+import { withTransaction } from './transaction';
 
 const TEST_URL = 'postgres://app@127.0.0.1:5432/ultimate_test';
 const REASON = 'admin search runs one indexed lookup per text field';
@@ -57,7 +58,9 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
 
 afterEach(() => {
   host.Bun.SQL = realBunSql;
+  // All three are process-wide: one left installed makes every later test run against this one's.
   setStatementObserver(undefined);
+  setDbClient(undefined);
 });
 
 describe('unit · the expected-loop scope', () => {
@@ -137,14 +140,18 @@ describe('unit · the expected-loop scope', () => {
   // tell a considered loop from a silenced one, which is the thing this mechanism exists to fix.
   test('a blank reason is refused, and the body never runs', () => {
     let ran = false;
+    let caught: unknown;
     try {
       expectedQueryLoop('   ', () => {
         ran = true;
       });
-      throw new Error('expectedQueryLoop accepted a blank reason');
     } catch (error) {
-      expect(error).toBeUltimateError('X_INVARIANT');
+      caught = error;
     }
+
+    // Asserted on what was caught rather than guarded by a bare `throw`: a scope that accepted the
+    // blank reason leaves `caught` undefined, which fails here for the reason it actually failed.
+    expect(caught).toBeUltimateError('X_INVARIANT');
     expect(ran).toBe(false);
   });
 });
@@ -171,6 +178,42 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
     await client.query(sql`select id from posts`);
 
     expect(observer.seen.map((event) => event.expected)).toEqual([REASON, undefined]);
+  });
+
+  // The embedded funnel's other two paths, which the plain case above never reaches: `BEGIN` and
+  // `COMMIT` queue for a turn, and a statement issued while the transaction holds that turn skips
+  // the queue entirely. Every one of them settles several `await`s after the scope opened, and the
+  // reason has to survive all of them — a store lost at the queue would report the framework's own
+  // per-migration transaction as an N+1 nobody argued for.
+  test('the embedded client keeps the reason across the turn queue and a transaction', async () => {
+    const observer = recorder();
+    setStatementObserver(observer);
+    const client = createPgliteClient({ driver: fakeDriver() });
+    setDbClient(client);
+
+    await expectedQueryLoop(REASON, () =>
+      withTransaction(async (tx) => {
+        await tx.query(sql`select id from members`);
+        // Through the ambient client, so it arrives with a transaction open and runs direct.
+        await client.query(sql`select id from posts`);
+      }),
+    );
+    await client.query(sql`select id from posts`);
+
+    expect(observer.seen.map((event) => event.text)).toEqual([
+      'BEGIN',
+      'select id from members',
+      'select id from posts',
+      'COMMIT',
+      'select id from posts',
+    ]);
+    expect(observer.seen.map((event) => event.expected)).toEqual([
+      REASON,
+      REASON,
+      REASON,
+      REASON,
+      undefined,
+    ]);
   });
 
   // Fifty identical timeouts inside a declared loop are still that loop: the failing path carries

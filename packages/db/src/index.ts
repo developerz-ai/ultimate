@@ -128,5 +128,6 @@ export type { ReadOnlyRoleOptions } from './readonly-role';
 export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
 export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
+export { STATEMENT_ATTRIBUTE } from './statement-span';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction';
 export { beginStatement, currentTx, withTransaction } from './transaction';

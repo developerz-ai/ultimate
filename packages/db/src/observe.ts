@@ -5,9 +5,15 @@
 
 /**
  * What the layer that compiled the statement knows and the driver cannot: which entity and which
- * repository operation. Threaded by `@ultimat3/entity` (tier 2, so importing this is downward),
- * absent for hand-written SQL, a migration or a health probe. It is the difference between
- * "50× `select … where id = $1`" and "50× `findById` on `members`" in a diagnostic's report.
+ * repository operation. It is the difference between "50× `select … where id = $1`" and "50×
+ * `findById` on `members`" in a diagnostic's report.
+ *
+ * **Nothing produces one yet** — `As of 2026-08` both funnels omit the field, so every event in a
+ * running process carries `attribution: undefined`, and the only values this type has ever held are
+ * the ones a test supplied. The producer is `@ultimat3/entity`'s `postgresDriver()` (tier 2, so
+ * importing this is downward): it is the one caller that still knows the entity and the operation
+ * by the time the SQL exists. Hand-written SQL, a migration and a health probe stay unattributed
+ * even then, which is why the field is optional rather than required.
  */
 export interface StatementAttribution {
   /** Entity name as declared, e.g. `members` — never a table name. */
@@ -28,6 +34,7 @@ export interface StatementEvent {
   readonly rows: number;
   /** The rejection, already wrapped as `X_DB_UNAVAILABLE` by the funnel. */
   readonly error?: unknown;
+  /** Who compiled this statement. Always absent today — see `StatementAttribution`. */
   readonly attribution?: StatementAttribution | undefined;
   /**
    * The reason of the innermost `expectedQueryLoop()` this statement was issued inside, absent

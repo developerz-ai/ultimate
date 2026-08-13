@@ -111,10 +111,14 @@ function rowsOf<T>(result: unknown): readonly T[] {
   return Array.isArray(result) ? (result as readonly T[]) : [];
 }
 
+// The command tag only when it counted something, exactly like `rowsOf` in `pglite.ts` — one rule
+// across both drivers, so `execute()` and the observer's event cannot answer differently for the
+// same statement depending on which database is behind them. A driver that tags a read `0` while
+// returning rows would otherwise report 0 here and the row count there.
 function affectedBy(result: unknown): number {
   if (!Array.isArray(result)) return 0;
   const count = (result as { count?: unknown }).count;
-  return typeof count === 'number' ? count : result.length;
+  return typeof count === 'number' && count > 0 ? count : result.length;
 }
 
 export interface PostgresClient extends ReservableClient {

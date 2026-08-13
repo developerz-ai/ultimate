@@ -101,10 +101,12 @@ after the await left the corpse cached for the next `connect()`, and a second `c
 the same place rather than clearing it. The rejection still reaches the caller on `client.ts`
 (`pglite.ts` swallows a failed *boot*, which is a different thing: there is nothing to close).
 
-`execute()` trusts `affectedRows` only when it is `> 0`: PGlite counts MODIFIED rows, so a SELECT
-that returned rows is tagged `0`, and `??` would report 0 for every read while
-`PostgresClient.execute` reported the row count. A write that modified nothing returned no rows
-either, so the fallback stays 0 there.
+`execute()` trusts the command tag only when it is `> 0`, in **both** drivers — `rowsOf`
+(`pglite.ts`) and `affectedBy` (`client.ts`) are one rule written twice, not two rules. PGlite
+counts MODIFIED rows, so a SELECT that returned rows is tagged `0` and `??` would report 0 for
+every read; a driver that tags a read `0` on the pooled side would have diverged from PGlite the
+same way, and the same guard closes both. A write that modified nothing returned no rows either, so
+the fallback stays 0 there.
 
 `observe.ts` is the seam a statement-level diagnostic installs into: one process-wide `StatementObserver`, installed with
 `setStatementObserver()` and read with `statementObserver()`, the same ambient shape as
@@ -134,14 +136,23 @@ observer that only reports must not throw. `rows` comes from the same helper `ex
 (`affectedBy` in `client.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
 report and the return value cannot disagree about one statement.
 
+`StatementEvent.attribution` is the one field on that event **nothing produces yet**: both funnels
+omit it, so every event in every running process reads `undefined`, and the only values the type
+has held are a test's. Its producer is `@ultimat3/entity`'s `postgresDriver()` — the last caller
+that still knows the entity and the op once the SQL exists. Say that plainly wherever it comes up
+rather than describing the field as threaded; a seam nobody fills is a claim, not a feature.
+
 `statement-span.ts` is the other half of the observed shell: `withStatementSpan` wraps the **send
 alone**, so the span's duration is the statement's and the observer's own work is not charged to
 the database. Three decisions, each load-bearing. **`db.<verb>`** (`db.select`, `db.begin`; a text
 opening with a comment is `db.statement`) — `@ultimat3/cli`'s `dev-traces.ts` reads the `/_x` panel
 kind off the name prefix like it does for `query.`/`cache.`/`job.`, and this package is tier 1 and
-cannot name a tier-5 vocabulary. **The text is `db.statement`**, OTel's own attribute and the one
-`dev-traces.ts` prefers over the span name — a repository loop is then fifty rows of one SQL text
-in `repeatedSql`, not one `query.feed`. **It opens only when an observer is installed**, inside the
+cannot name a tier-5 vocabulary. **The text is `STATEMENT_ATTRIBUTE`** — `db.statement`, OTel's own
+attribute and the one `dev-traces.ts` prefers over the span name, so a repository loop is fifty rows
+of one SQL text in `repeatedSql` and not one `query.feed`. It is **exported** and re-exported from
+`src/index.ts` precisely because it is a contract across two packages: `dev-traces.ts` and its test
+import it, so renaming it here is a compile error there rather than a panel that quietly groups
+nothing while every test stays green. **It opens only when an observer is installed**, inside the
 guarded branch that already exists: installing an observer is the single switch that turns
 statement instrumentation on, event and span together (axiom 1), and an uninstalled process mints
 no span id and allocates no span object per statement — which on this path is every statement in
@@ -178,13 +189,16 @@ the repo that builds a `PgExecutor`, reached by every role through `dev-runtime.
 `PostgresClient`/`PgliteClient` `.query()` call for it. So today, in this framework's own boot
 code, every job-driver statement (claim, ack, nack, enqueue, heartbeat, step read/write) **does**
 pass through `runOn`/`statement()` and is visible to an installed `StatementObserver` and traced
-exactly like any other statement — just with no `attribution`, because that pair is threaded by
-`@ultimat3/entity`'s driver and `driver-pg.ts` never calls it. This is incidental, not guaranteed:
+exactly like any other statement — just with no `attribution`, which is not a `jobs` gap: **no
+producer of that pair exists anywhere yet** (`observe.ts`), so every event in every process today
+reads `attribution: undefined`. This is incidental, not guaranteed:
 `PgExecutor` is duck-typed, so a deployment that hands `createPgDriver` an executor not backed by
 this package — a raw `Bun.SQL` instance, a hand-rolled pool, `driver-redis`/`driver-nats` (which do
 not touch Postgres at all) — gets zero observation of its queue traffic, and nothing here or in
 `jobs` enforces otherwise. A detector reading `attribution` (PR 9's N+1 work) will see a claim loop
-as anonymous SQL, never as a `job` statement, until `jobs` threads its own attribution through.
+as anonymous SQL, never as a `job` statement, until `@ultimat3/entity`'s `postgresDriver()` — the
+one caller that still knows the entity and the op when the SQL exists — produces the pair, and
+`jobs` then threads its own.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
