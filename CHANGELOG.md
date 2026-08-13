@@ -250,6 +250,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`Pipeline.handle()` keeps its one promise: a Response, always.** The lifecycle absorbed a throw from every stage that runs *before* the response exists, and then ran the two that finish it — `cache-headers` and `response` — in a bare loop outside that guard. A stage refusing the response it was handed (headers that cannot be set, on a `Response.redirect` or anything else a handler returned) rejected `handle()` against the contract written on it, and the caller got whatever the runtime prints instead of a document naming the defect. The recover stage had the same hole from the other side: it is the single place a throw becomes a status, so an app's `onError` sink or a `devNotices` producer throwing inside it left nothing to render its own throw.
+
+  Both are now guarded in `finalize.ts`, and a refusal degrades to the new **`X_PIPELINE_FINALIZE_FAILED`** — 500, with the stage name and the underlying message in `cause`:
+
+  ```json
+  { "code": "X_PIPELINE_FINALIZE_FAILED",
+    "cause": "the \"response\" stage threw while finishing the response: immutable headers" }
+  ```
+
+  The degraded answer is finished, not shipped bare: the finalize chain runs a second time over the problem document, whose headers *are* writable, so `x-request-id`, CORS and the security headers still reach the client that has to report this. A second failure keeps its 500 and stops — two passes, never a loop. The failure travels through the recover stage rather than around it, so it is reported, logged and rendered by this package's one call site for each, and `x dev` still shows it in the overlay. A request the stages *can* finish is byte for byte what it was.
+
 - **A mis-encoded path is a 400, not a 500 and a page for the on-call.** `decodeURIComponent('%ZZ')` throws a bare `URIError`, and the router called it unguarded on every `:param` and `*wildcard` segment it walked past. A client typo — a lone `%`, a truncated `%A`, a value concatenated into a URL instead of run through `encodeURIComponent` — escaped `matchRoute` as an uncoded throw, so the pipeline mapped it to `X_INTERNAL`, answered **500**, and reported it to the error monitor (`error-map` pages on `status >= 500`). The caller was told nothing about a request only the caller could fix.
 
   `matchRoute` now answers with the fourth `MatchResult` variant instead of throwing, and the pipeline turns it into the new **`X_PATH_INVALID`** — 400, with the offending segment in `cause` and `encodeURIComponent` in `fix`:

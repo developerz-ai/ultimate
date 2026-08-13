@@ -14,6 +14,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_ROUTE_CONFLICT',
   'X_SERVER_NOT_STARTED',
   'X_PIPELINE_NO_RESPONSE',
+  'X_PIPELINE_FINALIZE_FAILED',
   'X_NO_REQUEST',
   'X_ERROR_STATUS_INVALID',
 ] as const;
@@ -43,6 +44,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_ROUTE_CONFLICT: 'two routes claim the same path',
   X_SERVER_NOT_STARTED: 'server handle used before start()',
   X_PIPELINE_NO_RESPONSE: 'a pipeline stage produced no response',
+  X_PIPELINE_FINALIZE_FAILED: 'a finalize stage threw instead of finishing the response',
   X_NO_REQUEST: 'the inbound request is not in scope here',
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
 };
@@ -147,6 +149,20 @@ export const pipelineNoResponse = (stage: string): HttpError =>
     code: 'X_PIPELINE_NO_RESPONSE',
     cause: `the pipeline finished at stage "${stage}" without a response`,
     fix: 'return a Response from the route handler, or a Response from the stage that short-circuits',
+  });
+
+/**
+ * A finalize stage threw on the response it was handed. `Pipeline.handle` promises a Response to
+ * every caller, so the throw becomes this — a 500 the client can read and report — instead of a
+ * rejected promise the server has nothing to send for.
+ */
+export const finalizeFailed = (stage: string, cause: unknown): HttpError =>
+  new HttpError({
+    code: 'X_PIPELINE_FINALIZE_FAILED',
+    cause: `the "${stage}" stage threw while finishing the response: ${
+      cause instanceof Error ? cause.message : String(cause)
+    }`,
+    fix: 'return a Response built here — json(), text(), html() or redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
   });
 
 /**

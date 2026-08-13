@@ -34,6 +34,7 @@ export {
   bodyInvalid,
   buildSkew,
   errorStatusInvalid,
+  finalizeFailed,
   forbidden,
   HTTP_ERROR_CODES,
   HTTP_ERROR_TITLES,

@@ -122,6 +122,7 @@ The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the 
 | `X_BUILD_SKEW` | client build id does not match the server build id | a tab open across an incompatible deploy | reload; the SW fetches the new build manifest. See [PWA and offline](PWA-And-Offline) |
 | `X_SERVER_NOT_STARTED` | server handle used before `start()` | reading `url()` too early in a test | `await createServer({ … }).start()` first |
 | `X_PIPELINE_NO_RESPONSE` | a pipeline stage produced no response | a middleware returned `undefined` | return a `Response` from the stage or from the handler |
+| `X_PIPELINE_FINALIZE_FAILED` | a finalize stage threw instead of finishing the response | the response cannot take the headers the pipeline puts on it — a `Response.redirect()`, or a frozen or proxied `Response` a handler returned. `handle()` answers this 500 rather than rejecting, and the `cause` names the stage | return a Response built here — `json()`, `text()`, `html()` or `redirect()` from `@ultimat3/http` |
 | `X_NO_REQUEST` | the inbound request is not in scope here | `useRequestCookie()` / `setRedirect()` called from a job, a task or a module body | read it inside a route handler, an action or a page; a job gets the value from its payload |
 | `X_ERROR_STATUS_INVALID` | an error code cannot be mapped to that status | `registerErrorStatus()` given a framework-owned code, a status outside 100–599, or a second, different status for one code | `x errors list --json`, then map a code this app owns to a status the framework does not already hold |
 

@@ -56,6 +56,16 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   reached `factsOf` as `X_INTERNAL`, so a `%ZZ` answered 500 and paged the on-call for a typo.
   Only the branch that would have decoded fails: static segments are compared raw, so a path that
   reaches no param or wildcard is still a 404 and precedence is unchanged.
+- **`handle()` resolves to a Response or the server has no answer at all.** The request phases are
+  guarded by `execute`'s own `try`; the two that run after them are guarded in `finalize.ts`, and
+  neither guard is optional. A finalize stage that refuses the response it was handed degrades to
+  `X_PIPELINE_FINALIZE_FAILED` (500), and the chain runs a **second** pass over that problem
+  document — whose headers are writable — so the request id, CORS and the security headers still
+  reach the client. Two passes, never a loop. A throw inside the recover stage (an app's `onError`,
+  a `devNotices` producer) is answered with the problem document for the error the request actually
+  hit: the stage that renders a throw has nothing left to render its own. Every degraded answer goes
+  *through* the recover stage, never around it — reporting, logging and the overlay each keep one
+  call site.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -77,6 +87,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | File | Job |
 |---|---|
 | `pipeline.ts` | the ordered lifecycle; the framework's guarantee |
+| `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
 | `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
 | `error-map.ts` | code → status table + `factsOf()` |
 | `hooks.ts` | the seams: `authenticate`, `authorize`, `devNotices` + the app's `configureAuthenticator()` |

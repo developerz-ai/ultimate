@@ -35,6 +35,10 @@ asserts the order; `/_x` renders it. Ordering rules worth restating:
 | body before authz | policies take parsed input as their subject |
 | cache-headers before response | a directive can never drop a security header |
 
+`handle()` resolves to a Response, always — a stage that throws after the handler, or while
+rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
+`cause`) and the chain finishes that document instead. `finalize.ts` owns that promise.
+
 ## Routing
 
 Precedence is structural, not declaration-ordered: **static > param > wildcard**,

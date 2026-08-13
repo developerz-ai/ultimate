@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "65378b10c119982751089c882ea39b9d96445df9f48ad4743f48436f1810cdec",
+  "buildId": "86b874b65c2afb2c2dc5316afe31434c911c56aa3e0be7d4fd37d5aa57ca0159",
   "tiers": {
     "0": [
       "core",
@@ -1064,6 +1064,11 @@
       "code": "X_PERMISSION_UNKNOWN",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
+    },
+    {
+      "code": "X_PIPELINE_FINALIZE_FAILED",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_PIPELINE_NO_RESPONSE",

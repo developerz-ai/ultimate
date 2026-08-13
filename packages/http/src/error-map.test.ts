@@ -51,6 +51,12 @@ describe('error -> status', () => {
   test('an unmapped code is a loud 500, never a quiet 200', () => {
     expect(statusFor('X_SOMETHING_NEW')).toBe(500);
   });
+
+  // A request the server answered and then could not finish is the server's failure — mapped, so
+  // it never rides the default and never reads as an app code someone forgot to register.
+  test('a response the pipeline could not finish is the server’s 500', () => {
+    expect(statusFor('X_PIPELINE_FINALIZE_FAILED')).toBe(500);
+  });
 });
 
 // Every app-defined code answered 500, and `pipeline.ts` reports `status >= 500` to the error
