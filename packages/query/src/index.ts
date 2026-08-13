@@ -79,7 +79,15 @@ export {
   resetRegistry,
 } from './registry';
 export type { Filter, FilterOp, OrderKey, QueryShape, SeekKey } from './shape';
-export { compareRows, compareValues, matchesFilter, matchesFilters, seekKeyOf } from './shape';
+/** `isNull` is the one definition of SQL NULL a custom `SqlSource` has to agree with. */
+export {
+  compareRows,
+  compareValues,
+  isNull,
+  matchesFilter,
+  matchesFilters,
+  seekKeyOf,
+} from './shape';
 export type { RowProvider, SqlSource, SqlText } from './source';
 /** `isAfterKey` is the one definition of "after this position" — both seek paths use it. */
 export { Builder, from, isAfterKey } from './source';

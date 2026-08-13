@@ -66,6 +66,17 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `@ultimat3/entity`'s `seekSql` spells it. A row-value comparison cannot express a mixed
   `createdAt desc, id asc` ordering, and the id-tiebreak-only fallback it replaced returned rows
   the ordering was already past — with `execute()` disagreeing with the SQL it printed.
+- **NULL has one meaning, and `isNull` is it.** `null` and a column the row omits are the same
+  absence, in the SQL and in memory alike. `=`/`!=`/`in` read NULL as a **value** — `is null`,
+  `is not null`, `is distinct from`, `in (…) or is null`, the pair `@ultimat3/entity`'s
+  `predicateSql` emits; `>`/`>=`/`<`/`<=` read it as **unknown**, matching nothing on either side,
+  which is why they need no special emission; `order by` reads it as the **largest value**, spelled
+  `asc nulls last` / `desc nulls first` rather than inherited from the driver. `= $n` with a NULL
+  argument is never true in Postgres, so `where({ deletedAt: null })` matched every row in memory
+  and none in the database, and `"col" > $n` blanked page two at the first NULL. Never emit a bound
+  parameter where NULL is the value being tested, and never let `compareValues` sort a NULL as the
+  string `"null"` again — `compareRows`, `isAfterKey` and the matcher's insertion position all
+  read it, so one string compare moves rows on three surfaces.
 - **The id is the tiebreak that makes the order total.** A row without one is
   `X_QUERY_NOT_PAGEABLE` at `seekKeyOf`, never `String(undefined)`: `"undefined"` is a position
   every row matches, signed and opaque, so page two would be page one forever.

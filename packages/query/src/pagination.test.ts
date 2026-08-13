@@ -257,7 +257,7 @@ describe('a paged read is ordered totally', () => {
 
   test('the id tiebreak reaches the ORDER BY, not only the seek predicate', () => {
     const { sql } = from<Post>('posts', tied).orderBy('createdAt').seek(null, 2).toSQL();
-    expect(sql).toContain('order by "createdAt" asc, "id" asc');
+    expect(sql).toContain('order by "createdAt" asc nulls last, "id" asc nulls last');
   });
 
   test('an ordering that already names id is not given a second one', () => {
@@ -266,13 +266,13 @@ describe('a paged read is ordered totally', () => {
       .orderBy('id', 'asc')
       .seek(null, 2)
       .toSQL();
-    expect(sql).toContain('order by "createdAt" desc, "id" asc');
+    expect(sql).toContain('order by "createdAt" desc nulls first, "id" asc nulls last');
   });
 
   test('an unpaged read keeps generating exactly the SQL it was asked for', () => {
     // `from()` is also the source for reads that never page, over rows that may have no `id`.
     const { sql } = from<Post>('posts', tied).orderBy('createdAt').toSQL();
-    expect(sql).toBe('select * from "posts" order by "createdAt" asc');
+    expect(sql).toBe('select * from "posts" order by "createdAt" asc nulls last');
   });
 
   test('rows tied on the sort key are each returned exactly once', async () => {

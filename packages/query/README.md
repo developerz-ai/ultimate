@@ -121,6 +121,30 @@ the declared keys alone leaves rows with equal sort values in whatever order the
 while the cursor reads them as if id had decided — so one of a tied pair comes back on both pages
 and the other on neither.
 
+## NULL
+
+One rule, three readers: the SQL a source generates, the in-memory execution behind `from()`, and
+the live matcher. `null` and a column the row omits are the same absence — `isNull` is the one
+definition, exported for the same reason `isAfterKey` is.
+
+| Operator | NULL is | Emitted as |
+|---|---|---|
+| `=` `!=` `in` | a value — it matches itself and nothing else | `is null` · `is not null` · `is distinct from` · `in (…) or is null` |
+| `>` `>=` `<` `<=` | unknown — a NULL on either side matches nothing | `"col" > $n`, which already matches no NULL |
+| `order by`, the cursor | the largest value: last ascending, first descending | `asc nulls last` · `desc nulls first` |
+
+`where({ deletedAt: null })` compiles to `"deletedAt" is null` and binds no parameter: `= $1` with
+a NULL argument is unknown in Postgres and unknown is never true, so that filter used to match
+every row in memory and none in the database. The seek predicate had the same defect one page
+later — `"publishedAt" > $1` is unknown for every draft, so page two stopped at the first NULL and
+the rows after it were unreachable through a cursor. An ascending key now reaches them
+(`("col" > $1 or "col" is null)`); a NULL cursor value drops its own term, nothing sorting after a
+NULL under `nulls last`, and the page continues on the id tiebreak, which is never NULL.
+
+`nulls last` / `nulls first` are Postgres' own defaults, written down rather than inherited: it is
+the rule `compareValues` implements, so the in-memory sort and the seek predicate can only agree
+with it, and a driver whose default differs cannot re-open the divergence.
+
 ## Caching
 
 Request memo (same read twice in one render ⇒ one round trip), then the tier behind

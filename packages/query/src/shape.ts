@@ -57,6 +57,15 @@ export function seekKeyOf(
   };
 }
 
+/**
+ * SQL NULL, as a row spells it. A column the row simply omits reads `undefined` here and NULL
+ * in Postgres, so both are the same absence — otherwise a fixture row without `deletedAt` and
+ * the same row round-tripped through a driver answer `where({ deletedAt: null })` differently.
+ */
+export function isNull(value: unknown): boolean {
+  return value === null || value === undefined;
+}
+
 export function matchesFilters(row: object, filters: readonly Filter[]): boolean {
   return filters.every((filter) => matchesFilter(row, filter));
 }
@@ -71,20 +80,46 @@ export function matchesFilter(row: object, filter: Filter): boolean {
     case 'in':
       return Array.isArray(filter.value) && filter.value.some((item) => same(actual, item));
     case '>':
-      return compareValues(actual, filter.value) > 0;
     case '>=':
-      return compareValues(actual, filter.value) >= 0;
     case '<':
-      return compareValues(actual, filter.value) < 0;
     case '<=':
-      return compareValues(actual, filter.value) <= 0;
+      return ordered(filter.op, actual, filter.value);
     default:
       return false;
   }
 }
 
-/** Dates compare by instant, everything else by value. No coercion across types. */
+/**
+ * `col > NULL` is unknown in SQL and unknown is not a match, so a NULL on either side of an
+ * ordering operator matches nothing here either. Only `=`, `!=` and `in` read NULL as a value —
+ * and those are exactly the three `Builder.toSQL()` compiles to `is null` / `is distinct from`.
+ */
+function ordered(op: '>' | '>=' | '<' | '<=', actual: unknown, value: unknown): boolean {
+  if (isNull(actual) || isNull(value)) return false;
+  const result = compareValues(actual, value);
+  switch (op) {
+    case '>':
+      return result > 0;
+    case '>=':
+      return result >= 0;
+    case '<':
+      return result < 0;
+    case '<=':
+      return result <= 0;
+  }
+}
+
+/**
+ * Dates compare by instant, everything else by value. No coercion across types.
+ *
+ * NULL is greater than every value and equal to itself — Postgres' own sort rule, which is what
+ * lets `Builder.toSQL()` write it down as `asc nulls last` / `desc nulls first` and mean this
+ * function. Sorting only: a comparison *filter* against NULL matches nothing (`ordered`). Before
+ * this, `null` sorted as the string `"null"`, so it landed between `"m"` and `"o"` in memory and
+ * at the end in the database — the same page read two ways.
+ */
 export function compareValues(a: unknown, b: unknown): number {
+  if (isNull(a) || isNull(b)) return isNull(a) ? (isNull(b) ? 0 : 1) : -1;
   const left = normalize(a);
   const right = normalize(b);
   if (typeof left === 'number' && typeof right === 'number') return left - right;
@@ -98,6 +133,7 @@ function normalize(value: unknown): unknown {
 }
 
 function same(a: unknown, b: unknown): boolean {
+  if (isNull(a) || isNull(b)) return isNull(a) && isNull(b);
   return compareValues(a, b) === 0 && typeof normalize(a) === typeof normalize(b);
 }
 

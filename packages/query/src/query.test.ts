@@ -182,7 +182,7 @@ describe('query', () => {
     const feed = registerQuery('orgFeed', defineFeed());
     const explained = await explain(feed, { orgId: ORG }, member);
     expect(explained.sql).toBe(
-      'select * from "posts" where "orgId" = $1 order by "createdAt" asc limit 50',
+      'select * from "posts" where "orgId" = $1 order by "createdAt" asc nulls last limit 50',
     );
     expect(explained.params).toEqual([ORG]);
   });

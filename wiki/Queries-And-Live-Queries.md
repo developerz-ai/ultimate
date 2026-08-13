@@ -96,6 +96,27 @@ Policy is not a subscribe-time gate that then trusts the stream.
 
 One authz system. A live query cannot become a second door into your data — that is the failure mode that killed the `allow`/`deny` generation of frameworks ([The eight primitives](The-Eight-Primitives)).
 
+## NULL
+
+`As of 2026-08`, one rule for the generated SQL, the in-memory source behind `from()` and the live
+matcher alike. `null` and a column the row omits are the same absence.
+
+| Operator | NULL is | Generated SQL |
+|---|---|---|
+| `=` `!=` `in` | a value — it matches itself and nothing else | `is null` · `is not null` · `is distinct from` · `in (…) or is null` |
+| `>` `>=` `<` `<=` | unknown — a NULL on either side matches nothing | `"col" > $n`, which already matches no NULL |
+| `orderBy`, the cursor | the largest value: last ascending, first descending | `asc nulls last` · `desc nulls first` |
+
+`where({ deletedAt: null })` emits `"deletedAt" is null` and binds no parameter. `= $1` with a NULL
+argument is *unknown* in Postgres and unknown is never true, so before this the same read matched
+every row from a memory source and no row from a driver. A cursor across a nullable sort key had
+the defect one page later: page two stopped at the first NULL, and the rows behind it were
+unreachable. `x queries describe <name> --json` prints the SQL that says so.
+
+A nullable sort key pages correctly here. `@ultimat3/entity`'s repo cursor refuses one outright at
+mint time instead ([Entities and migrations](Entities-And-Migrations)) — two answers to the same
+question, both explicit, neither silent.
+
 ## Request memo (tier 1) dedupe
 
 Three components on one page calling `liveFeed({ orgId })` resolve **one** query.
@@ -172,4 +193,6 @@ x verify              # runs all six test types
 - `live: true` needs `orderBy` + `limit`, always.
 - Presence, typing indicators, and cursors are tier 1 channels forever — never model ephemeral state as rows ([Realtime](Realtime)).
 - A cache miss must be correct and merely slower. No query may depend on a hit.
+- NULL is a value to `=`/`!=`/`in`, unknown to `>`/`<`, and the largest value to `orderBy`. Never
+  write a filter that reads a NULL a fourth way.
 - Cache keys are framework-generated. A hand-built key is a rejected PR.
