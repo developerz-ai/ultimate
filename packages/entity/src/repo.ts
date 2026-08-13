@@ -7,6 +7,7 @@
 //     table silently skips and repeats rows. A keyset cursor is stable because it names a
 //     position in the sort order, not a row count.
 
+import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
@@ -24,6 +25,22 @@ export interface RepoOptions {
   readonly tx?: Tx;
   /** Required for tenant-scoped entities; the guard throws without it. */
   readonly orgId?: string;
+}
+
+/** What `upsertAll` does with a row that lands on one already stored. */
+export interface UpsertArgs<T = unknown> extends RepoOptions {
+  /**
+   * The unique constraint a collision is judged against, named as entity properties — never a
+   * constraint name, which is a migration artefact this layer cannot resolve. At least one column:
+   * "any constraint" is not something a caller can reason about.
+   */
+  readonly onConflict: readonly (keyof T & string)[];
+  /**
+   * `'update'` (the default) overwrites the stored row with the incoming values, except the
+   * conflict target and the primary key. `'nothing'` leaves the stored row exactly as it is and
+   * omits it from the result, so the result is always "the rows this call wrote".
+   */
+  readonly onMatch?: 'update' | 'nothing';
 }
 
 export interface FindManyArgs extends RepoOptions {
@@ -53,6 +70,20 @@ export interface Repo<T = unknown> {
   findById(id: IdOf<T>, options?: RepoOptions): Promise<T | null>;
   findMany(args?: FindManyArgs): Promise<Page<T>>;
   insert(values: T, options?: RepoOptions): Promise<T>;
+  /**
+   * Many rows, one statement — the bulk form a per-row `insert` loop is the N+1 of. Resolves with
+   * the rows as stored, defaults included, in the order given; an empty batch writes nothing and
+   * resolves with `[]`. Nothing here resolves a collision — `upsertAll` is the call that does.
+   * Past Postgres's bind count the batch becomes several statements, so wrap it in
+   * `withTransaction` when all-or-nothing matters.
+   */
+  insertAll(rows: readonly T[], options?: RepoOptions): Promise<readonly T[]>;
+  /**
+   * `insertAll` that resolves a collision instead of failing on it. Resolves with the rows this
+   * call actually wrote — under `onMatch: 'nothing'` a row already stored is skipped and absent,
+   * which is what `returning *` says on the Postgres side.
+   */
+  upsertAll(rows: readonly T[], args: UpsertArgs<T>): Promise<readonly T[]>;
   update(id: IdOf<T>, patch: Partial<T>, options?: RepoOptions): Promise<T>;
   delete(id: IdOf<T>, options?: RepoOptions): Promise<void>;
   /**
@@ -257,6 +288,52 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
 
     async insert(values, options) {
       return write(values, options);
+    },
+
+    async insertAll(batch, options) {
+      // The whole batch is judged before any of it lands: Postgres refuses the statement as one,
+      // so a row an invariant rejects must not leave the rows before it stored here either.
+      for (const row of batch) entity.$assert(row);
+      return batch.map((row) => write(row, options));
+    },
+
+    async upsertAll(batch, args) {
+      for (const row of batch) entity.$assert(row);
+      const plan = upsertPlan(entity, batch, args.onConflict, args.onMatch ?? 'update');
+      const keys = conflictKeys(entity, plan, batch);
+      // The stored rows under the same key, so "does this collide" is the question the unique
+      // index answers in Postgres and not a scan per row. A soft-deleted row still occupies its
+      // key here, because the index it would collide with there is not partial either — and a row
+      // whose target holds a null occupies none, because the index is `NULLS DISTINCT`.
+      const stored = new Map<string, Row>();
+      for (const row of rows.values()) {
+        const key = conflictKeyOf(entity, plan.on, row);
+        if (key !== undefined) stored.set(key, row);
+      }
+      const written: Row[] = [];
+      for (const [position, row] of batch.entries()) {
+        const key = keys[position];
+        const existing = key === undefined ? undefined : stored.get(key);
+        // `do nothing` writes no row, and `returning *` therefore names none: a skipped row is
+        // absent from the result rather than present and unchanged.
+        if (existing !== undefined && plan.set.length === 0) continue;
+        const merged =
+          existing === undefined
+            ? row
+            : Object.assign(
+                {},
+                existing,
+                Object.fromEntries(plan.set.map((property) => [property, field(row, property)])),
+              );
+        // `UpsertArgs extends RepoOptions`, so the args ARE the options — one bag, and a `tx`
+        // passed to an upsert registers its undo exactly as it does for every other write here.
+        const result = write(merged, args);
+        // Filed as it lands, so a later row of the same batch collides with an earlier one exactly
+        // as it would with a row the request stored a moment before it.
+        if (key !== undefined) stored.set(key, result);
+        written.push(result);
+      }
+      return written;
     },
 
     async update(id, patch, options) {

@@ -146,6 +146,41 @@ and never unwritten.
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
 
+## Writing many rows
+
+```ts
+await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
+
+await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
+  onConflict: ['orgId', 'postId', 'memberId'],
+  onMatch: 'nothing',
+});
+
+await db.counters.upsertAll(rows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
+```
+
+`insertAll` is `insert` in bulk and nothing else: rows are `Insertable`, each one goes through
+`$parse`, so declared defaults are filled here rather than by the caller. `upsertAll` adds the one
+thing a per-row loop cannot do without a read first — resolve a collision — and stamps
+`onUpdateNow()` columns through the same `touch()` `update(id, patch)` uses, because an upsert that
+lands on a stored row *is* an update.
+
+Both resolve with **the rows this call wrote**, in order. Under `onMatch: 'nothing'` a row already
+stored is skipped and absent from the result, exactly as `returning *` reports it — which is how a
+caller counts what it actually inserted.
+
+| | |
+|---|---|
+| One builder | `insertStatement` compiles every insert in the framework, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
+| What a collision overwrites | every column the batch writes, minus the conflict target (how the row was found) and minus the primary key (where it lives). Moving either moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
+| Tenancy | on a tenant-scoped entity `onMatch: 'update'` requires the tenant column *in the conflict target*, else `X_TENANCY_UNSCOPED`: a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
+| A batch that repeats itself | two rows with one conflict target under `'update'` is refused. Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |
+| Uneven batches | under `'update'` every row must name the same columns: `excluded.<column>` for a row that omitted one is that column's *default*, not "leave it alone". Under `'nothing'` and under `insertAll`, an omitted column is `default` in its cell, which is what the same row means on its own |
+| Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
+| Size | past 65535 bind parameters the batch is several statements, never one the server refuses. Wrap the call in `withTransaction` when all-or-nothing matters |
+| Filtered writes | `updateWhere` / `deleteWhere` above are the bulk forms of `update` and `delete`; there is no `updateAll` |
+
 ## Relations are the foreign keys, read twice
 
 ```ts

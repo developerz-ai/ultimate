@@ -9,7 +9,7 @@ import type { RelatedTables } from './preload';
 import { preloaded } from './preload';
 import type { Relation } from './relations';
 import { relationNamed } from './relations';
-import type { Page, Repo, RepoOptions } from './repo';
+import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import type { ColumnMap, IdOf, Insertable } from './types';
 
@@ -54,6 +54,22 @@ export interface ReadBuilder<Row> {
 
 export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder<Row> {
   insert(values: Insertable<C>, options?: RepoOptions): Promise<Row>;
+  /**
+   * Many rows, one statement — the bulk write a per-row `insert` loop is the N+1 of, and the line
+   * an N+1 warning on a write loop names. Every row is parsed and asserted exactly as `insert`
+   * parses one, so declared defaults are filled here and not by the caller. Resolves with the rows
+   * as stored, in order; `insertAll([])` writes nothing. A collision is an error — `upsertAll` is
+   * the call that tolerates one.
+   */
+  insertAll(rows: readonly Insertable<C>[], options?: RepoOptions): Promise<readonly Row[]>;
+  /**
+   * `insertAll` that resolves a collision instead of failing on it: `on conflict (…) do update`,
+   * or `do nothing` with `onMatch: 'nothing'`. Resolves with the rows this call actually wrote, so
+   * a row left alone is absent from the result — which is how a caller counts what it inserted.
+   * The conflict target and the primary key are never overwritten: they are how the stored row was
+   * found and where it lives.
+   */
+  upsertAll(rows: readonly Insertable<C>[], args: UpsertArgs<Row>): Promise<readonly Row[]>;
   /** `IdOf<Row>`: an entity that declared `uuid<PostId>()` is addressed by a `PostId` only. */
   update(id: IdOf<Row>, patch: Partial<Row>, options?: RepoOptions): Promise<Row>;
   delete(id: IdOf<Row>, options?: RepoOptions): Promise<void>;
@@ -221,7 +237,7 @@ const builder = <Source, Row>(
  * column, and `X_PATCH_EMPTY` downstream would never see it — so whether the refusal fires would
  * depend on the schema rather than on the call.
  */
-const touch = <Row>(entity: EntityCore<Row>, patch: Partial<Row>): Partial<Row> => {
+const touch = <Row, Patch>(entity: EntityCore<Row>, patch: Patch): Patch => {
   if (namedColumns(patch).length === 0) return patch;
   const stamped: Record<string, unknown> = {};
   for (const [property, column] of Object.entries(entity.$columns)) {
@@ -241,6 +257,19 @@ export const tableFor = <Row, C extends ColumnMap>(
 ): Table<Row, C> => ({
   ...builder<Row, Row>(entity, repo, EMPTY, (row) => row, related),
   insert: async (values, options) => repo.insert(entity.$parse(values), options),
+  insertAll: async (rows, options) =>
+    repo.insertAll(
+      rows.map((row) => entity.$parse(row)),
+      options,
+    ),
+  // `touch` and not `$parse` alone: an upsert that lands on a stored row IS an update, so an
+  // `onUpdateNow()` column has to move exactly as `update(id, patch)` moves it — and stamping it
+  // in a second place is how one of the two ends up writing a stale `updatedAt`.
+  upsertAll: async (rows, args) =>
+    repo.upsertAll(
+      rows.map((row) => touch(entity, entity.$parse(row))),
+      args,
+    ),
   update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
   delete: async (id, options) => repo.delete(id, options),
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),

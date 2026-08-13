@@ -166,9 +166,48 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   ends up writing a stale `updatedAt`. It returns an empty patch untouched, so whether
   `X_PATCH_EMPTY` fires depends on the call and not on whether the entity happens to declare the
   column.
+- **A many-row write is one statement, and every refusal it needs happens before that statement
+  exists.** `insertStatement` (`pg-sql.ts`) builds *every* insert in the framework — one row or ten
+  thousand — so `insertAll([row])` compiles to exactly the text `insert(row)` always compiled to
+  and there is no second builder for the two to drift apart in. What both drivers have to agree on
+  lives in `bulk-write.ts`, decided in **property** space and projected to physical columns for the
+  SQL: the column list a batch writes (`Object.hasOwn`, exactly as `bindValues` decides it), what a
+  collision overwrites, the conflict key, and the chunking. Rules, none optional. **A collision
+  overwrites every column in the batch except two closed sets** — the conflict target, which is how
+  the stored row was found, and the primary key, which is where it lives; an upsert that moved
+  either would move a row nobody asked to move and every foreign key already pointing at that id
+  would miss it. **The conflict target must be a declared unique constraint** — because a target
+  Postgres cannot infer an index for is `42P10` wrapped as `X_DB_UNAVAILABLE`, which names nothing
+  the author can act on. All **three** of this framework's spellings of one count, or the refusal
+  would tell an author to declare a constraint they already declared and ship two indexes: the
+  primary key, a non-partial `unique: true` entry in `$indexes` (`unique()` on a column and
+  `indexes:` both land there), and a `kind: 'unique'` entry in `$invariants`
+  (`invariant(name, c.unique([…]))`, whose `CREATE UNIQUE INDEX` never touches `$indexes`). A
+  partial one is deliberately not a target on either list, since its predicate would have to be
+  repeated in the `on conflict` clause and this layer does not spell one — which is also why a
+  soft-deleting entity's `c.unique()` invariant, stamped `deleted_at is null` by `bindInvariant`,
+  is excluded by that same rule. **The tenant column is part of that
+  constraint or `onMatch: 'update'` is refused** (`X_TENANCY_UNSCOPED`) — this is a security
+  boundary, not ergonomics: `upsertAll` builds no read plan, so nothing else puts an org predicate
+  in the statement, and a target that omits the tenant column matches a row stored by another tenant
+  and rewrites it, tenant column included. `'nothing'` stays legal on such a target because it
+  writes nothing to a row it does not own. **A batch that repeats one conflict target is refused
+  under `'update'`** — Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect
+  row a second time`, so passing it in memory and failing in production is the exact drift the two
+  drivers exist to prevent — and **an uneven batch is refused under `'update'`** for the same
+  reason: `excluded.<column>` for a row that omitted it is that column's *default*, not the stored
+  value, so "leave it alone" is not what happens. `insertAll` and `'nothing'` accept an uneven batch
+  and render `default` in the missing cell, which is what the same row means on its own.
+  **Null is not a value here**: a null anywhere in the conflict target means the row collides with
+  nothing, in both drivers, because a Postgres unique index is `NULLS DISTINCT`. **The memory
+  driver judges the whole batch before storing any of it** — `$assert` over every row first — since
+  Postgres refuses the statement as one and a half-applied batch would make the two disagree about
+  what one call did. Past `MAX_BIND_PARAMETERS` (65535) the batch is several whole statements, so
+  atomicity across them is `withTransaction`'s and never one statement's.
 - **Nothing is interpolated into SQL.** `pg-sql.ts` binds every value through `sql` and resolves
   every identifier through the entity, so a column name can only be one the entity declared.
-  `raw()` appears exactly twice, for `asc|desc` and the seek operator — both closed sets.
+  `raw()` appears exactly three times, for `asc|desc`, the seek operator and the `default` cell of a
+  many-row `values` list — each a closed set of one word.
 - **Money is `bigint` minor units + `char(3)` currency.** A float throws. Never one column,
   never an implied single currency.
 - **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
@@ -226,6 +265,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |
+| `bulk-write.ts` | what a many-row write is made of — the column list, the conflict plan, the bind-count chunking |
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |

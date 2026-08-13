@@ -211,6 +211,47 @@ stated rather than inferred from a loop. The other two members of the family ask
 `findById` batches a same-microtask fan-out for itself, and a `for … of` loop over a page is
 already two statements, above.
 
+## Writing many rows is one statement
+
+The three sections above make a read loop stop being N statements. A loop of `insert()` calls is
+the same defect on the write side, and `insertAll`/`upsertAll` are its answer, `As of 2026-08`:
+
+```ts
+await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
+
+await db.likes.upsertAll(rows, {                                  // insert, or leave what is there
+  onConflict: ['orgId', 'postId', 'memberId'],
+  onMatch: 'nothing',
+});
+
+await db.counters.upsertAll(rows, { onConflict: ['orgId', 'day'] });   // insert, or overwrite
+```
+
+Rows are `Insertable` and go through `$parse` exactly as one row does, so declared defaults are
+filled here rather than by the caller; `upsertAll` also stamps `onUpdateNow()` columns through the
+same `touch()` `update(id, patch)` uses, because an upsert that lands on a stored row *is* an
+update. Both resolve with **the rows this call wrote**, in order — under `onMatch: 'nothing'` a row
+already stored is skipped and absent, which is how a caller counts what it actually inserted.
+
+| Property | Behavior |
+|---|---|
+| One builder | every insert in the framework compiles through the same function, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
+| What a collision writes | every column the batch names, minus the conflict target (how the row was found) and minus the primary key (where it lives). Moving either moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
+| Tenancy | on a tenant-scoped entity, `onMatch: 'update'` requires the tenant column *inside* the conflict target, else `X_TENANCY_UNSCOPED`: an upsert builds no read plan, so a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
+| A batch repeating itself | two rows with one conflict target under `'update'` is refused: Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |
+| Uneven batches | under `'update'` every row names the same columns — `excluded.<column>` for a row that omitted one is that column's *default*, not the stored value. `insertAll` and `'nothing'` accept an uneven batch and render `default` in the missing cell |
+| Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
+| Size | past 65535 bind parameters the batch is several statements, never one the server refuses. Wrap the call in `withTransaction` when all-or-nothing matters |
+
+There is no `updateAll`: `updateWhere(filter, patch)` and `deleteWhere(filter)` are already the
+bulk forms of `update` and `delete`, and a second spelling of one of them would be a second path.
+
+One consequence to know before you reach for `onMatch: 'update'` on a tenant-scoped entity: the
+composite unique index the tenancy rule requires is one the migration generator still cannot emit —
+see the composite-index row in [Known gaps](Known-Gaps). Declare it on the entity as usual and write
+that one `create unique index` by hand in the migration until it is fixed.
+
 ## Invariants
 
 | Rule | Behavior |

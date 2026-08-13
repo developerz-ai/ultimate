@@ -112,6 +112,36 @@ type _NullableStillAccepted = Assert<
 /** A non-nullable column with no default is still required — the pin must not over-relax. */
 type _RequiredStaysRequired = Assert<{ optionalByNull: null } extends InsertPin ? false : true>;
 
+// --- The bulk write path keeps every narrowing the single-row one has ---------
+// `insertAll`/`upsertAll` are `insert` in bulk, and a bulk signature is exactly where one quietly
+// widens: `readonly Row[]` instead of `readonly Insertable<C>[]` would make every batch spell out
+// the defaults `insert` fills for one row, and a `readonly string[]` conflict target would push a
+// typo the single-row path never had to the runtime guard.
+
+type InsertPinTable = Table<RowOf<InsertPinColumns>, InsertPinColumns>;
+type ConflictTarget = Parameters<InsertPinTable['upsertAll']>[1]['onConflict'];
+
+/** A batch is `Insertable`, so a nullable column stays omissible a hundred rows at a time. */
+type _InsertAllTakesInsertables = Assert<
+  readonly { required: 'x' }[] extends Parameters<InsertPinTable['insertAll']>[0] ? true : false
+>;
+
+/** What comes back is the stored row, never the insertable the caller handed in. */
+type _InsertAllResolvesWithRows = Assert<
+  [Awaited<ReturnType<InsertPinTable['insertAll']>>] extends [readonly RowOf<InsertPinColumns>[]]
+    ? true
+    : false
+>;
+
+type _ConflictTargetTakesADeclaredColumn = Assert<
+  readonly 'required'[] extends ConflictTarget ? true : false
+>;
+
+/** The narrowing that matters: a misspelled conflict target is a compile error, not a rejection. */
+type _ConflictTargetRejectsATypo = Assert<
+  readonly 'requiredd'[] extends ConflictTarget ? false : true
+>;
+
 // --- A branded id survives the whole type chain ------------------------------
 // `uuid<PostId>()` is where the brand is declared, and every hop after it has to carry it. The
 // derivation (`TypeOf`, `RowOf`, `Insertable`) always did; the BUILDER hard-coded `Column<string>`
@@ -158,6 +188,13 @@ type _FindByIdTakesTheBrand = Assert<
 type _FindByIdRejectsAnotherBrand = Assert<
   [UserId] extends [Parameters<Repo<BrandRow>['findById']>[0]] ? false : true
 >;
+
+/**
+ * `UpsertArgs<T>.onConflict` is `readonly (keyof T & string)[]`, which is `readonly never[]` at
+ * `T = unknown` — so a typed repository must still satisfy the row-agnostic one `RelatedTable.repo`
+ * and the generated admin are written against, or narrowing the target breaks the preload seam.
+ */
+type _TypedRepoIsARowAgnosticRepo = Assert<[Repo<BrandRow>] extends [Repo<unknown>] ? true : false>;
 
 type _TableUpdateTakesTheBrand = Assert<
   [Parameters<Table<BrandRow>['update']>[0]] extends [PostId] ? true : false

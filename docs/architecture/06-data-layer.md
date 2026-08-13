@@ -53,6 +53,8 @@ Generated per entity. The **only** place SQL lives.
 | `findMany(args)` | cursor-paginated only (below); leaves its page's foreign key values behind for the preload above |
 | `preload(name)` | not on `Repo<T>` — a `ReadBuilder` chain method, `db.<table>.preload('<relation>')`, resolved by `page()`/`all()`/`one()`. One more `where <key> in (…)` per named relation, over the page `findMany` already read ([`preload.ts`](../../packages/entity/src/preload.ts)); several relations resolve concurrently, and naming one twice is one statement |
 | `insert(values)` / `update(id, patch)` | invariants run before the statement |
+| `insertAll(rows)` | many rows, one `insert into … values (…), (…) returning *` ([`pg-sql.ts`](../../packages/entity/src/pg-sql.ts) builds *every* insert, so `insertAll([row])` is the text `insert(row)` produced). Resolves with the rows as stored; past 65535 bind parameters it is several statements, so all-or-nothing is `withTransaction`'s |
+| `upsertAll(rows, args)` | `insertAll` that resolves a collision — `on conflict (…) do update set …`, or `do nothing`. Resolves with the rows this call **wrote**, so a skipped row is absent. What both drivers must agree on lives in [`bulk-write.ts`](../../packages/entity/src/bulk-write.ts) |
 | `delete(id)` | soft-deletes when the entity declares `deletedAt`, hard-deletes when it does not |
 | `deleteWhere(filter)` | delete by equality filter; resolves with the **number of rows removed** |
 | `updateWhere(filter, patch)` | update by equality filter; resolves with the **number of rows written** |
@@ -69,6 +71,17 @@ One family, three members:
 | Eager preload ([`preload.ts`](../../packages/entity/src/preload.ts)) | `.preload('<relation>')` named on the chain | one `where <key> in (…)` per relation, resolved before the caller sees a row |
 
 Reach for `preload()` when the relation is part of what the page *is* — a list rendered with its authors, rows handed to something that will not call back into the repo, or a read a reviewer should see stated rather than inferred from a loop. The other two ask for nothing: a same-microtask fan-out and a sequential `for … of` loop already get them for free. All three read their keys through one file ([`batch-read.ts`](../../packages/entity/src/batch-read.ts)) — one spelling of a key, one 500-id bind cap — so a bound and a key's identity cannot disagree between them. What each may widen is its own: the two implicit paths share a scope key and refuse to widen across a tenant, a soft-delete visibility, a projection or an entity, because they answer a statement the caller already sent; `preload()` sends its own, so it carries the chain's tenant predicate onto it and refuses when it cannot.
+
+`upsertAll` refuses four things before a statement exists, each of them otherwise a `42P10`, a cross-tenant write, a `21000` or a silent surprise:
+
+| Refusal | Why it is not the server's job |
+|---|---|
+| A conflict target no declared unique constraint matches | Postgres answers `42P10`, which arrives as `X_DB_UNAVAILABLE` and names nothing to edit. The entity already holds `$primaryKey`, `$indexes` and `$invariants`, so the target is checkable at the seam. All three spellings of one constraint count — the key, `unique()`/`indexes:`, and `invariant(name, c.unique([…]))` — or the refusal would ask for a second declaration of a constraint that exists. A partial unique index is not a target on any of them, since `on conflict` would have to repeat its predicate |
+| A target omitting the tenant column under `onMatch: 'update'` | `X_TENANCY_UNSCOPED`. `upsertAll` builds no read plan, so nothing else puts an org predicate in the statement: a target that omits the tenant column matches a row stored by another tenant and rewrites it, tenant column included. `'nothing'` stays legal — it writes nothing to a row it does not own |
+| A batch repeating one conflict target under `'update'` | `ON CONFLICT DO UPDATE command cannot affect row a second time` (`21000`) on the server, and a silent last-one-wins in memory. The two drivers have to mean one thing |
+| An uneven batch under `'update'` | `excluded.<column>` for a row that omitted the column is that column's *default*, not the stored value, so "leave the others alone" is not what runs. `insertAll` and `'nothing'` accept one and render `default` in the missing cell, which is what the same row means on its own |
+
+A collision overwrites every column the batch writes minus two closed sets — the conflict target, which is how the row was found, and the primary key, which is where it lives. A null anywhere in the target collides with nothing, in both drivers, because a Postgres unique index is `NULLS DISTINCT`.
 
 The two filtered writes are not conveniences. `delete(id)` and `update(id, patch)` both need a single-column primary key — `singleKeyOf` throws `X_INVARIANT_VIOLATED` on a composite one — so on a join table (`likes`, `blocks`, `participants`) they are the only write paths there are. Without them a composite-key row is create-only: `likes` could be liked and never unliked, and `participants.lastReadAt` could never be marked read. Four properties make them safe to be the only filtered writes:
 

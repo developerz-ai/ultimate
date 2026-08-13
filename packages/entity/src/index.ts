@@ -66,7 +66,15 @@ export {
 } from './registry';
 export type { EntityRelations, Relation, RelationKind, RelationMap } from './relations';
 export { relationMap, relationNamed, relationsFor, relationsOf } from './relations';
-export type { FindManyArgs, Page, Repo, RepoOptions, Transactor, Tx } from './repo';
+export type {
+  FindManyArgs,
+  Page,
+  Repo,
+  RepoOptions,
+  Transactor,
+  Tx,
+  UpsertArgs,
+} from './repo';
 export { memoryRepo, memoryTransactor } from './repo';
 export type { Seed, SeedContext, SeedOptions } from './seed';
 export { defineSeed, seedId } from './seed';

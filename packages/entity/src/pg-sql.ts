@@ -135,14 +135,57 @@ export const countStatement = <Row>(
 ): SqlFragment =>
   sql`select count(*) as count from ${identifier(entity.$table)} where ${conditions(entity, plan, shape)}`;
 
+/** `on conflict (…) do update set …`, or `do nothing` when there is nothing to overwrite. */
+export interface ConflictTarget {
+  /** Physical columns of the unique index a collision is judged against. */
+  readonly columns: readonly string[];
+  /** Physical columns a colliding row takes from the incoming one. Empty is `do nothing`. */
+  readonly set: readonly string[];
+}
+
+export interface InsertShape {
+  /** Every physical column written — one list, shared by every row of the statement. */
+  readonly columns: readonly string[];
+  /** How a collision resolves. Absent, it is the caller's error, exactly as it is for one row. */
+  readonly conflict?: ConflictTarget | undefined;
+}
+
+/**
+ * The cell of a row that did not name this column. `default` is the third and last `raw()` in this
+ * file and, like the other two, a closed set of one word: it is what makes a row inside a many-row
+ * `insert` mean what the same row means on its own, where an unnamed column is simply left out.
+ */
+const DEFAULT_CELL = raw('default');
+
+const conflictSql = (conflict: ConflictTarget): SqlFragment => {
+  const target = join(conflict.columns.map(identifier));
+  return conflict.set.length === 0
+    ? sql` on conflict (${target}) do nothing`
+    : sql` on conflict (${target}) do update set ${join(
+        conflict.set.map((column) => sql`${identifier(column)} = excluded.${identifier(column)}`),
+      )}`;
+};
+
+/**
+ * One statement for any number of rows. A single row compiles to exactly the text it always did,
+ * which is the point: `insertAll([row])` and `insert(row)` are one code path, so there is no
+ * second insert builder for the two to drift apart in.
+ */
 export const insertStatement = <Row>(
   entity: EntityCore<Row>,
-  values: ReadonlyMap<string, unknown>,
+  rows: readonly ReadonlyMap<string, unknown>[],
+  shape: InsertShape,
 ): SqlFragment => {
-  const entries = [...values];
+  const tuples = rows.map(
+    (row) =>
+      sql`(${join(
+        shape.columns.map((column) => (row.has(column) ? sql`${row.get(column)}` : DEFAULT_CELL)),
+      )})`,
+  );
+  const conflict = shape.conflict === undefined ? sql`` : conflictSql(shape.conflict);
   return sql`insert into ${identifier(entity.$table)} (${join(
-    entries.map(([column]) => identifier(column)),
-  )}) values (${join(entries.map(([, value]) => sql`${value}`))}) returning *`;
+    shape.columns.map(identifier),
+  )}) values ${join(tuples)}${conflict} returning *`;
 };
 
 export const updateStatement = <Row>(
