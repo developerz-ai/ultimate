@@ -471,7 +471,7 @@ Reserved, not registered. The name is spoken for — the design docs use it and 
 | Reserved code | What happens today |
 |---|---|
 | `X_TIMEOUT` | no deadline is enforced per request. A cancelled request is `X_ABORTED`; a job past its deadline is `X_JOB_TIMEOUT`. `@ultimat3/http` already maps the code to 504 for the build that raises it |
-| `X_MIGRATE_CONCURRENT` | `ROLE=migrate` takes no advisory lock, so two overlapping deploys both migrate. Serialise them in the deploy pipeline until this ships — roadmap milestone 11 |
+| `X_MIGRATE_CONCURRENT` | reserved, not thrown — **the lock is real**. `migrate()` and `rollback()` hold `pg_advisory_lock(MIGRATION_LOCK_KEY)` on one pinned session unless `lock: false`, so two overlapping deploys serialise: the second **waits**, which is why there is no throw site |
 | `X_SW_HAND_EDITED` | `sw.js` carries no checksum, so a hand edit survives `x build` and is silently overwritten on the next one |
 | `X_SW_UNCACHEABLE` | an `offline` strategy contradicting the route's `render` mode is accepted; `X_SW_SCOPE_INVALID` covers only the scope half |
 | `X_CACHE_UNTAGGED_QUERY` | a query no tag covers is cached and never invalidated. `X_CACHE_TAG_UNKNOWN` catches the opposite mistake — a tag no entity declared |

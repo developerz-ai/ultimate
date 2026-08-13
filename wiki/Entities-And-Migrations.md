@@ -164,7 +164,7 @@ More in [MCP and AI](MCP-And-AI).
 | Apply (dev) | `x db migrate` | runs pending migrations against the dev DB; live queries resubscribe |
 | Check | `x db drift --json` | schema vs migrations; exits non-zero on a difference |
 | Inspect | `x db studio` | tables, columns, indexes, FKs, generated SQL — also the `/_x` **Schema** panel |
-| Pre-deploy | `ROLE=migrate` container | run-once hook, same image; refuses to run while another version's migration is in flight (`X_MIGRATE_CONCURRENT`) |
+| Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned advisory lock while another version's migration is in flight, then applies (`X_MIGRATE_CONCURRENT` is reserved, not thrown) |
 | Test template | automatic | migrate + seed once into `myapp_test_tpl`, then clone per worker |
 
 Prod ordering is fixed: `ROLE=migrate` completes, then `web` / `sync` / `worker` / `scheduler` roll. Migrations are forward-compatible with the previous release so a rolling restart never serves a request against a schema it cannot read. See [Deployment](Deployment).
@@ -220,7 +220,6 @@ The same clone mechanism powers test parallelism: `bun test --workers 8` gives e
 | Code | Cause | Fix |
 |---|---|---|
 | `X_DB_DRIFT` | schema differs from migrations | `x db gen "<name>"` |
-| `X_MIGRATE_CONCURRENT` | another version's migration is in flight | wait for the running `ROLE=migrate` to finish, then redeploy |
 | `X_ENTITY_DUPLICATE` | two entities on the same table | rename one, or merge them |
 | `X_INVARIANT_VIOLATED` | a write broke a named invariant | fix the caller, or change the invariant and generate a migration |
 | `X_TENANCY_UNSCOPED` | a query without a tenant predicate | go through the repo |

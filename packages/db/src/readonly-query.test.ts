@@ -4,9 +4,10 @@
 // live-database test would name, because every one of them still returns the right rows.
 
 import { describe, expect, test } from 'bun:test';
-import type { DbClient, ReservableClient } from './client';
+import type { DbClient } from './client';
 import { dbUnavailable } from './errors';
 import { createRecordingClient } from './fake';
+import { reservableOver } from './fake-reservable';
 import { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 
 describe('readOnlyQuery', () => {
@@ -142,34 +143,33 @@ describe('readOnlyQuery', () => {
 
   test('a reservable client is reserved and released exactly once', async () => {
     const recorder = createRecordingClient();
-    let reserveCalls = 0;
-    let releaseCalls = 0;
-    const reservable: ReservableClient = {
-      query: (fragment) => recorder.query(fragment),
-      one: (fragment) => recorder.one(fragment),
-      execute: (fragment) => recorder.execute(fragment),
-      reserve: async () => {
-        reserveCalls += 1;
-        return {
-          query: (fragment) => recorder.query(fragment),
-          one: (fragment) => recorder.one(fragment),
-          execute: (fragment) => recorder.execute(fragment),
-          release: () => {
-            releaseCalls += 1;
-          },
-        };
-      },
-    };
+    const { client: reservable, pins } = reservableOver(recorder);
 
     await readOnlyQuery('select 1', { client: reservable });
 
-    expect(reserveCalls).toBe(1);
-    expect(releaseCalls).toBe(1);
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
     expect(recorder.texts).toEqual([
       'BEGIN READ ONLY',
       `SET LOCAL statement_timeout = ${READONLY_TIMEOUT_MS}`,
       'select 1',
       'ROLLBACK',
     ]);
+  });
+
+  test('a rejecting BEGIN READ ONLY gives the pin back instead of leaking it', async () => {
+    const boom = dbUnavailable('statement failed: BEGIN READ ONLY');
+    // Every statement fails, the rollback included — a connection that could not BEGIN is exactly
+    // the one that cannot ROLLBACK either.
+    const dead: DbClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async () => {
+        throw boom;
+      },
+    };
+    const { client: reservable, pins } = reservableOver(dead);
+
+    await expect(readOnlyQuery('select 1', { client: reservable })).rejects.toBe(boom);
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
   });
 });

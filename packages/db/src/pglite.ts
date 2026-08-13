@@ -172,15 +172,20 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
       // statement queues like any other caller and waits for its own turn.
       const on = (fragment: SqlFragment): Promise<PgliteResult> =>
         held ? statement(driver, fragment) : turns.run(() => statement(driver, fragment));
+      // Idempotent for free: `turn.release()` is a settled promise's `resolve`, not a counter, so
+      // a second call cannot hand out a second turn (`pglite-turns.ts`). `[Symbol.dispose]` below
+      // is that same call.
+      const release = (): void => {
+        held = false;
+        turn.release();
+      };
       return {
         query: async <T>(fragment: SqlFragment) => (await on(fragment)).rows as readonly T[],
         one: async <T>(fragment: SqlFragment) =>
           ((await on(fragment)).rows[0] as T | undefined) ?? null,
         execute: async (fragment: SqlFragment) => rowsOf(await on(fragment)),
-        release: () => {
-          held = false;
-          turn();
-        },
+        release,
+        [Symbol.dispose]: release,
       };
     },
     async ping(): Promise<void> {

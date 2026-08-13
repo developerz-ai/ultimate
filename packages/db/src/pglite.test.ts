@@ -271,6 +271,70 @@ describe('createPgliteClient', () => {
     await late;
     expect(driver.calls.map((call) => call.text)).toEqual(['begin', 'insert into t values (1)']);
   });
+
+  // The single session makes this the loudest failure in the framework: a reservation that is
+  // never released keeps the turn forever, and the next statement — any statement, from any
+  // request — waits for a turn that is never coming. `using` is what makes forgetting impossible.
+  test('`using` gives the turn back, so the next statement is not wedged behind it', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+
+    {
+      using reserved = await client.reserve();
+      await reserved.execute(sql`begin`);
+      await reserved.execute(sql`commit`);
+    }
+
+    await client.execute(sql`insert into t values (1)`);
+    expect(driver.calls.map((call) => call.text)).toEqual([
+      'begin',
+      'commit',
+      'insert into t values (1)',
+    ]);
+  });
+
+  // The RAII rewrite moved BEGIN inside the guarded scope precisely so a rejecting first statement
+  // still gives the turn back — before that fix the turn stayed with a reservation nobody could
+  // reach, and every later statement in the process queued behind it forever.
+  test('a failed BEGIN does not wedge the queue — a second statement still runs', async () => {
+    const driver: PgliteDriver = {
+      async query(text) {
+        if (text === 'begin') throw new Error('connection reset');
+        return { rows: [] };
+      },
+      async close() {},
+    };
+    const client = createPgliteClient({ driver });
+
+    const failed = (async () => {
+      using reserved = await client.reserve();
+      await reserved.execute(sql`begin`);
+    })();
+    await expect(failed).rejects.toThrow();
+
+    // Bounded by the test's own timeout: a wedged queue hangs here rather than failing loud.
+    await expect(client.execute(sql`insert into t values (1)`)).resolves.toBeDefined();
+  });
+
+  test('releasing after disposal is a no-op, not a second turn', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const reserved = await client.reserve();
+
+    reserved[Symbol.dispose]();
+    reserved.release();
+
+    // A second turn handed out would let this statement start while the holder below still owns
+    // the connection; taking a fresh reservation proves the queue has exactly one turn in it.
+    const holder = await client.reserve();
+    const queued = client.execute(sql`insert into t values (1)`);
+    await Bun.sleep(5);
+    expect(driver.calls).toEqual([]);
+
+    holder.release();
+    await queued;
+    expect(driver.calls.map((call) => call.text)).toEqual(['insert into t values (1)']);
+  });
 });
 
 // The fakes above pin the adapter; this pins the binding. Without it "the driver is wired up" is

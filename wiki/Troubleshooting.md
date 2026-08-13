@@ -33,7 +33,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `X_DB_DRIFT` | schema differs from migrations (a column added by hand, or a generated migration never applied) | `x db gen "<message>"` then `x db migrate` |
-| `X_MIGRATE_CONCURRENT` | another version's `ROLE=migrate` holds the advisory lock | wait for it to exit 0; never run two deploys' migrations at once |
+| `ROLE=migrate` sits there doing nothing | another version's `ROLE=migrate` holds the session-pinned advisory lock — this one **waits**, it does not error (`X_MIGRATE_CONCURRENT` is reserved, never thrown) | let the first exit 0; the second then applies. If nothing else is deploying, look for a backend still holding `pg_advisory_lock` in `pg_locks` |
 | `ROLE=migrate` exits non-zero, deploy blocked | migration failure — correct, the roll is supposed to stop | read the SQL error, fix the migration, re-run. Do not start `web` on the old schema |
 | `X_TIMEOUT` on one query | past `db.statementTimeout` (default `'10s'`) | add the index the plan wants, or narrow the query. Raising the timeout hides it |
 | Connection exhaustion under load | `db.pool` × replicas × roles exceeds Postgres `max_connections` | lower `db.pool`, or a pooler in front |

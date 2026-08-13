@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { setDbClient } from './client';
+import { type DbClient, setDbClient } from './client';
+import { dbUnavailable } from './errors';
 import { createRecordingClient, type RecordingClient } from './fake';
+import { reservableOver } from './fake-reservable';
 import { sql } from './sql';
 import { beginStatement, currentTx, withTransaction } from './transaction';
 
@@ -132,5 +134,185 @@ describe('withTransaction', () => {
   test('the isolation level reaches the wire', async () => {
     await withTransaction(async () => undefined, { isolation: 'repeatable read' });
     expect(client.texts[0]).toBe('BEGIN ISOLATION LEVEL REPEATABLE READ');
+  });
+});
+
+describe('withTransaction and the reserved connection', () => {
+  test('a reservable client is pinned once and released once', async () => {
+    const { client: reservable, pins } = reservableOver(client);
+
+    await withTransaction(
+      async (tx) => {
+        await tx.execute(sql`select 1`);
+      },
+      { client: reservable },
+    );
+
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
+    expect(client.texts).toEqual(['BEGIN', 'select 1', 'COMMIT']);
+  });
+
+  test('a rejecting BEGIN gives the pin back instead of leaking it', async () => {
+    const texts: string[] = [];
+    const boom = dbUnavailable('statement failed: BEGIN');
+    const dead: DbClient = {
+      query: async () => [],
+      one: async () => null,
+      // Every statement fails, the rollback included — a connection that could not BEGIN is
+      // exactly the one that cannot ROLLBACK either.
+      execute: async (fragment) => {
+        texts.push(fragment.text);
+        throw boom;
+      },
+    };
+    const { client: reservable, pins } = reservableOver(dead);
+    let bodyRan = false;
+
+    await expect(
+      withTransaction(
+        async () => {
+          bodyRan = true;
+        },
+        { client: reservable },
+      ),
+    ).rejects.toBe(boom);
+
+    expect(bodyRan).toBe(false);
+    expect(texts).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
+    expect(currentTx()).toBeUndefined();
+  });
+
+  test('a rejecting COMMIT gives the pin back and reports the commit failure', async () => {
+    const boom = dbUnavailable('statement failed: COMMIT');
+    const failsOnCommit: DbClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async (fragment) => {
+        if (fragment.text === 'COMMIT') throw boom;
+        return 0;
+      },
+    };
+    const { client: reservable, pins } = reservableOver(failsOnCommit);
+    const undone: string[] = [];
+
+    await expect(
+      withTransaction(
+        async (tx) => {
+          tx.onRollback(() => undone.push('undo'));
+        },
+        { client: reservable },
+      ),
+    ).rejects.toBe(boom);
+
+    expect(undone).toEqual(['undo']);
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
+  });
+
+  test('a client that cannot be reserved runs on the pool, unpinned', async () => {
+    await withTransaction(
+      async (tx) => {
+        await tx.execute(sql`select 1`);
+      },
+      { client },
+    );
+
+    expect(client.texts).toEqual(['BEGIN', 'select 1', 'COMMIT']);
+  });
+
+  // A nested `withTransaction` reuses `outer.connection` (`runNested`, transaction.ts:80) rather
+  // than reserving again — that sharing is what makes SAVEPOINT/RELEASE land on the same physical
+  // connection BEGIN did. A second `reserve()` per level would pin a second connection per
+  // SAVEPOINT, and the root's `using` would only ever give one of them back: a leak per nesting
+  // depth, invisible to every test above because none of them nest three deep under a pin.
+  test('nesting three deep still takes and releases exactly one pin', async () => {
+    const { client: reservable, pins } = reservableOver(client);
+    const undone: string[] = [];
+
+    await expect(
+      withTransaction(
+        async (outer) => {
+          outer.onRollback(() => undone.push('outer'));
+          await withTransaction(async (inner) => {
+            inner.onRollback(() => undone.push('inner'));
+            await withTransaction(async (innermost) => {
+              innermost.onRollback(() => undone.push('innermost'));
+              throw new Error('deep failure');
+            });
+          });
+        },
+        { client: reservable },
+      ),
+    ).rejects.toThrow('deep failure');
+
+    expect(pins).toEqual({ reserves: 1, releases: 1 });
+    expect(undone).toEqual(['innermost', 'inner', 'outer']);
+  });
+});
+
+describe('withTransaction rollback failures', () => {
+  test('a failing ROLLBACK TO SAVEPOINT does not mask the error that caused it', async () => {
+    const texts: string[] = [];
+    const undone: string[] = [];
+    const savepointRollbackFails: DbClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async (fragment) => {
+        texts.push(fragment.text);
+        if (fragment.text.startsWith('ROLLBACK TO SAVEPOINT')) {
+          throw dbUnavailable('statement failed: ROLLBACK TO SAVEPOINT x_sp_1');
+        }
+        return 0;
+      },
+    };
+
+    await expect(
+      withTransaction(
+        async () => {
+          await withTransaction(async (inner) => {
+            inner.onRollback(() => undone.push('inner'));
+            throw new Error('inner failed');
+          });
+        },
+        { client: savepointRollbackFails },
+      ),
+    ).rejects.toThrow('inner failed');
+
+    expect(texts).toEqual([
+      'BEGIN',
+      'SAVEPOINT x_sp_1',
+      'ROLLBACK TO SAVEPOINT x_sp_1',
+      'ROLLBACK',
+    ]);
+    expect(undone).toEqual(['inner']);
+  });
+
+  test('a failing SAVEPOINT reaches the caller and aborts the outer transaction', async () => {
+    const texts: string[] = [];
+    const boom = dbUnavailable('statement failed: SAVEPOINT x_sp_1');
+    const savepointFails: DbClient = {
+      query: async () => [],
+      one: async () => null,
+      execute: async (fragment) => {
+        texts.push(fragment.text);
+        if (fragment.text.startsWith('SAVEPOINT')) throw boom;
+        return 0;
+      },
+    };
+    let innerRan = false;
+
+    await expect(
+      withTransaction(
+        async () => {
+          await withTransaction(async () => {
+            innerRan = true;
+          });
+        },
+        { client: savepointFails },
+      ),
+    ).rejects.toBe(boom);
+
+    expect(innerRan).toBe(false);
+    expect(texts).toEqual(['BEGIN', 'SAVEPOINT x_sp_1', 'ROLLBACK']);
   });
 });

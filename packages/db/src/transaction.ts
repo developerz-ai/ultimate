@@ -78,6 +78,10 @@ async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promi
   const name = `x_sp_${outer.savepoints.value}`;
   const undos: (() => void)[] = [];
   const tx = makeTx(`${outer.tx.id}/${name}`, outer.connection, undos);
+  // `SAVEPOINT` and `RELEASE` are deliberately uncaught: a savepoint that was never taken means
+  // this scope never opened, and a release that failed means its work is not durable in the outer
+  // one. Both are the caller's failure to see — swallowing either would run the rest of the unit
+  // of work against a transaction that is not the one it thinks it is in.
   await outer.connection.execute(raw(`SAVEPOINT ${name}`));
   try {
     const result = await storage.run({ ...outer, tx, undos }, () => fn(tx));
@@ -87,7 +91,10 @@ async function runNested<T>(outer: TxState, fn: (tx: DbTx) => Promise<T>): Promi
     outer.undos.push(...undos);
     return result;
   } catch (error) {
-    await outer.connection.execute(raw(`ROLLBACK TO SAVEPOINT ${name}`));
+    // Best-effort, exactly like the root's ROLLBACK: the savepoint is already gone when the
+    // failure was the connection itself, and the caller needs the error that caused the rollback,
+    // never the rollback's own.
+    await outer.connection.execute(raw(`ROLLBACK TO SAVEPOINT ${name}`)).catch(() => undefined);
     runUndos(undos);
     throw error;
   }
@@ -101,24 +108,30 @@ export async function withTransaction<T>(
   if (outer !== undefined) return runNested(outer, fn);
 
   const client = options.client ?? baseClient();
-  const reserved: DbConnection | undefined = isReservable(client)
+  // A pooled BEGIN that lands on a different physical connection than the statements after it is
+  // not a transaction at all, so a reservable client pins one connection for the whole scope.
+  // Held by a `using` declaration rather than a `finally`, because a `finally` only covers what
+  // someone remembered to put in its `try`: BEGIN used to sit above the block, so a rejected BEGIN
+  // returned the pin to nobody — on PGlite, the single session's turn with it, wedging every later
+  // statement in the process. The declaration covers every exit, including the ones nobody wrote.
+  using reserved: DbConnection | undefined = isReservable(client)
     ? await client.reserve()
     : undefined;
   const connection: DbClient = reserved ?? client;
   const undos: (() => void)[] = [];
   const tx = makeTx(`tx_${nanoid(12)}`, connection, undos);
 
-  await connection.execute(raw(beginStatement(options)));
   try {
+    await connection.execute(raw(beginStatement(options)));
     const state: TxState = { tx, connection, undos, savepoints: { value: 0 } };
     const result = await storage.run(state, () => fn(tx));
     await connection.execute(raw('COMMIT'));
     return result;
   } catch (error) {
+    // Best-effort: the caller needs the original failure, never the rollback's. A BEGIN that
+    // itself failed opened nothing, so this ROLLBACK is a no-op the server answers with a notice.
     await connection.execute(raw('ROLLBACK')).catch(() => undefined);
     runUndos(undos);
     throw error;
-  } finally {
-    reserved?.release();
   }
 }
