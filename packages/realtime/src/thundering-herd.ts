@@ -49,6 +49,22 @@ export function backoffDelay(
   }
 }
 
+/**
+ * The timer half of mechanism 2. Returns its own canceller rather than a handle, so nothing has to
+ * name a type that differs between Bun, the browser and `node:timers`. Injected because a reconnect
+ * only provable by sleeping is a reconnect no test proves — and an unproven one silently did not
+ * fire at all until `As of 2026-08`.
+ */
+export type Scheduler = (fn: () => void, ms: number) => () => void;
+
+/** The production scheduler: the one `setTimeout` on the client's reconnect path. */
+export const timeoutScheduler: Scheduler = (fn, ms) => {
+  const handle = setTimeout(fn, ms);
+  return () => {
+    clearTimeout(handle);
+  };
+};
+
 export type ReconnectReason = 'drain' | 'overload' | 'rebalance';
 
 export interface DrainPlanEntry {

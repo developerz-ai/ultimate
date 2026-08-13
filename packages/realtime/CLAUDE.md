@@ -68,6 +68,16 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   liveHookFor(liveFeed)` runs at import; `registerQueries()` stamps the name later, at boot.
 - Type claims about the hook go in `type-pins.ts`, never in a `.test.ts` — `tsconfig.json` excludes
   test files, so `tsc -b` never reads one and an assertion written there can never fail.
+- The client owns its own reconnect: a closed socket arms **one** timer through the injected
+  `Scheduler`, and that timer calls `connect()`. `reconnectAt` is the render half and never the
+  mechanism — publishing it without arming anything is exactly the bug that shipped. Rules that
+  hold the arming together: `onClose` nulls `#socket` (a retained dead socket makes `#send` a
+  silent no-op), it only schedules when nothing is armed (a `reconnect` frame arms the node's
+  spread slot *before* closing, and a local backoff would overwrite it), and `close()` cancels —
+  a client whose owner is gone must stop dialling, while `connect()` starts it over. A dial that
+  throws inside the timer arms the next attempt before rethrowing: a socket constructor may refuse,
+  and one refusal ending the chain is the same outage as never arming. Only the timer owns the
+  chain — a `connect()` the app called itself throws to the app and arms nothing.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
@@ -86,7 +96,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `nats-fake.ts` | an in-memory nats-server — the only way to prove multi-node fanout under a sealed network |
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
-| `client.ts` / `sync-node.ts` | the two halves |
+| `client.ts` / `sync-node.ts` | the two halves — `client.test.ts` owns the reconnect timer |
+| `apply-patches.ts` | folding a patch list onto a row list — the client's one stateless piece |
 | `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
 | `query-hook.ts` | the typed projection: one declared query bound to one named hook |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |

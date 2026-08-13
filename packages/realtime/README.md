@@ -53,7 +53,7 @@ frame handler is unchanged between rungs.
 | replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus client | `NatsConnection`, `NatsProtocolParser`, `NatsKvSet`, `ensureKvBucket`, `parseNatsUrl`, `bunNatsStream`, `FakeNatsServer` |
-| reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `drainPlan`, `AcceptBudget` |
+| reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `Scheduler`, `timeoutScheduler`, `drainPlan`, `AcceptBudget` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
@@ -131,6 +131,12 @@ On drain, `drainPlan()` gives every client its own jittered slot in a spread win
 sends a `reconnect` frame carrying that delay — clients redistribute instead of stampeding.
 `AcceptBudget` is the receiving node's token bucket, and a refusal always carries a retry delay,
 because refusing without one just moves the herd next door.
+
+The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
+frame assigned one, otherwise `backoffDelay()` — and that timer calls `connect()`, which re-sends
+`hello` with every cursor and re-subscribes every registration. `reconnectAt` is what a component
+renders while it waits; `close()` cancels it, and `connect()` starts over. The timer comes from an
+injected `Scheduler`, so a test fires it by hand instead of sleeping.
 
 ### Limits, stated plainly
 

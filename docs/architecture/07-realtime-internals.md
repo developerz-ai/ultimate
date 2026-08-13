@@ -168,7 +168,7 @@ Mitigations, all mandatory:
 | 2 | Window computed from live connection count | 500 clients drain in a second; 500k spread over minutes |
 | 3 | `resumeFrom` LSN | reconnect is a buffer delta, not a resubscribe-and-refetch |
 | 4 | Stateless `sync`, no sticky sessions | the LB redistributes clients across remaining nodes |
-| 5 | Client backoff is a floor, not the mechanism | a socket lost without a frame still backs off exponentially with jitter |
+| 5 | Client backoff is a floor, not the mechanism | a socket lost without a frame still backs off exponentially with jitter. `LiveClient` arms **one** timer per closed socket — the node's `afterMs` when a frame assigned one, otherwise `backoffDelay()` — and the timer calls `connect()`; `close()` cancels it |
 | 6 | Per-tenant subscription caps | a registered-query explosion is a load-shedding decision with `X_LIVE_QUERY_LIMIT`, not a fall-over |
 | 7 | Snapshot admission control | snapshot regeneration is queued with a concurrency cap; excess clients get a jittered retry frame |
 

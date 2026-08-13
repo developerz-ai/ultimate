@@ -1,6 +1,8 @@
 // Public API. Explicit, tier by tier: channels, live queries, local-first sync, plus the wire and
 // the server/client halves that carry all three.
 
+// ---- the client's one stateless piece, reusable against an app's own store ----------------------
+export { applyPatches } from './apply-patches';
 export { type ChangeBufferOptions, RingChangeBuffer } from './change-buffer';
 // ---- tier 2: live queries ----------------------------------------------------------------------
 export {
@@ -25,7 +27,6 @@ export {
   type SelectChangeFeedOptions,
   selectChangeFeed,
 } from './changefeed-env';
-
 // ---- tier 1: channels + presence ---------------------------------------------------------------
 export {
   ChannelHub,
@@ -39,7 +40,6 @@ export {
 } from './channel';
 // ---- server + client halves -------------------------------------------------------------------
 export {
-  applyPatches,
   type ClientSocket,
   LiveClient,
   type LiveClientOptions,
@@ -323,6 +323,8 @@ export {
   type ReconnectReason,
   type Rng,
   reconnectFrame,
+  type Scheduler,
+  timeoutScheduler,
 } from './thundering-herd';
 export {
   DEFAULT_PRESENCE_BUCKET,

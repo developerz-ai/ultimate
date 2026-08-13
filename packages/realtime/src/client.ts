@@ -5,14 +5,22 @@
 // same call tier 3. Nothing about the subscription changes — that is the ladder's whole promise.
 
 import { type Clock, systemClock, uuid } from '@ultimat3/core';
+import { applyPatches } from './apply-patches';
 import type { Topic } from './channel';
 import type { LiveCursor } from './cursor';
-import type { JsonObject, JsonValue, Row, RowPatch } from './json';
+import type { JsonObject, JsonValue, Row } from './json';
 import type { LocalStore, LocalTx, TableMap } from './local-store';
 import { mutateFrame, type OfflineQueue } from './offline-queue';
 import { type ConflictStrategy, type RebaseLog, reconcile } from './rebase';
 import { decode, encode, type Frame, PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
-import { type BackoffPolicy, backoffDelay, defaultBackoff, type Rng } from './thundering-herd';
+import {
+  type BackoffPolicy,
+  backoffDelay,
+  defaultBackoff,
+  type Rng,
+  type Scheduler,
+  timeoutScheduler,
+} from './thundering-herd';
 
 /** Injected reactive primitive. `createSignal` from Solid satisfies this exactly. */
 export type SignalFactory = <T>(initial: T) => [get: () => T, set: (next: T) => void];
@@ -61,6 +69,8 @@ export interface LiveClientOptions<T extends TableMap = TableMap> {
   readonly backoff?: BackoffPolicy;
   readonly rng?: Rng;
   readonly clock?: Clock;
+  /** How a pending reconnect is armed. Defaults to `setTimeout`; tests fire theirs by hand. */
+  readonly scheduler?: Scheduler;
 }
 
 interface Registration {
@@ -94,6 +104,10 @@ export class LiveClient<T extends TableMap = TableMap> {
 
   #socket: ClientSocket | null = null;
   #attempt = 0;
+  /** The armed reconnect's canceller, and the flag for "one timer in flight, the first wins". */
+  #reconnectTimer: (() => void) | null = null;
+  /** Set by `close()`: an explicit teardown must not be undone by the close it just triggered. */
+  #closed = false;
   /** A signal, not a field: `connected` is rendered, so a plain boolean would never re-render. */
   readonly #connected: () => boolean;
   readonly #setConnected: (next: boolean) => void;
@@ -126,6 +140,8 @@ export class LiveClient<T extends TableMap = TableMap> {
   }
 
   connect(): void {
+    this.#closed = false;
+    this.#cancelReconnect();
     const socket = this.#options.connect();
     this.#socket = socket;
     socket.onOpen(() => {
@@ -149,10 +165,31 @@ export class LiveClient<T extends TableMap = TableMap> {
       this.#onFrame(decode(data));
     });
     socket.onClose(() => {
+      // Drop the dead socket before anything can write to it: `#send` is fire-and-forget, so a
+      // retained reference turns every later frame into a silent no-op the caller believes landed.
+      if (this.#socket === socket) this.#socket = null;
       this.#setConnected(false);
       for (const registration of this.#registrations.values()) registration.setState('offline');
-      this.#scheduleReconnect(null);
+      // A `reconnect` frame armed the server's own delay before closing us; rescheduling here would
+      // replace the delay the node assigned with a local backoff and re-cluster the herd it spread.
+      if (this.#reconnectTimer === null) this.#scheduleReconnect(null);
     });
+  }
+
+  /**
+   * Explicit teardown: cancels the armed reconnect and drops the socket. Without it a client whose
+   * owner is gone keeps waking up and dialling forever — the timer is the only thing still holding
+   * it alive. `connect()` starts over, so this is a stop, not a tombstone.
+   */
+  close(code = 1000, reason = 'client closed'): void {
+    this.#closed = true;
+    this.#cancelReconnect();
+    this.#setReconnectAt(null);
+    this.#attempt = 0;
+    const socket = this.#socket;
+    this.#socket = null;
+    socket?.close(code, reason);
+    this.#setConnected(false);
   }
 
   /** Tier 2 and tier 3 alike. The returned accessor is the reactive result set. */
@@ -365,6 +402,8 @@ export class LiveClient<T extends TableMap = TableMap> {
         return;
       }
       case 'reconnect': {
+        // Order is load-bearing: arming first is what makes the close this triggers keep the delay
+        // the node assigned to *this* socket instead of falling back to a local backoff.
         this.#scheduleReconnect(frame.afterMs);
         this.#socket?.close(1001, frame.reason);
         return;
@@ -389,13 +428,41 @@ export class LiveClient<T extends TableMap = TableMap> {
     }
   }
 
-  /** Honours a server-assigned delay when there is one; otherwise jittered exponential backoff. */
+  /**
+   * Honours a server-assigned delay when there is one; otherwise jittered exponential backoff.
+   * Publishing `reconnectAt` is the render half — arming the timer is the half that makes the
+   * client come back, and `connect()` is the only thing it calls.
+   */
   #scheduleReconnect(serverDelayMs: number | null): void {
+    if (this.#closed) return;
+    this.#cancelReconnect();
     const rng = this.#options.rng ?? Math.random;
     const delay =
       serverDelayMs ?? backoffDelay(this.#attempt, this.#options.backoff ?? defaultBackoff, rng);
     this.#attempt += 1;
     this.#setReconnectAt(this.#clock.now().getTime() + delay);
+    const schedule = this.#options.scheduler ?? timeoutScheduler;
+    this.#reconnectTimer = schedule(() => {
+      // Cleared before dialling, not after: the attempt's own close must be free to arm the next
+      // one. `reconnectAt` stays put until the socket opens, so a countdown does not blink to null.
+      this.#reconnectTimer = null;
+      if (this.#closed) return;
+      try {
+        this.connect();
+      } catch (error) {
+        // A socket constructor that throws (mixed content, a URL the page may not open) would
+        // otherwise end the chain here — this attempt failed, so it counts as one and the next is
+        // armed before the error leaves. Rethrown, never swallowed: the host still reports it.
+        this.#scheduleReconnect(null);
+        throw error;
+      }
+    }, delay);
+  }
+
+  #cancelReconnect(): void {
+    const cancel = this.#reconnectTimer;
+    this.#reconnectTimer = null;
+    cancel?.();
   }
 
   #send(frame: Frame): void {
@@ -405,33 +472,6 @@ export class LiveClient<T extends TableMap = TableMap> {
   #notifyQueueChange(): void {
     for (const listener of this.#queueListeners) listener();
   }
-}
-
-/** Minimal in-place patch application: the shape a Solid store update maps onto directly. */
-export function applyPatches(rows: readonly Row[], patches: readonly RowPatch[]): readonly Row[] {
-  let next = rows;
-  for (const patch of patches) {
-    if (patch.op === 'delete') {
-      next = next.filter((row) => row.id !== patch.id);
-      continue;
-    }
-    if (patch.row === null) continue;
-    const index = next.findIndex((row) => row.id === patch.id);
-    const current = index >= 0 ? next[index] : undefined;
-    const merged: Row = { ...(current ?? {}), ...patch.row, id: patch.id };
-    if (index >= 0) {
-      const copy = [...next];
-      copy[index] = merged;
-      next = copy;
-    } else if (patch.index !== undefined) {
-      const copy = [...next];
-      copy.splice(patch.index, 0, merged);
-      next = copy;
-    } else {
-      next = [...next, merged];
-    }
-  }
-  return next;
 }
 
 function memberJson(member: PresenceMember): JsonValue {

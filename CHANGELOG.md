@@ -250,6 +250,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`LiveClient` never reconnected.** `#scheduleReconnect` computed the delay, incremented the attempt counter and published `reconnectAt` — and armed nothing. No `setTimeout`, no call to `connect()` from any close path; `reconnectAt` was read in exactly one place, `useConnection()`, to render a countdown that then expired and sat there. A client that lost its socket stayed offline until the app called `connect()` itself, which meant every deploy, every idle timeout and every dropped Wi-Fi packet ended the session. `drainPlan()`, the `reconnect` frame and `AcceptBudget` — the three mechanisms that spread a reconnect herd — were spreading clients that were never coming back.
+
+  The timer is now armed by the same method, through an injected `Scheduler` (`(fn, ms) => cancel`) defaulting to `timeoutScheduler`, so the reconnect is provable without sleeping. Four consequences fall out of making it real:
+
+  - **`onClose` drops the socket reference.** `#send` is fire-and-forget, so a retained dead socket turned every later frame into a silent no-op the caller believed had landed.
+  - **A server-assigned delay survives the close it triggers.** A `reconnect` frame arms the node's slot *before* closing, and `onClose` only schedules when nothing is armed — otherwise the delay `drainPlan()` computed for this socket was immediately overwritten by a local backoff, re-clustering the herd the node had just spread.
+  - **A dial that throws arms the next attempt.** A socket constructor is allowed to refuse — mixed content, a URL the page may not open — and one throw inside the timer would otherwise end the chain as completely as never arming it did. The error is rethrown, not swallowed, so the host still reports it; a `connect()` the app called itself is still the app's to handle and arms nothing.
+  - **`LiveClient.close(code?, reason?)` is new**: cancels the armed reconnect and drops the socket, so a client whose owner is gone stops dialling. `connect()` starts over — it is a stop, not a tombstone.
+
+  ```ts
+  const client = new LiveClient({ signal: createSignal, connect, buildId });
+  client.connect();
+  // socket drops → reconnectAt renders the countdown → and now the client actually dials again
+  client.close();   // …and this is how you make it stop
+  ```
+
 - **Docs: a read's cache key does not include the actor, and six pages said it did.** "Cache keys always include the actor's tenant and policy scope, so a cache hit can never leak across tenants" was a guarantee an app could have designed around. `cacheKeyFor` in `@ultimat3/query` is `query:<name>:<parsed-input fingerprint>:<sorted tag keys>` and has never carried the actor. The rule that actually holds: the tenant reaches the key through the read's **input**, so `feed({ orgId })` is one entry per org, and a `cache:` read whose answer varies by actor for one input must not declare `cache:` — tier 1, the request memo, is keyed by `Ctx` identity and already separates it. Policy still runs on every read before a tier is consulted; it decides whether *this* caller may ask, not which rows the entry holds. Corrected in `wiki/Caching-And-Invalidation.md`, `wiki/Queries-And-Live-Queries.md`, `wiki/Entities-And-Migrations.md`, `docs/architecture/01-package-map.md`, `03-request-lifecycle.md` and `06-data-layer.md`; `docs/idea/05-caching.md` keeps the scoped key as the design intent and now names the gap rather than claiming it shipped. No code changed.
 
 - **MCP exposure has one answer, `isMcpExposed`, and the contract stops publishing tools nothing serves.** Six readers across five packages decided `mcp: { expose }` three ways: `=== true` where a tool is actually built (`@ultimat3/action`'s `toMcpTools`, `@ultimat3/query`'s, `@ultimat3/mcp`'s two projections), `!== false` in the OpenAPI operation's `x-ultimate.mcpTool`, and `?? true` in `describeAction`'s manifest fact. So an action with **no `mcp` block at all** was published as a tool by `x.manifest.json` and by `openapi.json`, and refused by every surface an agent could call — and the first honest `mcp: { expose: false }` an author wrote then read as a *withdrawn* capability, which `x verify`'s contract diff classifies as breaking and demands a major version bump for.
