@@ -142,6 +142,8 @@ Three components on one page calling `liveFeed({ orgId })` resolve **one** query
 
 Streamed `<Suspense>` holes ([Routes and render modes](Routes-And-Render-Modes)) are the common case: independent holes, one round trip to Postgres. The same memo is what keeps an uncached lookup called once per row of a list to one round trip — `As of 2026-08`, per row is what it used to cost.
 
+The memo collapses the *same* read asked twice. Fifty *different* row lookups collapse one layer down, in the repo: `findById` issued across one microtask of a request is one `where "id" in (…)` ([Entities and migrations → Point lookups batch themselves](Entities-And-Migrations#point-lookups-batch-themselves)).
+
 ## Every cached query carries a tag
 
 The contract. **Not yet a gate** — `As of 2026-08` `X_CACHE_UNTAGGED_QUERY` is reserved: no code path raises it, and `x errors explain X_CACHE_UNTAGGED_QUERY` refuses it ([Error codes → Reserved codes](Error-Codes#reserved-codes)).

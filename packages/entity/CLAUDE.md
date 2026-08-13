@@ -28,6 +28,20 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   that is how a `unique()` column shipped a migration failing on `42P07` and money's currency
   shipped as `char(1)`. A new operator, column kind or write path is not done until it round-trips
   there.
+- **A point lookup batches itself, and the batch is never wider than the statement it replaces.**
+  `findById` called several times in one microtask of one request is one `select … where "id" in
+  (…)` — `coalesce.ts`, keyed by ctx identity (a `WeakMap`, so the batch dies with the request, the
+  shape `@ultimat3/query`'s request memo has one tier up) and by a scope key covering **every**
+  input to the statement except the id. Two tenants, two soft-delete visibilities, two projections,
+  two entities or two clients therefore never share one: a coalesced statement has to be one each
+  of the singles would have been served by, or a caller is answered with rows their own statement
+  could never have returned. It declines rather than guesses — no request in scope, a composite
+  key, a predicate value it cannot render — and declining is just the statement `findById` always
+  sent, which is why `findById` keeps its signature and there is no `batch()` to opt into. The
+  window closes before the statement goes out, so a lookup arriving mid-flight opens the next batch
+  instead of joining ids already on the wire, and past `MAX_IDS_PER_STATEMENT` a batch becomes
+  several whole statements rather than one Postgres refuses for its bind count. A sequential
+  `for … of` loop still pays one statement per row — its `await` ends the window.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -155,6 +169,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
+| `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |

@@ -47,6 +47,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`findById` batches itself — one microtask of point lookups is one `where "id" in (…)`.** A page that resolves an author per row sent one `select … where "id" = $1` per row. Inside a request, `postgresRepo()` now collects the lookups issued in the same microtask and sends one statement for all of them:
+
+  ```ts
+  // One statement, not one per post. findById's signature and its meaning are unchanged.
+  const authors = await Promise.all(posts.map((post) => users.findById(post.authorId, { orgId })));
+  ```
+
+  No `dataloader()`, no `batch()`, nothing to opt into: the capability lives inside the method that already exists, which is the only place it can reach code already written. The batch is keyed by context identity — a `WeakMap`, so it dies with the request, the shape `@ultimat3/query`'s request memo has one tier up — and by a scope key covering every input to the statement except the id, so another tenant, another soft-delete visibility, another projection, another entity or another client is a different statement and never joins one. What goes out is the statement each single lookup would have been served by, `in` instead of `=`: the tenant predicate and the `deleted_at is null` clause are inside it, so an id whose row is missing, soft-deleted or another tenant's still reads as `null`. Past 500 ids it becomes several whole statements rather than one Postgres refuses for its bind count, and it declines outright — sending exactly what it always sent — with no request in scope (a job, a script), on a composite primary key, or on a scope it cannot compare. The window is one microtask and closes before the statement is sent, so a sequential `for … of` loop still costs one statement per row; `Promise.all` over the rows is the form that batches. Proved against a real Postgres in `pg-driver.live.test.ts`: five lookups, one statement, the same five answers.
 - **`relationMap()` — the foreign keys an entity already declared, readable at query time.** `ColumnMeta.references` was resolved in exactly one place, `describe.ts`, to spell a DDL constraint; at query time nothing could answer "what is a post's author". `@ultimat3/entity` now derives a named map from the same thunks — `belongsTo` from an entity's own foreign keys, `hasMany` from the inbound ones:
 
   ```ts

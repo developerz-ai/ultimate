@@ -14,6 +14,7 @@ import {
   type TransactionOptions,
   withTransaction,
 } from '@ultimat3/db';
+import { coalesceFindById } from './coalesce';
 import { snake } from './column';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
@@ -79,7 +80,12 @@ export const postgresRepo = <Row>(
   return {
     async findById(id, options) {
       const plan = idPlan(entity, id, options, 'findById');
-      return one(plan, options ?? {});
+      const args = options ?? {};
+      // Every point lookup a request issues in one microtask is one statement: a page that
+      // resolves an author per row pays for one round trip, not one per row. The statement is the
+      // one this call would have sent — same scope, same soft-delete filter, `in` instead of `=` —
+      // and with no request in scope (a job, a script) it is exactly that statement, alone.
+      return coalesceFindById(entity, client(), plan, shapeOf(args), id) ?? one(plan, args);
     },
 
     async findMany(args = {}) {

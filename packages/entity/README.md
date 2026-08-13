@@ -208,6 +208,30 @@ that enqueued it.
 Every value is bound to `$n` and every identifier is resolved through the entity, so a column
 name can only be one the entity declared and a row value can never become SQL.
 
+## Point lookups batch themselves
+
+```ts
+const repo = postgresRepo(users);
+// One statement, not one per post: the lookups issued in this microtask are one `in`.
+const authors = await Promise.all(posts.map((post) => repo.findById(post.authorId, { orgId })));
+```
+
+`findById` keeps its signature and gets faster. There is no `dataloader()`, no `batch()` and
+nothing to opt into: inside a request the point lookups issued in one microtask become one
+`select … where "id" in ($1, $2, …)` carrying the scope each of them carried, and outside one — a
+job, a script — it is the single statement it always was.
+
+| | |
+|---|---|
+| Window | one microtask, closed before the statement is sent |
+| Lifetime | the request; the batch is keyed by context identity and dies with it |
+| Never shared with | another tenant, another soft-delete visibility, another projection, another entity, another client |
+| Wider than 500 ids | several whole statements, never one Postgres refuses |
+| An id with no row | `null`, exactly as the single statement answered |
+
+A sequential `for … of` loop still costs one statement per row — its `await` ends the window, and
+`Promise.all` over the rows is the form that batches.
+
 ## Tenancy is a guard
 
 `tenant: 'orgId'` on the entity names the column outright. Omit it and it is inferred — a

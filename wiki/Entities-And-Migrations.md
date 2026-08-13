@@ -129,6 +129,26 @@ Removing the key is a real option, not a hedge: inference (steps 2–4) still ap
 | Live queries | the tenant predicate is part of the matcher, not a post-filter |
 | Vector search | tenant + policy filters applied **in SQL**, so similarity search cannot leak across tenants |
 
+## Point lookups batch themselves
+
+`findById` called several times in one microtask of one request is **one** statement, `As of 2026-08`:
+
+```ts
+// One `select … where "id" in ($1, $2, $3, …)`, not one statement per post.
+const authors = await Promise.all(posts.map((post) => users.findById(post.authorId, { orgId })));
+```
+
+Nothing to opt into — no `dataloader()`, no `batch()`. `findById` keeps its signature and its meaning, which is the only way the fix reaches code that is already written.
+
+| Property | Behavior |
+|---|---|
+| Window | one microtask, closed before the statement goes out. A sequential `for … of` loop still costs one statement per row — its `await` ends the window, and `Promise.all` is the form that batches |
+| Lifetime | one request. The batch is keyed by context identity, so it dies with the request and never crosses one |
+| Never shared with | another tenant, another soft-delete visibility, another projection, another entity, another client. The coalesced statement has to be one each single lookup would have been served by |
+| Scope | the tenant predicate and `deleted_at is null` are **inside** the statement, so an id that is missing, soft-deleted or another tenant's still reads as `null` — never another caller's row |
+| Wide batches | past 500 ids, several whole statements rather than one Postgres refuses for its bind count |
+| Outside a request | a job, a script, a migration: the single statement it always was |
+
 ## Invariants
 
 | Rule | Behavior |
