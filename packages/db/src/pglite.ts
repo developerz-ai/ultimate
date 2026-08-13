@@ -5,6 +5,7 @@
 
 import type { DbConnection, ReservableClient } from './client';
 import { DbError, dbUnavailable } from './errors';
+import { statementObserver } from './observe';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
 import { currentTx } from './transaction';
@@ -106,6 +107,17 @@ export interface PgliteClient extends ReservableClient {
   close(): Promise<void>;
 }
 
+// PGlite counts MODIFIED rows, so a SELECT that returned rows still reports `affectedRows: 0` —
+// `??` would answer 0 for every read and disagree with `PostgresClient.execute`. A write that
+// modified nothing returned no rows either, so falling back to the row count stays 0 there. One
+// definition, shared: `execute()` and the observer's event must not disagree about how many rows a
+// statement accounted for.
+function rowsOf(result: PgliteResult): number {
+  return result.affectedRows !== undefined && result.affectedRows > 0
+    ? result.affectedRows
+    : result.rows.length;
+}
+
 /** Lazily boots: constructing a client opens nothing, exactly like `createPostgresClient`. */
 export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
   // One in-flight boot, shared. PGlite takes seconds to start, so two concurrent first queries
@@ -122,12 +134,50 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     return booting;
   }
 
-  async function statement(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
+  /** The send itself: one statement on the session, every driver failure typed on the way out. */
+  async function send(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
     try {
       return await driver.query(fragment.text, fragment.values);
     } catch (error) {
       throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
     }
+  }
+
+  /**
+   * The funnel — queued, in-transaction and pinned statements all arrive here, so the observer
+   * hangs off this one function and nowhere else. Uninstalled it costs one property read and one
+   * branch: no clock read, no event object, and `send` receives exactly the call `statement` made
+   * before the seam existed (axiom 6). Same shape as `runOn` in `client.ts`, one driver up.
+   */
+  async function statement(driver: PgliteDriver, fragment: SqlFragment): Promise<PgliteResult> {
+    const observer = statementObserver();
+    if (observer === undefined) return send(driver, fragment);
+    const started = performance.now();
+    let result: PgliteResult;
+    try {
+      result = await send(driver, fragment);
+    } catch (error) {
+      // The failing path is observed too — the error is already `X_DB_UNAVAILABLE`, and a throw
+      // from `onStatement` replaces it, which is why `observe.ts` says a reporting-only observer
+      // must not throw.
+      observer.onStatement({
+        text: fragment.text,
+        values: fragment.values,
+        durationMs: performance.now() - started,
+        rows: 0,
+        error,
+      });
+      throw error;
+    }
+    // Outside the `try` deliberately: a throw from `onStatement` is the observer's, not the
+    // database's, and catching it above would report a statement that succeeded as failed.
+    observer.onStatement({
+      text: fragment.text,
+      values: fragment.values,
+      durationMs: performance.now() - started,
+      rows: rowsOf(result),
+    });
+    return result;
   }
 
   async function run(fragment: SqlFragment): Promise<PgliteResult> {
@@ -140,14 +190,6 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     if (currentTx() !== undefined) return statement(driver, fragment);
     return turns.run(() => statement(driver, fragment));
   }
-
-  // PGlite counts MODIFIED rows, so a SELECT that returned rows still reports `affectedRows: 0` —
-  // `??` would answer 0 for every read and disagree with `PostgresClient.execute`. A write that
-  // modified nothing returned no rows either, so falling back to the row count stays 0 there.
-  const rowsOf = (result: PgliteResult): number =>
-    result.affectedRows !== undefined && result.affectedRows > 0
-      ? result.affectedRows
-      : result.rows.length;
 
   return {
     async query<T>(fragment: SqlFragment): Promise<readonly T[]> {

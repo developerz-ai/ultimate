@@ -1,5 +1,7 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { baseClient, isReservable, setDbClient } from './client';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { isReservable, setDbClient } from './client';
+import type { StatementEvent, StatementObserver } from './observe';
+import { setStatementObserver } from './observe';
 import {
   createPgliteClient,
   loadPgliteDriver,
@@ -9,7 +11,6 @@ import {
   type PgliteResult,
   pgliteDataDir,
 } from './pglite';
-import { readOnlyQuery } from './readonly-query';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 
@@ -337,125 +338,116 @@ describe('createPgliteClient', () => {
   });
 });
 
-// The fakes above pin the adapter; this pins the binding. Without it "the driver is wired up" is
-// a claim about a module specifier nobody ever resolved — which is what the stub used to be.
-describe('the real embedded database', () => {
-  // A WASM compile plus an initdb — ~1.5s on a CI runner, against bun's 5s default. Stated so a
-  // slow machine reads as slow rather than as a broken driver; it is a hang detector, not a budget.
-  const PGLITE_BOOT_MS = 30_000;
+function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
+  const seen: StatementEvent[] = [];
+  return {
+    seen,
+    onStatement(event: StatementEvent): void {
+      seen.push(event);
+    },
+  };
+}
 
-  /**
-   * One session for all four cases, not one each. The boot is the entire cost — four measured
-   * ~2.4s apiece — and `createPgliteClient` is lazy, so the WASM compile still happens inside the
-   * first case that runs a statement rather than at import. Sharing costs these cases nothing they
-   * were asserting: PGlite is a pool of exactly one either way, which is the very thing the
-   * reservation rules below exist for, so a shared client is the shape production runs.
-   */
-  const client = createPgliteClient();
-
-  // Each case owns `posts` outright, so none of them inherits the previous one's table or rows.
-  beforeEach(async () => {
-    await client.execute(sql`drop table if exists posts`);
-  }, PGLITE_BOOT_MS);
-
-  afterAll(async () => {
-    await client.close();
+describe('the statement observer', () => {
+  afterEach(() => {
+    // Both are process-wide: leaving either installed makes every later test observe this one's.
+    setStatementObserver(undefined);
+    setDbClient(undefined);
   });
 
-  test(
-    'boots from the default loader and runs Postgres, with no server and no Docker',
-    async () => {
-      await client.execute(sql`create table posts (id int primary key, title text)`);
-      expect(await client.execute(sql`insert into posts values (${1}, ${'hello'})`)).toBe(1);
-      expect(await client.execute(sql`insert into posts values (${2}, ${'world'})`)).toBe(1);
-      expect(
-        await client.one<{ title: string }>(sql`select title from posts where id = ${2}`),
-      ).toEqual({ title: 'world' });
-      expect(await client.query(sql`select id from posts order by id`)).toEqual([
-        { id: 1 },
-        { id: 2 },
-      ]);
-      expect(await client.execute(sql`delete from posts`)).toBe(2);
-    },
-    PGLITE_BOOT_MS,
-  );
+  // `statement()` is the funnel: the queued path, the pinned path and the in-transaction path that
+  // skips the queue all land on it. A detector fed by only one of the three would be blind to
+  // exactly the reads that happen inside a transaction.
+  test('sees every statement once, whichever of the three paths it took', async () => {
+    const driver = fakeDriver({ rows: [{ id: 1 }, { id: 2 }], affectedRows: 0 });
+    const client = createPgliteClient({ driver });
+    setDbClient(client);
+    const observer = recorder();
+    setStatementObserver(observer);
 
-  // Embedded Postgres is one session. Before this client was reservable both units of work ran
-  // their BEGIN on the same connection, so B's COMMIT committed A's rows and A's ROLLBACK found
-  // no transaction left to undo — `x dev` losing a rollback under any two concurrent requests.
-  test(
-    'two concurrent transactions do not share one — a rollback still rolls back',
-    async () => {
-      setDbClient(client);
-      try {
-        await client.execute(sql`create table posts (id int primary key, title text)`);
+    await client.query(sql`select id from posts where org = ${'o_1'}`);
+    await withTransaction(async (tx) => {
+      await tx.execute(sql`insert into posts values (${1})`);
+      // Through the ambient client, so it reaches `run()` with a transaction open and skips the
+      // queue rather than waiting for a turn the transaction is already holding.
+      await client.query(sql`select id from posts`);
+    });
 
-        const rolledBack = withTransaction(async (tx) => {
-          await tx.execute(sql`insert into posts values (${1}, ${'abandoned'})`);
-          await Bun.sleep(20);
-          throw new Error('this unit of work fails');
-        });
-        const committed = withTransaction(async (tx) => {
-          await Bun.sleep(5);
-          await tx.execute(sql`insert into posts values (${2}, ${'kept'})`);
-        });
+    expect(observer.seen.map((event) => event.text)).toEqual([
+      'select id from posts where org = $1',
+      'BEGIN',
+      'insert into posts values ($1)',
+      'select id from posts',
+      'COMMIT',
+    ]);
+    expect(observer.seen[0]?.values).toEqual(['o_1']);
+    expect(observer.seen[0]?.rows).toBe(2);
+    expect(observer.seen[0]?.durationMs).toBeGreaterThanOrEqual(0);
+    expect(observer.seen[0]).not.toHaveProperty('error');
+  });
 
-        await expect(rolledBack).rejects.toThrow('this unit of work fails');
-        await committed;
-        expect(await client.query(sql`select id, title from posts order by id`)).toEqual([
-          { id: 2, title: 'kept' },
-        ]);
-      } finally {
-        setDbClient(undefined);
-      }
-    },
-    PGLITE_BOOT_MS,
-  );
+  // The same count `execute()` answers with, from the same helper — a report saying 0 rows for
+  // every write while `execute` said 3 would make the two disagree about the same statement.
+  test('counts rows the way execute does: the command tag for a write', async () => {
+    const client = createPgliteClient({ driver: fakeDriver({ rows: [], affectedRows: 3 }) });
+    const observer = recorder();
+    setStatementObserver(observer);
 
-  // `handle.enqueue(input, { outbox: false })` inside `withTransaction` goes to the queue driver's
-  // own executor, which holds the plain client — and the plain client must not wait for the turn
-  // the surrounding transaction is holding, or the request hangs with no error to explain it.
-  test(
-    'a plain statement issued inside a transaction joins it instead of deadlocking',
-    async () => {
-      setDbClient(client);
-      try {
-        await client.execute(sql`create table posts (id int primary key)`);
-        const seen = await withTransaction(async (tx) => {
-          await tx.execute(sql`insert into posts values (${1})`);
-          await baseClient().execute(sql`insert into posts values (${2})`);
-          return (await baseClient().query(sql`select id from posts`)).length;
-        });
-        expect(seen).toBe(2);
-        expect(await client.query(sql`select id from posts order by id`)).toEqual([
-          { id: 1 },
-          { id: 2 },
-        ]);
-      } finally {
-        setDbClient(undefined);
-      }
-    },
-    PGLITE_BOOT_MS,
-  );
+    expect(await client.execute(sql`delete from posts`)).toBe(3);
+    expect(observer.seen[0]?.rows).toBe(3);
+  });
 
-  // `db.query`'s BEGIN READ ONLY used to land on the shared connection, so an app write that
-  // happened to overlap an agent's read was executed inside a read-only transaction and refused.
-  test(
-    'an agent read-only query does not make a concurrent write fail',
-    async () => {
-      setDbClient(client);
-      try {
-        await client.execute(sql`create table posts (id int primary key)`);
-        const read = readOnlyQuery<{ n: number }>('select count(*)::int as n from posts');
-        const written = client.execute(sql`insert into posts values (${1})`);
+  test('reports a failed statement with the error the caller is about to be thrown', async () => {
+    const client = createPgliteClient({
+      driver: {
+        query: () => Promise.reject(new Error('syntax error')),
+        close: async () => undefined,
+      },
+    });
+    const observer = recorder();
+    setStatementObserver(observer);
 
-        expect((await read).guards).toContain('txn:read-only');
-        expect(await written).toBe(1);
-        expect(await client.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
-      } finally {
-        setDbClient(undefined);
-      }
-    },
-    PGLITE_BOOT_MS,
-  );
+    const error = await failure(() => client.query(sql`selct 1`));
+
+    expect(error.code).toBe('X_DB_UNAVAILABLE');
+    // Identity, not shape: the event carries the very error thrown, already wrapped by the funnel.
+    expect(observer.seen[0]?.error).toBe(error);
+    expect(observer.seen[0]?.rows).toBe(0);
+  });
+
+  // Strict test mode is an observer that throws, and the throw must arrive as itself. Notifying
+  // inside the statement's own `try` would report a statement that succeeded as X_DB_UNAVAILABLE.
+  test('a throwing observer reaches the caller as its own error, not a database failure', async () => {
+    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
+    setStatementObserver({
+      onStatement(): void {
+        throw new Error('n+1 in a strict test');
+      },
+    });
+
+    await expect(client.query(sql`select 1`)).rejects.toThrow('n+1 in a strict test');
+  });
+
+  test('booting, reserving and closing are not statements', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const observer = recorder();
+    setStatementObserver(observer);
+
+    await client.ping();
+    (await client.reserve()).release();
+    await client.close();
+
+    expect(observer.seen).toEqual([]);
+  });
+
+  test('an uninstalled seam observes nothing, which is the production path', async () => {
+    const observer = recorder();
+    setStatementObserver(observer);
+    setStatementObserver(undefined);
+
+    await createPgliteClient({ driver: fakeDriver({ rows: [] }) }).query(sql`select 1`);
+
+    expect(observer.seen).toEqual([]);
+  });
 });

@@ -34,8 +34,10 @@ a reservation runs direct **only while its turn is held**, re-queueing through `
 `release()` has been called. Drop the first and a rollback is silently lost; drop the second and
 `enqueue(input, { outbox: false })` inside `withTransaction` hangs forever; drop the third and a
 `tx` handle leaked past its scope writes into whichever transaction holds the connection next. The
-first two are pinned by live tests in `pglite.test.ts` and a fake driver cannot catch either; the
-third is a fake-driver test, because it is about ordering, not SQL.
+first two are pinned by real-database tests in `pglite-embedded.test.ts` and a fake driver cannot
+catch either; the third is a fake-driver test in `pglite.test.ts`, because it is about ordering,
+not SQL. That is the split between the two files: `pglite.test.ts` pins the adapter against fakes,
+`pglite-embedded.test.ts` boots the WASM module once and pins the binding.
 
 `Turn` (`pglite-turns.ts`) is `Disposable`, same shape as `DbConnection`: `release()` and
 `[Symbol.dispose]` are the same call, idempotent for free because it is a settled promise's
@@ -104,7 +106,7 @@ that returned rows is tagged `0`, and `??` would report 0 for every read while
 `PostgresClient.execute` reported the row count. A write that modified nothing returned no rows
 either, so the fallback stays 0 there.
 
-`observe.ts` is a seam and nothing more: one process-wide `StatementObserver`, installed with
+`observe.ts` is the seam a statement-level diagnostic installs into: one process-wide `StatementObserver`, installed with
 `setStatementObserver()` and read with `statementObserver()`, the same ambient shape as
 `setDbClient()`. Three rules, each load-bearing. **Guard at the call site** — read the accessor,
 branch on `undefined`, and only then build the `StatementEvent`; a `notify(event)` wrapper would
@@ -116,7 +118,21 @@ N+1 happened in, so a guarding facade here would silently delete that mode. `onS
 synchronous, runs on the caller's stack after the statement settled, and must not issue SQL: a
 statement from inside it re-enters the funnel and observes itself. Only two places may invoke it —
 `runOn` (`client.ts`) and `statement()` (`pglite.ts`), the funnels every statement already passes
-through. Reserving a connection and closing a pool are not statements and stay out.
+through. Reserving a connection, booting PGlite and closing a pool are not statements and stay out.
+
+Both funnels are now split in two, and the split is the whole design: `sendOn`/`send` is the raw
+statement plus the `X_DB_UNAVAILABLE` wrap — byte-identical to what the funnel used to be — and
+`runOn`/`statement` is the observed shell around it. Three rules hold, in both drivers:
+**guard first** — read the accessor, and with nothing installed hand straight to `sendOn`/`send`,
+no clock read and no event; **observe both settle paths** — a failed statement is an event with
+`rows: 0` and the already-wrapped error the caller is about to be thrown, because fifty identical
+timeouts are still fifty statements; **notify outside the statement's own `try`** — a throw from
+`onStatement` on the success path is the observer's, and catching it there would wrap a statement
+that succeeded as `X_DB_UNAVAILABLE` and delete strict test mode's failure. On the failing path
+the observer's throw replaces the DB error instead, which is the price of never swallowing — an
+observer that only reports must not throw. `rows` comes from the same helper `execute()` uses
+(`affectedBy` in `client.ts`, `rowsOf` in `pglite.ts`, hoisted to module scope for it), so the
+report and the return value cannot disagree about one statement.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.

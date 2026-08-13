@@ -5,6 +5,7 @@
 
 import { type Role, resolveRole } from '@ultimat3/core';
 import { dbUnavailable } from './errors';
+import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
 import { currentTx } from './transaction';
 
@@ -134,7 +135,8 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     return driver;
   }
 
-  async function runOn(
+  /** The send itself: one statement on one handle, every driver failure typed on the way out. */
+  async function sendOn(
     driver: Pick<BunSqlDriver, 'unsafe'>,
     fragment: SqlFragment,
   ): Promise<unknown> {
@@ -143,6 +145,47 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     } catch (error) {
       throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
     }
+  }
+
+  /**
+   * The funnel — pooled and pinned statements both arrive here, which is why the observer hangs
+   * off this one function and nowhere else. Uninstalled it costs one property read and one
+   * branch: no clock read, no event object, and `sendOn` receives exactly the call `runOn` made
+   * before the seam existed (axiom 6).
+   */
+  async function runOn(
+    driver: Pick<BunSqlDriver, 'unsafe'>,
+    fragment: SqlFragment,
+  ): Promise<unknown> {
+    const observer = statementObserver();
+    if (observer === undefined) return sendOn(driver, fragment);
+    const started = performance.now();
+    let result: unknown;
+    try {
+      result = await sendOn(driver, fragment);
+    } catch (error) {
+      // A statement that failed is still a statement: fifty identical timeouts are an N+1 of
+      // timeouts. The error is already `X_DB_UNAVAILABLE`, so the event carries what the caller
+      // is about to be thrown — and an observer that throws here replaces it, which is why
+      // `observe.ts` says a reporting-only observer must not throw.
+      observer.onStatement({
+        text: fragment.text,
+        values: fragment.values,
+        durationMs: performance.now() - started,
+        rows: 0,
+        error,
+      });
+      throw error;
+    }
+    // Outside the `try` deliberately: a throw from `onStatement` is the observer's, not the
+    // database's, and catching it above would report a statement that succeeded as failed.
+    observer.onStatement({
+      text: fragment.text,
+      values: fragment.values,
+      durationMs: performance.now() - started,
+      rows: affectedBy(result),
+    });
+    return result;
   }
 
   async function run(fragment: SqlFragment): Promise<unknown> {
