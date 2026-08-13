@@ -89,6 +89,24 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   ```
 
   `insertStatement` builds every insert in the framework now, one row or ten thousand, so `insertAll([row])` compiles to the text `insert(row)` always compiled to and there is no second builder for the two to drift apart in. Rows are `Insertable`, parsed by `$parse` exactly as one row is — declared defaults are filled here, not by the caller — and `upsertAll` also stamps `onUpdateNow()` columns through `touch()`, the one place that happens, because an upsert that lands on a stored row *is* an update. The result is the rows the call actually **wrote**: under `onMatch: 'nothing'` a row already stored is skipped and absent, which is what `returning *` says on the server and is therefore how a caller counts what it inserted. A collision overwrites every column in the batch except two closed sets — the conflict target, which is how the stored row was found, and the primary key, which is where it lives; moving either would move a row nobody asked to move and every foreign key pointing at that id would miss it. Past Postgres's 65535 bind parameters the batch becomes several whole statements rather than one the server refuses, so an all-or-nothing caller wraps the call in `withTransaction`. Four refusals precede the statement, each of them a `42P10`, a cross-tenant write or a silent surprise otherwise: a conflict target no declared unique constraint matches, a target that omits the tenant column under `onMatch: 'update'` (`X_TENANCY_UNSCOPED` — another tenant's row would match and be rewritten, so an updating upsert must be scoped by the constraint itself), a batch that repeats one conflict target under `'update'` (Postgres answers that `ON CONFLICT DO UPDATE command cannot affect row a second time`), and a batch whose rows name different columns under `'update'`, where `excluded.<column>` is that column's default and not "leave it alone". The in-memory driver answers all four the same way and judges the whole batch before storing any of it, so a test that passes against memory still says something about Postgres — including `NULLS DISTINCT`: a null in the conflict target collides with nothing, there and here.
+- **`inBatches(size)` — reading a whole table is a terminal on the chain, not a loop around `page()`.** A page is bounded on purpose, so every backfill, export and reindex hand-rolled the cursor loop, and the hand-rolled ones are where an `offset` creeps back in. `ReadBuilder` now ends in one:
+
+  ```ts
+  // One statement per batch, one page of rows in memory at a time.
+  for await (const batch of db.posts.where({ orgId }).preload('author').inBatches(500)) {
+    await search.index(batch);
+  }
+
+  // Stopping early keeps the position, so a job resumes where it ran out of time.
+  await using batches = db.posts.where({ orgId }).after(checkpoint).inBatches(500);
+  for await (const batch of batches) {
+    await search.index(batch);
+    if (ctx.clock.now() > deadline) break;
+  }
+  await db.checkpoints.update(id, { cursor: batches.cursor });
+  ```
+
+  A batch **is** the page `page()` would have returned at that position — same filters, same tenancy, same soft-delete visibility, same `select()`, same `preload()` — so there is no second read path to learn or to drift, and both drivers inherit it from the one they already share. The handle is the iteration: `break`, `return`, a throw and `await using` all stop the *next* statement (`close()` is the generator's own `return()`, so it is idempotent by construction), a second `for await` continues it rather than re-reading the table from the top, and an empty batch is never yielded. `.cursor` is where the next batch starts and advances before the yield, so a consumer that breaks reads the position it stopped at and `.after(cursor)` resumes it. Three refusals land on the chain instead of one batch later: a size that is not a whole number of rows, a chain that also called `limit()` — one number with two meanings, and honouring it reads a fraction of a batch while dropping it reads the whole table the caller thought they had bounded — and an ordering no cursor can carry, which is the one that matters most: a nullable sort column mints no cursor when the result fits in a single batch, so it would pass every test and fail once the table grew.
 - **`relationMap()` — the foreign keys an entity already declared, readable at query time.** `ColumnMeta.references` was resolved in exactly one place, `describe.ts`, to spell a DDL constraint; at query time nothing could answer "what is a post's author". `@ultimat3/entity` now derives a named map from the same thunks — `belongsTo` from an entity's own foreign keys, `hasMany` from the inbound ones:
 
   ```ts

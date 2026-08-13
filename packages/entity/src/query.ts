@@ -1,10 +1,13 @@
 // The chainable read. Every chain terminates in a cursor page — `page()` returns rows plus the
-// cursor for the next one, and `all()`/`one()` are that page's rows. There is no `offset()` and
-// there will not be one: under concurrent writes an insert before the offset shifts every later
-// page, so a client silently skips and repeats rows.
+// cursor for the next one, `all()`/`one()` are that page's rows, and `inBatches()` is that page
+// repeated until the cursor runs out. There is no `offset()` and there will not be one: under
+// concurrent writes an insert before the offset shifts every later page, so a client silently
+// skips and repeats rows.
 
+import type { BatchIterator } from './batch';
+import { assertBatchable, batchIterator } from './batch';
 import type { EntityCore } from './entity';
-import { namedColumns } from './plan';
+import { DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import type { RelatedTables } from './preload';
 import { preloaded } from './preload';
 import type { Relation } from './relations';
@@ -43,6 +46,22 @@ export interface ReadBuilder<Row> {
    * `select()` narrows the columns, never the relations.
    */
   preload<Name extends string>(relation: Name): ReadBuilder<Row & Preloaded<Name>>;
+  /**
+   * Every row the chain matches, `size` at a time and one statement per batch — the terminal a
+   * `for await` consumes instead of holding a whole table in memory. A batch is the page `page()`
+   * would have returned at that position, so filters, tenancy, soft delete, the projection and
+   * every `preload()` mean here what they mean there, and an empty batch is never yielded.
+   *
+   * Keyset, never OFFSET: each batch resumes from the cursor the previous one ended on, so a row
+   * written mid-iteration cannot make the loop skip or repeat one. `after(cursor)` is where it
+   * starts and `.cursor` is where it stopped — persist that and a job resumes the iteration.
+   *
+   * The loop closes it: `break`, `return` and a throw all stop the next statement, and
+   * `await using` does the same for a handle kept in a variable. A chain that cannot carry a
+   * cursor — a nullable sort column — and a chain that also called `limit()` are refused here,
+   * not one batch later.
+   */
+  inBatches(size: number): BatchIterator<Row>;
   /** The terminal: one bounded page and the cursor that continues it. */
   page(): Promise<Page<Row>>;
   all(): Promise<readonly Row[]>;
@@ -91,7 +110,12 @@ export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder
 interface State {
   readonly where: readonly Predicate[];
   readonly orderBy: readonly SortKey[];
-  readonly limit: number;
+  /**
+   * `undefined` until `limit()` is called, and not the default spelled a second time: the driver
+   * already defaults an unnamed page to `DEFAULT_PAGE_SIZE`, and only "the caller named a page
+   * size" tells `inBatches()` it was handed one number for two jobs.
+   */
+  readonly limit: number | undefined;
   readonly cursor: string | null;
   readonly select: readonly string[] | undefined;
   /** Resolved when `preload()` was called, so an unknown name fails at the chain and not a page later. */
@@ -101,7 +125,7 @@ interface State {
 const EMPTY: State = {
   where: [],
   orderBy: [],
-  limit: 50,
+  limit: undefined,
   cursor: null,
   select: undefined,
   preload: [],
@@ -133,7 +157,9 @@ const builder = <Source, Row>(
   const args = () => ({
     where: state.where,
     orderBy: state.orderBy,
-    limit: state.limit,
+    // Sent only when the caller named one: an unnamed page is the driver's default, and passing
+    // it from here would be the same number written in two files.
+    ...(state.limit === undefined ? {} : { limit: state.limit }),
     cursor: state.cursor,
     ...(selected === undefined ? {} : { select: selected }),
   });
@@ -199,6 +225,19 @@ const builder = <Source, Row>(
       );
     },
 
+    inBatches(size) {
+      assertBatchable(entity, size, state);
+      return batchIterator<Row>({
+        from: state.cursor,
+        // The chain's own arguments with the batch as the page size and the iteration's position
+        // in place of the chain's: one statement per batch, and the same one `page()` sends.
+        page: async (cursor) => {
+          const result = await repo.findMany({ ...args(), limit: size, cursor });
+          return { rows: await attach(result.rows), nextCursor: result.nextCursor };
+        },
+      });
+    },
+
     page: async () => {
       const result = await repo.findMany(args());
       return { rows: await attach(result.rows), nextCursor: result.nextCursor };
@@ -218,7 +257,8 @@ const builder = <Source, Row>(
       entity: entity.$name,
       where: state.where,
       orderBy: state.orderBy,
-      limit: state.limit,
+      // The page that will actually run, so an unnamed one still reads as the bound it has.
+      limit: state.limit ?? DEFAULT_PAGE_SIZE,
       ...(state.cursor === null ? {} : { cursor: state.cursor }),
       // The projection actually sent, preload keys included: a plan that is safe to log is only
       // useful if it is the plan that ran.

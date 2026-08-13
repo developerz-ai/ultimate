@@ -118,6 +118,38 @@ these filters, this sort order. A tampered cursor, or one taken from another lis
 `X_CURSOR_INVALID` rather than a silent page one. The page size is deliberately outside the scope:
 asking for a bigger next page is the same query.
 
+## Iterating every row
+
+`As of 2026-08`. A page is bounded on purpose, so reading a whole table is a loop — and the loop is
+the terminal, not something the caller writes around `page()`:
+
+```ts
+// One statement per batch, one page of rows in memory at a time.
+for await (const batch of db.posts.where({ orgId }).preload('author').inBatches(500)) {
+  await search.index(batch);
+}
+
+// Stopping early is cheap: the position survives, so the next run resumes where this one stopped.
+await using batches = db.posts.where({ orgId }).after(checkpoint).inBatches(500);
+for await (const batch of batches) {
+  await search.index(batch);
+  if (ctx.clock.now() > deadline) break;
+}
+await db.checkpoints.update(id, { cursor: batches.cursor });
+```
+
+Every batch is the page `page()` would have returned at that position — same filters, same tenancy,
+same soft-delete visibility, same `select()`, same `preload()` — so there is no second read path to
+learn or to drift.
+
+| | |
+|---|---|
+| Statements | one per batch, each asking for one row past it, exactly as `page()` does. An empty batch is never yielded |
+| Position | keyset, never OFFSET: a row written mid-iteration cannot make the loop skip or repeat one. `after(cursor)` starts it, `.cursor` is where it stopped, `null` once exhausted |
+| Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle kept in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
+| Refusals | on the chain, not one batch later: a size that is not a whole number of rows, a `limit()` on the same chain (one number, two meanings), and an ordering no cursor can carry — a nullable sort column, which a result that fits in one batch would otherwise hide until the table grew |
+| Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
+
 ## Writing by filter
 
 ```ts

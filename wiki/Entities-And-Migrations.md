@@ -211,6 +211,42 @@ stated rather than inferred from a loop. The other two members of the family ask
 `findById` batches a same-microtask fan-out for itself, and a `for … of` loop over a page is
 already two statements, above.
 
+## Reading a whole table is a loop of pages
+
+A page is bounded on purpose, so reading everything is iteration — and the iteration is a terminal
+on the same chain, not something written around `page()`, `As of 2026-08`:
+
+```ts
+// One statement per batch, one page of rows in memory at a time.
+for await (const batch of db.posts.where({ orgId }).preload('author').inBatches(500)) {
+  await search.index(batch);
+}
+```
+
+A batch **is** the page `page()` would have returned at that position: same filters, same tenancy,
+same soft-delete visibility, same `select()`, same `preload()`. Nothing here is a second read path.
+
+Stopping early keeps the position, which is what makes a long backfill a job that can run out of
+time and pick up where it stopped:
+
+```ts
+await using batches = db.posts.where({ orgId }).after(checkpoint).inBatches(500);
+for await (const batch of batches) {
+  await search.index(batch);
+  if (ctx.clock.now() > deadline) break;
+}
+await db.checkpoints.update(id, { cursor: batches.cursor });   // resume with .after(cursor)
+```
+
+| Property | Behavior |
+|---|---|
+| Statements | one per batch, each asking for one row past it exactly as a page does. An empty batch is never yielded, so a consumer never checks `batch.length` |
+| Position | keyset, never OFFSET — a row written mid-iteration cannot make the loop skip or repeat one. `.after(cursor)` starts it, `.cursor` is where the next batch starts, `null` once exhausted |
+| Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle held in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
+| Batch size | a whole number of rows, at least one. A chain that also called `limit()` is `X_INVARIANT_VIOLATED`: one number with two meanings, and neither reading is safe to guess |
+| Sort order | an ordering no cursor can carry — a nullable sort column — is refused at `inBatches()`, not one batch later. A result that fits in a single batch mints no cursor, so deferring it would hide the mistake until the table grew |
+| Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
+
 ## Writing many rows is one statement
 
 The three sections above make a read loop stop being N statements. A loop of `insert()` calls is

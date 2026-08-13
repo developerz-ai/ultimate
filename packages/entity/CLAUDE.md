@@ -102,6 +102,26 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
   total. The cursor carries the sort **values**, not just an id — seeking by an id that was
   deleted between two requests would restart pagination at the top.
+- **`inBatches(size)` is that same page in a loop, and the loop owns it.** `batch.ts` holds no
+  driver of its own: a batch is the `findMany` the chain would have sent at that position, so
+  filters, tenancy, soft delete, the projection and every `preload()` mean there what they mean in
+  `page()` and there is no second read path to drift. Properties, none optional. **The handle is
+  the iteration**: it is its own iterator, so `break`, `return`, a throw and `await using` all stop
+  the *next* statement — `close()` is `AsyncGenerator.return()` and therefore idempotent by
+  construction, never a flag two paths could disagree about — and a second `for await` continues it
+  instead of re-reading the table from the top. **The position is readable**: `.cursor` is where
+  the next batch starts, advanced *before* the yield, so a consumer that breaks reads the position
+  it stopped at and `.after(cursor).inBatches(size)` resumes it; stopping early is then cheap
+  rather than wasted. **An empty batch is never yielded** — a consumer forced to check
+  `batch.length` is reading around the iterator. **Three refusals, all on the chain**: a size that
+  is not a whole number of rows ≥ 1, a chain that also called `limit()` (one number, two meanings —
+  honouring it reads a fraction of a batch, dropping it reads the whole table the caller thought
+  they had bounded), and an ordering no cursor can carry. That last one is why
+  `totalOrder(entity, orderBy)` is exported from `plan.ts` rather than inlined in `planFor`: the
+  guard has to judge the order the driver will *send*, primary key included, and a result that fits
+  in one batch mints no cursor — so a nullable sort key would otherwise pass in every test and fail
+  once the table grew. `State.limit` is `number | undefined` for the same reason: only "the caller
+  named a page size" can be told apart from the default, which the driver already applies.
 - **The codec is `@ultimat3/core`'s, and both drivers reach it through exactly two functions**:
   `cursorFor(entity, plan, row, id)` and `seekFrom(entity, plan)` in `cursor.ts`. Both call
   `assertSeekable`, so an ordering that cannot carry a position — a nullable key, an undeclared
@@ -262,6 +282,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
+| `batch.ts` | `inBatches(size)` — the chain's page in a loop, closed by the loop that reads it |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` |
 | `coalesce.ts` | one microtask of `findById` calls → one `where id in (…)`, per request |
 | `batch-read.ts` | what a shared point read is made of — the scope key, `keyOf`, the one `in` statement |

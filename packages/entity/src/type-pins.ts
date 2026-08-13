@@ -212,4 +212,22 @@ type _UnbrandedIdStaysAString = Assert<
   [string] extends [IdOf<{ readonly id: string }>] ? true : false
 >;
 
+// --- The batch iteration stays consumable both ways --------------------------
+// `inBatches()` is the one read that hands back a resource instead of a value, and both ways of
+// consuming it are language features rather than methods a call site would obviously miss:
+// `for await` needs `[Symbol.asyncIterator]`, `await using` needs `[Symbol.asyncDispose]`. Losing
+// either is a silent regression — every existing call keeps compiling, and only the loop that was
+// supposed to stop reading stops stopping.
+
+type BatchPin = ReturnType<Table<BrandRow>['inBatches']>;
+
+type _BatchIterates = Assert<
+  [BatchPin] extends [AsyncIterable<readonly BrandRow[]>] ? true : false
+>;
+
+type _BatchDisposes = Assert<[BatchPin] extends [AsyncDisposable] ? true : false>;
+
+/** Batches, never rows: yielding one row at a time is the loop this call exists to replace. */
+type _BatchYieldsBatches = Assert<[BatchPin] extends [AsyncIterable<BrandRow>] ? false : true>;
+
 type _RowAgnosticIdStaysAString = Assert<[string] extends [IdOf<unknown>] ? true : false>;

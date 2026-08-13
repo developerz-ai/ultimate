@@ -6,7 +6,7 @@
 import type { EntityCore } from './entity';
 import { invariantViolated, patchEmpty, writeUnfiltered } from './errors';
 import type { FindManyArgs, RepoOptions } from './repo';
-import type { Predicate, QueryPlan } from './tenancy';
+import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { assertScoped } from './tenancy';
 
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
@@ -30,23 +30,34 @@ export const singleKeyOf = <Row>(entity: EntityCore<Row>, operation: string): st
   return only;
 };
 
+/**
+ * The sort keys a read actually runs with: the caller's, then whatever the primary key still adds.
+ * The primary key is always the final key — a cursor needs a total order, or two rows with the same
+ * sort value straddle a page boundary.
+ *
+ * Exported because a chain can be judged before it runs: `inBatches()` refuses an ordering that
+ * cannot carry a cursor, and it has to be looking at the order the driver will send rather than at
+ * the one the caller typed.
+ */
+export const totalOrder = <Row>(
+  entity: EntityCore<Row>,
+  ordered: readonly SortKey[],
+): readonly SortKey[] => [
+  ...ordered,
+  ...entity.$primaryKey
+    .filter((property) => !ordered.some((entry) => entry.column === property))
+    .map((property) => ({ column: property, direction: 'asc' as const })),
+];
+
 export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): QueryPlan => {
   const scoped =
     args.orgId === undefined || entity.$tenantColumn === null
       ? []
       : [{ column: entity.$tenantColumn, op: 'eq', value: args.orgId } satisfies Predicate];
-  const ordered = args.orderBy ?? [];
   return {
     entity: entity.$name,
     where: [...(args.where ?? []), ...scoped],
-    // The primary key is always the final sort key: a cursor needs a total order, or two
-    // rows with the same sort value straddle a page boundary.
-    orderBy: [
-      ...ordered,
-      ...entity.$primaryKey
-        .filter((property) => !ordered.some((entry) => entry.column === property))
-        .map((property) => ({ column: property, direction: 'asc' as const })),
-    ],
+    orderBy: totalOrder(entity, args.orderBy ?? []),
     limit: args.limit ?? DEFAULT_PAGE_SIZE,
     ...(args.cursor === undefined || args.cursor === null ? {} : { cursor: args.cursor }),
     ...(args.select === undefined ? {} : { select: args.select }),
