@@ -6,7 +6,6 @@
 
 import { watch } from 'node:fs';
 import { join } from 'node:path';
-import { listActions, toRoute } from '@ultimat3/action';
 import { devShellStyle } from '@ultimat3/admin/dev';
 import type { Role } from '@ultimat3/core';
 import { configureTelemetry, METRICS_PATH, noopExporter } from '@ultimat3/core';
@@ -15,6 +14,7 @@ import type { OverlayNotice, RequestContext, Route } from '@ultimat3/http';
 import { asCtx } from '@ultimat3/http';
 import type { Manifest } from '@ultimat3/manifest';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
+import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
@@ -157,7 +157,9 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
 
   const routes: readonly Route[] = [
     ...devDashboardRoutes(dashboard),
-    ...listActions().map(toRoute),
+    // The same API table the container serves: a read that answers here and 404s in production
+    // is exactly the drift one composition exists to prevent.
+    ...apiRoutes(),
     // The image pipeline's only HTTP surface: the icons the web manifest declares, and the
     // variants every `srcset` promises. Mounted before the app's own routes so a page route can
     // never shadow `/icons` or `/media`.

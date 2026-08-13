@@ -4,7 +4,6 @@
 // `dev: true`. The only production-shaped decisions live here: which role, which port, and the
 // fact that a container must bind every interface.
 
-import { listActions, toRoute } from '@ultimat3/action';
 import type { Role } from '@ultimat3/core';
 import {
   configureErrorReporting,
@@ -15,6 +14,7 @@ import {
 } from '@ultimat3/core';
 import { type MigrationReport, migrate } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
+import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
@@ -186,7 +186,7 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
   // own logs, everything below it is a served request, a claimed job or a routed frame.
   configureReporting(options.env, buildId);
   const routes: readonly Route[] = [
-    ...listActions().map(toRoute),
+    ...apiRoutes(),
     ...assetRoutes({ root: options.root, storage: runtime.storage }),
     ...storageRoutes({ storage: runtime.storage }),
     ...appRoutes({ buildId }),

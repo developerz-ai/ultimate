@@ -250,6 +250,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`query.client()` now reaches a route. Reads are served over HTTP, in `x dev` and in a container alike.** `@ultimat3/query` derived `/_x/query/<kebab>` in `naming.ts`, `client.ts` fetched exactly that URL, and nothing anywhere built or mounted a route for it — so every typed read compiled, shipped, and 404'd, while the README and the wiki documented the projection as shipped.
+
+  `toQueryRoute(target)` in `packages/query/src/http.ts` is that projection, mirroring `@ultimat3/action`'s `toRoute`:
+
+  ```ts
+  GET /_x/query/live-feed?orgId=…   // the URL liveFeed.client({ baseUrl }) already derived
+  ```
+
+  Three decisions it makes, each for a reason a read has and a write does not. The search string is **coerced** at the boundary (`@ultimat3/schema`'s `coerceQuery`, the one HTTP-boundary decoder) and **validated** by `runQuery` — one parser, so a bad `orgId` is the read's own `X_INPUT_INVALID` with the line that prints its schema, never the pipeline's `X_BODY_INVALID`. `meta.input` is therefore absent: the pipeline validates it against a *body*, and a GET has none. The answer is `no-store` — the URL names no actor while the rows are scoped to one — and `enforcedBy: 'handler'`, because `runQuery` is the read's one policy evaluation and it holds the parsed input; an authz stage deciding first would be a second authz system deciding from raw strings.
+
+  `@ultimat3/cli`'s new `apiRoutes()` is what mounts it, and it is now the **one** composition of the app's HTTP API — both `x dev` and `serve.ts` mount it, so a read cannot answer in one and 404 in the other. `@ultimat3/query` gains a dependency on `@ultimat3/http` (tier 3 → tier 2, downward).
+
+- **`X_INPUT_INVALID` is a 400 over HTTP, not a 500.** The code had no row in `error-map.ts`, so it took the 500 default on every surface that throws it — an action route and now a query read alike. A caller's typo'd uuid was answered as a server fault *and* reported to the error monitor by the `error-map` stage, which pages the on-call for someone else's mistake. 400 is also what the published OpenAPI operation has always promised for it.
+
 - **`LruCache.clear()` now resets `hits`/`misses`/`evictions` along with entries and bytes.** `stats()` after a `clear()` used to keep reporting whatever the cache had accumulated before the clear — a fresh cache with stale lifetime counters. `clear()` is a reset, and `stats()` now reads as one.
 
 - **A drain that times out no longer leaks its waiter.** `waitForIdle()` pushed a closure onto `idleWaiters` and relied on the eventual `beginWork()` completion to remove it; a drain that gave up at the deadline resolved its own promise but left that closure in the array forever, to be invoked (harmlessly, but pointlessly) whenever in-flight work eventually finished. The timeout branch now removes its own waiter. `@ultimat3/core` exports a test-only `idleWaiterCount()` so this stays provable.

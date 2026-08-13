@@ -179,7 +179,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_ACTION_DUPLICATE` | two actions registered under one name | duplicate export names across features | rename one; names are global. `x actions list --json` |
-| `X_INPUT_INVALID` | input failed the action's schema | wrong shape from a client or an agent | `x actions describe <name> --json` |
+| `X_INPUT_INVALID` | input failed the primitive's schema — an action's, and a query's too | wrong shape from a client or an agent; over HTTP it is a **400**, never a 500 | `x actions describe <name> --json` (`x queries describe` for a read) |
 | `X_OUTPUT_INVALID` | the handler returned a value its `output` schema rejects | the handler drifted from the declared output | `x actions describe <name> --json`, then fix the handler or the schema |
 | `X_ACTION_FOREIGN` | a value that is not an action was projected as one | a hand-rolled object with `kind: 'action'`, or an action from a duplicated copy of `@ultimat3/action` | declare it as `export const name = action({ input, output, policy, handle })` |
 | `X_ACTION_UNREGISTERED` | an action was projected before it was registered, so it has no name | `.tool()` / `.client()` / `.job()` / `.openapi()` on an action `registerActions()` never named | `registerActions(await import('./actions'))` at boot, before mounting routes |

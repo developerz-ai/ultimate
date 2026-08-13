@@ -60,6 +60,19 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | Cache entry | tags from `sql` | key includes actor tenant + policy scope; see [Caching and invalidation](Caching-And-Invalidation) |
 | MCP read tool | `input` + `policy` + name | one read tool per query, identical authz. See [MCP and AI](MCP-And-AI) |
 
+### The HTTP GET, precisely
+
+Mounted for every registered query by `x dev` and by a container, from one composition — nothing to wire in the app.
+
+| Fact | Rule |
+|---|---|
+| Method + path | `GET /_x/query/<kebab-export-name>`, the URL `.client()` derives with no server import |
+| Input | the search string, coerced at the boundary (`t.number` from `"12"`) then validated by the query's own schema. Repeated keys are an array, and keys are sorted so one input is one URL |
+| Bad input | **400** `X_INPUT_INVALID`, with `x queries describe <name> --json` as the fix — the same code and line every other surface of that read answers |
+| Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |
+| Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
+| Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
+
 ## Owns / never
 
 | Aspect | Rule |

@@ -30,6 +30,11 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // and declaring a status the framework already owns. 500 is the honest answer to either.
   X_NO_REQUEST: 500,
   X_ERROR_STATUS_INVALID: 500,
+  // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
+  // the primitive declared. 400 because that is what the published OpenAPI operation promises for
+  // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,
+  // and the `error-map` stage reported the caller's mistake to the on-call monitor.
+  X_INPUT_INVALID: 400,
   // @ultimat3/entity
   X_NOT_FOUND: 404,
   X_ENTITY_DUPLICATE: 409,

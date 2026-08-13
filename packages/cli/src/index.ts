@@ -2,6 +2,8 @@
 // on these, and a barrel that re-exports everything would make every internal a compatibility
 // promise.
 
+/** The app's own API over HTTP — the one table `x dev` and a container both mount. */
+export { apiRoutes } from './api-routes';
 export type { BoundaryCode, SourceFile } from './app-boundaries';
 export {
   appImportGraph,

@@ -4,7 +4,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 ## Boundary
 
-- May import: `core`, `schema` (t0), `cache`, `i18n`, `time` (t1), `entity`, `policy` (t2).
+- May import: `core`, `schema` (t0), `cache`, `i18n`, `time` (t1), `entity`, `policy`, `http` (t2).
 - Never import: `action`, `jobs`, `realtime` (sideways), or any tier 4-5 package.
 - Reads only. A query that writes is an `action` in the wrong file.
 
@@ -15,6 +15,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `query.ts` | the primitive: `query()`, `describeQuery`, `queryHash`; the package's front door for the read path |
 | `read.ts` | **the one read path** (`runQuery`, `sourceFor`) + the private declaration store `sql` lives in |
 | `facade.ts` | the fluent surface — binds each projection to the query, re-implements none |
+| `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
 | `client.ts` | typed read client (browser-safe: no server imports) |
 | `naming.ts` | export name → `/_x/query/<kebab>` + snake_case tool name. Pure string math |
@@ -48,6 +49,25 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   the author said so.
 - `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
   is the same tier, so its naming is ported here, never imported.
+- **`toQueryRoute` is the other half of `client()`, and the two derive the same URL from the same
+  `naming.ts`.** The client shipped fetching `/_x/query/<kebab>` while nothing built a route for
+  it, so every typed read compiled and 404'd; a projection whose only consumer is a URL string is
+  the failure this pairing exists to prevent. Named for the primitive rather than `toRoute`,
+  because a host mounts it beside `@ultimat3/action`'s — the same reason the tool projection here
+  is `toQueryTool`.
+- **The route coerces, `runQuery` validates, and only the first belongs to the wire.** A search
+  string is characters, so the boundary decodes it with `@ultimat3/schema`'s `coerceQuery` — the
+  one HTTP-boundary decoder, which never invents data and hands on what it cannot convert.
+  Validating there as well (`request.query(schema)`) would be the second parser: the same read
+  would answer `X_BODY_INVALID` where every other surface answers `X_INPUT_INVALID` and prints
+  its schema. For the same reason `meta.input` stays **absent** — the pipeline's body stage
+  validates it against a body, and a GET has none, so declaring it fails every read on nothing.
+- **A read is `no-store`, and its policy is `enforcedBy: 'handler'`.** The URL names no actor
+  while the answer is scoped to one, so `public` would hand one reader's rows to the next caller
+  of that URL; and `runQuery` is the read's one evaluation, deciding from the parsed input, so an
+  authz stage deciding first would be a second authz system holding raw strings — and would
+  demand an `authorize` hook to decide at all. `http.test.ts` drives both over the real pipeline
+  with no hook wired and counts the evaluations: exactly one.
 - `registry.ts` announces `registerQueries` in core's registrar table at import. That is how
   `defineApi({ queries })` in `@ultimat3/action` registers a read without importing this package
   sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.

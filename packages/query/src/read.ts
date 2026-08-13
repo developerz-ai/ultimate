@@ -57,8 +57,23 @@ export function queryName(target: AnyQuery): string {
 export function runQuery<TInput extends StandardSchemaV1, TRow extends object>(
   target: Query<TInput, TRow>,
   raw: unknown,
+  options?: QueryOptions,
+): Promise<readonly TRow[]>;
+/**
+ * The same read from a schema-erased handle. The route projection maps `listQueries()`,
+ * which knows only `AnyQuery` — an overload rather than a second function, so what is
+ * gone is the row TYPE and never the parse, the policy or the memo.
+ */
+export function runQuery(
+  target: AnyQuery,
+  raw: unknown,
+  options?: QueryOptions,
+): Promise<readonly object[]>;
+export function runQuery(
+  target: AnyQuery,
+  raw: unknown,
   options: QueryOptions = {},
-): Promise<readonly TRow[]> {
+): Promise<readonly object[]> {
   return asActor(options, (ctx) => readRows(target, raw, ctx, options));
 }
 
@@ -90,30 +105,29 @@ function asActor<T>(options: QueryOptions, run: (ctx: Ctx) => Promise<T>): Promi
     : runWithContext(base, () => withChildContext(patch, inChild));
 }
 
-async function readRows<TInput extends StandardSchemaV1, TRow extends object>(
-  target: Query<TInput, TRow>,
+async function readRows(
+  target: AnyQuery,
   raw: unknown,
   ctx: Ctx,
   options: QueryOptions,
-): Promise<readonly TRow[]> {
+): Promise<readonly object[]> {
   const def = defOf(target);
   const name = queryName(target);
   const source = await buildSource(target, raw, ctx, options);
   const read = (): Promise<readonly object[]> => withSpan(`query.${name}`, () => source.execute());
-  // The source came from this query's own `sql()`, so its rows are TRow throughout.
+  // The source came from this query's own `sql()`, so its rows are TRow throughout —
+  // which is what the typed overload above states, and this body never has to assert.
   const key = cacheKeyFor(name, raw, def.cache?.tags ?? []);
   // `fresh` is the caller saying no cache may answer this one — the memo included, a memo being
   // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
   // newest answer the request has, so the next plain read of the key joins it rather than the
   // entry a write earlier in the request already moved past.
-  if (options.fresh === true) return (await readFresh(ctx, key, read)) as readonly TRow[];
+  if (options.fresh === true) return await readFresh(ctx, key, read);
   // `cache:` buys the tier, never the memo: a read asked twice in one request is one execution
   // whether or not its author opted into caching.
-  const rows =
-    def.cache === undefined
-      ? await readOnce(ctx, key, read)
-      : await readThrough(ctx, key, def.cache.ttlMs ?? null, read);
-  return rows as readonly TRow[];
+  return def.cache === undefined
+    ? await readOnce(ctx, key, read)
+    : await readThrough(ctx, key, def.cache.ttlMs ?? null, read);
 }
 
 async function buildSource(

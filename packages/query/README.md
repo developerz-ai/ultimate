@@ -33,6 +33,12 @@ Every projection is a method on the query itself. A query has no `.def`.
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
 | `liveFeed.describe()` | the manifest row |
 
+The route on the other end of that client is `toQueryRoute(liveFeed)`, and `x dev` and a
+container both mount it for every registered read — the framework's job, not the app's. The
+search string is coerced at the wire and validated by the read's own schema, so a bad `orgId`
+is the query's `X_INPUT_INVALID` and a 400; the answer is `no-store`, because the URL names no
+actor while the rows are scoped to one.
+
 The declaration is lifted too: `.input`, `.policy`, `.cache`, `.mcp`, `.isLive`. `sql` is not
 among them — it lives in a private store inside `read.ts`, so `sourceFor` is the only thing
 that can build a source and there is nowhere for a second authz path to hide. Something that
@@ -47,6 +53,7 @@ merely looks like a query (`kind: 'query'`, no declaration) is `X_QUERY_FOREIGN`
 | `facade.ts` | binds each projection to the query; re-implements none of them |
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
+| `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `naming.ts` | export name → wire path + tool name |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
