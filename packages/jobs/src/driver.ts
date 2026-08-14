@@ -2,6 +2,7 @@
 // switching backends is a config line and ZERO job-code change. Six methods and no more:
 // claim/ack/nack with a visibility timeout is the smallest set that survives a worker crash.
 
+import type { BackfillLedger } from './backfill-ledger';
 import type { StepStore } from './steps';
 
 export type JobState = 'ready' | 'delayed' | 'running' | 'suspended' | 'done' | 'failed' | 'dead';
@@ -115,6 +116,13 @@ export interface JobDriver {
   /** Extends the lease of a long-running job so it is not double-claimed. */
   heartbeat(jobId: string, options: { readonly visibilityTimeoutMs: number }): Promise<void>;
   stats(): Promise<readonly QueueStats[]>;
+  /**
+   * Optional, like `introspect`: `x_backfills` records what a `backfill()` pass has already swept,
+   * and a driver without one runs backfills with no bookkeeping rather than refusing them. It
+   * hangs here for the same reason `steps` does — durable state that ships in the queue's own DDL,
+   * so one install point covers both.
+   */
+  readonly backfills?: BackfillLedger;
   readonly introspect?: JobIntrospection;
   close?(): Promise<void>;
 }

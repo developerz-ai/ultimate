@@ -4,6 +4,8 @@
 
 import type { Clock } from '@ultimat3/core';
 import { assert, systemClock, uuid } from '@ultimat3/core';
+import type { BackfillLedger } from './backfill-ledger';
+import { createMemoryBackfillLedger } from './backfill-ledger';
 import { nowMs } from './clock';
 import type {
   ClaimedJob,
@@ -25,6 +27,8 @@ import { createMemoryStepStore } from './steps';
 export interface MemoryDriverOptions {
   readonly clock?: Clock;
   readonly steps?: StepStore;
+  /** Injectable for the same reason `steps` is: two drivers in one test sharing one ledger. */
+  readonly backfills?: BackfillLedger;
 }
 
 const LIVE_STATES = new Set(['ready', 'delayed', 'running', 'suspended']);
@@ -32,6 +36,7 @@ const LIVE_STATES = new Set(['ready', 'delayed', 'running', 'suspended']);
 export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver {
   const clock = options.clock ?? systemClock;
   const steps = options.steps ?? createMemoryStepStore();
+  const backfills = options.backfills ?? createMemoryBackfillLedger(clock);
   const jobs = new Map<string, JobRecord>();
 
   const liveByKey = (key: string): JobRecord | undefined => {
@@ -88,6 +93,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
   return {
     name: 'memory',
     steps,
+    backfills,
     introspect,
 
     enqueue(request: EnqueueRequest): Promise<EnqueueResult> {

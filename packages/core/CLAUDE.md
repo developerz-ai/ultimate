@@ -34,6 +34,7 @@ shape against a locally declared sample interface for exactly that reason.
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never declare a second env var for it |
 | what this process does | `roles.ts` (`ROLE`) | |
+| which build of the APP this is | `app-version.ts` (`APP_VERSION`) | one reader, `dev` by default: `db` writes it into `x_migrations` and `jobs` into `x_backfills`, and `jobs` cannot reach `db` for the answer |
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — anything that prints goes through `maskedEnvValues()` |
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |

@@ -23,6 +23,7 @@ export {
   userActor,
   withFacts,
 } from './actor';
+export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export type { InvariantOptions } from './assert';
 export { assert, assertNever, invariant } from './assert';
 export type { Clock, FrozenClock } from './clock';

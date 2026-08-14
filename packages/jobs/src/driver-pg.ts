@@ -5,6 +5,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock, uuid } from '@ultimat3/core';
+import type { BackfillLedger, BackfillRun, BackfillStatus } from './backfill-ledger';
 import { nowMs } from './clock';
 import type {
   ClaimedJob,
@@ -22,6 +23,10 @@ import { DEFAULT_QUEUE } from './driver';
 import {
   SQL_ACK,
   SQL_ADVISORY_UNLOCK,
+  SQL_BACKFILL_FINISH,
+  SQL_BACKFILL_LIST,
+  SQL_BACKFILL_PROGRESS,
+  SQL_BACKFILL_START,
   SQL_CLAIM,
   SQL_ENQUEUE,
   SQL_FIND_LIVE_BY_KEY,
@@ -57,6 +62,18 @@ interface StepRow {
   readonly correlation_key: string | null;
   readonly attempts: number;
   readonly error: string | null;
+}
+
+interface BackfillRow {
+  readonly run_id: string;
+  readonly name: string;
+  readonly checksum: string;
+  readonly status: string;
+  readonly app_version: string;
+  readonly rows_processed: number | string;
+  readonly last_cursor: string | null;
+  readonly started_at: number | string;
+  readonly completed_at: number | string | null;
 }
 
 interface JobRow {
@@ -171,6 +188,44 @@ function pgStepStore(exec: () => PgExecutor): StepStore {
   };
 }
 
+function toBackfillRun(row: BackfillRow): BackfillRun {
+  const completedAt = optionalNum(row.completed_at);
+  return {
+    runId: row.run_id,
+    name: row.name,
+    checksum: row.checksum,
+    status: row.status as BackfillStatus,
+    appVersion: row.app_version,
+    // `rows_processed` is a bigint, which every Postgres client hands back as a string.
+    rows: num(row.rows_processed),
+    cursor: row.last_cursor,
+    startedAt: num(row.started_at),
+    ...(completedAt === undefined ? {} : { completedAt }),
+  };
+}
+
+function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
+  return {
+    async start(run) {
+      await exec().query(SQL_BACKFILL_START, [run.runId, run.name, run.checksum, run.appVersion]);
+    },
+    async progress(runId, at) {
+      await exec().query(SQL_BACKFILL_PROGRESS, [runId, at.rows, at.cursor]);
+    },
+    async finish(runId, at) {
+      await exec().query(SQL_BACKFILL_FINISH, [runId, at.status, at.rows]);
+    },
+    async list(filter = {}) {
+      const rows = await exec().query<BackfillRow>(SQL_BACKFILL_LIST, [
+        filter.name ?? null,
+        filter.status ?? null,
+        filter.limit ?? 100,
+      ]);
+      return rows.map(toBackfillRun);
+    },
+  };
+}
+
 export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
   const clock = options.clock ?? systemClock;
   let executor: PgExecutor | undefined;
@@ -234,6 +289,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
   return {
     name: 'pg',
     steps: pgStepStore(exec),
+    backfills: pgBackfillLedger(exec),
     introspect,
 
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {

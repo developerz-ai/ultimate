@@ -136,12 +136,33 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   jumps over a page the live iteration never read. A checkpoint READ back is checked rather than
   trusted — `step.run` replays it through an unchecked `as T`, and an absent cursor is not `null`,
   so the pass would silently reopen the source at the top and walk the whole table again.
+- **`x_backfills` is what has already been SWEPT, and the step checkpoints are where a pass
+  resumes. Never the other way round.** The ledger row (`backfill-ledger.ts`) is a report an
+  operator reads and the record that a completed name is done; the checkpoints are written in step
+  with the work. A resume driven off `last_cursor` would be a second answer to "where were we"
+  against a row that is not transactional with the rows it describes. Keyed by RUN, not by name,
+  because `force` writes a NEW row rather than editing the one it reruns — history, not an edit of
+  it. Only `completed` blocks: a `running` row is this pass resuming or one holding the single live
+  idempotency key, a `failed` one is an attempt the queue is about to retry, and `start()` puts an
+  adopted row back to `running` keeping the `started_at` the PASS began at. A moved checksum WARNS
+  and still does not run — it hashes `source` and `handle`'s source text with a `\u0000` between
+  them (raw concatenation would hash a boundary, not a pair), and a bundler moves that text without
+  a line of behaviour changing, which is why `@ultimat3/db`'s `auditLedger` may throw on the same
+  fact and this may not. `force` is the only override, and it rides the input rather than the
+  idempotency key: one live pass per name, forced or not, or "kick it again" becomes a second
+  writer on one table.
+- **The ledger hangs off the queue driver (`driver.backfills`), optional like `introspect`.**
+  `x_backfills` ships in `SQL_JOBS_TABLE`, so a ledger a pass cannot write is a queue it could not
+  have been claimed from — and `dev-queue.ts` applies that one constant, so `x dev` and production
+  create the same table. A driver that ships none (`driver-redis`, `driver-nats`, a hand-rolled
+  one) runs backfills with NO bookkeeping rather than refusing them: nothing blocks a completed
+  name there, and that degradation is the price of one install point.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
 - All time is epoch ms from an injected `Clock`, read via `nowMs()` in `clock.ts`.
-- Drivers implement exactly the six `JobDriver` methods plus optional `introspect`.
-  New capabilities go behind the interface, never as a driver-specific export.
+- Drivers implement exactly the six `JobDriver` methods plus optional `introspect` and
+  `backfills`. New capabilities go behind the interface, never as a driver-specific export.
 - `inspect.ts` returns plain JSON-serialisable objects — CLI, `/_x` and MCP share them.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a job/task file imports
   one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
@@ -178,7 +199,9 @@ picture from the other side.
 | File | Owns |
 |---|---|
 | `job.ts` | the `job()` primitive + registry + the handle's fluent surface + `registerJob` |
-| `backfill.ts` | `backfill()` — a factory over `job()`: the batched pass and its cursor checkpoints |
+| `backfill.ts` | `backfill()` — a factory over `job()`: the declaration, its checksum and its input |
+| `backfill-pass.ts` | one pass: the batched iteration, its cursor checkpoints and its ledger row |
+| `backfill-ledger.ts` | `x_backfills` — the contract, the checksum, the verdict, the memory ledger |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |

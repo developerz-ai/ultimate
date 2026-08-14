@@ -5,19 +5,18 @@
 // the worker's cancellation, the dead-letter path, `x jobs show` and a manifest row without a line
 // here, and it is why nothing in the framework grows a ninth kind of thing to hold table sweeps.
 //
-// What the factory adds is the iteration. `inBatches()` reads the source one statement per page,
-// and each page is handled inside its own `step.run`, so an attempt killed mid-pass resumes on the
-// page it stopped at instead of reading the table again from the top. What a step persists is the
-// CURSOR and the row count, never the page: `steps.ts` hands a completed step's output back for the
-// whole run, so checkpointing rows would retain every row of every batch already processed until
-// the job ended — the leak that turns a backfill of a large table into an OOM.
+// The declaration lives here and the pass lives in `backfill-pass.ts` — the same split `job.ts`
+// and `execute.ts` already have, and the reason the iteration, the checkpoints and the
+// `x_backfills` ledger are one file's problem rather than this one's.
 
 import type { Ctx } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
-import type { BatchIterator, ReadBuilder } from '@ultimat3/entity';
+import type { ReadBuilder } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
+import { backfillChecksum } from './backfill-ledger';
+import { backfillPass } from './backfill-pass';
 import type { DurationInput } from './clock';
-import type { JobHandle, JobRunArgs } from './job';
+import type { JobHandle } from './job';
 import { job } from './job';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
@@ -29,9 +28,6 @@ import { DEFAULT_RETRY } from './retry';
  * lease is the size that belongs here.
  */
 export const DEFAULT_BACKFILL_BATCH = 1_000;
-
-/** Every batch is a step, and this is the name it is checkpointed under. See `pass()`. */
-const STEP_PREFIX = 'batch:';
 
 export interface BackfillBatch<Row> {
   /** The page `page()` would have returned here: tenancy, soft delete, projection, preloads. */
@@ -82,49 +78,27 @@ export interface BackfillDefinition<Row> {
 /** What one completed pass reports — bounded, so `x jobs show` can print it. */
 export interface BackfillReport {
   readonly name: string;
-  /** Batches this pass handled, replayed ones included. */
+  /** Batches THIS pass handled, replayed ones included. `0` when it was skipped. */
   readonly batches: number;
   readonly rows: number;
+  /** True when `x_backfills` already held a completed pass under this name and `force` was not set. */
+  readonly skipped: boolean;
+  /** The completed pass the ledger answered with, when there was one. */
+  readonly previousRunId?: string | undefined;
 }
 
 /**
- * A backfill's payload is its identity and nothing else. What to visit is declared, so a queue row
- * carries no parameters that could drift from the definition, and a run enqueued last week resumes
- * against today's source rather than a stale copy of it.
+ * A backfill's payload is its identity plus the one decision a queue row is allowed to carry.
+ * What to visit is declared, so nothing here can drift from the definition; `force` changes only
+ * whether a name the ledger already records as completed runs a SECOND pass, and never what that
+ * pass would do.
  */
-export type BackfillInput = Record<string, never>;
-
-/** What a step persists: a bounded position, never the page it came from. See the file header. */
-interface Checkpoint {
-  /** Where the next batch starts; `null` once the pass is over. */
-  readonly cursor: string | null;
-  readonly rows: number;
-}
-
-/** One live iteration and the pull that advances it. Rebuilt when the checkpoints disagree. */
-interface Iteration<Row> {
-  readonly batches: BatchIterator<Row>;
-  readonly pull: AsyncIterator<readonly Row[]>;
-}
-
-const fieldOf = (value: unknown, key: string): unknown =>
-  typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[key] : undefined;
-
-/**
- * `steps.ts` hands a completed step's output back through an unchecked `as T`, so a checkpoint
- * READ from storage is this shape by claim and never by check. It is checked here because the
- * failure it would otherwise cause is silent and expensive: an absent cursor is not `null`, so the
- * loop would reopen the source at the top and walk the whole table a second time.
- */
-function asCheckpoint(value: unknown, step: string): Checkpoint {
-  const cursor = fieldOf(value, 'cursor');
-  const rows = fieldOf(value, 'rows');
-  assert(
-    (cursor === null || typeof cursor === 'string') && typeof rows === 'number',
-    `step "${step}" replayed ${JSON.stringify(value)}, which is not a backfill checkpoint`,
-    `x jobs show <jobId> --json prints the run's steps — a run id whose "${step}" was written by something other than this backfill has to be retired, not resumed`,
-  );
-  return { cursor, rows };
+export interface BackfillInput {
+  /**
+   * Run even though `x_backfills` holds a completed pass under this name. The rerun is a NEW
+   * ledger row — history is never overwritten, so what each pass swept stays readable.
+   */
+  readonly force?: boolean | undefined;
 }
 
 export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<BackfillInput> {
@@ -136,78 +110,20 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
     `backfill "${definition.name}" declares batch: ${String(size)} — a batch is a whole number of rows, at least one`,
     `set batch: ${DEFAULT_BACKFILL_BATCH} on backfill("${definition.name}") — the rows one statement reads and one durable step handles`,
   );
+  // Hashed once, at declaration: the definition cannot change while the process runs, and a hash
+  // per attempt would charge every batch of every pass for a fact that is fixed at import.
+  const checksum = backfillChecksum(definition.source, definition.handle);
 
   return job<BackfillInput>({
     name: definition.name,
-    input: t.object({}),
-    // One live run per name. A second enqueue while the pass is still going is the same pass, and
-    // deduping it is what makes "kick it again" safe rather than a second writer on one table.
+    input: t.object({ force: t.boolean.optional() }),
+    // One live run per name, forced or not. A second enqueue while the pass is still going is the
+    // same pass, and deduping it is what makes "kick it again" safe rather than a second writer on
+    // one table — which is exactly what a `force` in the key would have allowed.
     idempotencyKey: () => definition.name,
     retry: definition.retry ?? DEFAULT_RETRY,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
-    run: (args) => pass(definition, size, args),
+    run: (args) => backfillPass({ definition, size, checksum }, args),
   });
-}
-
-/**
- * The pass itself: one `step.run` per batch, named by position so a replay finds it. Completed
- * steps are served from storage without touching the database, so a resumed attempt walks its own
- * history to the last checkpoint and opens the source there.
- */
-async function pass<Row>(
-  definition: BackfillDefinition<Row>,
-  size: number,
-  args: JobRunArgs<BackfillInput>,
-): Promise<BackfillReport> {
-  const { ctx, step } = args;
-  let cursor: string | null = null;
-  let rows = 0;
-  let batches = 0;
-  let live: Iteration<Row> | undefined;
-
-  /**
-   * The iteration positioned at `cursor`, opened on the first batch this attempt actually runs so
-   * a resumed pass sends no statement for a page it already handled.
-   *
-   * `batches.cursor` IS where the next statement starts, so comparing it with the checkpoint's is
-   * the whole staleness test — and it is not academic: `retryFromStep` re-opens ONE step in the
-   * middle of a finished run, which moves the checkpoints somewhere this iteration is not. Rebuilt
-   * from the checkpoint rather than read from wherever the old one was parked.
-   */
-  const iterate = async (): Promise<Iteration<Row>> => {
-    if (live !== undefined && live.batches.cursor === cursor) return live;
-    await live?.batches.close();
-    const opened = definition.source({ ctx }).after(cursor).inBatches(size);
-    live = { batches: opened, pull: opened[Symbol.asyncIterator]() };
-    return live;
-  };
-
-  try {
-    for (let index = 0; ; index += 1) {
-      const name = `${STEP_PREFIX}${index}`;
-      const checkpoint = asCheckpoint(
-        await step.run(name, async (signal): Promise<Checkpoint> => {
-          const iteration = await iterate();
-          const next = await iteration.pull.next();
-          if (next.done === true) return { cursor: null, rows: 0 };
-          await definition.handle({ rows: next.value, ctx, signal, index });
-          return { cursor: iteration.batches.cursor, rows: next.value.length };
-        }),
-        name,
-      );
-      rows += checkpoint.rows;
-      // `inBatches()` never yields an empty batch, so rows is what tells a handled page from the
-      // one step an exhausted source costs.
-      if (checkpoint.rows > 0) batches += 1;
-      cursor = checkpoint.cursor;
-      if (cursor === null) break;
-    }
-  } finally {
-    // Whatever the iteration holds belongs to this attempt, and an attempt that failed, was
-    // cancelled or finished is done with it either way.
-    await live?.batches.close();
-  }
-
-  return { name: definition.name, batches, rows };
 }

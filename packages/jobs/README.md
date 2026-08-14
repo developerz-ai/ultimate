@@ -139,6 +139,28 @@ without a statement, and the iteration reopens at the cursor they left behind.
 | `idempotencyKey` is the backfill's name | re-enqueueing a live pass is the same pass, not a second writer on one table |
 | `batch` is refused at declaration | `0`, `1.5` and a `NaN` from an env var fail the build, not the fourth attempt |
 
+### The `x_backfills` ledger
+
+What has already been swept, the twin of `x_migrations`. It ships in the same DDL as `x_jobs`,
+hangs off the queue driver as `driver.backfills`, and carries one row per **pass**: name,
+definition checksum, status, app version, rows processed, last cursor, started/completed.
+
+```ts
+await rewriteSlugs.enqueue({});                  // completed already? no-op with a report
+// → { name: 'rewrite-slugs', batches: 0, rows: 0, skipped: true, previousRunId: '…' }
+
+await rewriteSlugs.enqueue({ force: true });     // sweeps again, into a NEW row
+```
+
+| Rule | Why |
+|---|---|
+| only a **completed** row blocks | a `running` row is this pass resuming, a `failed` one is an attempt the queue is about to retry |
+| `force` writes a new row | reruns are history, never an edit of the row they rerun |
+| a moved checksum **warns** | it hashes function source text, which a bundler moves without behaviour changing — `@ultimat3/db` throws on the same fact because SQL text is what it applied |
+| the row is a report, never a resume source | where a resumed pass restarts is the step checkpoints' answer, and there is only one |
+| a retry adopts its own row | `started_at` is when the pass began, not when this attempt did |
+| a driver without a ledger runs the pass anyway | the same degradation `introspect` has — no bookkeeping, never a refusal |
+
 ## The deadline cancels
 
 A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that

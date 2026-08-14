@@ -17,6 +17,14 @@ export type {
   BackfillReport,
 } from './backfill';
 export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
+export type {
+  BackfillFilter,
+  BackfillLedger,
+  BackfillRun,
+  BackfillStatus,
+  BackfillVerdict,
+} from './backfill-ledger';
+export { backfillChecksum, createMemoryBackfillLedger, decideBackfill } from './backfill-ledger';
 export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,
@@ -48,6 +56,10 @@ export { createPgDriver, createPgLeader } from './driver-pg';
 export {
   SQL_ACK,
   SQL_ADVISORY_UNLOCK,
+  SQL_BACKFILL_FINISH,
+  SQL_BACKFILL_LIST,
+  SQL_BACKFILL_PROGRESS,
+  SQL_BACKFILL_START,
   SQL_CLAIM,
   SQL_ENQUEUE,
   SQL_HEARTBEAT,

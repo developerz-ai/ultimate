@@ -68,9 +68,11 @@ export interface JobDriver {
 
 | Driver | State | Trade-off |
 |---|---|---|
-| `pg` (default) | `x_jobs`, `x_job_steps`, `x_outbox`, `x_rate_buckets` | outbox is free (same DB, same tx); `SKIP LOCKED` claiming; zero extra infra |
+| `pg` (default) | `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`, `x_rate_buckets` | outbox is free (same DB, same tx); `SKIP LOCKED` claiming; zero extra infra |
 | `redis` | streams + consumer groups, outbox relay in front | high throughput, short jobs; loses "queue state in one backup" |
 | `nats` | JetStream, outbox relay in front | strongest delivery semantics, most operational surface. `As of 2026-07` `claim` throws `X_NOT_IMPLEMENTED` with `fix: set jobs.driver = "pg" in app.config.ts` |
+
+`x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
 Because `saveStep`/`loadSteps` are driver methods, step persistence works identically on all three. Switching is a config line plus `x jobs drain --to redis` for in-flight rows.
 
