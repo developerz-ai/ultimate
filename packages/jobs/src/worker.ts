@@ -246,6 +246,11 @@ export function createWorker(options: WorkerOptions): Worker {
   const limiter = options.limiter ?? createLimiter({});
 
   const inFlight = new Set<Promise<unknown>>();
+  /**
+   * Claim rounds in flight. Jobs land in `inFlight` mid-round, so a drain that waited only on
+   * `inFlight` waited on a set the round it was racing had not finished filling.
+   */
+  const rounds = new Set<Promise<unknown>>();
   let state: WorkerStats['state'] = 'idle';
   let loop: ReturnType<typeof setTimeout> | undefined;
   /** The `onShutdown` registration this worker holds while it runs. Handed back by `stop()`. */
@@ -321,12 +326,18 @@ export function createWorker(options: WorkerOptions): Worker {
     }
   };
 
-  const tick = async (): Promise<readonly JobExecution[]> => {
-    if (state === 'draining' || state === 'stopped') return [];
+  /** The drain's one question: may this worker still take work off the queue? */
+  const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
+
+  const claimRound = async (): Promise<readonly JobExecution[]> => {
     await publishQueueDepth();
     const results: JobExecution[] = [];
 
     for (const queue of queues) {
+      // Re-read per queue, not once at the top: a `stop()` between two queues means "stop
+      // claiming" now, not at the next tick. What this round already holds still runs to the end
+      // — that is the drain, and `stop()` waits for it.
+      if (!claiming()) break;
       const free = Math.max(0, slotsFor(queue) - limiter.inFlight({ queue }));
       if (free === 0) continue;
 
@@ -380,6 +391,21 @@ export function createWorker(options: WorkerOptions): Worker {
     return results;
   };
 
+  /**
+   * One claim round, tracked. The guard and the registration are one synchronous step — no await
+   * between them — so a round is either refused by a drain already under way or visible to every
+   * drain that starts after it. A round that reached `claim()` first is the one `stop()` must
+   * wait out: it is still adding to `inFlight`.
+   */
+  const tick = (): Promise<readonly JobExecution[]> => {
+    if (!claiming()) return Promise.resolve([]);
+    const round = claimRound().finally(() => {
+      rounds.delete(round);
+    });
+    rounds.add(round);
+    return round;
+  };
+
   const schedule = (): void => {
     loop = setTimeout(() => {
       void tick()
@@ -402,13 +428,20 @@ export function createWorker(options: WorkerOptions): Worker {
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
     try {
       // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
+      // Rounds first: one that passed the guard before the flag flipped is still awaiting its
+      // `claim()`, and the jobs it starts join `inFlight` after any snapshot taken here — so a
+      // drain that waited on `inFlight` alone closed the driver under a job that had just begun.
+      await Promise.allSettled([...rounds]);
       await Promise.allSettled([...inFlight]);
       await options.driver.close?.();
-      state = 'stopped';
     } finally {
-      // Whatever the close did, the hook goes back. It exists only to call this, so one left
-      // registered drains a stopped worker on the next process-wide shutdown — through a driver
-      // already closed — and keeps this closure, its driver and its in-flight set alive with it.
+      // Whatever the close did, this worker is done: a state left at 'draining' is a drain that
+      // is not happening — `start()` refuses it for the rest of the process and `stats()` reports
+      // a worker still finishing work it finished. And the hook goes back. It exists only to call
+      // this, so one left registered drains a stopped worker on the next process-wide shutdown —
+      // through a driver already closed — and keeps this closure, its driver and its in-flight
+      // set alive with it.
+      state = 'stopped';
       releaseShutdownHook?.();
       releaseShutdownHook = undefined;
     }
@@ -418,7 +451,9 @@ export function createWorker(options: WorkerOptions): Worker {
     if (state === 'stopped') return;
     // One teardown, joined rather than repeated: a SIGTERM landing on a manual stop must wait out
     // the same in-flight work, not close the driver a second time underneath it. Cleared as it
-    // settles, so a close that threw can be retried rather than replayed from a rejected promise.
+    // settles, so a worker that started again tears down again instead of joining a promise that
+    // settled a lifetime ago. A close that threw still stopped this worker — the failure is the
+    // caller's to see on the promise it awaited, not a teardown to run twice.
     stopping ??= teardown(reason).finally(() => {
       stopping = undefined;
     });

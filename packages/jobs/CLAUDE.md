@@ -53,7 +53,19 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   draining for the same reason: a claim loop back on a driver the drain is about to close.
 - **One teardown, joined.** `stop()` shares the in-flight teardown promise, so a SIGTERM landing
   on a manual stop waits out the same in-flight jobs instead of closing the driver underneath
-  it. The promise is cleared as it settles — a close that threw is retryable, not replayed.
+  it. The promise is cleared as it settles, so a worker that started again tears down again
+  rather than joining one that settled a lifetime ago. A close that threw still stopped the
+  worker — the failure goes back on the promise the caller awaited, not into a second teardown.
+- **The drain waits out the claim round it races, then the jobs.** `tick()` registers its round
+  in `rounds` in the same synchronous step as its guard, so a round is either refused by a drain
+  already under way or visible to every drain that starts after it. Guarding on entry alone was
+  not enough: a round parked in `driver.claim()` adds to `inFlight` AFTER a drain that only
+  snapshots `inFlight` has decided there is nothing to wait for, and `close()` then lands under a
+  live job. The round re-reads the state before each queue — "stop claiming" means this round
+  too — and what it already holds runs to the end.
+- **`state` is set in the teardown's `finally`, never after the close.** A `driver.close()` that
+  threw pinned it at `'draining'`: `stats()` reported a drain that had finished and `start()`,
+  which leaves only `'idle'` or `'stopped'`, refused that worker for the life of the process.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.

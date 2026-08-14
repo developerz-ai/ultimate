@@ -251,12 +251,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **The jobs worker's drain closed the queue connection under a job it had just claimed.** `tick()` read the drain flag on entry and never again, so a round that got past that read kept going: it was still awaiting `driver.claim()`, and the jobs it started joined `inFlight` *after* `stop()` had already snapshotted that set. The snapshot was empty, the drain concluded there was nothing to wait for, and `driver.close()` ran with a handler mid-flight — the ack never lands, the lease expires, and the queue hands the job to the next worker that claims. That is the "always twice" draining exists to prevent, on exactly the deploys where a poll and a SIGTERM land in the same tick.
+
+  `stop()` now waits out the claim round it is racing before it waits on the jobs. A round registers itself in the same synchronous step as its guard — no await between them — so it is either refused by a drain already under way or visible to every drain that starts after it. Two rules fall out of that:
+
+  - **A round already in flight stops claiming the moment the drain starts.** The state is re-read before each queue rather than once on entry, so a `stop()` landing between two queues is honoured by the round it landed in, not the next one. What that round already holds still runs to the end — that is the drain, and `stop()` waits for it.
+  - **A `driver.close()` that throws leaves the worker `'stopped'`.** The state was assigned after the close, so a throwing close pinned it at `'draining'` for the life of the process: `stats()` reported a drain that had already finished, and `start()` — which leaves only `'idle'` or `'stopped'` — refused to run that worker again. It is now set in the same `finally` that hands the shutdown hook back. The failure still reaches the caller, on the promise it awaited.
+
 - **The jobs worker leaked a shutdown hook per `start()`.** `onShutdown` returns an unregister and `createWorker`'s `start()` threw it away, while `stop()` unregistered nothing — so a stopped worker stayed on the process's drain list forever, holding its driver, its in-flight set and the whole worker closure alive. The `start()` guard read `'running'`, so start → stop → start stacked a second registration on the first, and every later drain called all of them. `@ultimat3/realtime`'s `listenSyncNode` and `@ultimat3/http`'s `server.ts` already kept theirs; the worker now does too, released in a `finally` so a `driver.close()` that throws still hands it back.
 
   Two rules fall out of making the registration single:
 
   - **`start()` only starts from a standstill.** It used to restart mid-drain, putting the claim loop back on a driver the drain was about to close — and stacking a hook on the one still running, which is the leak again by another route.
-  - **`stop()` is one teardown, joined.** A SIGTERM landing on a manual stop used to run the whole drain a second time and close the driver underneath it. Concurrent callers now await the same promise, which is cleared as it settles so a close that threw is retryable rather than replayed from a rejected promise.
+  - **`stop()` is one teardown, joined.** A SIGTERM landing on a manual stop used to run the whole drain a second time and close the driver underneath it. Concurrent callers now await the same promise, which is cleared as it settles so a worker that started again tears down again rather than joining a promise that settled a lifetime ago.
 
   `@ultimat3/core` exports a test-only `shutdownHookCount()` — the same shape as `idleWaiterCount()` — so "one hook while it runs, none once it has stopped" is assertable rather than asserted in prose.
 
