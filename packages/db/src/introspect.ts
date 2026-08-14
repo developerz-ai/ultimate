@@ -125,20 +125,26 @@ export async function introspect(options: IntrospectOptions = {}): Promise<Schem
     order by t.relname, i.relname
   `);
 
+  // `conkey` and `confkey` are unnested TOGETHER, by shared ordinality: they are two halves of one
+  // ordered pairing, and matching each independently with `= any(...)` is a cross product — a
+  // two-column key came back as four source columns against four referenced ones, duplicated and
+  // misaligned. Ordered by `k.ord` (the constraint's own key position), never by `attnum`, for the
+  // same reason `indkey` orders the index query: `references t (y, x)` is not `references t (x, y)`.
   const foreignKeys = await client.query<ForeignKeyRow>(sql`
     select
       src.relname as table_name,
       c.conname as constraint_name,
-      array_agg(sa.attname order by sa.attnum) as columns,
+      array_agg(sa.attname order by k.ord) as columns,
       tgt.relname as referenced_table,
-      array_agg(ta.attname order by ta.attnum) as referenced_columns,
+      array_agg(ta.attname order by k.ord) as referenced_columns,
       c.confdeltype as on_delete
     from pg_constraint c
     join pg_class src on src.oid = c.conrelid
     join pg_class tgt on tgt.oid = c.confrelid
     join pg_namespace n on n.oid = src.relnamespace
-    join pg_attribute sa on sa.attrelid = src.oid and sa.attnum = any(c.conkey)
-    join pg_attribute ta on ta.attrelid = tgt.oid and ta.attnum = any(c.confkey)
+    cross join lateral unnest(c.conkey, c.confkey) with ordinality as k(src_attnum, tgt_attnum, ord)
+    join pg_attribute sa on sa.attrelid = src.oid and sa.attnum = k.src_attnum
+    join pg_attribute ta on ta.attrelid = tgt.oid and ta.attnum = k.tgt_attnum
     where c.contype = 'f' and n.nspname = ${schema}
     group by src.relname, c.conname, tgt.relname, c.confdeltype
     order by src.relname, c.conname

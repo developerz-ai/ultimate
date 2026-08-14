@@ -1,0 +1,12 @@
+{
+  "eval": "ai.fix-line-runnable",
+  "prompt": "ai.fix-line-runnable@1",
+  "promptHash": "6b788c934d335044043d13c71c1c7b49",
+  "score": 1,
+  "cases": {
+    "runnable/cli-flag": 1,
+    "runnable/x-command": 1,
+    "vague/check": 1,
+    "vague/see-docs": 1
+  }
+}

@@ -36,6 +36,7 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `tools.ts` | action → LLM tool definition; `runLlmToolCall` |
 | `llm.ts` | `llm()` — the model call, declared as an `action` |
 | `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
+| `fix-line.ts` / `fix-line.evals.ts` / `fix-line.v1.baseline.json` / `fix-line.eval.test.ts` | the package's own dogfood eval — the first framework-level `*.eval.test.ts`, proving the `defineEval`/baseline convention actually fails a build |
 
 ## Invariants
 

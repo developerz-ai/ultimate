@@ -370,6 +370,19 @@ emitting `references "orgs" ("id")` — a snapshot denying a constraint its own 
 its predicate and direction. Ordering by `attnum` returned a composite index's columns in table
 order, which reads correct and compares wrong.
 
+A foreign key's two column lists are read the same way and, crucially, **together**: `conkey` and
+`confkey` are unnested in one `unnest(a, b) with ordinality` and ordered by that shared position,
+because they are one ordered pairing and not two sets. Matching each independently
+(`sa.attnum = any(c.conkey)`, `ta.attnum = any(c.confkey)`) is a cross product — a two-column key
+came back as four source columns against four referenced ones, duplicated and misaligned, so
+`compareForeignKeys` judged a correct database as drift and the admin schema view showed a key
+that does not exist. Only a real engine can tell the two queries apart, which is what
+`introspect-embedded.test.ts` is for: it boots PGlite, declares `(org_id, user_id) references users
+(tenant_id, id)` — neither list alphabetical, the two orders deliberately different — and asserts
+the pair comes back whole. Same split as `pglite.test.ts`/`pglite-embedded.test.ts`:
+`introspect.test.ts` pins the row -> description fold against a recording client, and the embedded
+file pins the catalog SQL against Postgres.
+
 `appTables()` is why it can run: a table in the `x_` namespace is framework bookkeeping — the
 ledger, `x_jobs`/`x_job_steps`, `x_outbox` and every `@ultimat3/auth` table are `create table if not
 exists` at boot, declared by no migration and carried in no snapshot, so counted as app schema they
