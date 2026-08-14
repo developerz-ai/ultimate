@@ -173,6 +173,14 @@ picture from the other side.
 | `events.ts` | stored event bus for `step.waitForEvent` |
 | `inspect.ts` | `--json` introspection |
 
+`*.job.test.ts` is the opt-in suite the `job` verify step runs: `replay.job.test.ts`,
+`idempotency.job.test.ts` and `outbox-atomicity.job.test.ts` each prove one named guarantee (step
+replay, idempotency dedupe, outbox atomicity) through a REAL worker — `start()`/`stop()` and its
+own poll loop, never `tick()` driven by hand. `worker-soak.job.test.ts` runs several real workers
+against one shared driver with one killed mid-job (its queue connection severed, not a clean
+`stop()`) and asserts every job still reaches a terminal state and the work behind it runs exactly
+once. Collected by bare `bun test`, excluded from `bun run test`.
+
 ## Commands
 
 ```
