@@ -4,8 +4,15 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { JobRecord } from '@ultimat3/jobs';
-import { createMemoryDriver, inspectDeadLetters, inspectJob, inspectQueues } from '@ultimat3/jobs';
 import {
+  createMemoryDriver,
+  inspectBackfills,
+  inspectDeadLetters,
+  inspectJob,
+  inspectQueues,
+} from '@ultimat3/jobs';
+import {
+  backfillToJson,
   deadLetterToJson,
   depthToJson,
   drainFailureToJson,
@@ -101,6 +108,79 @@ describe('unit · queue projections', () => {
       steps: [{ name: 'charge-card', status: 'completed' }],
     });
     expect((await listJobs(driver)).rows).toHaveLength(1);
+  });
+
+  test('a job that is not a backfill carries an explicit null, never a missing key', async () => {
+    const driver = createMemoryDriver();
+    const { id } = await driver.enqueue({
+      name: 'send-email',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'k3',
+      maxAttempts: 3,
+    });
+    const trace = await inspectJob(driver, id);
+    const json = jobTraceToJson(trace as NonNullable<typeof trace>);
+    expect(json).toEqual(roundTrip(json) as never);
+    expect(Object.keys(json as Record<string, unknown>)).toContain('backfill');
+    expect(json).toMatchObject({ backfill: null });
+  });
+
+  test("a backfill run's progress rides on its own trace, so --json never drops it", async () => {
+    const driver = createMemoryDriver();
+    const { id, runId } = await driver.enqueue({
+      name: 'reindex-posts',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'k4',
+      maxAttempts: 3,
+    });
+    // The ledger is keyed by run id, which is how `x jobs show <id>` joins the two with no
+    // second lookup table — write the row against this job's run and it must come back here.
+    await driver.backfills?.start({
+      runId,
+      name: 'reindex-posts',
+      checksum: 'abc123',
+      appVersion: '1.2.0',
+    });
+    await driver.backfills?.progress(runId, { rows: 250, cursor: 'post_250' });
+
+    const trace = await inspectJob(driver, id);
+    const json = jobTraceToJson(trace as NonNullable<typeof trace>);
+
+    expect(json).toEqual(roundTrip(json) as never);
+    expect(json).toMatchObject({
+      backfill: { runId, name: 'reindex-posts', rows: 250, cursor: 'post_250', status: 'running' },
+    });
+  });
+});
+
+describe('unit · backfillToJson', () => {
+  test('every absent value is already null at the source, so no key vanishes', async () => {
+    const driver = createMemoryDriver();
+    await driver.backfills?.start({
+      runId: 'run_1',
+      name: 'reindex-posts',
+      checksum: 'abc123',
+      appVersion: '1.2.0',
+    });
+    const [progress] = await inspectBackfills(driver);
+    const json = backfillToJson(progress as NonNullable<typeof progress>);
+
+    expect(json).toEqual(roundTrip(json) as never);
+    expect(json).toMatchObject({
+      runId: 'run_1',
+      name: 'reindex-posts',
+      status: 'running',
+      checksum: 'abc123',
+      appVersion: '1.2.0',
+      rows: 0,
+      cursor: null,
+      completedAt: null,
+      durationMs: null,
+    });
+    // ISO in, ISO out: the projection re-formats no date, because it has no zone to do it with.
+    expect(json).toMatchObject({ startedAt: progress?.startedAt ?? 'missing' });
   });
 });
 

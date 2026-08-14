@@ -38,6 +38,11 @@ export interface BackfillRun {
 export interface BackfillFilter {
   readonly name?: string | undefined;
   readonly status?: BackfillStatus | undefined;
+  /**
+   * The one pass this row belongs to. A backfill's run id IS the queue row's, so `x jobs show
+   * <id>` can ask how far the sweep behind that job has got without a second lookup table.
+   */
+  readonly runId?: string | undefined;
   readonly limit?: number | undefined;
 }
 
@@ -158,6 +163,7 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
         .sort((a, b) => b.startedAt - a.startedAt)
         .filter((run) => filter.name === undefined || run.name === filter.name)
         .filter((run) => filter.status === undefined || run.status === filter.status)
+        .filter((run) => filter.runId === undefined || run.runId === filter.runId)
         .slice(0, filter.limit ?? 100);
       return Promise.resolve(rows);
     },

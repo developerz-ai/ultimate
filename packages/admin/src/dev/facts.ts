@@ -120,6 +120,28 @@ export interface TaskFact {
   readonly nextRunAt: string | null;
 }
 
+/**
+ * One `x_backfills` pass. The queue's own facts answer "is this job moving"; only the ledger
+ * answers "how much of the table is behind it", which is the one question a sweep is watched for.
+ * `cursor` is where the pass had got to and `null` before its first batch — never a percentage:
+ * nothing counted the rows ahead of it, and a made-up denominator is the fact this panel exists
+ * not to invent.
+ */
+export interface BackfillFact {
+  /** The pass, and the run id of the job sweeping it — the join back to `runs` on this panel. */
+  readonly runId: string;
+  readonly name: string;
+  readonly status: 'running' | 'completed' | 'failed';
+  readonly rows: number;
+  readonly cursor: string | null;
+  readonly startedAt: string;
+  readonly completedAt: string | null;
+  /** How long the pass took. `null` while it is still running. */
+  readonly durationMs: number | null;
+  /** The build that STARTED the pass — a redeploy mid-sweep does not rewrite it. */
+  readonly appVersion: string;
+}
+
 export interface ColumnFact {
   readonly name: string;
   readonly type: string;
@@ -192,6 +214,7 @@ export interface DevSources {
   jobDefs(): Promise<readonly JobDefFact[]>;
   queues(): Promise<readonly QueueFact[]>;
   jobRuns(): Promise<readonly JobRunFact[]>;
+  backfills(): Promise<readonly BackfillFact[]>;
   tasks(): Promise<readonly TaskFact[]>;
   tables(): Promise<readonly TableFact[]>;
   drift(): Promise<readonly DriftFact[]>;

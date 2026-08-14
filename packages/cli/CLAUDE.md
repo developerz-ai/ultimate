@@ -58,7 +58,7 @@ them is answered by this table rather than by a second convention:
 | Command | Files | Reads |
 |---|---|---|
 | `x actions` / `x queries` / `x entities` | `cmd-registries.ts` | the three declaration registries |
-| `x jobs` | `cmd-jobs.ts`, `jobs-{report,drain,json,table}.ts` | `@ultimat3/jobs`' own introspection |
+| `x jobs` | `cmd-jobs.ts`, `jobs-{driver,report,drain,json,table}.ts` | `@ultimat3/jobs`' own introspection |
 | `x tasks` | `cmd-tasks.ts`, `tasks-facts.ts` | `registeredTasks()` + `@ultimat3/time`'s cron resolution |
 | `x policy` | `cmd-policy.ts`, `policy-facts.ts` | `@ultimat3/policy`'s `policyMatrix()` over the app's own `Policy` objects |
 | `x i18n` | `cmd-i18n.ts`, `i18n-audit.ts` | `@ultimat3/i18n`'s `extractFromFiles` + `auditCatalogs` |
@@ -196,6 +196,20 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `cmd-db.ts` | the subcommands, and nothing else — `gen` calls `db-generate.ts`, `migrate`/`reset` call `serve.ts`'s `runMigrations` |
 | `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
 | `db-destructive.ts` | `checkDestructiveMigrations`: the same step's second half — every committed `up` that drops, truncates or retypes must carry `-- destructive: true` |
+| `db-backfill.ts` | `x db backfill --list`: the flag parsing, the ledger read and the table |
+
+`jobs-driver.ts` is the ONE place a CLI command gets hold of the app's queue — `withJobDriver`,
+which `x jobs` and `x db backfill` both call. It reuses an ambient `jobDriver()` when a process
+already installed one (inside `x dev` or `x mcp serve`, booting a second queue talks to the wrong
+database) and otherwise boots `startQueue` and releases it in a `finally`, or a CLI that exits
+holding the PGlite lock breaks the next command run against this app. A second copy of that boot
+would be two answers to "which queue is this command talking to".
+
+`x db backfill` requires `--list` and refuses without it, in `X_CLI_BAD_FLAG` naming the exact
+invocation. `x db backfill <name>` will one day RUN a pass; a bare command that quietly printed the
+ledger would be a second spelling of one thing today and a silent no-op the day the runner lands.
+`X_NOT_IMPLEMENTED` would be wrong for the opposite reason — that code is for a subcommand shipping
+nothing, and this one ships the ledger.
 
 `x db migrate` and `ROLE=migrate` are the same function call. That is the whole design: until
 1.2.0 the CLI shelled out to `bunx drizzle-kit` — a second engine, a second journal, declared in no

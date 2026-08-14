@@ -3,6 +3,7 @@
 // alone. Drain is `jobs-drain.ts`, the `--json` shapes `jobs-json.ts`, the table `jobs-table.ts`.
 
 import type {
+  BackfillProgress,
   DeadLetterEntry,
   JobDriver,
   JobFilter,
@@ -12,6 +13,7 @@ import type {
   QueueDepthReport,
 } from '@ultimat3/jobs';
 import {
+  inspectBackfills,
   inspectDeadLetters,
   inspectJob,
   inspectJobList,
@@ -48,15 +50,18 @@ export function parseStateFlag(value: string | undefined): JobState | undefined 
  * A digit string is not yet a limit: past `Number.MAX_SAFE_INTEGER` the parse silently lands on a
  * different integer, and `1e400`-shaped input yields `Infinity`. Either way the driver would be
  * handed a bound other than the one typed, so the safe-integer check is the flag's real contract.
+ *
+ * `command` exists because `x db backfill --list` takes the same `--limit` and must not report it
+ * as a flag on `x jobs` — one parser, and the error still names the command that was typed.
  */
-export function parseLimitFlag(value: string | undefined): number | undefined {
+export function parseLimitFlag(value: string | undefined, command = 'jobs'): number | undefined {
   if (value === undefined) return undefined;
   const digits = value.trim();
   const limit = /^\d+$/.test(digits) ? Number(digits) : Number.NaN;
   if (!Number.isSafeInteger(limit) || limit <= 0) {
     throw new BadFlagError({
       flag: 'limit',
-      command: 'jobs',
+      command,
       reason: `expects an integer from 1 to ${Number.MAX_SAFE_INTEGER}, got "${value}"`,
     });
   }
@@ -76,12 +81,19 @@ export interface JobsListResult {
   readonly depth: QueueDepthReport;
   readonly rows: readonly JobRecord[];
   readonly deadLetters: readonly DeadLetterEntry[];
+  /** The sweeps still in flight — see below for why finished ones are not this command's answer. */
+  readonly backfills: readonly BackfillProgress[];
 }
 
 /**
  * The depth report AND the filtered rows, plus dead letters unconditionally: a dead job that a
  * `--state ready` filter (or the default 100-row cap) pushes out of view is the exact failure
  * mode this command exists to prevent.
+ *
+ * Backfills are read `running` only. `x jobs ls` is a LIVE view of the queue — a pass that
+ * finished last week is history, and `x db backfill --list` is where that question is asked and
+ * answered with the whole ledger. A driver with no ledger answers `[]` rather than throwing, so
+ * the queue view never fails over a fact nobody asked about.
  */
 export async function listJobs(
   driver: JobDriver,
@@ -95,12 +107,13 @@ export async function listJobs(
     ...(state === undefined ? {} : { state }),
     ...(limit === undefined ? {} : { limit }),
   };
-  const [depth, rows, deadLetters] = await Promise.all([
+  const [depth, rows, deadLetters, backfills] = await Promise.all([
     inspectQueues(driver),
     inspectJobList(driver, jobFilter),
     inspectDeadLetters(driver),
+    inspectBackfills(driver, { status: 'running' }),
   ]);
-  return { depth, rows, deadLetters };
+  return { depth, rows, deadLetters, backfills };
 }
 
 // ── show ──────────────────────────────────────────────────────────────────

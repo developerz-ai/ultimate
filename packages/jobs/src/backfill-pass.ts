@@ -18,6 +18,7 @@ import type { BatchIterator } from '@ultimat3/entity';
 import type { BackfillDefinition, BackfillInput, BackfillReport } from './backfill';
 import type { BackfillLedger, BackfillRun } from './backfill-ledger';
 import { decideBackfill } from './backfill-ledger';
+import type { Pacer } from './backfill-rate';
 import { jobDriver } from './driver';
 import type { JobRunArgs } from './job';
 import { isStepSuspension } from './steps';
@@ -38,11 +39,13 @@ interface Iteration<Row> {
   readonly pull: AsyncIterator<readonly Row[]>;
 }
 
-/** Everything about the backfill that is fixed at declaration, hashed and sized once. */
+/** Everything about the backfill that is fixed at declaration, hashed, sized and paced once. */
 export interface BackfillPlan<Row> {
   readonly definition: BackfillDefinition<Row>;
   readonly size: number;
   readonly checksum: string;
+  /** The declared `rate`, already an interval. Built at declaration for the reason `size` is. */
+  readonly pace: Pacer;
 }
 
 const fieldOf = (value: unknown, key: string): unknown =>
@@ -109,7 +112,7 @@ export async function backfillPass<Row>(
   plan: BackfillPlan<Row>,
   args: JobRunArgs<BackfillInput>,
 ): Promise<BackfillReport> {
-  const { definition, size, checksum } = plan;
+  const { definition, size, checksum, pace } = plan;
   const { ctx, step, runId } = args;
   const name = definition.name;
   // Absent on a driver that ships no ledger, which runs the pass with no bookkeeping rather than
@@ -167,6 +170,14 @@ export async function backfillPass<Row>(
       const stepName = `${STEP_PREFIX}${index}`;
       const checkpoint = asCheckpoint(
         await step.run(stepName, async (signal): Promise<Checkpoint> => {
+          // INSIDE the body, which is the whole of it: a completed step is served from storage
+          // without its body running, so an attempt resuming at batch 500 replays 500 checkpoints
+          // and pays none of their pauses. Paced outside the step, a resumed pass would spend the
+          // entire throttle of everything it had already done before touching a new row.
+          //
+          // The signal is the run's cancellation composed with this step's ceiling, so a cancelled
+          // pass unwinds out of the wait instead of sitting in a timer nobody is waiting for.
+          await pace.wait({ signal, step: stepName });
           const iteration = await iterate();
           const next = await iteration.pull.next();
           if (next.done === true) return { cursor: null, rows: 0 };

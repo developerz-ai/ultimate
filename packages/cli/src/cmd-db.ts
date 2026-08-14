@@ -1,6 +1,6 @@
-// `x db gen|migrate|reset|studio|branch` — everything that touches the database, including the
-// branch DB that makes destructive work safe. An agent that can clone the database in a second
-// can migrate, seed and break things without a human deciding whether to let it.
+// `x db gen|migrate|reset|studio|branch|backfill` — everything that touches the database,
+// including the branch DB that makes destructive work safe. An agent that can clone the database
+// in a second can migrate, seed and break things without a human deciding whether to let it.
 //
 // Every subcommand here runs `@ultimat3/db`'s own engine, which is the engine `ROLE=migrate` runs
 // (`serve.ts`): one `x_migrations` ledger, one checksum rule, one advisory lock, from a laptop to
@@ -15,18 +15,21 @@ import { branchPglite, type DriftReport, driftError } from '@ultimat3/db';
 import { requireAppRoot } from './app-root';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
+import { listBackfills, renderBackfillTable } from './db-backfill';
 import { generateAppMigration } from './db-generate';
 import { resolveServices } from './dev-services';
-import { CliNotImplementedError } from './errors';
+import { BadFlagError, CliNotImplementedError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
+import { withJobDriver } from './jobs-driver';
+import { backfillToJson } from './jobs-json';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom, isUltimateErrorShape } from './output';
 import { flagBool, flagString } from './parse';
 import { runMigrations } from './serve';
 
-export const DB_SUBCOMMANDS = ['gen', 'migrate', 'reset', 'studio', 'branch'] as const;
+export const DB_SUBCOMMANDS = ['gen', 'migrate', 'reset', 'studio', 'branch', 'backfill'] as const;
 
 const failure = (result: ExecResult, code: string, fix: string): Finding => ({
   code,
@@ -121,12 +124,20 @@ async function runBranch(
 export const dbCommand: CliCommand = {
   spec: {
     name: 'db',
-    summary: 'gen, migrate, reset, studio, branch',
-    usage: 'x db gen "add publish_at" | migrate | reset | studio | branch <name>',
+    summary: 'gen, migrate, reset, studio, branch, backfill',
+    usage:
+      'x db gen "add publish_at" | migrate | reset | studio | branch <name> | backfill --list [--name n] [--status s] [--limit n]',
     requiresApp: true,
     subcommands: DB_SUBCOMMANDS,
     flags: [
-      { name: 'name', type: 'string', summary: 'migration or branch name' },
+      { name: 'name', type: 'string', summary: 'migration or branch name, or backfill to filter' },
+      { name: 'list', type: 'boolean', summary: 'backfill: print the x_backfills ledger' },
+      {
+        name: 'status',
+        type: 'string',
+        summary: 'backfill: filter by running, completed or failed',
+      },
+      { name: 'limit', type: 'string', summary: 'backfill: max ledger rows to return' },
       // Declared because `X_MIGRATION_IRREVERSIBLE`'s own fix line names it. A `fix:` is copied
       // and run verbatim, so a flag the parser refuses would make the error unfollowable.
       {
@@ -145,6 +156,7 @@ export const dbCommand: CliCommand = {
     if (sub === 'migrate') return runMigrate(ctx, root, msg('cli.db.migrate.applied'));
     if (sub === 'reset') return runReset(ctx, root);
     if (sub === 'studio') throw plannedSubcommand('db', 'studio');
+    if (sub === 'backfill') return runBackfill(ctx, root);
 
     return runBranch(ctx, root, argument ?? 'preview');
   },
@@ -258,4 +270,42 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
   }
   await rm(join(services.stateDir, 'pgdata'), { recursive: true, force: true });
   return runMigrate(ctx, root, msg('cli.db.reset.done'));
+}
+
+/**
+ * `--list` is the only shape this subcommand ships, and its absence is refused rather than
+ * defaulted: `x db backfill <name>` will one day RUN a pass, so a bare `x db backfill` that quietly
+ * printed the ledger would be a second spelling of one command today and a silent no-op the day
+ * the runner lands. Not `X_NOT_IMPLEMENTED` either — that is for a subcommand that ships nothing,
+ * and this one ships the ledger. The reason names the invocation that works, verbatim.
+ *
+ * An empty ledger is `ok: true`. "Nothing has swept this database yet" is an answer to the
+ * question asked, and a command that failed over it would be unrunnable on a fresh app.
+ */
+async function runBackfill(ctx: CommandContext, root: string): Promise<CommandResult> {
+  if (!flagBool(ctx.args, 'list')) {
+    throw new BadFlagError({
+      flag: 'list',
+      command: 'db',
+      reason: 'x db backfill reports the ledger and runs nothing yet: x db backfill --list',
+      fix: 'x db backfill --list',
+    });
+  }
+  return withJobDriver(root, ctx, async (driver) => {
+    const rows = await listBackfills(driver, {
+      name: flagString(ctx.args, 'name'),
+      status: flagString(ctx.args, 'status'),
+      limit: flagString(ctx.args, 'limit'),
+    });
+    return {
+      ok: true,
+      command: 'db',
+      summary:
+        rows.length === 0
+          ? msg('cli.db.backfill.empty')
+          : msg('cli.db.backfill.listed', { count: rows.length }),
+      lines: rows.length === 0 ? [] : renderBackfillTable(rows).map((line) => `  ${line}`),
+      data: rows.map(backfillToJson),
+    };
+  });
 }

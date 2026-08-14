@@ -59,4 +59,37 @@ describe('the factory', () => {
       expect(getJob(`bad-${String(batch)}`)).toBeUndefined();
     }
   });
+
+  test('refuses a rate that is not batches per second, where it was written', () => {
+    for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      let thrown: unknown;
+      try {
+        backfill<Row>({
+          name: `unpaced-${String(rate)}`,
+          rate,
+          source,
+          handle: () => undefined,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_INVARIANT');
+      // Not one statement into a dead-lettered job: an unpaced sweep saturates the pool, and the
+      // app finds out before the queue does.
+      expect(getJob(`unpaced-${String(rate)}`)).toBeUndefined();
+    }
+  });
+
+  test('a fraction is a rate too — one batch every two seconds', () => {
+    // Unlike `batch`, which is a whole number of rows: this one is a frequency, and a backfill
+    // slower than one batch a second is exactly what a hot table wants.
+    const handle = backfill<Row>({
+      name: 'slow-and-steady',
+      rate: 0.5,
+      source,
+      handle: () => undefined,
+    });
+
+    expect(getJob('slow-and-steady')).toBe(handle);
+  });
 });

@@ -15,6 +15,7 @@ import type { ReadBuilder } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import { backfillChecksum } from './backfill-ledger';
 import { backfillPass } from './backfill-pass';
+import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 import type { DurationInput } from './clock';
 import type { JobHandle } from './job';
 import { job } from './job';
@@ -69,6 +70,13 @@ export interface BackfillDefinition<Row> {
   handle(batch: BackfillBatch<Row>): Promise<void> | void;
   /** Rows per statement and per step. Defaults to `DEFAULT_BACKFILL_BATCH`. */
   readonly batch?: number;
+  /**
+   * Batches per second. Defaults to `DEFAULT_BACKFILL_RATE`, which is slow on purpose: this pass
+   * shares its pool with the requests the app is still serving. Fractions are a rate too —
+   * `rate: 0.5` is one batch every two seconds. To sweep faster raise it; there is no way to
+   * turn it off, because a backfill that saturates the pool has no correct value here.
+   */
+  readonly rate?: number;
   readonly queue?: string;
   readonly retry?: RetryPolicy;
   /** Per attempt, not per pass: a resumed attempt picks up at the last checkpoint. */
@@ -110,9 +118,22 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
     `backfill "${definition.name}" declares batch: ${String(size)} — a batch is a whole number of rows, at least one`,
     `set batch: ${DEFAULT_BACKFILL_BATCH} on backfill("${definition.name}") — the rows one statement reads and one durable step handles`,
   );
+  const rate = definition.rate ?? DEFAULT_BACKFILL_RATE;
+  // Refused in the same voice and for the same reason as `batch` above — except that an unpaced
+  // sweep is not a dead-lettered job but a saturated pool, which the app finds out about first.
+  assert(
+    Number.isFinite(rate) && rate > 0,
+    `backfill "${definition.name}" declares rate: ${String(rate)} — a rate is batches per second, greater than zero`,
+    `set rate: ${DEFAULT_BACKFILL_RATE} on backfill("${definition.name}"), or leave it out — to sweep faster raise the number, there is no unthrottled mode`,
+  );
   // Hashed once, at declaration: the definition cannot change while the process runs, and a hash
   // per attempt would charge every batch of every pass for a fact that is fixed at import.
+  // `rate` is NOT in it, for the reason `batch` is not: pacing is a tuning knob, and changing one
+  // does not make a completed sweep a different sweep.
   const checksum = backfillChecksum(definition.source, definition.handle);
+  // Built here rather than per attempt: the interval belongs to the table and the pool, not to
+  // whichever attempt holds the run, so a retrying pass keeps the pace it was declared with.
+  const pace = createPacer({ rate, job: definition.name });
 
   return job<BackfillInput>({
     name: definition.name,
@@ -124,6 +145,6 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
     retry: definition.retry ?? DEFAULT_RETRY,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
-    run: (args) => backfillPass({ definition, size, checksum }, args),
+    run: (args) => backfillPass({ definition, size, checksum, pace }, args),
   });
 }

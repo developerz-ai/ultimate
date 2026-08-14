@@ -17,6 +17,8 @@ export type {
   BackfillReport,
 } from './backfill';
 export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
+export type { BackfillProgress } from './backfill-inspect';
+export { backfillForRun, inspectBackfills, toBackfillProgress } from './backfill-inspect';
 export type {
   BackfillFilter,
   BackfillLedger,
@@ -25,6 +27,8 @@ export type {
   BackfillVerdict,
 } from './backfill-ledger';
 export { backfillChecksum, createMemoryBackfillLedger, decideBackfill } from './backfill-ledger';
+export type { Pacer, PacerOptions } from './backfill-rate';
+export { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,

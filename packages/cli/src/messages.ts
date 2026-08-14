@@ -24,6 +24,10 @@ const CATALOG = {
   'cli.cron.inMonths': 'in {months}',
   'cli.cron.onDaysOfMonth': 'on day {days} of the month',
   'cli.cron.onWeekdays': 'on {days}',
+  'cli.db.backfill.empty': 'no backfill has run against this database yet',
+  'cli.db.backfill.listed': '{count} backfill pass(es)',
+  /** The empty cell in a `x db backfill --list` column — a value, not a column key. */
+  'cli.db.backfill.none': '-',
   'cli.db.branch.ready': 'branch {name} ready',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
@@ -58,6 +62,9 @@ const CATALOG = {
   'cli.i18n.ok': '{locales} locale(s), {keys} key(s) used — no gaps',
   'cli.i18n.synced': 'synced {locale} from {from} — {added} key(s) added, {total} total',
   'cli.i18n.unused': '{count} key(s) defined in {locale} and never used:',
+  'cli.jobs.backfillNoCursor': 'no cursor yet',
+  'cli.jobs.backfillRow': '{name} — {rows} row(s) so far, cursor {cursor}',
+  'cli.jobs.backfills': '{count} backfill(s) in flight:',
   'cli.jobs.deadLetters': '{count} dead letter(s):',
   'cli.jobs.depth':
     '{ready} ready · {running} running · {delayed} delayed · {dead} dead across {queues} queue(s)',

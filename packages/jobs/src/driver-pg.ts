@@ -219,6 +219,7 @@ function pgBackfillLedger(exec: () => PgExecutor): BackfillLedger {
       const rows = await exec().query<BackfillRow>(SQL_BACKFILL_LIST, [
         filter.name ?? null,
         filter.status ?? null,
+        filter.runId ?? null,
         filter.limit ?? 100,
       ]);
       return rows.map(toBackfillRun);

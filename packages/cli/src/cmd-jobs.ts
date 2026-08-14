@@ -1,17 +1,17 @@
 // `x jobs ls|show|retry|drain` — introspect and recover the job queue, bound to `@ultimat3/jobs`'s
 // own introspection so the CLI, `/_x` and MCP report identically. This file is CLI wiring only:
 // the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
-// `jobs-table.ts`.
+// `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
 
 import type { JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver, createNatsDriver, createRedisDriver, jobDriver } from '@ultimat3/jobs';
+import { createMemoryDriver, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { startQueue } from './dev-queue';
-import { resolveServices } from './dev-services';
 import { BadFlagError } from './errors';
 import { drainJobs } from './jobs-drain';
+import { withJobDriver } from './jobs-driver';
 import {
+  backfillToJson,
   deadLetterToJson,
   depthToJson,
   drainFailureToJson,
@@ -28,29 +28,6 @@ import { flagBool, flagString } from './parse';
 export const JOBS_SUBCOMMANDS = ['ls', 'show', 'retry', 'drain'] as const;
 
 const DRAIN_TARGETS = ['memory', 'redis', 'nats'] as const;
-
-/**
- * `x jobs` needs the app's real driver. Reuse an already-running one first — inside `x dev` or
- * `x mcp serve`, `jobDriver()` is already set and booting a second queue on top of it would talk
- * to the wrong database. Otherwise boot just the db + jobs half (`startQueue`, not the full
- * `startServices`: this command touches no transport, storage or mail) and always release it, or
- * a CLI that exits holding the PGlite lock breaks the next command run against this app.
- */
-async function withDriver(
-  root: string,
-  ctx: CommandContext,
-  fn: (driver: JobDriver) => Promise<CommandResult>,
-): Promise<CommandResult> {
-  const ambient = jobDriver();
-  if (ambient !== undefined) return fn(ambient);
-  const services = resolveServices(root, ctx.env);
-  const queue = await startQueue(services);
-  try {
-    return await fn(queue.jobs);
-  } finally {
-    await queue.stop();
-  }
-}
 
 function requireIdPositional(ctx: CommandContext, sub: string): string {
   const id = ctx.args.positionals[0];
@@ -114,6 +91,17 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
       );
     }
   }
+  // Same shape as the dead-letter section above, and here for the same reason: a sweep in flight
+  // is a fact the depth counts cannot show. Name, rows so far and cursor, because "how far has it
+  // got" is the whole question — the finished passes are `x db backfill --list`'s answer.
+  if (result.backfills.length > 0) {
+    lines.push(`  ${msg('cli.jobs.backfills', { count: result.backfills.length })}`);
+    for (const pass of result.backfills) {
+      const cursor = pass.cursor ?? msg('cli.jobs.backfillNoCursor');
+      const progress = msg('cli.jobs.backfillRow', { name: pass.name, rows: pass.rows, cursor });
+      lines.push(`    ${pass.runId}  ${progress}`);
+    }
+  }
   return {
     ok: true,
     command: 'jobs',
@@ -129,6 +117,7 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
       depth: depthToJson(result.depth),
       rows: result.rows.map(jobRecordToJson),
       deadLetters: result.deadLetters.map(deadLetterToJson),
+      backfills: result.backfills.map(backfillToJson),
     },
   };
 }
@@ -222,7 +211,7 @@ export const jobsCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('jobs', ctx.cwd).dir;
     const sub = ctx.args.subcommand ?? 'ls';
-    return withDriver(root, ctx, (driver) => {
+    return withJobDriver(root, ctx, (driver) => {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
       if (sub === 'drain') return runDrain(driver, ctx);

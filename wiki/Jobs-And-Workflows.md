@@ -195,9 +195,10 @@ Draining a worker mid-job is safe: it finishes the current step, persists it, an
 
 | Surface | Contents |
 |---|---|
-| `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job |
-| `x jobs ls --json` | one row per job: state, queue, attempts, `runAt`, idempotency key |
-| `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason |
+| `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job, and the whole `x_backfills` ledger with a live count |
+| `x jobs ls --json` | one row per job: state, queue, attempts, `runAt`, idempotency key — plus the `backfill()` passes **in flight**, with rows so far and cursor |
+| `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason, and this run's ledger row under `backfill` when the job is a backfill |
+| `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference#x-db) |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
 | Metrics | `queue_depth{queue}`, `jobs_total{queue,outcome}`, `job_leases_lost_total{queue}` → [Observability](Observability) |

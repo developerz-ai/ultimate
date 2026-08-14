@@ -116,6 +116,7 @@ import { db } from '@postly/db';
 export const rewriteSlugs = backfill({
   name: 'rewrite-slugs',                                   // REQUIRED: a durable key
   batch: 1_000,                                            // rows per statement and per step
+  rate: 5,                                                 // batches/sec — the default
   source: () => db.posts.where({ published: true }),
   async handle({ rows }) {
     await db.posts.upsertAll(rows.map(slugged), { onConflict: ['id'] });
@@ -138,6 +139,20 @@ without a statement, and the iteration reopens at the cursor they left behind.
 | `handle` runs at least once per page | an attempt cancelled between the last row and the checkpoint replays it — write through `upsertAll` / `updateWhere`, never `count + 1` |
 | `idempotencyKey` is the backfill's name | re-enqueueing a live pass is the same pass, not a second writer on one table |
 | `batch` is refused at declaration | `0`, `1.5` and a `NaN` from an env var fail the build, not the fourth attempt |
+| `rate` throttles, and there is no way off | a sweep shares its pool with the requests the app is still serving; to go faster raise the number |
+| the pause is spent **inside** the step | a resumed attempt replays 500 checkpoints and re-pays none of their pauses |
+
+### The throttle
+
+`rate` is batches per second, defaulting to `DEFAULT_BACKFILL_RATE` (5) — 5,000 rows/sec at the
+default batch, one statement every 200ms, so the pool spends the rest of each interval on the
+app. A rate above what the batches can actually achieve produces no wait, which is why there is
+no unthrottled mode to reach for: `rate: 200` is the fast sweep. Fractions are rates too
+(`rate: 0.5` is one batch every two seconds), a rate that is not finite and positive is refused
+where it was written, and the wait unwinds on the run's cancellation (`X_ABORTED`) rather than
+sitting in a timer nobody is waiting for. `rate` is **not** part of the definition checksum, for
+the reason `batch` is not: pacing is tuning, and changing it does not make a completed sweep a
+different sweep.
 
 ### The `x_backfills` ledger
 
@@ -160,6 +175,16 @@ await rewriteSlugs.enqueue({ force: true });     // sweeps again, into a NEW row
 | the row is a report, never a resume source | where a resumed pass restarts is the step checkpoints' answer, and there is only one |
 | a retry adopts its own row | `started_at` is when the pass began, not when this attempt did |
 | a driver without a ledger runs the pass anyway | the same degradation `introspect` has — no bookkeeping, never a refusal |
+
+Three surfaces read it, all through one projection (`inspectBackfills()`), so none of them can
+report a different number:
+
+| Surface | Shows |
+|---|---|
+| `x db backfill --list` | the whole ledger, `--name` / `--status` / `--limit`, and `--json` |
+| `x jobs ls` | the passes **in flight** — rows so far and cursor, beside the queue depth |
+| `x jobs show <id>` | the ledger row for that run, under `backfill` (`null` for any other job) |
+| `/_x` → jobs | the whole ledger plus a live count, alongside the queues and the step traces |
 
 ## The deadline cancels
 

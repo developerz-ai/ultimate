@@ -4,6 +4,7 @@ import { createPgDriver } from './driver-pg';
 import {
   SQL_ACK,
   SQL_BACKFILL_FINISH,
+  SQL_BACKFILL_LIST,
   SQL_BACKFILL_PROGRESS,
   SQL_BACKFILL_START,
   SQL_CLAIM,
@@ -165,12 +166,28 @@ describe('the pg backfill ledger', () => {
         completedAt: 2000,
       },
     ]);
-    expect(executor.calls[0]?.params).toEqual(['sweep', 'completed', 5]);
+    expect(executor.calls[0]?.params).toEqual(['sweep', 'completed', null, 5]);
   });
 
   test('an unfiltered list is nulls and the default limit, never a missing predicate', async () => {
     const executor = recordingExecutor();
     await ledgerOf(executor).list();
-    expect(executor.calls[0]?.params).toEqual([null, null, 100]);
+    expect(executor.calls[0]?.params).toEqual([null, null, null, 100]);
+  });
+
+  test('a run id rides in its own parameter, cast to the uuid the column actually is', async () => {
+    const executor = recordingExecutor();
+    await ledgerOf(executor).list({ runId: '11111111-2222-3333-4444-555555555555', limit: 1 });
+
+    expect(executor.calls[0]?.params).toEqual([
+      null,
+      null,
+      '11111111-2222-3333-4444-555555555555',
+      1,
+    ]);
+    // `uuid = text` has no operator in Postgres, so a `::text` cast here is not a style choice —
+    // it fails every call, filtered or not. Pinned as text rather than as a substring of the
+    // statement so a reformat of the SQL does not silently retire the assertion.
+    expect(SQL_BACKFILL_LIST).toContain('$3::uuid is null or run_id = $3');
   });
 });

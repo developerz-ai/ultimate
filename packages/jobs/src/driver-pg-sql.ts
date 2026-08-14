@@ -213,6 +213,12 @@ update x_backfills
  where run_id = $1
 `.trim();
 
+/**
+ * `$3::uuid`, where its two neighbours are `::text`, because `run_id` IS a uuid: the cast on the
+ * null test is what tells Postgres the parameter's type, and `::text` there pins it to text for
+ * the comparison below it — `uuid = text` has no operator, so every call failed, filtered or not.
+ * Nothing hand-types this value; it arrives from a job record the same database wrote.
+ */
 export const SQL_BACKFILL_LIST = `
 select run_id, name, checksum, status, app_version, rows_processed, last_cursor,
        (extract(epoch from started_at)   * 1000)::bigint as started_at,
@@ -220,6 +226,7 @@ select run_id, name, checksum, status, app_version, rows_processed, last_cursor,
   from x_backfills
  where ($1::text is null or name = $1)
    and ($2::text is null or status = $2)
+   and ($3::uuid is null or run_id = $3)
  order by started_at desc
- limit $3
+ limit $4
 `.trim();

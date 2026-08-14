@@ -151,6 +151,26 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   fact and this may not. `force` is the only override, and it rides the input rather than the
   idempotency key: one live pass per name, forced or not, or "kick it again" becomes a second
   writer on one table.
+- **The throttle is spent INSIDE the batch's own `step.run`, and that is the whole of it.**
+  `backfill-rate.ts` owns one pacer per declaration (`rate`, batches/sec, default 5); the wait is
+  the first statement of the step body, never around it. Outside the step, an attempt resuming at
+  batch 500 would replay 500 completed checkpoints — which run no body and touch no database — and
+  still pay the full throttle of everything it had already done before reading a new row. The
+  pacer takes the step's `signal` and rejects `X_ABORTED` both before the wait and after it, for
+  the reason `execute.ts` cancels before it rejects: the wait's sleeper settles early on abort, so
+  what it means is "the wait is over", never "the slot arrived". Built once at declaration, like
+  the checksum: the interval belongs to the table and the pool, not to whichever attempt holds the
+  run. `rate` is deliberately NOT in the checksum, for the reason `batch` is not.
+- **`inspectBackfills()` is the ONE projection of the ledger, and there is no second reader.**
+  `backfill-inspect.ts` maps a `BackfillRun` to a plain JSON object (epochs to ISO, absent to
+  `null`) for `x db backfill --list`, `x jobs ls`, `x jobs show` and `/_x`'s jobs panel — four
+  surfaces that must not disagree about how many rows a pass has swept. It reads no clock: a
+  running row's elapsed time is a different number in every process that asks, so `durationMs` is
+  the pass's own completed span or `null`. It answers `[]` — never a throw — for a driver with no
+  ledger, because `x jobs ls` is asked about the queue and must not fail over a fact nobody asked
+  for; the surface that IS asking (`x db backfill --list`) says so in its own summary. `JobTrace`
+  carries `backfill` for the same reason `steps` is on it: a step trace says which batch is next,
+  the ledger row says what is behind it.
 - **The ledger hangs off the queue driver (`driver.backfills`), optional like `introspect`.**
   `x_backfills` ships in `SQL_JOBS_TABLE`, so a ledger a pass cannot write is a queue it could not
   have been claimed from — and `dev-queue.ts` applies that one constant, so `x dev` and production
@@ -202,6 +222,8 @@ picture from the other side.
 | `backfill.ts` | `backfill()` — a factory over `job()`: the declaration, its checksum and its input |
 | `backfill-pass.ts` | one pass: the batched iteration, its cursor checkpoints and its ledger row |
 | `backfill-ledger.ts` | `x_backfills` — the contract, the checksum, the verdict, the memory ledger |
+| `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
+| `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
@@ -219,6 +241,11 @@ picture from the other side.
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` | stored event bus for `step.waitForEvent` |
 | `inspect.ts` | `--json` introspection |
+
+`backfill-pass.test.ts` is at **496 of the 500-line ceiling** — the next task that adds to it splits
+the `x_backfills` describe into its own file first (it and the iteration tests share `harness()`
+and `installLedger()`, so the split is a shared-fixture decision, not a cut-and-paste). The throttle
+already left, as `backfill-throttle.test.ts` with a fixture of its own.
 
 `*.job.test.ts` is the opt-in suite the `job` verify step runs: `replay.job.test.ts`,
 `idempotency.job.test.ts` and `outbox-atomicity.job.test.ts` each prove one named guarantee (step

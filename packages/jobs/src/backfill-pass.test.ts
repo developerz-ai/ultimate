@@ -3,7 +3,8 @@
 // the rows behind it, and the `x_backfills` row that reports all of it. The source is a real
 // `@ultimat3/entity` chain over a real `memoryRepo`, so the cursors, the keyset paging and
 // `inBatches()`'s own refusals are the shipped ones and not a fixture that agrees by construction.
-// `backfill.test.ts` owns the declaration; `backfill-ledger.test.ts` owns the ledger on its own.
+// `backfill.test.ts` owns the declaration, `backfill-ledger.test.ts` the ledger on its own, and
+// `backfill-throttle.test.ts` the pacing — every harness here declares a rate no timer resolves.
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
@@ -102,6 +103,9 @@ interface Harness {
 
 const RUN_ID = 'run-backfill-1';
 
+/** Above the millisecond a timer can resolve, so the pacer skips every wait and nothing sleeps. */
+const NO_WAIT_RATE = 100_000;
+
 const ctx: Ctx = createContext();
 
 /**
@@ -136,6 +140,9 @@ const harness = (options: { batch?: number; name?: string } = {}): Harness => {
   };
   const handle = backfill<Row>({
     name: options.name ?? 'rewrite-titles',
+    // Every test on this harness is about the iteration and not the throttle, so it declares a
+    // rate no timer can resolve and the pacer skips each wait. `the rate throttle` owns pacing.
+    rate: NO_WAIT_RATE,
     ...(options.batch === undefined ? {} : { batch: options.batch }),
     source: () => watchedChain(table.where({ orgId: ORG }), watch),
     handle: ({ rows: page, index }) => {
