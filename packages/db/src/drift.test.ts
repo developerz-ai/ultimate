@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { assertNoDrift, diffSchema, driftError } from './drift';
+import { assertNoDrift, declaredSchema, diffSchema, driftError, expectedSchema } from './drift';
 import type { SchemaDescription, TableDescription } from './introspect';
+import type { LedgerRow, Migration } from './migrate';
 
 const table = (name: string, columns: readonly string[]): TableDescription => ({
   schema: 'public',
@@ -99,5 +100,50 @@ describe('drift', () => {
       table: 'posts',
       column: 'publish_at',
     });
+  });
+});
+
+describe('the schema migrations declare', () => {
+  const migration = (id: string, snapshot?: SchemaDescription): Migration => ({
+    id,
+    name: id,
+    up: '',
+    down: '',
+    ...(snapshot === undefined ? {} : { snapshot }),
+  });
+  const ledgerRow = (id: string): LedgerRow => ({
+    id,
+    name: id,
+    checksum: 'x',
+    applied_at: '2026-08-14T00:00:00Z',
+    app_version: 'dev',
+    duration_ms: 1,
+  });
+
+  test('the newest snapshot wins, whatever order the migrations arrive in', () => {
+    const declared = declaredSchema([
+      migration('0002_b', schema(table('posts', ['id', 'title']))),
+      migration('0001_a', schema(table('posts', ['id']))),
+    ]);
+    expect(declared.tables[0]?.columns.map((column) => column.name)).toEqual(['id', 'title']);
+  });
+
+  test('a migration with no snapshot is skipped, and no snapshot at all is an empty schema', () => {
+    expect(declaredSchema([migration('0003_c')]).tables).toEqual([]);
+    expect(
+      declaredSchema([migration('0001_a', schema(table('posts', ['id']))), migration('0002_b')])
+        .tables,
+    ).toHaveLength(1);
+  });
+
+  test('expected is declared over the applied subset — a pending migration is not owed yet', () => {
+    const migrations = [
+      migration('0001_a', schema(table('posts', ['id']))),
+      migration('0002_b', schema(table('posts', ['id', 'title']))),
+    ];
+    // `x db gen` diffs against 0002 (both are written down); the database only owes 0001.
+    expect(declaredSchema(migrations).tables[0]?.columns).toHaveLength(2);
+    expect(expectedSchema(migrations, [ledgerRow('0001_a')]).tables[0]?.columns).toHaveLength(1);
+    expect(expectedSchema(migrations, []).tables).toEqual([]);
   });
 });

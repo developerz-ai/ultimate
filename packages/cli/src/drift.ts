@@ -5,10 +5,12 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+// One declaration of where migrations live, and it belongs to the module that reads them —
+// `x db migrate` and this sidecar must never disagree about the directory they share.
+import { hashFileName, MIGRATIONS_DIR } from './migrations';
 import type { Finding } from './output';
 
 export const DB_PACKAGE = join('packages', 'db');
-export const MIGRATIONS_DIR = join(DB_PACKAGE, 'migrations');
 const SCHEMA_GLOB = 'packages/db/src/**/*.ts';
 
 /** Content hash of the whole schema, order-independent per file path. */
@@ -47,9 +49,9 @@ export async function recordedHashes(root: string): Promise<readonly MigrationRe
   return out;
 }
 
-export async function writeSchemaHash(root: string, migrationName: string): Promise<string> {
+export async function writeSchemaHash(root: string, migrationId: string): Promise<string> {
   const hash = await schemaHash(root);
-  await Bun.write(join(root, MIGRATIONS_DIR, `${migrationName}.hash`), `${hash}\n`);
+  await Bun.write(join(root, MIGRATIONS_DIR, hashFileName(migrationId)), `${hash}\n`);
   return hash;
 }
 

@@ -117,18 +117,32 @@ export function assertNoDrift(report: DriftReport): void {
 }
 
 /**
- * The schema migrations claim. Each generated migration carries the snapshot it leaves behind,
- * so the newest applied one with a snapshot is the expectation — no SQL is re-parsed.
+ * The schema the migration files themselves declare, ledger or no ledger. Each generated
+ * migration carries the snapshot it leaves behind, so the newest one with a snapshot is the
+ * claim — no SQL is re-parsed.
+ *
+ * This is what `x db gen` diffs the app's entities against, and why generating a migration needs
+ * no database: the previous migration already wrote down what it left behind.
+ */
+export function declaredSchema(migrations: readonly Migration[]): SchemaDescription {
+  const snapshots = [...migrations]
+    .filter((migration) => migration.snapshot !== undefined)
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
+  return snapshots[snapshots.length - 1]?.snapshot ?? { tables: [] };
+}
+
+/**
+ * The schema migrations claim to have *applied* — `declaredSchema` over the ledger's own subset,
+ * never a second reading of the same snapshots. Generation asks "what have we written down" and
+ * drift asks "what does this database owe us"; two answers, one implementation, so a snapshot can
+ * never mean one thing to `x db gen` and another to `x verify`.
  */
 export function expectedSchema(
   migrations: readonly Migration[],
   ledger: readonly LedgerRow[],
 ): SchemaDescription {
   const applied = new Set(ledger.map((row) => row.id));
-  const snapshots = [...migrations]
-    .filter((migration) => applied.has(migration.id) && migration.snapshot !== undefined)
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
-  return snapshots[snapshots.length - 1]?.snapshot ?? { tables: [] };
+  return declaredSchema(migrations.filter((migration) => applied.has(migration.id)));
 }
 
 export interface DriftOptions {

@@ -38,6 +38,40 @@ test('an app with no migrations directory reads an empty list, never a throw', a
   }
 });
 
+test('a hand-written <id>.down.sql is never read as a migration of its own', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'x-migrations-'));
+  try {
+    await Bun.write(join(dir, 'packages/db/migrations/0001_init.sql'), 'CREATE TABLE a();');
+    // The pre-1.2.0 hand-written layout. Read as a migration it would sort first and drop the
+    // table the pair exists to reverse.
+    await Bun.write(join(dir, 'packages/db/migrations/0001_init.down.sql'), 'DROP TABLE a;');
+    const migrations = await readMigrations(dir);
+    expect(migrations.map((migration) => migration.id)).toEqual(['0001_init']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the snapshot sidecar rides along, and a corrupt one is absent rather than fatal', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'x-migrations-'));
+  try {
+    const schema = { tables: [{ name: 'a', columns: [], indexes: [], foreignKeys: [] }] };
+    await Bun.write(join(dir, 'packages/db/migrations/0001_a.sql'), 'CREATE TABLE a();');
+    await Bun.write(
+      join(dir, 'packages/db/migrations/0001_a.snapshot.json'),
+      JSON.stringify(schema),
+    );
+    await Bun.write(join(dir, 'packages/db/migrations/0002_b.sql'), 'CREATE TABLE b();');
+    await Bun.write(join(dir, 'packages/db/migrations/0002_b.snapshot.json'), '{ not json');
+    const [first, second] = await readMigrations(dir);
+    expect(first?.snapshot).toEqual(schema);
+    expect(second?.snapshot).toBeUndefined();
+    expect(second?.up).toBe('CREATE TABLE b();');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('migrations are read in id order, whatever order the directory yields', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'x-migrations-'));
   try {

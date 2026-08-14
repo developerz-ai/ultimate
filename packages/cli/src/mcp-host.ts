@@ -3,11 +3,16 @@
 // the gate. The description half is the framework's own `frameworkIntrospection`, so nothing here
 // is a second catalog of routes, entities, actions, queries or jobs.
 
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { agentActor, UltimateError } from '@ultimat3/core';
+import { agentActor, isUltimateError, UltimateError } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
-import { ensureReadOnlyRole, readLedger, readOnlyQuery } from '@ultimat3/db';
+import {
+  ensureReadOnlyRole,
+  migrate,
+  pendingMigrations,
+  readLedger,
+  readOnlyQuery,
+} from '@ultimat3/db';
 import { inspectJobList, inspectQueues } from '@ultimat3/jobs';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import type {
@@ -28,13 +33,13 @@ import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import type { DevServices, Env } from './dev-services';
 import { resolveServices } from './dev-services';
-import { MIGRATIONS_DIR } from './drift';
 import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import { databaseTarget } from './mcp-db-target';
 import { explainErrorCode } from './mcp-errors';
 import { parseBunTest } from './mcp-test-output';
+import { readMigrations } from './migrations';
 
 export interface DevHostInput {
   readonly root: string;
@@ -106,20 +111,20 @@ export function lazyServices(input: DevHostInput): LazyServices {
   };
 }
 
-/** Migration ids on disk (`0001_init.sql` → `0001_init`) that the ledger does not record. */
-async function pendingMigrations(root: string, lazy: LazyServices): Promise<readonly string[]> {
-  const dir = join(root, MIGRATIONS_DIR);
-  if (!existsSync(dir)) return [];
-  const ids: string[] = [];
-  for await (const file of new Bun.Glob('*.sql').scan({ cwd: dir, absolute: false })) {
-    if (!file.endsWith('.down.sql')) ids.push(file.replace(/\.sql$/, ''));
-  }
+/**
+ * Migration ids on disk that the ledger does not record. Both halves are the framework's own —
+ * `readMigrations` is the list `ROLE=migrate` applies and `pendingMigrations` is the filter
+ * `migrate()` applies it through, so this tool can never report a pending set the migrator would
+ * disagree with.
+ */
+async function pendingIds(root: string, lazy: LazyServices): Promise<readonly string[]> {
+  const migrations = await readMigrations(root);
+  if (migrations.length === 0) return [];
   const { db } = await lazy.running();
   // No ledger table means nothing has been applied. `ensureLedger` would create it, and a dry run
   // is not allowed to write.
   const ledger = await readLedger(db).catch(() => []);
-  const applied = new Set(ledger.map((row) => row.id));
-  return ids.filter((id) => !applied.has(id)).sort();
+  return pendingMigrations(ledger, migrations).map((migration) => migration.id);
 }
 
 // ── the capabilities ─────────────────────────────────────────────────────────
@@ -175,20 +180,24 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
     },
 
     async runMigrations(branch: string, dryRun: boolean) {
-      const before = await pendingMigrations(root, lazy);
+      const before = await pendingIds(root, lazy);
       if (dryRun) return { branch, applied: [], pending: before };
-      const result = await runner(['bunx', 'drizzle-kit', 'migrate'], { cwd: root });
-      if (!result.ok) {
+      const { db } = await lazy.running();
+      try {
+        await migrate({ migrations: await readMigrations(root), client: db });
+      } catch (error) {
         // Thrown, not returned: `server.ts` renders any X_* error as the three-line
-        // code/cause/fix result, which is what an agent needs to act without a round trip.
+        // code/cause/fix result, which is what an agent needs to act without a round trip. The
+        // engine's own errors already carry that shape and pass through untouched.
+        if (isUltimateError(error)) throw error;
         throw new UltimateError({
           code: 'X_DB_MIGRATE_FAILED',
-          cause: `${result.command.join(' ')} exited ${result.code}: ${execOutput(result).slice(0, 400)}`,
+          cause: error instanceof Error ? error.message : String(error),
           fix: 'x db reset',
         });
       }
-      // The ledger is the evidence for "applied" — never the migrator's own stdout.
-      const pending = await pendingMigrations(root, lazy);
+      // The ledger is the evidence for "applied" — never the migrator's own return value.
+      const pending = await pendingIds(root, lazy);
       return { branch, applied: before.filter((id) => !pending.includes(id)), pending };
     },
 

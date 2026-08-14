@@ -178,7 +178,13 @@ Now `x verify` sees drift, which is the point:
            default 'drizzle.config.json' … file does not exist
 ```
 
-`x db migrate` fails identically. `@ultimat3/db` exports the framework's own generator, so a twenty-line script does the job — this one passes `x verify`:
+`x db migrate` fails identically.
+
+**Fixed on `main`, unreleased.** `x db gen "add todos"` now calls `@ultimat3/db`'s own
+`generateMigration()` and writes the three files itself — `<id>.sql`, `<id>.snapshot.json` and
+`<id>.hash` — while `x db migrate` runs the same migrator `ROLE=migrate` runs. Skip the script
+below on `main`; on 1.1.0 it is the way through. `@ultimat3/db` exports the framework's own
+generator, so a twenty-line script does the job — this one passes `x verify`:
 
 ```ts
 // scripts/db-gen.ts —  bun run scripts/db-gen.ts 0001 "add todos"
@@ -219,6 +225,9 @@ Apply them the way production does — same code path, no toolchain:
 ```bash
 ROLE=migrate bun apps/web/server.ts
 ```
+
+On `main`, `bunx x db migrate` is that same code path with a `--json` report and a drift check
+after it. Both read `packages/db/migrations` and write one `x_migrations` ledger.
 
 ```text
 {"ts":"2026-08-11T17:09:15.790Z","level":"info","msg":"ultimate migrate applied","applied":3,"available":3,"appVersion":"dev"}

@@ -52,14 +52,21 @@ export type { McpHttpServer } from './cmd-mcp';
 export { mcpCommand, startMcpHttp } from './cmd-mcp';
 export type { NewAppOptions, WrittenApp } from './cmd-new';
 export { newCommand, planNewApp, writeNewApp } from './cmd-new';
-export type { PlannedCommand } from './cmd-planned';
-export { PLANNED_COMMANDS, plannedCommands } from './cmd-planned';
+export type { PlannedCommand, PlannedSubcommand } from './cmd-planned';
+export {
+  PLANNED_COMMANDS,
+  PLANNED_SUBCOMMANDS,
+  plannedCommands,
+  plannedSubcommand,
+} from './cmd-planned';
 export { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 export { renderRouteTable, routesCommand } from './cmd-routes';
 export { testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
+export type { GeneratedFiles, GenerateMigrationOptions } from './db-generate';
+export { generateAppMigration, migrationSql } from './db-generate';
 export type { AssetRoutesOptions } from './dev-assets';
 export {
   assetRoutes,
@@ -135,7 +142,14 @@ export { createDevMcpServer, DEV_TOOL_SCOPES, localCaller } from './mcp-host';
 export { messageKeys, msg } from './messages';
 export type { MetricsEndpoint, MetricsEndpointOptions } from './metrics-endpoint';
 export { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
-export { MIGRATIONS_DIR, migrationName, parseMigrationSql, readMigrations } from './migrations';
+export {
+  hashFileName,
+  MIGRATIONS_DIR,
+  migrationName,
+  parseMigrationSql,
+  readMigrations,
+  snapshotFileName,
+} from './migrations';
 export type { CommandResult, Finding, JsonValue, StepResult } from './output';
 export {
   exitCodeFor,

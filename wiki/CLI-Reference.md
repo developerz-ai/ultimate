@@ -212,17 +212,37 @@ x db gen "add publish_at" | migrate | reset | studio | branch <name>
 
 | Subcommand | Does | Notes |
 |---|---|---|
-| `gen "<name>"` | diff entities against migrations and write the next migration | the message is required and becomes the filename |
-| `migrate` | apply pending migrations | the same code path as `ROLE=migrate` |
+| `gen "<name>"` | diff the app's entities against what the migrations declare, write the next migration | the message is required and becomes the id's slug. **Opens no database** — the previous migration's snapshot is what it diffs against |
+| `migrate` | apply pending migrations | literally `ROLE=migrate`'s own `runMigrations`, then a drift check |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
-| `studio` | open the Drizzle studio against the dev database | read/write, dev only |
+| `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
 | `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating |
 
-`gen`, `migrate` and `reset` shell out to `bunx drizzle-kit generate|migrate` for the migration
-files, and `studio` to `bunx drizzle-kit studio`. Nothing in the request path goes through an ORM:
-reads and writes run on `@ultimat3/entity`'s hand-written `postgresDriver()`.
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--name` | string | — | migration or branch name, when you would rather not pass it positionally |
+| `--allow-destructive` | boolean | `false` | let `gen` emit a DROP whose `down` cannot restore the rows. `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line names it |
 
-Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_DB_STUDIO_FAILED`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`.
+**One migration engine, everywhere.** `gen` calls `@ultimat3/db`'s `generateMigration()`;
+`migrate` and `reset` call `migrate()` — the same `x_migrations` ledger, the same per-migration
+checksum, the same session-pinned advisory lock a `ROLE=migrate` container runs. A laptop, CI,
+staging and production therefore share one answer to "what has been applied". Before 1.2.0 these
+shelled out to `bunx drizzle-kit`, a second engine with a second journal that no `package.json`
+declared and `bunx` fetched unpinned at run time. Nothing in the request path goes through an ORM
+either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDriver()`.
+
+**One migration is one file.** `x db gen` writes three, all committed:
+
+| File | Holds |
+|---|---|
+| `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
+| `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
+| `packages/db/migrations/<id>.hash` | the entity-source hash `x verify`'s `drift` step checks |
+
+A separate `<id>.down.sql` is not a migration and is never applied — that was a hand-written
+pre-1.2.0 layout, and reading it as one would drop every table the pair exists to reverse.
+
+Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
 
 ## x verify
 
@@ -680,7 +700,7 @@ For each violation involving the file it reports the offending edge, the full ch
 
 Specified in the design docs, not yet implemented. Every one is in the command registry: calling it exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts and only one of them is true.
 
-The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command.
+The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-planned.test.ts` asserts every row is reachable through the parser and that no `fix` points at another planned command. `PLANNED_SUBCOMMANDS` in the same file is the one-level-down version — a subcommand of a shipped command that this build does not implement, `x db studio` being the only entry. It stays in `x db`'s subcommand list, so the parser reaches it and `x help db` lists it.
 
 | Command | Purpose | `fix:` today |
 |---|---|---|

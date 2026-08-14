@@ -172,7 +172,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_BRANCH_EXISTS` | that branch database already exists | `x db branch create <name>` twice — or a drop aimed at the database this session is connected to | `x db branch drop <name>`, then re-create, or pick another name. To drop the connected one, reconnect elsewhere first: `DATABASE_URL=.../postgres` |
 | `X_SQL_UNSAFE` | SQL was built by string interpolation | a non-scalar interpolated into a `sql` template, or an identifier or branch name that is not `[a-z0-9_-]+` | pass a scalar (it becomes `$n`), a nested `sql` fragment, or wrap audited SQL in `raw()` — `cause` numbers the interpolation |
 | `X_READONLY_VIOLATION` | a mutating statement reached a read-only client | an INSERT/UPDATE/DELETE sent through `readOnly(db())` | use `db()` instead of `readOnly(db())`, or rewrite the statement as a SELECT |
-| `X_DB_GEN_FAILED` / `X_DB_MIGRATE_FAILED` / `X_DB_BRANCH_FAILED` / `X_DB_STUDIO_FAILED` | the underlying `x db` step failed | Postgres rejected the statement, or the DB is unreachable | read `cause` — it carries the SQL error verbatim |
+| `X_DB_GEN_FAILED` / `X_DB_MIGRATE_FAILED` / `X_DB_BRANCH_FAILED` | the `x db` step failed for a reason no framework error claimed | a write the filesystem refused, `psql` missing, the DB unreachable. A failure the engine itself names — `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_DB_UNAVAILABLE` — reaches you as that code, with its own fix, never wrapped in these | read `cause` — it carries the underlying error verbatim |
+| `X_DB_STUDIO_FAILED` | reserved, not thrown — `x db studio` is **planned** since 1.2.0 and exits `X_NOT_IMPLEMENTED`. It shelled out to `bunx drizzle-kit studio`, a second schema engine for one subcommand | — | `x dev`, then the db panel at `/_x` |
 
 ## Actions
 

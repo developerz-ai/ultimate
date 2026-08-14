@@ -92,7 +92,12 @@ layer 1 covers only what existed at grant time.
 
 ## The drift contract
 
-`x db drift` compares `introspect()` against the snapshot the newest applied migration carries.
+`x db drift` compares `introspect()` against the snapshot the newest applied migration carries —
+`expectedSchema(migrations, ledger)`. `declaredSchema(migrations)` is the same read with the ledger
+left out: the schema the files *declare*, applied or not, which is what `x db gen` diffs the app's
+entities against so generation needs no database at all. One implementation, two callers — a
+snapshot that meant one thing to the generator and another to drift is exactly the divergence the
+ledger exists to prevent.
 Rendered output is pinned byte-for-byte:
 
 ```

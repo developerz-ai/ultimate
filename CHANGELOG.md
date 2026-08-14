@@ -252,6 +252,38 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`x db gen|migrate|reset` run the framework's own migration engine — there is no second one.**
+  All three shelled out to `bunx drizzle-kit`, and `x db studio` to `bunx drizzle-kit studio`.
+  drizzle-kit is declared in **no** `package.json` in this repo and is not installed, so `bunx`
+  network-fetched an unpinned version at run time — a supply-chain surface, and the reason a
+  scaffolded app's very first documented command (`bin/setup` → `x db migrate`) exited
+  `X_DB_MIGRATE_FAILED` on *drizzle.config.json file does not exist*. Worse than broken: two
+  engines with two journals for the same question, while `ROLE=migrate` already applied migrations
+  through `@ultimat3/db`'s ledger.
+
+  `x db gen` now calls `generateMigration()`, and `x db migrate` / `x db reset` call `serve.ts`'s
+  own `runMigrations` — literally the function `ROLE=migrate` runs. A laptop, CI, staging and
+  production share one `x_migrations` ledger, one checksum rule and one advisory lock. The MCP
+  `db.migrate` tool joins them; it kept a fifth shell-out and a third hand-rolled scanner of
+  "which migrations exist", both now the framework's own `readMigrations` + `pendingMigrations`.
+
+  `x db gen` opens no database at all: it diffs the app's entities against the schema the newest
+  migration **declares**, and writes that schema beside the SQL as `<id>.snapshot.json` so the next
+  generation is incremental. `declaredSchema()` is new in `@ultimat3/db` and `expectedSchema()` is
+  now defined over it, so generation and drift can never read one snapshot two ways. `--allow-destructive`
+  is now a real flag, because `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line has always named it and
+  the parser used to refuse it.
+
+  `x db studio` moves to the planned table (`PLANNED_SUBCOMMANDS`, new): `X_NOT_IMPLEMENTED` with
+  `x dev   # then the db panel at /_x`. One subcommand does not earn a second schema engine.
+  `X_DB_STUDIO_FAILED` is now reserved and never thrown, like `X_MIGRATE_CONCURRENT`.
+
+  Two smaller fixes ride along. `readMigrations` skipped nothing, so a hand-written pre-1.2.0
+  `<id>.down.sql` beside its `<id>.sql` was read as a migration named `<id>.down` and would have
+  **dropped every table it exists to reverse** — it is now never applied, and the reference app's
+  own migration is one file with a `-- down` marker like every generated one. And `packages/db/migrations`
+  was spelled in two places that had to agree; it is one constant now, in the module that reads it.
+
 - **A migration `up` holding two statements applies — on both drivers.** `migrate()` sent the whole
   script through one `tx.execute(raw(migration.up))`, and the two drivers disagreed about what that
   means. PGlite's `query()` is the extended protocol always, so it refused the send outright:

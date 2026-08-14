@@ -163,7 +163,9 @@ Boundaries are a build error, not a note: `bunx x boundaries` runs inside `x ver
 
 ### `bin/setup` is broken at 1.1.0
 
-`bin/setup` calls `bunx x db migrate`, which shells out to `drizzle-kit` — a package a scaffolded app neither installs nor configures. It exits `X_DB_MIGRATE_FAILED`. Skip it; `bun install` plus `bunx x dev` is the whole first run, and [tutorial 2](Tutorial-02-First-Feature#migrations) covers migrations.
+`bin/setup` calls `bunx x db migrate`, which on 1.1.0 shells out to `drizzle-kit` — a package a scaffolded app neither installs nor configures. It exits `X_DB_MIGRATE_FAILED`. Skip it; `bun install` plus `bunx x dev` is the whole first run, and [tutorial 2](Tutorial-02-First-Feature#migrations) covers migrations.
+
+**Fixed on `main`, unreleased.** `x db migrate` now runs `@ultimat3/db`'s own migrator — the same one `ROLE=migrate` runs — so `bin/setup` works with nothing extra installed.
 
 ## Three standing findings
 

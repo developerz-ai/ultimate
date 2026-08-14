@@ -35,6 +35,7 @@ export type { DriftDifference, DriftKind, DriftOptions, DriftReport } from './dr
 export {
   assertNoDrift,
   checkDrift,
+  declaredSchema,
   diffSchema,
   driftError,
   expectedSchema,
