@@ -90,7 +90,7 @@ describe('live queries', () => {
     expect(first.frame.type).toBe('snapshot');
     expect(second.frame.type).toBe('snapshot');
     if (first.frame.type !== 'snapshot' || second.frame.type !== 'snapshot') {
-      throw new Error('unreachable');
+      expect.unreachable('both subscribes answer with a snapshot');
     }
     expect(first.frame.rows.map((row) => row.id)).toEqual(['p1']);
     expect(second.frame.rows.map((row) => row.id)).toEqual(['p2']);
@@ -116,7 +116,7 @@ describe('live queries', () => {
     expect(alice.ws.frames).toHaveLength(0);
     expect(bob.ws.frames).toHaveLength(1);
     const frame = bob.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a patch frame');
+    if (frame?.type !== 'patch') expect.unreachable('expected a patch frame');
     // Minimal patch: the changed column plus the id, never the whole row.
     expect(frame.patches[0]?.row).toEqual({ id: 'p2', likes: 1 });
   });
@@ -132,16 +132,51 @@ describe('live queries', () => {
     await registry.deliver(change({ ...target, ownerId: 'carol' }, target));
 
     const frame = bob.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a patch frame');
+    if (frame?.type !== 'patch') expect.unreachable('expected a patch frame');
     expect(frame.patches[0]?.op).toBe('delete');
     expect(frame.patches[0]?.id).toBe('p2');
   });
 
-  test('an unknown query name is a protocol error, not an empty result', async () => {
+  test('an unknown query name is its own error, not an empty result', async () => {
     const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
     const alice = socketFor('s-alice', actor('alice'));
-    expect(
+    await expect(
       registry.subscribe({ socket: alice.socket, name: 'nope', input: null }),
-    ).rejects.toThrow();
+    ).rejects.toBeUltimateError('X_LIVE_QUERY_UNKNOWN');
+  });
+
+  test('the name is a typo, so the fix is the registry — never a rebuild of the client', async () => {
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(liveFeed);
+    const alice = socketFor('s-alice', actor('alice'));
+
+    // `liveFed` is one letter off a query this node *does* have — the case that used to answer
+    // `X_PROTOCOL_VERSION`, sending the reader to rebuild a client that would spell it the same
+    // way. What has to reach them instead is where the real names are.
+    const error = await registry
+      .subscribe({ socket: alice.socket, name: 'liveFed', input: null })
+      .then(
+        () => null,
+        (thrown: unknown) => thrown as { cause: string; fix: string; docs: string },
+      );
+    if (error === null) expect.unreachable('expected the subscribe to be refused');
+    expect(error.cause).toContain('liveFed');
+    expect(error.fix).toContain('x queries list');
+    expect(error.fix).not.toContain('redeploy');
+    expect(error.docs).toBe('https://ultimate.dev/errors/X_LIVE_QUERY_UNKNOWN');
+    // The registry is not read back to a socket that has not been allowed anything yet.
+    expect(error.cause).not.toContain('liveFeed');
+  });
+
+  test('a registered name still subscribes — the guard refuses only what is missing', async () => {
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(liveFeed);
+    const alice = socketFor('s-alice', actor('alice'));
+
+    const result = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: { orgId: 'o1' } satisfies JsonValue,
+    });
+
+    expect(result.frame.type).toBe('snapshot');
   });
 });

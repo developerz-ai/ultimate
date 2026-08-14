@@ -7,6 +7,9 @@ import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import {
   isClientFault,
+  isPolicyDenial,
+  LiveQueryUnknownError,
+  POLICY_DENIAL_CODES,
   REALTIME_BORROWED_ERROR_CODES,
   REALTIME_CLIENT_FAULT_CODES,
   REALTIME_ERROR_CODES,
@@ -34,6 +37,7 @@ const ADDED_SINCE = [
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_QUERY_NOT_SUBSCRIBABLE',
+  'X_LIVE_QUERY_UNKNOWN',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
@@ -105,6 +109,8 @@ describe('isClientFault', () => {
     expect(isClientFault(new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1' }))).toBe(true);
     expect(isClientFault({ code: 'X_SUBSCRIPTION_LIMIT' })).toBe(true);
     expect(isClientFault({ code: 'X_PROTOCOL_VERSION' })).toBe(true);
+    // A name this node never registered is the client's typo, not this node's outage.
+    expect(isClientFault(new LiveQueryUnknownError({ name: 'liveFed' }))).toBe(true);
     // Borrowed from policy/auth: a surface denial is still the caller's condition.
     expect(isClientFault({ code: 'X_FORBIDDEN' })).toBe(true);
   });
@@ -121,6 +127,37 @@ describe('isClientFault', () => {
       expect(known.has(code), `${code} is in the client-fault set but nothing declares it`).toBe(
         true,
       );
+    }
+  });
+});
+
+/**
+ * The narrower question the live gates ask: not "whose fault is this" but "was this a decision at
+ * all". A cap and a stale cursor are the client's fault and still not denials — reading one as a
+ * denial is how a subscription gets destroyed for a reason nobody chose.
+ */
+describe('isPolicyDenial', () => {
+  test('only the two authz codes are decisions', () => {
+    expect(isPolicyDenial({ code: 'X_FORBIDDEN' })).toBe(true);
+    expect(isPolicyDenial({ code: 'X_UNAUTHENTICATED' })).toBe(true);
+  });
+
+  test('a client fault that is not an authz answer is still not a denial', () => {
+    expect(isPolicyDenial(new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1' }))).toBe(false);
+    expect(isPolicyDenial({ code: 'X_SUBSCRIPTION_LIMIT' })).toBe(false);
+    expect(isPolicyDenial({ code: 'X_CURSOR_STALE' })).toBe(false);
+  });
+
+  test('a timeout, a TypeError and a bare string never decided anything', () => {
+    expect(isPolicyDenial({ code: 'X_DB_TIMEOUT' })).toBe(false);
+    expect(isPolicyDenial(new TypeError('undefined is not a function'))).toBe(false);
+    expect(isPolicyDenial('a string nobody typed')).toBe(false);
+    expect(isPolicyDenial({ code: 42 })).toBe(false);
+  });
+
+  test('every denial code is a client fault — the sets are declared together, not copied', () => {
+    for (const code of POLICY_DENIAL_CODES) {
+      expect(REALTIME_CLIENT_FAULT_CODES.has(code), `${code} must be a client fault`).toBe(true);
     }
   });
 });

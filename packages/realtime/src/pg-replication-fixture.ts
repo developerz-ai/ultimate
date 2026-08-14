@@ -87,6 +87,9 @@ export const xlog = (payload: Uint8Array, walEnd = 0n): Uint8Array =>
 export const keepalive = (walEnd: bigint, replyRequested: number): Uint8Array =>
   frame('d', new ByteWriter().uint8(0x6b).int64(walEnd).int64(0n).uint8(replyRequested).finish());
 
+/** `c` CopyDone — the walsender ending the stream politely. It is still the stream ending. */
+export const copyDone = (): Uint8Array => frame('c', new Uint8Array(0));
+
 // ---- a scripted walsender ---------------------------------------------------------------------
 
 export const dataRow = (values: readonly (string | null)[]): Uint8Array => {
@@ -205,6 +208,81 @@ export class FakeWalsender implements PgStream {
   }
 }
 
+/**
+ * A walsender that parks on the `X` Terminate its connection writes on the way out, so a test can
+ * hold a stream *mid-close* and race a `stop()` against it. Production's version of that race is a
+ * SIGTERM landing on the same tick the walsender dies.
+ */
+export class ParkingWalsender extends FakeWalsender {
+  #release: (() => void) | null = null;
+  #arrive: (() => void) | null = null;
+  /** Resolves once the goodbye is parked. `release()` lets it finish. */
+  readonly parked: Promise<void> = new Promise((resolve) => {
+    this.#arrive = resolve;
+  });
+
+  override async write(bytes: Uint8Array): Promise<void> {
+    if (bytes[0] === 0x58) {
+      this.#arrive?.();
+      await new Promise<void>((resolve) => {
+        this.#release = resolve;
+      });
+    }
+    await super.write(bytes);
+  }
+
+  release(): void {
+    this.#release?.();
+  }
+}
+
+/** `d` — the tag on every frontend CopyData, which is what a standby status update travels in. */
+const COPY_DATA = 0x64;
+
+/**
+ * A walsender whose socket is gone by the time the shutdown reaches it: every frontend `CopyData`
+ * — the standby status update `stop()` confirms with, before anything else — rejects. Production's
+ * version is a connection reset landing between the last WAL read and the SIGTERM.
+ */
+export class BrokenWriteWalsender extends FakeWalsender {
+  override write(bytes: Uint8Array): Promise<void> {
+    // A socket that refuses a write is not a framework fault and not a policy denial, so a
+    // non-framework error class is the honest fixture for one.
+    if (bytes[0] === COPY_DATA) return Promise.reject(new TypeError('socket is already closed'));
+    return super.write(bytes);
+  }
+}
+
+/** A socket whose `close()` raises — the one way a teardown failure reaches a caller of `start()`. */
+export class UncloseableWalsender extends FakeWalsender {
+  override close(): void {
+    super.close();
+    throw new TypeError('socket close failed');
+  }
+}
+
+export interface FeedOptions {
+  readonly entities?: readonly string[];
+  readonly statusIntervalMs?: number;
+}
+
+/** The feed every test in this package builds — one set of options, over whatever it dials. */
+export const feedOver = (
+  dial: () => Promise<PgStream>,
+  options: FeedOptions = {},
+): PgLogicalReplicationFeed =>
+  new PgLogicalReplicationFeed({
+    url: 'postgres://replicator:secret@db.test:5432/app',
+    slot: 'ultimate_slot',
+    publication: 'ultimate_pub',
+    entities: options.entities ?? ['posts'],
+    clock: frozenClock('2026-08-09T12:00:00.000Z'),
+    stream: dial,
+    ...(options.statusIntervalMs === undefined
+      ? {}
+      : { statusIntervalMs: options.statusIntervalMs }),
+  });
+
 export const POST_COLUMNS: readonly FixtureColumn[] = [
   { name: 'id', key: true },
   { name: 'title' },
@@ -222,26 +300,11 @@ export interface Started {
 }
 
 export const start = async (
-  options: {
-    script?: ServerScript;
-    from?: string;
-    entities?: readonly string[];
-    statusIntervalMs?: number;
-  } = {},
+  options: FeedOptions & { script?: ServerScript; from?: string } = {},
 ): Promise<Started> => {
   const server = new FakeWalsender(options.script);
   const events: ChangeEvent[] = [];
-  const feed = new PgLogicalReplicationFeed({
-    url: 'postgres://replicator:secret@db.test:5432/app',
-    slot: 'ultimate_slot',
-    publication: 'ultimate_pub',
-    entities: options.entities ?? ['posts'],
-    clock: frozenClock('2026-08-09T12:00:00.000Z'),
-    stream: () => Promise.resolve(server),
-    ...(options.statusIntervalMs === undefined
-      ? {}
-      : { statusIntervalMs: options.statusIntervalMs }),
-  });
+  const feed = feedOver(() => Promise.resolve(server), options);
   await feed.start(
     options.from === undefined
       ? { onChange: (event) => void events.push(event) }

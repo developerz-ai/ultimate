@@ -97,20 +97,37 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   let sweeping: ReturnType<typeof setInterval> | null = null;
 
   /**
-   * Presence work nobody is waiting on — a leave from a synchronous close, a sweep on a timer.
-   * It reaches the bus, so it can fail; failing must not take a socket or the process with it,
-   * and must not be silent either, or "the room still shows someone who left" has nothing to read.
+   * Work nobody is waiting on — a presence leave from a synchronous close, a sweep on a timer, a
+   * fanout off the change bus. It reaches the bus or a policy, so it can fail; failing must not take
+   * a socket or the process with it, and must not be silent either, or "the room still shows someone
+   * who left" and "that change reached nobody" have nothing to read. `operation` stays low
+   * cardinality so the monitor can group on it; the topic or entity goes in `at`.
    */
-  const detach = (work: Promise<unknown>, at: string): void => {
+  const detach = (work: Promise<unknown>, operation: string, at?: string): void => {
     void work.catch((error: unknown) => {
-      logger.error('presence failed', {
-        at,
+      logger.error(`${operation} failed`, {
+        ...(at === undefined ? {} : { at }),
         error: error instanceof Error ? error.message : String(error),
       });
       // Nobody is awaiting this, so the log is the only trace it leaves — and a log is not a
       // signal anyone is paged on. The bus is this node's dependency, never the client's.
-      reportError(error, { source: 'realtime', scope: { operation: `presence.${at}` } });
+      reportError(error, { source: 'realtime', scope: { operation } });
     });
+  };
+
+  /**
+   * Everything `start()` acquired that is not a socket: the change subscription and the presence
+   * sweep. Both `drain()` and `stop()` run it, because a `drain()` is terminal on its own — it
+   * closes the hub — and `listenSyncNode` is the only caller that follows one with the other. A
+   * node that drained and kept its subscription goes on pulling changes off the bus and sweeping
+   * presence for a fleet it has already left, with no socket to deliver either to. Idempotent:
+   * running it twice is the normal case.
+   */
+  const release = (): void => {
+    changes?.unsubscribe();
+    changes = null;
+    if (sweeping !== null) clearInterval(sweeping);
+    sweeping = null;
   };
 
   const routeFrame = async (socket: SyncSocket, frame: Frame): Promise<void> => {
@@ -226,12 +243,18 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     async start(): Promise<void> {
       changes = await options.transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
         const change = parseChange(payload);
-        if (change) void options.registry.deliver(change);
+        // Not awaited: the bus handler must return before the next change, and ordering is the
+        // registry's — one serial lane per query id. What this call site owes is the failure. An
+        // unhandled rejection here is a fanout that reached nobody, reported as a dead process.
+        if (change) detach(options.registry.deliver(change), 'live.deliver', change.entity);
       });
       // One pass per heartbeat window: a member is swept only once it has actually missed its
       // window, and the interval never holds the process open — shutdown is the drain's job.
       if (presence) {
-        sweeping = setInterval(() => detach(presence.sweepAll(), 'sweep'), presence.heartbeatMs);
+        sweeping = setInterval(
+          () => detach(presence.sweepAll(), 'presence.sweep'),
+          presence.heartbeatMs,
+        );
         sweeping.unref();
       }
       ready = true;
@@ -241,10 +264,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
     async stop(): Promise<void> {
       ready = false;
-      changes?.unsubscribe();
-      changes = null;
-      if (sweeping !== null) clearInterval(sweeping);
-      sweeping = null;
+      release();
     },
 
     fetch(request: Request, server: UpgradeTarget): Response | undefined {
@@ -327,7 +347,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         // A closed socket is a leave, said now rather than left to TTL: everyone else would
         // otherwise keep rendering a member who is provably gone for the rest of its window. The
         // write is on the bus, and this callback is synchronous, so it cannot be awaited here.
-        if (presence) for (const name of topics) detach(presence.leave(name, socket.id), name);
+        if (presence) {
+          for (const name of topics)
+            detach(presence.leave(name, socket.id), 'presence.leave', name);
+        }
       },
     },
 
@@ -347,6 +370,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         socket.close(CLOSE.goingAway, 'drain');
         sockets.remove(socket.id);
       }
+      // Released once the sockets are gone rather than at the top: a client is entitled to its
+      // patches for the whole grace window, and it is entitled to them *before* the hub the
+      // fanout writes through is closed.
+      release();
       await options.hub.close();
       return plan;
     },

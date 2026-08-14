@@ -132,7 +132,7 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 | 1 | **Prototype before locking topology** | the reconnect benchmark: 50k sockets, forced `sync` restart, time-to-consistent and DB load. **Measured `As of 2026-08`** — the numbers are below, and the result is committed |
 | 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
-| 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding |
+| 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding. `LiveClient` arms **one** timer per closed socket — that delay when the node assigned one, otherwise its own `backoffDelay` — and the timer calls `connect()`. `useConnection().reconnectAt` renders the wait; `client.close()` cancels it |
 | 5 | **Per-tenant subscription caps** | a registered-query explosion is a load-shedding decision, made with a limit and a typed `X_LIVE_QUERY_LIMIT`, not by falling over |
 | 6 | **Consider wrapping an existing protocol** | if the benchmark says our matcher is the bottleneck, adopting Zero's protocol beats inventing one |
 
@@ -200,6 +200,7 @@ A client on build `A` connecting to a `sync` node on build `B` is **accepted**, 
 | `X_SUBSCRIPTION_LIMIT` | a socket or tenant reached the subscription cap | `raise realtime.limits.perSocket in app.config.ts, or unsubscribe unused live queries` |
 | `X_LIVE_QUERY_LIMIT` | a tenant registered more distinct live queries than the cap | raise the per-tenant query cap, or narrow the query set |
 | `X_PROTOCOL_VERSION` | client and server disagree on the wire format, or a malformed frame | `x build && redeploy the client; the sync node sends 'update-available' before it drains` |
+| `X_LIVE_QUERY_UNKNOWN` | a `subscribe` frame named a live query this node does not have | `x queries list --json` |
 | `X_CURSOR_STALE` | resume cursor cannot be honoured and no snapshot path was supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
 | `X_REBASE_CONFLICT` | `custom(merge)` returned nothing, or the base row vanished | `set conflict: 'server-wins' on the mutator, or return a row from custom(merge)` |
 | `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down | `x doctor — then check NATS_URL points at a reachable nats-server` |

@@ -123,6 +123,32 @@ Making that affordable:
 
 A dropped row is a metric (`live.rows_denied`), never a client-visible error — telling a client "there is a row you may not see" is itself a leak. `LiveQueryRegistry` counts every drop (`rowsDenied`) and reports each one through `onRowDenied`, carrying the query id, the subscription, the actor and the row id — never the row.
 
+That is a **denial**. A gate that never reached a decision — a rule whose lookup timed out, a predicate with a typo in it — is a different fact and gets a different number: `live.gate_failed` (`gateFailures`, reported through `onGateFailed` with the stage, the row id and the error). Reading one as the other publishes an outage as a permission change, which is silent by construction: the rows leave the screen and the drop counter explains why.
+
+| Stage | Denial | Failure |
+|---|---|---|
+| `subscribe` snapshot | row dropped | raises out of `subscribe` — a snapshot missing the undecidable rows is a short result set the client renders as the whole one |
+| `deliver` patch | dropped, or a `delete` when the subscriber holds the row | that one subscriber is desynced and re-snapshotted next flush; the fanout to the rest completes |
+
+A patch whose row the shared window does not hold is a third answer and neither of these: an update patch carries the changed columns only, so there is no whole row to decide about. It is withheld — dropped, or the one `delete` that tells a subscriber holding it so — and counted as neither, because nothing decided anything. The window *is* the result set.
+| `reauthorize` | unsubscribed, sid returned in `dropped` | the subscription survives, desynced — the row gate still decides every row under the new actor, from the same policy `authorize` consults |
+
+### One lane per query id
+
+The shared window is a read-modify-write across awaits — match, apply the patches, append to the retained buffer, then one policy pass per subscriber — and nothing upstream orders the callers. The `sync` node fires `void registry.deliver(change)` off its bus subscription, because the handler has to return before the next change arrives. Two changes back to back therefore both start, and an interleaved fanout hands one subscriber lsn 2 and then asks it to fold lsn 1 on top: the row settles at the older value, and the cursor is rewound to 1, so the next reconnect replays it again.
+
+`WindowLock` gives every entry a FIFO lane and `deliver` enters every lane before it awaits any of them. Across query ids nothing is ordered and nothing needs to be — a qid pins the query *and* its input, so two entries share no state. Three properties make the lanes safe to hold at once:
+
+| Property | Why |
+|---|---|
+| No fanout ever takes a second lane | holding all of them at once cannot be a cycle, and entering them all up front is what queues two deliveries onto each query id in call order |
+| Each task chains on a settled shadow, never on its own promise | one fanout that threw rejects its own caller; the changes queued behind it still run |
+| A lane that fails desyncs its own subscribers, and `allSettled` lets the rest finish | the window advanced under a fanout that did not, so those subscribers hold a cursor below the change; awaiting one entry before entering the next let a throw skip every entry behind it with nobody desynced |
+
+The definition's read shares the same lane and the same rule. It happens **once per entry**: a cold subscriber arriving while another's read is in flight joins it rather than issuing a second one, then runs its own policy pass over the result — the read is shared, the authz is not. It is a share and not a cache; the in-flight promise is cleared as it settles, so a subscriber arriving later reads current rows. And the window it produces is assigned in the lane and only ever forwards: a snapshot that resolved after a newer change had already been fanned out is discarded, because writing it back would hand that subscriber rows the fanout has moved past, at a cursor behind the change that would have corrected them.
+
+The one gate pass outside the lane is a resume, and it reads the live window deliberately: the window can only have moved forwards, and a row whose grant was revoked in the meantime is one the pass must refuse rather than replay from the state it had at the cursor's lsn. An entry nothing has read yet has no live window at all, so a resume onto a cold one fills it first — conditional on purpose, because re-reading per resuming subscriber is the cost a delta resume exists to skip in a restart storm.
+
 ## Cursor and reconnect
 
 Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a delta instead of a refetch.
@@ -168,7 +194,7 @@ Mitigations, all mandatory:
 | 2 | Window computed from live connection count | 500 clients drain in a second; 500k spread over minutes |
 | 3 | `resumeFrom` LSN | reconnect is a buffer delta, not a resubscribe-and-refetch |
 | 4 | Stateless `sync`, no sticky sessions | the LB redistributes clients across remaining nodes |
-| 5 | Client backoff is a floor, not the mechanism | a socket lost without a frame still backs off exponentially with jitter |
+| 5 | Client backoff is a floor, not the mechanism | a socket lost without a frame still backs off exponentially with jitter. `LiveClient` arms **one** timer per closed socket — the node's `afterMs` when a frame assigned one, otherwise `backoffDelay()` — and the timer calls `connect()`; `close()` cancels it |
 | 6 | Per-tenant subscription caps | a registered-query explosion is a load-shedding decision with `X_LIVE_QUERY_LIMIT`, not a fall-over |
 | 7 | Snapshot admission control | snapshot regeneration is queued with a concurrency cap; excess clients get a jittered retry frame |
 

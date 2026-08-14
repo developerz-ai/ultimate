@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2958671cff28c4e656cf944e6f1f0f9a3cba5e037054302fe5484651e9c85d18",
+  "buildId": "200c67d220e9e7ec976ec493910e0216e425a2233876ff5b78598aa80c446cbc",
   "tiers": {
     "0": [
       "core",
@@ -802,6 +802,11 @@
     },
     {
       "code": "X_LIVE_CLIENT_MISSING",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_LIVE_QUERY_UNKNOWN",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
     },

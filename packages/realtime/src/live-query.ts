@@ -16,7 +16,7 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
-import { ProtocolVersionError, SubscriptionLimitError } from './errors';
+import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import { canonicalJson, fnv1a, type JsonValue, type Row, type RowPatch } from './json';
 import {
   applyToWindow,
@@ -25,7 +25,9 @@ import {
   type SubscriptionShape,
 } from './matcher-bridge';
 import type { SyncSocket } from './socket';
+import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import { WindowLock } from './window-lock';
 
 /** `qid` = hash(query name, input). Fanout subjects and change windows are keyed by it. */
 export function qidOf(name: string, input: JsonValue): string {
@@ -69,36 +71,13 @@ export interface LiveSubscription {
   cursor: LiveCursor;
 }
 
-export interface LiveQueryRegistryOptions {
+export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly source: ResumeSource;
   readonly budget?: ReconnectBudget;
   readonly clock?: Clock;
   readonly maxPerSocket?: number;
   readonly maxPerTenant?: number;
   readonly tenantOf?: (actor: Actor | null) => string | null;
-  /**
-   * `live.rows_denied`. A row an actor's policy refuses is dropped, never sent and never turned
-   * into an error — telling a client "there is a row you may not see" is itself the leak. Dropped
-   * silently it is also invisible, so the drop is a metric instead.
-   */
-  readonly onRowDenied?: (event: RowDenied) => void;
-}
-
-/** One row withheld from one subscriber. Carries no row payload: the ids are the whole point. */
-export interface RowDenied {
-  readonly qid: string;
-  readonly sid: string;
-  readonly actorId: string | null;
-  readonly rowId: string;
-}
-
-/**
- * Who a decision is being made for. Every policy call in this file takes one, which is the shape
- * of the rule: there is no path through the gate that reads a query id and no actor.
- */
-interface Subscriber {
-  readonly sid: string;
-  readonly actor: Actor | null;
 }
 
 interface QueryEntry {
@@ -114,6 +93,10 @@ interface QueryEntry {
    */
   rows: readonly Row[];
   lsn: string;
+  /** Serial lane over `rows`/`lsn`. Every fanout and every window assignment takes its turn here. */
+  readonly lock: WindowLock;
+  /** The read in flight, shared by every subscriber that arrives during it. `null` between reads. */
+  reading: Promise<SnapshotResult> | null;
 }
 
 export class LiveQueryRegistry {
@@ -122,16 +105,22 @@ export class LiveQueryRegistry {
   readonly #bySid = new Map<string, LiveSubscription>();
   readonly #options: LiveQueryRegistryOptions;
   readonly #clock: Clock;
-  #rowsDenied = 0;
+  readonly #gate: SubscriberGate;
 
   constructor(options: LiveQueryRegistryOptions) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
+    this.#gate = new SubscriberGate(options);
   }
 
   /** `live.rows_denied` for this node: rows a subscriber's policy refused since boot. */
   get rowsDenied(): number {
-    return this.#rowsDenied;
+    return this.#gate.rowsDenied;
+  }
+
+  /** `live.gate_failed` for this node: gates that raised instead of deciding. Never a denial. */
+  get gateFailures(): number {
+    return this.#gate.gateFailures;
   }
 
   register(definition: LiveQueryDefinition): this {
@@ -163,13 +152,10 @@ export class LiveQueryRegistry {
     cursor?: LiveCursor | null;
   }): Promise<{ subscription: LiveSubscription; frame: Frame }> {
     const definition = this.#definitions.get(args.name);
-    if (!definition) {
-      throw new ProtocolVersionError({
-        got: args.name,
-        expected: PROTOCOL_VERSION,
-        detail: `no live query registered as "${args.name}" — client and server manifests differ`,
-      });
-    }
+    // A name this node never registered, and not a protocol skew: the frame parsed, the version
+    // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
+    // client "x build && redeploy the client" for a typo no rebuild changes.
+    if (!definition) throw new LiveQueryUnknownError({ name: args.name });
     this.#assertLimits(args.socket);
     await definition.authorize?.({ actor: args.socket.actor, input: args.input });
     // After this subscriber's own decision, never before it: resolving a shape for a caller who
@@ -189,11 +175,19 @@ export class LiveQueryRegistry {
         snapshot: async () => await this.#read(entry, { sid, actor: args.socket.actor }),
       });
       if (resumed.kind === 'delta') {
-        const patches = await this.#filterPatches(
+        // The gate decides about whole rows out of the shared window, and an entry nothing has read
+        // yet has none — every patch would meet an empty window and be withheld. Filling is
+        // conditional on purpose: a restart storm resumes onto entries that already hold a live
+        // window, and re-reading per resuming subscriber is the cost a delta resume exists to skip.
+        if (entry.lsn === '') await this.#fill(entry);
+        // The live entry on purpose: a resume runs outside the lane, so the window under it may
+        // have moved on — always forwards, and a row whose grant was revoked in the meantime is
+        // one this pass must refuse rather than replay from the state it had at the cursor's lsn.
+        const patches = await this.#gate.filterPatches(
           entry,
           { sid, actor: args.socket.actor },
           resumed.patches,
-          args.cursor,
+          new Set(args.cursor.ids),
         );
         const subscription = this.#attach(entry, args.socket, sid, resumed.cursor);
         return {
@@ -245,7 +239,8 @@ export class LiveQueryRegistry {
   /**
    * Actor changed mid-connection (login, logout, role change): re-run subscribe-time authz and drop
    * what is no longer allowed. Survivors are marked desynced so the next flush re-snapshots them
-   * under the new actor's row policy.
+   * under the new actor's row policy. Returns the sids that were dropped — a denial and nothing
+   * else, so a caller may tell the client "you may no longer see this" and be right.
    */
   async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
     const dropped: string[] = [];
@@ -256,11 +251,24 @@ export class LiveQueryRegistry {
           actor: socket.actor,
           input: subscription.input,
         });
-        socket.markDesynced(subscription.sid);
-      } catch {
-        this.unsubscribe(subscription.sid);
-        dropped.push(subscription.sid);
+      } catch (error) {
+        if (isPolicyDenial(error)) {
+          this.unsubscribe(subscription.sid);
+          dropped.push(subscription.sid);
+          continue;
+        }
+        // Not a decision — the gate never reached one. Destroying the subscription would report a
+        // database timeout as a revoked grant, and a client does not resubscribe to a denial. It
+        // survives, desynced: nothing is delivered from the window built under the old actor, and
+        // the row gate still decides every row under the new one, from the same policy `authorize`
+        // consults. The failure is counted and reported rather than silently absorbed.
+        this.#gate.failedAuthorize(
+          subscription.qid,
+          { sid: subscription.sid, actor: socket.actor },
+          error,
+        );
       }
+      socket.markDesynced(subscription.sid);
     }
     return dropped;
   }
@@ -268,48 +276,95 @@ export class LiveQueryRegistry {
   /**
    * Fan one change out. Matched once per query id, authorized once per subscriber. Returns the
    * number of frames sent — the metric the reconnect benchmark watches.
+   *
+   * Each entry's turn is taken in that entry's lane. Nothing upstream orders this: `sync` fires
+   * `void registry.deliver(change)` straight off the bus subscription, so two changes arriving back
+   * to back would otherwise interleave inside one query id — lsn 2 delivered before lsn 1, the
+   * subscriber's cursor rewound to 1, and every gate deciding against whichever window won.
+   *
+   * Every lane is *entered* before any of them is awaited, and nothing inside a fanout takes a
+   * second lane, so holding all of them at once cannot be a cycle. That is what makes the ordering
+   * claim true: two deliveries queue onto each query id in call order, serialized per query id and
+   * never per node — awaiting one entry before entering the next made one slow policy pass the
+   * whole node's pace, and let a lane that threw skip every entry behind it with nobody desynced.
    */
   async deliver(change: ChangeEvent): Promise<number> {
+    const lanes = [...this.#entries.values()].map(async (entry) => {
+      try {
+        return await entry.lock.run(() => this.#fanout(entry, change));
+      } catch (error) {
+        // The window advanced under a fanout that did not finish, so every subscriber of this one
+        // query id now holds a cursor below the change and no later flush would correct them:
+        // desynced here, re-snapshotted on the next one. Silent divergence is the whole reason
+        // `markDesynced` exists, and skipping this is how a failure became one.
+        for (const subscription of entry.subscribers.values()) {
+          subscription.socket.markDesynced(subscription.sid);
+        }
+        throw error;
+      }
+    });
+    // `allSettled`, so one lane's rejection neither cancels the others nor goes unhandled. The
+    // first failure still reaches the caller — `sync` logs it — but it costs one query id.
     let sent = 0;
-    for (const entry of this.#entries.values()) {
-      const result = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
-      if (!result) continue;
-      entry.lsn = change.lsn;
-      entry.rows = applyToWindow(entry.rows, result.patches);
-      // The retained window holds the pre-policy patch; resume re-filters it per subscriber.
-      for (const patch of result.patches) this.#options.source.append(entry.qid, patch);
+    let failure: { readonly error: unknown } | null = null;
+    for (const lane of await Promise.allSettled(lanes)) {
+      if (lane.status === 'fulfilled') sent += lane.value;
+      else failure ??= { error: lane.reason };
+    }
+    if (failure !== null) throw failure.error;
+    return sent;
+  }
 
-      for (const subscription of entry.subscribers.values()) {
-        if (result.refill) {
-          // The window lost its tail: guessing is how a sync engine silently diverges.
-          subscription.socket.markDesynced(subscription.sid);
-          continue;
-        }
-        const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
-        const allowed: RowPatch[] = [];
-        for (const patch of result.patches) {
-          const gated = await this.#gate(
-            entry,
-            who,
-            patch,
-            subscription.cursor.ids.includes(patch.id),
-          );
-          if (gated) allowed.push(gated);
-        }
-        if (allowed.length === 0) continue;
-        const frame: Frame = {
-          type: 'patch',
-          v: PROTOCOL_VERSION,
-          sid: subscription.sid,
-          patches: allowed,
-          lsn: change.lsn,
-        };
-        if (subscription.socket.send(frame)) {
-          subscription.cursor = advance(subscription.cursor, allowed, change.lsn, change.at);
-          sent += 1;
-        } else {
-          subscription.socket.markDesynced(subscription.sid);
-        }
+  /**
+   * One change, one query id, inside that entry's lane — so the window this mutates at the top is
+   * still the window every subscriber's gate reads at the bottom, and the patches reach the
+   * retained buffer in the order the client will be asked to fold them.
+   */
+  async #fanout(entry: QueryEntry, change: ChangeEvent): Promise<number> {
+    const result = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
+    if (!result) return 0;
+    entry.lsn = change.lsn;
+    entry.rows = applyToWindow(entry.rows, result.patches);
+    // The retained window holds the pre-policy patch; resume re-filters it per subscriber.
+    for (const patch of result.patches) this.#options.source.append(entry.qid, patch);
+
+    let sent = 0;
+    for (const subscription of entry.subscribers.values()) {
+      if (result.refill) {
+        // The window lost its tail: guessing is how a sync engine silently diverges.
+        subscription.socket.markDesynced(subscription.sid);
+        continue;
+      }
+      const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
+      let allowed: readonly RowPatch[];
+      try {
+        allowed = await this.#gate.filterPatches(
+          entry,
+          who,
+          result.patches,
+          new Set(subscription.cursor.ids),
+        );
+      } catch {
+        // Already counted and reported as a gate failure. Degrade this one subscriber the way a
+        // lost window tail degrades them — desynced, re-snapshotted on the next flush — because
+        // rejecting here would abandon the fanout to every other subscriber over one actor's
+        // broken rule, and delivering the patches anyway would be the leak.
+        subscription.socket.markDesynced(subscription.sid);
+        continue;
+      }
+      if (allowed.length === 0) continue;
+      const frame: Frame = {
+        type: 'patch',
+        v: PROTOCOL_VERSION,
+        sid: subscription.sid,
+        patches: allowed,
+        lsn: change.lsn,
+      };
+      if (subscription.socket.send(frame)) {
+        subscription.cursor = advance(subscription.cursor, allowed, change.lsn, change.at);
+        sent += 1;
+      } else {
+        subscription.socket.markDesynced(subscription.sid);
       }
     }
     return sent;
@@ -357,71 +412,52 @@ export class LiveQueryRegistry {
       subscribers: new Map(),
       rows: [],
       lsn: '',
+      lock: new WindowLock(),
+      reading: null,
     };
     this.#entries.set(qid, created);
     return created;
   }
 
-  /** One read, then one policy pass per subscriber. Never one read per subscriber. */
+  /**
+   * One read, then one policy pass per subscriber. Never one read per subscriber — and never a
+   * partial pass: a gate that fails raises out of `subscribe`, because a snapshot missing the rows
+   * nobody could decide about is a short result set this subscriber would render as the whole one.
+   */
   async #read(entry: QueryEntry, who: Subscriber): Promise<SnapshotResult> {
-    const result = await entry.definition.snapshot({ input: entry.input });
-    entry.rows = result.rows;
-    entry.lsn = result.lsn;
-    const rows: Row[] = [];
-    for (const row of result.rows) {
-      if (await entry.definition.visible({ actor: who.actor, row, input: entry.input })) {
-        rows.push(row);
-      } else {
-        this.#denied(entry, who, row.id);
-      }
-    }
-    return { rows, lsn: result.lsn };
-  }
-
-  async #filterPatches(
-    entry: QueryEntry,
-    who: Subscriber,
-    patches: readonly RowPatch[],
-    cursor: LiveCursor,
-  ): Promise<RowPatch[]> {
-    const held = new Set(cursor.ids);
-    const out: RowPatch[] = [];
-    for (const patch of patches) {
-      const allowed = await this.#gate(entry, who, patch, held.has(patch.id));
-      if (allowed) out.push(allowed);
-    }
-    return out;
+    const window = await this.#fill(entry);
+    return { rows: await this.#gate.filterRows(entry, who, window.rows), lsn: window.lsn };
   }
 
   /**
-   * Row-level authz. A row that becomes invisible is converted to a `delete` when the subscriber
-   * holds it — otherwise a revoked grant would leave a stale row on screen forever.
+   * The window this subscriber is served from, read once per entry. A subscriber arriving while
+   * another's read is in flight joins that read rather than issuing its own — N cold subscribers on
+   * one query id being N reads is the shared window not existing.
+   *
+   * The result lands in the lane, and never backwards. A snapshot that resolved after a newer change
+   * had already been fanned out would rewind every later subscriber to rows the window has moved
+   * past, so a stale read is discarded and its caller is served from the newer window instead.
    */
-  async #gate(
-    entry: QueryEntry,
-    who: Subscriber,
-    patch: RowPatch,
-    holds: boolean,
-  ): Promise<RowPatch | null> {
-    if (patch.op === 'delete' || patch.row === null) return patch;
-    // The policy always sees the whole row from the shared window — a patch carries changed
-    // columns only, and authorizing a partial row is how a row policy silently starts failing.
-    const full = entry.rows.find((row) => row.id === patch.id);
-    const row: Row = { ...(full ?? {}), ...patch.row, id: patch.id };
-    if (await entry.definition.visible({ actor: who.actor, row, input: entry.input })) return patch;
-    this.#denied(entry, who, patch.id);
-    return holds ? { op: 'delete', id: patch.id, row: null, lsn: patch.lsn } : null;
+  async #fill(entry: QueryEntry): Promise<{ rows: readonly Row[]; lsn: string }> {
+    const result = await (entry.reading ?? this.#startRead(entry));
+    return await entry.lock.run(async () => {
+      if (result.lsn >= entry.lsn) {
+        entry.rows = result.rows;
+        entry.lsn = result.lsn;
+      }
+      return { rows: entry.rows, lsn: entry.lsn };
+    });
   }
 
-  /** `live.rows_denied`. Counted here and nowhere else, so every drop is one increment. */
-  #denied(entry: QueryEntry, who: Subscriber, rowId: string): void {
-    this.#rowsDenied += 1;
-    this.#options.onRowDenied?.({
-      qid: entry.qid,
-      sid: who.sid,
-      actorId: who.actor === null ? null : who.actor.id,
-      rowId,
-    });
+  /** Publishes the in-flight read, and clears it as it settles — the share is per read, not a cache. */
+  #startRead(entry: QueryEntry): Promise<SnapshotResult> {
+    const reading = entry.definition.snapshot({ input: entry.input });
+    entry.reading = reading;
+    const done = (): void => {
+      if (entry.reading === reading) entry.reading = null;
+    };
+    void reading.then(done, done);
+    return reading;
   }
 
   #assertLimits(socket: SyncSocket): void {

@@ -217,4 +217,21 @@ describe('the node runs the sweep', () => {
     // A timer left behind sweeps for a node that has stopped, on a transport that may be closed.
     expect(swept.mock.calls.length).toBe(after);
   }, 10_000);
+
+  test('drain() clears it too, without waiting for a stop() that may never come', async () => {
+    const app = harness(3_000);
+    const swept = spyOn(app.presence, 'sweepAll');
+    await app.node.start();
+    await Bun.sleep(1_200);
+    expect(swept.mock.calls.length).toBeGreaterThan(0);
+
+    await app.node.drain({ graceMs: 0 });
+    const after = swept.mock.calls.length;
+    await Bun.sleep(1_200);
+
+    // A drained node has handed its sockets to the fleet: it is sweeping a room it has left,
+    // and it does it through a hub `drain()` already closed.
+    expect(swept.mock.calls.length).toBe(after);
+    await app.node.stop();
+  }, 10_000);
 });

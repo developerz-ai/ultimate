@@ -98,6 +98,9 @@ async function harness(): Promise<Harness> {
     queue,
     clock: frozenClock(1_000),
     rng: () => 0,
+    // Arms nothing: a closed socket here must not leave a real `setTimeout` dialling behind the
+    // test that closed it. The timer itself is `client.test.ts`'s subject, not this file's.
+    scheduler: () => () => {},
   });
   return { client, socket, store, queue };
 }
@@ -383,7 +386,7 @@ describe('useMutationQueue', () => {
     expect(queue.pending()).toHaveLength(1);
     const beforeReconnect = notifications();
 
-    client.connect(); // the reconnect: a real driver would call this again after `reconnectAt`
+    client.connect(); // the reconnect, called directly: the timer that arms it is `client.test.ts`
     socket.open();
     await flush();
 

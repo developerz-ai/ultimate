@@ -54,7 +54,8 @@ export type LiveInput = JsonValue | (() => JsonValue);
 
 /**
  * A callable result set: `feed()` are the rows, `feed.state()` / `feed.cursor()` /
- * `feed.unsubscribe()` are the rest of the `LiveHandle` hanging off it.
+ * `feed.unsubscribe()` are the rest of the `LiveHandle` hanging off it. It is also `Disposable`
+ * (inherited from `LiveHandle`), so `using feed = useLive(...)` unsubscribes on scope exit.
  *
  * `R` is only constrained to `object`: on the wire every row is a `Row`, but a hook bound to a
  * declared query (`query-hook.ts`) answers in that query's own row type, which is whatever its
@@ -70,7 +71,7 @@ export type LiveRows<R extends object = Row> = (() => readonly R[]) & Omit<LiveH
  * A thunk `input` is read **once**, at subscribe time: tier 3 has no reactive runtime of its own,
  * so nothing re-runs it when its dependencies change. Changing input means a new subscription.
  * The caller owns `unsubscribe` — nothing here disposes on unmount, because nothing here knows
- * what a mount is.
+ * what a mount is. `using` works too, when the caller does have a scope to hang it on.
  */
 export function useLive<R extends Row = Row>(query: LiveQueryRef, input: LiveInput): LiveRows<R> {
   const handle = live('useLive').client.useLive<R>(
@@ -81,6 +82,7 @@ export function useLive<R extends Row = Row>(query: LiveQueryRef, input: LiveInp
     state: handle.state,
     cursor: handle.cursor,
     unsubscribe: handle.unsubscribe,
+    [Symbol.dispose]: handle[Symbol.dispose],
   });
 }
 

@@ -17,6 +17,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
   'X_LIVE_ROW_UNIDENTIFIED',
+  'X_LIVE_QUERY_UNKNOWN',
   'X_QUERY_NOT_SUBSCRIBABLE',
 ] as const;
 
@@ -28,31 +29,53 @@ export const REALTIME_OWNED_ERROR_CODES = [
 export const REALTIME_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
 
 /**
- * The sync protocol's answer to "which of these is a 4xx". A denied topic, a subscription cap, a
- * skewed protocol version and a cursor that fell out of the buffer are all conditions the CLIENT
- * caused and the ack frame already explains — so an error monitor that held them would be a log
- * nobody reads. Everything else, including an accidental `TypeError`, is this node's fault.
- * Kept beside the code list so the two cannot drift.
+ * The two codes an authz **decision** carries. Everything else a gate throws — a rule that reached
+ * for a row and timed out, a predicate with a typo in it — is a failure to reach a decision at all,
+ * and reading one as "denied" publishes an outage as a permission change: rows leave the screen,
+ * `live.rows_denied` ticks up, and nothing ever pages anyone.
  */
-export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
-  'X_TOPIC_FORBIDDEN',
-  'X_SUBSCRIPTION_LIMIT',
-  'X_PROTOCOL_VERSION',
-  'X_CURSOR_STALE',
-  'X_REBASE_CONFLICT',
+export const POLICY_DENIAL_CODES: ReadonlySet<string> = new Set([
   'X_FORBIDDEN',
   'X_UNAUTHENTICATED',
 ]);
 
+/**
+ * The sync protocol's answer to "which of these is a 4xx". A denied topic, a subscription cap, a
+ * skewed protocol version and a cursor that fell out of the buffer are all conditions the CLIENT
+ * caused and the ack frame already explains — so an error monitor that held them would be a log
+ * nobody reads. Everything else, including an accidental `TypeError`, is this node's fault.
+ * Kept beside the code list so the two cannot drift, and it spreads the denial codes rather than
+ * respelling them: a denial is always the client's own condition.
+ */
+export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
+  ...POLICY_DENIAL_CODES,
+  'X_TOPIC_FORBIDDEN',
+  'X_SUBSCRIPTION_LIMIT',
+  'X_PROTOCOL_VERSION',
+  'X_LIVE_QUERY_UNKNOWN',
+  'X_CURSOR_STALE',
+  'X_REBASE_CONFLICT',
+]);
+
 /** True when the client is the one who can fix it, so the node must not page anyone about it. */
 export function isClientFault(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof (error as { code: unknown }).code === 'string' &&
-    REALTIME_CLIENT_FAULT_CODES.has((error as { code: string }).code)
-  );
+  return REALTIME_CLIENT_FAULT_CODES.has(codeOf(error) ?? '');
+}
+
+/**
+ * True when a gate **decided** against the actor, false when it never got that far. The gates take
+ * arbitrary functions — `LiveQueryDefinition.authorize` and `.visible` are supplied by the caller —
+ * so the question is asked of the error's code rather than of a class this package could import.
+ */
+export function isPolicyDenial(error: unknown): boolean {
+  return POLICY_DENIAL_CODES.has(codeOf(error) ?? '');
+}
+
+/** The `X_*` code an unknown throw carries, or `null` — the one place that reads it off `unknown`. */
+function codeOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return null;
+  const code = (error as { code: unknown }).code;
+  return typeof code === 'string' ? code : null;
 }
 
 /** Every code realtime can throw through `RealtimeError`: the ones it owns plus the borrowed one. */
@@ -77,6 +100,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
+  X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
   X_QUERY_NOT_SUBSCRIBABLE: 'a hook was bound to a query that is not declared live',
 };
 
@@ -267,6 +291,30 @@ export class LiveRowUnidentifiedError extends RealtimeError {
       code: 'X_LIVE_ROW_UNIDENTIFIED',
       cause: `live query "${args.query}" returned a row with no id (columns: ${args.keys.join(', ') || 'none'})`,
       fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
+    });
+  }
+}
+
+/**
+ * A `subscribe` frame named a live query this node does not have. Distinct from a version skew
+ * because the two have opposite instructions: this one was reported as `X_PROTOCOL_VERSION`, whose
+ * fix is "x build && redeploy the client" — and redeploying a client that spells the name the same
+ * way changes nothing, while the registry that would have shown the mismatch never gets opened.
+ * A misspelling and an unregistered query produce the same frame, so the fix names both.
+ *
+ * The name it prints is the one the client sent; the registry is never enumerated back over the
+ * wire, because an unauthenticated socket asking for "a" through "zz" is not entitled to a list of
+ * every read this app declares.
+ *
+ * `fix` is the command and nothing else. What to do with what it prints belongs in `cause`: a fix
+ * line is pasted into a shell, so prose appended to it is a command that does not run.
+ */
+export class LiveQueryUnknownError extends RealtimeError {
+  constructor(args: { name: string }) {
+    super({
+      code: 'X_LIVE_QUERY_UNKNOWN',
+      cause: `no live query is registered as "${args.name}" on this node — subscribe under a name the registry prints, or pass the query to defineApi({ queries }) if it is missing`,
+      fix: 'x queries list --json',
     });
   }
 }

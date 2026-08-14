@@ -82,6 +82,28 @@ describe('visibleWithPolicy', () => {
     );
     await expect(visible({ actor: null, row, input })).resolves.toBe(false);
   });
+
+  test('a rule that throws is a failure, not a denial — it reaches the caller', async () => {
+    // The bug this pins: a bare `catch { return false }` read a dead database as "you may not see
+    // this row". The rows leave the screen, `live.rows_denied` counts the drop, and no error ever
+    // reaches the node — an outage published as a permission change.
+    const visible = visibleWithPolicy(
+      {
+        kind: 'permission' as const,
+        label: 'row:read',
+        permissions: [],
+        children: [],
+        run: () => {
+          // A `TypeError` on purpose: what the gate must not do is read *any* non-denial as one,
+          // and a framework error would leave "it matched a code" as an explanation for passing.
+          throw new TypeError('connection pool exhausted');
+        },
+      },
+      options(),
+    );
+
+    await expect(visible({ actor: null, row, input })).rejects.toThrow('connection pool exhausted');
+  });
 });
 
 describe('authorizeWithPolicy', () => {

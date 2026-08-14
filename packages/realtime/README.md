@@ -53,7 +53,7 @@ frame handler is unchanged between rungs.
 | replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus client | `NatsConnection`, `NatsProtocolParser`, `NatsKvSet`, `ensureKvBucket`, `parseNatsUrl`, `bunNatsStream`, `FakeNatsServer` |
-| reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `drainPlan`, `AcceptBudget` |
+| reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `Scheduler`, `timeoutScheduler`, `drainPlan`, `AcceptBudget` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
@@ -80,6 +80,7 @@ const queue = useMutationQueue();                               // .pending .fai
 | Every member is a **getter**, every result set an **accessor** | a value snapshotted at hook time never re-renders |
 | A thunk `input` is read **once**, at subscribe time | nothing here re-runs it; changing input is a new subscription |
 | The caller owns `unsubscribe` | this layer does not know what a mount is |
+| Every subscription handle (`useLive`'s return, `client.subscribe(topic, …)`'s return) is `Disposable` | `using feed = useLive(liveFeed, () => input)` unsubscribes on scope exit — the same call as `unsubscribe()`, never a second teardown path |
 | `pending` / `failed` are read off the queue, through an invalidation signal refreshed on each `mutate` and `drain` | the count is never a second copy of the queue, and `OfflineQueue` holds arrays, not signals |
 
 Tier 2 has no queue, so `pending` is `0` there — stated, not guessed.
@@ -132,6 +133,12 @@ sends a `reconnect` frame carrying that delay — clients redistribute instead o
 `AcceptBudget` is the receiving node's token bucket, and a refusal always carries a retry delay,
 because refusing without one just moves the herd next door.
 
+The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
+frame assigned one, otherwise `backoffDelay()` — and that timer calls `connect()`, which re-sends
+`hello` with every cursor and re-subscribes every registration. `reconnectAt` is what a component
+renders while it waits; `close()` cancels it, and `connect()` starts over. The timer comes from an
+injected `Scheduler`, so a test fires it by hand instead of sleeping.
+
 ### Limits, stated plainly
 
 - **The change window is per node.** A client that reconnects to a *different* `sync` node has no
@@ -142,6 +149,29 @@ because refusing without one just moves the herd next door.
   it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next flush re-snapshots rather than diverging.
+- **Deliveries are serialized per query id, not per node.** A change is fanned out inside that
+  query's own FIFO lane, so two changes off the bus cannot interleave: the window one of them
+  writes is the window every subscriber's gate reads, and patch frames leave in lsn order. Every
+  lane is entered before any is awaited, so one slow policy pass never sets the node's pace, and
+  across query ids there is no ordering and none is wanted — a qid pins both the query and its
+  input. A lane that fails costs one query id: its own subscribers are desynced and re-snapshotted
+  on the next flush, every other query id still sees the change, and the failure still reaches the
+  caller.
+- **A cold subscribe reads once per query id.** Subscribers arriving during a read join it and each
+  runs its own policy pass over the result. A read that resolves behind a change already fanned out
+  is discarded rather than written back: the window only ever moves forwards.
+- **A denial drops a row; a gate that could not decide does not.** A policy answer (`X_FORBIDDEN`,
+  `X_UNAUTHENTICATED`) is a decision and costs the row, counted as `rowsDenied`. Anything else a
+  gate throws — a rule whose lookup timed out, a predicate with a typo — is counted as
+  `gateFailures` and reported through `onGateFailed`, never as a denial: it raises out of
+  `subscribe`, desyncs exactly the one subscriber it happened to during a delivery, and leaves a
+  subscription standing at `reauthorize`. Reading a timeout as "you may no longer see this" is an
+  outage published as a permission change.
+- **A patch is authorized against the whole row or it is not authorized.** An update patch carries
+  the changed columns only, so a rule reading a column the change did not touch would read
+  `undefined` and answer as if the row had said so. A patch whose row the shared window does not
+  hold is withheld — the window *is* the result set — and a subscriber holding that row gets the
+  one `delete` that says so. It counts as neither a denial nor a gate failure: nothing decided.
 - **`PgLogicalReplicationFeed` decodes `pgoutput` off a real slot** — its own Postgres v3 client
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication and the slot, creates the slot when there is none, and confirms the slot as it goes so
@@ -193,9 +223,15 @@ because refusing without one just moves the herd next door.
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
-`X_LIVE_CLIENT_MISSING` · `X_NOT_IMPLEMENTED`
+`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.
+
+A `subscribe` frame naming a query this node never registered is `X_LIVE_QUERY_UNKNOWN`, not
+`X_PROTOCOL_VERSION`: the frame parsed and the version matched, so "rebuild and redeploy the
+client" is the one instruction that cannot help — a rebuilt client spells the name the same way.
+The fix is `x queries list --json`, and the name the client sent is echoed back while the registry
+never is.
 
 `As of 2026-07`: tiers 1–2 target v1, tier 3 targets v2.

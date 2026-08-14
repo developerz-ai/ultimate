@@ -225,6 +225,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_LIVE_CLIENT_MISSING` | a realtime hook ran with no `LiveClient` registered | `useLive` / `useConnection` / `useMutation` / `useMutationQueue` on a page whose entry never registered one | `setLiveClient(new LiveClient({ signal: createSignal, connect, buildId }))` in the app entry, above the first render |
 | `X_QUERY_NOT_SUBSCRIBABLE` | a hook was bound to a query that is not declared live | `liveHookFor(orgPosts)` where `orgPosts` has no `live: true` — there is no subscription for the hook to read, so it could only ever answer an empty set | add `live: true` to the query declaration, or read it once through `query.client({ baseUrl })` |
 | `X_LIVE_ROW_UNIDENTIFIED` | a live query returned a row with no id | a `live: true` read whose projection selects columns but not the primary key — patches, cursors and the local store all address a row by `id` | select the primary key in that query's `sql()`, or drop `live: true` from it |
+| `X_LIVE_QUERY_UNKNOWN` | no live query is registered under the name a `subscribe` frame asked for | a misspelled name, or a query never passed to `defineApi({ queries })` — the frame parsed and the version matched, so this is not a protocol skew and a client rebuild cannot change it | `x queries list --json` |
 
 ## Cache
 
