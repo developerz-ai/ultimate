@@ -12,7 +12,7 @@ import {
   ROLES,
   sentryErrorReporter,
 } from '@ultimat3/core';
-import { type MigrationReport, migrate } from '@ultimat3/db';
+import { checkDrift, type DriftReport, type MigrationReport, migrate } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
@@ -126,6 +126,8 @@ export interface MigratedApp {
   readonly kind: 'migrated';
   readonly role: 'migrate';
   readonly report: MigrationReport;
+  /** The post-condition: the live schema against the ledger this run just wrote. */
+  readonly drift: DriftReport;
 }
 
 export type StartedApp = ServedApp | MigratedApp;
@@ -139,6 +141,13 @@ export type StartedApp = ServedApp | MigratedApp;
  *
  * It boots the queue, not the whole runtime: this role touches the database and nothing else, and
  * `startQueue` is what installs `db()` for `migrate()` to find.
+ *
+ * The drift check is the post-condition, and it lives here rather than in `cmd-db.ts` for the same
+ * reason the migrator does: it needs the connection this function opened, and a developer and a
+ * release phase must not verify different things. It is **returned, never thrown** — the role's
+ * contract is "apply every migration, then exit", and a schema difference after a clean apply is a
+ * diagnostic, not a failed migration. `x db migrate` is where it is actionable, so `x db migrate`
+ * is what fails on it.
  */
 export async function runMigrations(options: ServeOptions): Promise<MigratedApp> {
   const queue = await startQueue(resolveServices(options.root, options.env));
@@ -155,7 +164,17 @@ export async function runMigrations(options: ServeOptions): Promise<MigratedApp>
       available: migrations.length,
       appVersion: report.appVersion,
     });
-    return { kind: 'migrated', role: 'migrate', report };
+    const drift = await checkDrift({ migrations });
+    // Logged with the first difference, not just a count: a release phase's log is the only place
+    // an operator sees this, and "3 differences" names nothing to act on.
+    if (!drift.ok) {
+      logger.warn('ultimate migrate drift', {
+        differences: drift.differences.length,
+        cause: drift.differences[0]?.cause,
+        fix: drift.differences[0]?.fix,
+      });
+    }
+    return { kind: 'migrated', role: 'migrate', report, drift };
   } finally {
     await queue.stop();
   }

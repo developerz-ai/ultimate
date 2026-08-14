@@ -9,13 +9,12 @@
 
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { branchPglite } from '@ultimat3/db';
+import { branchPglite, type DriftReport, driftError } from '@ultimat3/db';
 import { requireAppRoot } from './app-root';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { generateAppMigration } from './db-generate';
 import { resolveServices } from './dev-services';
-import { checkDrift } from './drift';
 import { CliNotImplementedError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
@@ -194,10 +193,23 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
 }
 
 /**
+ * The post-migrate report, rendered. Through `driftError` rather than a second literal: the
+ * three-line `X_DB_DRIFT` output is pinned by the framework contract, and this command must not be
+ * where a copy of it drifts from the one `x verify` prints.
+ */
+export const driftFindings = (report: DriftReport): readonly Finding[] =>
+  report.differences.map((difference) => findingFrom(driftError(difference)));
+
+/**
  * `runMigrations` is `serve.ts`'s, unchanged and unwrapped: the developer applying a migration and
  * the release-phase container applying it run the same function, over the same file list, through
- * the same ledger. Drift is the post-condition on both — a schema that migrated cleanly and still
- * disagrees with the entities is the failure this command exists to surface.
+ * the same ledger, and verify the same post-condition — the live schema against that ledger. A
+ * database that migrated cleanly and still disagrees is the failure this command exists to
+ * surface, and only a check that opened the connection can see it.
+ *
+ * The *source* half — an entity edited with no migration generated — is `x verify`'s `drift` step
+ * (`checkSourceDrift`) and is deliberately not repeated here: two reporters of one condition is the
+ * duplication this package's own rule forbids, and that one needs no database at all.
  */
 async function runMigrate(
   ctx: CommandContext,
@@ -206,13 +218,12 @@ async function runMigrate(
 ): Promise<CommandResult> {
   try {
     const migrated = await runMigrations({ root, env: ctx.env });
-    const drift = await checkDrift(root);
     const report = migrated.report;
     return {
-      ok: drift.length === 0,
+      ok: migrated.drift.ok,
       command: 'db',
       summary,
-      findings: drift,
+      findings: driftFindings(migrated.drift),
       data: {
         applied: report.applied.map((entry) => entry.id),
         skipped: report.skipped.length,

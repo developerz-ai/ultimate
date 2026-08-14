@@ -272,6 +272,23 @@ competing with it would only report the same fault in worse words. `@ultimat3/en
 `@ultimat3/ai`'s live tests import it rather than hand-rolling a seventh copy; splitting a script is
 one question with one answer (axiom 1).
 
+`checkDrift()` is the **post-migrate verification** and the only drift question that needs a
+database: the live catalog against the ledger the run just wrote. It is asked where a connection is
+open — `@ultimat3/cli`'s `runMigrations`, which is `x db migrate`, `x db reset` and `ROLE=migrate`
+alike — and returned, never thrown. The *other* `X_DB_DRIFT` is `@ultimat3/cli`'s
+`checkSourceDrift`: the entity source hashed against what `x db gen` recorded, no database, which is
+what `x verify`'s `drift` step runs in a CI with nothing listening. Two conditions, two detectors,
+one code — and neither may grow the other's half. Until 1.2.0 both were named `checkDrift`, the
+file-hash one was wired everywhere and this one had no callers at all.
+
+`appTables()` is why it can run: a table in the `x_` namespace is framework bookkeeping — the
+ledger, `x_jobs`/`x_job_steps`, `x_outbox` and every `@ultimat3/auth` table are `create table if not
+exists` at boot, declared by no migration and carried in no snapshot, so counted as app schema they
+are eight `unexpected-table` findings against a correct database. The prefix is the rule, not a
+list, so a table a future package adds needs no second declaration here. `introspect()` keeps its
+narrower default (`x_migrations` alone) because the admin schema view and the MCP `schema.describe`
+tool legitimately show `x_users` — only drift wants the whole namespace gone.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

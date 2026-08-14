@@ -21,7 +21,7 @@ import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
-import { checkDrift } from './drift';
+import { checkSourceDrift } from './drift';
 import { checkErrorFixes } from './error-contract';
 import { BadFlagError } from './errors';
 import { msg } from './messages';
@@ -99,10 +99,12 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   ...TEST_STEPS,
   {
     name: 'drift',
-    summary: 'schema vs migrations',
+    summary: 'schema source vs migrations',
     // Only an app owns migrations; a package monorepo's `packages/db` is the driver, not a schema.
+    // Source, not database: the gate runs in CI with nothing listening, and the database half is
+    // the post-migrate verification `runMigrations` performs where a connection is already open.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
-    run: async (ctx) => fromFindings(await checkDrift(ctx.root)),
+    run: async (ctx) => fromFindings(await checkSourceDrift(ctx.root)),
   },
   {
     name: 'contract-diff',

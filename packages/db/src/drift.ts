@@ -145,12 +145,40 @@ export function expectedSchema(
   return declaredSchema(migrations.filter((migration) => applied.has(migration.id)));
 }
 
+/**
+ * Framework bookkeeping is not app schema. The ledger, the job queue's tables, the outbox and
+ * every `@ultimat3/auth` table are created by `create table if not exists` at boot — no migration
+ * declares them and no snapshot carries them, so each one reads as `unexpected-table` against a
+ * schema that is in fact correct. The `x_` prefix is the convention every framework table already
+ * follows, so a table a future package adds needs no second list here.
+ *
+ * `introspect()` keeps its own narrower default (`x_migrations` alone) on purpose: the admin
+ * dashboard's schema view and the MCP `schema.describe` tool legitimately show `x_users`. Only
+ * drift wants the whole namespace gone, so only drift declares it.
+ */
+export const FRAMEWORK_TABLE_PREFIX = 'x_';
+
+/** The live schema minus framework bookkeeping — what a migration snapshot can be compared to. */
+export function appTables(live: SchemaDescription): SchemaDescription {
+  return { tables: live.tables.filter((t) => !t.name.startsWith(FRAMEWORK_TABLE_PREFIX)) };
+}
+
 export interface DriftOptions {
   readonly migrations: readonly Migration[];
   readonly client?: DbClient | undefined;
   readonly schema?: string | undefined;
 }
 
+/**
+ * **The post-migrate verification**: the live database against the ledger it just wrote. This is
+ * the one drift question that needs a database, so it is asked where one is open — `runMigrations`
+ * in `@ultimat3/cli`, which is `x db migrate`, `x db reset` and `ROLE=migrate` alike.
+ *
+ * The other drift question — "the entity source was edited and no migration recorded it" — needs
+ * no database and is `x verify`'s `drift` step (`checkSourceDrift`, `@ultimat3/cli`). Two
+ * conditions, two detectors, one `X_DB_DRIFT`; a check that opened a database in CI could not run
+ * at all, and one that read files could not see a column added by hand.
+ */
 export async function checkDrift(options: DriftOptions): Promise<DriftReport> {
   const client = options.client ?? baseClient();
   const ledger = await readLedger(client);
@@ -158,5 +186,5 @@ export async function checkDrift(options: DriftOptions): Promise<DriftReport> {
     client,
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   });
-  return diffSchema(live, expectedSchema(options.migrations, ledger));
+  return diffSchema(appTables(live), expectedSchema(options.migrations, ledger));
 }

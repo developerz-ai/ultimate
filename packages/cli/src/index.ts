@@ -89,7 +89,7 @@ export type { DevServices, ServiceBinding } from './dev-services';
 export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
-export { checkDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+export { checkSourceDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
 export type { ErrorCatalog } from './error-catalog';
 export {
   buildErrorCatalog,

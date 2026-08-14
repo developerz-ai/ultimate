@@ -351,7 +351,7 @@ More in [MCP and AI](MCP-And-AI).
 |---|---|---|
 | Generate | `x db gen "add publish_at"` | diffs entities vs migrations, writes a named, ordered migration + its `down` |
 | Apply (dev) | `x db migrate` | runs pending migrations against the dev DB; live queries resubscribe |
-| Check | `x db drift --json` | schema vs migrations; exits non-zero on a difference |
+| Check | `x db migrate --json` | the live schema against the ledger it just wrote; exits non-zero on a difference |
 | Inspect | `x db studio` | tables, columns, indexes, FKs, generated SQL — also the `/_x` **Schema** panel |
 | Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned advisory lock while another version's migration is in flight, then applies (`X_MIGRATE_CONCURRENT` is reserved, not thrown) |
 | Test template | automatic | migrate + seed once into `myapp_test_tpl`, then clone per worker |
@@ -366,11 +366,17 @@ X_DB_DRIFT: schema differs from migrations
   fix:   x db gen "add publish_at"
 ```
 
-| Direction | Meaning |
-|---|---|
-| Entity has what migrations lack | you edited an entity and did not generate — run the `fix` |
-| DB has what migrations lack | someone changed the database by hand; generate a migration or revert the change |
-| Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping |
+| Direction | Meaning | Caught by |
+|---|---|---|
+| Entity has what migrations lack | you edited an entity and did not generate — run the `fix` | `x verify` |
+| DB has what migrations lack | someone changed the database by hand; generate a migration or revert the change | `x db migrate` |
+| Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping | `x verify` |
+
+One code, two detectors, because one check cannot be both. `x verify`'s `drift` step reads the
+entity source and the `.hash` a migration recorded — no database, which is what lets the gate run
+in CI. `x db migrate` diffs the live catalog against the `x_migrations` ledger on the connection it
+just migrated over — the only place a hand-edited column is visible at all. A pending migration is
+not drift, and neither is a table in the framework's `x_` namespace.
 
 There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s seventeen steps — the list, in order, is in [Testing](Testing).
 

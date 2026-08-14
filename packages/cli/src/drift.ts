@@ -1,7 +1,12 @@
-// Migration drift detection. `x db gen` records the hash of the app's entity schema next to the
-// migration it produced; drift is "the schema hashes to something no migration recorded". The
-// hash file is committed beside the migration, so a fresh clone can detect drift with no local
-// state and CI needs no database to answer the question.
+// Source drift: the app's schema *source* against what migrations recorded. `x db gen` writes the
+// hash of the entity schema next to the migration it produced, so drift here is "the schema hashes
+// to something no migration recorded". The hash is committed beside the migration, so a fresh clone
+// answers with no local state and CI needs no database.
+//
+// This is not the post-migrate verification and deliberately cannot be: that one is the live
+// database against the ledger (`checkDrift`, `@ultimat3/db`), asked by `runMigrations` where a
+// connection is open. Same `X_DB_DRIFT`, two conditions — an entity edited with no migration
+// generated, versus a database that does not match the migrations it ran.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -59,7 +64,7 @@ export async function writeSchemaHash(root: string, migrationId: string): Promis
  * Empty result = no drift. A missing db package is not drift (an app may have no database yet);
  * a schema with no migration at all is.
  */
-export async function checkDrift(root: string): Promise<readonly Finding[]> {
+export async function checkSourceDrift(root: string): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
   const current = await schemaHash(root);
   const records = await recordedHashes(root);

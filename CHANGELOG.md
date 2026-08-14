@@ -10,6 +10,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — `@ultimat3/cli` exports `checkSourceDrift`, not `checkDrift`.** Two functions named
+  `checkDrift` answered two different questions; the name now says which is which. `@ultimat3/db`'s
+  `checkDrift()` keeps its name and its meaning — the live database against the ledger, the
+  post-migrate verification. `@ultimat3/cli`'s becomes `checkSourceDrift()` — the entity source
+  hashed against what `x db gen` recorded, no database, which is what `x verify`'s `drift` step
+  needs to run in CI. `recordedHashes`, `schemaHash` and `writeSchemaHash` are unchanged.
+
+  ```ts
+  import { checkDrift } from '@ultimat3/cli';        // before
+  import { checkSourceDrift } from '@ultimat3/cli';  // after — same signature, same findings
+  ```
+
+  Nothing an app writes calls either: both are the CLI's own step implementations. The defect
+  behind the rename is below under *Fixed*.
+
 - **BREAKING — `invariants` is a function, and `invariant()` takes a built expression.** `invariants: (c) => [...]` receives the column proxy once, so `invariant(name, expr)` no longer carries a `(c) => Expr` builder of its own. The array form is gone; there is one way to write a rule.
 
   The defect it fixes: `InvariantColumns` was an index-signature type, so under `noUncheckedIndexedAccess` every `c.title` was `ColumnExpr | undefined` and **every** entity `x new`, `x g entity` and `x g resource` write failed `typecheck` until the author added `!`. Typing the proxy from the declared columns only reaches `c` when the whole `invariants` argument is context-sensitive — a per-element `invariant(name, build)` is a call TypeScript checks before `entity()`'s `C` is fixed. `InvariantColumns<C>` is now a mapped type over `C`, so `c.title` is a `ColumnExpr` and `c.titel` is `TS2551: Property 'titel' does not exist … Did you mean 'title'?`. `unique()` and `satisfies()` take `keyof C & string`, so a typo in a column *list* is caught too.
@@ -251,6 +266,37 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`statementFingerprint()`, `statementKind()` and `statementVerb()` from `@ultimat3/db`.** What shape a statement is — `entity.op` when attributed, its own whitespace-collapsed text when not; read or write from the leading verb — is now one rule next to the `StatementEvent` it reads, rather than a copy per detector. `x dev`'s ledger and the `statements` fixture group by the same identity by construction, and `statementSpanName` reads its verb from the same scanner.
 
 ### Fixed
+
+- **`x db migrate` verifies the database it just migrated — the third engine split, closed.**
+  `checkDrift` existed twice under one name and one `X_DB_DRIFT`. `@ultimat3/db`'s read the ledger,
+  introspected the live catalog and diffed the two — and had **zero callers anywhere**.
+  `@ultimat3/cli`'s hashes the entity source against what `x db gen` recorded, never opens a
+  database, and was the one wired into `x verify`, `x doctor` and `x db migrate`. So the comment on
+  `x db migrate` promising "a schema that migrated cleanly and still disagrees is the failure this
+  command exists to surface" described a check that reads files and answers the same before and
+  after a migration: a column added by hand was invisible on every path the framework ships.
+
+  `@ultimat3/db`'s `checkDrift()` is now **the post-migrate verification**, and it runs where a
+  connection is open: `runMigrations` calls it inside the queue's lifetime and returns it on
+  `MigratedApp.drift`, so `x db migrate`, `x db reset` and `ROLE=migrate` verify one post-condition
+  through one call, the way they already apply migrations through one. `x db migrate` renders each
+  difference through `driftError` — the pinned three-line `X_DB_DRIFT` output, never a second copy
+  — and exits non-zero; a `ROLE=migrate` container logs the first difference and still exits 0,
+  because its contract is "apply every migration, then exit" and a diagnostic after a clean apply
+  is not a failed migration.
+
+  It could not have run before: `x_migrations`, `x_jobs`, `x_job_steps`, `x_outbox` and every
+  `@ultimat3/auth` table are `create table if not exists` at boot, declared by no migration and
+  carried in no snapshot, so a correct database reported eight `unexpected-table` findings. New
+  `appTables()` / `FRAMEWORK_TABLE_PREFIX` in `@ultimat3/db` drop the whole `x_` namespace before
+  the diff — a prefix, so a table a future package adds needs no second list. `introspect()` keeps
+  its narrower exclusion, because the admin schema view and MCP's `schema.describe` legitimately
+  show `x_users`.
+
+  The source check keeps its job and loses the collided name (see *Changed*): it stays `x verify`'s
+  `drift` step and `x doctor`'s probe, where no database exists to open, and is no longer repeated
+  on `x db migrate`. One condition, one reporter, each. `packages/cli/src/drift.ts` also gains the
+  test file it never had — eight tests over a check that has been failing builds since 1.0.0.
 
 - **`x db gen|migrate|reset` run the framework's own migration engine — there is no second one.**
   All three shelled out to `bunx drizzle-kit`, and `x db studio` to `bunx drizzle-kit studio`.

@@ -213,7 +213,7 @@ x db gen "add publish_at" | migrate | reset | studio | branch <name>
 | Subcommand | Does | Notes |
 |---|---|---|
 | `gen "<name>"` | diff the app's entities against what the migrations declare, write the next migration | the message is required and becomes the id's slug. **Opens no database** — the previous migration's snapshot is what it diffs against |
-| `migrate` | apply pending migrations | literally `ROLE=migrate`'s own `runMigrations`, then a drift check |
+| `migrate` | apply pending migrations, then verify the result | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
 | `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating |
@@ -238,6 +238,13 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 | `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
 | `packages/db/migrations/<id>.hash` | the entity-source hash `x verify`'s `drift` step checks |
+
+**`X_DB_DRIFT` has two detectors, and each answers what the other cannot.** `x verify`'s `drift`
+step hashes the entity source against the `.hash` sidecars — no database, so it runs in a CI with
+nothing listening, and it catches "you edited an entity and never generated". `x db migrate` diffs
+the live catalog against the `x_migrations` ledger — a database, so it runs only where one is open,
+and it catches "someone changed the schema by hand". A table in the `x_` namespace is framework
+bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never counted as drift.
 
 A separate `<id>.down.sql` is not a migration and is never applied — that was a hand-written
 pre-1.2.0 layout, and reading it as one would drop every table the pair exists to reverse.

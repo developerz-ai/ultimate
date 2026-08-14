@@ -1,12 +1,13 @@
 // `x db` runs one migration engine, and this file is what says so. The gen path writes through
 // `@ultimat3/db`, migrate and reset go through `serve.ts`'s `runMigrations` — the release phase's
-// own function — and nothing anywhere shells out to a second migrator.
+// own function — and nothing anywhere shells out to a second migrator. Its post-condition is one
+// check too: the live schema against the ledger, which is what `runMigrations` returns.
 
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand } from './cmd-db';
+import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { flagBool, parseArgs } from './parse';
@@ -111,5 +112,57 @@ describe('unit · one engine, everywhere', () => {
     // Structural, because the alternative is a second migrator nobody notices: the moment this
     // file stops importing `runMigrations`, `x db migrate` and `ROLE=migrate` are two engines again.
     expect(source).toContain("import { runMigrations } from './serve'");
+  });
+
+  test('the post-migrate check is the database one, and it is asked where the connection is', async () => {
+    const here = await Bun.file(join(import.meta.dir, 'cmd-db.ts')).text();
+    const serve = await Bun.file(join(import.meta.dir, 'serve.ts')).text();
+    // `checkSourceDrift` reads files and answers the same before and after a migration, so a
+    // migrate that reported it was verifying nothing about the database it had just written.
+    expect(here).not.toContain("from './drift'");
+    expect(serve).toContain('checkDrift');
+    expect(here).toContain('migrated.drift');
+  });
+});
+
+describe('unit · the post-migrate report renders the pinned contract output', () => {
+  test('every difference becomes one X_DB_DRIFT finding with its own runnable fix', () => {
+    const findings = driftFindings({
+      ok: false,
+      differences: [
+        {
+          kind: 'unexpected-column',
+          table: 'posts',
+          column: 'hotfix',
+          cause: 'table "posts" has column "hotfix" not present in any migration',
+          fix: 'x db gen "add hotfix"',
+        },
+        {
+          kind: 'missing-table',
+          table: 'comments',
+          column: null,
+          cause: 'table "comments" is declared by migrations but does not exist',
+          fix: 'x db migrate',
+        },
+      ],
+    });
+    expect(findings).toEqual([
+      {
+        code: 'X_DB_DRIFT',
+        cause: 'table "posts" has column "hotfix" not present in any migration',
+        fix: 'x db gen "add hotfix"',
+        docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+      },
+      {
+        code: 'X_DB_DRIFT',
+        cause: 'table "comments" is declared by migrations but does not exist',
+        fix: 'x db migrate',
+        docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
+      },
+    ]);
+  });
+
+  test('a clean database reports nothing, so x db migrate exits 0', () => {
+    expect(driftFindings({ ok: true, differences: [] })).toEqual([]);
   });
 });

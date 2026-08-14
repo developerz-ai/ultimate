@@ -33,12 +33,14 @@ export {
 } from './client';
 export type { DriftDifference, DriftKind, DriftOptions, DriftReport } from './drift';
 export {
+  appTables,
   assertNoDrift,
   checkDrift,
   declaredSchema,
   diffSchema,
   driftError,
   expectedSchema,
+  FRAMEWORK_TABLE_PREFIX,
 } from './drift';
 export type { DbErrorCode, DbErrorInit } from './errors';
 export {

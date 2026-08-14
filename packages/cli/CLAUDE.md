@@ -194,7 +194,7 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `migrations.ts` | the app's `packages/db/migrations` read into `@ultimat3/db`'s `Migration` shape — the **one** reader |
 | `db-generate.ts` | `x db gen`: entities diffed against what the migrations declare, written as `.sql` + `.snapshot.json` + `.hash` |
 | `cmd-db.ts` | the subcommands, and nothing else — `gen` calls `db-generate.ts`, `migrate`/`reset` call `serve.ts`'s `runMigrations` |
-| `drift.ts` | the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
+| `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
 
 `x db migrate` and `ROLE=migrate` are the same function call. That is the whole design: until
 1.2.0 the CLI shelled out to `bunx drizzle-kit` — a second engine, a second journal, declared in no
@@ -202,6 +202,20 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 ledger, so "what has been applied" had two answers that only agreed by luck. `cmd-db.test.ts`
 holds the line from both ends: no shipped source spawns a second migrator, and this file still
 imports `runMigrations` from `./serve`.
+
+**The post-condition is one check too, and it is the database one.** `runMigrations` runs
+`@ultimat3/db`'s `checkDrift()` inside the queue's lifetime — the connection it opened for the
+migrator is the only one there is — and returns the report on `MigratedApp.drift`, so a developer
+and a release phase verify the same thing. `x db migrate` renders it through `driftFindings` and
+exits non-zero; `ROLE=migrate` logs the first difference and still exits 0, because its contract is
+"apply every migration, then exit" and turning a diagnostic into a blocked deploy is not that.
+
+The *source* half is a different question with a different answer: `checkSourceDrift` hashes the
+entity source against what `x db gen` recorded, answers the same before and after a migration, and
+opens nothing — which is what lets the gate run it in a CI with no database. It stays on `x verify`
+and `x doctor` and is deliberately **not** repeated on `x db migrate`; two reporters of one
+condition is the duplication this package's own rule forbids. Both were called `checkDrift` until
+1.2.0, and the one that was wired everywhere was the one that cannot see a column added by hand.
 
 Generation opens no database. It diffs `describeEntities()` against `declaredSchema(readMigrations(root))`
 — the snapshot the newest migration wrote down — so `x db gen` answers the same in CI, on a laptop
