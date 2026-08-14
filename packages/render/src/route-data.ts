@@ -5,6 +5,7 @@
  * the body does not contain.
  */
 
+import { isUltimateError } from '@ultimat3/core';
 import { useI18n } from '@ultimat3/i18n';
 import { RouteLoadFailedError } from './errors';
 import type { RouteConfig, RouteContext, RouteData, RouteMetaContext } from './route';
@@ -20,14 +21,20 @@ export async function routeDataFor<TData = RouteData>(
   config: RouteConfig<TData>,
   ctx: RouteContext,
 ): Promise<TData> {
-  if (config.load === undefined) return ctx as unknown as TData;
+  // The context IS the data, and `defineRoute`'s `LoadRequirement` is what makes that true: a
+  // route whose `meta` reads more than `{ params, url }` cannot compile without a `load`, so
+  // `RouteContext` satisfies `TData` on this line. One narrowing assertion backed by a build
+  // error, in place of the `as unknown as` that used to hand back any shape a caller named.
+  if (config.load === undefined) return ctx as RouteContext & TData;
   try {
     return await config.load(ctx);
   } catch (cause) {
     // Rethrown as-is when it is already one of ours: a loader that failed its OWN way — a policy
     // denial, a missing row — has a better code and a better fix than anything this frame knows,
-    // and wrapping it would bury both behind a generic one.
-    if (cause instanceof Error && 'code' in cause && typeof cause.code === 'string') throw cause;
+    // and wrapping it would bury both behind a generic one. Read through core's brand, never a
+    // `code` property: an ENOENT off `Bun.file` carries `code: 'ENOENT'`, and the duck-type let
+    // every one of them out of here unwrapped — no fix line, and no mention of the route to fix.
+    if (isUltimateError(cause)) throw cause;
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new RouteLoadFailedError(
       `load() threw while rendering ${new URL(ctx.url).pathname}: ${detail}`,

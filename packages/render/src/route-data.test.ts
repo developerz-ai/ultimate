@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
+import { ULTIMATE_ERROR_BRAND, UltimateError } from '@ultimat3/core';
 import { defineRoute } from './route';
 import { metaContextFor, routeDataFor } from './route-data';
 
@@ -108,6 +108,46 @@ describe('routeDataFor', () => {
     });
     const failure = await routeDataFor(config, CTX).catch((error: unknown) => error);
     expect((failure as UltimateError).code).toBe('X_NOT_FOUND');
+  });
+
+  test('an ENOENT is wrapped — a string `code` was never proof the error was ours', async () => {
+    const config = defineRoute({
+      ...base,
+      load: () => {
+        // What `Bun.file(...).text()` throws for a missing file, and what every `node:fs` call
+        // throws: an Error carrying a string `code`. The duck-type this replaced let all of them
+        // straight out of the frame — the reader got a bare ENOENT with no fix line and no
+        // mention of the route that failed to load.
+        throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+      },
+      meta: () => ({ title: 't' }),
+    });
+    const failure = await routeDataFor(config, CTX).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(UltimateError);
+    const error = failure as UltimateError;
+    expect(error.code).toBe('X_ROUTE_LOAD_FAILED');
+    expect(error.cause).toContain('/posts/7');
+    expect(error.cause).toContain('ENOENT');
+    expect(error.fix).toContain('/posts/7');
+  });
+
+  test('a tier-0 error survives on its brand alone, not on being a core subclass', async () => {
+    // `@ultimat3/schema` cannot import `@ultimat3/core`, so its errors carry the well-known
+    // symbol instead of extending the class. Checking `instanceof UltimateError` here would bury
+    // an `X_VALIDATION_FAILED` — the most precise thing a loader can fail with — under a generic
+    // wrapper, which is the same loss the ENOENT case is the mirror image of.
+    const config = defineRoute({
+      ...base,
+      load: () => {
+        throw Object.assign(new Error('expected a string'), {
+          [ULTIMATE_ERROR_BRAND]: true,
+          code: 'X_VALIDATION_FAILED',
+        });
+      },
+      meta: () => ({ title: 't' }),
+    });
+    const failure = await routeDataFor(config, CTX).catch((error: unknown) => error);
+    expect((failure as UltimateError).code).toBe('X_VALIDATION_FAILED');
   });
 
   test('a non-function load is refused at declaration, not at the first request', async () => {

@@ -38,9 +38,21 @@ real `<head>` — the data for the content, `url` for the canonical, `t` because
 string may be hardcoded. A route that declares no `load` still gets `params` and `url` under the
 same names it always had, so nothing that shipped has to change.
 
+Omitting `load` means the context IS the data, so `meta` may only read what the context supplies.
+Anything richer needs a loader, and the type says so:
+
+```ts
+defineRoute({ …, meta: ({ data }) => ({ title: data.post.title }) });
+// Property 'load' is missing in type … but required in type '{ readonly load: RouteLoadFn<…> }'
+```
+
+Axiom 3 again: without that, the route compiled and rendered `undefined` in a `<title>`.
+
 A loader that throws is `X_ROUTE_LOAD_FAILED`, naming the path to fix — unless it threw an
 `UltimateError` of its own, which passes through untouched: a policy denial or a missing row
-already carries a better code and a better fix than any wrapper could.
+already carries a better code and a better fix than any wrapper could. Membership is the framework's
+brand, not a `code` property: an `ENOENT` is an `Error` with a string `code` too, and it gets
+wrapped like any other loader failure.
 
 ## `offline`, `hydrate` and `meta` are required by the type
 
