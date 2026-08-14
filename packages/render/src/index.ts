@@ -142,6 +142,7 @@ export {
 } from './render-stream';
 export type {
   HydrateStrategy,
+  LoadRequirement,
   OfflineStrategy,
   PrerenderFn,
   RenderMode,

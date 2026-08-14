@@ -24,8 +24,11 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `mcp-tool.ts` | MCP descriptor, same `invoke` |
 | `job-handle.ts` | shape `@ultimat3/jobs` consumes |
 | `contract-test.ts` | assertions `x g action` emits |
+| `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
 | `idempotency.ts` | store interface + memory default |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
+| `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
+| `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
 | `naming.ts`, `infer.ts`, `validate.ts`, `json-schema.ts`, `stable.ts`, `tags.ts` | pure helpers |
 
 ## Invariants
@@ -43,12 +46,58 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
+- **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased
+  view — `listActions()`, `getAction(name)` — so a member missing from it is a projection the
+  registry cannot reach: `.job()` was absent until 2026-08 and `getAction('publishPost')?.job()`
+  was a type error against an object that has had the method since `facadeFor` bound it. `job()`
+  erases because `ActionJobHandle`'s members are method-syntax (bivariant parameters) and its
+  output erases to `unknown`; `ClientMethod` is a **function type**, so its input is
+  contravariant and `(input: unknown) => …` is a supertype of no concrete action's method. Both
+  halves are build errors in `type-pins.ts`, never a comment — and type claims go there, never in
+  a `.test.ts`, because `tsconfig.json` excludes tests and `tsc` never reads one.
+- **The client keeps the server's error code and marks it remote.** A `problem+json` failure
+  becomes `RemoteActionError` (`errors.ts`), which re-uses the code off the wire the way
+  `ActionDeniedError` re-uses the policy decision's — and then says so, because the browser
+  bundle never registered it: `name` marks it in a stack, `meta.origin: 'remote'` marks it in
+  `--json`, the overlay and the error reporter. **It never synthesizes a docs URL.**
+  `https://ultimate.dev/errors/X_SIGNUP_CLOSED` for an app-declared code is a 404 dressed as
+  documentation; the link is the server's own `docs`/`type` when it sent an `http(s)` one, this
+  build's registered link when `hasErrorCode` knows the code, otherwise `ERROR_DOCS_BASE`. The
+  code must be `X_SCREAMING_SNAKE` to be taken at all — `typeof code === 'string'` accepted `""`
+  from a gateway — and anything else is `RpcFailedError`, which is what that code means.
+  `docs` and `type` travel to `remoteDocs` as an ordered pair, not `docs ?? type`: preference is
+  not selection, and picking the preferred slot on presence alone let one `javascript:` string
+  bury a perfectly good `type` the same response had already offered.
 - **MCP exposure is read through `isMcpExposed` from `@ultimat3/core`, in all three places.**
   `toMcpTools` builds the tool, `describeAction` publishes the manifest fact and
   `toOpenApiOperation` publishes `x-ultimate.mcpTool` — the last two fail-opened (`?? true`,
   `!== false`) until 2026-08, so an action with no `mcp` block was advertised as a tool by both
   contract artifacts and refused by the only surface that could serve one. A contract that
   disagrees with the runtime is worse than no contract; never spell the check inline again.
+- **The post-commit bust never fails the write it followed.** `cache.invalidates` fans out once the
+  handler has committed, so `bustAfterCommit` — `cache-gate.ts`, the only caller of
+  `invalidateTags` here — absorbs a fan-out that refuses and answers `undefined`: an undeclared tag
+  (`X_CACHE_TAG_UNKNOWN`) must not turn a durable write into a failed action, and those entries
+  expire by TTL. One dead tier is not that case; `invalidateTags` already reports it in
+  `report.errors`. It logs through core's `logger`, never `ctx.logger` — an HTTP `Ctx` is a cast
+  request context that carries none — and never renders the tags, because reading a malformed
+  `invalidates` entry back is the second throw the guard exists to stop. **A replay skips the bust
+  entirely:** no handler ran, the first call already busted these tags, and re-purging the CDN and
+  re-queueing ISR per retry is work for a write nobody made.
+- **The policy contract test asserts `ActionDeniedError`, and it sends valid input to get there.**
+  It sent `{}` and accepted any `UltimateError` until 2026-08, so every action with a required
+  field failed `input:` before `guard()` ran and the assertion passed on `X_INPUT_INVALID` —
+  including one whose policy was `allow()`. `sampleInput` builds the payload from `input:`'s own
+  IR (required keys only) so the invocation reaches the policy; the class, not `X_FORBIDDEN`, is
+  the assertion, because `ActionDeniedError` re-uses the policy decision's code and `can()`
+  answers a null actor with `X_UNAUTHENTICATED`. **Only `X_INPUT_INVALID` becomes
+  `X_CONTRACT_DRIFT`** — it is the one code `invoke` raises before `guard()` is reached, and
+  `input:` is the one knob that answers it. Everything else keeps its own code and its own fix:
+  saying `X_OUTPUT_INVALID … before its policy decided` named a stage nothing had checked and
+  offered a fix that changes nothing, and it hid the `allow()` whose handler threw — the authz
+  escape this assertion exists to catch. A non-`UltimateError` (a `row:` loader's own
+  `TypeError`) is rethrown untouched too: its stack is the thing worth reading.
+  `contract-test.contract.test.ts` drives all three assertions against actions built to fail them.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.

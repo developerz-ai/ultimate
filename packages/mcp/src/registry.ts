@@ -138,13 +138,13 @@ export type ToolResolution =
   | { readonly kind: 'invalid-args'; readonly name: string; readonly issues: readonly ArgIssue[] };
 
 export class ToolRegistry {
-  private readonly tools = new Map<string, AnyMcpTool>();
+  readonly #tools = new Map<string, AnyMcpTool>();
 
   register(tool: AnyMcpTool): this {
-    if (this.tools.has(tool.name)) {
+    if (this.#tools.has(tool.name)) {
       throw new McpDuplicateToolError(tool.name);
     }
-    this.tools.set(tool.name, tool);
+    this.#tools.set(tool.name, tool);
     return this;
   }
 
@@ -155,7 +155,7 @@ export class ToolRegistry {
 
   /** Raw lookup with NO gate applied — the resolver owns the gates. */
   get(name: string): AnyMcpTool | undefined {
-    return this.tools.get(name);
+    return this.#tools.get(name);
   }
 
   /**
@@ -163,7 +163,7 @@ export class ToolRegistry {
    * this catalog between runs and map insertion order is not a contract.
    */
   list(caller?: McpCaller): readonly ToolListEntry[] {
-    const all = [...this.tools.values()];
+    const all = [...this.#tools.values()];
     const visible = caller === undefined ? all : all.filter((t) => visibleToCaller(t, caller));
     return visible
       .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }))
@@ -185,7 +185,7 @@ export class ToolRegistry {
    * input. Absent and hidden collapse into ONE branch so the two cannot drift apart.
    */
   resolve(name: string, rawArgs: unknown, caller: McpCaller): ToolResolution {
-    const tool = this.tools.get(name);
+    const tool = this.#tools.get(name);
     if (tool === undefined || !visibleToCaller(tool, caller)) {
       return { kind: 'not-found', name };
     }
@@ -202,7 +202,7 @@ export class ToolRegistry {
    * strict bucket, because a probing client must never get the cheap one.
    */
   verbClass(name: string): McpVerbClass {
-    const tool = this.tools.get(name);
+    const tool = this.#tools.get(name);
     if (tool === undefined) return 'write';
     return tool.destructive === true ? 'write' : 'read';
   }

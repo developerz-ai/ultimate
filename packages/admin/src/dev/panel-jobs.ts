@@ -38,8 +38,8 @@ const firstFailedStep = (run: JobRunFact): RetryTarget | null => {
 
 export const jobsPanel: DevPanel<JobsPanelData> = {
   key: 'jobs',
-  titleKey: 'dev.panel.jobs',
-  question: 'is the queue moving, and which step failed?',
+  titleKey: 'dev.panel.jobs.title',
+  questionKey: 'dev.panel.jobs.question',
   async data(sources, params): Promise<JobsPanelData> {
     const [queues, jobs, tasks, runs] = await Promise.all([
       sources.queues(),

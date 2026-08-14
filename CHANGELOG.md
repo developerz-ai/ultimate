@@ -252,6 +252,89 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **The `/_x` DB panel's read-only guard read a comment marker inside a quoted identifier as a
+  comment.** `select 1 as "--"; delete from members` blanked from the `--` onward, so the scan saw
+  `select 1 as "`, called it a read, and handed the whole string to Postgres — which ran both
+  statements. The passes could not be ordered correctly, because each opaque form can contain
+  another's opener: blanking comments first eats the `--` inside a string, blanking strings first
+  eats the `'` inside a comment. `sanitize()` is now ONE left-to-right alternation over every span
+  Postgres reads as opaque text — `'…'`, `"…"`, `$tag$…$tag$`, `--` and block comments — which
+  resolves them the way a lexer does: whichever token starts first consumes the rest. An
+  unterminated quote matches nothing and leaves the rest of the statement visible to the scan;
+  failing open there would be the same bypass by another route.
+
+- **`/_x/live` reported every subscriber-lookup failure as "no sync node".** A bare `catch` around
+  `sources.subscribers()` folded an authz refusal, a dropped NATS connection and a bug in the
+  recorder into `dev.live.no-sync-node` — the note for a tier that was never installed — and threw
+  the diagnostic away, telling the reader to wire up something they already had. It now catches
+  `DevSourceUnavailableError` and nothing wider; everything else reaches `panelPayload`, which
+  renders its code and its fix line.
+
+- **The policy contract test called any coded failure "before its policy decided".** `invoke` runs
+  parse input → row → policy → handle → parse output, and every `UltimateError` from any stage
+  landed in one branch: an `X_OUTPUT_INVALID` from the parse *after* the handler was reported as
+  input drift, with `pass \`input:\`` as the fix — a knob that changes nothing about an output
+  schema. Worse, it hid the case the assertion exists to catch: a `policy: allow()` whose handler
+  throws was read as drift rather than as an anonymous actor getting through. Only
+  `X_INPUT_INVALID` becomes `X_CONTRACT_DRIFT` now; every other code keeps its own code and its own
+  fix, the same reasoning that already rethrew a non-`UltimateError` untouched.
+
+- **An unusable `docs` link buried a usable `type`.** `nonEmpty(body['docs'] ?? body['type'])`
+  selected on presence, not on being a link, so a problem document carrying `docs:
+  'javascript:alert(1)'` alongside a valid HTTPS `type` reached `RemoteActionError` with only the
+  unusable one and fell back to the error index. Both now travel in preference order and
+  `remoteDocs` takes the first that is an absolute `http(s)` URL.
+
+- **`/_x/live`'s `sql` field was permanently `''`.** `QueryDescriptor` never carried SQL text —
+  `defaultDevSources().liveQueries()` read a field the registry does not produce — so every row in
+  the live panel printed an empty string forever, not the query it described. It now compiles real
+  SQL through `@ultimat3/query`'s `describeSql`, given a sample input via the new `sqlSamples`
+  option on `defaultDevSources`; a query with no sample answers `sql: null`, honestly "unknown",
+  never an invented `''`. `LiveQueryFact.sql` is `string | null` to say so.
+
+- **`/_x/live`'s "no sync node" note fired for a sync node with zero subscribers.** `panel-live.ts`
+  folded "the source is unwired" and "the source answered `[]`" into one empty array, so a live
+  tier that was up and running with nobody attached printed `dev.live.no-sync-node` — a different
+  and wrong diagnosis. The two are now told apart: an unwired source still degrades to the note,
+  a wired one with no subscribers shows an empty list and no note.
+
+- **The `/_x` DB panel's write guard matched a write word inside a string literal.** `assertReadOnly`
+  tested `\b(insert|update|…)\b` against the raw SQL text, so `select * from events where kind =
+  'create'` was refused as a write statement — a false positive on the exact kind of filtered read
+  the panel exists to answer. It also read only `--` line comments, so a `/* … */` block comment
+  naming a write word could still trip the same false refusal, or a comment could hide a real one
+  past the leading-keyword check. `assertReadOnly` now sanitizes string literals and both comment
+  forms (blanking them, not deleting them, so `whe` + `re` never fuses into a new keyword) before
+  the keyword scan runs.
+
+- **`ToolRegistry`'s field used TypeScript `private` instead of a real `#` private field**
+  (`@ultimat3/mcp`), the one place in `registry.ts` that had drifted from the rest of the package's
+  convention — `private` is erased at compile time only, `#tools` is actually inaccessible outside
+  the class at runtime.
+
+- **`DevPanel.question` was an English literal sitting beside `titleKey`**, in `panel.ts` and every
+  `panel-*.ts` (`@ultimat3/admin`) plus the CLI's two process panels — rendered raw into `/_x`'s
+  `<p class="question">` with no `t()` in the path, and `titleKey` itself was declared on every
+  panel but never actually read anywhere. Replaced with `questionKey` (`t()`'d the same way
+  `titleKey` now is, for the tab label), both following the `dev.panel.<key>.title` /
+  `dev.panel.<key>.question` convention the rest of `catalogs/en.json` already uses.
+
+- **A route's `load` swallowed every failure that carried a `code`, and a route that loaded nothing claimed to load anything.** `routeDataFor` rethrew a caught error untouched whenever it was an `Error` with a string `code` — the shape of a framework error, and equally the shape of every `ENOENT`, `ECONNREFUSED` and `ERR_MODULE_NOT_FOUND` a loader can raise. A `load` that read a missing file surfaced Bun's own rejection, with no `X_ROUTE_LOAD_FAILED`, no fix line and no mention of the route an author has to go and fix. The check is now `isUltimateError` from `@ultimat3/core`, which reads the well-known brand: a policy denial or a tier-0 `X_VALIDATION_FAILED` still passes through with its own code, and everything else gets wrapped, as it always should have.
+
+  The second half is the branch above it. With no `load` the context IS the route's data, and it was handed back as `ctx as unknown as TData` — a double cast that let a route declare `meta: ({ data }) => ({ title: data.post.title })`, load nothing, and render `undefined` in a `<title>` on the surface whose entire purpose is SEO. `defineRoute` now takes `RouteDefinition<TData> & LoadRequirement<TData>`: data the context cannot supply requires a `load`, so that route is a compile error, and the fallback narrows to `RouteContext & TData` — checked, not laundered. `RouteContext` is an alias rather than an `interface` for the same reason; only an alias is a `RouteData`. Pinned in `packages/render/src/type-pins.ts`. Routes reading `data.url` / `data.params`, and every route `x new` and `x g route` write, are unaffected.
+
+- **The typed client rebuilt a server's failure as a locally-declared one, and invented the page documenting it.** Any `problem+json` body with a string `code` became a bare `UltimateError` carrying that code plus `docs: https://ultimate.dev/errors/<code>` — a URL synthesized in the browser for a code this bundle never registered. The codes that reach a browser are exactly the ones that need it least: an app's own `X_SIGNUP_CLOSED`, declared through `registerErrorStatus`, printed a `docs:` line pointing at a framework page that does not exist, under a title humanised from the code as if the framework owned it. `typeof code === 'string'` was the only check, so a gateway answering `{"code":""}` produced an error rendering `: `.
+
+  Failures now come back as `RemoteActionError`: the code rides along verbatim — matching on it is the point of `problem+json` — but the error says where it came from, `name` in a stack trace and `meta: { origin: 'remote', action, status }` in `--json`, the dev overlay and the error reporter, with the status also typed as `.status`. The docs link is the server's own when it sent a resolvable `http(s)` one (RFC-9457's `type` counts, `about:blank` and `javascript:` do not), this build's registered link when it knows the code, and otherwise the index — never a per-code page nobody wrote. A body naming no `X_SCREAMING_SNAKE` code is a proxy answering rather than the app, which is what `X_RPC_FAILED` already says.
+
+- **`.job()` was missing from the view the registry hands back.** `listActions()` and `getAction(name)` answer in `AnyAction`, the schema-erased view, and it projected an action to every surface except the queue: `getAction('publishPost')?.job()` was a type error against an object that has carried the method since `facadeFor` bound it. The erased view now declares `job(): ActionJobHandle`, and `Action` narrows it to its own schemas as before. `client()` stays off it and now says why in a build error rather than a comment — a `ClientMethod` is a function type, so its input is contravariant and no erased spelling is assignable from a concrete one. Both halves are pinned in `packages/action/src/type-pins.ts`, source rather than a test, because `tsconfig.json` excludes tests and `tsc` never reads one.
+
+- **`.contract()`'s policy assertion never reached a policy.** The generated `"<action>: policy denies an anonymous actor"` test invoked the action with `{}` and accepted **any** `UltimateError` as proof of a denial. Every action with a required input field — which is every action `x g action` writes, and all three in the reference app — failed `input:` before `guard()` ran, so the assertion passed on `X_INPUT_INVALID` and proved nothing about authz. An action whose policy was `allow()` passed it too.
+
+  The test now sends an input the schema accepts, synthesized from the schema's own IR (required keys only, formats included: `t.uuid` gets a uuid, `t.money` gets minor units and a currency, a nullable field gets `null`), and accepts only an `ActionDeniedError` — the one outcome that means the policy decided. It is the class and not `X_FORBIDDEN`, because a denial carries the policy decision's own code and the blessed `can()` answers a null actor with `X_UNAUTHENTICATED`; pinning one code would fail every action authored the way the framework teaches. Anything else thrown before the policy is `X_CONTRACT_DRIFT` naming the culprit code, with `pass \`input:\` to contractTestsFor(<action>)` as the fix — the new `input` option, for a schema carrying a constraint the IR cannot invert (a bare `pattern`) or a `row:` loader that needs an id which resolves. `contractTestsFor` is unchanged for callers that pass neither.
+
+- **A cache bust that refused failed the write it followed.** `invoke` awaited `invalidateTags()` after the handler had already committed, so a fan-out that refuses outright — `invalidates: [tag.pots]`, or any tag a manifest older than the entity never declared, raising `X_CACHE_TAG_UNKNOWN` — turned a durable write into a failed action, and the caller retried a write that had already happened. The bust now goes through `bustAfterCommit` in `cache-gate.ts`, the one place this package calls `invalidateTags`: the refusal becomes a single `action.invalidate.failed` error line and the stale entries expire by TTL. That is the rule `@ultimat3/cache` already held for one dead tier, now held for a fan-out that never started. A replay busts nothing either — `idempotent: true` plus a repeated `Idempotency-Key` runs no handler, so re-purging the CDN and re-queueing ISR on every retry was work for a write nobody made.
+
 - **An `ack` that failed re-queued a job that had already finished.** `executeJob` settled inside the `try` it ran the body in, so an `ack` rejected by a pool timeout or a reset on that one statement fell into the retry branch: the queue was told the attempt FAILED, `nack` re-delivered work whose side effects outside a step had already happened, and the run was reported as `retried` — a point in `jobs_total{outcome}` for a failure that never occurred. Settlement now lives outside the retry decision. Only the body's own rejection reaches the `catch`; an `ack` that cannot land propagates to the worker, which logs `jobs.worker.settle-failed` and lets the lease lapse, so the queue re-delivers because nobody could say the job ended rather than because it failed.
 
 - **A heartbeat that renewed too LATE hid the lease it lost.** Expiry was decided before the driver was asked, which catches a renewal that hangs or rejects — but a renewal that *succeeds* after the visibility window (an event-loop stall, a driver answering at the end of its connect timeout) then set `renewedAt = now()` and restarted the clock on a lease the queue had already handed to another worker. The one failure shape with nothing to catch is now checked after the `await` as well: a renewal that lands past its own window reports `jobs.lease.lost` and `job_leases_lost_total` instead of silently extending somebody else's lease.

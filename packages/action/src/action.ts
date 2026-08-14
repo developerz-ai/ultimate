@@ -178,6 +178,18 @@ export interface AnyAction {
   as(actor: Actor | null, input: unknown, options?: InvokeOptions): Promise<unknown>;
   tool(): McpToolDescriptor;
   openapi(): OpenApiOperation;
+  /**
+   * The durable-work shape, erased. `listActions()` and `getAction(name)` hand back this view
+   * and nothing else, so leaving `job()` off it meant the registry could project an action to
+   * every surface except the queue — `getAction('publishPost')?.job()` was a type error against
+   * an object that has had the method since `facadeFor` bound it.
+   *
+   * It erases where `client()` cannot: `ActionJobHandle`'s members are method-syntax, so their
+   * parameters stay bivariant, and its output erases to `unknown`. `ClientMethod` is a function
+   * type — contravariant input — and `(input: unknown) => …` is a supertype of nothing.
+   * `type-pins.ts` holds both halves of that as build errors.
+   */
+  job(): ActionJobHandle;
   contract(options?: ContractTestOptions): readonly ContractTest[];
 }
 
@@ -196,8 +208,10 @@ export interface Action<
     options?: InvokeOptions,
   ): Promise<InferOutput<TOutput>>;
   /**
-   * Typed against this action's schemas, which is the whole point of both — so they
-   * live here and not on the schema-erased `AnyAction` view.
+   * Typed against this action's schemas, which is the whole point of it — and the reason
+   * `client()` lives here alone: its input sits in a contravariant position, so no erased
+   * spelling of it is assignable from a concrete one. `job()` is the narrowing of the erased
+   * view's, not a second declaration of it.
    */
   client(options: ClientOptions): ClientMethod<TInput, TOutput>;
   job(): ActionJobHandle<TInput, TOutput>;

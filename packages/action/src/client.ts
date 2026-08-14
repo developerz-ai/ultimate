@@ -3,10 +3,10 @@
  * the same pure derivation the server uses, so a renamed or mistyped action is a
  * compile error in a Solid component — not a 404 at runtime.
  */
-import { UltimateError } from '@ultimat3/core';
+import type { UltimateError } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
-import { ContractDriftError, RpcFailedError } from './errors';
+import { ContractDriftError, RemoteActionError, RpcFailedError } from './errors';
 import { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './http';
 import { derivePath } from './naming';
 import { isJsonObject } from './stable';
@@ -131,20 +131,45 @@ function assertSameBuild(
   );
 }
 
-/** `application/problem+json` back into the same error the server threw. */
+/**
+ * A framework code, spelled the one way codes are spelled. `typeof code === 'string'` alone
+ * accepted `""` and `"error"` — a gateway's JSON body became an `UltimateError` whose code
+ * nothing in the framework or the app declares, rendering `: ` under a humanised title.
+ */
+const FRAMEWORK_CODE = /^X_[A-Z0-9]+(?:_[A-Z0-9]+)*$/;
+
+/**
+ * `application/problem+json` back into the error the server threw. The code rides along
+ * verbatim — carrying one is the point of the document — but it is a code this bundle may never
+ * have registered, so the result is a `RemoteActionError`: marked remote-origin, and linked only
+ * to a page that exists. A body naming no framework code is a proxy answering rather than the
+ * app, which is what `RpcFailedError` already says.
+ */
 async function toUltimateError(response: Response, name: string): Promise<UltimateError> {
   const body: unknown = await response.json().catch(() => null);
-  if (isJsonObject(body) && typeof body['code'] === 'string') {
-    return new UltimateError({
-      code: body['code'],
-      cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${response.status}`),
-      fix: stringOr(body['fix'], `x actions describe ${name} --json`),
-      docs: stringOr(body['docs'], `https://ultimate.dev/errors/${body['code']}`),
-    });
+  if (!isJsonObject(body)) return new RpcFailedError(name, response.status);
+  const code = body['code'];
+  if (typeof code !== 'string' || !FRAMEWORK_CODE.test(code)) {
+    return new RpcFailedError(name, response.status);
   }
-  return new RpcFailedError(name, response.status);
+  return new RemoteActionError({
+    action: name,
+    status: response.status,
+    code,
+    cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${response.status}`),
+    fix: stringOr(body['fix'], `x actions describe ${name} --json`),
+    // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
+    // still offered one. Both travel, in preference order: `??` picked `docs` on presence alone,
+    // so a `javascript:` one hid a perfectly good `type` behind it. `remoteDocs` takes the first
+    // that is an absolute HTTP(S) URL — neither is trusted for being there.
+    docs: [nonEmpty(body['docs']), nonEmpty(body['type'])],
+  });
+}
+
+function nonEmpty(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function stringOr(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.length > 0 ? value : fallback;
+  return nonEmpty(value) ?? fallback;
 }

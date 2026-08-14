@@ -18,8 +18,8 @@ export interface MailPanelData {
 
 export const mailPanel: DevPanel<MailPanelData> = {
   key: 'mail',
-  titleKey: 'dev.panel.mail',
-  question: 'what did that email look like, in that locale?',
+  titleKey: 'dev.panel.mail.title',
+  questionKey: 'dev.panel.mail.question',
   async data(sources, params): Promise<MailPanelData> {
     const all = await sources.mail();
     const locale = params.get('locale');

@@ -135,6 +135,11 @@ no `.def`. A second authz path cannot be written without deleting that store.
 | handle | whatever the handler throws |
 | parse output | `X_OUTPUT_INVALID` — and fields the schema never declared are dropped |
 
+`cache: { invalidates }` fans out **after** the handler commits, so it never fails it: a
+fan-out that refuses — an undeclared tag, `X_CACHE_TAG_UNKNOWN` — is one
+`action.invalidate.failed` log line and the entries expire by TTL. A replayed idempotent
+call busts nothing; the first call already did.
+
 Registering an action without `policy:` throws `X_ACTION_POLICY_MISSING`; there is
 no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FOREIGN`.
 
@@ -189,6 +194,33 @@ name-sorted, and reads no clock, env or random source — same registry ⇒ same
 (`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new
 payload, is `X_IDEMPOTENCY_CONFLICT`. Store is swappable via `setIdempotencyStore()`.
 
+## Contract tests
+
+`publishPost.contract()` returns three assertions. Run them; they throw `X_CONTRACT_DRIFT`.
+
+| Assertion | Holds when |
+|---|---|
+| input schema rejects garbage | the invocation fails `X_INPUT_INVALID` — that code, not any failure |
+| policy denies an anonymous actor | the invocation fails with an `ActionDeniedError` |
+| OpenAPI document contains its operation | the derived path is in `buildOpenApi()` |
+
+The denial assertion sends an input synthesized from `input:`'s own schema — required keys
+only, formats included — because a payload the schema rejects never reaches a policy. It
+asserts the denial, not `X_FORBIDDEN`: a denial carries the policy decision's own code, and
+`can()` answers a null actor with `X_UNAUTHENTICATED`.
+
+```ts
+publishPost.contract({
+  garbage: 42,                                 // what the input schema must reject
+  input: { postId, orgId },                    // when the synthesized one cannot fit
+  ctx: myCtx,                                  // default: an anonymous context
+})
+```
+
+Pass `input:` when the schema carries a constraint the IR cannot invert (a bare `pattern`) or
+when `row:` needs an id that resolves. Anything thrown *before* the policy decides is drift,
+never a pass — the assertion says which code got in the way and names `input:` as the fix.
+
 ## Errors
 
 | Code | When | Fix |
@@ -198,11 +230,18 @@ payload, is `X_IDEMPOTENCY_CONFLICT`. Store is swappable via `setIdempotencyStor
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
-| `X_RPC_FAILED` | non-`problem+json` failure reached the client | check the gateway |
+| `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
 
 Denials re-throw the policy layer's own codes (`X_FORBIDDEN`, `X_UNAUTHENTICATED`) —
 this package never invents an authz code.
+
+The client does the same with the server's: a `problem+json` failure comes back as a
+`RemoteActionError` keeping the code the server sent, marked `meta.origin: 'remote'` because
+the browser bundle may never have registered it, and linked only to a page that exists — the
+server's own `docs`/`type` when it sent an `http(s)` one, this build's registered link when it
+knows the code, otherwise the error index. A per-code URL is never synthesized for a code
+nothing here declares.
 
 ## Boundaries
 

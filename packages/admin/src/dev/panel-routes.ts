@@ -23,8 +23,8 @@ const kb = (budget: string | undefined): number => {
 
 export const routesPanel: DevPanel<RoutesPanelData> = {
   key: 'routes',
-  titleKey: 'dev.panel.routes',
-  question: 'which handler serves this?',
+  titleKey: 'dev.panel.routes.title',
+  questionKey: 'dev.panel.routes.question',
   async data(sources): Promise<RoutesPanelData> {
     const routes = await sources.routes();
     const byRenderMode: Record<string, number> = {};

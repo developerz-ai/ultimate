@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { CacheTier } from '@ultimat3/cache';
+import { declareTags, registerTier, resetDeclaredTags, resetTiers, tag } from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -280,5 +282,77 @@ describe('the invocation core', () => {
       return null;
     })();
     expect((failure as { code?: string }).code).toBe('X_ACTION_FOREIGN');
+  });
+});
+
+describe('cache invalidation after the handler settles', () => {
+  /** Counts what the fan-out reached, so "busted once" and "busted at all" are both assertable. */
+  function countingTier(count: { value: number }): CacheTier {
+    return {
+      name: 'lru',
+      get: () => Promise.resolve(undefined),
+      set: () => Promise.resolve(),
+      del: () => Promise.resolve(),
+      invalidateTags: (tags) => {
+        count.value++;
+        return Promise.resolve({ tier: 'lru' as const, keys: tags.map((value) => value.entity) });
+      },
+    };
+  }
+
+  afterEach(() => {
+    resetTiers();
+    resetDeclaredTags();
+  });
+
+  test('a bust that refuses does not fail the write it was meant to follow', async () => {
+    declareTags(['post']);
+    let handled = 0;
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      // `feed` is not a declared entity, so the fan-out raises X_CACHE_TAG_UNKNOWN — after the
+      // handler has already committed.
+      cache: { invalidates: [tag('feed')] },
+      handle: ({ input }) => {
+        handled++;
+        return { id: input.postId, published: true };
+      },
+    }).named('publishPost');
+
+    const result = await invoke(target, { postId: POST_ID }, { ctx: editor });
+
+    expect(result).toEqual({ id: POST_ID, published: true });
+    expect(handled).toBe(1);
+  });
+
+  test('a replay busts nothing: the first call already did', async () => {
+    declareTags(['post']);
+    const busts = { value: 0 };
+    registerTier(countingTier(busts));
+    let handled = 0;
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      idempotent: true,
+      cache: { invalidates: [tag('post')] },
+      handle: ({ input }) => {
+        handled++;
+        return { id: input.postId, published: true };
+      },
+    }).named('publishPost');
+    const options = { ctx: editor, store: new MemoryIdempotencyStore(), idempotencyKey: 'k1' };
+
+    await invoke(target, { postId: POST_ID }, options);
+    expect(busts.value).toBe(1);
+
+    await invoke(target, { postId: POST_ID }, options);
+
+    // The handler ran once, so the tags were busted once — a retry loop must not re-purge the
+    // CDN and re-queue ISR for a write nobody made.
+    expect(handled).toBe(1);
+    expect(busts.value).toBe(1);
   });
 });

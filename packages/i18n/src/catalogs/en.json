@@ -191,6 +191,45 @@
       "clearSelection": "Clear selection"
     }
   },
+  "dev": {
+    "panel": {
+      "routes": { "title": "Routes", "question": "which handler serves this?" },
+      "timeline": {
+        "title": "Timeline",
+        "question": "where did the time go in this request?"
+      },
+      "live": { "title": "Live", "question": "what does each subscriber receive, and why?" },
+      "jobs": { "title": "Jobs", "question": "is the queue moving, and which step failed?" },
+      "db": {
+        "title": "DB",
+        "question": "what is in the table, and does the schema match the migrations?"
+      },
+      "mail": { "title": "Mail", "question": "what did that email look like, in that locale?" },
+      "cache": {
+        "title": "Cache",
+        "question": "what invalidated what — and why is this still stale?"
+      },
+      "policy": { "title": "Policy", "question": "can this actor do that, and why?" },
+      "manifest": {
+        "title": "Manifest",
+        "question": "is the committed x.manifest.json current?"
+      },
+      "services": {
+        "title": "Services",
+        "question": "which services is this process talking to, and did anything fail to load?"
+      },
+      "boundaries": {
+        "title": "Boundaries",
+        "question": "does any file import across a boundary the build will reject?"
+      }
+    },
+    "live": {
+      "no-sync-node": "no sync node is attached — subscriber facts need a running x dev process"
+    },
+    "cache": {
+      "no-invalidations-yet": "no invalidation has been logged yet — the graph above is still real"
+    }
+  },
   "time": {
     "cron": {
       "everyMinute": "every minute",

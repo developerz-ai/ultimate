@@ -54,11 +54,16 @@ export interface RouteGuard {
 /**
  * What a loader and a `meta` function are told about the request. `url` is a string because that
  * is what `ld.*` embeds and what `meta` already received before `load` existed.
+ *
+ * An alias rather than an `interface`, deliberately: absent a `load` this object IS the route's
+ * data, and only an alias carries the implicit index signature that makes it a `RouteData`. As an
+ * interface the compiler could not see that, so the one place it mattered — `routeDataFor`'s
+ * fallback — laundered it through `as unknown as TData` and checked nothing at all.
  */
-export interface RouteContext {
+export type RouteContext = {
   readonly params: RouteParams;
   readonly url: string;
-}
+};
 
 /**
  * The route's server-side data, resolved ONCE per render and handed to both `meta` and the page.
@@ -109,6 +114,20 @@ export type PrerenderFn = () =>
   | readonly (string | RouteParams)[]
   | Promise<readonly (string | RouteParams)[]>;
 
+/**
+ * The rule that makes the no-`load` fallback true: a route that loads nothing renders
+ * `{ params, url }`, so its `meta` may only read what the context itself supplies. Any richer
+ * `TData` has to come from a loader, and this intersection is what says so — `nothing` when the
+ * context already satisfies `TData`, a required `load` when it does not.
+ *
+ * Enforced, not documented (axiom 3): a `meta` reading `data.post` off a route that declares no
+ * `load` is a compile error here, rather than `undefined` in a `<title>` on the surface whose
+ * entire purpose is SEO.
+ */
+export type LoadRequirement<TData> = RouteContext extends TData
+  ? unknown
+  : { readonly load: RouteLoadFn<TData> };
+
 /** The input shape of `defineRoute` — exactly the contract's nine keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {
   readonly render: RenderMode;
@@ -156,9 +175,12 @@ export function tagKeys(tags: readonly CacheTag[] | undefined): readonly string[
  * Declare a route. Validates the shape (for JS callers who bypass the types) and the
  * mode-local invariants immediately, so a bad route fails at module evaluation — build
  * time — rather than on the first request in production.
+ *
+ * `LoadRequirement` is the half the compiler owns: a `meta` reading data the context cannot
+ * supply forces a `load`, which is what lets `routeDataFor` hand the context back as the data.
  */
 export function defineRoute<TData = RouteData>(
-  definition: RouteDefinition<TData>,
+  definition: RouteDefinition<TData> & LoadRequirement<TData>,
 ): RouteConfig<TData> {
   const def = definition as Partial<RouteDefinition<TData>>;
 

@@ -17,8 +17,8 @@ export interface ManifestPanelData {
 
 export const manifestPanel: DevPanel<ManifestPanelData> = {
   key: 'manifest',
-  titleKey: 'dev.panel.manifest',
-  question: 'is the committed x.manifest.json current?',
+  titleKey: 'dev.panel.manifest.title',
+  questionKey: 'dev.panel.manifest.question',
   async data(sources): Promise<ManifestPanelData> {
     const manifest = await sources.manifest();
     return {
