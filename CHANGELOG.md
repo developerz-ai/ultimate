@@ -252,6 +252,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A composite index reaches the generated migration whole.** `EntityDescription.indexes` carried
+  index *names* and `parseIndexName` recovered the column list back out of one, so
+  `indexes: [{ on: ['orgId', 'createdAt'] }]` emitted
+  `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at")` — one column that
+  does not exist, `42703`, and a migration nobody can apply. The convention that builds the name
+  joins with `_` and does not run backwards: two columns and one column called `org_id_created_at`
+  are the same string. `IndexDescription` now carries `columns`, `unique`, `where` and `order`, and
+  the generator spells every part of them — so a **partial** index keeps its predicate (emitted as
+  a total one, it refused rows the entity allows) and a `desc` index keeps its direction.
+  `parseIndexName`/`ParsedIndex` are gone; nothing derives an index from a string any more.
+  Composite unique indexes are what `upsertAll`'s `on conflict` is inferred against, so
+  `packages/entity/src/pg-driver-bulk.live.test.ts` no longer creates its own by hand — it asserts
+  the generated migration carries it. An index over no columns is `X_INVARIANT` at `entity()`
+  rather than DDL Postgres cannot parse.
+
 - **The `/_x` DB panel's read-only guard read a comment marker inside a quoted identifier as a
   comment.** `select 1 as "--"; delete from members` blanked from the `--` onward, so the scan saw
   `select 1 as "`, called it a read, and handed the whole string to Postgres — which ran both

@@ -232,6 +232,18 @@ anonymous SQL, never as a `job` statement, and will keep seeing it that way unti
 own pair through `driver-pg.ts` the way `postgresRepo` now threads entity's — that is still future
 work, not something this change reaches.
 
+**`generate.ts` reads an index, it never re-derives one.** `EntityDescriptionLike.indexes` carries
+`columns`, `unique`, `where` and `order`, and `createIndex` writes every one of them out. It used to
+carry names alone and `parseIndexName` recovered the column list from the `<table>_<a>_<b>_idx`
+convention — which does not run backwards: `_` joins the columns *and* appears inside them, so a
+two-column index emitted `("org_id_created_at")`, a column that does not exist, `42703`, and a
+migration nobody can apply. The same loss took the rest of the declaration with it: a partial index
+emitted as a total one refuses rows the entity allows, and a `desc` index came out ascending. Any
+new part of an index is added to `IndexDescriptionLike` and spelled in `createIndex`, never encoded
+into the name for a reader to parse back out. An index naming no column is `X_INVARIANT` through
+core's `assert` — `entity()` refuses `on: []` at declaration, so nothing the framework produces can
+reach it, and a hand-built description gets the error rather than DDL Postgres cannot parse.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

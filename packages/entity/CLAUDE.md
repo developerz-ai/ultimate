@@ -236,6 +236,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   name, **every** member of that group takes its long form, so declaring a second foreign key
   never renames the first relation behind a caller's back. What the two tiers cannot separate is
   refused with `X_INVARIANT_VIOLATED` naming both columns — never collapsed into one relation.
+- **An index is described whole — columns, uniqueness, predicate, direction — never by its name
+  alone.** `EntityDescription.indexes` is a list of `IndexDescription`, not of strings, because the
+  `<table>_<a>_<b>_idx` name `entity()` mints joins with `_` and cannot be read back: a two-column
+  index recovered from its own name became the single column `"org_id_created_at"`, so
+  `generateMigration` emitted DDL Postgres answers `42703` and every composite index in the
+  framework — including the composite unique one `upsertAll`'s `on conflict` is inferred against —
+  had to be written by hand. `where` and `order` ride along for the same reason: a partial index
+  emitted as a total one refuses rows the entity allows. `on: []` is refused at declaration
+  (`X_INVARIANT_VIOLATED`), where the author can see it.
 - **Relations reach query time through `RegistryEntry.references()`, and the DDL string is
   rendered from it.** The resolved records are the source; `ColumnDescription.references` spells
   `"<table>.<column>"` out of one for the migration generator, which is in tier 1 and cannot

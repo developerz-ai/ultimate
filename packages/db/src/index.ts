@@ -63,15 +63,9 @@ export type {
   EntityDescriptionLike,
   GeneratedMigration,
   GenerateOptions,
-  ParsedIndex,
+  IndexDescriptionLike,
 } from './generate';
-export {
-  generateMigration,
-  migrationStamp,
-  parseIndexName,
-  slugify,
-  snapshotOf,
-} from './generate';
+export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
 export type {
   ColumnDescription,
   ForeignKeyDescription,

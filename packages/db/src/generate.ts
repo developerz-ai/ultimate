@@ -3,7 +3,7 @@
 // the CLI passes `describeEntities()` and the types below mirror `EntityDescription` field for
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
-import { systemClock } from '@ultimat3/core';
+import { assert, systemClock } from '@ultimat3/core';
 import { migrationIrreversible } from './errors';
 import {
   type ColumnDescription,
@@ -25,14 +25,31 @@ export interface ColumnDescriptionLike {
   readonly references: string | null;
 }
 
+/**
+ * Structurally assignment-compatible with `@ultimat3/entity`'s `IndexDescription`.
+ *
+ * The column list is carried, never recovered from `name`. Entity names an index
+ * `<table>_<a>_<b>_idx`, and that convention does not run backwards: two columns joined by `_`
+ * are one string, so a composite index read back out of its own name became the single column
+ * `"org_id_created_at"` — DDL Postgres answers `42703` and a migration nobody can apply.
+ */
+export interface IndexDescriptionLike {
+  readonly name: string;
+  readonly columns: readonly string[];
+  readonly unique: boolean;
+  /** Partial index predicate as SQL, `null` when the index covers every row. */
+  readonly where: string | null;
+  /** `null` is Postgres' own default (`asc`), never written out. */
+  readonly order: 'asc' | 'desc' | null;
+}
+
 /** Structurally assignment-compatible with `@ultimat3/entity`'s `EntityDescription`. */
 export interface EntityDescriptionLike {
   readonly name: string;
   readonly table: string;
   readonly primaryKey: readonly string[];
   readonly columns: readonly ColumnDescriptionLike[];
-  /** Index names only, following entity's `<table>_<column>_idx` / `_key` convention. */
-  readonly indexes: readonly string[];
+  readonly indexes: readonly IndexDescriptionLike[];
 }
 
 const SQL_TYPES: Readonly<Record<string, string>> = {
@@ -80,25 +97,24 @@ function columnClause(column: ColumnDescriptionLike): string {
   return parts.join(' ');
 }
 
-export interface ParsedIndex {
-  readonly name: string;
-  readonly columns: readonly string[];
-  readonly unique: boolean;
-}
-
 /**
  * A `unique` column clause already creates an index, and Postgres names it exactly what the
  * entity's own convention names it — `<table>_<column>_key`. Emitting `create unique index` for
  * it too is the same index twice: `42P07`, and a migration that cannot be applied at all.
  * Mirrors the rule `entity()` already applies to a foreign key indexing its own column.
+ *
+ * A **partial** unique index is not that index: the column clause constrains every row, so
+ * skipping the partial one would silently widen the constraint the entity declared.
  */
 function impliedByColumnClause(
   entity: EntityDescriptionLike,
-  index: ParsedIndex,
+  index: IndexDescriptionLike,
   added: ReadonlySet<string>,
 ): boolean {
   const [only] = index.columns;
-  if (!index.unique || index.columns.length !== 1 || only === undefined) return false;
+  if (!index.unique || index.where !== null || index.columns.length !== 1 || only === undefined) {
+    return false;
+  }
   const column = entity.columns.find((each) => each.column === only);
   // `columnClause` writes `unique` under exactly this condition — keep the two in step.
   //
@@ -107,15 +123,6 @@ function impliedByColumnClause(
   // unsafe for exactly this reason — applying it turned a green typecheck red.
   // biome-ignore lint/complexity/useOptionalChain: an optional chain widens the return to include undefined
   return column !== undefined && column.unique && !column.primaryKey && added.has(only);
-}
-
-/** Entity only records index names; the convention is what makes the columns recoverable. */
-export function parseIndexName(table: string, name: string): ParsedIndex {
-  const unique = name.endsWith('_key');
-  const prefix = `${table}_`;
-  const withoutTable = name.startsWith(prefix) ? name.slice(prefix.length) : name;
-  const middle = withoutTable.replace(/_(idx|key)$/, '');
-  return { name, columns: middle === '' ? [] : [middle], unique };
 }
 
 export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDescription {
@@ -136,8 +143,10 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
         name: entity.table,
         columns,
         primaryKey: [...entity.primaryKey],
-        indexes: entity.indexes.map((name) => ({
-          ...parseIndexName(entity.table, name),
+        indexes: entity.indexes.map((index) => ({
+          name: index.name,
+          columns: index.columns,
+          unique: index.unique,
           primary: false,
         })),
         foreignKeys: [],
@@ -154,18 +163,29 @@ function createTable(entity: EntityDescriptionLike): readonly string[] {
   const statements = [`create table "${entity.table}" (\n  ${clauses.join(',\n  ')}\n);`];
   // Every column of a new table carries its own clause, so every `unique` one brings its index.
   const added = new Set(entity.columns.map((column) => column.column));
-  for (const name of entity.indexes) {
-    const index = parseIndexName(entity.table, name);
-    if (index.columns.length === 0 || impliedByColumnClause(entity, index, added)) continue;
+  for (const index of entity.indexes) {
+    if (impliedByColumnClause(entity, index, added)) continue;
     statements.push(createIndex(entity.table, index));
   }
   return statements;
 }
 
-function createIndex(table: string, index: ParsedIndex): string {
+/**
+ * Every part of the declaration reaches the statement: the whole column list in its declared
+ * order, the direction when one was asked for, and the predicate that makes it partial. A part
+ * dropped here is a constraint the database does not hold or an index the planner cannot use.
+ */
+function createIndex(table: string, index: IndexDescriptionLike): string {
+  assert(
+    index.columns.length > 0,
+    `index "${index.name}" on "${table}" names no columns`,
+    `indexes: [{ on: ['<column>'] }]   # name the columns in the entity(), then x db gen`,
+  );
   const kind = index.unique ? 'create unique index' : 'create index';
-  const columns = index.columns.map((column) => `"${column}"`).join(', ');
-  return `${kind} "${index.name}" on "${table}" (${columns});`;
+  const direction = index.order === null ? '' : ` ${index.order}`;
+  const columns = index.columns.map((column) => `"${column}"${direction}`).join(', ');
+  const predicate = index.where === null ? '' : ` where (${index.where})`;
+  return `${kind} "${index.name}" on "${table}" (${columns})${predicate};`;
 }
 
 interface Plan {
@@ -220,14 +240,13 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
   }
 
   const indexed = new Set(live.indexes.map((index) => index.name));
-  for (const name of entity.indexes) {
-    if (indexed.has(name)) continue;
-    const index = parseIndexName(entity.table, name);
+  for (const index of entity.indexes) {
+    if (indexed.has(index.name)) continue;
     // `added` only: an index over a column that was already there is implied by no clause this
     // migration emits, so it still needs a statement of its own.
-    if (index.columns.length === 0 || impliedByColumnClause(entity, index, added)) continue;
+    if (impliedByColumnClause(entity, index, added)) continue;
     plan.up.push(createIndex(entity.table, index));
-    plan.down.push(`drop index "${name}";`);
+    plan.down.push(`drop index "${index.name}";`);
   }
 }
 

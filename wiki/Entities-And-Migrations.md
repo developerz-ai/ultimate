@@ -83,7 +83,7 @@ Every projection is a method on the entity — `posts.$view(['id', 'title'])`, n
 | `$view(keys)` | the row projection | `const PostView = posts.$view(['id', 'title'])` — what an action names as its `output`. An unknown key is a compile error, and `X_INVARIANT_VIOLATED` at declaration for a JS caller |
 | `$assert(row)` | every invariant, run | called by the repo on insert and on update; reports **every** failing invariant at once, so one round trip fixes all |
 | `$migration()` | the CHECK and UNIQUE statements this entity contributes | `ALTER TABLE … ADD CONSTRAINT … CHECK` per `check`, `CREATE UNIQUE INDEX` per `unique`. A JS-only rule is `kind: 'assert'` and emits nothing — never a pretend CHECK |
-| `$describe()` | the manifest row | name, table, primary key, physical columns, invariants, index names, tags, `cacheTag`, `softDelete`, `orgScoped` |
+| `$describe()` | the manifest row | name, table, primary key, physical columns, invariants, indexes (name **and** column list, uniqueness, predicate, direction — a name cannot be parsed back into columns), tags, `cacheTag`, `softDelete`, `orgScoped` |
 | `$cacheTag` | `entity:<name>` | the string `@ultimat3/cache` invalidates by |
 | `$tagFor(id)` | `entity:<name>:<id>` | row-level invalidation for live queries |
 | `$tenantColumn` | the tenant column's property key, or `null` | presence is what turns tenancy on — resolution order under **Tenant column rule** below |

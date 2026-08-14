@@ -211,7 +211,7 @@ Two edits to the emitted SQL, both mechanical:
 
 | Emitted | Why it fails | Fix |
 |---|---|---|
-| `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at");` | the composite index column list round-trips as one mangled name | spell the columns: `("org_id", "created_at")` |
+| `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at");` | the composite index column list round-trips as one mangled name. **Fixed on `main`, unreleased** — on 1.1.0 it is an edit | spell the columns: `("org_id", "created_at")` |
 | `create table …;` and `create index …;` in one file | the driver runs a migration's `up` as one prepared statement — *cannot insert multiple commands into a prepared statement* | **one statement per migration file**; split into `0001_…` and `0002_…`, each with its own `.hash` |
 
 Apply them the way production does — same code path, no toolchain:

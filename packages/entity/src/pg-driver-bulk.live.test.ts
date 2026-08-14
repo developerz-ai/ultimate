@@ -71,16 +71,6 @@ const MONEY = { minor: 12_500, currency: 'EUR' };
 const UNIQUE_INDEX = 'pg_bulk_live_invoices_org_id_reference_key';
 
 /**
- * The constraint an updating upsert on a tenant-scoped entity has to be inferred against, written
- * out. `generateMigration` cannot emit it: `EntityDescription.indexes` carries index NAMES only and
- * `parseIndexName` recovers ONE column from `<table>_<a>_<b>_key`, so the generated DDL reads
- * `("org_id_reference")` and Postgres answers `42703`. Reported, not papered over — this file is
- * about the driver, and the driver needs the index to exist.
- */
-const COMPOSITE_UNIQUE = `create unique index "${UNIQUE_INDEX}"
-  on "pg_bulk_live_invoices" ("org_id", "reference")`;
-
-/**
  * The generator returns one `up` script; a driver executes one statement. Splitting on `;\n` is
  * enough because every value in a generated clause is an identifier or a CHECK the entity wrote.
  */
@@ -110,20 +100,9 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
       name: 'live bulk writes',
       now: new Date('2026-08-12T00:00:00.000Z'),
     });
-    let replaced = 0;
     for (const statement of statementsOf(migration.up)) {
-      // See `COMPOSITE_UNIQUE`: the generated form of this one index names a column that does not
-      // exist, so it is replaced rather than applied.
-      if (statement.includes(UNIQUE_INDEX)) {
-        replaced += 1;
-        continue;
-      }
       await client.execute(raw(statement));
     }
-    // Counted, because a generator that renames that index would match nothing here and send the
-    // broken `create unique index` to the server — a `42703` that reads like a driver bug.
-    expect(replaced).toBe(1);
-    await client.execute(raw(COMPOSITE_UNIQUE));
   });
 
   afterAll(async () => {
@@ -157,13 +136,17 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
 
   test('the server carries the unique constraints on conflict is inferred against', async () => {
     // The premise of every upsert below, asserted against the catalog rather than against a script:
-    // whatever created them, both constraints are on this server or nothing here means anything.
+    // both constraints are on this server, put there by the generated migration and nothing else.
     const indexes = await client.query<{ indexdef: string }>(
       raw(`select indexdef from pg_indexes where tablename = 'pg_bulk_live_invoices'`),
     );
     expect(indexes.some((index) => index.indexdef.includes('(org_id, reference)'))).toBe(true);
-    // The generator does get a composite PRIMARY KEY right; it is only `indexes:` it cannot spell.
     expect(migration.up).toContain('primary key ("org_id", "invoice_id", "label")');
+    // The composite index this file used to create by hand: the description carries its column
+    // list, so the generator spells it whole instead of `("org_id_reference")` — a `42703`.
+    expect(migration.up).toContain(
+      `create unique index "${UNIQUE_INDEX}" on "pg_bulk_live_invoices" ("org_id", "reference");`,
+    );
   });
 
   test('a batch round-trips through one multi-row insert', async () => {
