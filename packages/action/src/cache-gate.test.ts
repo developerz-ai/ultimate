@@ -1,3 +1,9 @@
+/**
+ * Proves the post-commit bust degrades instead of raising: the handler has already committed
+ * by the time `bustAfterCommit` runs, so a dead tier or an undeclared tag may cost stale
+ * entries but may never reverse an action result the caller was already handed.
+ */
+
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { CacheTag, CacheTier, TierInvalidation, TierName } from '@ultimat3/cache';
 import { declareTags, registerTier, resetDeclaredTags, resetTiers, tag } from '@ultimat3/cache';

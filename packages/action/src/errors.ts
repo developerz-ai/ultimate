@@ -194,8 +194,12 @@ export interface RemoteFailure {
   readonly code: string;
   readonly cause: string;
   readonly fix: string;
-  /** The link the server sent, if it sent one. Never synthesized from the code. */
-  readonly docs?: string | undefined;
+  /**
+   * The links the server offered, most specific first. Never synthesized from the code, and
+   * never trusted for being present — the first one that is an absolute HTTP(S) URL wins, so
+   * a `javascript:` in the preferred slot cannot suppress a usable link behind it.
+   */
+  readonly docs?: readonly (string | undefined)[] | undefined;
 }
 
 /** A link, not a string the server happened to put in a field the overlay renders as an href. */
@@ -208,9 +212,14 @@ const ABSOLUTE_HTTP_URL = /^https?:\/\//;
  * that URL is a 404 dressed as documentation, printed under `docs:` as if the framework wrote the
  * page. So: the server's own link when it sent a resolvable one, this build's registered link
  * when it knows the code, and otherwise the index — a page that exists.
+ *
+ * `sent` is ordered, not singular: a server that fills `docs` with a `javascript:` URI still
+ * sent RFC-9457's `type`, and taking the first *resolvable* candidate means the unusable one
+ * costs nothing. Testing only the preferred slot would have dropped a valid link on the floor.
  */
-function remoteDocs(code: string, sent: string | undefined): string | undefined {
-  if (sent !== undefined && ABSOLUTE_HTTP_URL.test(sent)) return sent;
+function remoteDocs(code: string, sent: readonly (string | undefined)[] = []): string | undefined {
+  const link = sent.find((value) => value !== undefined && ABSOLUTE_HTTP_URL.test(value));
+  if (link !== undefined) return link;
   // `undefined` lets the constructor resolve the REGISTERED descriptor, whose docs a package
   // may have declared as something other than the default URL.
   return hasErrorCode(code) ? undefined : ERROR_DOCS_BASE;

@@ -11,6 +11,30 @@ const base = {
   hydrate: 'never',
 } as const;
 
+/**
+ * What `Bun.file(...).text()` throws for a missing file, and what every `node:fs` call throws:
+ * an `Error` carrying a string `code` and NO brand. Deliberately unbranded — that a `code`
+ * property is not proof of membership is the whole assertion, so a framework subclass here
+ * would test nothing.
+ */
+function foreignEnoent(): Error {
+  return Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+}
+
+/**
+ * What a tier-0 package throws. `@ultimat3/schema` cannot import `@ultimat3/core`, so its
+ * errors carry the well-known symbol instead of extending the class — a full code, cause and
+ * fix, and still never an `instanceof UltimateError`.
+ */
+function tierZeroFailure(): Error {
+  return Object.assign(new Error('expected a string'), {
+    [ULTIMATE_ERROR_BRAND]: true,
+    code: 'X_VALIDATION_FAILED',
+    cause: 'field "title": expected a string, received number',
+    fix: 'x actions describe publishPost --json  # compare the value against `input:`',
+  });
+}
+
 describe('routeDataFor', () => {
   test('a route with no load gets the context as its data, exactly as before load existed', async () => {
     const config = defineRoute({ ...base, meta: () => ({ title: 't' }) });
@@ -111,14 +135,12 @@ describe('routeDataFor', () => {
   });
 
   test('an ENOENT is wrapped — a string `code` was never proof the error was ours', async () => {
+    // The duck-type this replaced let every one of these straight out of the frame: the reader
+    // got a bare ENOENT with no fix line and no mention of the route that failed to load.
     const config = defineRoute({
       ...base,
       load: () => {
-        // What `Bun.file(...).text()` throws for a missing file, and what every `node:fs` call
-        // throws: an Error carrying a string `code`. The duck-type this replaced let all of them
-        // straight out of the frame — the reader got a bare ENOENT with no fix line and no
-        // mention of the route that failed to load.
-        throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' });
+        throw foreignEnoent();
       },
       meta: () => ({ title: 't' }),
     });
@@ -132,22 +154,22 @@ describe('routeDataFor', () => {
   });
 
   test('a tier-0 error survives on its brand alone, not on being a core subclass', async () => {
-    // `@ultimat3/schema` cannot import `@ultimat3/core`, so its errors carry the well-known
-    // symbol instead of extending the class. Checking `instanceof UltimateError` here would bury
-    // an `X_VALIDATION_FAILED` — the most precise thing a loader can fail with — under a generic
-    // wrapper, which is the same loss the ENOENT case is the mirror image of.
+    // Checking `instanceof UltimateError` here would bury an `X_VALIDATION_FAILED` — the most
+    // precise thing a loader can fail with — under a generic wrapper, which is the same loss the
+    // ENOENT case is the mirror image of. Identity, not just the code: the contract is that the
+    // object arrives untouched, so its cause and fix reach the reader too.
+    const thrown = tierZeroFailure();
     const config = defineRoute({
       ...base,
       load: () => {
-        throw Object.assign(new Error('expected a string'), {
-          [ULTIMATE_ERROR_BRAND]: true,
-          code: 'X_VALIDATION_FAILED',
-        });
+        throw thrown;
       },
       meta: () => ({ title: 't' }),
     });
     const failure = await routeDataFor(config, CTX).catch((error: unknown) => error);
+    expect(failure).toBe(thrown);
     expect((failure as UltimateError).code).toBe('X_VALIDATION_FAILED');
+    expect((failure as UltimateError).fix).toContain('x actions describe publishPost');
   });
 
   test('a non-function load is refused at declaration, not at the first request', async () => {

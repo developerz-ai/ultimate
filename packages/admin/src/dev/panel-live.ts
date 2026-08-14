@@ -2,6 +2,7 @@
 // Kills: "why did (or didn't) this subscriber get that row?" — every subscriber, what it
 // received, and the matcher's decision trace beside it.
 
+import { DevSourceUnavailableError } from '../errors';
 import type { LiveQueryFact, LiveSubscriberFact } from './facts';
 import type { DevPanel } from './panel';
 
@@ -34,7 +35,12 @@ export const livePanel: DevPanel<LivePanelData> = {
     let wired = true;
     try {
       subscribers = await sources.subscribers();
-    } catch {
+    } catch (error) {
+      // Only the one error that MEANS unwired. A bare `catch` read an authz refusal, a dropped
+      // NATS connection and a bug in the recorder as "no sync node" — the note the panel prints
+      // for a tier that was never installed — and threw the diagnostic away. Anything else
+      // reaches `panelPayload`, which renders its code and its fix line.
+      if (!(error instanceof DevSourceUnavailableError)) throw error;
       wired = false;
     }
     const wanted = params.get('query');

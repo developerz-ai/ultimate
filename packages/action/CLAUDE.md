@@ -65,6 +65,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   build's registered link when `hasErrorCode` knows the code, otherwise `ERROR_DOCS_BASE`. The
   code must be `X_SCREAMING_SNAKE` to be taken at all — `typeof code === 'string'` accepted `""`
   from a gateway — and anything else is `RpcFailedError`, which is what that code means.
+  `docs` and `type` travel to `remoteDocs` as an ordered pair, not `docs ?? type`: preference is
+  not selection, and picking the preferred slot on presence alone let one `javascript:` string
+  bury a perfectly good `type` the same response had already offered.
 - **MCP exposure is read through `isMcpExposed` from `@ultimat3/core`, in all three places.**
   `toMcpTools` builds the tool, `describeAction` publishes the manifest fact and
   `toOpenApiOperation` publishes `x-ultimate.mcpTool` — the last two fail-opened (`?? true`,
@@ -87,9 +90,13 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   including one whose policy was `allow()`. `sampleInput` builds the payload from `input:`'s own
   IR (required keys only) so the invocation reaches the policy; the class, not `X_FORBIDDEN`, is
   the assertion, because `ActionDeniedError` re-uses the policy decision's code and `can()`
-  answers a null actor with `X_UNAUTHENTICATED`. Anything else thrown before the policy is
-  `X_CONTRACT_DRIFT` naming `input:` as the fix — never a pass. A non-`UltimateError` (a `row:`
-  loader's own `TypeError`) is rethrown untouched: its stack is the thing worth reading.
+  answers a null actor with `X_UNAUTHENTICATED`. **Only `X_INPUT_INVALID` becomes
+  `X_CONTRACT_DRIFT`** — it is the one code `invoke` raises before `guard()` is reached, and
+  `input:` is the one knob that answers it. Everything else keeps its own code and its own fix:
+  saying `X_OUTPUT_INVALID … before its policy decided` named a stage nothing had checked and
+  offered a fix that changes nothing, and it hid the `allow()` whose handler threw — the authz
+  escape this assertion exists to catch. A non-`UltimateError` (a `row:` loader's own
+  `TypeError`) is rethrown untouched too: its stack is the thing worth reading.
   `contract-test.contract.test.ts` drives all three assertions against actions built to fail them.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method

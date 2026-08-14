@@ -122,6 +122,13 @@ async function expectDenied(
     // drift error would hide the line that threw behind a fix that does not apply.
     if (!isUltimateError(error)) throw error;
     if (error instanceof ActionDeniedError) return;
+    // `invoke` runs parse input → row → policy → handle → parse output, and every stage lands
+    // here identically. Only `X_INPUT_INVALID` is attributable: it is what `validateInput`
+    // raises before `guard()` is reached, and `input:` is the knob that answers it. Any other
+    // code — `X_TENANCY_UNSCOPED` from a `row:` loader, `X_DB_CONFLICT` from a handler,
+    // `X_OUTPUT_INVALID` from the parse after it — keeps its own code and its own fix rather
+    // than being retold as an input problem with a fix that changes nothing.
+    if (error.code !== 'X_INPUT_INVALID') throw error;
     throw new ContractDriftError(
       `${name} failed with ${error.code} before its policy decided, so the denial is unproven`,
       `pass \`input:\` to contractTestsFor(${name}) — x actions describe ${name} --json prints the schema`,

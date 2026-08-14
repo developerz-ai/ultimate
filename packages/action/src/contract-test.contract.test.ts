@@ -12,6 +12,7 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { ContractTest, ContractTestOptions } from './contract-test';
 import { contractTestsFor } from './contract-test';
+import { ContractDriftError } from './errors';
 import type { ActionPolicy } from './policy-gate';
 
 const Input = t.object({ postId: t.uuid, notify: t.boolean.default(true) });
@@ -31,9 +32,19 @@ const publish = (policy: ActionPolicy, options?: ContractTestOptions): readonly 
 const denial = (contracts: readonly ContractTest[]): ContractTest => at(contracts, 1);
 const garbage = (contracts: readonly ContractTest[]): ContractTest => at(contracts, 0);
 
+/**
+ * The pinned position of each generated assertion. Reaching past the end means the projection
+ * emits a different set than the one this file drives — drift in the generator itself, which is
+ * a coded failure like any other, not a bare throw with no fix line.
+ */
 function at(contracts: readonly ContractTest[], index: number): ContractTest {
   const contract = contracts[index];
-  if (contract === undefined) throw new Error(`no contract test at index ${index}`);
+  if (contract === undefined) {
+    throw new ContractDriftError(
+      `contractTestsFor emitted ${contracts.length} assertions, so index ${index} is past the end`,
+      'bun test packages/action/src/contract-test.contract.test.ts  # then repin the indices',
+    );
+  }
   return contract;
 }
 
@@ -133,6 +144,24 @@ describe('the policy assertion', () => {
       .run()
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(TypeError);
+  });
+
+  test('a coded failure the policy could not have caused keeps its code, not `input:` drift', async () => {
+    // The branch used to read every UltimateError as "before its policy decided". This one is
+    // raised after `allow()` let a null actor through, so the old message named a stage it had
+    // not checked and offered `input:`, a knob that changes nothing about an output schema.
+    const target = action({
+      input: Input,
+      output: t.object({ id: t.uuid, published: t.boolean }),
+      policy: allow(),
+      handle: () => ({ id: 'not-a-uuid', published: true }),
+    }).named('publishMalformed');
+
+    const failure = await denial(contractTestsFor(target))
+      .run()
+      .catch((error: unknown) => error);
+    expect(failure).toBeUltimateError('X_OUTPUT_INVALID');
+    expect(fixOf(failure)).not.toContain('pass `input:`');
   });
 });
 

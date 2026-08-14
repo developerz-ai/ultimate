@@ -18,23 +18,30 @@ export interface DbPanelData {
 const WRITE_STATEMENT =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|copy|vacuum)\b/i;
 
-/** A `'...'` string literal, `''` escapes included — blanked before the keyword scan runs. */
-const STRING_LITERAL = /'(?:[^']|'')*'/g;
-const LINE_COMMENT = /--[^\n]*/g;
-const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
+/**
+ * Every span Postgres reads as opaque text rather than as SQL, in ONE alternation: a `'…'`
+ * string (`''` escapes included), a `"…"` quoted identifier (`""` included), a `$tag$…$tag$`
+ * dollar-quoted body, a `--` line comment and a slash-star block comment.
+ *
+ * One pass, not five. Sequential passes cannot be ordered correctly, because each form can
+ * contain the opener of any other: blanking comments first eats the `--` inside `'…'`, and
+ * blanking strings first eats the `'` inside a comment. A single left-to-right scan resolves
+ * that the way a lexer does — whichever token *starts* first consumes the rest — which is what
+ * closes `SELECT 1 AS "--"; DELETE FROM members`, where the `--` hid inside an identifier and
+ * commented the DELETE out of the guard's view while Postgres still ran it.
+ */
+const OPAQUE_SPAN =
+  /'(?:[^']|'')*'|"(?:[^"]|"")*"|\$([A-Za-z_]\w*)?\$[\s\S]*?\$\1\$|--[^\n]*|\/\*[\s\S]*?\*\//g;
 
 /**
- * Strips what the keyword scan must not read as SQL: string content and both comment forms.
- * Order matters — string literals are blanked first, so a `--` or `/*` sitting inside one
- * (`where note = '-- not a comment'`) is never mistaken for the start of a real comment, and a
- * `create`/`update`/… sitting inside one (`where kind = 'create'`) never reaches the write-word
- * check below. Blanked to spaces, never deleted, so `whe`+`re` never fuses into a new keyword.
+ * Blanks what the keyword scan must not read as SQL, so a `create`/`update`/… sitting inside a
+ * literal (`where kind = 'create'`) never reaches the write-word check below. Blanked to spaces,
+ * never deleted, so `whe`+`re` never fuses into a new keyword. An *unterminated* quote matches
+ * nothing and is left standing — the statement after it stays visible to the guard, and Postgres
+ * rejects it as a syntax error anyway. Failing open there would be the bypass.
  */
 function sanitize(sql: string): string {
-  return sql
-    .replace(STRING_LITERAL, (literal) => ' '.repeat(literal.length))
-    .replace(BLOCK_COMMENT, (comment) => ' '.repeat(comment.length))
-    .replace(LINE_COMMENT, (comment) => ' '.repeat(comment.length));
+  return sql.replace(OPAQUE_SPAN, (span) => ' '.repeat(span.length));
 }
 
 /**

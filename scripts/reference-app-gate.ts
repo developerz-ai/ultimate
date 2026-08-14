@@ -47,8 +47,8 @@ export const EXPECTED_RED: Readonly<Record<string, string>> = {
     'three site/ routes read @postly/db directly; they need the bounded queries the ' +
     'data-substrate work adds',
   contract:
-    'X_TENANCY_UNSCOPED on every post write, and on the read publishPost`s row: loader makes ' +
-    'before its policy runs — data substrate',
+    "X_TENANCY_UNSCOPED on every post write, and on the read that publishPost's `row:` loader " +
+    'makes before its policy runs — data substrate',
   live: 'the live suite reads through the same unscoped repo — data substrate',
   job: 'the digest job writes through the same unscoped repo — data substrate',
   e2e: 'the built output serves pages backed by the same repo — data substrate',

@@ -74,18 +74,18 @@ export const publishPost = action({
 |---|---|---|
 | Tier 1 request memo | drop entries carrying the tag | immediate, same request |
 | Tier 2 in-process LRU (**all instances**) | tag-invalidation message on NATS | ~ms, best-effort; a missed message costs a stale read until TTL, never a wrong write |
-| Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, transactional with the outbox |
+| Tier 3 Redis | `SREM`/`DEL` over the tag's key set | immediate, inside the fan-out |
 | ISR pages | routes whose `revalidate.tags` include the tag are marked stale → regenerated in background | next request serves stale, regen enqueued as a job |
 | CDN | purge by surrogate key — the same tag strings — through the configured `PurgeDriver` | seconds; `stale-while-revalidate` covers the gap |
 | Live queries | the same commit already flows through logical replication | **independent path** — realtime does not depend on cache invalidation |
 
-Fanout is enqueued in the **same transaction** as the write — the transactional outbox from [Jobs and workflows](Jobs-And-Workflows). A rolled-back write never purges; a committed write always does.
+Fan-out runs **after the handler resolves, in the same call** — `bustAfterCommit` awaits `invalidateTags()` directly (`packages/action/src/cache-gate.ts`), never through the outbox `As of 2026-08`. A handler that throws never reaches it, so a rolled-back write never purges; a process that dies between the commit and the fan-out leaves those entries until their TTL.
 
 > **Tier 3 invalidation needs single-node Redis `As of 2026-08`.** The Lua script `DEL`s keys it never declared in `KEYS`, which single-node Redis tolerates and **Dragonfly and Redis Cluster reject** — a cluster cannot route a key it was not told about. On those, tier-3 invalidation fails and entries live until their TTL. Use single-node Redis, or drop the shared tier → [Known gaps](Known-Gaps).
 
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 
-The write side holds the same rule one layer up. An action's `invalidates` fans out *after* its handler commits, so a fan-out that refuses outright — a tag no entity declared, `X_CACHE_TAG_UNKNOWN` — is absorbed rather than raised: one `action.invalidate.failed` error line, entries live until their TTL, and the caller keeps the write it already made. A replayed idempotent call (`idempotent: true` + a repeated `Idempotency-Key`) busts nothing at all: no handler ran, and the first call already did.
+The write side holds the same rule one layer up: a fan-out that refuses outright — a tag no entity declared, `X_CACHE_TAG_UNKNOWN` — is absorbed rather than raised: one `action.invalidate.failed` error line, entries live until their TTL, and the caller keeps the write it already made. A replayed idempotent call (`idempotent: true` + a repeated `Idempotency-Key`) busts nothing at all: no handler ran, and the first call already did.
 
 The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
 

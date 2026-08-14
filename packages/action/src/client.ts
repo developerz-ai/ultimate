@@ -159,8 +159,10 @@ async function toUltimateError(response: Response, name: string): Promise<Ultima
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${response.status}`),
     fix: stringOr(body['fix'], `x actions describe ${name} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
-    // still offered one. Both are checked before use — neither is trusted for being present.
-    docs: nonEmpty(body['docs'] ?? body['type']),
+    // still offered one. Both travel, in preference order: `??` picked `docs` on presence alone,
+    // so a `javascript:` one hid a perfectly good `type` behind it. `remoteDocs` takes the first
+    // that is an absolute HTTP(S) URL — neither is trusted for being there.
+    docs: [nonEmpty(body['docs']), nonEmpty(body['type'])],
   });
 }
 

@@ -252,6 +252,39 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **The `/_x` DB panel's read-only guard read a comment marker inside a quoted identifier as a
+  comment.** `select 1 as "--"; delete from members` blanked from the `--` onward, so the scan saw
+  `select 1 as "`, called it a read, and handed the whole string to Postgres — which ran both
+  statements. The passes could not be ordered correctly, because each opaque form can contain
+  another's opener: blanking comments first eats the `--` inside a string, blanking strings first
+  eats the `'` inside a comment. `sanitize()` is now ONE left-to-right alternation over every span
+  Postgres reads as opaque text — `'…'`, `"…"`, `$tag$…$tag$`, `--` and block comments — which
+  resolves them the way a lexer does: whichever token starts first consumes the rest. An
+  unterminated quote matches nothing and leaves the rest of the statement visible to the scan;
+  failing open there would be the same bypass by another route.
+
+- **`/_x/live` reported every subscriber-lookup failure as "no sync node".** A bare `catch` around
+  `sources.subscribers()` folded an authz refusal, a dropped NATS connection and a bug in the
+  recorder into `dev.live.no-sync-node` — the note for a tier that was never installed — and threw
+  the diagnostic away, telling the reader to wire up something they already had. It now catches
+  `DevSourceUnavailableError` and nothing wider; everything else reaches `panelPayload`, which
+  renders its code and its fix line.
+
+- **The policy contract test called any coded failure "before its policy decided".** `invoke` runs
+  parse input → row → policy → handle → parse output, and every `UltimateError` from any stage
+  landed in one branch: an `X_OUTPUT_INVALID` from the parse *after* the handler was reported as
+  input drift, with `pass \`input:\`` as the fix — a knob that changes nothing about an output
+  schema. Worse, it hid the case the assertion exists to catch: a `policy: allow()` whose handler
+  throws was read as drift rather than as an anonymous actor getting through. Only
+  `X_INPUT_INVALID` becomes `X_CONTRACT_DRIFT` now; every other code keeps its own code and its own
+  fix, the same reasoning that already rethrew a non-`UltimateError` untouched.
+
+- **An unusable `docs` link buried a usable `type`.** `nonEmpty(body['docs'] ?? body['type'])`
+  selected on presence, not on being a link, so a problem document carrying `docs:
+  'javascript:alert(1)'` alongside a valid HTTPS `type` reached `RemoteActionError` with only the
+  unusable one and fell back to the error index. Both now travel in preference order and
+  `remoteDocs` takes the first that is an absolute `http(s)` URL.
+
 - **`/_x/live`'s `sql` field was permanently `''`.** `QueryDescriptor` never carried SQL text —
   `defaultDevSources().liveQueries()` read a field the registry does not produce — so every row in
   the live panel printed an empty string forever, not the query it described. It now compiles real

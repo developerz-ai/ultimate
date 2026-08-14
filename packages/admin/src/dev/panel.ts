@@ -10,7 +10,8 @@ export interface DevPanel<Data = unknown> {
   readonly titleKey: string;
   /**
    * i18n key for the question this panel exists to kill, rendered as the tab's subtitle —
-   * `t(questionKey)`, never a literal sitting beside `titleKey`. Convention: `${titleKey}.question`.
+   * `t(questionKey)`, never a literal sitting beside `titleKey`. The two are siblings under the
+   * panel's own namespace: `dev.panel.jobs.title` and `dev.panel.jobs.question`.
    */
   readonly questionKey: string;
   data(sources: DevSources, params: URLSearchParams): Promise<Data>;

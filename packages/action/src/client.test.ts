@@ -137,6 +137,21 @@ describe('typed client', () => {
     expect((blank as RemoteActionError).docs).toBe('https://ultimate.dev/errors/');
   });
 
+  test('an unusable `docs` falls through to a usable `type` instead of burying it', async () => {
+    // Preference is not selection: `docs ?? type` picked the preferred slot on presence alone,
+    // so one unusable string cost the reader a link the same response had already offered.
+    const smuggled = await failWith({
+      body: {
+        code: 'X_SIGNUP_CLOSED',
+        cause: 'closed',
+        docs: 'javascript:alert(1)',
+        type: 'https://app.test/problems/closed',
+      },
+      status: 403,
+    });
+    expect((smuggled as RemoteActionError).docs).toBe('https://app.test/problems/closed');
+  });
+
   test('a body naming no framework code is X_RPC_FAILED, not a synthesized one', async () => {
     for (const body of [
       { code: '' },

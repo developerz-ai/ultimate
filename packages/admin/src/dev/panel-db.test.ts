@@ -52,4 +52,27 @@ describe('assertReadOnly', () => {
   test('refuses a statement that is not a recognized read form', () => {
     expect(assertReadOnly('call some_procedure()')).not.toBeNull();
   });
+
+  test('a comment marker smuggled through a quoted identifier does not hide the write', () => {
+    // The bypass this guard existed to stop and did not: blanking `--` before quoted spans left
+    // the scan looking at `select 1 as "` and calling it a read, while Postgres ran both
+    // statements. Same shape for a dollar-quoted body, which is a string Postgres does not
+    // terminate on `'`.
+    expect(assertReadOnly('select 1 as "--"; delete from members')).not.toBeNull();
+    expect(assertReadOnly('select $$--$$; drop table members')).not.toBeNull();
+    expect(assertReadOnly('select $tag$--$tag$; truncate members')).not.toBeNull();
+  });
+
+  test('a quoted identifier that only looks like a write is still a read', () => {
+    expect(assertReadOnly('select "delete" from members')).toBeNull();
+    expect(assertReadOnly('select id as "update count" from members')).toBeNull();
+    expect(assertReadOnly('select $$ delete from members $$ as note')).toBeNull();
+  });
+
+  test('an unterminated quote leaves the rest of the statement visible to the scan', () => {
+    // Failing open on a malformed quote is the same bypass by another route. Postgres rejects
+    // this too, but the guard must not be the thing that let it through.
+    expect(assertReadOnly("select '; delete from members")).not.toBeNull();
+    expect(assertReadOnly('select "; drop table members')).not.toBeNull();
+  });
 });
