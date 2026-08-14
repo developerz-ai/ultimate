@@ -29,6 +29,7 @@ await withTransaction(async (tx) => {
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
+| `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
 | `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report |
 | `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL |
 | `introspect()` | live schema → `SchemaDescription` |

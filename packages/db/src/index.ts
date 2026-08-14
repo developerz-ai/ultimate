@@ -125,5 +125,6 @@ export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
+export { statementsOf } from './statement-split';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction';
 export { beginStatement, currentTx, withTransaction } from './transaction';

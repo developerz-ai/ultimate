@@ -252,6 +252,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A migration `up` holding two statements applies — on both drivers.** `migrate()` sent the whole
+  script through one `tx.execute(raw(migration.up))`, and the two drivers disagreed about what that
+  means. PGlite's `query()` is the extended protocol always, so it refused the send outright:
+  *cannot insert multiple commands into a prepared statement*. Bun.SQL degrades to the simple
+  protocol whenever the text carries no bound value, so against a server the same script happened to
+  apply — until it carried one, and never by contract. The embedded driver is the one `x dev` and
+  `x db branch` run on, and `createTable` emits the table **and** every index it carries, so an
+  entity with one index generated a migration the local database could not apply. The documented
+  workaround was one statement per file.
+
+  `migrate()` and `rollback()` now split the script and send one statement at a time, inside the
+  **same** transaction: a half-applied migration is worse than an unapplied one. Splitting is
+  `statementsOf()` (`@ultimat3/db`), and it is a scan, not a `split(';')` — a `;` inside a string
+  literal, a quoted identifier, a dollar-quoted body, a `--` comment or a **nested** block comment is
+  data, and a generated migration holds all five, including the `-- backfill "c", then: … set not
+  null;` note written for a NOT NULL column added to a populated table. A chunk of whitespace and
+  comments alone is dropped rather than sent as an empty query, so a no-op `up` reaches its ledger
+  row instead of failing on nothing. The seven copies of this rule hand-rolled across
+  `@ultimat3/entity`'s and `@ultimat3/ai`'s live tests are gone — they import the one migrations use.
+  Pinned where it actually broke: `pglite-embedded.test.ts` applies a table-plus-index `up` against
+  the real embedded database and reverses it, and `migrate.live.test.ts` does the same against a
+  real server.
+
 - **A composite index reaches the generated migration whole.** `EntityDescription.indexes` carried
   index *names* and `parseIndexName` recovered the column list back out of one, so
   `indexes: [{ on: ['orgId', 'createdAt'] }]` emitted

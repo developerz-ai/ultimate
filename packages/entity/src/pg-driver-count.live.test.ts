@@ -11,6 +11,7 @@ import {
   raw,
   setDbClient,
   setStatementObserver,
+  statementsOf,
 } from '@ultimat3/db';
 import { integer, text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -49,13 +50,6 @@ const DROP = 'drop table if exists "pg_count_live_likes", "pg_count_live_orgs" c
 
 const POST_A = '00000000-0000-7000-8000-0000000000aa';
 const POST_B = '00000000-0000-7000-8000-0000000000bb';
-
-/** One `up` script out, one statement per `execute` in: every value in it is an identifier. */
-const statementsOf = (script: string): readonly string[] =>
-  script
-    .split(';\n')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
 
 describe.skipIf(!hasPostgres)('live · postgres · grouped counts', () => {
   let client: PostgresClient;

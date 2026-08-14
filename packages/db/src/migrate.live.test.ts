@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createPostgresClient, type PostgresClient } from './client';
-import { LEDGER_TABLE, type Migration, migrate } from './migrate';
+import { LEDGER_TABLE, type Migration, migrate, rollback } from './migrate';
 import { raw } from './sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -87,5 +87,62 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate advisory lock', () =>
 
     expect(report.applied.map((applied) => applied.id)).toEqual([slowMigration.id]);
     expect(elapsedMs).toBeLessThan(3_000);
+  }, 15_000);
+});
+
+/**
+ * The one thing a recording client cannot answer: whether a server accepts what the migrator sends.
+ * The refusal itself is the embedded driver's — `pglite-embedded.test.ts` holds that case, because
+ * PGlite is the extended protocol always — and what belongs here is the other half: the same split
+ * script, applied and reversed against a real server, in the order the script wrote it.
+ */
+describe.skipIf(!hasPostgres)('live · postgres · migrate applies a script', () => {
+  const clients: PostgresClient[] = [];
+
+  const freshClient = (): PostgresClient => {
+    const client = createPostgresClient({ url: url ?? '' });
+    clients.push(client);
+    return client;
+  };
+
+  const script: Migration = {
+    id: '20260101000200_live_script',
+    name: 'live script',
+    // What `generateMigration` emits for one indexed entity, plus the note it leaves for a NOT
+    // NULL column added later — a `;` inside a comment, which is not a separator.
+    up:
+      'create table "live_script_posts" ("id" uuid primary key, "org_id" uuid not null);\n' +
+      'create index "live_script_posts_org_id_idx" on "live_script_posts" ("org_id");\n' +
+      '-- backfill "org_id", then: alter table "live_script_posts" alter column "org_id" ' +
+      'set not null;\n',
+    down: 'drop index "live_script_posts_org_id_idx";\ndrop table "live_script_posts";',
+  };
+
+  beforeEach(async () => {
+    const client = freshClient();
+    await client.execute(raw('drop table if exists "live_script_posts" cascade'));
+    await client.execute(raw(`drop table if exists ${LEDGER_TABLE}`));
+  });
+
+  afterEach(async () => {
+    await Promise.all(clients.splice(0).map((client) => client.close()));
+  });
+
+  test('a table and its index in one up apply, and rollback reverses both', async () => {
+    const report = await migrate({ migrations: [script], client: freshClient() });
+    expect(report.applied.map((applied) => applied.id)).toEqual([script.id]);
+
+    const client = freshClient();
+    const indexes = await client.query<{ indexname: string }>(
+      raw(`select indexname from pg_indexes where tablename = 'live_script_posts'`),
+    );
+    expect(indexes.map((row) => row.indexname)).toContain('live_script_posts_org_id_idx');
+
+    const reverted = await rollback({ migrations: [script], client: freshClient() });
+    expect(reverted).toEqual([script.id]);
+    const after = await freshClient().query<{ n: number }>(
+      raw(`select count(*)::int as n from pg_tables where tablename = 'live_script_posts'`),
+    );
+    expect(after[0]?.n).toBe(0);
   }, 15_000);
 });

@@ -11,6 +11,7 @@ import {
   raw,
   setDbClient,
   setStatementObserver,
+  statementsOf,
 } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -69,16 +70,6 @@ const DROP =
 const MONEY = { minor: 12_500, currency: 'EUR' };
 
 const UNIQUE_INDEX = 'pg_bulk_live_invoices_org_id_reference_key';
-
-/**
- * The generator returns one `up` script; a driver executes one statement. Splitting on `;\n` is
- * enough because every value in a generated clause is an identifier or a CHECK the entity wrote.
- */
-const statementsOf = (script: string): readonly string[] =>
-  script
-    .split(';\n')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
 
 /**
  * A row that leaves columns out — which is what puts a `default` in its cell. `Repo` is typed for

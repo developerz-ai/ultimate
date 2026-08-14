@@ -12,6 +12,7 @@ import {
   raw,
   setDbClient,
   setStatementObserver,
+  statementsOf,
 } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { database } from './database';
@@ -39,16 +40,6 @@ const posts = entity('pg_batch_live_posts', {
 });
 
 const DROP = 'drop table if exists "pg_batch_live_posts", "pg_batch_live_orgs" cascade';
-
-/**
- * One `up` script out, one statement per `execute` in: every value in it is an identifier or a
- * CHECK the entity wrote, none of which can contain a semicolon.
- */
-const statementsOf = (script: string): readonly string[] =>
-  script
-    .split(';\n')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
 
 describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
   let client: PostgresClient;

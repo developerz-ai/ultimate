@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type DbClient, type DbConnection, type ReservableClient, setDbClient } from './client';
 import { expectedQueryLoopReason } from './expected-loop';
 import { createRecordingClient, type RecordingClient } from './fake';
+import { type EntityDescriptionLike, generateMigration } from './generate';
 import {
   auditLedger,
   type LedgerRow,
@@ -201,6 +202,133 @@ describe('migrate', () => {
     const later: Migration = { ...addPosts, id: '20260303000000_add_publish_at', name: 'b' };
     const pending = pendingMigrations([ledgerRow()], [later, addPosts]);
     expect(pending.map((migration) => migration.id)).toEqual([later.id]);
+  });
+});
+
+/**
+ * One send is one statement — what the recording client can answer is the *shape*: how many sends
+ * the migrator makes, in what order, and inside which transaction. Whether an engine accepts a
+ * script is a different question and a fake has no opinion on it, so it is pinned against the real
+ * embedded database in `pglite-embedded.test.ts` and a real server in `migrate.live.test.ts`.
+ */
+describe('a multi-statement migration', () => {
+  const withIndex: EntityDescriptionLike = {
+    name: 'Post',
+    table: 'posts',
+    primaryKey: ['id'],
+    columns: [
+      {
+        property: 'id',
+        column: 'id',
+        kind: 'uuid',
+        notNull: true,
+        primaryKey: true,
+        unique: false,
+        hasDefault: true,
+        check: null,
+        references: null,
+      },
+      {
+        property: 'orgId',
+        column: 'org_id',
+        kind: 'uuid',
+        notNull: true,
+        primaryKey: false,
+        unique: false,
+        hasDefault: false,
+        check: null,
+        references: null,
+      },
+    ],
+    indexes: [
+      { name: 'posts_org_id_idx', columns: ['org_id'], unique: false, where: null, order: null },
+    ],
+  };
+
+  const generated = (): Migration => {
+    const migration = generateMigration({
+      entities: [withIndex],
+      name: 'create posts',
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    return { id: migration.id, name: migration.name, up: migration.up, down: migration.down };
+  };
+
+  test('what `x db gen` writes for an indexed entity applies, one statement at a time', async () => {
+    client.on(/from x_migrations/, { rows: [] });
+    client.on('insert into x_migrations', { affected: 1 });
+    const migration = generated();
+    // The regression itself: what the generator produced was never applicable as one send.
+    expect(migration.up).toContain('create table "posts"');
+    expect(migration.up).toContain('create index "posts_org_id_idx"');
+
+    const report = await migrate({ migrations: [migration], appVersion: '1.5.0', client });
+
+    expect(report.applied).toHaveLength(1);
+    // Two sends, in the script's order, and neither carries the other.
+    const table = client.texts.findIndex((text) => text.startsWith('create table "posts"'));
+    const index = client.texts.findIndex((text) => text.startsWith('create index'));
+    expect(table).toBeGreaterThan(-1);
+    expect(index).toBeGreaterThan(table);
+    expect(client.texts[table]).not.toContain('create index');
+    expect(client.texts[index]).not.toContain('create table');
+    // Still one transaction: a half-applied migration is worse than an unapplied one.
+    expect(client.texts.filter((text) => text === 'BEGIN')).toHaveLength(1);
+    expect(client.texts.filter((text) => text === 'COMMIT')).toHaveLength(1);
+    expect(client.texts.indexOf('COMMIT')).toBeGreaterThan(index);
+    expect(
+      client.texts.findIndex((text) => text.includes('insert into x_migrations')),
+    ).toBeGreaterThan(index);
+  });
+
+  test('a semicolon inside a literal is data, not a second statement', async () => {
+    client.on(/from x_migrations/, { rows: [] });
+    client.on('insert into x_migrations', { affected: 1 });
+    const migration: Migration = {
+      ...addPosts,
+      up: `alter table "orgs" add constraint "c" check ("slug" ~ 'a;b');`,
+    };
+
+    await migrate({ migrations: [migration], appVersion: '1.5.0', client });
+
+    expect(client.texts).toContain(`alter table "orgs" add constraint "c" check ("slug" ~ 'a;b')`);
+  });
+
+  test('a script with nothing to run sends nothing, and still records the ledger row', async () => {
+    client.on(/from x_migrations/, { rows: [] });
+    client.on('insert into x_migrations', { affected: 1 });
+    // `generateMigration` answers `''` for a no-op, and its `-- backfill …;` note is a whole
+    // chunk on its own. Either reaching a driver on the extended protocol is an empty query.
+    const empty: Migration = { ...addPosts, up: '  \n-- nothing to do here\n' };
+
+    const report = await migrate({ migrations: [empty], appVersion: '1.5.0', client });
+
+    expect(report.applied).toHaveLength(1);
+    const inside = client.texts.slice(
+      client.texts.indexOf('BEGIN') + 1,
+      client.texts.indexOf('COMMIT'),
+    );
+    expect(inside).toHaveLength(1);
+    expect(inside[0]).toContain('insert into x_migrations');
+  });
+
+  test('rollback splits the down script the same way', async () => {
+    const migration: Migration = {
+      ...addPosts,
+      down: 'drop index "posts_org_id_idx";\ndrop table "posts";',
+    };
+    client.on(/from x_migrations/, {
+      rows: [ledgerRow({ checksum: migrationChecksum(migration) })],
+    });
+
+    const reverted = await rollback({ migrations: [migration], client });
+
+    expect(reverted).toEqual([migration.id]);
+    expect(client.texts).toContain('drop index "posts_org_id_idx"');
+    expect(client.texts).toContain('drop table "posts"');
+    expect(client.texts.indexOf('drop table "posts"')).toBeGreaterThan(
+      client.texts.indexOf('drop index "posts_org_id_idx"'),
+    );
   });
 });
 

@@ -244,6 +244,34 @@ into the name for a reader to parse back out. An index naming no column is `X_IN
 core's `assert` — `entity()` refuses `on: []` at declaration, so nothing the framework produces can
 reach it, and a hand-built description gets the error rather than DDL Postgres cannot parse.
 
+**One send is one statement, so `migrate()` and `rollback()` split the script.** `tx.execute(raw(
+migration.up))` on a text holding two commands is where the two drivers disagreed, and the
+disagreement is the whole reason this is a bug rather than a preference: `pglite.ts` calls
+PGlite's `query()`, which is the extended protocol always and answers `cannot insert multiple
+commands into a prepared statement`, while `client.ts`'s `Bun.SQL.unsafe(text, values)` degrades to
+the *simple* protocol whenever `values` is empty and applies the same script — measured on bun
+1.3.14, guaranteed by nothing. `createTable` emits the table *and* every index it carries, and
+`x dev`/`x db branch` run on the embedded driver, so the broken case was the common one on the
+path an author uses most. `applyScript` (`migrate.ts`) sends `statementsOf(script)` one at a time
+inside the **same** transaction; a half-applied migration is worse than an unapplied one, and it
+needs no `expectedQueryLoop` of its own because both call sites already run inside the one declared
+for the migration loop. `pglite-embedded.test.ts` is where that is pinned — a recording client
+replies to any text, and only a real engine has an opinion about a script.
+
+`statement-split.ts` is that splitter and the only one: `statementsOf(script)` is a left-to-right
+scan, never a `split(';')`, because a `;` inside a string literal, a quoted identifier, a
+dollar-quoted body, a `--` comment or a **nested** block comment is data — and a generated migration
+holds all five, including the `-- backfill "c", then: … set not null;` note. Three rules. `$1` is a
+bound parameter and never a `$tag$`, so a tag may not begin with a digit — otherwise one parameter
+swallows the rest of the script. A backslash escapes only inside an `E''` string, which is also the
+only place the `''` escape is observable: everywhere else, closing and reopening the run lands on
+exactly the same separator. A chunk of whitespace and comments alone is **not** a statement and is
+dropped, so an empty `up` reaches its ledger row instead of sending an empty query. An unterminated
+literal is returned as it stands — Postgres names that syntax error precisely, and a second parser
+competing with it would only report the same fault in worse words. `@ultimat3/entity`'s and
+`@ultimat3/ai`'s live tests import it rather than hand-rolling a seventh copy; splitting a script is
+one question with one answer (axiom 1).
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's
