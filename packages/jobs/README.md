@@ -163,7 +163,7 @@ debugging a stuck queue can read and run the exact statement.
 | Role | Entry | Behaviour |
 |---|---|---|
 | `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
-| `scheduler` | `createScheduler({ driver, leader })` | advisory-lock leader, one dispatcher per tick, catch-up policy |
+| `scheduler` | `createScheduler({ driver, leader })` | advisory-lock leader, one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
 
 ```ts
 export const nightlyDigest = task({
@@ -176,7 +176,9 @@ export const nightlyDigest = task({
 `tz` is required by the type *and* validated against the runtime's IANA database, because a
 non-empty string is not a timezone: `tz: 'Bogota'` would resolve every occurrence in UTC and
 run five hours off, silently, forever. `0 3 * * *` in a DST zone runs twice or zero times on
-the switch day. Catch-up after downtime is explicit: `skip` (default), `run-once`, `run-all`.
+the switch day. Catch-up after downtime is explicit: `skip` (default) fires the latest missed
+occurrence and drops the older ones, `run-once` fires the earliest missed one, `run-all` fires
+every one of them, bounded by `maxCatchUp`.
 
 ## Retries
 

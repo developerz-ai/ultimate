@@ -7,8 +7,8 @@ import { JobsNotImplementedError } from './errors';
 import { registeredJobs } from './job';
 import { retrySchedule } from './retry';
 import type { Scheduler } from './scheduler';
-import { registeredTasks } from './scheduler';
 import type { StepRecord } from './steps';
+import { registeredTasks } from './task';
 
 export interface QueueDepthReport {
   readonly driver: string;

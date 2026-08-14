@@ -100,6 +100,19 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - `Ctx.signal` is non-optional in the type, and `executeJob` still reads it defensively:
   `@ultimat3/http`'s `asCtx` casts a request context across the seam without one, and a job that
   crashed on a missing field is worse than a job with no caller to follow.
+- **One dispatch round at a time, and `stop()` is what waits for it.** The scheduler's timer
+  re-arms on the round it just finished (never a fixed `setInterval` period) and every other
+  caller of `tick()` JOINS the round in flight rather than opening a second one. Two rounds read
+  the same `lastFiredAt`, walk the same occurrences and dispatch them both: the occurrence key
+  deduped the jobs, so all that showed was a re-marked watermark, occurrences reported as
+  dispatched that were never enqueued, and a `run-all` catch-up interleaved with itself. `stop()`
+  waits that round out BEFORE `leader.release()` — a lock handed back mid-dispatch promotes a
+  standby onto an occurrence this node is still enqueueing for, which is the double-fire leader
+  election exists to prevent — and the round re-reads the drain state before each task, so "stop
+  dispatching" means this round too. Same hook rules as the worker: one `onShutdown` at the
+  `accept` phase while it runs, handed back in the teardown's `finally` so a `release()` that
+  threw still gives it up, `isLeader` cleared there too because a lock this process could not
+  hand back is never treated as still held.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
@@ -154,7 +167,8 @@ picture from the other side.
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `worker.ts` | `worker` role, claim loop, drain |
-| `scheduler.ts` | `task()` primitive + registry + `registerTask`, `scheduler` role, catch-up, leader election |
+| `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
+| `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` | stored event bus for `step.waitForEvent` |
 | `inspect.ts` | `--json` introspection |

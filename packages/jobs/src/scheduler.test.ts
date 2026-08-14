@@ -1,20 +1,18 @@
+// The `scheduler` role: catch-up policy, the occurrence a late dispatch builds its payload from,
+// and the leader that decides whether this node dispatches at all. Lifecycle — one round at a
+// time, the drain, the shutdown hook — is `scheduler-lifecycle.test.ts`.
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { resetJobDriver, setJobDriver } from './driver';
+import { resetJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver, LeaderElection } from './scheduler';
-import {
-  createMemorySchedulerState,
-  createScheduler,
-  getTask,
-  registeredTasks,
-  resetTasks,
-  task,
-} from './scheduler';
+import { createMemorySchedulerState, createScheduler } from './scheduler';
+import { resetTasks, task } from './task';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -69,7 +67,6 @@ function datedDigestJob(): JobHandle<DatedInput> {
 }
 
 let sendDigest: JobHandle<Record<string, never>>;
-let sweepLogs: JobHandle<Record<string, never>>;
 
 beforeEach(() => {
   resetJobs();
@@ -83,13 +80,6 @@ beforeEach(() => {
     retry: { attempts: 3 },
     run: () => Promise.resolve(),
   });
-  sweepLogs = job<Record<string, never>>({
-    name: 'sweepLogs',
-    input: passthrough<Record<string, never>>(),
-    idempotencyKey: () => 'sweep',
-    retry: { attempts: 2 },
-    run: () => Promise.resolve(),
-  });
 });
 
 // Both slots are process-global; a leaked one reroutes every later enqueue in this process.
@@ -97,123 +87,6 @@ afterEach(() => {
   resetJobDriver();
   resetJobsFacade();
 });
-
-describe('task', () => {
-  test('registers with its explicit tz — a cron without one is a build error by type', () => {
-    const nightlyDigest = task({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'America/New_York',
-      enqueue: () => [[sendDigest, {}]],
-    });
-    expect(nightlyDigest.tz).toBe('America/New_York');
-    expect(registeredTasks().map((handle) => handle.name)).toEqual(['nightlyDigest']);
-  });
-
-  test('an empty tz is refused at runtime as well as by the type', () => {
-    expect(() => task({ name: 'bad', cron: '0 3 * * *', tz: '', enqueue: () => [] })).toThrow();
-  });
-
-  // `registerTasks(module)` is what gives a task its export name; `task()` on its own is
-  // unchanged, and must stay so — 1.0.0 semver, and every existing caller declares only.
-  test('an unregistered task still takes a positional name and still schedules under it', () => {
-    const orphan = task({ cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] });
-
-    expect(orphan.name).toMatch(/^anonymous-task-\d+$/);
-    expect(getTask(orphan.name)).toBe(orphan);
-    expect(orphan.describe().name).toBe(orphan.name);
-    expect(registeredTasks().map((handle) => handle.name)).toEqual([orphan.name]);
-  });
-
-  test('a non-empty string that is not an IANA zone is refused too', () => {
-    expect(() =>
-      task({ name: 'nowhere', cron: '0 3 * * *', tz: 'Not/AZone', enqueue: () => [] }),
-    ).toThrow('X_INVARIANT');
-    // The city alone is the mistake this catches: it would resolve every occurrence in UTC.
-    expect(() =>
-      task({ name: 'bogota', cron: '0 3 * * *', tz: 'Bogota', enqueue: () => [] }),
-    ).toThrow('X_INVARIANT');
-    expect(() =>
-      task({ name: 'newYork', cron: '0 3 * * *', tz: 'America/New_York', enqueue: () => [] }),
-    ).not.toThrow();
-  });
-
-  test('describe() is JSON-safe and lists its jobs in declaration order', () => {
-    const nightly = task({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'America/New_York',
-      catchUp: 'run-once',
-      maxCatchUp: 3,
-      enqueue: () => [
-        [sweepLogs, {}],
-        [sendDigest, {}],
-      ],
-    });
-
-    expect(nightly.describe()).toEqual({
-      kind: 'task',
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'America/New_York',
-      catchUp: 'run-once',
-      maxCatchUp: 3,
-      jobs: ['sweepLogs', 'sendDigest'],
-    });
-    expect(JSON.parse(JSON.stringify(nightly.describe()))).toEqual(nightly.describe());
-  });
-
-  test('enqueue() fires every declared entry now, once each', async () => {
-    const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
-    setJobDriver(driver);
-    const nightly = task({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'UTC',
-      enqueue: () => [
-        [sendDigest, {}],
-        [sweepLogs, {}],
-      ],
-    });
-
-    const fired = await nightly.enqueue();
-    expect(fired.map((entry) => entry.job)).toEqual(['sendDigest', 'sweepLogs']);
-    expect(fired.every((entry) => entry.result.deduped)).toBe(false);
-    expect(((await driver.introspect?.list()) ?? []).length).toBe(2);
-  });
-
-  test('a manual enqueue() uses the job plain key; the scheduler stays occurrence-scoped', async () => {
-    const clock = fakeClock(T0);
-    const driver = createMemoryDriver({ clock });
-    setJobDriver(driver);
-    const nightly = task({
-      name: 'nightlyDigest',
-      cron: '0 3 * * *',
-      tz: 'UTC',
-      enqueue: () => [[sendDigest, {}]],
-    });
-    const scheduler = createScheduler({ driver, clock, cron: dailyAt3 });
-
-    await nightly.enqueue();
-    expect(((await driver.introspect?.list()) ?? []).map((row) => row.idempotencyKey)).toEqual([
-      'digest',
-    ]);
-
-    await scheduler.tick(); // arms the task
-    clock.advance(4 * 3_600_000);
-    const dispatched = await scheduler.tick();
-    const occurrenceMs = dispatched[0]?.occurrenceMs ?? 0;
-
-    // Two rows, two different keys: the occurrence key is what stops two schedulers from
-    // double-firing a tick, and a manual run has no occurrence to scope itself to.
-    expect(((await driver.introspect?.list()) ?? []).map((row) => row.idempotencyKey)).toEqual([
-      'digest',
-      `nightlyDigest:${occurrenceMs}:digest`,
-    ]);
-  });
-});
-
 describe('scheduler', () => {
   test('nextRunFor honours the task tz — 03:00 New York is not 03:00 UTC', () => {
     const nightly = task({

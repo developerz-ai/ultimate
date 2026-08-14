@@ -106,7 +106,7 @@ Free instances **sleep**. That is not a performance note; it changes which roles
 |---|---|
 | `web` | works. First request after a sleep pays a cold start, then serves normally |
 | `worker` | **does not run reliably.** No inbound traffic means nothing wakes the instance, so queued jobs sit until the next visitor |
-| `scheduler` | **does not run reliably.** A cron whose process is asleep at 03:00 does not fire; `catchUp: 'skip'` is the generated default, so the occurrence is dropped rather than replayed |
+| `scheduler` | **does not run reliably.** A cron whose process is asleep at 03:00 does not fire then; `catchUp: 'skip'` is the generated default, so whenever something next wakes the instance a week of missed occurrences collapses into one late fire, never a replay of each |
 | `sync` | works while awake; every sleep disconnects every subscriber |
 | `replicator` | needs a Postgres with `wal_level=logical`, which free managed tiers generally do not offer |
 

@@ -125,29 +125,14 @@ export {
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
 export type {
-  CatchUpPolicy,
   CronResolver,
   DispatchedOccurrence,
   LeaderElection,
   Scheduler,
   SchedulerOptions,
   SchedulerState,
-  TaskDefinition,
-  TaskDescriptor,
-  TaskEnqueueEntry,
-  TaskHandle,
-  TaskJobResult,
 } from './scheduler';
-export {
-  createMemorySchedulerState,
-  createScheduler,
-  getTask,
-  isTaskHandle,
-  registeredTasks,
-  resetTasks,
-  soleLeader,
-  task,
-} from './scheduler';
+export { createMemorySchedulerState, createScheduler, soleLeader } from './scheduler';
 export type {
   EventLookup,
   StepApi,
@@ -164,5 +149,14 @@ export {
   isStepSuspension,
   StepSuspension,
 } from './steps';
+export type {
+  CatchUpPolicy,
+  TaskDefinition,
+  TaskDescriptor,
+  TaskEnqueueEntry,
+  TaskHandle,
+  TaskJobResult,
+} from './task';
+export { getTask, isTaskHandle, registeredTasks, resetTasks, task } from './task';
 export type { Worker, WorkerOptions, WorkerStats } from './worker';
 export { createWorker } from './worker';

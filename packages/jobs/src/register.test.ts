@@ -9,8 +9,8 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyJobHandle, JobHandle } from './job';
 import { getJob, job, registeredJobs, resetJobs } from './job';
 import { registerJobs, registerTasks } from './register';
-import type { TaskHandle } from './scheduler';
-import { getTask, registeredTasks, resetTasks, task } from './scheduler';
+import type { TaskHandle } from './task';
+import { getTask, registeredTasks, resetTasks, task } from './task';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
