@@ -7,6 +7,8 @@
 // a release phase. Until 1.2.0 these shelled out to `bunx drizzle-kit` — a second engine with a
 // second journal, declared in no `package.json` and fetched unpinned at run time.
 
+// `node:fs/promises` for `rm` — `Bun.file().delete()` takes one file, and `x db reset` removes a
+// directory tree. `node:path` for `join` — Bun exposes no path joiner.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { branchPglite, type DriftReport, driftError } from '@ultimat3/db';

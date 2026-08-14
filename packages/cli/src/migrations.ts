@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Migration, SchemaDescription } from '@ultimat3/db';
+import { parseSnapshot } from '@ultimat3/db';
 
 /** Where `x new` writes them and where `x db gen` adds to. App-root-relative, POSIX. */
 export const MIGRATIONS_DIR = 'packages/db/migrations';
@@ -32,19 +33,17 @@ export function parseMigrationSql(id: string, sql: string): Migration {
 }
 
 /**
- * A snapshot that will not parse is absent, not fatal: the sidecar is a generation aid, and the
- * `up` beside it is still the migration this app applies. `x db gen` regenerates the file it
- * cannot read, and `x verify`'s drift step is what reports the schema disagreeing.
+ * A snapshot that will not parse is *absent*, never a half-read one: the `up` beside it is still
+ * the migration this app applies, so the file list stays whole. What that absence then means is
+ * the caller's — `x db gen` refuses with `X_MIGRATION_SNAPSHOT_MISSING` when it is the newest
+ * migration's, because there is nothing left to diff the entities against.
  */
 async function readSnapshot(dir: string, id: string): Promise<SchemaDescription | undefined> {
   const file = Bun.file(join(dir, snapshotFileName(id)));
   if (!(await file.exists())) return undefined;
-  const parsed: unknown = await file.json().catch(() => undefined);
-  return typeof parsed === 'object' &&
-    parsed !== null &&
-    Array.isArray((parsed as SchemaDescription).tables)
-    ? (parsed as SchemaDescription)
-    : undefined;
+  // Parsed to the last nested field by `@ultimat3/db`, never asserted: `{"tables":[null]}` is
+  // valid JSON and a cast made it a `SchemaDescription` the diff then threw on.
+  return parseSnapshot(await file.json().catch(() => undefined));
 }
 
 /**

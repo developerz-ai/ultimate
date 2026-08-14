@@ -2,9 +2,15 @@
 // migration files already declare, written as one reversible `.sql` plus the two sidecars the gate
 // reads back — the snapshot the next generation diffs against, and the schema hash `drift` checks.
 
+// `node:path` — Bun ships no path joiner of its own, and these paths are built, not opened.
 import { join } from 'node:path';
 import type { GeneratedMigration } from '@ultimat3/db';
-import { DESTRUCTIVE_MARKER, declaredSchema, generateMigration } from '@ultimat3/db';
+import {
+  DESTRUCTIVE_MARKER,
+  declaredSchema,
+  generateMigration,
+  migrationSnapshotMissing,
+} from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { writeSchemaHash } from './drift';
@@ -67,9 +73,19 @@ export async function generateAppMigration(
   const app = await loadApp(root);
   if (app.findings.length > 0) return { files: [], findings: app.findings };
 
+  const migrations = await readMigrations(root);
+  const current = declaredSchema(migrations);
+  // Refused, never defaulted to the empty schema: with nothing to diff against, every table the
+  // database already holds looks new and the generated `up` is `create table` for all of them.
+  if (current === undefined) {
+    const newest = migrations[migrations.length - 1];
+    const id = newest?.id ?? '';
+    throw migrationSnapshotMissing(id, join(MIGRATIONS_DIR, snapshotFileName(id)));
+  }
+
   const migration = generateMigration({
     entities: describeEntities(),
-    current: declaredSchema(await readMigrations(root)),
+    current,
     name: options.name,
     ...(options.allowDestructive === true ? { allowDestructive: true } : {}),
   });

@@ -409,7 +409,7 @@ alter table "posts" drop column "legacy";
 alter table "posts" add column "legacy" text; -- data is not restored
 ```
 
-```
+```text
 X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
   cause: packages/db/migrations/20260814120000_drop_legacy.sql drops a column and does not
          declare it: alter table "posts" drop column "legacy"

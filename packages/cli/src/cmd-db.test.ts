@@ -4,6 +4,7 @@
 // check too: the live schema against the ledger, which is what `runMigrations` returns.
 
 import { describe, expect, test } from 'bun:test';
+// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,16 +22,19 @@ const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
   bunVersion: '1.3.0',
 });
 
-/** An app root the command will accept: `app.config.ts` is what `requireAppRoot` looks for. */
-function appRoot(): string {
+/**
+ * An app root the command will accept: `app.config.ts` is what `requireAppRoot` looks for.
+ * `Bun.write` is a promise — unawaited, the command raced the file it needs and failed by timing.
+ */
+async function appRoot(): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), 'x-db-cmd-'));
-  Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
   return dir;
 }
 
 describe('unit · x db gen', () => {
   test('an unchanged schema generates nothing and still exits ok', async () => {
-    const root = appRoot();
+    const root = await appRoot();
     try {
       const result = await dbCommand.run(ctxFor(['db', 'gen', 'nothing to do'], root));
       expect(result.ok).toBe(true);
@@ -48,7 +52,7 @@ describe('unit · x db gen', () => {
 
 describe('unit · x db studio is planned, not a second engine', () => {
   test('it exits X_NOT_IMPLEMENTED with a fix that runs today', async () => {
-    const root = appRoot();
+    const root = await appRoot();
     try {
       const failure: unknown = await dbCommand.run(ctxFor(['db', 'studio'], root)).then(
         () => undefined,
@@ -68,7 +72,7 @@ describe('unit · x db studio is planned, not a second engine', () => {
 
 describe('unit · x db reset', () => {
   test('refuses an external Postgres rather than dropping a database it does not own', async () => {
-    const root = appRoot();
+    const root = await appRoot();
     try {
       const ctx = { ...ctxFor(['db', 'reset'], root), env: { DATABASE_URL: 'postgres://x/y' } };
       const failure: unknown = await dbCommand.run(ctx).then(

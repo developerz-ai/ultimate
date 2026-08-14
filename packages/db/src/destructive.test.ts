@@ -150,3 +150,30 @@ describe('unit · X_MIGRATION_DESTRUCTIVE', () => {
     });
   });
 });
+
+describe('unit · the marker is a comment, not a substring', () => {
+  // The rail's whole value is that an author declares a drop. A marker the scanner finds inside a
+  // block comment or a dollar body is one no reviewer reading the diff would call a declaration,
+  // and it bought the file past `x verify` all the same.
+  test('inside a block comment it declares nothing', () => {
+    expect(hasDestructiveMarker('/*\n-- destructive: true\n*/\ndrop table "post";')).toBe(false);
+  });
+
+  test('inside a dollar-quoted body it declares nothing', () => {
+    expect(hasDestructiveMarker('do $fn$\n-- destructive: true\n$fn$;\ndrop table "post";')).toBe(
+      false,
+    );
+  });
+
+  test('inside a string literal it declares nothing', () => {
+    expect(hasDestructiveMarker(`insert into "audit" values ('-- destructive: true');`)).toBe(
+      false,
+    );
+  });
+
+  test('a real marker after any of them still declares the file', () => {
+    expect(hasDestructiveMarker('/* not it */\n-- destructive: true\ndrop table "post";')).toBe(
+      true,
+    );
+  });
+});

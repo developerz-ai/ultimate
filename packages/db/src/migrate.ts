@@ -85,6 +85,22 @@ export async function ensureLedger(client: DbClient): Promise<void> {
   `);
 }
 
+/** Postgres' `undefined_table`. The ledger's absence is a class, not a message to match on. */
+const UNDEFINED_TABLE = '42P01';
+
+/**
+ * Whether `error` is "the ledger table does not exist" and nothing else.
+ *
+ * The driver wraps a failed statement as `X_DB_UNAVAILABLE` and keeps the server's own error as
+ * `sourceError`, so the SQLSTATE is read from there. Everything else — a permission denied, a
+ * server in recovery, a timeout — is a failure to read the ledger, not an empty one, and a caller
+ * treating the two alike reports every migration as pending against a database it cannot see.
+ */
+export function isLedgerMissing(error: unknown): boolean {
+  const source = (error as { sourceError?: unknown } | null)?.sourceError ?? error;
+  return (source as { code?: unknown } | null)?.code === UNDEFINED_TABLE;
+}
+
 export async function readLedger(client: DbClient): Promise<readonly LedgerRow[]> {
   return client.query<LedgerRow>(sql`
     select id, name, checksum, applied_at, app_version, duration_ms

@@ -290,8 +290,10 @@ constraint`/`default`/`not null` and `drop index` are excluded by name: the data
 **Decide on blanked text, report the original** — `statementsOf` + `stripSqlNoise` before a keyword
 is looked for, so `-- drop table users` is prose and `values ('drop table users')` is data; but the
 excerpt in the error keeps its identifiers, because `drop table ""` names nothing an author can act
-on. **The marker is a whole line**, like `-- down`, so a file merely mentioning it has declared
-nothing. It is also SQL the checksum covers, which is deliberate: marking an already-applied
+on. **The marker is a top-level line comment**, like `-- down`, so a file merely mentioning it has
+declared nothing — and one inside a `/* … */` or a dollar-quoted body has declared nothing either,
+which a regex over the raw file could not tell apart. `hasDestructiveMarker` walks `sql-scan.ts`
+for the same reason the classifier does: the marker is a lexical fact, not a substring. It is also SQL the checksum covers, which is deliberate: marking an already-applied
 migration is an edit, and `X_MIGRATION_CONFLICT` is the correct answer to that.
 
 `X_MIGRATION_DESTRUCTIVE` and `X_MIGRATION_IRREVERSIBLE` are two questions, not two spellings of
@@ -299,6 +301,20 @@ one. Irreversible refuses to *generate* a plan whose `down` cannot restore the r
 `--allow-destructive` is the override. Destructive refuses to *ship* a plan whose `up` destroys them
 without saying so — and a retype is reversible in DDL, gated by no flag, and still rewrites every
 row, so it is marked without ever being refused.
+
+`sql-scan.ts` is the **one** lexer under all of it: `noiseAt(text, index)` names the span starting
+at one offset — line comment, block comment, literal, quoted identifier, dollar-quoted body — or
+`null` for code. `statement-split.ts`, `sql-noise.ts` and `destructive.ts`'s marker all walk it, and
+a splitter that disagreed with a guard about where a literal ends is a `;` sent as data or a
+`delete` read as prose. Two rules it owns. **Source order, never a sequence of replacements**:
+`stripSqlNoise` blanked comments before literals, so the `--` in `select '--'; delete from posts`
+read as a comment and erased the `delete` before `inspectStatement()` saw it — a mutating fragment
+through `readOnly(client, { seal: false })`. **A `$tag$` needs separating from the identifier before
+it**: `$` is legal in a name after the first character, so `foo$tag$` is one identifier and
+`select foo$tag$; select 2;` is two statements — read as a body opener it went out as one send.
+The run before the delimiter is walked to its start rather than one character being read, because
+`$1$tag$` is a bound parameter followed by a real delimiter and a run opening with a digit or a `$`
+cannot be an identifier at all.
 
 `sql-noise.ts` holds `stripSqlNoise` alone, for the three guards that share it — `readonly.ts`,
 `readonly-query.ts`, `destructive.ts`. It lives apart from all of them because `errors.ts` names the
@@ -313,6 +329,30 @@ alike — and returned, never thrown. The *other* `X_DB_DRIFT` is `@ultimat3/cli
 what `x verify`'s `drift` step runs in a CI with nothing listening. Two conditions, two detectors,
 one code — and neither may grow the other's half. Until 1.2.0 both were named `checkDrift`, the
 file-hash one was wired everywhere and this one had no callers at all.
+
+`declaredSchema()` answers with the **newest** migration's snapshot or with `undefined`, never with
+the newest one that happens to have a snapshot. `0001` records `posts`, `0002` adds a column and
+writes nothing down, and reaching back to `0001` reports a column the database correctly holds as
+`unexpected-column` — drift against a schema that is exactly right, with `x db gen "add …"` as the
+fix for a migration that already exists. `checkDrift` turns that `undefined` into an
+`unknown-schema` difference rather than `ok: true`, and `x db gen` refuses with
+`X_MIGRATION_SNAPSHOT_MISSING` rather than diffing against the empty schema, which would emit
+`create table` for every table the database already holds.
+
+`compareTable` judges **declared** indexes: one the migrations name and the catalog does not hold is
+`missing-index`, and one whose column list or uniqueness moved is `changed-index` — which is what
+catches a composite index rebuilt with its columns the other way round while the column diff said
+`ok: true`. A live index no snapshot names is deliberately **not** reported: Postgres creates one for
+every primary key and every unique constraint, so counting those is eight findings against a correct
+database, the same argument `appTables()` makes. The predicate and the direction are not compared
+either — the catalog returns its own rewriting of an expression (`(deleted_at IS NULL)`) and the
+snapshot holds the author's spelling, so a text comparison reports two identical indexes as drift.
+`x db gen` compares them instead (`redefineIndex`), where both sides are generated. Named in
+`wiki/Known-Gaps.md`.
+
+`introspect()` reads an index's columns in **index key order** (`indkey`, not `attnum`) and carries
+its predicate and direction. Ordering by `attnum` returned a composite index's columns in table
+order, which reads correct and compares wrong.
 
 `appTables()` is why it can run: a table in the `x_` namespace is framework bookkeeping — the
 ledger, `x_jobs`/`x_job_steps`, `x_outbox` and every `@ultimat3/auth` table are `create table if not

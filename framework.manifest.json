@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b57735b167525a0d4dba965e7b51afc02d52bb9d2f465aa1968fc12775682b7a",
+  "buildId": "909ec1253bd0eb60d74d9efc72f93fb113e4a152054998eee8a7617c2dcc75c1",
   "tiers": {
     "0": [
       "core",
@@ -982,6 +982,11 @@
     },
     {
       "code": "X_MIGRATION_IRREVERSIBLE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_SNAPSHOT_MISSING",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },

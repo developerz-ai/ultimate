@@ -3,13 +3,14 @@
 // through the reader that applies it, and its snapshot must be the schema the next diff starts from.
 
 import { afterAll, expect, test } from 'bun:test';
+// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { declaredSchema, generateMigration } from '@ultimat3/db';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { generateAppMigration, migrationSql } from './db-generate';
-import { readMigrations } from './migrations';
+import { MIGRATIONS_DIR, readMigrations } from './migrations';
 
 // Registered here rather than inside a test: `entity()` writes to a process-wide registry that
 // `describeEntities()` reads whole, so the fixture is declared once and cleared once.
@@ -129,4 +130,20 @@ test('an app whose modules will not load generates nothing — a short registry 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a newest migration with no snapshot refuses to generate, never diffs against nothing', async () => {
+  const dir = tempRoot();
+  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  // Diffed against the empty schema instead, every table the database already holds looks new and
+  // the generated `up` is `create table` for all of them.
+  await Bun.write(join(dir, MIGRATIONS_DIR, '0001_init.sql'), 'create table "gen_posts" ();');
+
+  const failure: unknown = await generateAppMigration(dir, { name: 'anything' }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeUltimateError('X_MIGRATION_SNAPSHOT_MISSING');
+  expect((failure as { fix: string }).fix).toContain('0001_init.snapshot.json');
+  rmSync(dir, { recursive: true, force: true });
 });

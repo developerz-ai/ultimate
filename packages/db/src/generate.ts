@@ -9,6 +9,7 @@ import { migrationIrreversible } from './errors';
 import {
   type ColumnDescription,
   findTable,
+  type IndexDescription,
   type SchemaDescription,
   type TableDescription,
 } from './introspect';
@@ -144,11 +145,16 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
         name: entity.table,
         columns,
         primaryKey: [...entity.primaryKey],
+        // Whole, never partly: a snapshot that recorded the name and dropped the predicate made
+        // the next generation blind to a `where` or an `order` changing, and a partial index
+        // silently kept as a total one is a constraint the entity no longer declares.
         indexes: entity.indexes.map((index) => ({
           name: index.name,
-          columns: index.columns,
+          columns: [...index.columns],
           unique: index.unique,
           primary: false,
+          where: index.where,
+          order: index.order,
         })),
         foreignKeys: [],
       };
@@ -216,6 +222,44 @@ function retypeColumn(
   plan.down.push(alter(recorded.dataType));
 }
 
+/** The parts of an index Postgres cannot alter in place — every one of them is a rebuild. */
+function indexShape(index: IndexDescriptionLike | IndexDescription): string {
+  return JSON.stringify([[...index.columns], index.unique, index.where, index.order ?? null]);
+}
+
+/**
+ * A same-named index whose definition moved is dropped and recreated, because Postgres has no
+ * `alter index` for any of it — the column list, the uniqueness, the predicate and the direction
+ * are all fixed at creation.
+ *
+ * Matching on the name alone was the gap: `where` and `order` were not even recorded, so an
+ * entity narrowing an index to a predicate, or reversing it to `desc`, generated an empty
+ * migration and the database kept serving the old one. Both sides here are *generated* spellings
+ * — `recorded` is a previous migration's own snapshot, never the catalog's rewriting of it — so a
+ * text difference in `where` is a real change and not a formatting one.
+ */
+function redefineIndex(
+  table: string,
+  index: IndexDescriptionLike,
+  recorded: IndexDescription,
+  plan: Plan,
+): void {
+  if (indexShape(index) === indexShape(recorded)) return;
+  plan.up.push(`drop index "${index.name}";`, createIndex(table, index));
+  // `down` is reversed at assembly, so the pair is pushed forwards and read backwards: recreating
+  // the recorded definition is what must land last, after the new one is dropped.
+  plan.down.push(
+    createIndex(table, {
+      name: recorded.name,
+      columns: recorded.columns,
+      unique: recorded.unique,
+      where: recorded.where,
+      order: recorded.order,
+    }),
+    `drop index "${index.name}";`,
+  );
+}
+
 function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: Plan): void {
   const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
@@ -240,9 +284,13 @@ function diffTable(entity: EntityDescriptionLike, live: TableDescription, plan: 
     plan.down.push(`alter table "${entity.table}" drop column "${column.column}";`);
   }
 
-  const indexed = new Set(live.indexes.map((index) => index.name));
+  const indexed = new Map(live.indexes.map((index) => [index.name, index]));
   for (const index of entity.indexes) {
-    if (indexed.has(index.name)) continue;
+    const recorded = indexed.get(index.name);
+    if (recorded !== undefined) {
+      redefineIndex(entity.table, index, recorded, plan);
+      continue;
+    }
     // `added` only: an index over a column that was already there is implied by no clause this
     // migration emits, so it still needs a statement of its own.
     if (impliedByColumnClause(entity, index, added)) continue;

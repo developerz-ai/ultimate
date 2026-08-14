@@ -11,6 +11,7 @@ import {
 import { createRecordingClient } from './fake';
 import type { SchemaDescription, TableDescription } from './introspect';
 import type { LedgerRow, Migration } from './migrate';
+import { isLedgerMissing } from './migrate';
 
 const table = (name: string, columns: readonly string[]): TableDescription => ({
   schema: 'public',
@@ -28,6 +29,63 @@ const table = (name: string, columns: readonly string[]): TableDescription => ({
 });
 
 const schema = (...tables: readonly TableDescription[]): SchemaDescription => ({ tables });
+
+const index = (
+  name: string,
+  columns: readonly string[],
+  unique = false,
+): TableDescription['indexes'][number] => ({
+  name,
+  columns,
+  unique,
+  primary: false,
+  where: null,
+  order: null,
+});
+
+const withIndexes = (
+  base: TableDescription,
+  ...indexes: TableDescription['indexes']
+): TableDescription => ({ ...base, indexes });
+
+describe('an index migrations declare, against the one the catalog holds', () => {
+  const posts = table('posts', ['id', 'org_id', 'created_at']);
+  const declared = index('posts_org_id_created_at_idx', ['org_id', 'created_at']);
+
+  test('a composite index rebuilt the other way round is drift, not a clean schema', () => {
+    const live = schema(withIndexes(posts, index(declared.name, ['created_at', 'org_id'])));
+    const report = diffSchema(live, schema(withIndexes(posts, declared)));
+    expect(report.ok).toBe(false);
+    expect(report.differences[0]?.kind).toBe('changed-index');
+    expect(report.differences[0]?.cause).toContain('covers (created_at, org_id)');
+  });
+
+  test('an index the migrations declare and the database does not have is drift', () => {
+    const report = diffSchema(schema(posts), schema(withIndexes(posts, declared)));
+    expect(report.differences[0]?.kind).toBe('missing-index');
+    expect(report.differences[0]?.fix).toBe('x db migrate');
+  });
+
+  test('uniqueness dropped underneath a declared index is drift', () => {
+    const live = schema(withIndexes(posts, index(declared.name, declared.columns, false)));
+    const report = diffSchema(live, schema(withIndexes(posts, { ...declared, unique: true })));
+    expect(report.differences[0]?.cause).toContain('is not unique');
+  });
+
+  test('an index the database has and no migration declares is not drift', () => {
+    // Every primary key and every unique constraint brings one, declared by no migration.
+    const live = schema(withIndexes(posts, index('posts_pkey', ['id'], true)));
+    expect(diffSchema(live, schema(posts)).ok).toBe(true);
+  });
+
+  test('a matching index reports nothing, predicate and direction aside', () => {
+    // The catalog rewrites a predicate into its own spelling, so comparing the text would report
+    // two identical indexes as drift. `x db gen` compares them, where both sides are generated.
+    const live = schema(withIndexes(posts, { ...declared, where: '(deleted_at IS NULL)' }));
+    const expected = schema(withIndexes(posts, { ...declared, where: '"deleted_at" is null' }));
+    expect(diffSchema(live, expected).ok).toBe(true);
+  });
+});
 
 describe('drift', () => {
   test('a live column absent from the ledger renders the pinned contract output', () => {
@@ -138,12 +196,18 @@ describe('the schema migrations declare', () => {
     expect(declared.tables[0]?.columns.map((column) => column.name)).toEqual(['id', 'title']);
   });
 
-  test('a migration with no snapshot is skipped, and no snapshot at all is an empty schema', () => {
-    expect(declaredSchema([migration('0003_c')]).tables).toEqual([]);
+  test('no migration at all declares an empty schema — an app owes the database nothing yet', () => {
+    expect(declaredSchema([])).toEqual({ tables: [] });
+  });
+
+  test('a newest migration with no snapshot declares nothing, never an older snapshot', () => {
+    // The obsolete-snapshot bug: `0002` changed the schema and wrote nothing down, so answering
+    // with `0001` reports the column the database correctly holds as `unexpected-column` — drift
+    // against a schema that is exactly right.
+    expect(declaredSchema([migration('0003_c')])).toBeUndefined();
     expect(
-      declaredSchema([migration('0001_a', schema(table('posts', ['id']))), migration('0002_b')])
-        .tables,
-    ).toHaveLength(1);
+      declaredSchema([migration('0001_a', schema(table('posts', ['id']))), migration('0002_b')]),
+    ).toBeUndefined();
   });
 
   test('expected is declared over the applied subset — a pending migration is not owed yet', () => {
@@ -152,9 +216,9 @@ describe('the schema migrations declare', () => {
       migration('0002_b', schema(table('posts', ['id', 'title']))),
     ];
     // `x db gen` diffs against 0002 (both are written down); the database only owes 0001.
-    expect(declaredSchema(migrations).tables[0]?.columns).toHaveLength(2);
-    expect(expectedSchema(migrations, [ledgerRow('0001_a')]).tables[0]?.columns).toHaveLength(1);
-    expect(expectedSchema(migrations, []).tables).toEqual([]);
+    expect(declaredSchema(migrations)?.tables[0]?.columns).toHaveLength(2);
+    expect(expectedSchema(migrations, [ledgerRow('0001_a')])?.tables[0]?.columns).toHaveLength(1);
+    expect(expectedSchema(migrations, [])?.tables).toEqual([]);
   });
 });
 
@@ -246,5 +310,38 @@ describe('checkDrift is the post-migrate verification', () => {
     const live = schema(table('posts', ['id']), table('x_jobs', ['id']));
     expect(appTables(live).tables.map((entry) => entry.name)).toEqual(['posts']);
     expect(appTables(schema()).tables).toEqual([]);
+  });
+});
+
+describe('a snapshot the migrations do not carry', () => {
+  test('the report says so instead of answering clean', async () => {
+    // The newest applied migration wrote nothing down, so there is no schema to compare against —
+    // and `ok: true` here would be the false green drift detection exists to prevent.
+    const client = liveDatabase(
+      [ledgerRow('0001_a'), ledgerRow('0002_b')],
+      [columnRow('posts', 'id')],
+    );
+    const report = await checkDrift({
+      client,
+      migrations: [
+        migration('0001_a', schema(table('posts', ['id']))),
+        { id: '0002_b', name: 'b', up: '', down: '' },
+      ],
+    });
+    expect(report.ok).toBe(false);
+    expect(report.differences[0]?.kind).toBe('unknown-schema');
+    expect(report.differences[0]?.cause).toContain('0002_b');
+    expect(report.differences[0]?.fix).toContain('x db gen');
+  });
+});
+
+describe('isLedgerMissing', () => {
+  test('only Postgres undefined_table is a ledger that does not exist', () => {
+    expect(isLedgerMissing({ sourceError: { code: '42P01' } })).toBe(true);
+    // A permission denied is a ledger nobody read, not an empty one.
+    expect(isLedgerMissing({ sourceError: { code: '42501' } })).toBe(false);
+    expect(isLedgerMissing({ code: 'X_DB_UNAVAILABLE' })).toBe(false);
+    expect(isLedgerMissing(new Error('nope'))).toBe(false);
+    expect(isLedgerMissing(undefined)).toBe(false);
   });
 });

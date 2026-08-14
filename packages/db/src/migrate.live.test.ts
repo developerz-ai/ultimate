@@ -6,12 +6,14 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createPostgresClient, type PostgresClient } from './client';
+import { diffSchema } from './drift';
 import type {
   ColumnDescriptionLike,
   EntityDescriptionLike,
   IndexDescriptionLike,
 } from './generate';
 import { generateMigration } from './generate';
+import { introspect } from './introspect';
 import { LEDGER_TABLE, type Migration, migrate, rollback } from './migrate';
 import { raw } from './sql';
 
@@ -265,6 +267,31 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a composite i
       '(org_id, created_at)',
     );
     expect(byName.get('live_composite_posts_org_id_id_key')).toContain('(org_id, id)');
+
+    // The description `checkDrift` compares against, off the same server. Ordered by `indkey`
+    // and not by `attnum`: a composite index whose columns are declared in a different order
+    // from the table's came back reversed, which reads correct and compares wrong.
+    const live = await introspect({ client });
+    const described = live.tables.find((each) => each.name === 'live_composite_posts');
+    const declared = new Map(described?.indexes.map((each) => [each.name, each]) ?? []);
+    expect(declared.get('live_composite_posts_org_id_created_at_idx')?.columns).toEqual([
+      'org_id',
+      'created_at',
+    ]);
+    expect(declared.get('live_composite_posts_org_id_id_key')?.unique).toBe(true);
+
+    // And this table, as the server holds it, matches the snapshot the migration wrote down —
+    // through `diffSchema`, the comparison `checkDrift` runs. Scoped to the one table because a
+    // shared test database carries every other suite's tables too.
+    const snapshotTable = generated.snapshot.tables.find(
+      (each) => each.name === 'live_composite_posts',
+    );
+    expect(
+      diffSchema(
+        { tables: described === undefined ? [] : [described] },
+        { tables: snapshotTable === undefined ? [] : [snapshotTable] },
+      ),
+    ).toEqual({ ok: true, differences: [] });
 
     const reverted = await rollback({ migrations: [composite], client: freshClient() });
     expect(reverted).toEqual([composite.id]);

@@ -208,8 +208,11 @@ imports `runMigrations` from `./serve`.
 `@ultimat3/db`'s `checkDrift()` inside the queue's lifetime — the connection it opened for the
 migrator is the only one there is — and returns the report on `MigratedApp.drift`, so a developer
 and a release phase verify the same thing. `x db migrate` renders it through `driftFindings` and
-exits non-zero; `ROLE=migrate` logs the first difference and still exits 0, because its contract is
-"apply every migration, then exit" and turning a diagnostic into a blocked deploy is not that.
+exits non-zero; `runRole` throws the first difference for `ROLE=migrate`, so the release phase
+exits non-zero too. Both entrypoints call the same `runMigrations` and both fail — the difference
+is only the channel each has. `ROLE=migrate` logged and exited 0 until it did not: a release phase
+whose only signal is the exit code reported success over a schema nobody can reconstruct, which is
+the failure the post-migrate check exists to catch.
 
 **The `drift` step asks a third thing, off the same directory and with no database either: is every
 destructive statement declared?** `db-destructive.ts` reads each committed migration through

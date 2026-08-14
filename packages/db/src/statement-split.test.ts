@@ -1,3 +1,5 @@
+// Where a `;` separates and where it is data. Every case here is one a generated migration holds.
+
 import { describe, expect, test } from 'bun:test';
 import { statementsOf } from './statement-split';
 
@@ -106,5 +108,31 @@ describe('statementsOf', () => {
     expect(statementsOf("select 'oops;")).toEqual(["select 'oops;"]);
     expect(statementsOf('select $$oops;')).toEqual(['select $$oops;']);
     expect(statementsOf('select 1 /* oops;')).toEqual(['select 1 /* oops;']);
+  });
+});
+
+describe('a dollar delimiter needs separating from what precedes it', () => {
+  // `$` is a legal identifier character after the first, so Postgres reads `foo$tag$` as one
+  // identifier and the `;` after it as a separator. Read as a body opener instead, the rest of
+  // the script was swallowed and two statements went out as one send.
+  test('an identifier ending in $tag$ does not open a body', () => {
+    expect(statementsOf('select foo$tag$; select 2;')).toEqual(['select foo$tag$', 'select 2']);
+  });
+
+  test('the same tag with a space before it still opens one', () => {
+    expect(statementsOf('select foo $tag$ body; $tag$; select 2;')).toEqual([
+      'select foo $tag$ body; $tag$',
+      'select 2',
+    ]);
+  });
+
+  test('the run is judged by what it began as, not by one character', () => {
+    // `a1$$x$$` is one identifier: every character of it is legal in a name.
+    expect(statementsOf('select a1$$x$$; select 2;')).toEqual(['select a1$$x$$', 'select 2']);
+    // `$1` cannot be a name, so the delimiter after it is a real one and the body is data.
+    expect(statementsOf('select $1$t$ a; b $t$; select 2;')).toEqual([
+      'select $1$t$ a; b $t$',
+      'select 2',
+    ]);
   });
 });

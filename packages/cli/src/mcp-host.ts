@@ -8,6 +8,7 @@ import { agentActor, isUltimateError, UltimateError } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import {
   ensureReadOnlyRole,
+  isLedgerMissing,
   migrate,
   pendingMigrations,
   readLedger,
@@ -122,8 +123,13 @@ async function pendingIds(root: string, lazy: LazyServices): Promise<readonly st
   if (migrations.length === 0) return [];
   const { db } = await lazy.running();
   // No ledger table means nothing has been applied. `ensureLedger` would create it, and a dry run
-  // is not allowed to write.
-  const ledger = await readLedger(db).catch(() => []);
+  // is not allowed to write. Only that condition: a permission denied or an unreachable server is
+  // a ledger nobody read, and answering it with `[]` reports every migration as pending against a
+  // database whose state this tool never saw.
+  const ledger = await readLedger(db).catch((error: unknown) => {
+    if (!isLedgerMissing(error)) throw error;
+    return [];
+  });
   return pendingMigrations(ledger, migrations).map((migration) => migration.id);
 }
 

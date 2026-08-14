@@ -12,7 +12,10 @@ export type DriftKind =
   | 'unexpected-column'
   | 'missing-column'
   | 'unexpected-table'
-  | 'missing-table';
+  | 'missing-table'
+  | 'unknown-schema'
+  | 'missing-index'
+  | 'changed-index';
 
 export interface DriftDifference {
   readonly kind: DriftKind;
@@ -68,6 +71,85 @@ function missingTable(table: string): DriftDifference {
   };
 }
 
+/**
+ * Not a difference between two schemas but the absence of one to compare against — reported
+ * through the same channel so it reaches an operator, since a check that quietly answered "clean"
+ * because it had nothing to check is the one failure mode drift detection cannot have.
+ */
+function unknownSchema(migrations: readonly Migration[]): DriftDifference {
+  const newest = [...migrations].sort((a, b) => (a.id < b.id ? -1 : 1)).at(-1);
+  return {
+    kind: 'unknown-schema',
+    table: '',
+    column: null,
+    cause:
+      `migration "${newest?.id ?? ''}" records no schema snapshot, so what this database owes ` +
+      'cannot be established',
+    fix: `x db gen "snapshot ${newest?.name ?? ''}"   # or restore its .snapshot.json sidecar`,
+  };
+}
+
+function missingIndex(table: string, index: string): DriftDifference {
+  return {
+    kind: 'missing-index',
+    table,
+    column: null,
+    cause: `table "${table}" is missing index "${index}" that migrations declare`,
+    fix: 'x db migrate',
+  };
+}
+
+function changedIndex(table: string, index: string, detail: string): DriftDifference {
+  return {
+    kind: 'changed-index',
+    table,
+    column: null,
+    cause: `index "${index}" on "${table}" ${detail}, not what migrations declare`,
+    fix: 'x db migrate',
+  };
+}
+
+/**
+ * Indexes migrations declare, against the ones the catalog holds — by column list and by
+ * uniqueness, which is what caught a composite index rebuilt with its columns the other way round
+ * while `ok: true` said the schema agreed.
+ *
+ * Only the declared side is judged. A live index no snapshot names is **not** drift: Postgres
+ * creates one for every primary key and every unique constraint, no migration declares those, and
+ * an index a DBA added is a planner decision rather than a schema divergence — reporting them
+ * would be eight findings against a correct database, which is how a drift check earns being
+ * ignored (`appTables` exists for the same reason).
+ *
+ * The predicate and the direction are deliberately **not** compared: the catalog returns its own
+ * rewriting of an expression (`(deleted_at IS NULL)`) and a snapshot holds the author's spelling,
+ * so a text comparison reports drift on two identical indexes. `x db gen` compares them instead,
+ * where both sides are generated — see `redefineIndex` in `generate.ts`. Named in
+ * `wiki/Known-Gaps.md`.
+ */
+function compareIndexes(live: TableDescription, expected: TableDescription): DriftDifference[] {
+  const differences: DriftDifference[] = [];
+  const present = new Map(live.indexes.map((index) => [index.name, index]));
+  for (const index of expected.indexes) {
+    const counterpart = present.get(index.name);
+    if (counterpart === undefined) {
+      differences.push(missingIndex(live.name, index.name));
+      continue;
+    }
+    if (counterpart.columns.join(',') !== index.columns.join(',')) {
+      differences.push(
+        changedIndex(live.name, index.name, `covers (${counterpart.columns.join(', ')})`),
+      );
+      continue;
+    }
+    if (counterpart.unique !== index.unique) {
+      differences.push(
+        changedIndex(live.name, index.name, counterpart.unique ? 'is unique' : 'is not unique'),
+      );
+    }
+  }
+  return differences;
+}
+
 function compareTable(live: TableDescription, expected: TableDescription): DriftDifference[] {
   const differences: DriftDifference[] = [];
   const expectedColumns = new Set(expected.columns.map((column) => column.name));
@@ -79,6 +161,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   for (const column of expected.columns) {
     if (!liveColumns.has(column.name)) differences.push(missingColumn(live.name, column.name));
   }
+  differences.push(...compareIndexes(live, expected));
   return differences;
 }
 
@@ -117,18 +200,28 @@ export function assertNoDrift(report: DriftReport): void {
 }
 
 /**
- * The schema the migration files themselves declare, ledger or no ledger. Each generated
- * migration carries the snapshot it leaves behind, so the newest one with a snapshot is the
- * claim — no SQL is re-parsed.
+ * The schema the migration files themselves declare, ledger or no ledger, or `undefined` when
+ * they do not declare one. Each generated migration carries the snapshot it leaves behind, so the
+ * **newest** migration's snapshot is the claim — no SQL is re-parsed.
+ *
+ * The newest one, never the newest one that happens to have a snapshot: a later migration without
+ * a sidecar has changed the schema in ways nothing wrote down, so an earlier snapshot is not a
+ * partial answer but a wrong one. `0001` records `posts`, `0002` adds a column by hand, and
+ * reaching back to `0001` reports the column the database correctly holds as `unexpected-column`
+ * — drift against a schema that is exactly right, with `x db gen "add …"` as the fix for a
+ * migration that already exists.
+ *
+ * An empty list has nothing to declare and is `{ tables: [] }`, which is a real answer: an app
+ * with no migration yet owes the database no table.
  *
  * This is what `x db gen` diffs the app's entities against, and why generating a migration needs
  * no database: the previous migration already wrote down what it left behind.
  */
-export function declaredSchema(migrations: readonly Migration[]): SchemaDescription {
-  const snapshots = [...migrations]
-    .filter((migration) => migration.snapshot !== undefined)
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
-  return snapshots[snapshots.length - 1]?.snapshot ?? { tables: [] };
+export function declaredSchema(migrations: readonly Migration[]): SchemaDescription | undefined {
+  const ordered = [...migrations].sort((a, b) => (a.id < b.id ? -1 : 1));
+  const newest = ordered[ordered.length - 1];
+  if (newest === undefined) return { tables: [] };
+  return newest.snapshot;
 }
 
 /**
@@ -140,7 +233,7 @@ export function declaredSchema(migrations: readonly Migration[]): SchemaDescript
 export function expectedSchema(
   migrations: readonly Migration[],
   ledger: readonly LedgerRow[],
-): SchemaDescription {
+): SchemaDescription | undefined {
   const applied = new Set(ledger.map((row) => row.id));
   return declaredSchema(migrations.filter((migration) => applied.has(migration.id)));
 }
@@ -182,9 +275,16 @@ export interface DriftOptions {
 export async function checkDrift(options: DriftOptions): Promise<DriftReport> {
   const client = options.client ?? baseClient();
   const ledger = await readLedger(client);
+  const expected = expectedSchema(options.migrations, ledger);
+  // Unknowable, not clean: the newest applied migration wrote no snapshot, so there is nothing to
+  // compare the catalog to. Reported as its own difference rather than answered with a stale
+  // snapshot's verdict, because a wrong `ok: false` sends an author to fix a schema that is right
+  // and a wrong `ok: true` is the failure this check exists to prevent.
+  if (expected === undefined)
+    return { ok: false, differences: [unknownSchema(options.migrations)] };
   const live = await introspect({
     client,
     ...(options.schema === undefined ? {} : { schema: options.schema }),
   });
-  return diffSchema(appTables(live), expectedSchema(options.migrations, ledger));
+  return diffSchema(appTables(live), expected);
 }

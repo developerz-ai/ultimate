@@ -64,6 +64,7 @@ export {
   migrationConflict,
   migrationDestructive,
   migrationIrreversible,
+  migrationSnapshotMissing,
   readonlyViolation,
   sqlUnsafe,
 } from './errors';
@@ -99,6 +100,7 @@ export {
   auditLedger,
   checksumOf,
   ensureLedger,
+  isLedgerMissing,
   LEDGER_TABLE,
   MIGRATION_LOCK_KEY,
   migrate,
@@ -133,6 +135,7 @@ export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';
 export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
+export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
 export { stripSqlNoise } from './sql-noise';

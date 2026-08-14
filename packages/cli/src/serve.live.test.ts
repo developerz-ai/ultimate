@@ -157,4 +157,53 @@ describe('the scaffolded production entry is a runnable artifact', () => {
     },
     BOOT_TIMEOUT_MS,
   );
+
+  test(
+    'ROLE=migrate exits NON-zero when the schema it just applied does not match the ledger',
+    async () => {
+      await writeFixture();
+      // A migration that records a table it never creates. Applied cleanly, then the post-migrate
+      // check finds the table missing — the one condition a release phase must not roll past.
+      await Bun.write(
+        join(ROOT, 'packages/db/migrations/0001_lies.sql'),
+        '-- applies nothing, and claims a table\n',
+      );
+      await Bun.write(
+        join(ROOT, 'packages/db/migrations/0001_lies.snapshot.json'),
+        JSON.stringify({
+          tables: [
+            {
+              schema: 'public',
+              name: 'never_created',
+              columns: [
+                { name: 'id', dataType: 'uuid', nullable: false, default: null, position: 1 },
+              ],
+              primaryKey: ['id'],
+              indexes: [],
+              foreignKeys: [],
+            },
+          ],
+        }),
+      );
+      const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
+        cwd: ROOT,
+        env: { ...process.env, ROLE: 'migrate' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const out = pump(child.stdout);
+      const err = pump(child.stderr);
+      try {
+        // The exit code is the only channel a release phase has. Logging the drift and exiting 0
+        // let the deploy continue over a schema nobody can reconstruct.
+        expect(await child.exited).not.toBe(0);
+        expect(out() + err()).toContain('X_DB_DRIFT');
+      } finally {
+        child.kill('SIGKILL');
+        await child.exited;
+        await rm(ROOT, { recursive: true, force: true });
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
 });

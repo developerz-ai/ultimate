@@ -12,7 +12,13 @@ import {
   ROLES,
   sentryErrorReporter,
 } from '@ultimat3/core';
-import { checkDrift, type DriftReport, type MigrationReport, migrate } from '@ultimat3/db';
+import {
+  assertNoDrift,
+  checkDrift,
+  type DriftReport,
+  type MigrationReport,
+  migrate,
+} from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
@@ -251,7 +257,15 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
  */
 export async function runRole(options: ServeOptions): Promise<StartedApp> {
   const role = options.role ?? roleFromEnv(options.env);
-  if (role === 'migrate') return runMigrations({ ...options, role });
+  if (role === 'migrate') {
+    const migrated = await runMigrations({ ...options, role });
+    // The release phase has one channel — the exit code — so drift is thrown here rather than
+    // returned. `x db migrate` calls the same `runMigrations` and renders every difference as a
+    // finding before exiting non-zero; a container that logged one and exited 0 would let the
+    // deploy roll on over a schema nobody can reconstruct, which is the failure drift exists for.
+    assertNoDrift(migrated.drift);
+    return migrated;
+  }
   const app = await serveApp({ ...options, role });
   logger.info('ultimate started', { role: app.role, url: app.url, buildId: app.buildId });
   await holdUntilShutdown('serve', () => app.stop())();

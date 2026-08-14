@@ -1,10 +1,7 @@
-// The destructive-SQL rail at the gate: a migration whose `up` drops a table, drops a column,
-// truncates or retypes must declare it, and `x verify` refuses the file until it does. Files, not
-// the database — for the same reason the source-drift half reads files: the gate runs in CI with
-// nothing listening, and the rail is worth nothing if it first fires in a production release phase.
-//
-// Nothing here decides what "destructive" means. `@ultimat3/db` owns the classifier `x db gen`
-// already wrote the marker from, so the generator and the gate cannot disagree about one file.
+// The destructive-SQL rail at the gate: an `up` that drops, truncates or retypes must declare it.
+// Files, not the database, so the rail fires in CI rather than first in a release phase.
+// `@ultimat3/db` owns the classifier `x db gen` wrote the marker from — the generator and the gate
+// cannot disagree about one file.
 
 import { destructiveStatements, hasDestructiveMarker, migrationDestructive } from '@ultimat3/db';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';

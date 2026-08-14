@@ -3,6 +3,8 @@
 // classifier but disagreed with the reader would pass here and fail nothing in production.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+// `node:fs`/`node:os` — Bun has no temp-directory API, and a fixture tree must exist before the
+// gate reads it, so these are the synchronous Node ones. `node:path` — no Bun path joiner.
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

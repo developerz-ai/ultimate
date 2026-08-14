@@ -8,6 +8,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Fixed
+
+- **One SQL scanner under the splitter, the read-only guards and the destructive rail.** `stripSqlNoise()` blanked spans by a sequence of replacements, comments first — so the `--` in `select '--'; delete from posts` read as a line comment and the `delete` was erased before `inspectStatement()` ever saw it, letting a mutating fragment through `readOnly(client, { seal: false })`. It now walks the same left-to-right lexer `statementsOf()` uses (new internal `sql-scan.ts`), where a `--` inside a literal is data because the literal is scanned first. Two more from the same lexer: a `$tag$` immediately after an identifier is no longer read as a dollar-quote opener — `$` is legal in a name after the first character, so `select foo$tag$; select 2;` is two statements and used to go out as one send — and `hasDestructiveMarker()` now finds `-- destructive: true` only as a **top-level line comment**, never inside a `/* … */` or a dollar-quoted body where a regex over the raw file matched it and bought an unmarked destructive migration past `x verify`.
+
+- **A migration snapshot is the newest migration's, or there is none.** `declaredSchema()` returned the newest snapshot it could find, so a later migration written without one silently answered with an obsolete schema: `0001` records `posts`, `0002` adds a column by hand, and drift reported the column the database correctly holds as `unexpected-column`, fixed by generating a migration that already exists. It now returns `SchemaDescription | undefined` — the newest migration's snapshot, or nothing. `checkDrift()` reports that as an `unknown-schema` difference instead of `ok: true`, and `x db gen` refuses with the new `X_MIGRATION_SNAPSHOT_MISSING` rather than diffing against the empty schema, which would have emitted `create table` for every table the database already holds.
+
+- **A generated index keeps its predicate and its direction, and a changed one is rebuilt.** The migration snapshot recorded an index's name, columns and uniqueness and dropped `where` and `order`, while the diff treated a matching *name* as a matching definition — so narrowing an index to a predicate or reversing it to `desc` generated an empty migration and the database kept serving the old one. The snapshot now carries all five fields and `x db gen` emits `drop index` + `create index` for any of them moving, since Postgres has no `alter index` for a column list, a uniqueness, a predicate or a direction.
+
+- **`introspect()` reads an index's columns in index key order.** They were ordered by `attnum`, so a composite index on `(created_at, org_id)` whose columns were declared the other way round in the table came back reversed — a description that reads correct and compares wrong. It now orders by `indkey`, drops `INCLUDE` payload columns, and carries the index's predicate and direction alongside.
+
+- **Drift compares the indexes migrations declare, not columns alone.** `compareTable` read column names only, so a dropped index or a composite index rebuilt with its columns transposed answered `ok: true`. It now reports `missing-index` and `changed-index` for indexes a snapshot names. A live index no migration declares is deliberately not reported — Postgres creates one per primary key and per unique constraint — and the predicate and direction are not compared, because the catalog returns its own rewriting of an expression and a text comparison would call two identical indexes drift. Named in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps).
+
+- **`ROLE=migrate` exits non-zero on post-migration drift.** `runMigrations` logged the first difference and `runRole` returned success, so a release phase completed over a schema nobody can reconstruct. `x db migrate` and `ROLE=migrate` are still the same function call; the role entrypoint now throws the first difference, because the exit code is the only channel a release phase has.
+
+- **A snapshot sidecar is validated, not asserted.** `readMigrations` checked that `tables` was an array and cast the rest, so `{"tables":[null]}` — valid JSON — became a `SchemaDescription` the diff then threw on. Every nested field is parsed by the new `parseSnapshot()` in `@ultimat3/db`; a file that does not describe a schema is *absent*, which the reader already handles.
+
+- **A ledger the MCP host cannot read is not an empty ledger.** `db.migrate`'s dry run mapped every `readLedger()` failure to `[]`, so a permission denied or an unreachable server reported every migration as pending. Only Postgres' `undefined_table` does that now, through the new `isLedgerMissing()`; everything else propagates.
+
+- **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
+
 ### Changed
 
 - **BREAKING — `@ultimat3/cli` exports `checkSourceDrift`, not `checkDrift`.** Two functions named
@@ -64,7 +84,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 - **The destructive-SQL rail: a migration that destroys data must say so, and `x verify` refuses one that does not.** `x db gen` now writes `-- destructive: true` into any migration whose `up` drops a table, drops a column, truncates or retypes; `x verify`'s `drift` step reads the committed files back and fails an unmarked one with the new `X_MIGRATION_DESTRUCTIVE`. The strong-migrations idea, enforced rather than documented — a drop is allowed, an *undeclared* drop is not.
 
-  ```
+  ```text
   X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
     cause: packages/db/migrations/0002_drop_legacy.sql drops a column and does not declare it:
            alter table "posts" drop column "legacy"
