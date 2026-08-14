@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "1845f6fe3a9c7942",
+  "buildId": "75e5b6d88e04aa77",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -48,7 +48,7 @@
     },
     {
       "url": "/feed",
-      "render": "ssr",
+      "render": "stream",
       "offline": "runtime",
       "hydrate": "idle",
       "revalidateTags": [],
@@ -1242,6 +1242,115 @@
       }
     },
     {
+      "name": "setTheme",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          }
+        },
+        "required": [
+          "memberId",
+          "theme"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [
+        "member"
+      ],
+      "mcp": {
+        "expose": true,
+        "description": "Set the acting member’s theme"
+      },
+      "mutator": true
+    },
+    {
       "name": "summarize",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1290,6 +1399,110 @@
         "expose": true,
         "description": "Summarise a post into two sentences and up to four tags"
       }
+    },
+    {
+      "name": "toggleDigestOptIn",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "memberId",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [
+        "member"
+      ],
+      "mcp": {
+        "expose": true,
+        "description": "Toggle the acting member’s digest subscription"
+      },
+      "mutator": true
     },
     {
       "name": "upgradePlan",
@@ -1451,6 +1664,14 @@
     }
   ],
   "queries": [
+    {
+      "name": "feedActivity",
+      "policy": "feed:read",
+      "live": false,
+      "cacheTags": [
+        "post"
+      ]
+    },
     {
       "name": "liveFeed",
       "policy": "feed:read",
@@ -1745,6 +1966,7 @@
     {
       "permission": "feed:read",
       "enforcedIn": [
+        "query:feedActivity",
         "query:liveFeed",
         "query:postBySlug"
       ]
@@ -1754,7 +1976,9 @@
       "enforcedIn": [
         "action:grantAvatarUpload",
         "action:memberAvatar",
-        "action:savePreferences"
+        "action:savePreferences",
+        "action:setTheme",
+        "action:toggleDigestOptIn"
       ]
     },
     {

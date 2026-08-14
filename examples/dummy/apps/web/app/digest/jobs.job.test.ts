@@ -11,6 +11,7 @@
 import { expect, test } from 'bun:test';
 import { localDateIn } from '@postly/core';
 import { type Ctx, createContext } from '@ultimat3/core';
+import { applyFlagSnapshot } from '@ultimat3/flags';
 import type { JobDriver, StepRunner, StepStore } from '@ultimat3/jobs';
 import {
   createMemoryStepStore,
@@ -28,7 +29,7 @@ import {
   setMailDriver,
   tryMailDriver,
 } from '@ultimat3/mail';
-import { deliverDigest, sendDigest } from './jobs';
+import { deliverDigest, digestEnabled, sendDigest } from './jobs';
 
 const TINTA = '00000000-0000-4000-8000-00000000e001';
 const NUBE = '00000000-0000-4000-8000-00000000e002';
@@ -241,6 +242,35 @@ test('an empty window costs one statement and mails nobody', async () => {
     orgs: 0,
   });
   expect(mail.outbox()).toHaveLength(0);
+});
+
+test('the ops kill switch stops the fan-out from scheduling anything', async () => {
+  const queue: JobDriver = createQueue();
+  const previous = jobDriver();
+  setJobDriver(queue);
+  const runner = runnerOn(createMemoryStepStore(), 'sendDigest');
+
+  applyFlagSnapshot({ [digestEnabled.key]: { default: false } });
+  try {
+    expect(
+      await sendDigest.run({
+        input: { runDate: '2026-08-12' },
+        step: runner.step,
+        ctx: contextFor(noReads(), []),
+        attempt: 1,
+        jobId: 'job-fanout-off',
+        runId: RUN,
+      }),
+    ).toEqual({ runDate: '2026-08-12', groups: 0 });
+
+    // Off means no recipient read either: the switch is checked before any step runs.
+    expect(runner.usedNames()).toEqual([]);
+    expect(await queue.introspect?.list({ name: 'deliverDigest', limit: 50 })).toHaveLength(0);
+  } finally {
+    applyFlagSnapshot({ [digestEnabled.key]: { default: true } });
+    if (previous === undefined) resetJobDriver();
+    else setJobDriver(previous);
+  }
 });
 
 test('the idempotency key is the group, so two zones in one org are two digests', () => {

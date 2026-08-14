@@ -723,6 +723,103 @@
         ],
         "type": "object"
       },
+      "SetThemeInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "theme": {
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "theme"
+        ],
+        "type": "object"
+      },
+      "SetThemeOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "digestOptIn": {
+            "type": "boolean"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "es"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ],
+            "type": "string"
+          },
+          "theme": {
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ],
+            "type": "string"
+          },
+          "tz": {
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "type": "object"
+      },
       "SummarizeInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -761,6 +858,98 @@
         "required": [
           "summary",
           "tags"
+        ],
+        "type": "object"
+      },
+      "ToggleDigestOptInInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "digestOptIn": {
+            "type": "boolean"
+          },
+          "memberId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memberId",
+          "digestOptIn"
+        ],
+        "type": "object"
+      },
+      "ToggleDigestOptInOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "digestOptIn": {
+            "type": "boolean"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "es"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ],
+            "type": "string"
+          },
+          "theme": {
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ],
+            "type": "string"
+          },
+          "tz": {
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
         ],
         "type": "object"
       },
@@ -1094,6 +1283,67 @@
             "post"
           ],
           "mcpTool": "create_comment",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/digest-opt-ins/toggle": {
+      "post": {
+        "operationId": "toggleDigestOptIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleDigestOptInInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToggleDigestOptInOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Toggle the acting member’s digest subscription",
+        "tags": [
+          "digest-opt-ins"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": false,
+          "invalidates": [
+            "member"
+          ],
+          "mcpTool": "toggle_digest_opt_in",
           "rateLimit": null
         }
       }
@@ -1527,6 +1777,67 @@
           "rateLimit": null
         }
       }
+    },
+    "/api/themes/set": {
+      "post": {
+        "operationId": "setTheme",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetThemeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetThemeOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "Set the acting member’s theme",
+        "tags": [
+          "themes"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": false,
+          "invalidates": [
+            "member"
+          ],
+          "mcpTool": "set_theme",
+          "rateLimit": null
+        }
+      }
     }
   },
   "tags": [
@@ -1538,6 +1849,9 @@
     },
     {
       "name": "comments"
+    },
+    {
+      "name": "digest-opt-ins"
     },
     {
       "name": "members"
@@ -1553,6 +1867,9 @@
     },
     {
       "name": "summarizes"
+    },
+    {
+      "name": "themes"
     }
   ]
 }

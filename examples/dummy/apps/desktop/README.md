@@ -4,9 +4,10 @@ Empty on purpose. A desktop build is a shell around the same app, added without 
 
 ## Tauri
 
-```bash
-x app add desktop --shell tauri
-```
+Not built yet. There is no `x app add` or `x build --target desktop` in the CLI today — both are
+milestone 12 on the roadmap ([`docs/idea/16-app-targets.md`](../../../../docs/idea/16-app-targets.md)),
+which is why this directory stays empty rather than holding a scaffold nothing generates. The
+shape is already decided, so it is written down here instead of guessed at again when it ships:
 
 Wraps `apps/web`'s `app/` surface in a Tauri window:
 

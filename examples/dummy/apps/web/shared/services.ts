@@ -50,11 +50,16 @@ export interface OrgsService {
   byId(orgId: OrgId): Promise<OrgView>;
   invite(input: InviteInput): Promise<MemberView>;
   upgrade(plan: PlanCode): Promise<UpgradeReceipt>;
+  /**
+   * Every field optional: `actions.ts`'s bulk save writes all four, but `mutator.ts`'s `setTheme`
+   * and `toggleDigestOptIn` each write one — a partial write is what keeps the field a single
+   * mutator owns from also needing a second, competing write path through this method.
+   */
   savePreferences(values: {
-    locale: AppLocale;
-    tz: AppZone;
-    theme: AppTheme;
-    digestOptIn: boolean;
+    locale?: AppLocale;
+    tz?: AppZone;
+    theme?: AppTheme;
+    digestOptIn?: boolean;
   }): Promise<MemberView>;
   memberById(memberId: MemberId): Promise<MemberView>;
   /**

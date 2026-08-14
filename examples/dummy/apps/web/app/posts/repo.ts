@@ -32,6 +32,9 @@ export type PostWithComments = PostView & { readonly comments: readonly CommentV
 /** One prerenderable blog URL. `updatedAt` is what makes the sitemap's lastmod honest. */
 export type PublishedSlug = { readonly slug: string; readonly updatedAt: Date };
 
+/** The feed's activity badge: one synthetic row per org, `orgId` doubling as its tail key. */
+export type ActivitySummary = { readonly orgId: OrgId; readonly publishedCount: number };
+
 /** What `preload('author')` attaches to a page: the related row, under the relation's name. */
 type WithAuthor = { readonly author: unknown };
 
@@ -205,6 +208,15 @@ export const publishedSince = async (orgId: OrgId, since: Date): Promise<PostSum
       .preload('author')
       .all()
   ).map(summaryView);
+
+/**
+ * One row, one statement, for the feed's streamed activity badge — `feedActivity` in `live.ts`
+ * wraps this so the count arrives independently of the feed itself, which reads over the socket.
+ */
+export const activitySummary = async (orgId: OrgId): Promise<ActivitySummary[]> => {
+  const publishedCount = await db.posts.where({ orgId, status: 'published' }).count();
+  return [{ orgId, publishedCount }];
+};
 
 export const insertComment = async (row: {
   orgId: OrgId;

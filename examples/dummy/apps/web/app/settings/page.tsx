@@ -3,9 +3,12 @@
  * and nothing here is worth server-rendering.
  *
  * All three pickers write to the **member row**, not to localStorage. That is what makes the
- * digest email, the admin dashboard and a future mobile client agree with this screen.
+ * digest email, the admin dashboard and a future mobile client agree with this screen. Theme and
+ * the digest switch apply instantly through `mutator.ts`'s `setTheme` / `toggleDigestOptIn` —
+ * locale and timezone stay behind the explicit "Save" below, in `actions.ts`.
  */
 
+import type { AppTheme } from '@postly/domain';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import { defineRoute } from '@ultimat3/render';
@@ -39,11 +42,13 @@ export function Page(): JSX.Element {
 
   const [locale, setLocale] = createSignal(actor.member.locale);
   const [zone, setZone] = createSignal(actor.member.tz);
-  const [theme, setTheme] = createSignal(actor.member.theme);
-  const [digestOptIn, setDigestOptIn] = createSignal(actor.member.digestOptIn);
+  const [theme, setThemeSignal] = createSignal(actor.member.theme);
+  const [digestOptIn, setDigestOptInSignal] = createSignal(actor.member.digestOptIn);
   const [saved, setSaved] = createSignal(false);
 
   const save = async () => {
+    // Theme and digest opt-in already applied instantly through their own mutators below; they
+    // still ride along here so a caller of `savePreferences` gets back the row it expects.
     await client.savePreferences({
       locale: locale(),
       tz: zone(),
@@ -51,6 +56,18 @@ export function Page(): JSX.Element {
       digestOptIn: digestOptIn(),
     });
     setSaved(true);
+  };
+
+  /** Applies instantly and survives offline — the mutator's own local twin, not this "Save". */
+  const applyTheme = async (next: AppTheme) => {
+    setThemeSignal(next);
+    document.documentElement.dataset.theme = next === 'system' ? '' : next;
+    await client.setTheme({ memberId: actor.member.id, theme: next });
+  };
+
+  const applyDigestOptIn = async (next: boolean) => {
+    setDigestOptInSignal(next);
+    await client.toggleDigestOptIn({ memberId: actor.member.id, digestOptIn: next });
   };
 
   return (
@@ -87,11 +104,7 @@ export function Page(): JSX.Element {
         <Select
           label={t('app.settings.themeLabel')}
           value={theme()}
-          onChange={(next) => {
-            setTheme(next);
-            // Apply optimistically; `savePreferences` is what makes it survive a new device.
-            document.documentElement.dataset.theme = next === 'system' ? '' : next;
-          }}
+          onChange={(next) => void applyTheme(next)}
         >
           <For each={THEMES}>
             {(value) => (
@@ -112,7 +125,7 @@ export function Page(): JSX.Element {
           label={t('app.settings.digestLabel')}
           hint={t('app.settings.digestHelp')}
           checked={digestOptIn()}
-          onChange={setDigestOptIn}
+          onChange={(next) => void applyDigestOptIn(next)}
         />
 
         <div class={styles.actions}>

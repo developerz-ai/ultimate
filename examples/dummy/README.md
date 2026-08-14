@@ -26,19 +26,20 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost`, and `summarize` — an `llm()` model call, which is an action factory rather than a ninth primitive |
 | `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic), `grantAvatarUpload` — a presigned PUT `@ultimat3/storage` keys and signs ([`avatar.ts`](apps/web/app/orgs/avatar.ts)) |
 | `action` | [`apps/web/app/settings/actions.ts`](apps/web/app/settings/actions.ts) | `savePreferences` — a one-action slice still gets an `actions.ts` |
-| `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` — optimistic local twin, offline queue |
-| `query` | [`apps/web/app/posts/live.ts`](apps/web/app/posts/live.ts) | `liveFeed` (`live: true`, `persist: true`) + non-live `postBySlug` |
+| `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` — optimistic local twin, offline queue, `conflict: 'server-wins'` |
+| `mutator` | [`apps/web/app/settings/mutator.ts`](apps/web/app/settings/mutator.ts) | `setTheme` (`'last-write-wins'`) and `toggleDigestOptIn` (`custom`, sticky unsubscribe) — the other two conflict strategies |
+| `query` | [`apps/web/app/posts/live.ts`](apps/web/app/posts/live.ts) | `liveFeed` (`live: true`) + non-live `postBySlug` |
 | `job` | [`apps/web/app/orgs/jobs.ts`](apps/web/app/orgs/jobs.ts) | `onboardOrg` — durable steps + `step.sleep('3d')` |
-| `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `notifySubscribers` — fanout, per-tenant concurrency |
+| `job` | [`apps/web/app/posts/jobs.ts`](apps/web/app/posts/jobs.ts) | `notifySubscribers` — fanout, `concurrency: 1` (one in flight across the fleet) |
 | `job` | [`apps/web/app/digest/jobs.ts`](apps/web/app/digest/jobs.ts) | `sendDigest` — 09:00 **local per member**, DST-correct, delivered one (org, zone) group at a time |
 | `task` | [`apps/web/api/tasks.ts`](apps/web/api/tasks.ts) | `nightlyDigest` cron with an explicit `tz` |
 | `route` | [`apps/web/site/page.tsx`](apps/web/site/page.tsx) | `static`, `hydrate: 'never'`, 0kb JS |
 | `route` | [`apps/web/site/pricing/page.tsx`](apps/web/site/pricing/page.tsx) | `isr`, money formatted at the edge |
 | `route` | [`apps/web/site/blog/[slug]/page.tsx`](apps/web/site/blog/%5Bslug%5D/page.tsx) | `isr` + `prerender()` + `ld.Article` |
-| `route` | [`apps/web/site/blog/page.tsx`](apps/web/site/blog/page.tsx) | `isr` list + RSS/Atom/JSON feed from one declaration |
-| `route` | [`apps/web/app/posts/new/page.tsx`](apps/web/app/posts/new/page.tsx) | `stream` + `hydrate: 'never'` — a native form posting to an action |
+| `route` | [`apps/web/site/blog/page.tsx`](apps/web/site/blog/page.tsx) | `isr` list — no `feed:` key on `defineRoute`; a feed would be its own URL behind an `api/` route, not a flag on the HTML page (no feed route exists yet) |
+| `route` | [`apps/web/app/posts/new/page.tsx`](apps/web/app/posts/new/page.tsx) | `ssr` + `hydrate: 'never'` — a native `<form>` posting to an action, works before hydration and with JS disabled |
 | `route` | [`apps/web/app/posts/[id]/page.tsx`](apps/web/app/posts/%5Bid%5D/page.tsx) | `ssr`, fresh per request |
-| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useLiveFeed()`, usable offline |
+| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useLiveFeed()` over the socket + a `<Suspense>`-streamed activity badge, usable offline |
 | `route` | [`apps/web/app/settings/page.tsx`](apps/web/app/settings/page.tsx) | `spa`, locale + timezone + theme pickers |
 
 ## Why `packages/`

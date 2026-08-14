@@ -15,12 +15,25 @@
 
 import { localDateIn, scheduleByOrgAndZone } from '@postly/core';
 import { SUPPORTED_ZONES, orgId as toOrgId } from '@postly/domain';
+import { defineFlag, isEnabled } from '@ultimat3/flags';
 import { job, t } from '@ultimat3/jobs';
 import { send } from '@ultimat3/mail';
 import { digestEmail } from './mail';
 
 /** 24h back from the slot. A digest names its window; it never measures one from `ctx.now()`. */
 const DIGEST_WINDOW_MS = 86_400_000;
+
+/**
+ * Ops kill switch: flip this off and the nightly fan-out stops scheduling deliveries without a
+ * deploy. `permanent`, not `temporary` — this is a real ops lever for "mail is misbehaving,
+ * stop sending", not scaffolding around an in-progress change, so it carries no `expiresAt`.
+ */
+export const digestEnabled = defineFlag({
+  kind: 'permanent',
+  key: 'digest.enabled',
+  description: 'ops kill switch for the nightly digest fan-out',
+  targeting: { default: true },
+});
 
 export const sendDigest = job({
   /**
@@ -33,6 +46,12 @@ export const sendDigest = job({
   retry: { attempts: 3, backoff: 'exponential' },
   queue: 'digest',
   async run({ input, step, ctx }) {
+    // Checked once per run, off the ambient actor — sync, so no step boundary earns anything.
+    // Off means the fan-out enqueues nothing this occurrence; `deliverDigest` never even sees it.
+    if (!isEnabled(digestEnabled.key, ctx.actor)) {
+      return { runDate: input.runDate, groups: 0 };
+    }
+
     const recipients = await step.run('load-recipients', () => ctx.orgs.allDigestRecipients());
 
     // One `runAt` per zone rather than per member — 500 members in Madrid share one computation,
