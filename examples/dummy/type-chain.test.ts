@@ -272,7 +272,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // list on purpose, in the same commit, the same discipline `KNOWN_GAPS` in
     // `packages/cli/src/scaffold-typecheck.ts` uses for pinned compiler drift.
     expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
-    expect(introduced).toHaveLength(14);
+    expect(introduced).toHaveLength(16);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(
@@ -282,8 +282,10 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     ).toBe(true);
 
     // `repo.ts`: the view mapper, the feed projection and the insert shape each name the column,
-    // and the projection's two readers cascade off it (hop 2 → 3).
-    expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.ts')).toHaveLength(8);
+    // and the projection's THREE readers cascade off it, two diagnostics apiece — the column list
+    // and the mapper it feeds (hop 2 → 3). The third reader is `publishedPage`, the public blog
+    // index's page: one more reader of one projection is exactly the cascade this pins.
+    expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.ts')).toHaveLength(10);
 
     // `repo.test.ts`: a test seeding a row is an insert literal like any other (hop 1 → 2).
     expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.test.ts')).toHaveLength(1);

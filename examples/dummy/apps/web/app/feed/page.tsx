@@ -9,7 +9,7 @@
 
 import { useT } from '@postly/i18n';
 import { PostCard } from '@postly/ui';
-import { useConnection, useLive } from '@ultimat3/realtime';
+import { useConnection } from '@ultimat3/realtime';
 import { defineRoute } from '@ultimat3/render';
 import { Skeleton, Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
@@ -17,9 +17,9 @@ import { For, Show } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { postHref, toCardPost } from '../../shared/entities';
 import { Layout } from '../layout';
-import { liveFeed } from '../posts/live';
 import { LikeButton } from '../posts/ui/like-button';
 import { useViewer } from '../viewer-context';
+import { useLiveFeed } from './hooks';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -31,7 +31,7 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   budget: { js: '60kb', lcp: 2000 },
-  meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: 'noindex' }),
+  meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 
 export function Page(): JSX.Element {
@@ -39,7 +39,7 @@ export function Page(): JSX.Element {
   const actor = useActor();
   const viewer = useViewer();
   const connection = useConnection();
-  const feed = useLive(liveFeed, () => ({ orgId: actor.orgId }));
+  const feed = useLiveFeed(() => ({ orgId: actor.orgId }));
 
   return (
     <Layout>
@@ -72,7 +72,12 @@ export function Page(): JSX.Element {
                     post={toCardPost(post)}
                     href={postHref(post)}
                     zone={viewer.zone}
-                    actions={<LikeButton postId={post.id} likeCount={post.likeCount} />}
+                    actions={
+                      /* `postLike` decides on the org, so it travels in the mutator's input —
+                         off the ROW, which is the org the like is actually against, and which
+                         an offline queue replays hours later with no session to reach for. */
+                      <LikeButton postId={post.id} orgId={post.orgId} likeCount={post.likeCount} />
+                    }
                   />
                 </li>
               )}

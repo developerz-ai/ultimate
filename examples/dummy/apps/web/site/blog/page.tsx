@@ -22,22 +22,30 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1500 },
-  feed: { formats: ['rss', 'atom', 'json'] },
-  load: () => queries.publicPostSlugs({}),
+  // No `feed:` key: `defineRoute` takes the contract's nine keys and nothing else, so the one
+  // that used to sit here declared three feed formats and emitted none. A feed is its own URL —
+  // `buildFeed` from @ultimat3/seo, behind an `api/` route — never a flag on the HTML page.
+  load: () => queries.publicPosts({}),
   meta: ({ t, url }) => ({
     title: t('site.blog.metaTitle'),
     description: t('site.blog.metaDescription'),
     og: { image: '/og/blog.png' },
-    alternates: { canonical: url },
-    ld: ld.BreadcrumbList([
-      { name: 'Postly', url: '/' },
-      { name: 'Blog', url },
-    ]),
+    canonical: url,
+    // Every crumb through `t()`: a breadcrumb is what a search result shows a reader, so it is a
+    // user-facing string in the surface whose entire purpose is being read by strangers.
+    ld: [
+      ld.BreadcrumbList({
+        items: [
+          { name: t('common.appName'), url: '/' },
+          { name: t('site.blog.metaTitle'), url },
+        ],
+      }),
+    ],
   }),
 });
 
 /** A list route renders the page of rows the read answered, unwrapped by nothing. */
-type BlogIndex = Awaited<ReturnType<typeof queries.publicPostSlugs>>;
+type BlogIndex = Awaited<ReturnType<typeof queries.publicPosts>>;
 
 export function Page(props: {
   readonly data: BlogIndex;

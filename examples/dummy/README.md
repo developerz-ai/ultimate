@@ -38,7 +38,7 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `route` | [`apps/web/site/blog/page.tsx`](apps/web/site/blog/page.tsx) | `isr` list + RSS/Atom/JSON feed from one declaration |
 | `route` | [`apps/web/app/posts/new/page.tsx`](apps/web/app/posts/new/page.tsx) | `stream` + `hydrate: 'never'` — a native form posting to an action |
 | `route` | [`apps/web/app/posts/[id]/page.tsx`](apps/web/app/posts/%5Bid%5D/page.tsx) | `ssr`, fresh per request |
-| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useLive(liveFeed)`, usable offline |
+| `route` | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | `stream`, `useLiveFeed()`, usable offline |
 | `route` | [`apps/web/app/settings/page.tsx`](apps/web/app/settings/page.tsx) | `spa`, locale + timezone + theme pickers |
 
 ## Why `packages/`
@@ -78,7 +78,7 @@ apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}
 | **Timezones** | [`packages/core/src/digest-schedule.ts`](packages/core/src/digest-schedule.ts) | member `tz` drives every `<DateTime>`; digest fires 09:00 local, DST-correct across the March/November transitions |
 | **Money** | [`packages/core/src/billing.ts`](packages/core/src/billing.ts) | integer minor units, USD + EUR, arithmetic never leaves minor units, `Intl` only at the edge |
 | **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` queues offline and reconciles; feed reads from the persisted store; [`site/offline/page.tsx`](apps/web/site/offline/page.tsx) is the required fallback |
-| **Realtime** | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | tier 3 — `useLive(liveFeed)` is a Solid signal, patched per row |
+| **Realtime** | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | tier 3 — `useLiveFeed()` (bound once with `liveHookFor`) is a Solid signal, patched per row |
 | **AI-first** | [`packages/mcp/src/tools.ts`](packages/mcp/src/tools.ts) | every exposed action is an MCP tool with the *same* policy; admin ships its own MCP surface |
 | **Admin** | [`apps/admin/src/index.ts`](apps/admin/src/index.ts) | the whole dashboard, 20 lines of `defineAdmin` |
 | **Prompts** | [`apps/web/app/posts/prompts`](apps/web/app/posts/prompts) | versioned `.md` artifact + typed slots + a scored eval |

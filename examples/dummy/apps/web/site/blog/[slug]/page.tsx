@@ -34,22 +34,42 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1800 },
-  load: async ({ params }) =>
-    oneRow(await queries.publicPost({ slug: params.slug }), params.slug ?? ''),
+  load: async ({ params }) => {
+    const slug = params.slug ?? '';
+    return oneRow(await queries.publicPost({ slug }), slug);
+  },
+  /**
+   * `dateModified` is deliberately absent: `PostView` excludes `updatedAt` (`app/posts/entity.ts`)
+   * because a row's storage mtime is not an editorial fact, and `ld.Article` already defaults it
+   * to `datePublished`. An `Article` needs a published instant, so a row without one — which this
+   * read cannot return, since it filters `status: 'published'` — emits no node rather than a node
+   * a crawler rejects.
+   */
   meta: ({ data, t, url }) => ({
     title: data.title,
     description: data.excerpt,
     og: { image: data.coverUrl ?? '/og/blog.png' },
-    alternates: { canonical: url },
-    breadcrumb: [{ name: t('site.blog.metaTitle'), url: '/blog' }],
-    ld: ld.Article({
-      headline: data.title,
-      description: data.excerpt,
-      image: data.coverUrl,
-      datePublished: data.publishedAt,
-      dateModified: data.updatedAt,
-      author: { name: data.authorName },
-    }),
+    canonical: url,
+    ld: [
+      ld.BreadcrumbList({
+        items: [
+          { name: t('common.appName'), url: '/' },
+          { name: t('site.blog.metaTitle'), url: '/blog' },
+          { name: data.title, url },
+        ],
+      }),
+      ...(data.publishedAt === null
+        ? []
+        : [
+            ld.Article({
+              headline: data.title,
+              description: data.excerpt,
+              ...(data.coverUrl === null ? {} : { image: data.coverUrl }),
+              datePublished: data.publishedAt.toISOString(),
+              author: { name: data.authorName },
+            }),
+          ]),
+    ],
   }),
 });
 

@@ -76,6 +76,25 @@ export const publicPost = query({
 });
 
 /**
+ * The public blog index. A `PostSummary`, not a slug: the index renders the same `<PostCard>` the
+ * org feed does, and a card needs a title, an excerpt and a byline. `publicPostSlugs` below stays
+ * what it is — the prerender enumeration — because a URL list and a page of cards are two reads
+ * with two cache lifetimes, not one read used twice.
+ */
+export const publicPosts = query({
+  input: t.object({ limit: t.number.int().min(1).max(50).default(20) }),
+  policy: publicPostRead,
+  cache: { tags: [tag.blog], ttlMs: 3_600_000 },
+  mcp: { expose: true, description: 'List the published posts on the public blog' },
+  sql: ({ limit }) =>
+    from<PostSummary>('posts', () => repo.publishedPage(limit))
+      .where({ status: 'published' })
+      .orderBy('publishedAt', 'desc')
+      .orderBy('id')
+      .limit(limit),
+});
+
+/**
  * Feeds `prerender()` on the blog route: one row per page the build must emit. The tail key is
  * `slug`, not `id` — this projection has no `id` column to sort on, and `slug` is unique across
  * every org by invariant, which is the same property the public URL relies on.

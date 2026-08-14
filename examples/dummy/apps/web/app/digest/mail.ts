@@ -11,10 +11,15 @@ import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
 import { MemberView } from '../orgs/entity';
 import { PostSummary } from '../posts/entity';
 
+/**
+ * `org` is the org's NAME, top-level for the same two reasons `mail.ts` in `posts/` spells out:
+ * `{org}` is a name slot, and the subject interpolates from the payload's top level only.
+ */
 export const DigestData = t.object({
   member: MemberView,
   posts: t.array(PostSummary),
   localDate: t.string,
+  org: t.string,
 });
 
 export type DigestData = Infer<typeof DigestData>;
@@ -25,7 +30,7 @@ export const digestEmail = defineMail<DigestData>({
   input: DigestData,
   template: ({ data }) => [
     blocks.heading('digest.greeting', { name: data.member.name }),
-    blocks.paragraph('digest.intro', { count: data.posts.length, org: data.member.orgId }),
+    blocks.paragraph('digest.intro', { count: data.posts.length, org: data.org }),
     // Already localised by the job, so it is a value the renderer prints rather than a key it
     // has to format — a date without an explicit zone has no correct rendering here.
     blocks.detail('digest.date', data.localDate),

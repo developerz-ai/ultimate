@@ -9,7 +9,7 @@ import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
-import { useCan } from '../../../shared/actor';
+import { useActor, useCan } from '../../../shared/actor';
 import { client, queries } from '../../../shared/client';
 import { oneRow } from '../../../shared/rows';
 import { Layout } from '../../layout';
@@ -22,14 +22,23 @@ export const config = defineRoute({
   offline: 'network-only',
   hydrate: 'interaction',
   budget: { js: '40kb', lcp: 2000 },
-  // `postById` is a read, so it comes off the query client — `client` posts actions, and the two
-  // registries are separate keys on `Api` precisely so this cannot be confused.
-  load: async ({ params }) =>
-    oneRow(await queries.postById({ postId: params.id }), params.id ?? ''),
+  /**
+   * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
+   * registries are separate keys on `Api` precisely so this cannot be confused.
+   *
+   * The org is required input, not an optional filter: `postRead` decides on it, and a
+   * tenant-columned read that names no org is `X_TENANCY_UNSCOPED`. It comes off the actor rather
+   * than the URL because `/posts/{id}` carries no tenant and an id from another org must read as
+   * absent, which is exactly what an org-scoped read of a foreign id answers.
+   */
+  load: async ({ params }) => {
+    const postId = params.id ?? '';
+    return oneRow(await queries.postById({ orgId: useActor().orgId, postId }), postId);
+  },
   meta: ({ data, t }) => ({
     title: t('app.post.metaTitle', { title: data.title }),
     description: data.excerpt,
-    robots: 'noindex',
+    robots: { index: false },
   }),
 });
 

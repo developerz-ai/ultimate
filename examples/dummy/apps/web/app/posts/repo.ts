@@ -10,9 +10,10 @@
  *
  * KNOWN GAP, and the only one left on this file: the public blog resolves a post by slug alone —
  * `/blog/{slug}` carries no tenant, which is why `post_slug_unique` is global — so
- * `publishedBySlug` and `publishedSlugs` read `posts` with no org predicate and @ultimat3/entity
- * refuses that with `X_TENANCY_UNSCOPED` (`packages/entity/src/tenancy.ts`). A tenant-columned
- * entity has no cross-tenant escape hatch, deliberately; every other function here now runs.
+ * `publishedBySlug`, `publishedSlugs` and `publishedPage` read `posts` with no org predicate, and
+ * @ultimat3/entity refuses that with `X_TENANCY_UNSCOPED` (`packages/entity/src/tenancy.ts`). A
+ * tenant-columned entity has no cross-tenant escape hatch, deliberately; every other function
+ * here now runs.
  */
 
 import { type Comment, db, type Post } from '@postly/db';
@@ -248,6 +249,22 @@ export const withComments = async (orgId: OrgId, id: PostId): Promise<PostWithCo
     .all();
   return [{ ...post, comments: comments.map(commentView) }];
 };
+
+/**
+ * The public blog index's page. The same summary the org feed renders — a card needs a title, an
+ * excerpt and a byline, not a slug — so `site/` and `app/` map one row shape through one
+ * `toCardPost`, which is the property that makes a second mapping unnecessary.
+ */
+export const publishedPage = async (limit: number): Promise<PostSummary[]> =>
+  (
+    await db.posts
+      .where({ status: 'published' })
+      .orderBy('publishedAt', 'desc')
+      .limit(limit)
+      .select(SUMMARY_COLUMNS)
+      .preload('author')
+      .all()
+  ).map(summaryView);
 
 /** One published post, by slug, anywhere — the public blog has no tenant in the URL. */
 export const publishedBySlug = async (slug: string): Promise<PostView[]> =>

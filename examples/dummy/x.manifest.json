@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "8e87ab5d54a06788",
+  "buildId": "0ce34a4900510c16",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1388,6 +1388,14 @@
       "cacheTags": [
         "blog"
       ]
+    },
+    {
+      "name": "publicPosts",
+      "policy": "post:read-public",
+      "live": false,
+      "cacheTags": [
+        "blog"
+      ]
     }
   ],
   "jobs": [
@@ -1674,7 +1682,8 @@
       "permission": "post:read-public",
       "enforcedIn": [
         "query:publicPost",
-        "query:publicPostSlugs"
+        "query:publicPostSlugs",
+        "query:publicPosts"
       ]
     }
   ],

@@ -30,11 +30,19 @@ export const notifySubscribers = job({
       ctx.orgs.digestRecipients(toOrgId(post.orgId)),
     );
 
+    // The org's NAME, because the mail's `{org}` is a name slot. Its own step, so a provider blip
+    // on the send below replays neither this read nor the two above it.
+    const org = await step.run('load-org', () => ctx.orgs.byId(toOrgId(post.orgId)));
+
     // The step is the retry unit: a provider blip re-sends this step only, with the loads
     // replayed from storage in microseconds.
     await step.run('send', async () => {
       for (const member of recipients) {
-        await send(postPublished, { post, member }, { to: member.email, locale: member.locale });
+        await send(
+          postPublished,
+          { post, member, org: org.name },
+          { to: member.email, locale: member.locale },
+        );
       }
     });
   },

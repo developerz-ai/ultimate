@@ -84,10 +84,14 @@ export const deliverDigest = job({
     // re-query, and the idempotency key still blocks a second send today.
     if (posts.length === 0) return { sent: false };
 
+    // The org's NAME, because the mail's `{org}` is a name slot — and read after the empty check,
+    // so a member with nothing to read costs one statement fewer.
+    const org = await step.run('load-org', () => ctx.orgs.byId(toOrgId(member.orgId)));
+
     await step.run('send', () =>
       send(
         digestEmail,
-        { member, posts, localDate: input.localDate },
+        { member, posts, localDate: input.localDate, org: org.name },
         { to: member.email, locale: member.locale, tz: member.tz },
       ),
     );
