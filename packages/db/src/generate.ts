@@ -4,6 +4,7 @@
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 
 import { assert, systemClock } from '@ultimat3/core';
+import { isDestructive } from './destructive';
 import { migrationIrreversible } from './errors';
 import {
   type ColumnDescription,
@@ -267,6 +268,12 @@ export interface GeneratedMigration {
   readonly up: string;
   readonly down: string;
   readonly snapshot: SchemaDescription;
+  /**
+   * Whether `up` destroys data. Read off the generated SQL by the same classifier the gate runs,
+   * never assembled a second time from what the diff happened to push — one answer, so a migration
+   * cannot be written unmarked and then refused by `x verify` for lacking the mark.
+   */
+  readonly destructive: boolean;
 }
 
 export function migrationStamp(now: Date): string {
@@ -323,13 +330,15 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   }
 
   const id = `${migrationStamp(options.now ?? systemClock.now())}_${slugify(options.name)}`;
+  const up = plan.up.join('\n');
   return {
     id,
     name: options.name,
     fileName: `migrations/${id}.sql`,
-    up: plan.up.join('\n'),
+    up,
     // Reverse order: the last thing created is the first thing dropped.
     down: [...plan.down].reverse().join('\n'),
     snapshot: snapshotOf(options.entities),
+    destructive: isDestructive(up),
   };
 }

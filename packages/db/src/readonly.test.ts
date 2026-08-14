@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createRecordingClient, type RecordingClient } from './fake';
-import { inspectStatement, readOnly, stripSqlNoise } from './readonly';
+import { inspectStatement, readOnly } from './readonly';
 import { sql } from './sql';
+import { stripSqlNoise } from './sql-noise';
 
 let client: RecordingClient;
 

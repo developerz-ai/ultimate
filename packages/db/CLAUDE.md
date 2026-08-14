@@ -272,6 +272,35 @@ competing with it would only report the same fault in worse words. `@ultimat3/en
 `@ultimat3/ai`'s live tests import it rather than hand-rolling a seventh copy; splitting a script is
 one question with one answer (axiom 1).
 
+`destructive.ts` is the rail, and it decides **what** is destructive — never **whether** a given
+repo has any. `x db gen` reads `isDestructive(up)` to write `-- destructive: true` into the file;
+`x verify`'s `drift` step reads `hasDestructiveMarker`/`destructiveStatements` to refuse a file that
+lacks it (`@ultimat3/cli`'s `db-destructive.ts`). One classifier for both, because a generator that
+wrote no marker where the gate demanded one would ship a migration failing its own gate. Four rules.
+**Only `up`** — reversing a `create table` is a `drop table`, so a rail reading `down` marks every
+migration ever generated and a marker on all of them marks none. **A closed list of four kinds** —
+`drop table`, `drop column`, `truncate`, `alter column … type`; a rail enumerating every Postgres
+foot-gun is a second SQL parser competing with the server's, and every one of these four is a
+statement `generateMigration` emits, so each has a generated case holding it honest. `drop
+constraint`/`default`/`not null` and `drop index` are excluded by name: the database rebuilds them.
+**Decide on blanked text, report the original** — `statementsOf` + `stripSqlNoise` before a keyword
+is looked for, so `-- drop table users` is prose and `values ('drop table users')` is data; but the
+excerpt in the error keeps its identifiers, because `drop table ""` names nothing an author can act
+on. **The marker is a whole line**, like `-- down`, so a file merely mentioning it has declared
+nothing. It is also SQL the checksum covers, which is deliberate: marking an already-applied
+migration is an edit, and `X_MIGRATION_CONFLICT` is the correct answer to that.
+
+`X_MIGRATION_DESTRUCTIVE` and `X_MIGRATION_IRREVERSIBLE` are two questions, not two spellings of
+one. Irreversible refuses to *generate* a plan whose `down` cannot restore the rows, and
+`--allow-destructive` is the override. Destructive refuses to *ship* a plan whose `up` destroys them
+without saying so — and a retype is reversible in DDL, gated by no flag, and still rewrites every
+row, so it is marked without ever being refused.
+
+`sql-noise.ts` holds `stripSqlNoise` alone, for the three guards that share it — `readonly.ts`,
+`readonly-query.ts`, `destructive.ts`. It lives apart from all of them because `errors.ts` names the
+rail's wording and the rail reads SQL text: leaving the blanker in `readonly.ts` would have put the
+error registry, which registers codes at module evaluation, inside an import cycle.
+
 `checkDrift()` is the **post-migrate verification** and the only drift question that needs a
 database: the live catalog against the ledger the run just wrote. It is asked where a connection is
 open — `@ultimat3/cli`'s `runMigrations`, which is `x db migrate`, `x db reset` and `ROLE=migrate`

@@ -195,6 +195,7 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `db-generate.ts` | `x db gen`: entities diffed against what the migrations declare, written as `.sql` + `.snapshot.json` + `.hash` |
 | `cmd-db.ts` | the subcommands, and nothing else — `gen` calls `db-generate.ts`, `migrate`/`reset` call `serve.ts`'s `runMigrations` |
 | `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
+| `db-destructive.ts` | `checkDestructiveMigrations`: the same step's second half — every committed `up` that drops, truncates or retypes must carry `-- destructive: true` |
 
 `x db migrate` and `ROLE=migrate` are the same function call. That is the whole design: until
 1.2.0 the CLI shelled out to `bunx drizzle-kit` — a second engine, a second journal, declared in no
@@ -209,6 +210,17 @@ migrator is the only one there is — and returns the report on `MigratedApp.dri
 and a release phase verify the same thing. `x db migrate` renders it through `driftFindings` and
 exits non-zero; `ROLE=migrate` logs the first difference and still exits 0, because its contract is
 "apply every migration, then exit" and turning a diagnostic into a blocked deploy is not that.
+
+**The `drift` step asks a third thing, off the same directory and with no database either: is every
+destructive statement declared?** `db-destructive.ts` reads each committed migration through
+`migrations.ts` — the reader `x db migrate` applies from, because a rail checking a list the
+migrator does not run enforces nothing — and refuses an `up` that drops a table, drops a column,
+truncates or retypes without a `-- destructive: true` line, as `X_MIGRATION_DESTRUCTIVE`. It decides
+none of that itself: `@ultimat3/db`'s `destructive.ts` owns the classifier `db-generate.ts` already
+wrote the marker from, so the generator and the gate cannot disagree about one file. One finding per
+file, never one per statement — the marker declares the whole migration. It rides on `drift` rather
+than becoming an eighteenth step because it is this step's own question over this step's own files;
+a new step is for a genuinely new question.
 
 The *source* half is a different question with a different answer: `checkSourceDrift` hashes the
 entity source against what `x db gen` recorded, answers the same before and after a migration, and

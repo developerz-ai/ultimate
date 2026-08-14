@@ -440,6 +440,29 @@ describe('generateMigration', () => {
     });
     expect(migration.up).toContain('drop column "legacy";');
     expect(migration.down).toContain('-- data is not restored');
+    expect(migration.destructive).toBe(true);
+  });
+
+  test('a create-only migration is not destructive, and its `down` full of drops does not make it', () => {
+    const migration = generateMigration({
+      entities: [posts([column('id', { kind: 'uuid', primaryKey: true }), column('title')])],
+      name: 'create posts',
+      now: at,
+    });
+    expect(migration.down).toContain('drop table "posts";');
+    expect(migration.destructive).toBe(false);
+  });
+
+  test('a retype is destructive even though no --allow-destructive gates it', () => {
+    const before = snapshotOf([posts([column('legacy', { kind: 'char' })])]);
+    const migration = generateMigration({
+      entities: [posts([column('legacy', { kind: 'text' })])],
+      current: before,
+      name: 'retype legacy',
+      now: at,
+    });
+    expect(migration.up).toContain('alter column "legacy" type text');
+    expect(migration.destructive).toBe(true);
   });
 
   test('the emitted snapshot is drift-free against the entities it came from', () => {

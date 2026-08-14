@@ -32,7 +32,9 @@ await withTransaction(async (tx) => {
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
 | `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger |
 | `appTables()` / `FRAMEWORK_TABLE_PREFIX` | `As of 2026-08`: the live schema minus the `x_` namespace — no migration declares the ledger, the queue, the outbox or an auth table, so none of them is drift |
-| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL |
+| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL, and `destructive` for the marker the file must carry |
+| `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
+| `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked, so a guard reads the operation and not the prose. Shared by `readOnly()`, `readOnlyQuery()` and the destructive rail |
 | `introspect()` | live schema → `SchemaDescription` |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |

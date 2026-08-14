@@ -31,6 +31,14 @@ export {
   poolProfileFor,
   setDbClient,
 } from './client';
+export type { DestructiveKind, DestructiveStatement } from './destructive';
+export {
+  DESTRUCTIVE_CAUSE,
+  DESTRUCTIVE_MARKER,
+  destructiveStatements,
+  hasDestructiveMarker,
+  isDestructive,
+} from './destructive';
 export type { DriftDifference, DriftKind, DriftOptions, DriftReport } from './drift';
 export {
   appTables,
@@ -54,6 +62,7 @@ export {
   dbUnavailable,
   identifierUnsafe,
   migrationConflict,
+  migrationDestructive,
   migrationIrreversible,
   readonlyViolation,
   sqlUnsafe,
@@ -119,13 +128,14 @@ export {
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';
 export { branchPglite, pgliteBranchDir } from './pglite-branch';
 export type { MutationVerdict, ReadOnlyOptions } from './readonly';
-export { assertReadOnly, inspectStatement, readOnly, stripSqlNoise } from './readonly';
+export { assertReadOnly, inspectStatement, readOnly } from './readonly';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';
 export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
 export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
+export { stripSqlNoise } from './sql-noise';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';

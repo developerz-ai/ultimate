@@ -62,6 +62,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **The destructive-SQL rail: a migration that destroys data must say so, and `x verify` refuses one that does not.** `x db gen` now writes `-- destructive: true` into any migration whose `up` drops a table, drops a column, truncates or retypes; `x verify`'s `drift` step reads the committed files back and fails an unmarked one with the new `X_MIGRATION_DESTRUCTIVE`. The strong-migrations idea, enforced rather than documented — a drop is allowed, an *undeclared* drop is not.
+
+  ```
+  X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
+    cause: packages/db/migrations/0002_drop_legacy.sql drops a column and does not declare it:
+           alter table "posts" drop column "legacy"
+    fix:   add the line "-- destructive: true" to packages/db/migrations/0002_drop_legacy.sql,
+           or regenerate it: x db gen "<name>" --allow-destructive
+  ```
+
+  One classifier decides for both halves (`@ultimat3/db`'s new `destructive.ts`, exported as `destructiveStatements()`, `hasDestructiveMarker()`, `isDestructive()` and `DESTRUCTIVE_MARKER`), so the generator cannot write a file that fails its own gate. Four rules: only `up` is judged — reversing a `create table` is a `drop table`, and marking every `down` marks nothing; the kind list is closed at four — `drop constraint`/`default`/`not null` and `drop index` are rebuildable and excluded by name; the decision runs over comment- and literal-blanked text, so `-- drop table users` is prose and `values ('drop table users')` is data; and the marker is a whole line, so a file merely mentioning it has declared nothing.
+
+  `X_MIGRATION_DESTRUCTIVE` is not a second spelling of `X_MIGRATION_IRREVERSIBLE`. Irreversible refuses to *generate* a plan whose `down` cannot restore the rows, with `--allow-destructive` as the override. Destructive refuses to *ship* a plan whose `up` destroys them without saying so — which is why a column retype, reversible in DDL and gated by no flag, is now marked though it is never refused. Mark a migration before it is applied: the marker is SQL the checksum covers, so adding it to an applied file is an edit, and `X_MIGRATION_CONFLICT` correctly says so. Existing migrations are unaffected — the reference app's `0001_init` creates and drops nothing.
+
+  `GeneratedMigration` gains a `destructive: boolean` field. `stripSqlNoise()` moves from `readonly.ts` to its own `sql-noise.ts` — same export, same behaviour, now shared by three guards without putting the error registry in an import cycle.
+
 - **`job_leases_lost_total{queue}` — a counter for jobs the queue took back while they were still running.** Declared beside the other runtime series in `@ultimat3/core` (`leasesLost`, `recordLeaseLost(queue)`) and emitted from one place, the worker's lease heartbeat. Alert on any non-zero rate: it is the one queue failure that at-least-once delivery cannot paper over, and until now it was invisible. See the `Fixed` entry below.
 - **Realtime subscription handles are `Disposable` — `using sub = client.useLive(...)` unsubscribes on scope exit.** `LiveHandle` (`useLive`'s return, and `LiveRows` one layer up through the `useLive` hook) and `Unsubscribe` (`client.subscribe(topic, handler)`'s return) now carry `[Symbol.dispose]`, wired to the exact same function `unsubscribe` already was — never a second teardown implementation to drift from it. Purely additive: `unsubscribe()` and the callable topic-unsubscribe function both still work exactly as before, so no call site needs to change. Pinned in `packages/realtime/src/type-pins.ts` so a future refactor that drops the member fails the build rather than a call site months later.
 - **`findById` batches itself — one microtask of point lookups is one `where "id" in (…)`.** A page that resolves an author per row sent one `select … where "id" = $1` per row. Inside a request, `postgresRepo()` now collects the lookups issued in the same microtask and sends one statement for all of them:

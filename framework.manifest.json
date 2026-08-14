@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "200c67d220e9e7ec976ec493910e0216e425a2233876ff5b78598aa80c446cbc",
+  "buildId": "b57735b167525a0d4dba965e7b51afc02d52bb9d2f465aa1968fc12775682b7a",
   "tiers": {
     "0": [
       "core",
@@ -972,6 +972,11 @@
     },
     {
       "code": "X_MIGRATION_CONFLICT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_DESTRUCTIVE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },

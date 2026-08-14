@@ -20,6 +20,7 @@ import { OPENAPI_FILE, openApiJson } from './app-openapi';
 import { APP_CONFIG_FILE, requireAppRoot } from './app-root';
 import { checkBudgets, readBuildStats } from './budgets';
 import type { CliCommand, CommandContext } from './command';
+import { checkDestructiveMigrations } from './db-destructive';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkSourceDrift } from './drift';
 import { checkErrorFixes } from './error-contract';
@@ -99,12 +100,20 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   ...TEST_STEPS,
   {
     name: 'drift',
-    summary: 'schema source vs migrations',
+    summary: 'schema source vs migrations, and every destructive statement declared',
     // Only an app owns migrations; a package monorepo's `packages/db` is the driver, not a schema.
     // Source, not database: the gate runs in CI with nothing listening, and the database half is
     // the post-migrate verification `runMigrations` performs where a connection is already open.
+    //
+    // The destructive rail rides here rather than becoming an eighteenth step because it asks this
+    // step's own question — do the committed migrations still describe what the app is doing to its
+    // schema? — off the same directory, in the same pass, with no database either.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
-    run: async (ctx) => fromFindings(await checkSourceDrift(ctx.root)),
+    run: async (ctx) =>
+      fromFindings([
+        ...(await checkSourceDrift(ctx.root)),
+        ...(await checkDestructiveMigrations(ctx.root)),
+      ]),
   },
   {
     name: 'contract-diff',
