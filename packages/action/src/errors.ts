@@ -2,10 +2,19 @@
  * Every failure @ultimat3/action can produce, one subclass per stable code so
  * callers `instanceof` a specific failure instead of string-matching a message.
  */
-import { assertNever, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  assertNever,
+  ERROR_DOCS_BASE,
+  errorDocsUrl,
+  hasErrorCode,
+  registerErrorCodes,
+  UltimateError,
+} from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
 
-const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
+// Core's spelling, aliased — never a second one. A local template drifts from what
+// `x errors explain` prints the moment `ERROR_DOCS_BASE` moves.
+const docs = errorDocsUrl;
 
 /**
  * Titles for the framework-wide code table — every one of them owned by this package.
@@ -173,6 +182,62 @@ export class IdempotencyConflictError extends UltimateError {
           : 'retry the same Idempotency-Key after the first request settles',
       docs: docs('X_IDEMPOTENCY_CONFLICT'),
     });
+  }
+}
+
+/** What the wire said, once `client.ts` has decided the body really is a problem document. */
+export interface RemoteFailure {
+  /** The action that was called — `meta` carries it, so a report names the call, not just a code. */
+  readonly action: string;
+  readonly status: number;
+  /** The server's code, kept verbatim: matching on it is why problem+json carries one. */
+  readonly code: string;
+  readonly cause: string;
+  readonly fix: string;
+  /** The link the server sent, if it sent one. Never synthesized from the code. */
+  readonly docs?: string | undefined;
+}
+
+/** A link, not a string the server happened to put in a field the overlay renders as an href. */
+const ABSOLUTE_HTTP_URL = /^https?:\/\//;
+
+/**
+ * The docs link, or the honest absence of one. `UltimateError` resolves an unregistered code to
+ * `https://ultimate.dev/errors/<code>`, and a code the SERVER owns — `X_SIGNUP_CLOSED`, declared
+ * by the app through `registerErrorStatus` — is exactly the kind this bundle never registered:
+ * that URL is a 404 dressed as documentation, printed under `docs:` as if the framework wrote the
+ * page. So: the server's own link when it sent a resolvable one, this build's registered link
+ * when it knows the code, and otherwise the index — a page that exists.
+ */
+function remoteDocs(code: string, sent: string | undefined): string | undefined {
+  if (sent !== undefined && ABSOLUTE_HTTP_URL.test(sent)) return sent;
+  // `undefined` lets the constructor resolve the REGISTERED descriptor, whose docs a package
+  // may have declared as something other than the default URL.
+  return hasErrorCode(code) ? undefined : ERROR_DOCS_BASE;
+}
+
+/**
+ * A failure the SERVER raised, rebuilt from `application/problem+json` in the browser. The code
+ * is the server's — this package invents none, the same rule `ActionDeniedError` follows for a
+ * policy decision — but a code the server owns is one this bundle may never have registered, so
+ * the error says where it came from rather than passing as locally declared: `name` marks it in
+ * a stack trace and `meta.origin` marks it in `--json`, the dev overlay and the error reporter.
+ * `RpcFailedError` stays the answer when no framework code came back at all.
+ */
+export class RemoteActionError extends UltimateError {
+  override readonly name = 'RemoteActionError';
+  /** The status that carried it — typed, so a caller never digs it back out of `meta`. */
+  readonly status: number;
+
+  constructor(failure: RemoteFailure) {
+    super({
+      code: failure.code,
+      cause: failure.cause,
+      fix: failure.fix,
+      docs: remoteDocs(failure.code, failure.docs),
+      meta: { origin: 'remote', action: failure.action, status: failure.status },
+    });
+    this.status = failure.status;
   }
 }
 

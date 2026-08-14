@@ -28,6 +28,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `idempotency.ts` | store interface + memory default |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
+| `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
 | `naming.ts`, `infer.ts`, `validate.ts`, `json-schema.ts`, `stable.ts`, `tags.ts` | pure helpers |
 
 ## Invariants
@@ -45,6 +46,25 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
+- **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased
+  view — `listActions()`, `getAction(name)` — so a member missing from it is a projection the
+  registry cannot reach: `.job()` was absent until 2026-08 and `getAction('publishPost')?.job()`
+  was a type error against an object that has had the method since `facadeFor` bound it. `job()`
+  erases because `ActionJobHandle`'s members are method-syntax (bivariant parameters) and its
+  output erases to `unknown`; `ClientMethod` is a **function type**, so its input is
+  contravariant and `(input: unknown) => …` is a supertype of no concrete action's method. Both
+  halves are build errors in `type-pins.ts`, never a comment — and type claims go there, never in
+  a `.test.ts`, because `tsconfig.json` excludes tests and `tsc` never reads one.
+- **The client keeps the server's error code and marks it remote.** A `problem+json` failure
+  becomes `RemoteActionError` (`errors.ts`), which re-uses the code off the wire the way
+  `ActionDeniedError` re-uses the policy decision's — and then says so, because the browser
+  bundle never registered it: `name` marks it in a stack, `meta.origin: 'remote'` marks it in
+  `--json`, the overlay and the error reporter. **It never synthesizes a docs URL.**
+  `https://ultimate.dev/errors/X_SIGNUP_CLOSED` for an app-declared code is a 404 dressed as
+  documentation; the link is the server's own `docs`/`type` when it sent an `http(s)` one, this
+  build's registered link when `hasErrorCode` knows the code, otherwise `ERROR_DOCS_BASE`. The
+  code must be `X_SCREAMING_SNAKE` to be taken at all — `typeof code === 'string'` accepted `""`
+  from a gateway — and anything else is `RpcFailedError`, which is what that code means.
 - **MCP exposure is read through `isMcpExposed` from `@ultimat3/core`, in all three places.**
   `toMcpTools` builds the tool, `describeAction` publishes the manifest fact and
   `toOpenApiOperation` publishes `x-ultimate.mcpTool` — the last two fail-opened (`?? true`,

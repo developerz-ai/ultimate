@@ -230,11 +230,18 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
-| `X_RPC_FAILED` | non-`problem+json` failure reached the client | check the gateway |
+| `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
 
 Denials re-throw the policy layer's own codes (`X_FORBIDDEN`, `X_UNAUTHENTICATED`) —
 this package never invents an authz code.
+
+The client does the same with the server's: a `problem+json` failure comes back as a
+`RemoteActionError` keeping the code the server sent, marked `meta.origin: 'remote'` because
+the browser bundle may never have registered it, and linked only to a page that exists — the
+server's own `docs`/`type` when it sent an `http(s)` one, this build's registered link when it
+knows the code, otherwise the error index. A per-code URL is never synthesized for a code
+nothing here declares.
 
 ## Boundaries
 

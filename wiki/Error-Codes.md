@@ -185,7 +185,13 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ACTION_UNREGISTERED` | an action was projected before it was registered, so it has no name | `.tool()` / `.client()` / `.job()` / `.openapi()` on an action `registerActions()` never named | `registerActions(await import('./actions'))` at boot, before mounting routes |
 | `X_IDEMPOTENCY_CONFLICT` | idempotency key reused with a different payload, or still in flight | a retried request mutated its body | send a fresh `Idempotency-Key` for a different payload; otherwise retry after the first settles |
 | `X_CONTRACT_DRIFT` | the published contract changed | input/output shape moved without a version bump | give new inputs a `.default()`, or bump the package version |
-| `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, or a non-JSON response | check the gateway, then `x actions describe <name> --json` (`x queries describe <name> --json` for a read) |
+| `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, a non-JSON response, or a body naming no `X_` code | check the gateway, then `x actions describe <name> --json` (`x queries describe <name> --json` for a read) |
+
+A code the SERVER threw keeps its own code on the client — including one this table never
+lists, because an app declares its own through `registerErrorStatus`. The typed client rebuilds
+it as a `RemoteActionError` marked `meta.origin: 'remote'`, linked to the `docs` the server sent
+or to the error index; it never synthesizes `https://ultimate.dev/errors/<code>` for a code no
+page here documents.
 
 ## Queries and live queries
 
