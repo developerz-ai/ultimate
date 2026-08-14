@@ -10,6 +10,13 @@ import './register';
 /** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
+export type {
+  BackfillBatch,
+  BackfillDefinition,
+  BackfillInput,
+  BackfillReport,
+} from './backfill';
+export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
 export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,

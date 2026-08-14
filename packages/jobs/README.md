@@ -103,6 +103,42 @@ Step names are the replay key, so they must be deterministic and unique in a run
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
 (`StepSuspension`), never a failure: it does not burn a retry attempt.
 
+## Backfills are jobs
+
+`backfill()` is a **factory over `job()`**, not a ninth primitive — one pass over every row a
+chain matches, with the retry policy, the queue, the cancellation and the dead-letter path a job
+already has.
+
+```ts
+import { backfill } from '@ultimat3/jobs';
+import { db } from '@postly/db';
+
+export const rewriteSlugs = backfill({
+  name: 'rewrite-slugs',                                   // REQUIRED: a durable key
+  batch: 1_000,                                            // rows per statement and per step
+  source: () => db.posts.where({ published: true }),
+  async handle({ rows }) {
+    await db.posts.upsertAll(rows.map(slugged), { onConflict: ['id'] });
+  },
+});
+
+await rewriteSlugs.enqueue({});                            // it is a JobHandle
+```
+
+The source is read through `inBatches()` — one statement per page, keyset, never OFFSET — and
+each page is handled inside its own `step.run`, named `batch:0`, `batch:1`, … A run killed
+mid-pass therefore **resumes on the page it stopped at**: completed steps replay from storage
+without a statement, and the iteration reopens at the cursor they left behind.
+
+| Rule | Why |
+|---|---|
+| the checkpoint is a cursor and a count, never the page | a completed step's output is retained for the whole run — checkpointing rows would hold every processed row until the job ends |
+| `handle` is given no `step` | a step name minted inside it collides with itself on batch 2 (`X_STEP_DUPLICATE`) |
+| `handle` is given a `signal` | the run's deadline composed with the batch's own ceiling — hand it to whatever the body calls |
+| `handle` runs at least once per page | an attempt cancelled between the last row and the checkpoint replays it — write through `upsertAll` / `updateWhere`, never `count + 1` |
+| `idempotencyKey` is the backfill's name | re-enqueueing a live pass is the same pass, not a second writer on one table |
+| `batch` is refused at declaration | `0`, `1.5` and a `NaN` from an env var fail the build, not the fourth attempt |
+
 ## The deadline cancels
 
 A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that

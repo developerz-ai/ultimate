@@ -122,6 +122,20 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `accept` phase while it runs, handed back in the teardown's `finally` so a `release()` that
   threw still gives it up, `isLeader` cleared there too because a lock this process could not
   hand back is never treated as still held.
+- **`backfill()` is a FACTORY over `job()`, never a ninth primitive.** Same rule `llm()` follows
+  in `@ultimat3/ai`: a new capability arrives as a factory over an existing primitive, so a
+  backfill inherits `.enqueue()`, the retry policy, the cancellation, the dead-letter path and
+  its manifest row instead of re-declaring them. Three things in `backfill.ts` are load-bearing
+  and none is an implementation detail: a step's persisted output is the CURSOR and a row count
+  and never the page, because `steps.ts` retains a completed step's output for the whole run and
+  a page there is every processed row held until the job ends; step names are positional
+  (`batch:<index>`) so the next attempt mints the same key the last one wrote, which is also why
+  `handle` is handed no `step` — a name minted inside a per-batch body collides with itself on
+  batch 2; and the iteration is rebuilt whenever `batches.cursor` disagrees with the checkpoint,
+  because `retryFromStep` re-opens ONE step in the middle of a finished run and the cursor then
+  jumps over a page the live iteration never read. A checkpoint READ back is checked rather than
+  trusted — `step.run` replays it through an unchecked `as T`, and an absent cursor is not `null`,
+  so the pass would silently reopen the source at the top and walk the whole table again.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
@@ -164,6 +178,7 @@ picture from the other side.
 | File | Owns |
 |---|---|
 | `job.ts` | the `job()` primitive + registry + the handle's fluent surface + `registerJob` |
+| `backfill.ts` | `backfill()` — a factory over `job()`: the batched pass and its cursor checkpoints |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |

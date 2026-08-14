@@ -84,6 +84,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`backfill()` — one pass over a table, declared as a `job`.** `@ultimat3/jobs` gains a factory, not a ninth primitive: a backfill is durable work with an input schema, a retry policy, an idempotency key and a queue, so `backfill({ name, source, batch, handle })` *returns* a `JobHandle` and inherits `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row with no line of its own. Same rule `llm()` follows: a new capability arrives as a factory over an existing primitive.
+
+  ```ts
+  export const rewriteSlugs = backfill({
+    name: 'rewrite-slugs',
+    batch: 1_000,
+    source: () => db.posts.where({ published: true }),
+    async handle({ rows }) {
+      await db.posts.upsertAll(rows.map(slugged), { onConflict: ['id'] });
+    },
+  });
+  ```
+
+  `source` is read through `inBatches()` — one statement per page, keyset, never OFFSET — and every page is handled inside its own `step.run`, named `batch:0`, `batch:1`, … So a run killed mid-pass resumes on the page it stopped at: the completed steps replay from storage without touching the database, and the iteration is opened at the cursor they leave behind. What a step persists is that cursor and a row count, **never the page** — `steps.ts` hands a completed step's output back for the whole run, so checkpointing rows would retain every row already processed until the job ended. The body is handed no `step` for the same reason step names are positional: a name minted inside it would collide with itself on the second batch. `idempotencyKey` is the backfill's name, so re-enqueueing a live pass is the same pass.
+
 - **The destructive-SQL rail: a migration that destroys data must say so, and `x verify` refuses one that does not.** `x db gen` now writes `-- destructive: true` into any migration whose `up` drops a table, drops a column, truncates or retypes; `x verify`'s `drift` step reads the committed files back and fails an unmarked one with the new `X_MIGRATION_DESTRUCTIVE`. The strong-migrations idea, enforced rather than documented — a drop is allowed, an *undeclared* drop is not.
 
   ```text
