@@ -59,8 +59,8 @@ function flatten(trace: RequestTrace): readonly FlameRow[] {
 
 export const timelinePanel: DevPanel<TimelinePanelData> = {
   key: 'timeline',
-  titleKey: 'dev.panel.timeline',
-  question: 'where did the time go in this request?',
+  titleKey: 'dev.panel.timeline.title',
+  questionKey: 'dev.panel.timeline.question',
   async data(sources, params): Promise<TimelinePanelData> {
     const traces = await sources.traces();
     const wanted = params.get('requestId');

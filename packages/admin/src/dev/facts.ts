@@ -76,7 +76,8 @@ export interface LiveQueryFact {
   readonly name: string;
   readonly live: boolean;
   readonly policy: string;
-  readonly sql: string;
+  /** `null` when no sample input was supplied for this query — SQL depends on arguments. */
+  readonly sql: string | null;
 }
 
 export interface JobDefFact {

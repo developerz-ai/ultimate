@@ -19,8 +19,8 @@ export interface CachePanelData {
 
 export const cachePanel: DevPanel<CachePanelData> = {
   key: 'cache',
-  titleKey: 'dev.panel.cache',
-  question: 'what invalidated what — and why is this still stale?',
+  titleKey: 'dev.panel.cache.title',
+  questionKey: 'dev.panel.cache.question',
   async data(sources): Promise<CachePanelData> {
     const graph = await sources.cacheGraph();
     // The invalidation log needs a running process that has served a write; the graph alone

@@ -8,8 +8,11 @@ export interface DevPanel<Data = unknown> {
   /** URL segment and `--json` selector: `x dev --panel routes --json`. */
   readonly key: string;
   readonly titleKey: string;
-  /** The question this panel exists to kill. Rendered as the tab's subtitle. */
-  readonly question: string;
+  /**
+   * i18n key for the question this panel exists to kill, rendered as the tab's subtitle —
+   * `t(questionKey)`, never a literal sitting beside `titleKey`. Convention: `${titleKey}.question`.
+   */
+  readonly questionKey: string;
   data(sources: DevSources, params: URLSearchParams): Promise<Data>;
 }
 

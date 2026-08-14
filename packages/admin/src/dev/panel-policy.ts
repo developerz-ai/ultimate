@@ -24,8 +24,8 @@ export interface PolicyPanelData {
 
 export const policyPanel: DevPanel<PolicyPanelData> = {
   key: 'policy',
-  titleKey: 'dev.panel.policy',
-  question: 'can this actor do that, and why?',
+  titleKey: 'dev.panel.policy.title',
+  questionKey: 'dev.panel.policy.question',
   async data(sources, params): Promise<PolicyPanelData> {
     const facts = await sources.policyMatrix();
     const actors = [...new Set(facts.map((fact) => fact.actorId))].sort();

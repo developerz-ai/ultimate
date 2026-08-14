@@ -4,6 +4,7 @@
 
 // Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
 // values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
+import { t } from '@ultimat3/i18n';
 import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
 import { defaultDevSources } from './data';
@@ -142,7 +143,7 @@ function shell(
   const tabs = panels
     .map(
       (panel) =>
-        `<a href="${basePath}/${panel.key}"${panel.key === active.key ? ' aria-current="page"' : ''}>${panel.key}</a>`,
+        `<a href="${basePath}/${panel.key}"${panel.key === active.key ? ' aria-current="page"' : ''}>${escapeHtml(t(panel.titleKey))}</a>`,
     )
     .join(' ');
 
@@ -153,7 +154,7 @@ function shell(
 <title>_x · ${escapeHtml(active.key)}</title><style>${style}</style></head>
 <body><header><h1>_x</h1><nav>${tabs}</nav>
 <a href="${basePath}/${active.key}?json=1">--json</a></header>
-<main><p class="question">${escapeHtml(active.question)}</p>
+<main><p class="question">${escapeHtml(t(active.questionKey))}</p>
 <pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre></main></body></html>`;
 }
 

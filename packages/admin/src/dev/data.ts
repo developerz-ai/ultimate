@@ -83,6 +83,13 @@ export interface DevSourceOptions {
    * wiring line, rather than rendering an empty panel that reads as "nothing happened".
    */
   readonly hooks?: Partial<DevSources>;
+  /**
+   * Sample input per query name, so the live panel can show the SQL a query actually compiles
+   * to. `@ultimat3/query`'s `QueryDescriptor` carries no SQL text — it depends on the input —
+   * so a query with no sample here stays `sql: null` rather than an invented guess. `x dev
+   * --actor` supplies these the same way it supplies `actors` for the policy matrix.
+   */
+  readonly sqlSamples?: Readonly<Record<string, unknown>>;
 }
 
 const unavailable = (source: string, panel: string): DevSourceUnavailableError =>
@@ -155,18 +162,29 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
     statementLoops: unwired<readonly StatementLoopFact[]>('statementLoops', 'timeline'),
 
     async liveQueries(): Promise<readonly LiveQueryFact[]> {
-      const { describeQueries } = await import('@ultimat3/query');
-      return listOf(describeQueries()).map((raw) => {
+      const { describeQueries, describeSql, listQueries } = await import('@ultimat3/query');
+      const queries = describeQueries();
+      // `describeSql` is the one place that actually compiles a query to text — it needs a
+      // sample input to do it, so a name with no entry in `sqlSamples` comes back `sql: null`
+      // rather than the permanently-empty string this source used to answer for every query.
+      // It takes the live `AnyQuery[]` targets (`listQueries()`), never the already-projected
+      // `QueryDescriptor[]` this method also needs for `name`/`live`/`capability`.
+      const sqlByName = new Map(
+        (await describeSql(opts.sqlSamples ?? {}, listQueries())).map((entry) => [
+          entry.query,
+          entry.sql,
+        ]),
+      );
+      return listOf(queries).map((raw) => {
         const query = bagOf(raw);
+        const name = str(query['name']);
         return {
-          name: str(query['name']),
+          name,
           live: query['live'] === true,
           // `QueryDescriptor`'s permission field is named `capability`, not `policy` — this
           // fact keeps its own field named `policy` (that is the /_x rendering, not the registry).
           policy: str(query['capability']),
-          // `QueryDescriptor` carries no SQL text at all; this stays blank until the query
-          // registry actually describes one — never invent a value here.
-          sql: str(query['sql']),
+          sql: sqlByName.get(name) ?? null,
         };
       });
     },

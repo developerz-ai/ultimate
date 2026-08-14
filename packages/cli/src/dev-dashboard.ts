@@ -178,8 +178,8 @@ interface ServicesPanelData extends DevStatus {
  */
 const servicesPanel = (input: DevDashboardInput): DevPanel<ServicesPanelData> => ({
   key: 'services',
-  titleKey: 'dev.panel.services',
-  question: 'which services is this process talking to, and did anything fail to load?',
+  titleKey: 'dev.panel.services.title',
+  questionKey: 'dev.panel.services.question',
   data(): Promise<ServicesPanelData> {
     const status = input.status();
     return Promise.resolve({ ...status, stateDir: status.services.stateDir });
@@ -192,8 +192,8 @@ interface BoundariesPanelData {
 
 const boundariesPanel = (input: DevDashboardInput): DevPanel<BoundariesPanelData> => ({
   key: 'boundaries',
-  titleKey: 'dev.panel.boundaries',
-  question: 'does any file import across a boundary the build will reject?',
+  titleKey: 'dev.panel.boundaries.title',
+  questionKey: 'dev.panel.boundaries.question',
   async data(): Promise<BoundariesPanelData> {
     return { findings: await checkAppBoundaries(input.root) };
   },

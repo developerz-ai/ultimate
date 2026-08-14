@@ -64,7 +64,7 @@ describe('every panel is a rendering of its --json', () => {
       'policy',
       'manifest',
     ]);
-    for (const panel of DEV_PANELS) expect(panel.question.length).toBeGreaterThan(0);
+    for (const panel of DEV_PANELS) expect(panel.questionKey.length).toBeGreaterThan(0);
   });
 
   test('the routes panel answers "which handler serves this?"', async () => {

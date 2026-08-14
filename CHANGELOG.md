@@ -252,6 +252,40 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`/_x/live`'s `sql` field was permanently `''`.** `QueryDescriptor` never carried SQL text —
+  `defaultDevSources().liveQueries()` read a field the registry does not produce — so every row in
+  the live panel printed an empty string forever, not the query it described. It now compiles real
+  SQL through `@ultimat3/query`'s `describeSql`, given a sample input via the new `sqlSamples`
+  option on `defaultDevSources`; a query with no sample answers `sql: null`, honestly "unknown",
+  never an invented `''`. `LiveQueryFact.sql` is `string | null` to say so.
+
+- **`/_x/live`'s "no sync node" note fired for a sync node with zero subscribers.** `panel-live.ts`
+  folded "the source is unwired" and "the source answered `[]`" into one empty array, so a live
+  tier that was up and running with nobody attached printed `dev.live.no-sync-node` — a different
+  and wrong diagnosis. The two are now told apart: an unwired source still degrades to the note,
+  a wired one with no subscribers shows an empty list and no note.
+
+- **The `/_x` DB panel's write guard matched a write word inside a string literal.** `assertReadOnly`
+  tested `\b(insert|update|…)\b` against the raw SQL text, so `select * from events where kind =
+  'create'` was refused as a write statement — a false positive on the exact kind of filtered read
+  the panel exists to answer. It also read only `--` line comments, so a `/* … */` block comment
+  naming a write word could still trip the same false refusal, or a comment could hide a real one
+  past the leading-keyword check. `assertReadOnly` now sanitizes string literals and both comment
+  forms (blanking them, not deleting them, so `whe` + `re` never fuses into a new keyword) before
+  the keyword scan runs.
+
+- **`ToolRegistry`'s field used TypeScript `private` instead of a real `#` private field**
+  (`@ultimat3/mcp`), the one place in `registry.ts` that had drifted from the rest of the package's
+  convention — `private` is erased at compile time only, `#tools` is actually inaccessible outside
+  the class at runtime.
+
+- **`DevPanel.question` was an English literal sitting beside `titleKey`**, in `panel.ts` and every
+  `panel-*.ts` (`@ultimat3/admin`) plus the CLI's two process panels — rendered raw into `/_x`'s
+  `<p class="question">` with no `t()` in the path, and `titleKey` itself was declared on every
+  panel but never actually read anywhere. Replaced with `questionKey` (`t()`'d the same way
+  `titleKey` now is, for the tab label), both following the `dev.panel.<key>.title` /
+  `dev.panel.<key>.question` convention the rest of `catalogs/en.json` already uses.
+
 - **A route's `load` swallowed every failure that carried a `code`, and a route that loaded nothing claimed to load anything.** `routeDataFor` rethrew a caught error untouched whenever it was an `Error` with a string `code` — the shape of a framework error, and equally the shape of every `ENOENT`, `ECONNREFUSED` and `ERR_MODULE_NOT_FOUND` a loader can raise. A `load` that read a missing file surfaced Bun's own rejection, with no `X_ROUTE_LOAD_FAILED`, no fix line and no mention of the route an author has to go and fix. The check is now `isUltimateError` from `@ultimat3/core`, which reads the well-known brand: a policy denial or a tier-0 `X_VALIDATION_FAILED` still passes through with its own code, and everything else gets wrapped, as it always should have.
 
   The second half is the branch above it. With no `load` the context IS the route's data, and it was handed back as `ctx as unknown as TData` — a double cast that let a route declare `meta: ({ data }) => ({ title: data.post.title })`, load nothing, and render `undefined` in a `<title>` on the surface whose entire purpose is SEO. `defineRoute` now takes `RouteDefinition<TData> & LoadRequirement<TData>`: data the context cannot supply requires a `load`, so that route is a compile error, and the fallback narrows to `RouteContext & TData` — checked, not laundered. `RouteContext` is an alias rather than an `interface` for the same reason; only an alias is a `RouteData`. Pinned in `packages/render/src/type-pins.ts`. Routes reading `data.url` / `data.params`, and every route `x new` and `x g route` write, are unaffected.
