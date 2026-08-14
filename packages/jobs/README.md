@@ -94,7 +94,7 @@ to define a job in Ultimate that cannot be deduped.
 
 | Call | Behaviour |
 |---|---|
-| `step.run(name, fn)` | runs once ever; result persisted before the next step starts |
+| `step.run(name, fn)` | runs once ever; result persisted before the next step starts. `fn` receives an `AbortSignal` |
 | `step.sleep(name, '3d')` | suspends the run, requeues it for the wake time |
 | `step.sleep('3d')` | same, step name derived from the duration |
 | `step.waitForEvent(name, event, { match, timeout })` | suspends until `publishEvent()` matches |
@@ -102,6 +102,23 @@ to define a job in Ultimate that cannot be deduped.
 Step names are the replay key, so they must be deterministic and unique in a run — a
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
 (`StepSuspension`), never a failure: it does not burn a retry attempt.
+
+## The deadline cancels
+
+A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that
+follows makes the job claimable by another worker — a body still running past it is a second
+copy of one job.
+
+```ts
+run: async ({ input, ctx, step }) => {
+  const res = await fetch(url, { signal: ctx.signal });     // stops at the deadline
+  await step.run('save', (signal) => save(res, { signal })); // the step's own ceiling too
+},
+```
+
+Nothing can kill a body that ignores the signal, so the durable state is fenced: past the
+cancel every step write is refused with `X_ABORTED`, and a run that finishes anyway is logged
+as `jobs.timeout.abandoned` — the one way to find a handler that never reads `ctx.signal`.
 
 ## The transactional outbox (on by default)
 
@@ -194,6 +211,7 @@ burning an attempt — one org's 50k-row import cannot starve the fleet.
 | `X_JOB_MAX_ATTEMPTS` | retries exhausted, job dead-lettered |
 | `X_OUTBOX_NO_TX` | enqueue outside a transaction with `mode: 'required'` |
 | `X_DRIVER_UNAVAILABLE` | no `DATABASE_URL` / executor for the pg driver |
+| `X_ABORTED` | a cancelled attempt tried to write a step — core's code, not a second name for it |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |
 
 ## Boundary

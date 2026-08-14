@@ -28,7 +28,7 @@ X_DB_DRIFT: schema differs from migrations
 
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
-| `X_ABORTED` | operation aborted | the request's `AbortSignal` fired: client disconnected or a deadline passed | none — stop work and return |
+| `X_ABORTED` | operation aborted | the `AbortSignal` on `ctx` fired: client disconnected, or a deadline passed — including a job past its `timeout`, whose steps are refused from that point on | none — stop work and return; read `ctx.signal` in the body to stop sooner |
 | `X_INTERNAL` | unexpected internal framework error | a non-Ultimate error escaped into framework code | fix the failure named in `cause`, then re-run |
 | `X_INVARIANT` | invariant violated | framework state that "cannot happen" happened | report it with `x doctor --json` output attached |
 | `X_UNREACHABLE` | unreachable branch was reached | an exhaustive `switch` met a value the type says cannot exist | narrow the union at the call site |

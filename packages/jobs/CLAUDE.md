@@ -66,6 +66,22 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`state` is set in the teardown's `finally`, never after the close.** A `driver.close()` that
   threw pinned it at `'draining'`: `stats()` reported a drain that had finished and `start()`,
   which leaves only `'idle'` or `'stopped'`, refused that worker for the life of the process.
+- **A deadline CANCELS, then fails the attempt — never the other way round.** `executeJob` owns
+  an `AbortController` per attempt and hands its signal to the body as `ctx.signal` (composed
+  with the caller's, never replacing it) and to the step runner. `raceTimeout` aborts before it
+  rejects because the caller nacks on that rejection and the queue hands the job straight to
+  another worker: rejecting first is one job running twice. Same order in `withStepTimeout` for
+  `stepTimeoutMs`. The attempt is also cancelled in `executeJob`'s `finally`, so a step a handler
+  left in flight cannot write into the run its successor owns.
+- **A cancelled runner writes NOTHING, and `put()` in `steps.ts` is the one place that is
+  enforced.** Every `store.put` goes through it; aborted means `X_ABORTED` instead of the write,
+  and refusing the write is what unwinds a body that ignores the signal. The failure branch of
+  `step.run` checks the same flag directly rather than writing through `put`: the caller has to
+  see the original error, never one raised by the bookkeeping. Nothing in JS can kill an
+  uncooperative body — `jobs.timeout.abandoned` (warn) names it instead.
+- `Ctx.signal` is non-optional in the type, and `executeJob` still reads it defensively:
+  `@ultimat3/http`'s `asCtx` casts a request context across the seam without one, and a job that
+  crashed on a missing field is worse than a job with no caller to follow.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
@@ -117,7 +133,8 @@ picture from the other side.
 | `driver-memory.ts` | `x dev` / tests |
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
 | `retry.ts` | backoff arithmetic, dead-letter decision |
-| `worker.ts` | `worker` role, claim loop, `executeJob`, drain |
+| `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
+| `worker.ts` | `worker` role, claim loop, drain |
 | `scheduler.ts` | `task()` primitive + registry + `registerTask`, `scheduler` role, catch-up, leader election |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` | stored event bus for `step.waitForEvent` |

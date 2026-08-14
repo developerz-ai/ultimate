@@ -251,6 +251,27 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A job that hit its `timeout` kept running beside its own retry.** The deadline rejected the attempt and nothing told the body about it: the rejection nacked the job, the queue handed it to the next worker that claimed, and the original handler carried on — two copies of one job, in one process or two, both writing steps into the same `runId`. The one thing that had to happen first — telling the body to stop — never happened at all.
+
+  A deadline is now a **cancellation**, in that order: cancel, then fail the attempt. The signal is `ctx.signal`, the seam an action body already reads, so nothing jobs-only has to be learned:
+
+  ```ts
+  run: async ({ input, ctx, step }) => {
+    // Aborted at the job's `timeout`, and also when the caller's own ctx goes away.
+    const res = await fetch(url, { signal: ctx.signal });
+    throwIfAborted(ctx); // or check ctx.signal.aborted in a long loop
+    await step.run('save', (signal) => save(res, { signal }));
+  },
+  ```
+
+  Three rules fall out of it:
+
+  - **A cancelled attempt writes no steps.** Nothing in JS can kill a body that ignores a signal, so the durable state is fenced instead: past the cancel, `step.run`, `step.sleep` and `step.waitForEvent` refuse to write and raise `X_ABORTED`. A late `completed` would hand the attempt that replaced this one a step it never ran; a late `failed` would erase one it did. The refusal is what unwinds an uncooperative body, and it is one guard on one write path, not a check per call site.
+  - **`step.run`'s callback receives an `AbortSignal`** — the run's cancellation and that step's own `stepTimeoutMs` ceiling composed, so a body reads one signal and sees whichever deadline lands first. Purely additive: every zero-argument `() => …` callback already written is unchanged. The per-step timeout aborts before it rejects too, same order and same reason.
+  - **A body that runs past its deadline is named.** `jobs.timeout.abandoned` logs at `warn` with the job and how it ended, which is how an app finds the handler that never reads `ctx.signal`. A body that stopped *because* it was cancelled is the intended end and stays quiet.
+
+  `executeJob` moved to `packages/jobs/src/execute.ts` — same export from `@ultimat3/jobs`, and `worker.ts` is back under the file-size ceiling it was one line from.
+
 - **The jobs worker's drain closed the queue connection under a job it had just claimed.** `tick()` read the drain flag on entry and never again, so a round that got past that read kept going: it was still awaiting `driver.claim()`, and the jobs it started joined `inFlight` *after* `stop()` had already snapshotted that set. The snapshot was empty, the drain concluded there was nothing to wait for, and `driver.close()` ran with a handler mid-flight — the ack never lands, the lease expires, and the queue hands the job to the next worker that claims. That is the "always twice" draining exists to prevent, on exactly the deploys where a poll and a SIGTERM land in the same tick.
 
   `stop()` now waits out the claim round it is racing before it waits on the jobs. A round registers itself in the same synchronous step as its guard — no await between them — so it is either refused by a drain already under way or visible to every drain that starts after it. Two rules fall out of that:

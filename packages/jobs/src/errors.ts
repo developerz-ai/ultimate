@@ -14,11 +14,11 @@ export const JOB_OWNED_ERROR_CODES = [
 ] as const;
 
 /**
- * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `JobsNotImplementedError` below throws it; jobs keeps
- * no title for it, because the copy this file used to hold was a second title that nothing would
- * have failed on once core's changed.
+ * `X_NOT_IMPLEMENTED` and `X_ABORTED` are `@ultimat3/core`'s. `JobsNotImplementedError` and
+ * `JobAbortedError` below throw them; jobs keeps no title for either, because the copy this file
+ * used to hold was a second title that nothing would have failed on once core's changed.
  */
-export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED'] as const;
 
 /** Every code jobs can throw: the ones it owns plus the one it borrows. */
 export const JOB_ERROR_CODES = [...JOB_OWNED_ERROR_CODES, ...JOB_BORROWED_ERROR_CODES] as const;
@@ -99,6 +99,30 @@ export class JobTimeoutError extends UltimateError {
           : `job "${input.job}" step "${input.step}" exceeded its ${input.timeoutMs}ms timeout`,
       fix: `raise timeout on the job definition, or split the work into step.run() calls`,
       docs: docsFor('X_JOB_TIMEOUT'),
+    });
+  }
+}
+
+/**
+ * This attempt was cancelled — its deadline passed, or the caller went away — and something in it
+ * tried to keep going. The run belongs to whoever claims it next, so a step write from here would
+ * land on their history.
+ *
+ * Core's `X_ABORTED` rather than a code of jobs' own: the framework already means exactly one
+ * thing by "the signal fired, stop work", and a second name for it would make an agent ask which
+ * one it is looking at. `X_JOB_TIMEOUT` stays the code the ATTEMPT fails with; this is the code
+ * the work inside it stops with.
+ */
+export class JobAbortedError extends UltimateError {
+  constructor(input: { job: string; step?: string }) {
+    super({
+      code: 'X_ABORTED',
+      cause:
+        input.step === undefined
+          ? `job "${input.job}" was cancelled — this attempt no longer owns the run`
+          : `job "${input.job}" was cancelled before step "${input.step}" could be recorded`,
+      fix: 'no action needed — the queue re-runs the job; read ctx.signal in the job body (or pass it to fetch) to stop at the deadline instead of running past it',
+      docs: docsFor('X_ABORTED'),
     });
   }
 }

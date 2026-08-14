@@ -59,6 +59,7 @@ export {
   IdempotencyRequiredError,
   JOB_ERROR_CODES,
   JOB_ERROR_TITLES,
+  JobAbortedError,
   JobDuplicateError,
   JobMaxAttemptsError,
   JobNameTakenError,
@@ -69,6 +70,8 @@ export {
 } from './errors';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export { createMemoryEventBus, eventBus, publishEvent, setEventBus } from './events';
+export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
+export { executeJob } from './execute';
 export type {
   DeadLetterEntry,
   JobsManifest,
@@ -161,12 +164,5 @@ export {
   isStepSuspension,
   StepSuspension,
 } from './steps';
-export type {
-  ExecuteJobOptions,
-  JobExecution,
-  JobOutcome,
-  Worker,
-  WorkerOptions,
-  WorkerStats,
-} from './worker';
-export { createWorker, executeJob } from './worker';
+export type { Worker, WorkerOptions, WorkerStats } from './worker';
+export { createWorker } from './worker';

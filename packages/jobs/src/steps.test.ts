@@ -185,3 +185,116 @@ describe('step.waitForEvent', () => {
     expect(await attempt()).toBeUndefined();
   });
 });
+
+/**
+ * A cancelled attempt has lost its lease: the deadline nacked the job and another worker owns
+ * this `runId` now. So the runner writes nothing more — a late `completed` would hand the new
+ * attempt a step it never ran, and a late `failed` would erase one it did.
+ */
+describe('a cancelled run writes nothing', () => {
+  const cancelled = (): AbortSignal => {
+    const controller = new AbortController();
+    controller.abort();
+    return controller.signal;
+  };
+
+  test('a step that finishes after the cancel is refused instead of recorded', async () => {
+    const runner = createStepRunner({
+      runId: 'run-9',
+      jobName: 'j',
+      store,
+      signal: cancelled(),
+    });
+
+    await expect(runner.step.run('late', () => 'done')).rejects.toThrow(/X_ABORTED/);
+    expect(await store.get('run-9', 'late')).toBeUndefined();
+  });
+
+  test('a step that fails after the cancel leaves the live record alone', async () => {
+    // What the attempt that replaced this one has already put there.
+    await store.put({
+      runId: 'run-10',
+      name: 'shared',
+      status: 'completed',
+      output: 'from the live attempt',
+      startedAt: T0,
+      attempts: 1,
+    });
+    const runner = createStepRunner({
+      runId: 'run-10',
+      jobName: 'j',
+      store,
+      signal: cancelled(),
+    });
+
+    // `run` replays a completed step, so reach the failure path through a fresh name.
+    await expect(
+      runner.step.run('shared-2', () => {
+        throw new TypeError('the dependency is down');
+      }),
+    ).rejects.toThrow('the dependency is down');
+    expect(await store.get('run-10', 'shared-2')).toBeUndefined();
+    expect((await store.get('run-10', 'shared'))?.output).toBe('from the live attempt');
+  });
+
+  test('sleep and waitForEvent are fenced by the same signal', async () => {
+    const clock = fakeClock(T0);
+    const runner = createStepRunner({
+      runId: 'run-11',
+      jobName: 'j',
+      store,
+      clock,
+      signal: cancelled(),
+    });
+
+    await expect(runner.step.sleep('30s')).rejects.toThrow(/X_ABORTED/);
+    await expect(runner.step.waitForEvent('maybe', 'never.happens')).rejects.toThrow(/X_ABORTED/);
+    expect(await store.list('run-11')).toEqual([]);
+  });
+});
+
+describe('a step timeout cancels the body it is timing', () => {
+  test('the signal handed to the step aborts before the step is failed', async () => {
+    let observed: AbortSignal | undefined;
+    const runner = createStepRunner({
+      runId: 'run-12',
+      jobName: 'j',
+      store,
+      stepTimeoutMs: 5,
+    });
+
+    await expect(
+      runner.step.run('slow', async (signal) => {
+        observed = signal;
+        await Bun.sleep(40);
+        return 'done';
+      }),
+    ).rejects.toThrow(/X_JOB_TIMEOUT/);
+    // The failure is recorded — this run is still ours, only the step's ceiling passed — but the
+    // body was told to stop first, so it is not still working beside the retry.
+    expect(observed?.aborted).toBe(true);
+    expect((await store.get('run-12', 'slow'))?.status).toBe('failed');
+  });
+
+  test('the run signal reaches the body too, so one check covers both deadlines', async () => {
+    const controller = new AbortController();
+    let observed: AbortSignal | undefined;
+    const runner = createStepRunner({
+      runId: 'run-13',
+      jobName: 'j',
+      store,
+      stepTimeoutMs: 10_000,
+      signal: controller.signal,
+    });
+
+    const running = runner.step.run('watching', async (signal) => {
+      observed = signal;
+      await Bun.sleep(5);
+      return 'done';
+    });
+    controller.abort();
+    await expect(running).rejects.toThrow(/X_ABORTED/);
+
+    expect(observed?.aborted).toBe(true);
+  });
+});

@@ -4,27 +4,16 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import {
-  logger,
-  onShutdown,
-  recordJob,
-  recordQueueDepth,
-  reportError,
-  uuid,
-  withSpan,
-} from '@ultimat3/core';
+import { logger, onShutdown, recordJob, recordQueueDepth, uuid, withSpan } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
-import { JobTimeoutError } from './errors';
-import { eventBus } from './events';
-import type { AnyJobHandle } from './job';
+import type { JobExecution, JobOutcome } from './execute';
+import { executeJob } from './execute';
 import { getJob } from './job';
 import type { Limiter } from './limits';
 import { createLimiter } from './limits';
-import { nextRetry } from './retry';
-import type { EventLookup, StepRecord } from './steps';
-import { createStepRunner, isStepSuspension } from './steps';
+import type { EventLookup } from './steps';
 
 /**
  * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
@@ -33,8 +22,6 @@ import { createStepRunner, isStepSuspension } from './steps';
  * same number sixty times.
  */
 const QUEUE_DEPTH_INTERVAL_MS = 15_000;
-
-export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered';
 
 /**
  * `JobOutcome` -> the `jobs_total` label, and `null` for the outcome that is not one. `suspended`
@@ -48,151 +35,6 @@ const JOB_OUTCOME_LABELS: Readonly<Record<JobOutcome, 'ok' | 'failed' | 'dead' |
     retried: 'failed',
     'dead-lettered': 'dead',
   });
-
-export interface JobExecution {
-  readonly outcome: JobOutcome;
-  readonly jobId: string;
-  readonly job: string;
-  readonly attempt: number;
-  readonly durationMs: number;
-  readonly resumeAt?: number;
-  readonly error?: string;
-  readonly steps: readonly StepRecord[];
-  readonly replayed: readonly string[];
-}
-
-export interface ExecuteJobOptions {
-  readonly driver: JobDriver;
-  readonly claimed: ClaimedJob;
-  readonly handle: AnyJobHandle;
-  readonly ctx: Ctx;
-  readonly clock?: Clock;
-  readonly events?: EventLookup;
-}
-
-/**
- * Run one claimed job to completion, suspension or failure, and settle it with the driver.
- * Shared by the worker loop and `x jobs run` so both take exactly the same code path.
- */
-export async function executeJob(options: ExecuteJobOptions): Promise<JobExecution> {
-  const { driver, claimed, handle } = options;
-  const startedAt = nowMs(options.clock);
-  const runner = createStepRunner({
-    runId: claimed.runId,
-    jobName: handle.name,
-    store: driver.steps,
-    ...(options.clock === undefined ? {} : { clock: options.clock }),
-    events: options.events ?? eventBus(),
-  });
-
-  const settle = async (outcome: JobExecution): Promise<JobExecution> => {
-    const steps = await driver.steps.list(claimed.runId);
-    return { ...outcome, steps, replayed: runner.replayedNames() };
-  };
-
-  try {
-    const input = handle.parse(claimed.input);
-    const work = handle.run({
-      input,
-      step: runner.step,
-      ctx: options.ctx,
-      attempt: claimed.attempt,
-      jobId: claimed.id,
-      runId: claimed.runId,
-    });
-
-    await (handle.timeoutMs === undefined
-      ? work
-      : raceTimeout(work, handle.timeoutMs, handle.name));
-
-    await driver.ack(claimed.id);
-    return settle({
-      outcome: 'completed',
-      jobId: claimed.id,
-      job: handle.name,
-      attempt: claimed.attempt,
-      durationMs: nowMs(options.clock) - startedAt,
-      steps: [],
-      replayed: [],
-    });
-  } catch (error) {
-    if (isStepSuspension(error)) {
-      const delayMs = Math.max(0, error.resumeAt - nowMs(options.clock));
-      // countsAsAttempt: false — parking a run is not a failure.
-      await driver.nack(claimed.id, { delayMs, countsAsAttempt: false });
-      return settle({
-        outcome: 'suspended',
-        jobId: claimed.id,
-        job: handle.name,
-        attempt: claimed.attempt,
-        durationMs: nowMs(options.clock) - startedAt,
-        resumeAt: error.resumeAt,
-        steps: [],
-        replayed: [],
-      });
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-    const decision = nextRetry(handle.retry, claimed.attempt);
-    await driver.nack(claimed.id, {
-      delayMs: decision.delayMs,
-      error: message,
-      countsAsAttempt: true,
-      deadLetter: !decision.retry && decision.deadLetter,
-    });
-    logger.warn('jobs.attempt.failed', {
-      job: handle.name,
-      jobId: claimed.id,
-      attempt: claimed.attempt,
-      retry: decision.retry,
-      error: message,
-    });
-    // This package's ONE error-reporting call site, and it is here rather than in the loop because
-    // this is the only frame that still holds the thrown value — the loop sees a message string.
-    // A retry is a failure the framework recovered from, so it is a `warning`; a dead letter is
-    // one nobody recovered from. `x jobs run` takes this path too, which is the point: one
-    // execution path means one place a failed job can become visible.
-    reportError(error, {
-      source: 'job',
-      severity: decision.retry ? 'warning' : 'error',
-      scope: {
-        operation: handle.name,
-        extra: {
-          jobId: claimed.id,
-          runId: claimed.runId,
-          attempt: claimed.attempt,
-          retry: decision.retry,
-        },
-      },
-    });
-    return settle({
-      outcome: decision.retry ? 'retried' : 'dead-lettered',
-      jobId: claimed.id,
-      job: handle.name,
-      attempt: claimed.attempt,
-      durationMs: nowMs(options.clock) - startedAt,
-      error: message,
-      steps: [],
-      replayed: [],
-    });
-  }
-}
-
-function raceTimeout(work: Promise<unknown>, timeoutMs: number, job: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new JobTimeoutError({ job, timeoutMs })), timeoutMs);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-}
 
 export interface WorkerOptions {
   readonly driver: JobDriver;

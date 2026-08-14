@@ -68,7 +68,7 @@ External brokers are not exempted: the outbox table stays the transactional reco
 
 | API | Semantics |
 |---|---|
-| `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn` |
+| `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn`. `fn` receives an `AbortSignal` — this step's ceiling and the run's cancellation, whichever fires first |
 | `step.sleep(duration)` | persists a wake time, releases the worker, and the job resumes in a fresh process. No held connection, no timer in memory. `'3d'` is safe |
 | `step.waitForEvent(name, { match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the event payload or `null` |
 
@@ -81,6 +81,26 @@ External brokers are not exempted: the outbox table stays the transactional reco
 | Step results must be serializable | persisted via the driver's `saveStep` |
 | No step inside a loop with a computed name | non-deterministic names break replay; enumerate them |
 | Non-idempotent external call inside a step | wrap with the provider's idempotency header, keyed off `${jobId}:${stepName}` |
+
+## The deadline cancels
+
+A job's `timeout` aborts `ctx.signal` **before** it fails the attempt. The order is the whole point: failing the attempt re-queues the job, another worker claims it within milliseconds, and a body still running past that moment is a second copy of one job writing into the same run.
+
+```ts
+run: async ({ input, ctx, step }) => {
+  const res = await fetch(url, { signal: ctx.signal });      // stops at the deadline
+  throwIfAborted(ctx);                                       // or check it in a long loop
+  await step.run('save', (signal) => save(res, { signal })); // the step's own ceiling too
+},
+```
+
+`ctx.signal` is the same seam an [action](Actions) reads, composed with the caller's own — there is nothing jobs-specific to learn, and a job whose caller went away is cancelled for that reason too.
+
+| Past the cancel | What happens |
+|---|---|
+| `step.run` / `step.sleep` / `step.waitForEvent` | refuse to write, raise `X_ABORTED`. A late `completed` would hand the next attempt a step it never ran; a late `failed` would erase one it did |
+| a body that ignores the signal and finishes anyway | cannot be killed — nothing in JS can — so it is named: `jobs.timeout.abandoned` at `warn`, with the job and how it ended |
+| a body that stops because it was cancelled | the intended end. Nothing is logged |
 
 ## Idempotency is in the type signature
 
