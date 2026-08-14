@@ -2,7 +2,9 @@
  * What `live: true` actually produces: the descriptor @ultimat3/realtime
  * subscribes to. It carries the SQL shape (for the matcher), the dependency set
  * (which entities/tags a change feed must touch to matter), the policy (re-run
- * per subscriber, never once for a channel) and a cursor for cheap reconnects.
+ * per subscriber, never once for a channel) and a cursor for cheap reconnects —
+ * and it runs that read (`execute`), so the shared window and the matcher over it
+ * come from one build of one `(query, input)` rather than two that agree by luck.
  */
 import type { Ctx } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -58,6 +60,17 @@ export interface LiveQuery {
   readonly policy: QueryPolicy;
   readonly sqlText: string;
   readonly limit: number | null;
+  /**
+   * The read this descriptor describes, run. It is the *same* source the shape, the reads and the
+   * SQL text were taken from, which is the point: a subscriber's window and the matcher that
+   * patches it have to come from one build of one `(query, input)`. A caller that wanted rows and
+   * called `sourceFor` itself would be a second build — twice the parse, twice the `sql()`, and
+   * two descriptions of one read that are only equal by luck.
+   *
+   * It executes on every call rather than memoising: a client joining an existing subscription
+   * must see the rows as they are now, not the window someone else opened.
+   */
+  execute(): Promise<readonly object[]>;
   /** Per-subscriber authorization. Called on subscribe *and* on every fanout. */
   authorize(subject: QuerySubject): Promise<void>;
   initialCursor(rows: readonly object[]): LiveCursor;
@@ -115,6 +128,7 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
     policy,
     sqlText: source.toSQL().sql,
     limit: shape.limit,
+    execute: () => source.execute(),
     authorize: async (subject) => {
       guard(policy, subject, 'live');
     },

@@ -17,6 +17,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
   'X_LIVE_ROW_UNIDENTIFIED',
+  'X_LIVE_QUERY_UNKNOWN',
   'X_QUERY_NOT_SUBSCRIBABLE',
 ] as const;
 
@@ -51,6 +52,7 @@ export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
   'X_PROTOCOL_VERSION',
+  'X_LIVE_QUERY_UNKNOWN',
   'X_CURSOR_STALE',
   'X_REBASE_CONFLICT',
 ]);
@@ -98,6 +100,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
+  X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
   X_QUERY_NOT_SUBSCRIBABLE: 'a hook was bound to a query that is not declared live',
 };
 
@@ -288,6 +291,27 @@ export class LiveRowUnidentifiedError extends RealtimeError {
       code: 'X_LIVE_ROW_UNIDENTIFIED',
       cause: `live query "${args.query}" returned a row with no id (columns: ${args.keys.join(', ') || 'none'})`,
       fix: `select the primary key in ${args.query}'s sql(), or drop live: true from it`,
+    });
+  }
+}
+
+/**
+ * A `subscribe` frame named a live query this node does not have. Distinct from a version skew
+ * because the two have opposite instructions: this one was reported as `X_PROTOCOL_VERSION`, whose
+ * fix is "x build && redeploy the client" — and redeploying a client that spells the name the same
+ * way changes nothing, while the registry that would have shown the mismatch never gets opened.
+ * A misspelling and an unregistered query produce the same frame, so the fix names both.
+ *
+ * The name it prints is the one the client sent; the registry is never enumerated back over the
+ * wire, because an unauthenticated socket asking for "a" through "zz" is not entitled to a list of
+ * every read this app declares.
+ */
+export class LiveQueryUnknownError extends RealtimeError {
+  constructor(args: { name: string }) {
+    super({
+      code: 'X_LIVE_QUERY_UNKNOWN',
+      cause: `no live query is registered as "${args.name}" on this node`,
+      fix: 'x queries list --json — subscribe under a name it prints, and pass the query to defineApi({ queries }) if it is missing',
     });
   }
 }

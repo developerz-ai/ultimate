@@ -16,7 +16,7 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
-import { isPolicyDenial, ProtocolVersionError, SubscriptionLimitError } from './errors';
+import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import { canonicalJson, fnv1a, type JsonValue, type Row, type RowPatch } from './json';
 import {
   applyToWindow,
@@ -152,13 +152,10 @@ export class LiveQueryRegistry {
     cursor?: LiveCursor | null;
   }): Promise<{ subscription: LiveSubscription; frame: Frame }> {
     const definition = this.#definitions.get(args.name);
-    if (!definition) {
-      throw new ProtocolVersionError({
-        got: args.name,
-        expected: PROTOCOL_VERSION,
-        detail: `no live query registered as "${args.name}" — client and server manifests differ`,
-      });
-    }
+    // A name this node never registered, and not a protocol skew: the frame parsed, the version
+    // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
+    // client "x build && redeploy the client" for a typo no rebuild changes.
+    if (!definition) throw new LiveQueryUnknownError({ name: args.name });
     this.#assertLimits(args.socket);
     await definition.authorize?.({ actor: args.socket.actor, input: args.input });
     // After this subscriber's own decision, never before it: resolving a shape for a caller who

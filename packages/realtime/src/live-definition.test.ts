@@ -49,6 +49,8 @@ const ownRowsOnly: QueryPolicy = {
 
 let reads = 0;
 let visibleCalls = 0;
+/** Compiled sources built for a `(query, input)` pair. Two of them is the bug this file pins. */
+let builds = 0;
 
 function declareFeed(policy: QueryPolicy = ownRowsOnly): ReturnType<typeof registerQuery> {
   const target = query({
@@ -133,11 +135,39 @@ function change(after: FeedRow, before: FeedRow | null): ChangeEvent {
   };
 }
 
+/**
+ * A declaration whose every build is *distinguishable*: the rows it serves carry the number of the
+ * build that produced them. A second build of one `(query, input)` therefore cannot hide behind
+ * two sources that happen to agree — it shows up in the snapshot as rows the matcher never saw.
+ */
+function declareDrifting(): ReturnType<typeof registerQuery> {
+  return registerQuery(
+    'driftFeed',
+    query({
+      input: t.object({ orgId: t.string }),
+      policy: ownRowsOnly,
+      live: true,
+      sql: ({ orgId }) => {
+        builds += 1;
+        const build = builds;
+        return from<FeedRow>('posts', async () => {
+          reads += 1;
+          return [{ id: `p${build}`, orgId, ownerId: 'alice', likes: build }];
+        })
+          .where({ orgId })
+          .orderBy('id')
+          .limit(50);
+      },
+    }),
+  );
+}
+
 describe('a declared live query is subscribable, per subscriber', () => {
   beforeEach(() => {
     resetRegistry();
     reads = 0;
     visibleCalls = 0;
+    builds = 0;
   });
 
   test('two actors on one query id share the shape and get different rows', async () => {
@@ -255,6 +285,54 @@ describe('a declared live query is subscribable, per subscriber', () => {
       expect(result.frame.type).toBe('snapshot');
     }
     expect(reads).toBe(3);
+  });
+
+  test('one build per (query, input): the window reads the source the matcher describes', async () => {
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
+      liveQueryDefinition(declareDrifting(), { ctx: nodeCtx() }),
+    );
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+
+    const first = await registry.subscribe({
+      socket: alice.socket,
+      name: 'driftFeed',
+      input: INPUT,
+    });
+
+    // Two builds is not merely wasted work — the second one is what the subscriber is *served*
+    // while the matcher patching them belongs to the first, so the rows say `p2` and every patch
+    // is computed against a window that never held them.
+    expect(builds).toBe(1);
+    if (first.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    expect(first.frame.rows.map((row) => row.id)).toEqual(['p1']);
+  });
+
+  test('a second subscriber re-reads that one source rather than compiling another', async () => {
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(
+      liveQueryDefinition(declareDrifting(), { ctx: nodeCtx() }),
+    );
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+    await registry.subscribe({ socket: alice.socket, name: 'driftFeed', input: INPUT });
+
+    const second = await registry.subscribe({
+      socket: socketFor('s-second', userActor({ id: 'alice', orgId: 'o1' })).socket,
+      name: 'driftFeed',
+      input: INPUT,
+    });
+
+    // The window is shared and re-read; the compile is not repeated. One build, two reads.
+    expect(builds).toBe(1);
+    expect(reads).toBe(2);
+    if (second.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    expect(second.frame.rows.map((row) => row.id)).toEqual(['p1']);
+    // A different input is a different query id, and that one does compile — the dedup is per
+    // `(query, input)`, never a single source stretched over every argument a client sends.
+    await registry.subscribe({
+      socket: alice.socket,
+      name: 'driftFeed',
+      input: { orgId: 'o2' },
+    });
+    expect(builds).toBe(2);
   });
 
   test('a projection with no id is refused, not delivered as a row nobody can patch', async () => {

@@ -17,6 +17,21 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   for a hand-written definition and `live-definition.test.ts` proves it for a real declared
   `query({ live: true })` — the second one matters, because a rule that only holds for test fakes
   is a rule no declaration can reach.
+- **A name nothing registered is `X_LIVE_QUERY_UNKNOWN`, never `X_PROTOCOL_VERSION`.** The frame
+  parsed and the version matched — one string in it names nothing — so "x build && redeploy the
+  client" is the one instruction that cannot work: a rebuilt client spells the typo the same way,
+  and the registry that would have shown the mismatch never gets opened. The fix line is
+  `x queries list --json`. The name the client sent is echoed back; the registry is never
+  enumerated over the wire, because an unauthenticated socket walking `a`…`zz` is not entitled to
+  a list of every read this app declares. It is a client fault, so it never pages anyone.
+- **One build per `(query, input)`, and the window reads through it.** `target.live()` produces the
+  descriptor *and* runs the read (`LiveQuery.execute`) — a second subject-less `sourceFor` for the
+  rows was two descriptions of one read that agreed only by luck, at twice the parse and twice the
+  `sql()` per query id. Both halves must come from one build or the matcher patches a window it
+  never saw: `live-definition.test.ts` proves it with a declaration whose rows carry the number of
+  the build that produced them, and under the old code the subscriber was served build 2's rows.
+  `execute()` runs on every call rather than memoising — a client joining an existing subscription
+  sees the rows as they are now.
 - What `liveQueryDefinition` caches per query id is the compiled source, the shape, the matcher and
   the shared row window. What it must never cache is a decision. It builds that shared half with
   `enforce: false` **on purpose**: a source compiled under the first subscriber's authority and

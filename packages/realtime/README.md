@@ -213,9 +213,15 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
 `X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
-`X_LIVE_CLIENT_MISSING` · `X_NOT_IMPLEMENTED`
+`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.
+
+A `subscribe` frame naming a query this node never registered is `X_LIVE_QUERY_UNKNOWN`, not
+`X_PROTOCOL_VERSION`: the frame parsed and the version matched, so "rebuild and redeploy the
+client" is the one instruction that cannot help — a rebuilt client spells the name the same way.
+The fix is `x queries list --json`, and the name the client sent is echoed back while the registry
+never is.
 
 `As of 2026-07`: tiers 1–2 target v1, tier 3 targets v2.

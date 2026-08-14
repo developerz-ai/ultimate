@@ -43,6 +43,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a query file imports
   one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
   access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
+- **`LiveQuery` describes the read *and* runs it.** `execute()` is the source the shape, the reads
+  and `sqlText` were taken from — one build of one `(query, input)`. A caller that wanted rows and
+  called `sourceFor` itself was a second build: twice the parse, twice the `sql()`, and a matcher
+  describing a source the rows never came from. `@ultimat3/realtime`'s shared window is the one
+  consumer, and it reads through `execute()`. It never memoises — a subscriber joining an existing
+  subscription must see the rows as they are now, not the window someone else opened.
 - `isLive` is the declared boolean, `live()` is the subscription. Never name one after the other.
   `QueryDescriptor.live` keeps its name — `@ultimat3/manifest` and `@ultimat3/admin` read it.
 - `mcp` is opt-in (`expose: true`), exactly as it is for an action: rows reach an agent only when

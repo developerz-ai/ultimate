@@ -72,6 +72,7 @@ export {
 export {
   CursorStaleError,
   LiveClientMissingError,
+  LiveQueryUnknownError,
   LiveRowUnidentifiedError,
   NotImplementedError,
   ProtocolVersionError,

@@ -9,7 +9,7 @@
 // every time. Collapsing the second onto the first is privilege escalation with a cache hit rate.
 
 import type { Ctx } from '@ultimat3/core';
-import { type AnyQuery, queryName, sourceFor } from '@ultimat3/query';
+import { type AnyQuery, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
 import { type LiveQueryDefinition, qidOf, type SnapshotResult } from './live-query';
@@ -81,17 +81,14 @@ export function liveQueryDefinition(
       enforce: false,
       ...(options.epoch === undefined ? {} : { epoch: options.epoch }),
     });
-    // A second, subject-less build of the same source: `LiveQuery` describes the read (shape,
-    // reads, SQL text) but deliberately cannot run it, and the window needs rows. Both calls are
-    // pure source construction, both are subject-less, and they happen once per query id.
-    const source = await sourceFor(target, input, {
-      ctx: options.ctx,
-      enforce: false,
-      surface: 'live',
-    });
+    // One build, and the window reads through it. `live.execute()` runs the source the shape and
+    // the dependency set above were taken from, so the rows a subscriber is served and the matcher
+    // that patches them describe the same `(query, input)` by construction. Asking `sourceFor` for
+    // a second subject-less copy — which is what this did — paid for the parse and the `sql()`
+    // twice per query id and left two descriptions of one read that agreed only by luck.
     const built: SharedWindow = {
       matcher: matcherFor(live),
-      read: async () => rowsOf(name, await source.execute()),
+      read: async () => rowsOf(name, await live.execute()),
     };
     windows.set(qid, built);
     evictOldest(windows, options.maxWindows ?? 256);

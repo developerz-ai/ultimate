@@ -8,6 +8,7 @@ import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import {
   isClientFault,
   isPolicyDenial,
+  LiveQueryUnknownError,
   POLICY_DENIAL_CODES,
   REALTIME_BORROWED_ERROR_CODES,
   REALTIME_CLIENT_FAULT_CODES,
@@ -36,6 +37,7 @@ const ADDED_SINCE = [
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_QUERY_NOT_SUBSCRIBABLE',
+  'X_LIVE_QUERY_UNKNOWN',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
@@ -107,6 +109,8 @@ describe('isClientFault', () => {
     expect(isClientFault(new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1' }))).toBe(true);
     expect(isClientFault({ code: 'X_SUBSCRIPTION_LIMIT' })).toBe(true);
     expect(isClientFault({ code: 'X_PROTOCOL_VERSION' })).toBe(true);
+    // A name this node never registered is the client's typo, not this node's outage.
+    expect(isClientFault(new LiveQueryUnknownError({ name: 'liveFed' }))).toBe(true);
     // Borrowed from policy/auth: a surface denial is still the caller's condition.
     expect(isClientFault({ code: 'X_FORBIDDEN' })).toBe(true);
   });
