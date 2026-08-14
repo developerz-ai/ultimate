@@ -19,6 +19,15 @@ import { installedServices, isManagedService } from './service';
  *   interface CtxServices { readonly posts: PostRepo }
  * }
  * ```
+ *
+ * KNOWN GAP, and the one place in this file that axiom 3 does not hold: the index signature
+ * below makes `ctx.<anything>` a legal expression typed `unknown`, so a service nobody declared
+ * and nobody installed is not a compile error — it is a `TS18046` at its first use, or nothing
+ * at all where the value is only passed on. The reference app shipped `ctx.storage.ensureBucket()`
+ * against a method that exists in no package for exactly this reason. Closing it means deleting
+ * the index signature, which is a breaking change for every app that reaches a service through
+ * `ctx` without declaring it, and it makes `ServiceBag`'s late-bound half (`ctx.services['mail']`)
+ * the only untyped path — which is what it is for.
  */
 export interface CtxServices {
   readonly [service: string]: unknown;

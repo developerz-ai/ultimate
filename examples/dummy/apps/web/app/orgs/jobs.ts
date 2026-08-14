@@ -17,7 +17,11 @@ export const onboardOrg = job({
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`, // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {
-    const org = await step.run('provision', () => ctx.orgs.provision(toOrgId(input.orgId)));
+    // There is nothing to provision. A disk is declared in `app.config.ts` and built once at
+    // boot, and an org's objects are separated by the `org/<orgId>/` key prefix rather than by a
+    // bucket of their own — so the org row existing is the whole precondition for the mails
+    // below, and this step loads it once instead of re-reading it per mail.
+    const org = await step.run('load-org', () => ctx.orgs.byId(toOrgId(input.orgId)));
     const recipient = { to: input.to, locale: input.locale };
 
     await step.run('welcome-email', () => send(welcomeEmail, org, recipient));

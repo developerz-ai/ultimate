@@ -21,6 +21,7 @@ import type {
   PlanCode,
   PostId,
 } from '@postly/domain';
+import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
@@ -56,7 +57,13 @@ export interface OrgsService {
     digestOptIn: boolean;
   }): Promise<MemberView>;
   memberById(memberId: MemberId): Promise<MemberView>;
-  provision(orgId: OrgId): Promise<OrgView>;
+  /**
+   * A presigned PUT for the acting member's own avatar. No `orgId` parameter on purpose: the key
+   * is derived from the actor's org, so there is no value a caller could pass to widen it.
+   */
+  grantAvatarUpload(request: UploadRequest): Promise<UploadGrant>;
+  /** The acting member's avatar as a short-lived signed URL, `null` until they upload one. */
+  avatarUrl(): Promise<string | null>;
   digestRecipients(orgId: OrgId): Promise<MemberView[]>;
   /** Cross-tenant on purpose, and only reachable from the scheduler's job. */
   allDigestRecipients(): Promise<MemberView[]>;

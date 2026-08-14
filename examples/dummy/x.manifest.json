@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "d03d4cbff08ee8cd",
+  "buildId": "1845f6fe3a9c7942",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -657,6 +657,78 @@
       }
     },
     {
+      "name": "grantAvatarUpload",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "filename",
+          "contentType"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUT"
+            ]
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxBytes": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "url",
+          "method",
+          "contentType",
+          "maxBytes",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "inviteMember",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -898,6 +970,35 @@
         "description": "Like a post on behalf of the acting member"
       },
       "mutator": true
+    },
+    {
+      "name": "memberAvatar",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
     },
     {
       "name": "publishPost",
@@ -1651,6 +1752,8 @@
     {
       "permission": "member:self",
       "enforcedIn": [
+        "action:grantAvatarUpload",
+        "action:memberAvatar",
         "action:savePreferences"
       ]
     },
@@ -1717,6 +1820,10 @@
     "es"
   ],
   "errorCodes": [
+    {
+      "code": "X_ORG_NOT_A_MEMBER",
+      "package": "apps/web"
+    },
     {
       "code": "X_ORG_NOT_FOUND",
       "package": "apps/web"

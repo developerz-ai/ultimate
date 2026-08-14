@@ -113,7 +113,12 @@ bun run typecheck
 Gotchas:
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
 - `noPropertyAccessFromIndexSignature` is on — `ctx.services['mail']`, not `.mail`.
-- `Ctx` carries a string index signature so apps can augment `CtxServices` for `ctx.posts`.
+- `Ctx` carries a string index signature so apps can augment `CtxServices` for `ctx.posts`. The
+  cost is a real axiom-3 hole: `ctx.anything` type-checks as `unknown`, so a service nobody
+  declared and nobody installed reads as a value rather than a build error (`examples/dummy`
+  shipped `ctx.storage.ensureBucket()` against a method no package has). Deleting the signature
+  is the fix and a breaking change; until then `ctx.services['mail']` is the honest late-bound
+  path and a declared augmentation is the only typed one.
 - Tests that touch the registry, the lifecycle or the listener table must call
   `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
 - `onShutdown`'s return value is the unregister, and every caller that can be started twice owns

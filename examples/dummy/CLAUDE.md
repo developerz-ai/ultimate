@@ -129,3 +129,11 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
   because the post window is org-scoped and bounded by the group's own slot: reading it once per
   member is the same query N times.
 - Plan prices are per-currency rows in the plan catalog; never convert currencies at runtime.
+- A service reaches the app through `shared/services.ts` and nowhere else. `CtxServices` carries a
+  string index signature, so `ctx.whatever` compiles as `unknown` and an undeclared service is a
+  runtime `TypeError` rather than a build error — `ctx.storage.ensureBucket()` shipped that way
+  until it was deleted for `app/orgs/avatar.ts`, which calls `@ultimat3/storage`'s real surface.
+  `ctx.auth` and `ctx.billing` are still undeclared and still unimplemented; they are the two
+  remaining instances, not a pattern to copy.
+- Uploads are `grantUpload` wrapped in an app `action` — the app owns the policy, the framework
+  owns the key and the signature. Nothing here builds an object key by hand.

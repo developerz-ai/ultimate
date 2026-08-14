@@ -16,7 +16,7 @@ test('onboardOrg retries only the failed step', async ({ seed, clock, mail, runJ
   clock.advance('3d');
   const trace = await runJobs.drain();
 
-  expect(trace.steps.provision.executions).toBe(1); // replayed from storage, not re-run
+  expect(trace.steps['load-org'].executions).toBe(1); // replayed from the step log, not re-run
   expect(trace.steps['welcome-email'].executions).toBe(1);
   expect(trace.steps.nudge.executions).toBe(2); // only this one retried
 });
