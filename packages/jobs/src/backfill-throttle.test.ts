@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, frozenClock } from '@ultimat3/core';
+import { createContext, frozenClock, isUltimateError } from '@ultimat3/core';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { BackfillDefinition } from './backfill';
 import { backfill } from './backfill';
@@ -132,6 +132,25 @@ describe('the rate throttle', () => {
     // times for four batches — and a backfill resuming at batch 500 would re-pay all 500 pauses.
     expect(pass.asked).toEqual([200, 200, 200, 200]);
     expect(pass.seen).toHaveLength(4);
+  });
+
+  test('createPacer refuses a rate that is no throttle at all, not just backfill() does', () => {
+    // `createPacer` is exported, so `backfill()` is not the only way in. `rate: 0` makes the
+    // interval Infinity, which the timer clamps to about a millisecond — an unvalidated zero is
+    // therefore "sweep flat out", which is the one setting this module exists to make unreachable.
+    for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      let thrown: unknown;
+      try {
+        createPacer({ rate, job: 'unthrottled' });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(isUltimateError(thrown)).toBe(true);
+      expect(isUltimateError(thrown) ? thrown.code : undefined).toBe('X_INVARIANT');
+      // The message names the pacer this was asked of, so a caller that never wrote a declaration
+      // still knows which sweep it was building.
+      expect(isUltimateError(thrown) ? thrown.cause : '').toContain('unthrottled');
+    }
   });
 
   test('the default is the one a definition that says nothing sweeps under', () => {

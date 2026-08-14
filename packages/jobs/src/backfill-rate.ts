@@ -4,7 +4,7 @@
 // makes "one pass over the table" background work rather than a load test.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { assert, systemClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 import { JobAbortedError } from './errors';
 
@@ -25,7 +25,11 @@ export const DEFAULT_BACKFILL_RATE = 5;
 const RESOLUTION_MS = 1;
 
 export interface PacerOptions {
-  /** Batches per second. A backfill validates it at declaration, where it was written. */
+  /**
+   * Batches per second, greater than zero and finite. `backfill()` refuses a bad one at the
+   * declaration, where it was written and with the definition's name in the message; this is the
+   * same rule at the constructor, for the callers that do not come through a declaration.
+   */
   readonly rate: number;
   /** The name a cancellation is reported under — one pacer belongs to exactly one backfill. */
   readonly job: string;
@@ -66,6 +70,15 @@ function timerSleep(ms: number, signal: AbortSignal): Promise<void> {
  * attempt happens to hold the run.
  */
 export function createPacer(options: PacerOptions): Pacer {
+  // Refused HERE and not only at `backfill()`: `rate: 0` makes `intervalMs` Infinity, which the
+  // timer clamps to about a millisecond — so an unvalidated zero reads as "no throttle at all",
+  // which is the one setting this module exists to make unreachable. A negative rate is the same
+  // bug with a negative wait.
+  assert(
+    Number.isFinite(options.rate) && options.rate > 0,
+    `createPacer({ rate: ${String(options.rate)} }) for "${options.job}" — a rate is batches per second, greater than zero`,
+    `pass rate: ${DEFAULT_BACKFILL_RATE} — to sweep faster raise the number, there is no unthrottled mode`,
+  );
   const clock = options.clock ?? systemClock;
   const sleep = options.sleep ?? timerSleep;
   const intervalMs = 1000 / options.rate;

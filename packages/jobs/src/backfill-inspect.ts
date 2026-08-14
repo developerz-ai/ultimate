@@ -6,7 +6,7 @@
 // been going" computed against the reader's wall clock is a different number in every process
 // that asks — so `durationMs` is the pass's own completed span or nothing at all.
 
-import type { BackfillRun, BackfillStatus } from './backfill-ledger';
+import type { BackfillFilter, BackfillRun, BackfillStatus } from './backfill-ledger';
 import type { JobDriver } from './driver';
 
 /** One ledger row as a surface reports it: epochs become ISO, absent becomes `null`. */
@@ -50,12 +50,9 @@ export function toBackfillProgress(run: BackfillRun): BackfillProgress {
  */
 export async function inspectBackfills(
   driver: JobDriver,
-  filter: {
-    readonly name?: string | undefined;
-    readonly status?: BackfillStatus | undefined;
-    readonly runId?: string | undefined;
-    readonly limit?: number | undefined;
-  } = {},
+  // `BackfillFilter` itself, never its fields restated: `ledger.list` takes that type, so a field
+  // added to it reaches this surface instead of being silently dropped one call short of it.
+  filter: BackfillFilter = {},
 ): Promise<readonly BackfillProgress[]> {
   const ledger = driver.backfills;
   if (ledger === undefined) return [];

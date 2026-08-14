@@ -26,7 +26,13 @@ export type {
   BackfillStatus,
   BackfillVerdict,
 } from './backfill-ledger';
-export { backfillChecksum, createMemoryBackfillLedger, decideBackfill } from './backfill-ledger';
+export {
+  BACKFILL_STATUSES,
+  backfillChecksum,
+  createMemoryBackfillLedger,
+  decideBackfill,
+  isBackfillStatus,
+} from './backfill-ledger';
 export type { Pacer, PacerOptions } from './backfill-rate';
 export { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 export type { JobDescriptor } from './describe';

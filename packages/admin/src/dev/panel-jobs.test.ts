@@ -1,3 +1,7 @@
+// The jobs panel carries the WHOLE backfill ledger beside the queue rows, and a panel that
+// quietly narrowed it — to `running`, or to the `?queue=` a run row is filtered by — would answer
+// "has this ever swept here" with silence. That narrowing is what this file exists to refuse.
+
 import { describe, expect, test } from 'bun:test';
 import { staticDevSources } from './data';
 import type { BackfillFact, JobRunFact } from './facts';

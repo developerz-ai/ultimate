@@ -4,18 +4,16 @@
 // `ParsedArgs`, no app boot and no queue. `cmd-db.ts` is the CLI wiring and nothing else.
 
 import type { BackfillProgress, BackfillStatus, JobDriver } from '@ultimat3/jobs';
-import { inspectBackfills } from '@ultimat3/jobs';
+import { BACKFILL_STATUSES, inspectBackfills, isBackfillStatus } from '@ultimat3/jobs';
 import { BadFlagError } from './errors';
 import { parseLimitFlag } from './jobs-report';
 import { msg } from './messages';
 import { renderTable } from './table';
 
-/** Mirrors `BackfillStatus` from `@ultimat3/jobs`, which exports the type but no runtime list. */
-export const BACKFILL_STATUSES: readonly BackfillStatus[] = ['running', 'completed', 'failed'];
-
-const isBackfillStatus = (value: string): value is BackfillStatus =>
-  (BACKFILL_STATUSES as readonly string[]).includes(value);
-
+/**
+ * The list and the guard are `@ultimat3/jobs`': a status the ledger can record and this flag
+ * rejects is exactly the drift a second copy here would produce.
+ */
 export function parseBackfillStatusFlag(value: string | undefined): BackfillStatus | undefined {
   if (value === undefined) return undefined;
   if (isBackfillStatus(value)) return value;

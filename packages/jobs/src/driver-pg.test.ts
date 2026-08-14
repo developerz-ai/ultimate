@@ -185,9 +185,9 @@ describe('the pg backfill ledger', () => {
       '11111111-2222-3333-4444-555555555555',
       1,
     ]);
-    // `uuid = text` has no operator in Postgres, so a `::text` cast here is not a style choice —
-    // it fails every call, filtered or not. Pinned as text rather than as a substring of the
-    // statement so a reformat of the SQL does not silently retire the assertion.
+    // `run_id` IS a uuid, and `uuid = text` has no operator in Postgres — so `::uuid` here is not
+    // a style choice next to its two `::text` neighbours: `::text` fails every call, filtered or
+    // not. Pinned as text so a reformat of the SQL does not silently retire the assertion.
     expect(SQL_BACKFILL_LIST).toContain('$3::uuid is null or run_id = $3');
   });
 });

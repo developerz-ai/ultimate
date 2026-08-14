@@ -4,7 +4,13 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { BackfillRun } from './backfill-ledger';
-import { backfillChecksum, createMemoryBackfillLedger, decideBackfill } from './backfill-ledger';
+import {
+  BACKFILL_STATUSES,
+  backfillChecksum,
+  createMemoryBackfillLedger,
+  decideBackfill,
+  isBackfillStatus,
+} from './backfill-ledger';
 import {
   SQL_BACKFILL_FINISH,
   SQL_BACKFILL_LIST,
@@ -23,6 +29,21 @@ const completed = (fields: Partial<BackfillRun> = {}): BackfillRun => ({
   startedAt: 1,
   completedAt: 2,
   ...fields,
+});
+
+describe('BackfillStatus', () => {
+  test('the runtime list IS the declaration — nothing restates the three', () => {
+    // `BackfillStatus` is derived from this array, so a status added here is a status
+    // `x db backfill --status` accepts without a second list to remember to edit.
+    expect([...BACKFILL_STATUSES]).toEqual(['running', 'completed', 'failed']);
+    for (const status of BACKFILL_STATUSES) expect(isBackfillStatus(status)).toBe(true);
+  });
+
+  test('a string nothing in the ledger can record is refused, not cast', () => {
+    for (const value of ['done', 'RUNNING', '', 'complete']) {
+      expect(isBackfillStatus(value)).toBe(false);
+    }
+  });
 });
 
 describe('backfillChecksum', () => {
@@ -117,6 +138,10 @@ describe('the memory ledger', () => {
     // `startedAt` is when the PASS began, not this attempt.
     expect(adopted?.startedAt).toBe(Date.parse('2026-08-14'));
     expect(await store.list()).toHaveLength(1);
+    // `finish` stamps `completedAt` for `failed` too, so the attempt that adopts the row has to
+    // clear it — a running pass carrying a completion time in the past is what every surface
+    // reading this row would print.
+    expect(adopted?.completedAt).toBeUndefined();
   });
 
   test('a rerun is a new row, never an edit of the one it reruns', async () => {
@@ -160,6 +185,14 @@ describe('the shipped SQL', () => {
 
   test('start adopts a run rather than opening a second row for it', () => {
     expect(SQL_BACKFILL_START).toContain("on conflict (run_id) do update set status = 'running'");
+  });
+
+  test('start clears the completion time the attempt it adopts left behind', () => {
+    // `SQL_BACKFILL_FINISH` stamps `completed_at` for `failed` as well as `completed`, and
+    // `SQL_BACKFILL_LIST` returns the column to `x db backfill --list`, `x jobs show` and `/_x`.
+    // Adopting the row without clearing it renders a running pass with a past completion time.
+    expect(SQL_BACKFILL_START).toContain('completed_at = null');
+    expect(SQL_BACKFILL_FINISH).toContain('completed_at   = now()');
   });
 
   test('only a completed pass clears its cursor', () => {

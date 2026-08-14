@@ -1,3 +1,7 @@
+// `APP_VERSION` is stamped onto every ledger row and every manifest, so "which build wrote this"
+// is only answerable if an unset key resolves to one known value rather than to `undefined`.
+// Pinned here because `db` and `jobs` both read this one function and neither may keep a copy.
+
 import { describe, expect, test } from 'bun:test';
 import { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 

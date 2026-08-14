@@ -169,7 +169,10 @@ describe('the backfill ledger source', () => {
     setJobDriver(driver);
     try {
       const ledger = driver.backfills;
-      if (ledger === undefined) throw new Error('the memory driver must ship a backfill ledger');
+      // An assertion rather than a throw: `backfills` is optional on `JobDriver`, so this is a
+      // claim about the memory driver worth failing on by name — and it narrows the type.
+      expect(ledger).toBeDefined();
+      if (ledger === undefined) return;
       await ledger.start({ runId: 'r1', name: 'sweep', checksum: 'aa', appVersion: '1.2.0' });
       await ledger.progress('r1', { rows: 40, cursor: 'p40' });
       await ledger.finish('r1', { status: 'completed', rows: 40 });

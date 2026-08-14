@@ -190,11 +190,16 @@ on conflict (run_id, name) do update
  * than `do nothing` because a failed attempt left `failed` behind and this one is running:
  * `started_at`, `app_version` and `checksum` stay as the pass began, and the progress columns
  * stay where the last attempt got to.
+ *
+ * `completed_at` is cleared, and is the one column here that is not preserved: `finish` stamps it
+ * for `failed` as well as for `completed`, so a retried run that kept it would report a running
+ * pass with a completion time in the past — on `x db backfill --list`, on `x jobs show` and in
+ * `/_x`, all of which project that column straight through.
  */
 export const SQL_BACKFILL_START = `
 insert into x_backfills (run_id, name, checksum, app_version)
 values ($1, $2, $3, $4)
-on conflict (run_id) do update set status = 'running'
+on conflict (run_id) do update set status = 'running', completed_at = null
 `.trim();
 
 export const SQL_BACKFILL_PROGRESS = `

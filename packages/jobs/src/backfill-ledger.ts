@@ -17,8 +17,18 @@ import { nowMs } from './clock';
  * `failed` is the LAST ATTEMPT's verdict, not the pass's: the queue owns retries, so a row here
  * goes back to `running` when the next attempt starts. Only `completed` is terminal, and it is the
  * one status that blocks a re-run.
+ *
+ * The runtime list is the declaration and `BackfillStatus` is derived from it, the shape
+ * `PRIMITIVE_KINDS` already has: `x db backfill --status` has to validate a string it was handed,
+ * and a second list spelled out in the CLI is a status the ledger can record and the flag rejects.
  */
-export type BackfillStatus = 'running' | 'completed' | 'failed';
+export const BACKFILL_STATUSES = ['running', 'completed', 'failed'] as const;
+
+export type BackfillStatus = (typeof BACKFILL_STATUSES)[number];
+
+/** Narrows a string the CLI, MCP or a URL handed over. Never a cast — the list decides. */
+export const isBackfillStatus = (value: string): value is BackfillStatus =>
+  (BACKFILL_STATUSES as readonly string[]).includes(value);
 
 export interface BackfillRun {
   /** The job run this pass belongs to, and the ledger's primary key. */
@@ -133,11 +143,13 @@ export function createMemoryBackfillLedger(clock: Clock = systemClock): Backfill
       const existing = runs.get(run.runId);
       // A retry adopts its own row: `startedAt` is when the PASS began, not this attempt, and the
       // status goes back to `running` so a row a failed attempt marked stops claiming otherwise.
+      // `completedAt` goes with it — `finish` stamps one for `failed` too, and a running pass that
+      // kept it would report a completion time in the past on every surface that reads the row.
       runs.set(
         run.runId,
         existing === undefined
           ? { ...run, status: 'running', rows: 0, cursor: null, startedAt: nowMs(clock) }
-          : { ...existing, status: 'running' },
+          : { ...existing, status: 'running', completedAt: undefined },
       );
       return Promise.resolve();
     },
