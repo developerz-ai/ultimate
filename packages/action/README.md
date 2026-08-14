@@ -135,6 +135,11 @@ no `.def`. A second authz path cannot be written without deleting that store.
 | handle | whatever the handler throws |
 | parse output | `X_OUTPUT_INVALID` — and fields the schema never declared are dropped |
 
+`cache: { invalidates }` fans out **after** the handler commits, so it never fails it: a
+fan-out that refuses — an undeclared tag, `X_CACHE_TAG_UNKNOWN` — is one
+`action.invalidate.failed` log line and the entries expire by TTL. A replayed idempotent
+call busts nothing; the first call already did.
+
 Registering an action without `policy:` throws `X_ACTION_POLICY_MISSING`; there is
 no bypass flag. A look-alike that never came out of `action()` is `X_ACTION_FOREIGN`.
 

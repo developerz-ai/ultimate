@@ -85,6 +85,8 @@ Fanout is enqueued in the **same transaction** as the write — the transactiona
 
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 
+The write side holds the same rule one layer up. An action's `invalidates` fans out *after* its handler commits, so a fan-out that refuses outright — a tag no entity declared, `X_CACHE_TAG_UNKNOWN` — is absorbed rather than raised: one `action.invalidate.failed` error line, entries live until their TTL, and the caller keeps the write it already made. A replayed idempotent call (`idempotent: true` + a repeated `Idempotency-Key`) busts nothing at all: no handler ran, and the first call already did.
+
 The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
 
 ## Failure modes removed
@@ -98,7 +100,7 @@ The bug is never "the cache is wrong". The bug is that invalidation is a *decisi
 | Tier drift | Redis purged, CDN not | one fanout, all tiers |
 | Leak across tenants | hand-built cache key missing the tenant | keys are framework-generated from the query name, its parsed input and its tags — the tenant reaches the key through the input, which is why a read scoped by actor rather than by input must not declare `cache:` |
 | Stale forever | a query whose tables no tag covers | the tag rule — **not yet a gate**: `X_CACHE_UNTAGGED_QUERY` is reserved `As of 2026-08` and nothing raises it, so a cached query no tag covers is cached and never invalidated ([Error codes → Reserved codes](Error-Codes#reserved-codes)) |
-| Silent typo | `invalidates: [tag.pots]` | `X_CACHE_TAG_UNKNOWN`, or a compile error against the generated registry |
+| Silent typo | `invalidates: [tag.pots]` | a compile error against the generated registry; at runtime `X_CACHE_TAG_UNKNOWN`, which a write logs as `action.invalidate.failed` rather than failing the commit it followed |
 
 Agents are measurably bad at *distant* invariants — "edit here, remember to also edit there" is where LLM-written code regresses most. Declaring `invalidates` at the write site is local, checkable, and typed.
 

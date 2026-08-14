@@ -5,7 +5,6 @@
  * payload, and none of them can become a second execution path.
  */
 
-import { invalidateTags } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';
 import {
   anonymousActor,
@@ -17,6 +16,7 @@ import {
   withSpan,
 } from '@ultimat3/core';
 import type { AnyAction, AnyActionDef, InvokeOptions } from './action';
+import { bustAfterCommit } from './cache-gate';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
 import { getIdempotencyStore, idempotencyKeyFor, withIdempotency } from './idempotency';
 import { actorOf, guard } from './policy-gate';
@@ -107,14 +107,21 @@ async function core(
 
   const key = def.idempotent === true ? (options.idempotencyKey ?? null) : null;
   let value: unknown;
+  let wrote = true;
   if (key === null) {
     value = await run();
   } else {
     const store = options.store ?? getIdempotencyStore();
     const outcome = await withIdempotency(store, idempotencyKeyFor(name, key), input, run);
     if (outcome.replayed) options.onReplay?.();
+    wrote = !outcome.replayed;
     value = outcome.value;
   }
-  if (def.cache !== undefined) await invalidateTags(def.cache.invalidates);
+  // Only for a run that actually happened, and only through the gate. A replay ran no handler
+  // and changed nothing the first call had not already busted — re-busting per retry re-purges
+  // the CDN and re-queues ISR for a write nobody made. And the bust is post-commit either way,
+  // so `bustAfterCommit` swallowing its own failure is what keeps a dead cache from turning a
+  // durable write into a failed action.
+  if (wrote && def.cache !== undefined) await bustAfterCommit(name, def.cache.invalidates);
   return value;
 }

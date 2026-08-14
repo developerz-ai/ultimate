@@ -26,6 +26,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `contract-test.ts` | assertions `x g action` emits |
 | `idempotency.ts` | store interface + memory default |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
+| `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
 | `naming.ts`, `infer.ts`, `validate.ts`, `json-schema.ts`, `stable.ts`, `tags.ts` | pure helpers |
 
 ## Invariants
@@ -49,6 +50,16 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `!== false`) until 2026-08, so an action with no `mcp` block was advertised as a tool by both
   contract artifacts and refused by the only surface that could serve one. A contract that
   disagrees with the runtime is worse than no contract; never spell the check inline again.
+- **The post-commit bust never fails the write it followed.** `cache.invalidates` fans out once the
+  handler has committed, so `bustAfterCommit` — `cache-gate.ts`, the only caller of
+  `invalidateTags` here — absorbs a fan-out that refuses and answers `undefined`: an undeclared tag
+  (`X_CACHE_TAG_UNKNOWN`) must not turn a durable write into a failed action, and those entries
+  expire by TTL. One dead tier is not that case; `invalidateTags` already reports it in
+  `report.errors`. It logs through core's `logger`, never `ctx.logger` — an HTTP `Ctx` is a cast
+  request context that carries none — and never renders the tags, because reading a malformed
+  `invalidates` entry back is the second throw the guard exists to stop. **A replay skips the bust
+  entirely:** no handler ran, the first call already busted these tags, and re-purging the CDN and
+  re-queueing ISR per retry is work for a write nobody made.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.
