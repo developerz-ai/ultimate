@@ -24,8 +24,20 @@ describe('isRole', () => {
 });
 
 describe('resolveRole', () => {
-  test('no env/key given at all falls back to DEFAULT_ROLE', () => {
-    expect(resolveRole()).toBe(DEFAULT_ROLE);
+  // The ambient default is `process.env`, so this case owns `ROLE` for its duration: a CI runner
+  // that exports `ROLE=worker` would otherwise turn a passing assertion into a wrong one, and
+  // `ROLE=nonsense` into `X_ROLE_INVALID` — a red test that says nothing about this code.
+  test('no env/key given at all reads process.env, and unset there falls back to DEFAULT_ROLE', () => {
+    const previous = process.env['ROLE'];
+    delete process.env['ROLE'];
+    try {
+      expect(resolveRole()).toBe(DEFAULT_ROLE);
+      process.env['ROLE'] = 'worker';
+      expect(resolveRole()).toBe('worker');
+    } finally {
+      if (previous === undefined) delete process.env['ROLE'];
+      else process.env['ROLE'] = previous;
+    }
   });
 
   test('ROLE unset in the given env → DEFAULT_ROLE', () => {

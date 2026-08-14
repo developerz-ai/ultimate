@@ -2,7 +2,7 @@
 // the gate every role/scope-shaped route calls before touching a policy.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { assert, createContext, runWithContext, userActor } from '@ultimat3/core';
 import { AuthError } from './errors';
 import { currentActor, requireActor, requireRole, requireScope } from './guards';
 
@@ -12,13 +12,21 @@ const asUser = <T>(roles: readonly string[], scopes: readonly string[], fn: () =
   runWithContext(createContext({ actor: userActor({ id: 'user-1', roles, scopes }) }), fn);
 
 const caught = (fn: () => unknown): AuthError => {
+  let thrown: unknown;
   try {
     fn();
   } catch (error) {
-    if (error instanceof AuthError) return error;
-    throw error;
+    thrown = error;
   }
-  throw new Error('expected the call to throw');
+  // An unexpected throw keeps its own stack; only "it returned" and "it threw something else"
+  // become X_INVARIANT, so a green run can never mean the guard quietly let the call through.
+  if (thrown !== undefined && !(thrown instanceof AuthError)) throw thrown;
+  assert(
+    thrown instanceof AuthError,
+    'the guard under test returned instead of throwing an AuthError',
+    'assert on the returned value directly instead of wrapping the call in caught()',
+  );
+  return thrown;
 };
 
 describe('requireActor', () => {

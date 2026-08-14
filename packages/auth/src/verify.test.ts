@@ -3,9 +3,10 @@
 // constant-time compared).
 
 import { describe, expect, test } from 'bun:test';
-import { type FrozenClock, frozenClock } from '@ultimat3/core';
+import { assert, type FrozenClock, frozenClock } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
 import { AuthError } from './errors';
+import { MemoryAdapter } from './memory-adapter';
 import { sha256Hex } from './tokens';
 import {
   consumeVerification,
@@ -16,20 +17,23 @@ import {
   type VerificationRuntime,
 } from './verify';
 
-class MemoryVerificationStore implements VerificationStore {
-  readonly rows = new Map<string, AuthVerification>();
+/**
+ * A write log over the real `MemoryAdapter`, never a second store: both methods delegate, so these
+ * cases run the same verification lifecycle every other suite in this package does and a drift in
+ * the adapter fails here too. `written` exists only because `putVerification` is the one call whose
+ * *argument* a test needs to read — proving the token is stored hashed.
+ */
+class RecordingVerificationStore implements VerificationStore {
+  readonly written = new Map<string, AuthVerification>();
+  readonly #adapter = new MemoryAdapter();
 
   async putVerification(record: AuthVerification): Promise<void> {
-    this.rows.set(`${record.purpose}:${record.identifier}`, record);
+    await this.#adapter.putVerification(record);
+    this.written.set(`${record.purpose}:${record.identifier}`, record);
   }
 
   async takeVerification(purpose: string, identifier: string): Promise<AuthVerification | null> {
-    const key = `${purpose}:${identifier}`;
-    const record = this.rows.get(key);
-    if (record === undefined || record.consumedAt !== null) return null;
-    const consumed = { ...record, consumedAt: new Date() };
-    this.rows.set(key, consumed);
-    return consumed;
+    return this.#adapter.takeVerification(purpose, identifier);
   }
 }
 
@@ -52,25 +56,33 @@ class RecordingMail implements MailSender {
 }
 
 interface TestRuntime extends VerificationRuntime {
-  readonly store: MemoryVerificationStore;
+  readonly store: RecordingVerificationStore;
   readonly clock: FrozenClock;
   readonly mail: RecordingMail;
 }
 
 const runtime = (startMs = 0): TestRuntime => ({
-  store: new MemoryVerificationStore(),
+  store: new RecordingVerificationStore(),
   clock: frozenClock(startMs),
   mail: new RecordingMail(),
 });
 
 const caught = async (fn: () => Promise<unknown>): Promise<AuthError> => {
+  let thrown: unknown;
   try {
     await fn();
   } catch (error) {
-    if (error instanceof AuthError) return error;
-    throw error;
+    thrown = error;
   }
-  throw new Error('expected the call to throw');
+  // An unexpected throw keeps its own stack; only "it resolved" and "it threw something else"
+  // become X_INVARIANT, so a green run can never mean the call quietly succeeded.
+  if (thrown !== undefined && !(thrown instanceof AuthError)) throw thrown;
+  assert(
+    thrown instanceof AuthError,
+    'the call under test resolved instead of rejecting with an AuthError',
+    'assert on the resolved value directly instead of wrapping the call in caught()',
+  );
+  return thrown;
 };
 
 describe('issueVerification', () => {
@@ -82,7 +94,7 @@ describe('issueVerification', () => {
       locale: 'en',
     });
 
-    const row = rt.store.rows.get('email-verify:a@example.com');
+    const row = rt.store.written.get('email-verify:a@example.com');
     expect(row).toBeDefined();
     expect(row?.tokenHash).toBe(sha256Hex(token));
     expect(row?.tokenHash).not.toBe(token);
@@ -255,7 +267,26 @@ describe('consumeVerification', () => {
       }),
     );
 
+    // The third outcome the test's name promises: a token that is real, matching, and simply too
+    // late. It is the one an attacker can produce on purpose, so it must read like the other two.
+    const { token: stale } = await issueVerification(rt, {
+      purpose: 'email-verify',
+      identifier: 'z@example.com',
+      locale: 'en',
+    });
+    rt.clock.advance(DEFAULT_VERIFICATION_TTL_MS['email-verify'] + 1);
+    const expired = await caught(() =>
+      consumeVerification(rt, {
+        purpose: 'email-verify',
+        identifier: 'z@example.com',
+        token: stale,
+      }),
+    );
+
     expect(unknown.code).toBe(wrong.code);
     expect(unknown.fix).toBe(wrong.fix);
+    expect(expired.code).toBe(unknown.code);
+    expect(expired.fix).toBe(unknown.fix);
+    expect(expired.cause).toBe(unknown.cause);
   });
 });

@@ -4,7 +4,7 @@
 // job-trace shapes depend on.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { UltimateError } from '@ultimat3/core';
+import { assert, type UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { resetJobDriver } from './driver';
@@ -137,16 +137,19 @@ function driverWithoutIntrospect(): JobDriver {
 const INTROSPECT_FIX = "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs ls --json";
 
 async function expectIntrospectionRequired(call: () => Promise<unknown>): Promise<void> {
+  let thrown: unknown;
   try {
     await call();
-    throw new Error('expected the call to reject with X_NOT_IMPLEMENTED');
   } catch (error) {
-    expect(error).toBeInstanceOf(JobsNotImplementedError);
-    const ultimateError = error as UltimateError;
-    expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');
-    expect(ultimateError.cause).toContain('introspection for the "memory" jobs driver');
-    expect(ultimateError.fix).toBe(INTROSPECT_FIX);
+    thrown = error;
   }
+  // Captured, then asserted — inside the `catch` a call that resolved would run no assertion at
+  // all, and the guard under test is exactly the thing that must not silently let one through.
+  expect(thrown).toBeInstanceOf(JobsNotImplementedError);
+  const ultimateError = thrown as UltimateError;
+  expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');
+  expect(ultimateError.cause).toContain('introspection for the "memory" jobs driver');
+  expect(ultimateError.fix).toBe(INTROSPECT_FIX);
 }
 
 describe('the introspect-missing guard, shared by every read-side function', () => {
@@ -185,7 +188,11 @@ async function enqueueAndClaim(
     visibilityTimeoutMs: 30_000,
     workerId: 'worker-1',
   });
-  if (claimed === undefined) throw new Error('expected the enqueued job to be claimable');
+  assert(
+    claimed !== undefined,
+    'the job enqueued for this case was not claimable, so the fixture never got a run id',
+    'check the queue name passed to enqueueAndClaim matches the one claim() is polling',
+  );
   return { id, runId: claimed.runId };
 }
 
@@ -344,7 +351,11 @@ describe('retryFromStep', () => {
 
     const calls: (readonly [string, { readonly fromStep?: string } | undefined])[] = [];
     const introspect = driver.introspect;
-    if (introspect === undefined) throw new Error('memory driver always has introspect');
+    assert(
+      introspect !== undefined,
+      'the memory driver came back without introspect, so there is nothing to spy on',
+      "restore createMemoryDriver()'s introspect implementation",
+    );
     const spied: JobDriver = {
       ...driver,
       introspect: {

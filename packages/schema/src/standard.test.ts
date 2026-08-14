@@ -115,13 +115,17 @@ describe('validate', () => {
   test('throws SchemaUnsupportedError when the schema validates asynchronously', () => {
     const schema = makeAsyncSchema((value) => ({ value }));
     expect(() => validate(schema, 'ok')).toThrow(SchemaUnsupportedError);
+
+    let caught: unknown;
     try {
       validate(schema, 'ok');
-      throw new Error('expected validate() to throw');
     } catch (error) {
-      expect(error).toBeInstanceOf(SchemaUnsupportedError);
-      expect((error as SchemaUnsupportedError).code).toBe('X_SCHEMA_UNSUPPORTED');
+      caught = error;
     }
+    // Asserted outside the catch: a call that stopped throwing would otherwise skip the block and
+    // pass, which is the one outcome these cases exist to catch.
+    expect(caught).toBeInstanceOf(SchemaUnsupportedError);
+    expect((caught as SchemaUnsupportedError).code).toBe('X_SCHEMA_UNSUPPORTED');
   });
 });
 
@@ -146,23 +150,27 @@ describe('parse', () => {
   test('throws ValidationFailedError on issues', () => {
     const schema = makeSyncSchema(() => ({ issues: [{ message: 'required', path: ['name'] }] }));
     expect(() => parse(schema, {})).toThrow(ValidationFailedError);
+
+    let caught: unknown;
     try {
       parse(schema, {});
-      throw new Error('expected parse() to throw');
     } catch (error) {
-      expect(error).toBeInstanceOf(ValidationFailedError);
-      expect((error as ValidationFailedError).code).toBe('X_VALIDATION_FAILED');
+      caught = error;
     }
+    expect(caught).toBeInstanceOf(ValidationFailedError);
+    expect((caught as ValidationFailedError).code).toBe('X_VALIDATION_FAILED');
   });
 
   test('threads the root param through the thrown error', () => {
     const schema = makeSyncSchema(() => ({ issues: [{ message: 'required' }] }));
+    let caught: unknown;
     try {
       parse(schema, {}, 'input');
-      throw new Error('expected parse() to throw');
     } catch (error) {
-      expect((error as ValidationFailedError).cause).toContain('input: required');
+      caught = error;
     }
+    expect(caught).toBeInstanceOf(ValidationFailedError);
+    expect((caught as ValidationFailedError).cause).toContain('input: required');
   });
 });
 

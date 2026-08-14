@@ -88,12 +88,16 @@ describe('assertPermission()', () => {
   test('throws with the exact typo and the fix command naming definePermissions', () => {
     definePermissions(['post:read'] as const);
     expect(() => assertPermission('post:raed')).toThrow(/post:raed/);
+
+    let caught: unknown;
     try {
       assertPermission('post:raed');
-      throw new Error('expected assertPermission to throw');
     } catch (error) {
-      expect(String((error as { fix?: string }).fix)).toContain('definePermissions');
+      caught = error;
     }
+    // Asserted outside the catch: a call that stopped throwing would otherwise skip the block and
+    // pass, which is the one outcome this case exists to catch.
+    expect(caught).toMatchObject({ fix: expect.stringContaining('definePermissions') });
   });
 });
 

@@ -1,9 +1,6 @@
-// Direct coverage of "the one read path": the private declaration store (`hasDef`/`defOf`/
-// `stashDef`), `queryName`, and the `runQuery`/`sourceFor` front doors. `query.test.ts` already
-// pins the memo, `fresh`, denial and X_INPUT_INVALID behaviour end to end through `runQuery` —
-// this file targets what that suite does not: the declaration store itself, the authz-before-
-// execute ordering proved with a spy, impersonation via `options.actor`, and the live-surface
-// `total()` branch in `buildSource`.
+// Direct coverage of "the one read path" — what `query.test.ts` reaches only through `runQuery`:
+// the declaration store (`hasDef`/`defOf`/`stashDef`), `queryName`, the authz-before-execute
+// ordering proved with a spy, impersonation via `options.actor`, and `buildSource`'s `total()`.
 
 import { describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';

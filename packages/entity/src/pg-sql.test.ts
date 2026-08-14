@@ -163,7 +163,10 @@ describe('seekSql via selectStatement', () => {
   });
 
   test('a multi-key order seeks with the row-comparison expansion, not a tuple comparison', () => {
-    const stmt = countStatement(
+    // Through `selectStatement`, never `countStatement`: a seek is pagination, and pagination is
+    // exactly what an aggregate must ignore — a count that dropped the rows before the cursor
+    // would answer "how many are left on this page", which is not what `count()` means.
+    const stmt = selectStatement(
       posts,
       planOf({
         orderBy: [
@@ -172,12 +175,16 @@ describe('seekSql via selectStatement', () => {
         ],
       }),
       { includeDeleted: false, seek: ['t0', 'id0'] },
+      50,
     );
     // (title < $a) or (title = $b and id > $c) — never "(title, id) > (...)", which requires
     // every key to sort the same way and this order does not.
     expect(stmt.text).toContain('"title" < $');
     expect(stmt.text).toMatch(/"title" = \$\d+ and "id" > \$\d+/);
-    expect(stmt.values).toEqual(['t0', 't0', 'id0']);
+    // The cursor values are the leading params and the page limit is the last one, asserted apart
+    // so this case stays about the seek expansion rather than the statement's whole binding list.
+    expect(stmt.values.slice(0, 3)).toEqual(['t0', 't0', 'id0']);
+    expect(stmt.values.at(-1)).toBe(50);
   });
 });
 

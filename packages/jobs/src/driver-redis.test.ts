@@ -1,4 +1,4 @@
-// Pins the honest-stub contract: every method of the redis driver rejects with
+// Pins the honest-stub contract: every method of the redis driver throws
 // JobsNotImplementedError naming the method and the exact runnable fix, so an accidental
 // partial implementation (someone wires `enqueue` but forgets `ack`) fails a test instead of
 // silently dropping jobs in production.
@@ -15,21 +15,28 @@ const FIX =
 // Every stub method throws SYNCHRONOUSLY (`unavailable` is `throw`, not a rejected promise), so
 // the call under test has to happen inside the try — passed as a promise, `driver.enqueue(...)`
 // would already have thrown while building the argument, before `expectUnavailable` runs at all.
-async function expectUnavailable(
-  call: () => Promise<unknown>,
-  featureSubstring: string,
-): Promise<void> {
+//
+// The assertion is on that immediate throw and nothing else. `await call()` would have accepted a
+// returned rejected promise too, so a method rewritten to `return Promise.reject(unavailable(...))`
+// passed a suite whose entire subject is that it does not — and the returned promise is drained
+// here rather than dropped, or the failure arrives as an unhandled rejection in some later test.
+function expectUnavailable(call: () => Promise<unknown>, featureSubstring: string): void {
+  let thrown: unknown;
+  let returned: Promise<unknown> | undefined;
   try {
-    await call();
-    throw new Error(`expected ${featureSubstring} to reject`);
+    returned = call();
   } catch (error) {
-    expect(error).toBeInstanceOf(JobsNotImplementedError);
-    expect(error).toBeInstanceOf(UltimateError);
-    const ultimateError = error as UltimateError;
-    expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');
-    expect(ultimateError.cause).toContain(featureSubstring);
-    expect(ultimateError.fix).toBe(FIX);
+    thrown = error;
   }
+  if (returned !== undefined) void Promise.resolve(returned).catch(() => undefined);
+
+  expect(returned).toBeUndefined();
+  expect(thrown).toBeInstanceOf(JobsNotImplementedError);
+  expect(thrown).toBeInstanceOf(UltimateError);
+  const ultimateError = thrown as UltimateError;
+  expect(ultimateError.code).toBe('X_NOT_IMPLEMENTED');
+  expect(ultimateError.cause).toContain(featureSubstring);
+  expect(ultimateError.fix).toBe(FIX);
 }
 
 test('driver.name is "redis"', () => {
@@ -50,10 +57,10 @@ const stepRecord = {
   attempts: 1,
 };
 
-describe('every queue method rejects, naming itself', () => {
-  test('enqueue', async () => {
+describe('every queue method throws synchronously, naming itself', () => {
+  test('enqueue', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(
+    expectUnavailable(
       () =>
         driver.enqueue({
           name: 'send',
@@ -66,71 +73,68 @@ describe('every queue method rejects, naming itself', () => {
     );
   });
 
-  test('claim', async () => {
+  test('claim', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(
+    expectUnavailable(
       () =>
         driver.claim({ queues: ['default'], limit: 1, visibilityTimeoutMs: 1000, workerId: 'w1' }),
       'claim',
     );
   });
 
-  test('ack', async () => {
+  test('ack', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.ack('job-1'), 'ack');
+    expectUnavailable(() => driver.ack('job-1'), 'ack');
   });
 
-  test('nack', async () => {
+  test('nack', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.nack('job-1', { delayMs: 1000 }), 'nack');
+    expectUnavailable(() => driver.nack('job-1', { delayMs: 1000 }), 'nack');
   });
 
-  test('heartbeat', async () => {
+  test('heartbeat', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(
-      () => driver.heartbeat('job-1', { visibilityTimeoutMs: 1000 }),
-      'heartbeat',
-    );
+    expectUnavailable(() => driver.heartbeat('job-1', { visibilityTimeoutMs: 1000 }), 'heartbeat');
   });
 
-  test('stats', async () => {
+  test('stats', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.stats(), 'stats');
+    expectUnavailable(() => driver.stats(), 'stats');
   });
 });
 
-describe('every steps method rejects, naming itself as steps.<method>', () => {
-  test('steps.get', async () => {
+describe('every steps method throws synchronously, naming itself as steps.<method>', () => {
+  test('steps.get', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.steps.get('run-1', 'step-1'), 'steps.get');
+    expectUnavailable(() => driver.steps.get('run-1', 'step-1'), 'steps.get');
   });
 
-  test('steps.put', async () => {
+  test('steps.put', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.steps.put(stepRecord), 'steps.put');
+    expectUnavailable(() => driver.steps.put(stepRecord), 'steps.put');
   });
 
-  test('steps.list', async () => {
+  test('steps.list', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.steps.list('run-1'), 'steps.list');
+    expectUnavailable(() => driver.steps.list('run-1'), 'steps.list');
   });
 
-  test('steps.del', async () => {
+  test('steps.del', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.steps.del('run-1', 'step-1'), 'steps.del');
+    expectUnavailable(() => driver.steps.del('run-1', 'step-1'), 'steps.del');
   });
 
-  test('steps.clear', async () => {
+  test('steps.clear', () => {
     const driver = createRedisDriver();
-    await expectUnavailable(() => driver.steps.clear('run-1'), 'steps.clear');
+    expectUnavailable(() => driver.steps.clear('run-1'), 'steps.clear');
   });
 });
 
 // Mutation check: if `ack` (or any method) were accidentally wired to resolve instead of
-// reject, the corresponding test above must go red. Proven here directly rather than by
+// throw, the corresponding test above must go red. Proven here directly rather than by
 // editing the source file: a driver built with one method patched to succeed is the same
 // mutation, applied at the boundary the interface actually exposes.
-describe('mutation check — a method that starts resolving instead of rejecting fails its test', () => {
+describe('mutation check — a method that starts resolving instead of throwing fails its test', () => {
   function withAckPatchedToSucceed(): JobDriver {
     const driver = createRedisDriver();
     return { ...driver, ack: () => Promise.resolve() };
@@ -154,7 +158,7 @@ describe('mutation check — a method that starts resolving instead of rejecting
     await expect(patched.ack('job-1')).resolves.toBeUndefined();
     // The real driver, unpatched, still rejects: the patch above is a genuine mutation of
     // behaviour, not a no-op that would have passed either way.
-    await expectUnavailable(() => createRedisDriver().ack('job-1'), 'ack');
+    expectUnavailable(() => createRedisDriver().ack('job-1'), 'ack');
   });
 
   test('a patched enqueue no longer throws — proving the real enqueue does', async () => {
@@ -168,7 +172,7 @@ describe('mutation check — a method that starts resolving instead of rejecting
         maxAttempts: 1,
       }),
     ).resolves.toEqual({ id: 'fake', runId: 'fake', deduped: false });
-    await expectUnavailable(
+    expectUnavailable(
       () =>
         createRedisDriver().enqueue({
           name: 'x',
@@ -184,6 +188,6 @@ describe('mutation check — a method that starts resolving instead of rejecting
   test('a patched steps.put no longer throws — proving the real steps.put does', async () => {
     const patched = withStepsPutPatchedToSucceed();
     await expect(patched.steps.put(stepRecord)).resolves.toBeUndefined();
-    await expectUnavailable(() => createRedisDriver().steps.put(stepRecord), 'steps.put');
+    expectUnavailable(() => createRedisDriver().steps.put(stepRecord), 'steps.put');
   });
 });

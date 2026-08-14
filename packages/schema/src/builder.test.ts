@@ -1,3 +1,8 @@
+// Direct coverage for `builder.ts` — the result constructors and `makeSchema` every `t.*` type in
+// this package is assembled from. Exercised only indirectly until now, through the types built on
+// it, so a drift in an issue's path or in `describeValue`'s wording surfaced as a puzzling
+// failure in some other suite rather than here.
+
 import { describe, expect, test } from 'bun:test';
 import { checkOf, describeValue, expected, fail, failWith, makeSchema, pass } from './builder';
 import { ValidationFailedError } from './errors';

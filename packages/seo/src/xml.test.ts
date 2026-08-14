@@ -1,3 +1,7 @@
+// Direct coverage for `xml.ts` — the escaping every sitemap, feed and OpenSearch document in this
+// package is built out of. Untested until now despite being the one place an unescaped `&` or a
+// `]]>` inside CDATA turns a valid document into one a crawler rejects.
+
 import { describe, expect, test } from 'bun:test';
 import { absoluteUrl, attributes, cdata, escapeAttribute, escapeXml, xmlElement } from './xml';
 
