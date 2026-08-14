@@ -7,6 +7,7 @@
 // digest went out at 2am and again at 3am" is not a mystery anyone should have to debug.
 
 import { assert } from '@ultimat3/core';
+import { isValidTimeZone } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { EnqueueResult } from './driver';
 import { JobNameTakenError } from './errors';
@@ -94,18 +95,6 @@ interface TaskOrigin {
 
 const origin = new WeakMap<object, TaskOrigin>();
 
-/**
- * `Intl` carries the runtime's copy of the tz database and rejects anything not in it with a
- * `RangeError`, so it is the only check that can tell `America/Bogota` from `Bogota`.
- */
-function isIanaZone(tz: string): boolean {
-  try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: tz }).resolvedOptions().timeZone.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 export function task(definition: TaskDefinition): TaskHandle {
   anonymous += 1;
   const name = definition.name ?? `anonymous-task-${anonymous}`;
@@ -116,9 +105,12 @@ export function task(definition: TaskDefinition): TaskHandle {
     `add tz to task("${name}"), e.g. tz: 'UTC' — an unzoned cron silently drifts by an hour at every DST transition`,
   );
   // A non-empty string is not a timezone. `tz: 'Bogota'` would otherwise resolve every
-  // occurrence in UTC and the cron would run five hours off, silently, forever.
+  // occurrence in UTC and the cron would run five hours off, silently, forever. `time`'s
+  // validator and not a local `Intl` probe: ES2024 `Intl` ACCEPTS `'+02:00'`, and a fixed offset
+  // carries no DST rules — the one thing a cron's timezone exists to supply. One validator means
+  // a zone `task()` accepts is a zone `@ultimat3/time` can then do arithmetic in.
   assert(
-    isIanaZone(definition.tz),
+    isValidTimeZone(definition.tz),
     `task "${name}" has tz "${definition.tz}", which is not a zone in the IANA tz database`,
     `use the full zone id on task("${name}"), e.g. tz: 'America/Bogota' — list the valid ones with: bun -e "console.log(Intl.supportedValuesOf('timeZone').join('\\n'))"`,
   );

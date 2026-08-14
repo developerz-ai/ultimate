@@ -180,6 +180,19 @@ describe('N real workers, one killed mid-flight, under load', () => {
         return true;
       }, 'both chaos jobs finished their work and are parked');
 
+      // Every OTHER job settled first, because the clock jump below expires leases by wall time
+      // and the driver cannot tell a lease held by a dead worker from one held by a live handler
+      // mid-`Bun.sleep`. Jumping while a healthy job is still running would re-deliver it to a
+      // second worker and trip the concurrency guard — a failure of the test's staging, not of
+      // the worker. Before the kill, too: a killed worker's own acks fail, so a non-chaos job it
+      // still owns would never reach `done`.
+      const nonChaosIds = enqueued.map((row) => row.id).filter((id) => !chaosJobIds.has(id));
+      await waitFor(async () => {
+        const done = (await chaos.driver.introspect?.list({ state: 'done' })) ?? [];
+        const settled = new Set(done.map((row) => row.id));
+        return nonChaosIds.every((id) => settled.has(id));
+      }, 'every non-chaos job settled before the clock jump');
+
       const killed = new Set<string>();
       for (const jobId of chaosJobIds) {
         const owner = chaos.claimedBy(jobId);

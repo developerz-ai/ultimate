@@ -168,6 +168,29 @@ describe('a lease that lapses is named', () => {
     expect(harness.renewals()).toBe(1);
   });
 
+  test('a renewal that SUCCEEDS after the window is gone is still a loss', async () => {
+    const error = spyOn(logger, 'error');
+    // The renewal lands — it just lands too late: an event-loop stall, or a driver that answered
+    // at the end of its connect timeout. Trusting the resolution here would restart the window on
+    // a lease the queue has already re-delivered, hiding the loss inside the call meant to prevent
+    // it. This is the ONLY failure shape with nothing to catch.
+    const harness = held((clock) => {
+      clock.advance(VISIBILITY_MS + 1);
+      return Promise.resolve();
+    });
+
+    await harness.heartbeat.renew();
+    const lost = error.mock.calls.filter((call) => call[0] === 'jobs.lease.lost');
+    error.mockRestore();
+
+    expect(harness.heartbeat.lost()).toBe(true);
+    expect(lost.length).toBe(1);
+    expect(lostCount('emails')).toBe(1);
+    // And the window is not restarted behind it: renewing past the loss extends somebody else's.
+    await harness.heartbeat.renew();
+    expect(harness.renewals()).toBe(1);
+  });
+
   test('a renewal that lands after the loss does not revive the lease', async () => {
     let land = (): void => undefined;
     const harness = held(

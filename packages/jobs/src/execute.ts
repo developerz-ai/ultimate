@@ -92,17 +92,6 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     await (handle.timeoutMs === undefined
       ? work
       : raceTimeout(work, handle.timeoutMs, handle.name, cancel));
-
-    await driver.ack(claimed.id);
-    return settle({
-      outcome: 'completed',
-      jobId: claimed.id,
-      job: handle.name,
-      attempt: claimed.attempt,
-      durationMs: nowMs(options.clock) - startedAt,
-      steps: [],
-      replayed: [],
-    });
   } catch (error) {
     if (isStepSuspension(error)) {
       const delayMs = Math.max(0, error.resumeAt - nowMs(options.clock));
@@ -170,6 +159,23 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // the first reason, so a timed-out run still reports the timeout, not this.
     cancel.abort(new JobAbortedError({ job: handle.name }));
   }
+
+  // Only reachable when the BODY succeeded, and settlement is deliberately outside the catch
+  // above: an `ack` that rejects — a pool timeout, a reset on that one statement — is not an
+  // attempt failure. Nacking it would re-queue work that already ran to completion and report
+  // the run as `retried`, so `jobs_total{outcome}` would count a failure that never happened.
+  // Let it reach the worker instead, which logs `jobs.worker.settle-failed`; the lease then
+  // lapses and the queue re-delivers, which is the honest outcome for "we could not say it ended".
+  await driver.ack(claimed.id);
+  return settle({
+    outcome: 'completed',
+    jobId: claimed.id,
+    job: handle.name,
+    attempt: claimed.attempt,
+    durationMs: nowMs(options.clock) - startedAt,
+    steps: [],
+    replayed: [],
+  });
 }
 
 /**

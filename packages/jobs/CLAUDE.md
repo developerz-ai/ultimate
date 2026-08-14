@@ -35,13 +35,14 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   A look-alike never registers. Deliberately not a registry lookup — the registry is what
   registration rewrites.
 - `idempotencyKey` is NON-OPTIONAL in `JobDefinition`. Never relax it, never default it.
-- `tz` is NON-OPTIONAL in `TaskDefinition`, and checked against the runtime's IANA database —
-  a non-empty string is not a timezone. A task never contains a handler body.
+- `tz` is NON-OPTIONAL in `TaskDefinition`, and validated by `@ultimat3/time`'s `isValidTimeZone`
+  — never a local `Intl` probe, which accepts `'+02:00'`, a "zone" with no DST rules at all. A
+  non-empty string is not a timezone. A task never contains a handler body.
 - **One enqueue implementation.** Everything (`handle.enqueue`, `handle.as`, `task.enqueue`)
   goes through `jobsFacade()`; the only other `driver.enqueue(...)` call sites are the outbox
   relay and the scheduler's occurrence dispatch. Never add a third.
 - `handle.as(actor, input)` QUEUES. A job's execution surface is the queue, so it must never
-  run the handler inline — `worker.ts`'s `executeJob` is the one execution path.
+  run the handler inline — `execute.ts`'s `executeJob` is the one execution path.
 - The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`) and `task.enqueue()`'s
   is the job's plain key. Deliberate: the first stops two schedulers double-firing a tick, the
   second is a manual run with no occurrence to scope to.
@@ -70,9 +71,17 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   undefined)` made both look like a healthy run while the queue re-delivered the job. The window is
   measured on THIS process's clock from the last renewal that LANDED, never against
   `claimed.visibleAt` — that is the driver's clock, and comparing the two makes every lease
-  decision a function of skew. Expiry is checked before the driver is asked, because a heartbeat
-  hung on a dead connection never rejects; a renewal that lands after the loss does not revive it,
-  because that window is somebody else's now.
+  decision a function of skew. Expiry is asked BOTH SIDES of the call: before, because a heartbeat
+  hung on a dead connection never rejects, and after, because a renewal that SUCCEEDS past its own
+  window would otherwise restart the clock on a lease the queue already re-delivered — the loss
+  hidden inside the call meant to prevent it. A renewal that lands after the loss does not revive
+  it either, because that window is somebody else's now.
+- **Settlement is not part of the retry decision.** `executeJob`'s `driver.ack` sits AFTER the
+  `try/catch/finally`, so only the body's own rejection can reach the retry branch. An `ack` that
+  fails — a pool timeout, a reset on that one statement — is a job that finished and could not say
+  so, not a job that failed: nacking it re-runs completed work and records `retried` in
+  `jobs_total{outcome}` for a failure that never happened. It propagates instead, and the worker's
+  `jobs.worker.settle-failed` plus the lapsing lease are the honest answer.
 - **The claim loop re-arms on the PASS, never on the jobs.** A slot belongs to its own job and is
   free the moment it settles, so `claimRound` starts what it claimed and returns the promises —
   ending the pass on `Promise.allSettled([...inFlight])` made the pool as slow as its slowest

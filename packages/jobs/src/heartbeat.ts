@@ -88,6 +88,15 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     renewing = true;
     try {
       await options.driver.heartbeat(claimed.id, { visibilityTimeoutMs });
+      // Asked again AFTER the call, because a renewal that SUCCEEDS late is still late: an
+      // event-loop stall or a driver that answered at the end of a connect timeout can land this
+      // past the window it was renewing, and `renewedAt = now()` there would restart the clock on
+      // a lease the queue has already re-delivered — the loss hidden by the very call meant to
+      // prevent it.
+      if (lapsed()) {
+        reportLost();
+        return;
+      }
       renewedAt = now();
     } catch (error) {
       // One failed renewal is not a lost lease: there is a whole visibility window left to land

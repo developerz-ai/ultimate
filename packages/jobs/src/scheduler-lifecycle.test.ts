@@ -3,13 +3,14 @@
 // over one `lastFiredAt` re-mark the watermark and report occurrences they never enqueued; a lock
 // released mid-dispatch hands the next node an occurrence this one is still firing.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
-import { drain, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
+import { drain, logger, resetLifecycle, shutdownHookCount } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { EnqueueRequest, EnqueueResult, JobDriver } from './driver';
 import { resetJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
+import { DriverUnavailableError } from './errors';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
@@ -302,6 +303,77 @@ describe('the scheduler drains before the lock goes back', () => {
     // And a lock this process could not hand back is never treated as still held.
     expect(await scheduler.tick()).toEqual([]);
     expect(gated.enqueues()).toBe(0);
+  });
+});
+
+describe('a round that fails says what to do about it', () => {
+  test('an UltimateError keeps its code, cause and fix in jobs.scheduler.tick-failed', async () => {
+    const spy = spyOn(logger, 'error');
+    const clock = fakeClock(T0);
+    const unavailable = new DriverUnavailableError({
+      driver: 'pg',
+      cause: 'connection refused',
+      fix: 'x doctor --json',
+    });
+    const failing: JobDriver = {
+      ...createMemoryDriver(),
+      enqueue: () => Promise.reject(unavailable),
+    };
+    const scheduler = createScheduler({
+      driver: failing,
+      clock,
+      cron: everySecond,
+      tasks: [nightly],
+      tickIntervalMs: 1,
+    });
+    await scheduler.tick();
+    clock.advance(2_000);
+
+    scheduler.start();
+    for (let waited = 0; waited < 2_000; waited += 2) {
+      if (spy.mock.calls.some((call) => call[0] === 'jobs.scheduler.tick-failed')) break;
+      await Bun.sleep(2);
+    }
+    await scheduler.stop();
+    const failed = spy.mock.calls.find((call) => call[0] === 'jobs.scheduler.tick-failed');
+    spy.mockRestore();
+
+    // `message` alone strands the operator: the code is what they search on and the fix is what
+    // they run, and neither survives `error instanceof Error ? error.message : String(error)`.
+    expect(failed?.[1]).toMatchObject({
+      code: 'X_DRIVER_UNAVAILABLE',
+      cause: 'jobs driver "pg" is unavailable: connection refused',
+      fix: 'x doctor --json',
+    });
+  });
+
+  test('a plain Error still logs its message and nothing it does not have', async () => {
+    const spy = spyOn(logger, 'error');
+    const clock = fakeClock(T0);
+    const failing: JobDriver = {
+      ...createMemoryDriver(),
+      enqueue: () => Promise.reject(new Error('socket hang up')),
+    };
+    const scheduler = createScheduler({
+      driver: failing,
+      clock,
+      cron: everySecond,
+      tasks: [nightly],
+      tickIntervalMs: 1,
+    });
+    await scheduler.tick();
+    clock.advance(2_000);
+
+    scheduler.start();
+    for (let waited = 0; waited < 2_000; waited += 2) {
+      if (spy.mock.calls.some((call) => call[0] === 'jobs.scheduler.tick-failed')) break;
+      await Bun.sleep(2);
+    }
+    await scheduler.stop();
+    const failed = spy.mock.calls.find((call) => call[0] === 'jobs.scheduler.tick-failed');
+    spy.mockRestore();
+
+    expect(failed?.[1]).toEqual({ error: 'socket hang up' });
   });
 });
 

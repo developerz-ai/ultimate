@@ -23,6 +23,19 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
+/**
+ * Poll, never sleep a guessed interval: every wait below is for an ABANDONED body — work the
+ * deadline already gave up on — and a fixed sleep sized against it inverts on a loaded runner,
+ * failing for scheduling rather than for the behaviour under test.
+ */
+async function until(condition: () => boolean, label: string): Promise<void> {
+  for (let waited = 0; waited < 2_000; waited += 2) {
+    if (condition()) return;
+    await Bun.sleep(2);
+  }
+  throw new Error(`until timed out: ${label}`);
+}
+
 interface Harness {
   readonly driver: JobDriver;
   readonly claimed: ClaimedJob;
@@ -34,6 +47,8 @@ interface Harness {
 async function claimOne(
   options: {
     readonly timeout?: string;
+    /** Fails settlement the way a pool timeout does: the body already ran, `ack` did not land. */
+    readonly ackFails?: () => Error;
     run(args: JobRunArgs<{ n: number }>): Promise<unknown>;
   },
   onNack?: (nack: NackOptions) => void,
@@ -51,6 +66,11 @@ async function claimOne(
   const nacks: NackOptions[] = [];
   const driver: JobDriver = {
     ...base,
+    async ack(jobId) {
+      const failure = options.ackFails?.();
+      if (failure !== undefined) throw failure;
+      await base.ack(jobId);
+    },
     async nack(jobId, nack) {
       nacks.push(nack);
       onNack?.(nack);
@@ -111,19 +131,25 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     // The nack makes the job claimable by another worker, so the body must already have been told
     // to stop by the time it happens — otherwise two copies of one job run side by side.
     expect(abortedAtNack).toBe(true);
-    await Bun.sleep(60);
+    await until(() => abortedInBody !== undefined, 'the abandoned body finished');
     expect(abortedInBody).toBe(true);
   });
 
   test('a step the timed-out body finishes anyway is refused, not written', async () => {
+    let late: Promise<unknown> | undefined;
     const harness = await claimOne({
       timeout: '5ms',
       // The uncooperative handler: it never reads the signal and finishes its work late.
-      run: ({ step }) => step.run('late', () => Bun.sleep(40).then(() => 'done')),
+      run: ({ step }) => {
+        late = step.run('late', () => Bun.sleep(40).then(() => 'done'));
+        return late;
+      },
     });
 
     await harness.execute();
-    await Bun.sleep(60);
+    // The step's own promise is the deterministic signal that its late write was reached and
+    // refused — a sleep sized against the 40ms body would race it on a loaded runner.
+    await expect(late).rejects.toThrow(/X_ABORTED/);
 
     // Neither a `completed` record the retry would replay as already-done, nor a `failed` one
     // written over whatever the attempt that replaced this one has put there.
@@ -152,7 +178,10 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     const harness = await claimOne({ timeout: '5ms', run: () => Bun.sleep(40) });
 
     await harness.execute();
-    await Bun.sleep(60);
+    await until(
+      () => warn.mock.calls.some((call) => call[0] === 'jobs.timeout.abandoned'),
+      'jobs.timeout.abandoned logged',
+    );
     const abandoned = warn.mock.calls.find((call) => call[0] === 'jobs.timeout.abandoned');
     warn.mockRestore();
 
@@ -179,6 +208,8 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     });
 
     await harness.execute();
+    // The one wait here that must stay fixed: this asserts an ABSENCE, so there is no condition
+    // to poll for. The bound covers the 40ms at which an uncooperative body would have logged.
     await Bun.sleep(60);
     const abandoned = warn.mock.calls.filter((call) => call[0] === 'jobs.timeout.abandoned');
     warn.mockRestore();
@@ -217,6 +248,30 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     const execution = await harness.execute({ signal: undefined } as unknown as Ctx);
 
     expect(execution.outcome).toBe('completed');
+  });
+
+  test('an ack that fails is a settlement failure, never a retry of finished work', async () => {
+    let ran = 0;
+    const harness = await claimOne({
+      ackFails: () => new Error('connection reset'),
+      run: async ({ step }) => {
+        ran += 1;
+        await step.run('charge', () => 'ok');
+      },
+    });
+
+    // The body ran to completion, so the queue must NOT be told the attempt failed: a nack here
+    // re-delivers work whose side effects outside a step already happened, and reports the run as
+    // `retried` — a failure `jobs_total{outcome}` would count that never occurred. The worker
+    // observes this rejection as `jobs.worker.settle-failed` and the lapsed lease re-delivers.
+    await expect(harness.execute()).rejects.toThrow('connection reset');
+
+    expect(ran).toBe(1);
+    expect(harness.nacks()).toEqual([]);
+    // The step still stands: settlement failed, the work did not.
+    expect(await harness.driver.steps.get(harness.claimed.runId, 'charge')).toMatchObject({
+      status: 'completed',
+    });
   });
 
   test('a job inside its timeout is untouched by any of this', async () => {

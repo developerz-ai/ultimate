@@ -111,6 +111,14 @@ describe('task', () => {
     expect(() =>
       task({ name: 'bogota', cron: '0 3 * * *', tz: 'Bogota', enqueue: () => [] }),
     ).toThrow('X_INVARIANT');
+    // ES2024 `Intl` ACCEPTS a numeric offset, so a bare `Intl` probe would let this through — and
+    // a fixed offset has no DST rules, which is the one thing a cron's timezone is for.
+    expect(() =>
+      task({ name: 'offset', cron: '0 3 * * *', tz: '+02:00', enqueue: () => [] }),
+    ).toThrow('X_INVARIANT');
+    expect(() =>
+      task({ name: 'offsetShort', cron: '0 3 * * *', tz: '-0500', enqueue: () => [] }),
+    ).toThrow('X_INVARIANT');
     expect(() =>
       task({ name: 'newYork', cron: '0 3 * * *', tz: 'America/New_York', enqueue: () => [] }),
     ).not.toThrow();
@@ -157,7 +165,9 @@ describe('task', () => {
 
     const fired = await nightly.enqueue();
     expect(fired.map((entry) => entry.job)).toEqual(['sendDigest', 'sweepLogs']);
-    expect(fired.every((entry) => entry.result.deduped)).toBe(false);
+    // `some`, not `every`: "once EACH" fails if a SINGLE entry deduped, and `every(...) === false`
+    // would pass with one of the two already on the queue.
+    expect(fired.some((entry) => entry.result.deduped)).toBe(false);
     expect(((await driver.introspect?.list()) ?? []).length).toBe(2);
   });
 

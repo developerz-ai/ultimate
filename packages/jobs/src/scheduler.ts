@@ -8,12 +8,24 @@
 // round rather than opening a second one over the same `lastFiredAt`.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, onShutdown } from '@ultimat3/core';
+import { isUltimateError, logger, onShutdown } from '@ultimat3/core';
 import { instant, nextCronOccurrence } from '@ultimat3/time';
 import { nowMs } from './clock';
 import type { JobDriver } from './driver';
 import type { TaskHandle, TaskJobResult } from './task';
 import { registeredTasks } from './task';
+
+/**
+ * A round that failed, as log fields. `message` alone throws away the half of an `UltimateError`
+ * that makes it actionable — the operator reading `jobs.scheduler.tick-failed` at 3am needs the
+ * stable code to search on and the `fix:` to run, not a sentence.
+ */
+function failureFields(error: unknown): Record<string, unknown> {
+  const message = error instanceof Error ? error.message : String(error);
+  return isUltimateError(error)
+    ? { error: message, code: error.code, cause: error.cause, fix: error.fix }
+    : { error: message };
+}
 
 /** Resolves the next fire time. Injected so scheduling logic is testable without a cron impl. */
 export type CronResolver = (cron: string, options: { tz: string; from: Date }) => Date;
@@ -229,9 +241,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     timer = setTimeout(() => {
       void tick()
         .catch((error: unknown) => {
-          logger.error('jobs.scheduler.tick-failed', {
-            error: error instanceof Error ? error.message : String(error),
-          });
+          logger.error('jobs.scheduler.tick-failed', failureFields(error));
         })
         .finally(() => {
           if (state === 'running') schedule();

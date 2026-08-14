@@ -178,7 +178,10 @@ non-empty string is not a timezone: `tz: 'Bogota'` would resolve every occurrenc
 run five hours off, silently, forever. `0 3 * * *` in a DST zone runs twice or zero times on
 the switch day. Catch-up after downtime is explicit: `skip` (default) fires the latest missed
 occurrence and drops the older ones, `run-once` fires the earliest missed one, `run-all` fires
-every one of them, bounded by `maxCatchUp`.
+every one of them. `maxCatchUp` (default 10) bounds EVERY mode, not just `run-all`: one tick
+walks at most that many occurrences forward from the last fire, and the policy then picks from
+what that walk found — so after a long outage `skip` fires the latest occurrence *within the
+cap*, and `run-once` the earliest one, not the true latest/earliest missed.
 
 ## Retries
 

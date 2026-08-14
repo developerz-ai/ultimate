@@ -121,7 +121,7 @@ export class JobAbortedError extends UltimateError {
         input.step === undefined
           ? `job "${input.job}" was cancelled — this attempt no longer owns the run`
           : `job "${input.job}" was cancelled before step "${input.step}" could be recorded`,
-      fix: 'no action needed — the queue re-runs the job; read ctx.signal in the job body (or pass it to fetch) to stop at the deadline instead of running past it',
+      fix: 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the queue re-runs the job, so stop at the deadline instead of running past it',
       docs: docsFor('X_ABORTED'),
     });
   }
