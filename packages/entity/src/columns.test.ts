@@ -205,7 +205,7 @@ describe('the chain', () => {
     expect(org?.column).toBe('org_id');
     expect(org?.references).toBe('columns_test_orgs.id');
     expect(described.orgScoped).toBe(true);
-    expect(described.indexes).toContain('columns_test_posts_org_id_idx');
+    expect(described.indexes.map((index) => index.name)).toContain('columns_test_posts_org_id_idx');
   });
 
   test('text({ max }) reaches the database as a CHECK', () => {
@@ -214,6 +214,8 @@ describe('the chain', () => {
     });
     const title = notes.$describe().columns.find((column) => column.property === 'title');
     expect(title?.check).toBe('char_length(title) <= 80');
-    expect(notes.$describe().indexes).toContain('columns_test_notes_title_key');
+    expect(notes.$describe().indexes.map((index) => index.name)).toContain(
+      'columns_test_notes_title_key',
+    );
   });
 });

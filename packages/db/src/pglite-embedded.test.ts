@@ -5,6 +5,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { baseClient, setDbClient } from './client';
+import { type Migration, migrate, rollback } from './migrate';
 import { createPgliteClient } from './pglite';
 import { readOnlyQuery } from './readonly-query';
 import { sql } from './sql';
@@ -123,6 +124,51 @@ describe('the real embedded database', () => {
         expect((await read).guards).toContain('txn:read-only');
         expect(await written).toBe(1);
         expect(await client.query(sql`select id from posts`)).toEqual([{ id: 1 }]);
+      } finally {
+        setDbClient(undefined);
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
+
+  // The two drivers disagreed about a script, and only a real engine says so. PGlite's `query()`
+  // is the extended protocol always, so a send holding `create table …; create index …;` — what
+  // `generateMigration` writes for any entity with an index — was refused outright, while Bun.SQL
+  // quietly degrades to the simple protocol whenever the text carries no bound value and applied
+  // the same script. `x dev` and `x db branch` run on this driver, so the embedded path was the
+  // broken one; `statementsOf` is now what both take, and neither depends on that difference.
+  test(
+    'a migration whose up holds a table and its index applies, and rollback reverses both',
+    async () => {
+      setDbClient(client);
+      try {
+        await client.execute(sql`drop table if exists embedded_notes`);
+        await client.execute(sql`drop table if exists x_migrations`);
+        const migration: Migration = {
+          id: '20260101000000_embedded_notes',
+          name: 'embedded notes',
+          up:
+            'create table "embedded_notes" ("id" int primary key, "org_id" int not null);\n' +
+            'create index "embedded_notes_org_id_idx" on "embedded_notes" ("org_id");\n' +
+            '-- backfill "org_id", then: alter table "embedded_notes" alter column "org_id" ' +
+            'set not null;\n',
+          down: 'drop index "embedded_notes_org_id_idx";\ndrop table "embedded_notes";',
+        };
+
+        const report = await migrate({ migrations: [migration], client });
+        expect(report.applied.map((applied) => applied.id)).toEqual([migration.id]);
+        expect(
+          await client.query<{ indexname: string }>(
+            sql`select indexname from pg_indexes where tablename = 'embedded_notes'`,
+          ),
+        ).toContainEqual({ indexname: 'embedded_notes_org_id_idx' });
+
+        expect(await rollback({ migrations: [migration], client })).toEqual([migration.id]);
+        expect(
+          await client.one<{ n: number }>(
+            sql`select count(*)::int as n from pg_tables where tablename = 'embedded_notes'`,
+          ),
+        ).toEqual({ n: 0 });
       } finally {
         setDbClient(undefined);
       }

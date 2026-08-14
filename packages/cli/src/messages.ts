@@ -25,6 +25,12 @@ const CATALOG = {
   'cli.cron.onDaysOfMonth': 'on day {days} of the month',
   'cli.cron.onWeekdays': 'on {days}',
   'cli.db.branch.ready': 'branch {name} ready',
+  'cli.db.gen.failed': 'migration not generated',
+  'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
+  'cli.db.gen.written': 'migration {id} generated',
+  'cli.db.migrate.applied': 'migrations applied',
+  'cli.db.migrate.failed': 'migration failed',
+  'cli.db.reset.done': 'database reset and migrated',
   'cli.dev.ready': 'dev ready on {url} — /_x mounted ({panels} panels), {services}',
   // The mail and CDN halves of that boot line. Rendered text, so it lives here — while
   // `describeMail`/`describeCdn` keep the same wording as the fixed vocabulary `x dev --json`

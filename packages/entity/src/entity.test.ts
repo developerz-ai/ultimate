@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { generateMigration } from '@ultimat3/db';
 import { enumerated, integer, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { invariant } from './invariants';
@@ -170,13 +171,53 @@ describe('describe()', () => {
     expect(
       described.columns.find((column) => column.property === 'priceCurrency')?.check,
     ).toContain('^[A-Z]{3}$');
-    expect(described.indexes).toContain('entity_test_posts_org_id_published_at_idx');
+    // Carried whole, never reduced to the name: `<table>_<a>_<b>_idx` is one string for two
+    // columns and the generator cannot read it back into a column list.
+    expect(described.indexes).toEqual([
+      {
+        name: 'entity_test_posts_org_id_idx',
+        columns: ['org_id'],
+        unique: false,
+        where: null,
+        order: null,
+      },
+      {
+        name: 'entity_test_posts_org_id_published_at_idx',
+        columns: ['org_id', 'published_at'],
+        unique: false,
+        where: "status = 'published'",
+        order: 'desc',
+      },
+    ]);
   });
 
   test('a partial index carries the predicate the app also runs', () => {
     const index = posts.$indexes.find((entry) => entry.columns.includes('published_at'));
     expect(index?.where).toBe("status = 'published'");
     expect(index?.order).toBe('desc');
+  });
+
+  test('an index naming no column is refused where it was written', () => {
+    expect(() =>
+      entity('entity_test_empty_index', {
+        columns: { id: uuid().primaryKey() },
+        indexes: [{ on: [] }],
+      }),
+    ).toThrow('an index must name at least one column');
+  });
+
+  test('the declared index reaches the generated DDL with every column on it', () => {
+    // The whole chain, without a server: entity() -> $describe() -> generateMigration(). A
+    // column list recovered from the index name emitted `("org_id_published_at")` — `42703`.
+    const migration = generateMigration({
+      entities: [posts.$describe()],
+      name: 'create posts',
+      now: new Date('2026-08-12T00:00:00.000Z'),
+    });
+    expect(migration.up).toContain(
+      'create index "entity_test_posts_org_id_published_at_idx" on "entity_test_posts" ' +
+        `("org_id" desc, "published_at" desc) where (status = 'published');`,
+    );
   });
 
   test('describeEntities() is sorted so the manifest diffs cleanly', () => {

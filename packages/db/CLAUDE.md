@@ -232,6 +232,147 @@ anonymous SQL, never as a `job` statement, and will keep seeing it that way unti
 own pair through `driver-pg.ts` the way `postgresRepo` now threads entity's — that is still future
 work, not something this change reaches.
 
+**`generate.ts` reads an index, it never re-derives one.** `EntityDescriptionLike.indexes` carries
+`columns`, `unique`, `where` and `order`, and `createIndex` writes every one of them out. It used to
+carry names alone and `parseIndexName` recovered the column list from the `<table>_<a>_<b>_idx`
+convention — which does not run backwards: `_` joins the columns *and* appears inside them, so a
+two-column index emitted `("org_id_created_at")`, a column that does not exist, `42703`, and a
+migration nobody can apply. The same loss took the rest of the declaration with it: a partial index
+emitted as a total one refuses rows the entity allows, and a `desc` index came out ascending. Any
+new part of an index is added to `IndexDescriptionLike` and spelled in `createIndex`, never encoded
+into the name for a reader to parse back out. An index naming no column is `X_INVARIANT` through
+core's `assert` — `entity()` refuses `on: []` at declaration, so nothing the framework produces can
+reach it, and a hand-built description gets the error rather than DDL Postgres cannot parse.
+`generate.test.ts` pins the generated SQL text; `migrate.live.test.ts`'s composite-index describe
+block is the join of that fix with the engine it ships through — an entity description into
+`generateMigration`, applied by `migrate()` itself against a real server, columns confirmed against
+`pg_indexes`, rather than either half alone.
+
+**One send is one statement, so `migrate()` and `rollback()` split the script.** `tx.execute(raw(
+migration.up))` on a text holding two commands is where the two drivers disagreed, and the
+disagreement is the whole reason this is a bug rather than a preference: `pglite.ts` calls
+PGlite's `query()`, which is the extended protocol always and answers `cannot insert multiple
+commands into a prepared statement`, while `client.ts`'s `Bun.SQL.unsafe(text, values)` degrades to
+the *simple* protocol whenever `values` is empty and applies the same script — measured on bun
+1.3.14, guaranteed by nothing. `createTable` emits the table *and* every index it carries, and
+`x dev`/`x db branch` run on the embedded driver, so the broken case was the common one on the
+path an author uses most. `applyScript` (`migrate.ts`) sends `statementsOf(script)` one at a time
+inside the **same** transaction; a half-applied migration is worse than an unapplied one, and it
+needs no `expectedQueryLoop` of its own because both call sites already run inside the one declared
+for the migration loop. `pglite-embedded.test.ts` is where that is pinned — a recording client
+replies to any text, and only a real engine has an opinion about a script.
+
+`statement-split.ts` is that splitter and the only one: `statementsOf(script)` is a left-to-right
+scan, never a `split(';')`, because a `;` inside a string literal, a quoted identifier, a
+dollar-quoted body, a `--` comment or a **nested** block comment is data — and a generated migration
+holds all five, including the `-- backfill "c", then: … set not null;` note. Three rules. `$1` is a
+bound parameter and never a `$tag$`, so a tag may not begin with a digit — otherwise one parameter
+swallows the rest of the script. A backslash escapes only inside an `E''` string, which is also the
+only place the `''` escape is observable: everywhere else, closing and reopening the run lands on
+exactly the same separator. A chunk of whitespace and comments alone is **not** a statement and is
+dropped, so an empty `up` reaches its ledger row instead of sending an empty query. An unterminated
+literal is returned as it stands — Postgres names that syntax error precisely, and a second parser
+competing with it would only report the same fault in worse words. `@ultimat3/entity`'s and
+`@ultimat3/ai`'s live tests import it rather than hand-rolling a seventh copy; splitting a script is
+one question with one answer (axiom 1).
+
+`destructive.ts` is the rail, and it decides **what** is destructive — never **whether** a given
+repo has any. `x db gen` reads `isDestructive(up)` to write `-- destructive: true` into the file;
+`x verify`'s `drift` step reads `hasDestructiveMarker`/`destructiveStatements` to refuse a file that
+lacks it (`@ultimat3/cli`'s `db-destructive.ts`). One classifier for both, because a generator that
+wrote no marker where the gate demanded one would ship a migration failing its own gate. Four rules.
+**Only `up`** — reversing a `create table` is a `drop table`, so a rail reading `down` marks every
+migration ever generated and a marker on all of them marks none. **A closed list of four kinds** —
+`drop table`, `drop column`, `truncate`, `alter column … type`; a rail enumerating every Postgres
+foot-gun is a second SQL parser competing with the server's, and every one of these four is a
+statement `generateMigration` emits, so each has a generated case holding it honest. `drop
+constraint`/`default`/`not null` and `drop index` are excluded by name: the database rebuilds them.
+**Decide on blanked text, report the original** — `statementsOf` + `stripSqlNoise` before a keyword
+is looked for, so `-- drop table users` is prose and `values ('drop table users')` is data; but the
+excerpt in the error keeps its identifiers, because `drop table ""` names nothing an author can act
+on. **The marker is a top-level line comment**, like `-- down`, so a file merely mentioning it has
+declared nothing — and one inside a `/* … */` or a dollar-quoted body has declared nothing either,
+which a regex over the raw file could not tell apart. `hasDestructiveMarker` walks `sql-scan.ts`
+for the same reason the classifier does: the marker is a lexical fact, not a substring. It is also SQL the checksum covers, which is deliberate: marking an already-applied
+migration is an edit, and `X_MIGRATION_CONFLICT` is the correct answer to that.
+
+`X_MIGRATION_DESTRUCTIVE` and `X_MIGRATION_IRREVERSIBLE` are two questions, not two spellings of
+one. Irreversible refuses to *generate* a plan whose `down` cannot restore the rows, and
+`--allow-destructive` is the override. Destructive refuses to *ship* a plan whose `up` destroys them
+without saying so — and a retype is reversible in DDL, gated by no flag, and still rewrites every
+row, so it is marked without ever being refused.
+
+`sql-scan.ts` is the **one** lexer under all of it: `noiseAt(text, index)` names the span starting
+at one offset — line comment, block comment, literal, quoted identifier, dollar-quoted body — or
+`null` for code. `statement-split.ts`, `sql-noise.ts` and `destructive.ts`'s marker all walk it, and
+a splitter that disagreed with a guard about where a literal ends is a `;` sent as data or a
+`delete` read as prose. Two rules it owns. **Source order, never a sequence of replacements**:
+`stripSqlNoise` blanked comments before literals, so the `--` in `select '--'; delete from posts`
+read as a comment and erased the `delete` before `inspectStatement()` saw it — a mutating fragment
+through `readOnly(client, { seal: false })`. **A `$tag$` needs separating from the identifier before
+it**: `$` is legal in a name after the first character, so `foo$tag$` is one identifier and
+`select foo$tag$; select 2;` is two statements — read as a body opener it went out as one send.
+The run before the delimiter is walked to its start rather than one character being read, because
+`$1$tag$` is a bound parameter followed by a real delimiter and a run opening with a digit or a `$`
+cannot be an identifier at all.
+
+`sql-noise.ts` holds `stripSqlNoise` alone, for the three guards that share it — `readonly.ts`,
+`readonly-query.ts`, `destructive.ts`. It lives apart from all of them because `errors.ts` names the
+rail's wording and the rail reads SQL text: leaving the blanker in `readonly.ts` would have put the
+error registry, which registers codes at module evaluation, inside an import cycle.
+
+`checkDrift()` is the **post-migrate verification** and the only drift question that needs a
+database: the live catalog against the ledger the run just wrote. It is asked where a connection is
+open — `@ultimat3/cli`'s `runMigrations`, which is `x db migrate`, `x db reset` and `ROLE=migrate`
+alike — and returned, never thrown. The *other* `X_DB_DRIFT` is `@ultimat3/cli`'s
+`checkSourceDrift`: the entity source hashed against what `x db gen` recorded, no database, which is
+what `x verify`'s `drift` step runs in a CI with nothing listening. Two conditions, two detectors,
+one code — and neither may grow the other's half. Until 1.2.0 both were named `checkDrift`, the
+file-hash one was wired everywhere and this one had no callers at all.
+
+`declaredSchema()` answers with the **newest** migration's snapshot or with `undefined`, never with
+the newest one that happens to have a snapshot. `0001` records `posts`, `0002` adds a column and
+writes nothing down, and reaching back to `0001` reports a column the database correctly holds as
+`unexpected-column` — drift against a schema that is exactly right, with `x db gen "add …"` as the
+fix for a migration that already exists. `checkDrift` turns that `undefined` into an
+`unknown-schema` difference rather than `ok: true`, and `x db gen` refuses with
+`X_MIGRATION_SNAPSHOT_MISSING` rather than diffing against the empty schema, which would emit
+`create table` for every table the database already holds.
+
+`compareTable` judges **declared** indexes: one the migrations name and the catalog does not hold is
+`missing-index`, and one whose column list or uniqueness moved is `changed-index` — which is what
+catches a composite index rebuilt with its columns the other way round while the column diff said
+`ok: true`. A live index no snapshot names is deliberately **not** reported: Postgres creates one for
+every primary key and every unique constraint, so counting those is eight findings against a correct
+database, the same argument `appTables()` makes. The predicate and the direction are not compared
+either — the catalog returns its own rewriting of an expression (`(deleted_at IS NULL)`) and the
+snapshot holds the author's spelling, so a text comparison reports two identical indexes as drift.
+`x db gen` compares them instead (`redefineIndex`), where both sides are generated. Named in
+`wiki/Known-Gaps.md`.
+
+`compareForeignKeys` judges **declared** keys the same way, and matches on **where the key points**
+— its columns, its target table, its target columns — never on the constraint name. `snapshotOf`
+names one the way Postgres names an inline `references` clause (`posts_org_id_fkey`) because that is
+what the generated SQL produces, but a hand-written migration may have said `constraint fk_posts_org`
+and a key pointing the same way under another name is the same key. `onDelete` is not compared: the
+catalog spells it `a`/`c`/`r` and no generated clause has ever declared one, so a snapshot has
+nothing truthful to hold there. Before this, `snapshotOf` recorded `foreignKeys: []` beside an `up`
+emitting `references "orgs" ("id")` — a snapshot denying a constraint its own migration creates — so
+`alter table … drop constraint` on the database answered `ok: true`. `x db gen` still emits no
+`add constraint`/`drop constraint` of its own; see `wiki/Known-Gaps.md`.
+
+`introspect()` reads an index's columns in **index key order** (`indkey`, not `attnum`) and carries
+its predicate and direction. Ordering by `attnum` returned a composite index's columns in table
+order, which reads correct and compares wrong.
+
+`appTables()` is why it can run: a table in the `x_` namespace is framework bookkeeping — the
+ledger, `x_jobs`/`x_job_steps`, `x_outbox` and every `@ultimat3/auth` table are `create table if not
+exists` at boot, declared by no migration and carried in no snapshot, so counted as app schema they
+are eight `unexpected-table` findings against a correct database. The prefix is the rule, not a
+list, so a table a future package adds needs no second declaration here. `introspect()` keeps its
+narrower default (`x_migrations` alone) because the admin schema view and the MCP `schema.describe`
+tool legitimately show `x_users` — only drift wants the whole namespace gone.
+
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
 `errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's

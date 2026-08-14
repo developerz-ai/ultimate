@@ -4,7 +4,7 @@
 // — the same gate `pg-driver.live.test.ts` uses; CI's service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPostgresClient, type PostgresClient, raw, sql } from '@ultimat3/db';
+import { createPostgresClient, type PostgresClient, raw, sql, statementsOf } from '@ultimat3/db';
 import { normalize } from './embeddings';
 import { PgVectorStore } from './pg-vector';
 import { searchSql } from './pg-vector-sql';
@@ -311,11 +311,3 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
     });
   });
 });
-
-/** One `execute` runs one statement; `ddl()` is a script. No generated clause holds a `;\n`. */
-function statementsOf(script: string): readonly string[] {
-  return script
-    .split(';\n')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-}

@@ -177,6 +177,11 @@ export const entity = <const C extends ColumnMap>(
     ...(init.indexes ?? []).map((index) => {
       const columns = index.on.map((property) => resolve([property]));
       const unique = index.unique === true;
+      // `on: []` is type-legal and names nothing: the generated DDL would be `on "posts" ()`, a
+      // syntax error one migration later. Refused where it was written instead.
+      if (columns.length === 0) {
+        throw invariantViolated(name, 'index', 'an index must name at least one column');
+      }
       const where = index.where?.(columnsExpr).toSql(resolve) ?? null;
       if (index.where !== undefined && where === null) {
         throw invariantViolated(

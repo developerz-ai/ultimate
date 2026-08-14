@@ -62,6 +62,7 @@ export { tableFor } from './query';
 export type {
   ColumnDescription,
   EntityDescription,
+  IndexDescription,
   InvariantDescription,
   ReferenceDescription,
   RegistryEntry,

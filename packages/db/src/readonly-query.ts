@@ -4,8 +4,8 @@
 // meant to ask for.
 
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
-import { stripSqlNoise } from './readonly';
 import { identifier, raw, sql } from './sql';
+import { stripSqlNoise } from './sql-noise';
 
 /** Default per-statement ceiling for an agent-authored read. */
 export const READONLY_TIMEOUT_MS = 5_000;

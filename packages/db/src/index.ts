@@ -31,13 +31,24 @@ export {
   poolProfileFor,
   setDbClient,
 } from './client';
+export type { DestructiveKind, DestructiveStatement } from './destructive';
+export {
+  DESTRUCTIVE_CAUSE,
+  DESTRUCTIVE_MARKER,
+  destructiveStatements,
+  hasDestructiveMarker,
+  isDestructive,
+} from './destructive';
 export type { DriftDifference, DriftKind, DriftOptions, DriftReport } from './drift';
 export {
+  appTables,
   assertNoDrift,
   checkDrift,
+  declaredSchema,
   diffSchema,
   driftError,
   expectedSchema,
+  FRAMEWORK_TABLE_PREFIX,
 } from './drift';
 export type { DbErrorCode, DbErrorInit } from './errors';
 export {
@@ -51,7 +62,9 @@ export {
   dbUnavailable,
   identifierUnsafe,
   migrationConflict,
+  migrationDestructive,
   migrationIrreversible,
+  migrationSnapshotMissing,
   readonlyViolation,
   sqlUnsafe,
 } from './errors';
@@ -63,15 +76,9 @@ export type {
   EntityDescriptionLike,
   GeneratedMigration,
   GenerateOptions,
-  ParsedIndex,
+  IndexDescriptionLike,
 } from './generate';
-export {
-  generateMigration,
-  migrationStamp,
-  parseIndexName,
-  slugify,
-  snapshotOf,
-} from './generate';
+export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
 export type {
   ColumnDescription,
   ForeignKeyDescription,
@@ -93,6 +100,7 @@ export {
   auditLedger,
   checksumOf,
   ensureLedger,
+  isLedgerMissing,
   LEDGER_TABLE,
   MIGRATION_LOCK_KEY,
   migrate,
@@ -122,14 +130,17 @@ export {
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';
 export { branchPglite, pgliteBranchDir } from './pglite-branch';
 export type { MutationVerdict, ReadOnlyOptions } from './readonly';
-export { assertReadOnly, inspectStatement, readOnly, stripSqlNoise } from './readonly';
+export { assertReadOnly, inspectStatement, readOnly } from './readonly';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';
 export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
+export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
+export { stripSqlNoise } from './sql-noise';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
+export { statementsOf } from './statement-split';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction';
 export { beginStatement, currentTx, withTransaction } from './transaction';

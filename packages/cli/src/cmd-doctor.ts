@@ -8,7 +8,7 @@ import { usesDevCursorSecret } from '@ultimat3/core';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { ICON_SOURCE } from './dev-assets';
-import { checkDrift } from './drift';
+import { checkSourceDrift } from './drift';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagString } from './parse';
@@ -150,7 +150,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     production: (Bun.env['X_ENV'] ?? Bun.env['NODE_ENV']) === 'production',
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
-    drift: async () => (root === undefined ? [] : checkDrift(root)),
+    drift: async () => (root === undefined ? [] : checkSourceDrift(root)),
   };
 }
 

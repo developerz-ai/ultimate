@@ -11,6 +11,7 @@ import {
   raw,
   setDbClient,
   setStatementObserver,
+  statementsOf,
 } from '@ultimat3/db';
 import { text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -56,13 +57,6 @@ const posts = entity('pg_preload_live_posts', {
 const DROP =
   'drop table if exists "pg_preload_live_posts", "pg_preload_live_members", ' +
   '"pg_preload_live_orgs" cascade';
-
-/** One `up` script out, one statement per `execute` in: every value in it is an identifier. */
-const statementsOf = (script: string): readonly string[] =>
-  script
-    .split(';\n')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
 
 /**
  * A `hasMany` is named for the entity the rows come from, and both inbound keys want that name —

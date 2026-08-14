@@ -122,7 +122,15 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
       sql: inv.sql,
       where: inv.where ?? null,
     })),
-    indexes: input.indexes.map((index) => index.name),
+    // Projected whole, never reduced to the name: the generator spells the column list from this
+    // and a name cannot be parsed back into one. See `IndexDescription`.
+    indexes: input.indexes.map((index) => ({
+      name: index.name,
+      columns: index.columns,
+      unique: index.unique,
+      where: index.where ?? null,
+      order: index.order ?? null,
+    })),
     tags: input.tags,
     cacheTag: input.cacheTag,
     softDelete: input.softDelete,

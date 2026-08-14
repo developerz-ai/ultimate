@@ -1,9 +1,14 @@
+// `x db gen` on the framework's own engine: what it writes, what it refuses to write, and the
+// round trip that makes the second generation incremental — the file it emits must parse back
+// through the reader that applies it. Indexes are `generate-index.test.ts`.
+
 import { describe, expect, test } from 'bun:test';
 import { diffSchema } from './drift';
 import {
   type ColumnDescriptionLike,
   type EntityDescriptionLike,
   generateMigration,
+  type IndexDescriptionLike,
   snapshotOf,
 } from './generate';
 import type { SchemaDescription } from './introspect';
@@ -24,12 +29,27 @@ const column = (
   ...overrides,
 });
 
+const index = (
+  name: string,
+  columns: readonly string[],
+  overrides: Partial<IndexDescriptionLike> = {},
+): IndexDescriptionLike => ({
+  name,
+  columns,
+  unique: false,
+  where: null,
+  order: null,
+  ...overrides,
+});
+
+const slugKey = index('posts_slug_key', ['slug'], { unique: true });
+
 const posts = (columns: readonly ColumnDescriptionLike[]): EntityDescriptionLike => ({
   name: 'Post',
   table: 'posts',
   primaryKey: ['id'],
   columns,
-  indexes: ['posts_slug_key'],
+  indexes: [slugKey],
 });
 
 const priced: EntityDescriptionLike = {
@@ -85,27 +105,6 @@ describe('generateMigration', () => {
     // The `unique` clause above already creates `posts_slug_key`; naming it again is `42P07`.
     expect(migration.up).not.toContain('create unique index "posts_slug_key"');
     expect(migration.down).toContain('drop table "posts";');
-  });
-
-  test('an index a column clause does not imply still gets its own statement', () => {
-    const migration = generateMigration({
-      entities: [
-        {
-          ...posts([
-            column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
-            column('slug', { notNull: true, unique: true }),
-            column('org_id', { kind: 'uuid', notNull: true }),
-          ]),
-          indexes: ['posts_slug_key', 'posts_org_id_idx'],
-        },
-      ],
-      name: 'create posts',
-      now: at,
-    });
-
-    // Only the one Postgres makes for free is skipped — a plain index is nobody else's job.
-    expect(migration.up).not.toContain('create unique index "posts_slug_key"');
-    expect(migration.up).toContain('create index "posts_org_id_idx" on "posts" ("org_id")');
   });
 
   test('a unique column added later does not also emit its implied index', () => {
@@ -256,6 +255,59 @@ describe('generateMigration', () => {
     });
     expect(migration.up).toContain('drop column "legacy";');
     expect(migration.down).toContain('-- data is not restored');
+    expect(migration.destructive).toBe(true);
+  });
+
+  test('a create-only migration is not destructive, and its `down` full of drops does not make it', () => {
+    const migration = generateMigration({
+      entities: [posts([column('id', { kind: 'uuid', primaryKey: true }), column('title')])],
+      name: 'create posts',
+      now: at,
+    });
+    expect(migration.down).toContain('drop table "posts";');
+    expect(migration.destructive).toBe(false);
+  });
+
+  test('a retype is destructive even though no --allow-destructive gates it', () => {
+    const before = snapshotOf([posts([column('legacy', { kind: 'char' })])]);
+    const migration = generateMigration({
+      entities: [posts([column('legacy', { kind: 'text' })])],
+      current: before,
+      name: 'retype legacy',
+      now: at,
+    });
+    expect(migration.up).toContain('alter column "legacy" type text');
+    expect(migration.destructive).toBe(true);
+  });
+
+  test('the snapshot records the foreign key the column clause writes', () => {
+    // Recording `foreignKeys: []` beside a `references "orgs" ("id")` the same run emitted was a
+    // snapshot denying a constraint its own migration creates, so drift had nothing to compare
+    // and a key dropped on the database by hand was invisible to every check.
+    const entities = [
+      posts([
+        column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+        column('org_id', { kind: 'uuid', notNull: true, references: 'orgs.id' }),
+      ]),
+    ];
+    const migration = generateMigration({ entities, name: 'create posts', now: at });
+    expect(migration.up).toContain('references "orgs" ("id")');
+    expect(migration.snapshot.tables[0]?.foreignKeys).toEqual([
+      {
+        name: 'posts_org_id_fkey',
+        columns: ['org_id'],
+        referencedTable: 'orgs',
+        referencedColumns: ['id'],
+        onDelete: null,
+      },
+    ]);
+  });
+
+  test('a reference with no column named falls back to id, in the clause and the snapshot alike', () => {
+    const entities = [posts([column('org_id', { kind: 'uuid', references: 'orgs' })])];
+    const migration = generateMigration({ entities, name: 'create posts', now: at });
+    expect(migration.up).toContain('references "orgs" ("id")');
+    expect(migration.snapshot.tables[0]?.foreignKeys[0]?.referencedColumns).toEqual(['id']);
   });
 
   test('the emitted snapshot is drift-free against the entities it came from', () => {

@@ -178,7 +178,13 @@ Now `x verify` sees drift, which is the point:
            default 'drizzle.config.json' … file does not exist
 ```
 
-`x db migrate` fails identically. `@ultimat3/db` exports the framework's own generator, so a twenty-line script does the job — this one passes `x verify`:
+`x db migrate` fails identically.
+
+**Fixed on `main`, unreleased.** `x db gen "add todos"` now calls `@ultimat3/db`'s own
+`generateMigration()` and writes the three files itself — `<id>.sql`, `<id>.snapshot.json` and
+`<id>.hash` — while `x db migrate` runs the same migrator `ROLE=migrate` runs. Skip the script
+below on `main`; on 1.1.0 it is the way through. `@ultimat3/db` exports the framework's own
+generator, so a twenty-line script does the job — this one passes `x verify`:
 
 ```ts
 // scripts/db-gen.ts —  bun run scripts/db-gen.ts 0001 "add todos"
@@ -211,14 +217,17 @@ Two edits to the emitted SQL, both mechanical:
 
 | Emitted | Why it fails | Fix |
 |---|---|---|
-| `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at");` | the composite index column list round-trips as one mangled name | spell the columns: `("org_id", "created_at")` |
-| `create table …;` and `create index …;` in one file | the driver runs a migration's `up` as one prepared statement — *cannot insert multiple commands into a prepared statement* | **one statement per migration file**; split into `0001_…` and `0002_…`, each with its own `.hash` |
+| `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at");` | the composite index column list round-trips as one mangled name. **Fixed on `main`, unreleased** — on 1.1.0 it is an edit | spell the columns: `("org_id", "created_at")` |
+| `create table …;` and `create index …;` in one file | the driver ran a migration's `up` as one prepared statement — *cannot insert multiple commands into a prepared statement*, on the embedded database always. **Fixed on `main`, unreleased** — the script is split and sent one statement at a time, in one transaction | on 1.2.0, **one statement per migration file**; split into `0001_…` and `0002_…`, each with its own `.hash` |
 
 Apply them the way production does — same code path, no toolchain:
 
 ```bash
 ROLE=migrate bun apps/web/server.ts
 ```
+
+On `main`, `bunx x db migrate` is that same code path with a `--json` report and a drift check
+after it. Both read `packages/db/migrations` and write one `x_migrations` ledger.
 
 ```text
 {"ts":"2026-08-11T17:09:15.790Z","level":"info","msg":"ultimate migrate applied","applied":3,"available":3,"appVersion":"dev"}

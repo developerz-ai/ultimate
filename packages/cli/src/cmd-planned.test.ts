@@ -3,7 +3,12 @@
 // build actually ships. Each of those three is one assertion below.
 
 import { describe, expect, test } from 'bun:test';
-import { PLANNED_COMMANDS, plannedCommands } from './cmd-planned';
+import {
+  PLANNED_COMMANDS,
+  PLANNED_SUBCOMMANDS,
+  plannedCommands,
+  plannedSubcommand,
+} from './cmd-planned';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
@@ -63,6 +68,33 @@ describe('unit · the planned table', () => {
   test('names are unique across the whole registry', () => {
     const names = SPECS.map((spec) => spec.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('unit · the planned subcommand table', () => {
+  test('every entry names a subcommand its own command actually declares', () => {
+    for (const planned of PLANNED_SUBCOMMANDS) {
+      const spec = commandFor(planned.command)?.spec;
+      expect(spec?.subcommands ?? []).toContain(planned.subcommand);
+    }
+  });
+
+  test('every fix names a shipped command, and never the planned subcommand itself', () => {
+    const shipped = new Set(
+      SPECS.filter((spec) => !spec.summary.endsWith('(planned)')).map((spec) => spec.name),
+    );
+    for (const planned of PLANNED_SUBCOMMANDS) {
+      const words = runnableOf(planned.fix);
+      expect(words[0]).toMatch(/^(x|bun)$/);
+      if (words[0] === 'x') expect(shipped.has(words[1] ?? '')).toBe(true);
+      expect(planned.fix.startsWith(`x ${planned.command} ${planned.subcommand}`)).toBe(false);
+    }
+  });
+
+  test('an unlisted subcommand still fails as not-implemented, never as a bare throw', () => {
+    const error = plannedSubcommand('db', 'nope');
+    expect(error).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(error.fix).toBe('x db --help');
   });
 });
 

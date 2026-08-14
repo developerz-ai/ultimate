@@ -29,8 +29,15 @@ await withTransaction(async (tx) => {
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
 | `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
-| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report |
-| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL |
+| `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
+| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes, and declared foreign keys, matched on where the key points and not on its constraint name |
+| `declaredSchema()` / `expectedSchema()` | `As of 2026-08`: the schema the migrations write down, or `undefined` when the newest one carries no snapshot — never an older snapshot standing in for it |
+| `parseSnapshot()` | `As of 2026-08`: a `<id>.snapshot.json` sidecar validated to the last nested field, or `undefined`. `{"tables":[null]}` is valid JSON and is not a schema |
+| `isLedgerMissing()` | `As of 2026-08`: whether an error is Postgres' `undefined_table` for `x_migrations` — the one condition a caller may read as "nothing applied" |
+| `appTables()` / `FRAMEWORK_TABLE_PREFIX` | `As of 2026-08`: the live schema minus the `x_` namespace — no migration declares the ledger, the queue, the outbox or an auth table, so none of them is drift |
+| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL, and `destructive` for the marker the file must carry |
+| `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
+| `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a guard reads the operation and not the prose. Shared by `readOnly()`, `readOnlyQuery()` and the destructive rail |
 | `introspect()` | live schema → `SchemaDescription` |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
@@ -91,7 +98,28 @@ layer 1 covers only what existed at grant time.
 
 ## The drift contract
 
-`x db drift` compares `introspect()` against the snapshot the newest applied migration carries.
+`checkDrift()` compares `introspect()` against the snapshot the newest applied migration carries —
+`expectedSchema(migrations, ledger)`. `declaredSchema(migrations)` is the same read with the ledger
+left out: the schema the files *declare*, applied or not, which is what `x db gen` diffs the app's
+entities against so generation needs no database at all. One implementation, two callers — a
+snapshot that meant one thing to the generator and another to drift is exactly the divergence the
+ledger exists to prevent.
+
+**One `X_DB_DRIFT`, two detectors, and which is which matters.** `checkDrift()` is the post-migrate
+verification: it needs a database, so it runs where one is open — `runMigrations` in
+`@ultimat3/cli`, which is `x db migrate`, `x db reset` and `ROLE=migrate` alike. It is the only one
+that can see a column added by hand. The other, `checkSourceDrift()` (also `@ultimat3/cli`), hashes
+the entity source against what `x db gen` recorded, opens nothing, and is `x verify`'s `drift` step
+— the gate runs in CI with no database, so a check that needed one could not run at all.
+
+A migration the ledger has not recorded is **not** drift: `expectedSchema` reads the ledger's own
+subset, so a database that simply has not migrated yet is pending, not divergent. Neither is a
+table in the `x_` namespace — `x_migrations`, the queue's tables, the outbox and every
+`@ultimat3/auth` table are created by `create table if not exists` at boot and appear in no
+snapshot, so `appTables()` drops them before the diff. `introspect()` keeps its own narrower
+exclusion (the ledger alone), because the admin schema view and the MCP `schema.describe` tool
+legitimately show `x_users`.
+
 Rendered output is pinned byte-for-byte:
 
 ```
@@ -107,7 +135,10 @@ X_DB_DRIFT: schema differs from migrations
 | live table, no migration | `table "T" is not present in any migration` | `x db gen "add T"` |
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 
-`checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x verify` fails on it.
+`checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` reports
+them and exits non-zero; a `ROLE=migrate` container logs them and still exits 0, because its
+contract is "apply every migration, then exit" and a schema difference after a clean apply is a
+diagnostic, not a failed migration.
 
 ## The embedded database
 

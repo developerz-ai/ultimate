@@ -8,7 +8,8 @@ import { migrationConflict } from './errors';
 import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
 import { raw, sql } from './sql';
-import { withTransaction } from './transaction';
+import { statementsOf } from './statement-split';
+import { type DbTx, withTransaction } from './transaction';
 
 export const LEDGER_TABLE = 'x_migrations';
 
@@ -82,6 +83,22 @@ export async function ensureLedger(client: DbClient): Promise<void> {
       duration_ms integer not null
     )
   `);
+}
+
+/** Postgres' `undefined_table`. The ledger's absence is a class, not a message to match on. */
+const UNDEFINED_TABLE = '42P01';
+
+/**
+ * Whether `error` is "the ledger table does not exist" and nothing else.
+ *
+ * The driver wraps a failed statement as `X_DB_UNAVAILABLE` and keeps the server's own error as
+ * `sourceError`, so the SQLSTATE is read from there. Everything else — a permission denied, a
+ * server in recovery, a timeout — is a failure to read the ledger, not an empty one, and a caller
+ * treating the two alike reports every migration as pending against a database it cannot see.
+ */
+export function isLedgerMissing(error: unknown): boolean {
+  const source = (error as { sourceError?: unknown } | null)?.sourceError ?? error;
+  return (source as { code?: unknown } | null)?.code === UNDEFINED_TABLE;
 }
 
 export async function readLedger(client: DbClient): Promise<readonly LedgerRow[]> {
@@ -178,6 +195,22 @@ async function withAdvisoryLock<T>(
   }
 }
 
+/**
+ * A migration's `up` and `down` are **scripts**, and one send is one statement — because the two
+ * drivers disagree about anything else. PGlite's `query()` is the extended protocol always and
+ * answers `cannot insert multiple commands into a prepared statement`; `Bun.SQL.unsafe` degrades
+ * to the simple protocol when no value is bound and applies the same script, which is a fact about
+ * bun 1.3.14 and not a contract. `createTable` emits the table *and* every index it carries, and
+ * `x dev` runs on the embedded driver, so the refusing side was the common path.
+ *
+ * No `expectedQueryLoop` of its own: both call sites already run inside the one declared for the
+ * migration loop, and nesting here would replace that reason with a narrower one for no gain. An
+ * empty script sends nothing at all, which is how a no-op migration reaches its ledger row.
+ */
+async function applyScript(tx: DbTx, script: string): Promise<void> {
+  for (const statement of statementsOf(script)) await tx.execute(raw(statement));
+}
+
 export async function migrate(options: MigrateOptions): Promise<MigrationReport> {
   const client = options.client ?? baseClient();
   const appVersion = runningAppVersion(options.appVersion);
@@ -201,7 +234,7 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
           const at = performance.now();
           await withTransaction(
             async (tx) => {
-              await tx.execute(raw(migration.up));
+              await applyScript(tx, migration.up);
               const durationMs = Math.round(performance.now() - at);
               await tx.execute(sql`
                 insert into ${raw(LEDGER_TABLE)} (id, name, checksum, app_version, duration_ms)
@@ -269,7 +302,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
           }
           await withTransaction(
             async (tx) => {
-              await tx.execute(raw(migration.down));
+              await applyScript(tx, migration.down);
               await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
             },
             { client: session },

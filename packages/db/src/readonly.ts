@@ -8,6 +8,7 @@
 import type { DbClient } from './client';
 import { readonlyViolation } from './errors';
 import { raw, type SqlFragment } from './sql';
+import { stripSqlNoise } from './sql-noise';
 
 const MUTATING = [
   'insert',
@@ -35,20 +36,6 @@ const MUTATING = [
 ] as const;
 
 const MUTATING_PATTERN = new RegExp(`\\b(${MUTATING.join('|')})\\b`, 'i');
-
-/**
- * Blank out anything a keyword could legitimately hide inside: line comments, block comments,
- * single-quoted literals, dollar-quoted bodies and quoted identifiers. Blanking (rather than
- * deleting) keeps offsets stable so the reported statement still reads correctly.
- */
-export function stripSqlNoise(text: string): string {
-  return text
-    .replace(/\$([A-Za-z_]\w*)?\$[\s\S]*?\$\1?\$/g, ' ')
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'(?:[^']|'')*'/g, " '' ")
-    .replace(/"(?:[^"]|"")*"/g, ' "" ');
-}
 
 export interface MutationVerdict {
   readonly mutating: boolean;

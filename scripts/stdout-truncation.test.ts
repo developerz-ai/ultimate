@@ -20,15 +20,34 @@ import { join } from 'node:path';
 /** Comfortably past the 64KB pipe buffer, so a truncating write cannot pass by accident. */
 const PAYLOAD_BYTES = 300_000;
 
-async function runScript(body: string): Promise<{ bytes: number; code: number }> {
+/**
+ * Past any kernel buffer a pipe or socketpair can hold — measured at ~475KB on a Linux runner.
+ * The premise below needs the queue to be non-empty when `process.exit()` runs, and only a
+ * payload the buffer cannot swallow whole makes that true on every machine rather than most.
+ */
+const QUEUED_BYTES = 4_000_000;
+
+/**
+ * `drain: 'while-running'` reads stdout as the child writes it, which is what a real consumer
+ * (`| jq`, `$(...)`) does. `drain: 'after-exit'` leaves the buffer to fill instead, so whatever
+ * the child queued rather than wrote is still queued when it exits — the only way to observe the
+ * discard without racing the reader. A synchronous writer would BLOCK against an unread pipe, so
+ * the two writers genuinely need the two harnesses.
+ */
+async function runScript(
+  body: string,
+  payload: number,
+  drain: 'while-running' | 'after-exit',
+): Promise<{ bytes: number; code: number }> {
   const dir = await mkdtemp(join(tmpdir(), 'ultimate-stdout-'));
   try {
     const file = join(dir, 'emit.ts');
     await writeFile(file, body);
-    const proc = Bun.spawn(['bun', file, String(PAYLOAD_BYTES)], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
+    const proc = Bun.spawn(['bun', file, String(payload)], { stdout: 'pipe', stderr: 'pipe' });
+    if (drain === 'after-exit') {
+      const code = await proc.exited;
+      return { bytes: (await new Response(proc.stdout).text()).length, code };
+    }
     const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     return { bytes: out.length, code };
   } finally {
@@ -36,16 +55,19 @@ async function runScript(body: string): Promise<{ bytes: number; code: number }>
   }
 }
 
+const NAIVE = `const payload = 'x'.repeat(Number(Bun.argv[2]));
+   process.stdout.write(payload + '\\n');
+   process.exit(1);`;
+
 describe('stdout survives process.exit through a pipe', () => {
-  test('the naive write TRUNCATES — this is the bug, and it must stay reproducible', async () => {
-    // If this ever stops truncating, the runtime changed and the guard below is measuring nothing.
-    // A regression test whose premise has quietly evaporated is worse than no test.
-    const { bytes } = await runScript(
-      `const payload = 'x'.repeat(Number(Bun.argv[2]));
-       process.stdout.write(payload + '\\n');
-       process.exit(1);`,
-    );
-    expect(bytes).toBeLessThan(PAYLOAD_BYTES);
+  test('the naive write LOSES whatever it queued — the bug, still reproducible', async () => {
+    // The premise, and it must not be measured against a racing reader: with one draining, a fast
+    // machine can empty the buffer as fast as the runtime refills it and the whole payload lands
+    // by luck. That is what made this test flake in CI — it asserted a race, not a rule. The rule
+    // is that a queue `process.exit()` discards was never delivered, so the payload here is past
+    // any buffer and nothing reads until the child is gone.
+    const { bytes } = await runScript(NAIVE, QUEUED_BYTES, 'after-exit');
+    expect(bytes).toBeLessThan(QUEUED_BYTES);
   });
 
   test('the synchronous write delivers every byte, and keeps the exit code', async () => {
@@ -59,6 +81,8 @@ describe('stdout survives process.exit through a pipe', () => {
          written += writeSync(1, buffer, written, buffer.length - written);
        }
        process.exit(1);`,
+      PAYLOAD_BYTES,
+      'while-running',
     );
     expect(bytes).toBe(PAYLOAD_BYTES + 1);
     expect(code).toBe(1);

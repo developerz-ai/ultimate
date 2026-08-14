@@ -187,6 +187,61 @@ with the exact `preload('author')` line, the `preload()` form of the same read s
 `packages/entity/src/n-plus-one.test.ts`'s own fixture prefix, because `bun test -t 'n+1'` is a
 regex and `+` is a quantifier — `n1` is what actually selects these tests.
 
+## One migration engine, four environments
+
+| File | Job |
+|---|---|
+| `migrations.ts` | the app's `packages/db/migrations` read into `@ultimat3/db`'s `Migration` shape — the **one** reader |
+| `db-generate.ts` | `x db gen`: entities diffed against what the migrations declare, written as `.sql` + `.snapshot.json` + `.hash` |
+| `cmd-db.ts` | the subcommands, and nothing else — `gen` calls `db-generate.ts`, `migrate`/`reset` call `serve.ts`'s `runMigrations` |
+| `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
+| `db-destructive.ts` | `checkDestructiveMigrations`: the same step's second half — every committed `up` that drops, truncates or retypes must carry `-- destructive: true` |
+
+`x db migrate` and `ROLE=migrate` are the same function call. That is the whole design: until
+1.2.0 the CLI shelled out to `bunx drizzle-kit` — a second engine, a second journal, declared in no
+`package.json` and fetched unpinned at run time — while the release phase used the framework's
+ledger, so "what has been applied" had two answers that only agreed by luck. `cmd-db.test.ts`
+holds the line from both ends: no shipped source spawns a second migrator, and this file still
+imports `runMigrations` from `./serve`.
+
+**The post-condition is one check too, and it is the database one.** `runMigrations` runs
+`@ultimat3/db`'s `checkDrift()` inside the queue's lifetime — the connection it opened for the
+migrator is the only one there is — and returns the report on `MigratedApp.drift`, so a developer
+and a release phase verify the same thing. `x db migrate` renders it through `driftFindings` and
+exits non-zero; `runRole` throws the first difference for `ROLE=migrate`, so the release phase
+exits non-zero too. Both entrypoints call the same `runMigrations` and both fail — the difference
+is only the channel each has. `ROLE=migrate` logged and exited 0 until it did not: a release phase
+whose only signal is the exit code reported success over a schema nobody can reconstruct, which is
+the failure the post-migrate check exists to catch.
+
+**The `drift` step asks a third thing, off the same directory and with no database either: is every
+destructive statement declared?** `db-destructive.ts` reads each committed migration through
+`migrations.ts` — the reader `x db migrate` applies from, because a rail checking a list the
+migrator does not run enforces nothing — and refuses an `up` that drops a table, drops a column,
+truncates or retypes without a `-- destructive: true` line, as `X_MIGRATION_DESTRUCTIVE`. It decides
+none of that itself: `@ultimat3/db`'s `destructive.ts` owns the classifier `db-generate.ts` already
+wrote the marker from, so the generator and the gate cannot disagree about one file. One finding per
+file, never one per statement — the marker declares the whole migration. It rides on `drift` rather
+than becoming an eighteenth step because it is this step's own question over this step's own files;
+a new step is for a genuinely new question.
+
+The *source* half is a different question with a different answer: `checkSourceDrift` hashes the
+entity source against what `x db gen` recorded, answers the same before and after a migration, and
+opens nothing — which is what lets the gate run it in a CI with no database. It stays on `x verify`
+and `x doctor` and is deliberately **not** repeated on `x db migrate`; two reporters of one
+condition is the duplication this package's own rule forbids. Both were called `checkDrift` until
+1.2.0, and the one that was wired everywhere was the one that cannot see a column added by hand.
+
+Generation opens no database. It diffs `describeEntities()` against `declaredSchema(readMigrations(root))`
+— the snapshot the newest migration wrote down — so `x db gen` answers the same in CI, on a laptop
+with nothing running, and against a database three migrations behind. An app whose modules will not
+load generates **nothing**: a short registry is indistinguishable from deleted entities, and the
+diff would be a DROP nobody asked for.
+
+One migration is one file, split by a lone `-- down` line. `<id>.down.sql` is a pre-1.2.0
+hand-written layout and `readMigrations` skips it — read as a migration it sorts next to its own
+`up` and drops every table the pair exists to reverse.
+
 ## `x dev` boots the app; it does not simulate one
 
 | File | Job |
@@ -275,6 +330,11 @@ Every command in `wiki/CLI-Reference.md`'s planned table is in the registry, bui
 closest **shipped** command. `X_CLI_UNKNOWN_COMMAND` would say "you typed something that does not
 exist", which is false and sends an agent hunting a typo. `cmd-planned.test.ts` enforces both
 halves: every row is reachable through the parser, and no `fix` points at another planned command.
+
+`PLANNED_SUBCOMMANDS` is the same promise one level down, and `x db studio` is its only entry.
+A subcommand stays in its command's `subcommands` list — the parser reaches it, `x help db` lists
+it — and the owning `run` does `throw plannedSubcommand('db', 'studio')`. Dropping it from the list
+instead would answer `X_CLI_UNKNOWN_SUBCOMMAND`, which is the same lie the table above closes.
 
 Implementing one means deleting its row and adding a real `cmd-<name>.ts` — the summary's
 `(planned)` suffix disappears with it, and `x help` follows automatically.

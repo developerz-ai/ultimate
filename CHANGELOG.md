@@ -8,7 +8,44 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Fixed
+
+- **One SQL scanner under the splitter, the read-only guards and the destructive rail.** `stripSqlNoise()` blanked spans by a sequence of replacements, comments first — so the `--` in `select '--'; delete from posts` read as a line comment and the `delete` was erased before `inspectStatement()` ever saw it, letting a mutating fragment through `readOnly(client, { seal: false })`. It now walks the same left-to-right lexer `statementsOf()` uses (new internal `sql-scan.ts`), where a `--` inside a literal is data because the literal is scanned first. Two more from the same lexer: a `$tag$` immediately after an identifier is no longer read as a dollar-quote opener — `$` is legal in a name after the first character, so `select foo$tag$; select 2;` is two statements and used to go out as one send — and `hasDestructiveMarker()` now finds `-- destructive: true` only as a **top-level line comment**, never inside a `/* … */` or a dollar-quoted body where a regex over the raw file matched it and bought an unmarked destructive migration past `x verify`.
+
+- **A migration snapshot is the newest migration's, or there is none.** `declaredSchema()` returned the newest snapshot it could find, so a later migration written without one silently answered with an obsolete schema: `0001` records `posts`, `0002` adds a column by hand, and drift reported the column the database correctly holds as `unexpected-column`, fixed by generating a migration that already exists. It now returns `SchemaDescription | undefined` — the newest migration's snapshot, or nothing. `checkDrift()` reports that as an `unknown-schema` difference instead of `ok: true`, and `x db gen` refuses with the new `X_MIGRATION_SNAPSHOT_MISSING` rather than diffing against the empty schema, which would have emitted `create table` for every table the database already holds.
+
+- **A generated index keeps its predicate and its direction, and a changed one is rebuilt.** The migration snapshot recorded an index's name, columns and uniqueness and dropped `where` and `order`, while the diff treated a matching *name* as a matching definition — so narrowing an index to a predicate or reversing it to `desc` generated an empty migration and the database kept serving the old one. The snapshot now carries all five fields and `x db gen` emits `drop index` + `create index` for any of them moving, since Postgres has no `alter index` for a column list, a uniqueness, a predicate or a direction.
+
+- **`introspect()` reads an index's columns in index key order.** They were ordered by `attnum`, so a composite index on `(created_at, org_id)` whose columns were declared the other way round in the table came back reversed — a description that reads correct and compares wrong. It now orders by `indkey`, drops `INCLUDE` payload columns, and carries the index's predicate and direction alongside.
+
+- **Drift compares the indexes migrations declare, not columns alone.** `compareTable` read column names only, so a dropped index or a composite index rebuilt with its columns transposed answered `ok: true`. It now reports `missing-index` and `changed-index` for indexes a snapshot names. A live index no migration declares is deliberately not reported — Postgres creates one per primary key and per unique constraint — and the predicate and direction are not compared, because the catalog returns its own rewriting of an expression and a text comparison would call two identical indexes drift. Named in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps).
+
+- **Drift compares the foreign keys migrations declare.** `snapshotOf()` recorded `foreignKeys: []` beside an `up` that emitted `references "orgs" ("id")` — a snapshot denying a constraint its own migration creates — so `compareTable` had nothing to compare and `alter table "posts" drop constraint "posts_org_id_fkey"` on the database answered `ok: true`. A snapshot now records every key its `references()` columns write, and one the catalog does not hold is `missing-foreign-key`. Matched on **where the key points** and never on its name, because Postgres names an inline clause `posts_org_id_fkey` and a hand-written migration may have said `constraint fk_posts_org` — the same key under another name is the same key. `on delete` is not compared: the catalog spells it as one character and no generated clause declares one. A key the database has and no migration declares is not drift, for the reason index comparison gives. Named in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps).
+
+- **`ROLE=migrate` exits non-zero on post-migration drift.** `runMigrations` logged the first difference and `runRole` returned success, so a release phase completed over a schema nobody can reconstruct. `x db migrate` and `ROLE=migrate` are still the same function call; the role entrypoint now throws the first difference, because the exit code is the only channel a release phase has.
+
+- **A snapshot sidecar is validated, not asserted.** `readMigrations` checked that `tables` was an array and cast the rest, so `{"tables":[null]}` — valid JSON — became a `SchemaDescription` the diff then threw on. Every nested field is parsed by the new `parseSnapshot()` in `@ultimat3/db`; a file that does not describe a schema is *absent*, which the reader already handles.
+
+- **A ledger the MCP host cannot read is not an empty ledger.** `db.migrate`'s dry run mapped every `readLedger()` failure to `[]`, so a permission denied or an unreachable server reported every migration as pending. Only Postgres' `undefined_table` does that now, through the new `isLedgerMissing()`; everything else propagates.
+
+- **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
+
 ### Changed
+
+- **BREAKING — `@ultimat3/cli` exports `checkSourceDrift`, not `checkDrift`.** Two functions named
+  `checkDrift` answered two different questions; the name now says which is which. `@ultimat3/db`'s
+  `checkDrift()` keeps its name and its meaning — the live database against the ledger, the
+  post-migrate verification. `@ultimat3/cli`'s becomes `checkSourceDrift()` — the entity source
+  hashed against what `x db gen` recorded, no database, which is what `x verify`'s `drift` step
+  needs to run in CI. `recordedHashes`, `schemaHash` and `writeSchemaHash` are unchanged.
+
+  ```ts
+  import { checkDrift } from '@ultimat3/cli';        // before
+  import { checkSourceDrift } from '@ultimat3/cli';  // after — same signature, same findings
+  ```
+
+  Nothing an app writes calls either: both are the CLI's own step implementations. The defect
+  behind the rename is below under *Fixed*.
 
 - **BREAKING — `invariants` is a function, and `invariant()` takes a built expression.** `invariants: (c) => [...]` receives the column proxy once, so `invariant(name, expr)` no longer carries a `(c) => Expr` builder of its own. The array form is gone; there is one way to write a rule.
 
@@ -46,6 +83,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`x verify` counts skips apart from passes, and names them.** A step with nothing to check here is recorded green so the run continues, and the summary counted it among the passes — so a repo whose `job` and `eval` suites do not exist printed the same `all 17 steps passed` as a repo where both ran. The line is now `12 of 17 steps passed in 53224ms — 5 skipped: job, eval, drift, contract-diff, budgets` in this repo, and `14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap` in the scaffolded app of [tutorial 2](https://github.com/developerz-ai/ultimate/wiki/Tutorial-02-First-Feature); `all {n} steps passed` survives only when nothing was skipped. `--json` gains `data.skipped`, the list of names beside `data.failed` (`steps[].skipped` is unchanged). Exit codes are untouched: a skipped step is still not a failure — it is now just impossible to mistake one for a passing one.
 
 ### Added
+
+- **The destructive-SQL rail: a migration that destroys data must say so, and `x verify` refuses one that does not.** `x db gen` now writes `-- destructive: true` into any migration whose `up` drops a table, drops a column, truncates or retypes; `x verify`'s `drift` step reads the committed files back and fails an unmarked one with the new `X_MIGRATION_DESTRUCTIVE`. The strong-migrations idea, enforced rather than documented — a drop is allowed, an *undeclared* drop is not.
+
+  ```text
+  X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
+    cause: packages/db/migrations/0002_drop_legacy.sql drops a column and does not declare it:
+           alter table "posts" drop column "legacy"
+    fix:   add the line "-- destructive: true" to packages/db/migrations/0002_drop_legacy.sql,
+           or regenerate it: x db gen "<name>" --allow-destructive
+  ```
+
+  One classifier decides for both halves (`@ultimat3/db`'s new `destructive.ts`, exported as `destructiveStatements()`, `hasDestructiveMarker()`, `isDestructive()` and `DESTRUCTIVE_MARKER`), so the generator cannot write a file that fails its own gate. Four rules: only `up` is judged — reversing a `create table` is a `drop table`, and marking every `down` marks nothing; the kind list is closed at four — `drop constraint`/`default`/`not null` and `drop index` are rebuildable and excluded by name; the decision runs over comment- and literal-blanked text, so `-- drop table users` is prose and `values ('drop table users')` is data; and the marker is a whole line, so a file merely mentioning it has declared nothing.
+
+  `X_MIGRATION_DESTRUCTIVE` is not a second spelling of `X_MIGRATION_IRREVERSIBLE`. Irreversible refuses to *generate* a plan whose `down` cannot restore the rows, with `--allow-destructive` as the override. Destructive refuses to *ship* a plan whose `up` destroys them without saying so — which is why a column retype, reversible in DDL and gated by no flag, is now marked though it is never refused. Mark a migration before it is applied: the marker is SQL the checksum covers, so adding it to an applied file is an edit, and `X_MIGRATION_CONFLICT` correctly says so. Existing migrations are unaffected — the reference app's `0001_init` creates and drops nothing.
+
+  `GeneratedMigration` gains a `destructive: boolean` field. `stripSqlNoise()` moves from `readonly.ts` to its own `sql-noise.ts` — same export, same behaviour, now shared by three guards without putting the error registry in an import cycle.
 
 - **`job_leases_lost_total{queue}` — a counter for jobs the queue took back while they were still running.** Declared beside the other runtime series in `@ultimat3/core` (`leasesLost`, `recordLeaseLost(queue)`) and emitted from one place, the worker's lease heartbeat. Alert on any non-zero rate: it is the one queue failure that at-least-once delivery cannot paper over, and until now it was invisible. See the `Fixed` entry below.
 - **Realtime subscription handles are `Disposable` — `using sub = client.useLive(...)` unsubscribes on scope exit.** `LiveHandle` (`useLive`'s return, and `LiveRows` one layer up through the `useLive` hook) and `Unsubscribe` (`client.subscribe(topic, handler)`'s return) now carry `[Symbol.dispose]`, wired to the exact same function `unsubscribe` already was — never a second teardown implementation to drift from it. Purely additive: `unsubscribe()` and the callable topic-unsubscribe function both still work exactly as before, so no call site needs to change. Pinned in `packages/realtime/src/type-pins.ts` so a future refactor that drops the member fails the build rather than a call site months later.
@@ -251,6 +304,107 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`statementFingerprint()`, `statementKind()` and `statementVerb()` from `@ultimat3/db`.** What shape a statement is — `entity.op` when attributed, its own whitespace-collapsed text when not; read or write from the leading verb — is now one rule next to the `StatementEvent` it reads, rather than a copy per detector. `x dev`'s ledger and the `statements` fixture group by the same identity by construction, and `statementSpanName` reads its verb from the same scanner.
 
 ### Fixed
+
+- **`x db migrate` verifies the database it just migrated — the third engine split, closed.**
+  `checkDrift` existed twice under one name and one `X_DB_DRIFT`. `@ultimat3/db`'s read the ledger,
+  introspected the live catalog and diffed the two — and had **zero callers anywhere**.
+  `@ultimat3/cli`'s hashes the entity source against what `x db gen` recorded, never opens a
+  database, and was the one wired into `x verify`, `x doctor` and `x db migrate`. So the comment on
+  `x db migrate` promising "a schema that migrated cleanly and still disagrees is the failure this
+  command exists to surface" described a check that reads files and answers the same before and
+  after a migration: a column added by hand was invisible on every path the framework ships.
+
+  `@ultimat3/db`'s `checkDrift()` is now **the post-migrate verification**, and it runs where a
+  connection is open: `runMigrations` calls it inside the queue's lifetime and returns it on
+  `MigratedApp.drift`, so `x db migrate`, `x db reset` and `ROLE=migrate` verify one post-condition
+  through one call, the way they already apply migrations through one. `x db migrate` renders each
+  difference through `driftError` — the pinned three-line `X_DB_DRIFT` output, never a second copy
+  — and exits non-zero; a `ROLE=migrate` container logs the first difference and still exits 0,
+  because its contract is "apply every migration, then exit" and a diagnostic after a clean apply
+  is not a failed migration.
+
+  It could not have run before: `x_migrations`, `x_jobs`, `x_job_steps`, `x_outbox` and every
+  `@ultimat3/auth` table are `create table if not exists` at boot, declared by no migration and
+  carried in no snapshot, so a correct database reported eight `unexpected-table` findings. New
+  `appTables()` / `FRAMEWORK_TABLE_PREFIX` in `@ultimat3/db` drop the whole `x_` namespace before
+  the diff — a prefix, so a table a future package adds needs no second list. `introspect()` keeps
+  its narrower exclusion, because the admin schema view and MCP's `schema.describe` legitimately
+  show `x_users`.
+
+  The source check keeps its job and loses the collided name (see *Changed*): it stays `x verify`'s
+  `drift` step and `x doctor`'s probe, where no database exists to open, and is no longer repeated
+  on `x db migrate`. One condition, one reporter, each. `packages/cli/src/drift.ts` also gains the
+  test file it never had — eight tests over a check that has been failing builds since 1.0.0.
+
+- **`x db gen|migrate|reset` run the framework's own migration engine — there is no second one.**
+  All three shelled out to `bunx drizzle-kit`, and `x db studio` to `bunx drizzle-kit studio`.
+  drizzle-kit is declared in **no** `package.json` in this repo and is not installed, so `bunx`
+  network-fetched an unpinned version at run time — a supply-chain surface, and the reason a
+  scaffolded app's very first documented command (`bin/setup` → `x db migrate`) exited
+  `X_DB_MIGRATE_FAILED` on *drizzle.config.json file does not exist*. Worse than broken: two
+  engines with two journals for the same question, while `ROLE=migrate` already applied migrations
+  through `@ultimat3/db`'s ledger.
+
+  `x db gen` now calls `generateMigration()`, and `x db migrate` / `x db reset` call `serve.ts`'s
+  own `runMigrations` — literally the function `ROLE=migrate` runs. A laptop, CI, staging and
+  production share one `x_migrations` ledger, one checksum rule and one advisory lock. The MCP
+  `db.migrate` tool joins them; it kept a fifth shell-out and a third hand-rolled scanner of
+  "which migrations exist", both now the framework's own `readMigrations` + `pendingMigrations`.
+
+  `x db gen` opens no database at all: it diffs the app's entities against the schema the newest
+  migration **declares**, and writes that schema beside the SQL as `<id>.snapshot.json` so the next
+  generation is incremental. `declaredSchema()` is new in `@ultimat3/db` and `expectedSchema()` is
+  now defined over it, so generation and drift can never read one snapshot two ways. `--allow-destructive`
+  is now a real flag, because `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line has always named it and
+  the parser used to refuse it.
+
+  `x db studio` moves to the planned table (`PLANNED_SUBCOMMANDS`, new): `X_NOT_IMPLEMENTED` with
+  `x dev   # then the db panel at /_x`. One subcommand does not earn a second schema engine.
+  `X_DB_STUDIO_FAILED` is now reserved and never thrown, like `X_MIGRATE_CONCURRENT`.
+
+  Two smaller fixes ride along. `readMigrations` skipped nothing, so a hand-written pre-1.2.0
+  `<id>.down.sql` beside its `<id>.sql` was read as a migration named `<id>.down` and would have
+  **dropped every table it exists to reverse** — it is now never applied, and the reference app's
+  own migration is one file with a `-- down` marker like every generated one. And `packages/db/migrations`
+  was spelled in two places that had to agree; it is one constant now, in the module that reads it.
+
+- **A migration `up` holding two statements applies — on both drivers.** `migrate()` sent the whole
+  script through one `tx.execute(raw(migration.up))`, and the two drivers disagreed about what that
+  means. PGlite's `query()` is the extended protocol always, so it refused the send outright:
+  *cannot insert multiple commands into a prepared statement*. Bun.SQL degrades to the simple
+  protocol whenever the text carries no bound value, so against a server the same script happened to
+  apply — until it carried one, and never by contract. The embedded driver is the one `x dev` and
+  `x db branch` run on, and `createTable` emits the table **and** every index it carries, so an
+  entity with one index generated a migration the local database could not apply. The documented
+  workaround was one statement per file.
+
+  `migrate()` and `rollback()` now split the script and send one statement at a time, inside the
+  **same** transaction: a half-applied migration is worse than an unapplied one. Splitting is
+  `statementsOf()` (`@ultimat3/db`), and it is a scan, not a `split(';')` — a `;` inside a string
+  literal, a quoted identifier, a dollar-quoted body, a `--` comment or a **nested** block comment is
+  data, and a generated migration holds all five, including the `-- backfill "c", then: … set not
+  null;` note written for a NOT NULL column added to a populated table. A chunk of whitespace and
+  comments alone is dropped rather than sent as an empty query, so a no-op `up` reaches its ledger
+  row instead of failing on nothing. The seven copies of this rule hand-rolled across
+  `@ultimat3/entity`'s and `@ultimat3/ai`'s live tests are gone — they import the one migrations use.
+  Pinned where it actually broke: `pglite-embedded.test.ts` applies a table-plus-index `up` against
+  the real embedded database and reverses it, and `migrate.live.test.ts` does the same against a
+  real server.
+
+- **A composite index reaches the generated migration whole.** `EntityDescription.indexes` carried
+  index *names* and `parseIndexName` recovered the column list back out of one, so
+  `indexes: [{ on: ['orgId', 'createdAt'] }]` emitted
+  `create index "todos_org_id_created_at_idx" on "todos" ("org_id_created_at")` — one column that
+  does not exist, `42703`, and a migration nobody can apply. The convention that builds the name
+  joins with `_` and does not run backwards: two columns and one column called `org_id_created_at`
+  are the same string. `IndexDescription` now carries `columns`, `unique`, `where` and `order`, and
+  the generator spells every part of them — so a **partial** index keeps its predicate (emitted as
+  a total one, it refused rows the entity allows) and a `desc` index keeps its direction.
+  `parseIndexName`/`ParsedIndex` are gone; nothing derives an index from a string any more.
+  Composite unique indexes are what `upsertAll`'s `on conflict` is inferred against, so
+  `packages/entity/src/pg-driver-bulk.live.test.ts` no longer creates its own by hand — it asserts
+  the generated migration carries it. An index over no columns is `X_INVARIANT` at `entity()`
+  rather than DDL Postgres cannot parse.
 
 - **The `/_x` DB panel's read-only guard read a comment marker inside a quoted identifier as a
   comment.** `select 1 as "--"; delete from members` blanked from the `--` onward, so the scan saw

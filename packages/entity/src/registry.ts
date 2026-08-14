@@ -46,13 +46,31 @@ export interface InvariantDescription {
   readonly where: string | null;
 }
 
+/**
+ * An index as the migration generator has to emit it. The columns are carried, never recovered
+ * from `name`: `<table>_<a>_<b>_idx` is one string for two columns, and the convention that built
+ * it cannot be run backwards — `posts_org_id_created_at_idx` reads as the single column
+ * `"org_id_created_at"`, which is a `42703` at apply time. `where` and `order` are here for the
+ * same reason: a partial index emitted as a total one refuses rows the entity allows.
+ */
+export interface IndexDescription {
+  readonly name: string;
+  /** Physical columns, in index order. Always at least one. */
+  readonly columns: readonly string[];
+  readonly unique: boolean;
+  /** Partial index predicate as SQL, `null` when the index covers every row. */
+  readonly where: string | null;
+  /** `null` is Postgres' own default (`asc`), never written out. */
+  readonly order: 'asc' | 'desc' | null;
+}
+
 export interface EntityDescription {
   readonly name: string;
   readonly table: string;
   readonly primaryKey: readonly string[];
   readonly columns: readonly ColumnDescription[];
   readonly invariants: readonly InvariantDescription[];
-  readonly indexes: readonly string[];
+  readonly indexes: readonly IndexDescription[];
   readonly tags: readonly string[];
   readonly cacheTag: string;
   readonly softDelete: boolean;

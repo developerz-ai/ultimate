@@ -243,7 +243,8 @@ stage 14 post-commit
 | Schema is the source; migrations are the ledger | `x db gen "<name>"` diffs schema vs. applied migrations and writes SQL |
 | Applied set is recorded in-DB | `x_migrations` table: name, checksum, applied_at, build id |
 | Editing an applied migration | checksum mismatch → `X_MIGRATION_TAMPERED`, `fix: x db gen "<followup>"` |
-| Drift in either direction | `X_DB_DRIFT` in `x verify`, naming the table and column |
+| Drift in the source | `X_DB_DRIFT` from `checkSourceDrift`, naming the schema and migration hashes that moved — `x verify`, no database needed |
+| Drift in the database | `X_DB_DRIFT` from `checkDrift`, naming the table, column or index the live catalog disagrees on — `x db migrate` and `ROLE=migrate` |
 | Irreversible migrations | allowed only with `-- irreversible: <reason>`; otherwise `X_MIGRATION_NOT_REVERSIBLE` |
 | Concurrent versions | `ROLE=migrate` takes an advisory lock; a second version in flight is `X_MIGRATE_CONCURRENT` |
 | Destructive statements | `DROP COLUMN` / `DROP TABLE` require `--allow-destructive`, and are refused outright against a production-tagged URL |
@@ -254,7 +255,7 @@ X_DB_DRIFT: schema differs from migrations
   fix:   x db gen "add publish_at"
 ```
 
-Drift detection compares three things — the declared entities, the migration ledger, and the live catalog — so it catches both "you edited an entity and forgot to generate" and "someone ran DDL by hand".
+Drift detection compares three things — the declared entities, the migration ledger, and the live catalog — so it catches both "you edited an entity and forgot to generate" and "someone ran DDL by hand". Two checks, because one cannot be both: `x verify`'s `drift` step hashes the entity source against what `x db gen` recorded and opens no database, which is what lets the gate run in CI; `x db migrate` diffs the live catalog against `x_migrations` on the connection it just migrated over, which is the only place hand-run DDL is visible. Framework tables (the `x_` namespace) are declared by no migration and are never drift.
 
 ## Template-DB parallel testing
 

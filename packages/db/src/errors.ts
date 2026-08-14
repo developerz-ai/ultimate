@@ -3,6 +3,7 @@
 // pinned by the framework contract, so change its strings only with the contract.
 
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
 
 /**
  * Codes this package declares and owns. `X_DB_DRIFT` is db's: it is a statement about migrations
@@ -13,6 +14,8 @@ export const DB_OWNED_ERROR_CODES = [
   'X_DB_DRIFT',
   'X_MIGRATION_CONFLICT',
   'X_MIGRATION_IRREVERSIBLE',
+  'X_MIGRATION_DESTRUCTIVE',
+  'X_MIGRATION_SNAPSHOT_MISSING',
   'X_SQL_UNSAFE',
   'X_BRANCH_EXISTS',
   'X_READONLY_VIOLATION',
@@ -32,6 +35,8 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_DRIFT: 'schema differs from migrations',
   X_MIGRATION_CONFLICT: 'the migration ledger disagrees with this build',
   X_MIGRATION_IRREVERSIBLE: 'this migration cannot be reversed without data loss',
+  X_MIGRATION_DESTRUCTIVE: 'this migration destroys data and does not say so',
+  X_MIGRATION_SNAPSHOT_MISSING: 'the newest migration records no schema snapshot',
   X_SQL_UNSAFE: 'SQL was built by string interpolation',
   X_BRANCH_EXISTS: 'that branch database already exists',
   X_READONLY_VIOLATION: 'a mutating statement reached a read-only client',
@@ -95,6 +100,42 @@ export const migrationConflict = (cause: string, fix: string): DbError =>
 
 export const migrationIrreversible = (cause: string, fix: string): DbError =>
   new DbError({ code: 'X_MIGRATION_IRREVERSIBLE', cause, fix });
+
+/**
+ * The sidecar every generated migration writes is what the *next* generation diffs against, so a
+ * newest migration without one leaves nothing to diff. Refused rather than defaulted to the empty
+ * schema, which would generate `create table` for every table the database already holds.
+ */
+export const migrationSnapshotMissing = (id: string, file: string): DbError =>
+  new DbError({
+    code: 'X_MIGRATION_SNAPSHOT_MISSING',
+    cause: `migration "${id}" records no schema snapshot, so there is nothing to diff against`,
+    fix: `restore ${file} from version control, or delete "${id}" and regenerate it`,
+    meta: { id, file },
+  });
+
+/**
+ * One error per file, never one per statement: the marker declares the whole migration, so a
+ * second finding would repeat an instruction the first already gave. `file` is app-relative and
+ * arrives from the caller — `db` is tier 1 and does not know where an app keeps its migrations.
+ *
+ * Irreversible and destructive are two questions. `X_MIGRATION_IRREVERSIBLE` refuses to *generate*
+ * a plan whose `down` cannot restore the rows; this one refuses to *ship* a plan whose `up`
+ * destroys them without saying so — a retype is reversible in DDL and still rewrites every row.
+ */
+export const migrationDestructive = (
+  file: string,
+  first: DestructiveStatement,
+  more = 0,
+): DbError =>
+  new DbError({
+    code: 'X_MIGRATION_DESTRUCTIVE',
+    cause:
+      `${file} ${DESTRUCTIVE_CAUSE[first.kind]} and does not declare it` +
+      `${more === 0 ? '' : ` (and ${more} more destructive)`}: ${first.statement}`,
+    fix: `add the line "${DESTRUCTIVE_MARKER}" to ${file}, or regenerate it: x db gen "<name>" --allow-destructive`,
+    meta: { file, kind: first.kind, statements: more + 1 },
+  });
 
 export const sqlUnsafe = (received: string, position: number): DbError =>
   new DbError({

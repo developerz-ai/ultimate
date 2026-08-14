@@ -18,6 +18,7 @@ import {
   raw,
   setDbClient,
   setStatementObserver,
+  statementsOf,
 } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -74,17 +75,6 @@ type Invoice = typeof invoices.$row;
 
 const DROP =
   'drop table if exists "pg_live_invoice_tags", "pg_live_invoices", "pg_live_orgs" cascade';
-
-/**
- * The generator returns one `up` script; a driver executes one statement. Splitting on `;\n` is
- * enough because every value in a generated clause is an identifier or a CHECK the entity wrote,
- * and none of those can contain a semicolon.
- */
-const statementsOf = (script: string): readonly string[] =>
-  script
-    .split(';\n')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
 
 describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
   let client: PostgresClient;

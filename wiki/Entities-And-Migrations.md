@@ -83,7 +83,7 @@ Every projection is a method on the entity — `posts.$view(['id', 'title'])`, n
 | `$view(keys)` | the row projection | `const PostView = posts.$view(['id', 'title'])` — what an action names as its `output`. An unknown key is a compile error, and `X_INVARIANT_VIOLATED` at declaration for a JS caller |
 | `$assert(row)` | every invariant, run | called by the repo on insert and on update; reports **every** failing invariant at once, so one round trip fixes all |
 | `$migration()` | the CHECK and UNIQUE statements this entity contributes | `ALTER TABLE … ADD CONSTRAINT … CHECK` per `check`, `CREATE UNIQUE INDEX` per `unique`. A JS-only rule is `kind: 'assert'` and emits nothing — never a pretend CHECK |
-| `$describe()` | the manifest row | name, table, primary key, physical columns, invariants, index names, tags, `cacheTag`, `softDelete`, `orgScoped` |
+| `$describe()` | the manifest row | name, table, primary key, physical columns, invariants, indexes (name **and** column list, uniqueness, predicate, direction — a name cannot be parsed back into columns), tags, `cacheTag`, `softDelete`, `orgScoped` |
 | `$cacheTag` | `entity:<name>` | the string `@ultimat3/cache` invalidates by |
 | `$tagFor(id)` | `entity:<name>:<id>` | row-level invalidation for live queries |
 | `$tenantColumn` | the tenant column's property key, or `null` | presence is what turns tenancy on — resolution order under **Tenant column rule** below |
@@ -351,7 +351,7 @@ More in [MCP and AI](MCP-And-AI).
 |---|---|---|
 | Generate | `x db gen "add publish_at"` | diffs entities vs migrations, writes a named, ordered migration + its `down` |
 | Apply (dev) | `x db migrate` | runs pending migrations against the dev DB; live queries resubscribe |
-| Check | `x db drift --json` | schema vs migrations; exits non-zero on a difference |
+| Check | `x db migrate --json` | the live schema against the ledger it just wrote; exits non-zero on a difference |
 | Inspect | `x db studio` | tables, columns, indexes, FKs, generated SQL — also the `/_x` **Schema** panel |
 | Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned advisory lock while another version's migration is in flight, then applies (`X_MIGRATE_CONCURRENT` is reserved, not thrown) |
 | Test template | automatic | migrate + seed once into `myapp_test_tpl`, then clone per worker |
@@ -366,22 +366,56 @@ X_DB_DRIFT: schema differs from migrations
   fix:   x db gen "add publish_at"
 ```
 
-| Direction | Meaning |
-|---|---|
-| Entity has what migrations lack | you edited an entity and did not generate — run the `fix` |
-| DB has what migrations lack | someone changed the database by hand; generate a migration or revert the change |
-| Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping |
+| Direction | Meaning | Caught by |
+|---|---|---|
+| Entity has what migrations lack | you edited an entity and did not generate — run the `fix` | `x verify` |
+| DB has what migrations lack | someone changed the database by hand; generate a migration or revert the change | `x db migrate` |
+| Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping | `x verify` |
+
+One code, two detectors, because one check cannot be both. `x verify`'s `drift` step reads the
+entity source and the `.hash` a migration recorded — no database, which is what lets the gate run
+in CI. `x db migrate` diffs the live catalog against the `x_migrations` ledger on the connection it
+just migrated over — the only place a hand-edited column is visible at all. A pending migration is
+not drift, and neither is a table in the framework's `x_` namespace.
 
 There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s seventeen steps — the list, in order, is in [Testing](Testing).
 
 ## Reversible or marked
 
+Two questions, two answers. **Reversible** is asked at generation: can the `down` put the rows
+back? **Destructive** is asked at the gate: does applying the `up` destroy data, and does the file
+say so? A retype is reversible in DDL and still rewrites every row, which is why one flag cannot
+answer both.
+
 | Rule | Detail |
 |---|---|
-| Every migration has a `down` | or an explicit `irreversible('<reason>')` marker |
-| An unmarked non-reversible migration | fails `x verify` — the same check as drift |
-| Destructive steps | column/table drops need the marker plus a rollout note; prefer expand → migrate → contract across two releases |
-| `x db migrate` on a marked migration | proceeds, but the marker is printed and recorded in the manifest |
+| Every migration has a `down` | `x db gen` writes both halves of one file, split by a lone `-- down` line |
+| A generated drop | refuses with `X_MIGRATION_IRREVERSIBLE` — its `down` cannot restore the rows. Re-run with `x db gen "<name>" --allow-destructive` |
+| A destructive `up` | must carry `-- destructive: true` as a line in the file. `x db gen` writes it for you; an unmarked one fails `x verify`'s `drift` step with `X_MIGRATION_DESTRUCTIVE` |
+| What counts as destructive | `drop table`, `drop column`, `truncate`, `alter column … type` — a closed list. `drop constraint`, `drop default`, `drop not null` and `drop index` do not: the database rebuilds those |
+| Only `up` is judged | reversing a `create table` is a `drop table`, so a rail that read `down` would mark every migration ever generated |
+| Mark it before it is applied | the marker is SQL the checksum covers, so adding it to an applied migration is an edit — `X_MIGRATION_CONFLICT`, correctly |
+| Rollout | a marked drop still wants a rollout note; prefer expand → migrate → contract across two releases |
+
+```sql
+-- 20260814120000_drop_legacy
+-- GENERATED by `x db gen` from the app's entities — do not edit.
+-- Editing an applied migration changes its checksum: X_MIGRATION_CONFLICT on the next apply.
+-- destructive: true
+
+alter table "posts" drop column "legacy";
+
+-- down
+alter table "posts" add column "legacy" text; -- data is not restored
+```
+
+```text
+X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
+  cause: packages/db/migrations/20260814120000_drop_legacy.sql drops a column and does not
+         declare it: alter table "posts" drop column "legacy"
+  fix:   add the line "-- destructive: true" to packages/db/migrations/20260814120000_drop_legacy.sql,
+         or regenerate it: x db gen "<name>" --allow-destructive
+```
 
 ## Branch DBs for agents
 
