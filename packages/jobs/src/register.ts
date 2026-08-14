@@ -6,7 +6,7 @@
 
 import { type RegisteredPrimitive, registerPrimitiveRegistrar } from '@ultimat3/core';
 import { isJobHandle, registerJob } from './job';
-import { isTaskHandle, registerTask } from './scheduler';
+import { isTaskHandle, registerTask } from './task';
 
 /** `registerJobs(await import('./jobs'))` — export names become job names. */
 export function registerJobs(

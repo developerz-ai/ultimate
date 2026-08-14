@@ -28,6 +28,12 @@ import type { StepApi } from './steps';
 export interface JobRunArgs<I> {
   readonly input: I;
   readonly step: StepApi;
+  /**
+   * `ctx.signal` aborts when this attempt's `timeout` passes — the same seam an action reads, so
+   * `throwIfAborted(ctx)` and `fetch(url, { signal: ctx.signal })` work here unchanged. Past it
+   * the run belongs to whoever claims it next and `step.run` refuses to write, so a loop that
+   * never checks it is a body running beside its own retry.
+   */
   readonly ctx: Ctx;
   /** 1-based. Assume at-least-once: never branch on `attempt === 1` for correctness. */
   readonly attempt: number;

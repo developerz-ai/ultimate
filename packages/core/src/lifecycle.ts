@@ -92,6 +92,14 @@ export function idleWaiterCount(): number {
   return idleWaiters.length;
 }
 
+/**
+ * Test-only: hooks still registered. A count that climbs across a start/stop cycle is a leak —
+ * the registration retains its closure, and the next drain runs it against a torn-down resource.
+ */
+export function shutdownHookCount(): number {
+  return registrations.length;
+}
+
 /** Register a drain hook. Returns an unregister function. */
 export function onShutdown(
   name: string,

@@ -17,7 +17,7 @@ dashboard.
 | Error reporting: caught server faults, with code, cause and `fix:` | **shipped as a seam** — [`packages/core/src/error-reporter.ts`](../../packages/core/src/error-reporter.ts), wired for HTTP, jobs and realtime | the default reporter is a no-op; set `SENTRY_DSN` to switch the shipped transport on |
 | `x logs` | listed **planned** in `x --help` | — |
 
-`As of 2026-08` the five series every process emits are declared in
+`As of 2026-08` the six series every process emits are declared in
 [`packages/core/src/runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts), and each has
 exactly one emitter:
 
@@ -28,6 +28,7 @@ exactly one emitter:
 | `connections` | gauge | none | the sync node's socket table, `+1`/`-1` |
 | `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s |
 | `jobs_total` | counter | `queue`, `outcome` (`ok`\|`failed`\|`dead`) | the worker's outcome path |
+| `job_leases_lost_total` | counter | `queue` | the worker's lease heartbeat, once per job whose window lapsed |
 
 Labels are deliberately low-cardinality: the route **pattern** and the status **class**, never a
 concrete path, a user id or a job name. A label an attacker chooses is a label that decides how
@@ -238,9 +239,10 @@ a day later. Slow, but it is the difference between "we have no backups" being n
 
 ## Alerts on the app's own metrics
 
-`As of 2026-08` the five series above are emitted and scrapable, so these are writable today.
+`As of 2026-08` the six series above are emitted and scrapable, so these are writable today.
 `queue_depth` and `jobs_total` together are what tell a drained queue from a queue nothing is
-claiming — depth alone cannot.
+claiming — depth alone cannot. `job_leases_lost_total` deserves a rule of its own at any non-zero
+rate: each point is a job the queue re-delivered while this process was still running it.
 
 | Role | Alert on | Because |
 |---|---|---|

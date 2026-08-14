@@ -48,6 +48,11 @@ export const jobs: Counter = counter('jobs_total', {
   description: 'Background jobs finished, by queue and outcome',
 });
 
+export const leasesLost: Counter = counter('job_leases_lost_total', {
+  unit: '{job}',
+  description: 'Job leases that lapsed while the job was still running, by queue',
+});
+
 export interface RequestSample {
   readonly method: string;
   /** The route PATTERN (`/posts/:id`), never the concrete path — one series per pattern. */
@@ -83,4 +88,14 @@ export function recordQueueDepth(queue: string, depth: number): void {
 
 export function recordJob(queue: string, outcome: 'ok' | 'failed' | 'dead'): void {
   jobs.add(1, { queue, outcome });
+}
+
+/**
+ * One per job whose lease the holding process could not renew inside the visibility timeout.
+ * Deliberately not an outcome on `jobs_total`: nothing failed and nothing finished — the queue
+ * simply handed the job to somebody else while this process was still running it. Every point on
+ * this series is one job that ran twice, which is the only reason it is worth a series at all.
+ */
+export function recordLeaseLost(queue: string): void {
+  leasesLost.add(1, { queue });
 }

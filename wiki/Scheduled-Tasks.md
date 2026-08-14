@@ -62,7 +62,7 @@ Manual `enqueue()` and a scheduled tick differ in exactly one place: the key. A 
 | `cron` | yes | standard 5-field expression. No seconds field, no `@hourly` aliases — one way to write it |
 | `tz` | yes | explicit IANA zone (`'UTC'`, `'Europe/Berlin'`, `'America/New_York'`). Omitting it is a compile error |
 | `enqueue` | yes | `(occurrenceMs) => [[jobRef, input], …]`. Zero or more pairs; an empty list is a valid no-op tick. Read back through the handle as `entries()`, never as `.enqueue` — that name on the handle is the *fire* method |
-| `catchUp` | no — default `'skip'` | what to do when the scheduler was down across one or more occurrences. `'skip'` waits for the next one, `'run-once'` fires a single catch-up, `'run-all'` fires one per missed occurrence |
+| `catchUp` | no — default `'skip'` | what to do when the scheduler was down across one or more occurrences. `'skip'` collapses them into one dispatch for the **latest** missed occurrence and drops the older ones, `'run-once'` fires a single catch-up for the **earliest** missed one, `'run-all'` fires one per missed occurrence |
 | `maxCatchUp` | no — default `10` | how many occurrences one tick walks forward from the last fire. Bounds `'run-all'` directly, and caps the lookback for every policy |
 | `name` | no | the export name, stamped by `defineApi({ tasks: [scheduledTasks] })`. A module nobody hands over keeps `anonymous-task-<n>`; a definition carrying its own `name:` keeps that |
 
@@ -101,7 +101,8 @@ Fixed **1**. Cron dispatch only.
 | Lock lost / cannot acquire | the process exits non-zero with a typed error rather than running degraded |
 | Missed tick (leader down, node paused, clock jump) | **fires late rather than being skipped** |
 | Double fire during handover | absorbed by the enqueued job's `idempotencyKey` — the second enqueue returns the existing handle, no new row |
-| Drain on SIGTERM | releases the leader lock immediately so the standby promotes within one lock interval |
+| Drain on SIGTERM | registered at the `accept` phase: stop dispatching, wait out the dispatch round in flight, then release the lock — the standby promotes within one lock interval, and never onto an occurrence this node is still enqueueing for |
+| Two dispatch rounds at once | impossible in one process. The timer re-arms on the round it finished, and any other caller joins that round instead of opening a second one over the same last-tick state |
 | Durable state | none in the process. Last-tick state is a Postgres row |
 
 That chain is the whole safety argument: **at-least-once dispatch + required job idempotency = effectively-once work.** A scheduler that guarantees exactly-once dispatch does not exist; one that guarantees never-silently-skipped does.

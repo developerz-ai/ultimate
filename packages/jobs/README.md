@@ -94,7 +94,7 @@ to define a job in Ultimate that cannot be deduped.
 
 | Call | Behaviour |
 |---|---|
-| `step.run(name, fn)` | runs once ever; result persisted before the next step starts |
+| `step.run(name, fn)` | runs once ever; result persisted before the next step starts. `fn` receives an `AbortSignal` |
 | `step.sleep(name, '3d')` | suspends the run, requeues it for the wake time |
 | `step.sleep('3d')` | same, step name derived from the duration |
 | `step.waitForEvent(name, event, { match, timeout })` | suspends until `publishEvent()` matches |
@@ -102,6 +102,23 @@ to define a job in Ultimate that cannot be deduped.
 Step names are the replay key, so they must be deterministic and unique in a run — a
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
 (`StepSuspension`), never a failure: it does not burn a retry attempt.
+
+## The deadline cancels
+
+A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that
+follows makes the job claimable by another worker — a body still running past it is a second
+copy of one job.
+
+```ts
+run: async ({ input, ctx, step }) => {
+  const res = await fetch(url, { signal: ctx.signal });     // stops at the deadline
+  await step.run('save', (signal) => save(res, { signal })); // the step's own ceiling too
+},
+```
+
+Nothing can kill a body that ignores the signal, so the durable state is fenced: past the
+cancel every step write is refused with `X_ABORTED`, and a run that finishes anyway is logged
+as `jobs.timeout.abandoned` — the one way to find a handler that never reads `ctx.signal`.
 
 ## The transactional outbox (on by default)
 
@@ -145,8 +162,8 @@ debugging a stuck queue can read and run the exact statement.
 
 | Role | Entry | Behaviour |
 |---|---|---|
-| `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
-| `scheduler` | `createScheduler({ driver, leader })` | advisory-lock leader, one dispatcher per tick, catch-up policy |
+| `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
+| `scheduler` | `createScheduler({ driver, leader })` | advisory-lock leader, one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
 
 ```ts
 export const nightlyDigest = task({
@@ -159,7 +176,12 @@ export const nightlyDigest = task({
 `tz` is required by the type *and* validated against the runtime's IANA database, because a
 non-empty string is not a timezone: `tz: 'Bogota'` would resolve every occurrence in UTC and
 run five hours off, silently, forever. `0 3 * * *` in a DST zone runs twice or zero times on
-the switch day. Catch-up after downtime is explicit: `skip` (default), `run-once`, `run-all`.
+the switch day. Catch-up after downtime is explicit: `skip` (default) fires the latest missed
+occurrence and drops the older ones, `run-once` fires the earliest missed one, `run-all` fires
+every one of them. `maxCatchUp` (default 10) bounds EVERY mode, not just `run-all`: one tick
+walks at most that many occurrences forward from the last fire, and the policy then picks from
+what that walk found — so after a long outage `skip` fires the latest occurrence *within the
+cap*, and `run-once` the earliest one, not the true latest/earliest missed.
 
 ## Retries
 
@@ -178,6 +200,22 @@ Per-tenant concurrency (`tenantId` = the actor's `orgId`, carried on the queue r
 per-queue cap and a global cap. Over a cap, the claim is handed straight back without
 burning an attempt — one org's 50k-row import cannot starve the fleet.
 
+## Leases
+
+A claim buys `visibilityTimeoutMs` of invisibility; the worker renews it every
+`heartbeatIntervalMs` (default a third of the window) for as long as the job runs. Renewal
+failures are not swallowed:
+
+| Fact | Signal |
+|---|---|
+| a renewal failed, the window still has room | `jobs.heartbeat.failed` (warn) |
+| a whole window passed with none landing | `jobs.lease.lost` (error) + `job_leases_lost_total{queue}` |
+
+The second one means the queue is free to hand that job to another worker while this one is
+still running it — at-least-once turning into twice. Alert on any non-zero rate. The window is
+measured from the last renewal that **landed**, on this process's clock, so a driver whose
+heartbeat hangs is caught the same as one that rejects.
+
 ## Introspection
 
 `inspectQueues`, `inspectJob` (per-step trace), `inspectDeadLetters`, `retryFromStep`,
@@ -194,6 +232,7 @@ burning an attempt — one org's 50k-row import cannot starve the fleet.
 | `X_JOB_MAX_ATTEMPTS` | retries exhausted, job dead-lettered |
 | `X_OUTBOX_NO_TX` | enqueue outside a transaction with `mode: 'required'` |
 | `X_DRIVER_UNAVAILABLE` | no `DATABASE_URL` / executor for the pg driver |
+| `X_ABORTED` | a cancelled attempt tried to write a step — core's code, not a second name for it |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |
 
 ## Boundary

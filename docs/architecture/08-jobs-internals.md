@@ -125,6 +125,8 @@ RETURNING id, name, attempt;
 |---|---|
 | Default lease | 30s, `leaseMs` per job for long steps |
 | Heartbeat | the executor calls `driver.heartbeat` on an interval of `leaseMs / 3`, extending `lease_until` |
+| Failed renewal | one failure is not a lost lease — `jobs.heartbeat.failed` (warn) and the next try inside the same window |
+| Lost lease | a whole window with no renewal landing: `jobs.lease.lost` (error) + `job_leases_lost_total{queue}`, and this worker stops renewing. Decided on the WORKER's clock from the last renewal that landed, because a hung `heartbeat` never rejects and a rejection-only check would never fire |
 | Long step | heartbeats keep it alive; a step exceeding `maxStepMs` is killed and retried, never left leased forever |
 | SIGKILL | no heartbeat → the lease expires → the reaper requeues. Completed steps are memoized, so recovery resumes at the failed step |
 | Clock | `now()` is the **database's** clock, so a skewed worker cannot steal or hold leases |

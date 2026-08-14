@@ -198,7 +198,7 @@ export function throwIfAborted(ctx: Ctx = useContext()): void {
   throw new UltimateError({
     code: 'X_ABORTED',
     cause: `request ${ctx.requestId} was aborted by the caller`,
-    fix: 'no action needed — stop work and return',
+    fix: 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the caller is gone, so unwind instead of finishing',
     meta: { requestId: ctx.requestId },
   });
 }

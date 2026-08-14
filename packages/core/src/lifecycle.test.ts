@@ -12,6 +12,7 @@ import {
   onShutdown,
   readyzPayload,
   resetLifecycle,
+  shutdownHookCount,
 } from './lifecycle';
 import { createLogger } from './logger';
 
@@ -114,6 +115,21 @@ describe('lifecycle', () => {
     // Before the fix this stayed 1 forever: the timeout branch resolved the promise but never
     // removed its own closure from `idleWaiters`, so a later `finish()` would still invoke it.
     expect(idleWaiterCount()).toBe(0);
+  });
+
+  test('an unregistered hook is gone from the table, and never runs again', async () => {
+    let ran = 0;
+    const unregister = onShutdown('gone', () => {
+      ran += 1;
+    });
+    onShutdown('kept', () => undefined);
+    expect(shutdownHookCount()).toBe(2);
+
+    unregister();
+    expect(shutdownHookCount()).toBe(1);
+
+    await drain('SIGTERM');
+    expect(ran).toBe(0);
   });
 
   test('concurrent signals join the same drain and a failing hook does not stop it', async () => {

@@ -10,7 +10,7 @@ import type { Clock } from '@ultimat3/core';
 import { logger } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
-import { JobTimeoutError, StepDuplicateError } from './errors';
+import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
 
 export type StepStatus = 'completed' | 'sleeping' | 'waiting' | 'failed';
 
@@ -57,8 +57,14 @@ export interface WaitForEventOptions {
 }
 
 export interface StepApi {
-  /** Run once, ever. On replay the persisted output is returned and `fn` is not called. */
-  run<T>(name: string, fn: () => Promise<T> | T): Promise<T>;
+  /**
+   * Run once, ever. On replay the persisted output is returned and `fn` is not called.
+   *
+   * `fn` receives the step's `AbortSignal` — the run's cancellation and this step's own ceiling,
+   * whichever fires first. Hand it to `fetch`, or read `.aborted` in a loop: past it, this step
+   * may no longer write, because the attempt that replaced this one owns the run.
+   */
+  run<T>(name: string, fn: (signal: AbortSignal) => Promise<T> | T): Promise<T>;
   /** Suspend the run. `sleep(duration)` derives the step name from the duration. */
   sleep(name: string, duration: DurationInput): Promise<void>;
   sleep(duration: DurationInput): Promise<void>;
@@ -136,6 +142,12 @@ export interface StepRunnerOptions {
   readonly eventPollMs?: number;
   /** Per-step ceiling; the job-level timeout is enforced by the worker. */
   readonly stepTimeoutMs?: number;
+  /**
+   * The run's cancellation — `executeJob` aborts it at the job's deadline. Once aborted this
+   * runner writes nothing: the nack that follows a deadline makes the job claimable, so the
+   * store belongs to whichever attempt has it now.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface StepRunner {
@@ -146,21 +158,38 @@ export interface StepRunner {
   replayedNames(): readonly string[];
 }
 
+/** Stands in for an absent run signal, so the fence has one shape and no `undefined` branch. */
+const NEVER_ABORTED = new AbortController().signal;
+
 export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const { runId, jobName, store } = options;
   const used: string[] = [];
   const replayed: string[] = [];
   const clock = options.clock;
   const pollMs = options.eventPollMs ?? 30_000;
+  const runSignal = options.signal ?? NEVER_ABORTED;
 
   const claimName = (name: string): void => {
     if (used.includes(name)) throw new StepDuplicateError({ job: jobName, step: name });
     used.push(name);
   };
 
+  const cancelled = (): boolean => runSignal.aborted;
+
+  /**
+   * EVERY write this runner makes, and the one place the cancellation is enforced. A step result
+   * from a cancelled attempt is a write onto the attempt that replaced it: the deadline nacked
+   * this job, another worker claimed the same `runId`, and a late `put` would hand it a step it
+   * never ran — or overwrite one it did. The write is refused, and refusing it unwinds the body.
+   */
+  const put = async (record: StepRecord): Promise<void> => {
+    if (cancelled()) throw new JobAbortedError({ job: jobName, step: record.name });
+    await store.put(record);
+  };
+
   const now = (): number => nowMs(clock);
 
-  async function run<T>(name: string, fn: () => Promise<T> | T): Promise<T> {
+  async function run<T>(name: string, fn: (signal: AbortSignal) => Promise<T> | T): Promise<T> {
     claimName(name);
     const existing = await store.get(runId, name);
     if (existing?.status === 'completed') {
@@ -170,15 +199,23 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
 
     const startedAt = existing?.startedAt ?? now();
     const attempts = (existing?.attempts ?? 0) + 1;
+    // The step's own ceiling, folded into the run's cancellation so the body reads ONE signal and
+    // sees whichever deadline lands first. Composed only when there is a second one to compose.
+    const deadline = new AbortController();
+    const signal =
+      options.stepTimeoutMs === undefined
+        ? runSignal
+        : AbortSignal.any([runSignal, deadline.signal]);
     try {
       const output = await withStepTimeout(
-        fn(),
+        fn(signal),
         options.stepTimeoutMs,
+        deadline,
         () =>
           new JobTimeoutError({ job: jobName, step: name, timeoutMs: options.stepTimeoutMs ?? 0 }),
       );
       // Persist BEFORE returning: a crash one line later must not re-run this step.
-      await store.put({
+      await put({
         runId,
         name,
         status: 'completed',
@@ -190,14 +227,19 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
       return output;
     } catch (error) {
       if (isStepSuspension(error)) throw error;
-      await store.put({
-        runId,
-        name,
-        status: 'failed',
-        startedAt,
-        attempts,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      // The failure is this run's own history, so it is recorded on the way out — unless the
+      // attempt was cancelled, in which case the history is no longer ours to write. The original
+      // error is what the caller has to see, never one raised by the bookkeeping.
+      if (!cancelled()) {
+        await store.put({
+          runId,
+          name,
+          status: 'failed',
+          startedAt,
+          attempts,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       throw error;
     }
   }
@@ -217,14 +259,14 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     const at = now();
     if (existing?.status === 'sleeping' && existing.wakeAt !== undefined) {
       if (existing.wakeAt <= at) {
-        await store.put({ ...existing, status: 'completed', completedAt: at });
+        await put({ ...existing, status: 'completed', completedAt: at });
         return;
       }
       throw new StepSuspension({ step: name, resumeAt: existing.wakeAt, reason: 'sleep' });
     }
 
     const wakeAt = at + toMs(duration);
-    await store.put({
+    await put({
       runId,
       name,
       status: 'sleeping',
@@ -254,7 +296,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
 
     const hit = await options.events?.find(event, correlationKey, startedAt);
     if (hit !== undefined) {
-      await store.put({
+      await put({
         runId,
         name,
         status: 'completed',
@@ -277,7 +319,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
         });
       }
       logger.warn('jobs.step.wait-timeout', { job: jobName, step: name, event });
-      await store.put({
+      await put({
         runId,
         name,
         status: 'completed',
@@ -291,7 +333,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     }
 
     const resumeAt = Math.min(deadline, at + pollMs);
-    await store.put({
+    await put({
       runId,
       name,
       status: 'waiting',
@@ -317,14 +359,24 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   };
 }
 
+/**
+ * A step's own ceiling. It ABORTS before it rejects, in that order: `run()` fails the step on this
+ * rejection and the job retries, so a body still holding a socket open past the deadline would be
+ * racing the attempt that replaced it. Cancelling first is the only thing that can stop it.
+ */
 function withStepTimeout<T>(
   work: Promise<T> | T,
   timeoutMs: number | undefined,
+  deadline: AbortController,
   error: () => Error,
 ): Promise<T> {
   if (timeoutMs === undefined || timeoutMs <= 0) return Promise.resolve(work);
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(error()), timeoutMs);
+    const timer = setTimeout(() => {
+      const failure = error();
+      deadline.abort(failure);
+      reject(failure);
+    }, timeoutMs);
     Promise.resolve(work).then(
       (value) => {
         clearTimeout(timer);

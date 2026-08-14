@@ -4,27 +4,17 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import {
-  logger,
-  onShutdown,
-  recordJob,
-  recordQueueDepth,
-  reportError,
-  uuid,
-  withSpan,
-} from '@ultimat3/core';
+import { logger, onShutdown, recordJob, recordQueueDepth, uuid, withSpan } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
-import { JobTimeoutError } from './errors';
-import { eventBus } from './events';
-import type { AnyJobHandle } from './job';
+import type { JobExecution, JobOutcome } from './execute';
+import { executeJob } from './execute';
+import { startLeaseHeartbeat } from './heartbeat';
 import { getJob } from './job';
 import type { Limiter } from './limits';
 import { createLimiter } from './limits';
-import { nextRetry } from './retry';
-import type { EventLookup, StepRecord } from './steps';
-import { createStepRunner, isStepSuspension } from './steps';
+import type { EventLookup } from './steps';
 
 /**
  * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
@@ -33,8 +23,6 @@ import { createStepRunner, isStepSuspension } from './steps';
  * same number sixty times.
  */
 const QUEUE_DEPTH_INTERVAL_MS = 15_000;
-
-export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered';
 
 /**
  * `JobOutcome` -> the `jobs_total` label, and `null` for the outcome that is not one. `suspended`
@@ -48,151 +36,6 @@ const JOB_OUTCOME_LABELS: Readonly<Record<JobOutcome, 'ok' | 'failed' | 'dead' |
     retried: 'failed',
     'dead-lettered': 'dead',
   });
-
-export interface JobExecution {
-  readonly outcome: JobOutcome;
-  readonly jobId: string;
-  readonly job: string;
-  readonly attempt: number;
-  readonly durationMs: number;
-  readonly resumeAt?: number;
-  readonly error?: string;
-  readonly steps: readonly StepRecord[];
-  readonly replayed: readonly string[];
-}
-
-export interface ExecuteJobOptions {
-  readonly driver: JobDriver;
-  readonly claimed: ClaimedJob;
-  readonly handle: AnyJobHandle;
-  readonly ctx: Ctx;
-  readonly clock?: Clock;
-  readonly events?: EventLookup;
-}
-
-/**
- * Run one claimed job to completion, suspension or failure, and settle it with the driver.
- * Shared by the worker loop and `x jobs run` so both take exactly the same code path.
- */
-export async function executeJob(options: ExecuteJobOptions): Promise<JobExecution> {
-  const { driver, claimed, handle } = options;
-  const startedAt = nowMs(options.clock);
-  const runner = createStepRunner({
-    runId: claimed.runId,
-    jobName: handle.name,
-    store: driver.steps,
-    ...(options.clock === undefined ? {} : { clock: options.clock }),
-    events: options.events ?? eventBus(),
-  });
-
-  const settle = async (outcome: JobExecution): Promise<JobExecution> => {
-    const steps = await driver.steps.list(claimed.runId);
-    return { ...outcome, steps, replayed: runner.replayedNames() };
-  };
-
-  try {
-    const input = handle.parse(claimed.input);
-    const work = handle.run({
-      input,
-      step: runner.step,
-      ctx: options.ctx,
-      attempt: claimed.attempt,
-      jobId: claimed.id,
-      runId: claimed.runId,
-    });
-
-    await (handle.timeoutMs === undefined
-      ? work
-      : raceTimeout(work, handle.timeoutMs, handle.name));
-
-    await driver.ack(claimed.id);
-    return settle({
-      outcome: 'completed',
-      jobId: claimed.id,
-      job: handle.name,
-      attempt: claimed.attempt,
-      durationMs: nowMs(options.clock) - startedAt,
-      steps: [],
-      replayed: [],
-    });
-  } catch (error) {
-    if (isStepSuspension(error)) {
-      const delayMs = Math.max(0, error.resumeAt - nowMs(options.clock));
-      // countsAsAttempt: false — parking a run is not a failure.
-      await driver.nack(claimed.id, { delayMs, countsAsAttempt: false });
-      return settle({
-        outcome: 'suspended',
-        jobId: claimed.id,
-        job: handle.name,
-        attempt: claimed.attempt,
-        durationMs: nowMs(options.clock) - startedAt,
-        resumeAt: error.resumeAt,
-        steps: [],
-        replayed: [],
-      });
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-    const decision = nextRetry(handle.retry, claimed.attempt);
-    await driver.nack(claimed.id, {
-      delayMs: decision.delayMs,
-      error: message,
-      countsAsAttempt: true,
-      deadLetter: !decision.retry && decision.deadLetter,
-    });
-    logger.warn('jobs.attempt.failed', {
-      job: handle.name,
-      jobId: claimed.id,
-      attempt: claimed.attempt,
-      retry: decision.retry,
-      error: message,
-    });
-    // This package's ONE error-reporting call site, and it is here rather than in the loop because
-    // this is the only frame that still holds the thrown value — the loop sees a message string.
-    // A retry is a failure the framework recovered from, so it is a `warning`; a dead letter is
-    // one nobody recovered from. `x jobs run` takes this path too, which is the point: one
-    // execution path means one place a failed job can become visible.
-    reportError(error, {
-      source: 'job',
-      severity: decision.retry ? 'warning' : 'error',
-      scope: {
-        operation: handle.name,
-        extra: {
-          jobId: claimed.id,
-          runId: claimed.runId,
-          attempt: claimed.attempt,
-          retry: decision.retry,
-        },
-      },
-    });
-    return settle({
-      outcome: decision.retry ? 'retried' : 'dead-lettered',
-      jobId: claimed.id,
-      job: handle.name,
-      attempt: claimed.attempt,
-      durationMs: nowMs(options.clock) - startedAt,
-      error: message,
-      steps: [],
-      replayed: [],
-    });
-  }
-}
-
-function raceTimeout(work: Promise<unknown>, timeoutMs: number, job: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new JobTimeoutError({ job, timeoutMs })), timeoutMs);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-}
 
 export interface WorkerOptions {
   readonly driver: JobDriver;
@@ -246,8 +89,17 @@ export function createWorker(options: WorkerOptions): Worker {
   const limiter = options.limiter ?? createLimiter({});
 
   const inFlight = new Set<Promise<unknown>>();
+  /**
+   * Claim rounds in flight. Jobs land in `inFlight` mid-round, so a drain that waited only on
+   * `inFlight` waited on a set the round it was racing had not finished filling.
+   */
+  const rounds = new Set<Promise<unknown>>();
   let state: WorkerStats['state'] = 'idle';
   let loop: ReturnType<typeof setTimeout> | undefined;
+  /** The `onShutdown` registration this worker holds while it runs. Handed back by `stop()`. */
+  let releaseShutdownHook: (() => void) | undefined;
+  /** The teardown in flight, so a second `stop()` joins it instead of running a second one. */
+  let stopping: Promise<void> | undefined;
   let processed = 0;
   let failed = 0;
   let suspended = 0;
@@ -297,9 +149,18 @@ export function createWorker(options: WorkerOptions): Worker {
       };
     }
 
-    const heartbeat = setInterval(() => {
-      void options.driver.heartbeat(claimed.id, { visibilityTimeoutMs }).catch(() => undefined);
-    }, heartbeatIntervalMs);
+    // The lease, kept alive and NOT kept quiet: a renewal that stops landing means the queue hands
+    // this job to another worker while this one is still running it, and `.catch(() => undefined)`
+    // made that — the one failure a queue cannot recover from on its own — indistinguishable from
+    // a healthy run.
+    const heartbeat = startLeaseHeartbeat({
+      driver: options.driver,
+      claimed,
+      visibilityTimeoutMs,
+      intervalMs: heartbeatIntervalMs,
+      workerId,
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+    });
 
     try {
       return await withSpan(`job.${handle.name}`, () =>
@@ -313,16 +174,29 @@ export function createWorker(options: WorkerOptions): Worker {
         }),
       );
     } finally {
-      clearInterval(heartbeat);
+      heartbeat.stop();
     }
   };
 
-  const tick = async (): Promise<readonly JobExecution[]> => {
-    if (state === 'draining' || state === 'stopped') return [];
+  /** The drain's one question: may this worker still take work off the queue? */
+  const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
+
+  /**
+   * One claim pass: every queue asked once, and everything it hands back STARTED. It does not wait
+   * for the jobs — a slot is free again the moment its own job settles and the limiter releases
+   * the lease, so the next pass refills exactly that slot. Waiting for the whole batch made a pool
+   * as slow as its slowest member and, because the pass walks every queue before it waits, left
+   * every OTHER queue idle behind one long-running job too.
+   */
+  const claimRound = async (): Promise<readonly Promise<JobExecution>[]> => {
     await publishQueueDepth();
-    const results: JobExecution[] = [];
+    const started: Promise<JobExecution>[] = [];
 
     for (const queue of queues) {
+      // Re-read per queue, not once at the top: a `stop()` between two queues means "stop
+      // claiming" now, not at the next tick. What this round already holds still runs to the end
+      // — that is the drain, and `stop()` waits for it.
+      if (!claiming()) break;
       const free = Math.max(0, slotsFor(queue) - limiter.inFlight({ queue }));
       if (free === 0) continue;
 
@@ -350,7 +224,6 @@ export function createWorker(options: WorkerOptions): Worker {
 
         const running = runClaimed(job)
           .then((execution) => {
-            results.push(execution);
             if (execution.outcome === 'completed') processed += 1;
             else if (execution.outcome === 'suspended') suspended += 1;
             else if (execution.outcome === 'retried') failed += 1;
@@ -367,18 +240,61 @@ export function createWorker(options: WorkerOptions): Worker {
             lease.release();
           });
 
+        started.push(running);
         inFlight.add(running);
-        void running.finally(() => inFlight.delete(running));
+        // The claim loop no longer awaits these, so this is the one place a rejection is observed:
+        // unobserved it is an unhandled rejection, which on Bun's default is the whole process.
+        // `executeJob` settles the job itself, so reaching here means the driver could not be
+        // told how it ended — the lease will lapse and the queue will deliver it again.
+        void running.then(
+          () => {
+            inFlight.delete(running);
+          },
+          (error: unknown) => {
+            inFlight.delete(running);
+            logger.error('jobs.worker.settle-failed', {
+              workerId,
+              job: job.name,
+              jobId: job.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        );
       }
     }
 
-    await Promise.allSettled([...inFlight]);
-    return results;
+    return started;
   };
 
+  /**
+   * One claim pass, tracked. The guard and the registration are one synchronous step — no await
+   * between them — so a pass is either refused by a drain already under way or visible to every
+   * drain that starts after it. A pass that reached `claim()` first is the one `stop()` must
+   * wait out: it is still adding to `inFlight`.
+   */
+  const round = (): Promise<readonly Promise<JobExecution>[]> => {
+    if (!claiming()) return Promise.resolve([]);
+    const pass = claimRound().finally(() => {
+      rounds.delete(pass);
+    });
+    rounds.add(pass);
+    return pass;
+  };
+
+  /** One claim+run round: the pass, then the jobs THIS pass started — never the whole pool. */
+  const tick = async (): Promise<readonly JobExecution[]> => {
+    const settled = await Promise.allSettled(await round());
+    return settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  };
+
+  /**
+   * The claim loop re-arms on the PASS, not on the jobs: polling is how a free slot gets refilled,
+   * and a loop that waited for the last job of the previous pass could not refill one until the
+   * whole batch was done.
+   */
   const schedule = (): void => {
     loop = setTimeout(() => {
-      void tick()
+      void round()
         .catch((error: unknown) => {
           logger.error('jobs.worker.tick-failed', {
             workerId,
@@ -391,26 +307,59 @@ export function createWorker(options: WorkerOptions): Worker {
     }, pollIntervalMs);
   };
 
-  const stop = async (reason = 'stop'): Promise<void> => {
-    if (state === 'stopped') return;
+  const teardown = async (reason: string): Promise<void> => {
     state = 'draining';
     if (loop !== undefined) clearTimeout(loop);
     loop = undefined;
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
-    // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
-    await Promise.allSettled([...inFlight]);
-    await options.driver.close?.();
-    state = 'stopped';
+    try {
+      // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
+      // Rounds first: one that passed the guard before the flag flipped is still awaiting its
+      // `claim()`, and the jobs it starts join `inFlight` after any snapshot taken here — so a
+      // drain that waited on `inFlight` alone closed the driver under a job that had just begun.
+      await Promise.allSettled([...rounds]);
+      await Promise.allSettled([...inFlight]);
+      await options.driver.close?.();
+    } finally {
+      // Whatever the close did, this worker is done: a state left at 'draining' is a drain that
+      // is not happening — `start()` refuses it for the rest of the process and `stats()` reports
+      // a worker still finishing work it finished. And the hook goes back. It exists only to call
+      // this, so one left registered drains a stopped worker on the next process-wide shutdown —
+      // through a driver already closed — and keeps this closure, its driver and its in-flight
+      // set alive with it.
+      state = 'stopped';
+      releaseShutdownHook?.();
+      releaseShutdownHook = undefined;
+    }
+  };
+
+  const stop = async (reason = 'stop'): Promise<void> => {
+    if (state === 'stopped') return;
+    // One teardown, joined rather than repeated: a SIGTERM landing on a manual stop must wait out
+    // the same in-flight work, not close the driver a second time underneath it. Cleared as it
+    // settles, so a worker that started again tears down again instead of joining a promise that
+    // settled a lifetime ago. A close that threw still stopped this worker — the failure is the
+    // caller's to see on the promise it awaited, not a teardown to run twice.
+    stopping ??= teardown(reason).finally(() => {
+      stopping = undefined;
+    });
+    await stopping;
   };
 
   return {
     start() {
-      if (state === 'running') return;
+      // Only from a standstill. A start mid-drain would put the claim loop back on a driver the
+      // drain is about to close, and stack a second shutdown hook on the one still running.
+      if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
-      // 'accept' phase: stop claiming before core waits on in-flight jobs.
+      // 'accept' phase: stop claiming before core waits on in-flight jobs. The unregister is
+      // kept, never discarded: `stop()` hands it back, so start -> stop -> start holds ONE hook
+      // rather than one per start, each retaining the driver of a worker that is already gone.
       if (options.drainOnShutdown !== false) {
-        onShutdown(`jobs.worker.${workerId}`, () => stop('SIGTERM'), { phase: 'accept' });
+        releaseShutdownHook = onShutdown(`jobs.worker.${workerId}`, () => stop('SIGTERM'), {
+          phase: 'accept',
+        });
       }
       schedule();
     },

@@ -59,6 +59,7 @@ export {
   IdempotencyRequiredError,
   JOB_ERROR_CODES,
   JOB_ERROR_TITLES,
+  JobAbortedError,
   JobDuplicateError,
   JobMaxAttemptsError,
   JobNameTakenError,
@@ -69,6 +70,8 @@ export {
 } from './errors';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export { createMemoryEventBus, eventBus, publishEvent, setEventBus } from './events';
+export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
+export { executeJob } from './execute';
 export type {
   DeadLetterEntry,
   JobsManifest,
@@ -122,29 +125,14 @@ export {
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
 export type {
-  CatchUpPolicy,
   CronResolver,
   DispatchedOccurrence,
   LeaderElection,
   Scheduler,
   SchedulerOptions,
   SchedulerState,
-  TaskDefinition,
-  TaskDescriptor,
-  TaskEnqueueEntry,
-  TaskHandle,
-  TaskJobResult,
 } from './scheduler';
-export {
-  createMemorySchedulerState,
-  createScheduler,
-  getTask,
-  isTaskHandle,
-  registeredTasks,
-  resetTasks,
-  soleLeader,
-  task,
-} from './scheduler';
+export { createMemorySchedulerState, createScheduler, soleLeader } from './scheduler';
 export type {
   EventLookup,
   StepApi,
@@ -162,11 +150,13 @@ export {
   StepSuspension,
 } from './steps';
 export type {
-  ExecuteJobOptions,
-  JobExecution,
-  JobOutcome,
-  Worker,
-  WorkerOptions,
-  WorkerStats,
-} from './worker';
-export { createWorker, executeJob } from './worker';
+  CatchUpPolicy,
+  TaskDefinition,
+  TaskDescriptor,
+  TaskEnqueueEntry,
+  TaskHandle,
+  TaskJobResult,
+} from './task';
+export { getTask, isTaskHandle, registeredTasks, resetTasks, task } from './task';
+export type { Worker, WorkerOptions, WorkerStats } from './worker';
+export { createWorker } from './worker';

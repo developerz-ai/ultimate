@@ -15,8 +15,8 @@ import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
-import type { TaskEnqueueEntry, TaskHandle } from './scheduler';
-import { resetTasks, task } from './scheduler';
+import type { TaskEnqueueEntry, TaskHandle } from './task';
+import { resetTasks, task } from './task';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
 function passthrough<T>(): StandardSchemaV1<unknown, T> {

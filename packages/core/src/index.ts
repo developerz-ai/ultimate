@@ -255,6 +255,7 @@ export {
   readyzPayload,
   resetLifecycle,
   SHUTDOWN_PHASES,
+  shutdownHookCount,
 } from './lifecycle';
 export {
   isSelfOrigin,
@@ -325,9 +326,11 @@ export type { RequestSample } from './runtime-metrics';
 export {
   connections,
   jobs,
+  leasesLost,
   queueDepth,
   recordConnection,
   recordJob,
+  recordLeaseLost,
   recordQueueDepth,
   recordRequest,
   requestDuration,
