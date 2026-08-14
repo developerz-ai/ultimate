@@ -30,7 +30,7 @@ await withTransaction(async (tx) => {
 | `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
-| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger, columns and declared indexes alike |
+| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes, and declared foreign keys, matched on where the key points and not on its constraint name |
 | `declaredSchema()` / `expectedSchema()` | `As of 2026-08`: the schema the migrations write down, or `undefined` when the newest one carries no snapshot — never an older snapshot standing in for it |
 | `parseSnapshot()` | `As of 2026-08`: a `<id>.snapshot.json` sidecar validated to the last nested field, or `undefined`. `{"tables":[null]}` is valid JSON and is not a schema |
 | `isLedgerMissing()` | `As of 2026-08`: whether an error is Postgres' `undefined_table` for `x_migrations` — the one condition a caller may read as "nothing applied" |

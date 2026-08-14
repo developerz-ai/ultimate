@@ -87,6 +87,60 @@ describe('an index migrations declare, against the one the catalog holds', () =>
   });
 });
 
+describe('a foreign key migrations declare, against the one the catalog holds', () => {
+  const posts = table('posts', ['id', 'org_id']);
+  const key = (
+    overrides: Partial<TableDescription['foreignKeys'][number]> = {},
+  ): TableDescription['foreignKeys'][number] => ({
+    name: 'posts_org_id_fkey',
+    columns: ['org_id'],
+    referencedTable: 'orgs',
+    referencedColumns: ['id'],
+    onDelete: null,
+    ...overrides,
+  });
+  const withKeys = (
+    base: TableDescription,
+    ...foreignKeys: TableDescription['foreignKeys']
+  ): TableDescription => ({ ...base, foreignKeys });
+
+  test('a key the migrations declare and the database does not have is drift', () => {
+    const report = diffSchema(schema(posts), schema(withKeys(posts, key())));
+    expect(report.ok).toBe(false);
+    expect(report.differences[0]?.kind).toBe('missing-foreign-key');
+    expect(report.differences[0]?.cause).toContain('no foreign key on (org_id) to "orgs" (id)');
+    expect(report.differences[0]?.fix).toBe('x db migrate');
+  });
+
+  test('a key repointed at another table is the declared one missing', () => {
+    const live = schema(withKeys(posts, key({ referencedTable: 'tenants' })));
+    expect(diffSchema(live, schema(withKeys(posts, key()))).differences[0]?.kind).toBe(
+      'missing-foreign-key',
+    );
+  });
+
+  test('a key repointed at another column is drift too', () => {
+    const live = schema(withKeys(posts, key({ referencedColumns: ['slug'] })));
+    expect(diffSchema(live, schema(withKeys(posts, key()))).ok).toBe(false);
+  });
+
+  test('the same key under another constraint name is not drift', () => {
+    // Postgres names an inline clause `posts_org_id_fkey`; a hand-written migration may not.
+    const live = schema(withKeys(posts, key({ name: 'fk_posts_org' })));
+    expect(diffSchema(live, schema(withKeys(posts, key()))).ok).toBe(true);
+  });
+
+  test('an on delete rule the snapshot never wrote down is not drift', () => {
+    // The catalog spells it `a`/`c`/`r` and no generated clause declares one.
+    const live = schema(withKeys(posts, key({ onDelete: 'c' })));
+    expect(diffSchema(live, schema(withKeys(posts, key()))).ok).toBe(true);
+  });
+
+  test('a key the database has and no migration declares is not drift', () => {
+    expect(diffSchema(schema(withKeys(posts, key())), schema(posts)).ok).toBe(true);
+  });
+});
+
 describe('drift', () => {
   test('a live column absent from the ledger renders the pinned contract output', () => {
     const live = schema(table('posts', ['id', 'title', 'publish_at']));

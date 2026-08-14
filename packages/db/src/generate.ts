@@ -8,6 +8,7 @@ import { isDestructive } from './destructive';
 import { migrationIrreversible } from './errors';
 import {
   type ColumnDescription,
+  type ForeignKeyDescription,
   findTable,
   type IndexDescription,
   type SchemaDescription,
@@ -85,6 +86,16 @@ function defaultExpression(column: ColumnDescriptionLike): string | null {
   return null;
 }
 
+/**
+ * The two ends of a `references()`, which entity renders as `"<table>.<column>"`. Read once: the
+ * clause that writes the constraint and the snapshot that records it must not disagree about what
+ * it points at, or drift reports a key the database holds exactly as declared.
+ */
+function referenceParts(references: string): readonly [string, string] {
+  const [table = references, column = 'id'] = references.split('.');
+  return [table, column];
+}
+
 function columnClause(column: ColumnDescriptionLike): string {
   const parts = [`"${column.column}"`, sqlType(column.kind)];
   const expression = defaultExpression(column);
@@ -93,7 +104,7 @@ function columnClause(column: ColumnDescriptionLike): string {
   if (column.unique && !column.primaryKey) parts.push('unique');
   if (column.check !== null) parts.push(`check (${column.check})`);
   if (column.references !== null) {
-    const [refTable = column.references, refColumn = 'id'] = column.references.split('.');
+    const [refTable, refColumn] = referenceParts(column.references);
     parts.push(`references "${refTable}" ("${refColumn}")`);
   }
   return parts.join(' ');
@@ -127,6 +138,35 @@ function impliedByColumnClause(
   return column !== undefined && column.unique && !column.primaryKey && added.has(only);
 }
 
+/**
+ * The keys `columnClause` writes, recorded so drift can see one dropped by hand. Recording
+ * `foreignKeys: []` while the same run emitted `references "orgs" ("id")` was a snapshot claiming
+ * a constraint does not exist that the migration beside it creates, and `compareTable` had nothing
+ * to compare — a key dropped on the database was invisible to every check the framework runs.
+ *
+ * Named the way Postgres names an inline `references` clause (`<table>_<column>_fkey`) because
+ * that is what the generated SQL produces, but the name is *not* what drift matches on: see
+ * `compareForeignKeys` in `drift.ts`.
+ *
+ * `onDelete` stays `null`. `entity()` carries the option and no clause here has ever spelled one,
+ * so a value written down would be a claim about the database that is not true.
+ */
+function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescription[] {
+  return entity.columns
+    .filter((column) => column.references !== null)
+    .map((column): ForeignKeyDescription => {
+      const [table, key] = referenceParts(column.references ?? '');
+      return {
+        name: `${entity.table}_${column.column}_fkey`,
+        columns: [column.column],
+        referencedTable: table,
+        referencedColumns: [key],
+        onDelete: null,
+      };
+    })
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
+}
+
 export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDescription {
   const tables = [...entities]
     .sort((a, b) => (a.table < b.table ? -1 : 1))
@@ -156,7 +196,7 @@ export function snapshotOf(entities: readonly EntityDescriptionLike[]): SchemaDe
           where: index.where,
           order: index.order,
         })),
-        foreignKeys: [],
+        foreignKeys: foreignKeysOf(entity),
       };
     });
   return { tables };

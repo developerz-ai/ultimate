@@ -280,6 +280,36 @@ describe('generateMigration', () => {
     expect(migration.destructive).toBe(true);
   });
 
+  test('the snapshot records the foreign key the column clause writes', () => {
+    // Recording `foreignKeys: []` beside a `references "orgs" ("id")` the same run emitted was a
+    // snapshot denying a constraint its own migration creates, so drift had nothing to compare
+    // and a key dropped on the database by hand was invisible to every check.
+    const entities = [
+      posts([
+        column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+        column('org_id', { kind: 'uuid', notNull: true, references: 'orgs.id' }),
+      ]),
+    ];
+    const migration = generateMigration({ entities, name: 'create posts', now: at });
+    expect(migration.up).toContain('references "orgs" ("id")');
+    expect(migration.snapshot.tables[0]?.foreignKeys).toEqual([
+      {
+        name: 'posts_org_id_fkey',
+        columns: ['org_id'],
+        referencedTable: 'orgs',
+        referencedColumns: ['id'],
+        onDelete: null,
+      },
+    ]);
+  });
+
+  test('a reference with no column named falls back to id, in the clause and the snapshot alike', () => {
+    const entities = [posts([column('org_id', { kind: 'uuid', references: 'orgs' })])];
+    const migration = generateMigration({ entities, name: 'create posts', now: at });
+    expect(migration.up).toContain('references "orgs" ("id")');
+    expect(migration.snapshot.tables[0]?.foreignKeys[0]?.referencedColumns).toEqual(['id']);
+  });
+
   test('the emitted snapshot is drift-free against the entities it came from', () => {
     const entities = [
       posts([

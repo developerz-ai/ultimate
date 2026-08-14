@@ -350,6 +350,17 @@ snapshot holds the author's spelling, so a text comparison reports two identical
 `x db gen` compares them instead (`redefineIndex`), where both sides are generated. Named in
 `wiki/Known-Gaps.md`.
 
+`compareForeignKeys` judges **declared** keys the same way, and matches on **where the key points**
+— its columns, its target table, its target columns — never on the constraint name. `snapshotOf`
+names one the way Postgres names an inline `references` clause (`posts_org_id_fkey`) because that is
+what the generated SQL produces, but a hand-written migration may have said `constraint fk_posts_org`
+and a key pointing the same way under another name is the same key. `onDelete` is not compared: the
+catalog spells it `a`/`c`/`r` and no generated clause has ever declared one, so a snapshot has
+nothing truthful to hold there. Before this, `snapshotOf` recorded `foreignKeys: []` beside an `up`
+emitting `references "orgs" ("id")` — a snapshot denying a constraint its own migration creates — so
+`alter table … drop constraint` on the database answered `ok: true`. `x db gen` still emits no
+`add constraint`/`drop constraint` of its own; see `wiki/Known-Gaps.md`.
+
 `introspect()` reads an index's columns in **index key order** (`indkey`, not `attnum`) and carries
 its predicate and direction. Ordering by `attnum` returned a composite index's columns in table
 order, which reads correct and compares wrong.

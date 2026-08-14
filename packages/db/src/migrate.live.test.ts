@@ -13,7 +13,7 @@ import type {
   IndexDescriptionLike,
 } from './generate';
 import { generateMigration } from './generate';
-import { introspect } from './introspect';
+import { introspect, type SchemaDescription } from './introspect';
 import { LEDGER_TABLE, type Migration, migrate, rollback } from './migrate';
 import { raw } from './sql';
 
@@ -155,6 +155,36 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a script', ()
   }, 15_000);
 });
 
+/** Entity-description builders, shared by the two generated-migration describes below. */
+const column = (
+  name: string,
+  overrides: Partial<ColumnDescriptionLike> = {},
+): ColumnDescriptionLike => ({
+  property: name,
+  column: name,
+  kind: 'text',
+  notNull: false,
+  primaryKey: false,
+  unique: false,
+  hasDefault: false,
+  check: null,
+  references: null,
+  ...overrides,
+});
+
+const index = (
+  name: string,
+  columns: readonly string[],
+  overrides: Partial<IndexDescriptionLike> = {},
+): IndexDescriptionLike => ({
+  name,
+  columns,
+  unique: false,
+  where: null,
+  order: null,
+  ...overrides,
+});
+
 /**
  * End to end, the way `x db gen` then `x db migrate` actually runs it: an entity description
  * through `generateMigration` — never hand-written SQL — applied by the real ledger engine,
@@ -174,35 +204,6 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a composite i
     clients.push(client);
     return client;
   };
-
-  const column = (
-    name: string,
-    overrides: Partial<ColumnDescriptionLike> = {},
-  ): ColumnDescriptionLike => ({
-    property: name,
-    column: name,
-    kind: 'text',
-    notNull: false,
-    primaryKey: false,
-    unique: false,
-    hasDefault: false,
-    check: null,
-    references: null,
-    ...overrides,
-  });
-
-  const index = (
-    name: string,
-    columns: readonly string[],
-    overrides: Partial<IndexDescriptionLike> = {},
-  ): IndexDescriptionLike => ({
-    name,
-    columns,
-    unique: false,
-    where: null,
-    order: null,
-    ...overrides,
-  });
 
   const entity: EntityDescriptionLike = {
     name: 'LiveCompositePost',
@@ -299,5 +300,117 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a composite i
       raw(`select count(*)::int as n from pg_tables where tablename = 'live_composite_posts'`),
     );
     expect(after[0]?.n).toBe(0);
+  }, 15_000);
+});
+
+/**
+ * The other half of a generated migration a snapshot has to carry: the foreign key. `snapshotOf`
+ * recorded `foreignKeys: []` beside an `up` that emitted `references "…" ("id")` — a snapshot
+ * denying a constraint its own migration creates — so `compareTable` had nothing to compare and a
+ * key dropped on the database by hand was invisible to `x db migrate`'s post-migrate check. Only a
+ * server answers this: the constraint's name, its columns and its target come from `pg_constraint`,
+ * and dropping one is DDL a recording client cannot perform.
+ */
+describe.skipIf(!hasPostgres)('live · postgres · migrate applies a foreign key', () => {
+  const clients: PostgresClient[] = [];
+
+  const freshClient = (): PostgresClient => {
+    const client = createPostgresClient({ url: url ?? '' });
+    clients.push(client);
+    return client;
+  };
+
+  const orgs: EntityDescriptionLike = {
+    name: 'LiveKeyOrg',
+    table: 'live_key_orgs',
+    primaryKey: ['id'],
+    columns: [column('id', { kind: 'uuid', notNull: true, primaryKey: true })],
+    indexes: [],
+  };
+
+  const posts: EntityDescriptionLike = {
+    name: 'LiveKeyPost',
+    table: 'live_key_posts',
+    primaryKey: ['id'],
+    columns: [
+      column('id', { kind: 'uuid', notNull: true, primaryKey: true }),
+      column('org_id', { kind: 'uuid', notNull: true, references: 'live_key_orgs.id' }),
+    ],
+    indexes: [index('live_key_posts_org_id_idx', ['org_id'])],
+  };
+
+  const generated = generateMigration({
+    entities: [orgs, posts],
+    name: 'live foreign key',
+    now: new Date('2026-08-14T00:00:00.000Z'),
+  });
+  const withKey: Migration = {
+    id: generated.id,
+    name: 'live foreign key',
+    up: generated.up,
+    down: generated.down,
+  };
+
+  const scoped = (live: SchemaDescription, table: string): SchemaDescription => ({
+    tables: live.tables.filter((each) => each.name === table),
+  });
+
+  beforeEach(async () => {
+    const client = freshClient();
+    await client.execute(raw('drop table if exists "live_key_posts" cascade'));
+    await client.execute(raw('drop table if exists "live_key_orgs" cascade'));
+    await client.execute(raw(`drop table if exists ${LEDGER_TABLE}`));
+  });
+
+  afterEach(async () => {
+    await Promise.all(clients.splice(0).map((client) => client.close()));
+  });
+
+  test('the key applies, matches its snapshot, and dropping it by hand is drift', async () => {
+    const report = await migrate({ migrations: [withKey], client: freshClient() });
+    expect(report.applied.map((applied) => applied.id)).toEqual([withKey.id]);
+
+    const client = freshClient();
+    const live = await introspect({ client });
+    const described = live.tables.find((each) => each.name === 'live_key_posts');
+    // The server's own catalog: the constraint the inline clause created, named as the snapshot
+    // predicted and pointing where the entity said.
+    expect(described?.foreignKeys).toEqual([
+      {
+        name: 'live_key_posts_org_id_fkey',
+        columns: ['org_id'],
+        referencedTable: 'live_key_orgs',
+        referencedColumns: ['id'],
+        onDelete: 'a',
+      },
+    ]);
+
+    const expected = scoped(generated.snapshot, 'live_key_posts');
+    expect(diffSchema(scoped(live, 'live_key_posts'), expected)).toEqual({
+      ok: true,
+      differences: [],
+    });
+
+    // The failure this exists for. `alter table … drop constraint` is exactly the hand edit
+    // `checkDrift` is the last line against, and it used to report `ok: true`.
+    await client.execute(
+      raw('alter table "live_key_posts" drop constraint "live_key_posts_org_id_fkey"'),
+    );
+    const after = diffSchema(scoped(await introspect({ client }), 'live_key_posts'), expected);
+    expect(after.ok).toBe(false);
+    expect(after.differences[0]?.kind).toBe('missing-foreign-key');
+    expect(after.differences[0]?.cause).toContain('no foreign key on (org_id) to "live_key_orgs"');
+
+    // The same constraint under another name is the same constraint: drift matches on where the
+    // key points, never on what a migration called it.
+    await client.execute(
+      raw(
+        'alter table "live_key_posts" add constraint "fk_live_key_posts_org" ' +
+          'foreign key ("org_id") references "live_key_orgs" ("id")',
+      ),
+    );
+    expect(diffSchema(scoped(await introspect({ client }), 'live_key_posts'), expected).ok).toBe(
+      true,
+    );
   }, 15_000);
 });

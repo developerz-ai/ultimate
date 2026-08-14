@@ -5,7 +5,13 @@
 
 import { baseClient, type DbClient } from './client';
 import { DbError } from './errors';
-import { findTable, introspect, type SchemaDescription, type TableDescription } from './introspect';
+import {
+  type ForeignKeyDescription,
+  findTable,
+  introspect,
+  type SchemaDescription,
+  type TableDescription,
+} from './introspect';
 import { type LedgerRow, type Migration, readLedger } from './migrate';
 
 export type DriftKind =
@@ -15,7 +21,8 @@ export type DriftKind =
   | 'missing-table'
   | 'unknown-schema'
   | 'missing-index'
-  | 'changed-index';
+  | 'changed-index'
+  | 'missing-foreign-key';
 
 export interface DriftDifference {
   readonly kind: DriftKind;
@@ -109,6 +116,18 @@ function changedIndex(table: string, index: string, detail: string): DriftDiffer
   };
 }
 
+function missingForeignKey(table: string, key: ForeignKeyDescription): DriftDifference {
+  return {
+    kind: 'missing-foreign-key',
+    table,
+    column: null,
+    cause:
+      `table "${table}" has no foreign key on (${key.columns.join(', ')}) to ` +
+      `"${key.referencedTable}" (${key.referencedColumns.join(', ')}) that migrations declare`,
+    fix: 'x db migrate',
+  };
+}
+
 /**
  * Indexes migrations declare, against the ones the catalog holds — by column list and by
  * uniqueness, which is what caught a composite index rebuilt with its columns the other way round
@@ -150,6 +169,26 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
   return differences;
 }
 
+/**
+ * Foreign keys migrations declare, against the ones the catalog holds — matched on **where the key
+ * points**, never on its name. `snapshotOf` names one the way Postgres names an inline `references`
+ * clause (`posts_org_id_fkey`), a hand-written migration may have said `constraint fk_posts_org`,
+ * and a constraint that points the same columns at the same table is the same constraint whatever
+ * it is called; comparing the name would report drift on a database that is exactly right.
+ *
+ * `onDelete` is not compared either: the catalog spells it as a single character (`a`, `c`, `r`)
+ * and no generated clause declares one, so a snapshot has nothing truthful to hold there. Only the
+ * declared side is judged, for the reason `compareIndexes` gives. Named in `wiki/Known-Gaps.md`.
+ */
+function compareForeignKeys(live: TableDescription, expected: TableDescription): DriftDifference[] {
+  const target = (key: ForeignKeyDescription): string =>
+    JSON.stringify([[...key.columns], key.referencedTable, [...key.referencedColumns]]);
+  const present = new Set(live.foreignKeys.map(target));
+  return expected.foreignKeys
+    .filter((key) => !present.has(target(key)))
+    .map((key) => missingForeignKey(live.name, key));
+}
+
 function compareTable(live: TableDescription, expected: TableDescription): DriftDifference[] {
   const differences: DriftDifference[] = [];
   const expectedColumns = new Set(expected.columns.map((column) => column.name));
@@ -162,6 +201,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
     if (!liveColumns.has(column.name)) differences.push(missingColumn(live.name, column.name));
   }
   differences.push(...compareIndexes(live, expected));
+  differences.push(...compareForeignKeys(live, expected));
   return differences;
 }
 
