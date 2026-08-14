@@ -124,5 +124,8 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
 
 - `local()` in a mutator must be replayable: no `Date.now()`, no `Math.random()`, no I/O.
 - A live query must be bounded (`orderBy` + `limit`) or `x verify` rejects it.
-- The digest job schedules per member, not per org — timezone is a member column.
+- The digest schedules per (org, zone), never per org alone — timezone is a member column, so one
+  org spanning two zones is two deliveries at two instants. The unit is a group and not a member
+  because the post window is org-scoped and bounded by the group's own slot: reading it once per
+  member is the same query N times.
 - Plan prices are per-currency rows in the plan catalog; never convert currencies at runtime.

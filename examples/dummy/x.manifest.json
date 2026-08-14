@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "0ce34a4900510c16",
+  "buildId": "d03d4cbff08ee8cd",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1405,9 +1405,22 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "memberId": {
+          "orgId": {
             "type": "string",
             "format": "uuid"
+          },
+          "zone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
           },
           "localDate": {
             "type": "string",
@@ -1418,7 +1431,8 @@
           }
         },
         "required": [
-          "memberId",
+          "orgId",
+          "zone",
           "localDate",
           "slotAt"
         ],

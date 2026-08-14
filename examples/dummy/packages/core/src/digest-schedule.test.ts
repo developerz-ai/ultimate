@@ -4,7 +4,7 @@
  */
 
 import { expect, test } from 'bun:test';
-import { localDateIn, nextDigestAt, scheduleByZone } from './digest-schedule';
+import { localDateIn, nextDigestAt, scheduleByOrgAndZone } from './digest-schedule';
 
 const at = (iso: string) => new Date(iso);
 
@@ -48,17 +48,33 @@ test('the local date is the member’s date, not the server’s', () => {
   expect(localDateIn(at('2026-03-09T01:00:00.000Z'), 'Asia/Tokyo')).toBe('2026-03-09');
 });
 
-test('members are grouped by zone, one slot per zone', () => {
-  const grouped = scheduleByZone(
+test('members are grouped by (org, zone), and the slot is the zone’s', () => {
+  const groups = scheduleByOrgAndZone(
     [
-      { tz: 'Europe/Madrid', id: 'bruno' },
-      { tz: 'Asia/Tokyo', id: 'kenji' },
-      { tz: 'Europe/Madrid', id: 'ada' },
+      { orgId: 'tinta', tz: 'Europe/Madrid', id: 'bruno' },
+      { orgId: 'tinta', tz: 'Asia/Tokyo', id: 'kenji' },
+      { orgId: 'tinta', tz: 'Europe/Madrid', id: 'ada' },
     ],
     at('2026-03-28T09:30:00.000Z'),
   );
 
-  expect(grouped.size).toBe(2);
-  expect(grouped.get('Europe/Madrid')?.members).toHaveLength(2);
-  expect(grouped.get('Asia/Tokyo')?.at.toISOString()).toBe('2026-03-29T00:00:00.000Z');
+  expect(groups.map((group) => group.zone)).toEqual(['Europe/Madrid', 'Asia/Tokyo']);
+  expect(groups[0]?.members).toHaveLength(2);
+  expect(groups[1]?.at.toISOString()).toBe('2026-03-29T00:00:00.000Z');
+});
+
+test('one zone across two orgs is two groups, because the post window is org-scoped', () => {
+  const groups = scheduleByOrgAndZone(
+    [
+      { orgId: 'tinta', tz: 'Europe/Madrid', id: 'bruno' },
+      { orgId: 'nube', tz: 'Europe/Madrid', id: 'ada' },
+      { orgId: 'tinta', tz: 'Europe/Madrid', id: 'kenji' },
+    ],
+    at('2026-03-28T09:30:00.000Z'),
+  );
+
+  expect(groups.map((group) => group.orgId)).toEqual(['tinta', 'nube']);
+  expect(groups[0]?.members.map((member) => member.id)).toEqual(['bruno', 'kenji']);
+  // One zone, so one calculation — and both groups fire at the same instant, DST included.
+  expect(groups[0]?.at).toBe(groups[1]?.at as Date);
 });

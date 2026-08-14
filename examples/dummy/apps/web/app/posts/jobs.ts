@@ -34,16 +34,19 @@ export const notifySubscribers = job({
     // on the send below replays neither this read nor the two above it.
     const org = await step.run('load-org', () => ctx.orgs.byId(toOrgId(post.orgId)));
 
-    // The step is the retry unit: a provider blip re-sends this step only, with the loads
-    // replayed from storage in microseconds.
-    await step.run('send', async () => {
-      for (const member of recipients) {
-        await send(
+    for (const member of recipients) {
+      // One step per recipient, because the step IS the retry unit: a provider blip on recipient
+      // 40 of 50 re-sends recipient 40 and replays the other 39 from storage in microseconds. One
+      // step around the whole loop re-sent all 50, which is a mailbox full of duplicates for one
+      // transient 503. The member's id names the step because the id survives a replay — a loop
+      // index does not, and a step name is the replay key (X_STEP_DUPLICATE).
+      await step.run(`send:${member.id}`, () =>
+        send(
           postPublished,
           { post, member, org: org.name },
           { to: member.email, locale: member.locale },
-        );
-      }
-    });
+        ),
+      );
+    }
   },
 });
