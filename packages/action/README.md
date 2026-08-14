@@ -194,6 +194,33 @@ name-sorted, and reads no clock, env or random source — same registry ⇒ same
 (`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new
 payload, is `X_IDEMPOTENCY_CONFLICT`. Store is swappable via `setIdempotencyStore()`.
 
+## Contract tests
+
+`publishPost.contract()` returns three assertions. Run them; they throw `X_CONTRACT_DRIFT`.
+
+| Assertion | Holds when |
+|---|---|
+| input schema rejects garbage | the invocation fails `X_INPUT_INVALID` — that code, not any failure |
+| policy denies an anonymous actor | the invocation fails with an `ActionDeniedError` |
+| OpenAPI document contains its operation | the derived path is in `buildOpenApi()` |
+
+The denial assertion sends an input synthesized from `input:`'s own schema — required keys
+only, formats included — because a payload the schema rejects never reaches a policy. It
+asserts the denial, not `X_FORBIDDEN`: a denial carries the policy decision's own code, and
+`can()` answers a null actor with `X_UNAUTHENTICATED`.
+
+```ts
+publishPost.contract({
+  garbage: 42,                                 // what the input schema must reject
+  input: { postId, orgId },                    // when the synthesized one cannot fit
+  ctx: myCtx,                                  // default: an anonymous context
+})
+```
+
+Pass `input:` when the schema carries a constraint the IR cannot invert (a bare `pattern`) or
+when `row:` needs an id that resolves. Anything thrown *before* the policy decides is drift,
+never a pass — the assertion says which code got in the way and names `input:` as the fix.
+
 ## Errors
 
 | Code | When | Fix |

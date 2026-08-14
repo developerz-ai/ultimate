@@ -7,10 +7,11 @@
 import type { Ctx } from '@ultimat3/core';
 import { createContext, isUltimateError } from '@ultimat3/core';
 import type { AnyAction } from './action';
-import { ContractDriftError } from './errors';
+import { ActionDeniedError, ContractDriftError } from './errors';
 import { actionName, invoke } from './invoke';
 import { derivePath } from './naming';
 import { buildOpenApi } from './openapi';
+import { sampleInput } from './sample-input';
 
 export interface ContractTest {
   readonly name: string;
@@ -20,6 +21,12 @@ export interface ContractTest {
 export interface ContractTestOptions {
   /** Value the input schema must reject. `null` fails every object schema. */
   readonly garbage?: unknown;
+  /**
+   * Input for the policy assertion. Omitted means one synthesized from `input:` itself — pass
+   * it when the schema carries a constraint the IR does not (a bare `pattern`, a provider
+   * refinement), or when the action's `row:` loader needs an id that resolves.
+   */
+  readonly input?: unknown;
   readonly ctx?: Ctx;
 }
 
@@ -51,12 +58,8 @@ export function contractTestsFor(
     {
       name: `${name}: policy denies an anonymous actor`,
       run: async () => {
-        await expectThrow(
-          () => invoke(target, emptyInput(), { ctx, surface: 'http' }),
-          null,
-          `${name} ran for an actor of null`,
-          `make the ${name} policy require an authenticated actor`,
-        );
+        const input = 'input' in options ? options.input : sampleInput(target.input);
+        await expectDenied(target, name, input, ctx);
       },
     },
     {
@@ -85,7 +88,8 @@ export function policyTestStubFor(target: AnyAction): string {
 import { ${name} } from './actions';
 
 // Fill in: arrange a foreign actor, expect the policy to deny.
-// The contract tests below are framework-generated and always included.
+// The contract tests below are framework-generated and always included. Pass
+// \`{ input }\` if the synthesized one cannot satisfy this action's schema or row loader.
 for (const contract of contractTestsFor(${name})) {
   test(contract.name, async () => {
     await contract.run();
@@ -94,14 +98,44 @@ for (const contract of contractTestsFor(${name})) {
 `;
 }
 
-/** An input the schema may still reject — only the policy assertion depends on it. */
-function emptyInput(): unknown {
-  return {};
+/**
+ * The assertion the second test is named for, and the reason it refuses to accept just any
+ * thrown error: this used to pass on ANY `UltimateError`, and the input it sent was `{}` —
+ * which fails `input:` for every action with a required field, so `X_INPUT_INVALID` was
+ * thrown before the policy ran and the authz claim was never tested at all.
+ *
+ * `ActionDeniedError` is the one outcome that means the policy decided. It is asserted as a
+ * class rather than as `X_FORBIDDEN`, because it re-uses the policy decision's own code and
+ * the blessed `can()` answers a null actor with `X_UNAUTHENTICATED` — pinning one code would
+ * fail every action that authors its policy the way the framework tells it to.
+ */
+async function expectDenied(
+  target: AnyAction,
+  name: string,
+  input: unknown,
+  ctx: Ctx,
+): Promise<void> {
+  try {
+    await invoke(target, input, { ctx, surface: 'http' });
+  } catch (error) {
+    // A handler's own bug keeps its stack: wrapping a TypeError from a `row:` loader in a
+    // drift error would hide the line that threw behind a fix that does not apply.
+    if (!isUltimateError(error)) throw error;
+    if (error instanceof ActionDeniedError) return;
+    throw new ContractDriftError(
+      `${name} failed with ${error.code} before its policy decided, so the denial is unproven`,
+      `pass \`input:\` to contractTestsFor(${name}) — x actions describe ${name} --json prints the schema`,
+    );
+  }
+  throw new ContractDriftError(
+    `${name} ran for an actor of null`,
+    `make the ${name} policy require an authenticated actor`,
+  );
 }
 
 async function expectThrow(
   run: () => Promise<unknown>,
-  code: string | null,
+  code: string,
   cause: string,
   fix: string,
 ): Promise<void> {
@@ -109,7 +143,7 @@ async function expectThrow(
     await run();
   } catch (error) {
     if (!isUltimateError(error)) throw error;
-    if (code === null || error.code === code) return;
+    if (error.code === code) return;
     throw new ContractDriftError(`${cause} (got ${error.code}, expected ${code})`, fix);
   }
   throw new ContractDriftError(cause, fix);

@@ -24,6 +24,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `mcp-tool.ts` | MCP descriptor, same `invoke` |
 | `job-handle.ts` | shape `@ultimat3/jobs` consumes |
 | `contract-test.ts` | assertions `x g action` emits |
+| `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
 | `idempotency.ts` | store interface + memory default |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
@@ -60,6 +61,16 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `invalidates` entry back is the second throw the guard exists to stop. **A replay skips the bust
   entirely:** no handler ran, the first call already busted these tags, and re-purging the CDN and
   re-queueing ISR per retry is work for a write nobody made.
+- **The policy contract test asserts `ActionDeniedError`, and it sends valid input to get there.**
+  It sent `{}` and accepted any `UltimateError` until 2026-08, so every action with a required
+  field failed `input:` before `guard()` ran and the assertion passed on `X_INPUT_INVALID` —
+  including one whose policy was `allow()`. `sampleInput` builds the payload from `input:`'s own
+  IR (required keys only) so the invocation reaches the policy; the class, not `X_FORBIDDEN`, is
+  the assertion, because `ActionDeniedError` re-uses the policy decision's code and `can()`
+  answers a null actor with `X_UNAUTHENTICATED`. Anything else thrown before the policy is
+  `X_CONTRACT_DRIFT` naming `input:` as the fix — never a pass. A non-`UltimateError` (a `row:`
+  loader's own `TypeError`) is rethrown untouched: its stack is the thing worth reading.
+  `contract-test.contract.test.ts` drives all three assertions against actions built to fail them.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.
