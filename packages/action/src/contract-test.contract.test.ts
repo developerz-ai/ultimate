@@ -11,7 +11,7 @@ import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { ContractTest, ContractTestOptions } from './contract-test';
-import { contractTestsFor } from './contract-test';
+import { contractTestsFor, policyTestStubFor } from './contract-test';
 import { ContractDriftError } from './errors';
 import type { ActionPolicy } from './policy-gate';
 
@@ -31,6 +31,7 @@ const publish = (policy: ActionPolicy, options?: ContractTestOptions): readonly 
 
 const denial = (contracts: readonly ContractTest[]): ContractTest => at(contracts, 1);
 const garbage = (contracts: readonly ContractTest[]): ContractTest => at(contracts, 0);
+const openapi = (contracts: readonly ContractTest[]): ContractTest => at(contracts, 2);
 
 /**
  * The pinned position of each generated assertion. Reaching past the end means the projection
@@ -179,5 +180,53 @@ describe('the garbage assertion', () => {
       .catch((error: unknown) => error);
     expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
     expect(causeOf(failure)).toContain('got X_UNAUTHENTICATED, expected X_INPUT_INVALID');
+  });
+});
+
+describe('the OpenAPI assertion', () => {
+  test('holds: a registered action always has an entry in its own OpenAPI document', async () => {
+    await openapi(publish(can('post:publish'))).run();
+  });
+
+  test('is generated third, named for the action', () => {
+    const contract = openapi(publish(can('post:publish')));
+
+    expect(contract.name).toBe('publishPost: OpenAPI document contains its operation');
+  });
+});
+
+describe('policyTestStubFor', () => {
+  test('emits source text — never executed — that imports and drives the named action', () => {
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      handle: ({ input }) => ({ id: input.postId, published: input.notify }),
+    }).named('publishPost');
+
+    const stub = policyTestStubFor(target);
+
+    expect(typeof stub).toBe('string');
+    expect(stub).toContain("import { publishPost } from './actions'");
+    expect(stub).toContain('for (const contract of contractTestsFor(publishPost))');
+    // The generated file assumes `test()` is ambient — a bun:test / vitest global — and never
+    // imports it itself, because the app owns that import in whichever file it pastes this into.
+    expect(stub).toContain('test(contract.name, async () => {');
+    expect(stub).toContain('await contract.run();');
+  });
+
+  test('names whichever action is passed, not a fixed literal', () => {
+    const other = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      handle: ({ input }) => ({ id: input.postId, published: input.notify }),
+    }).named('archivePost');
+
+    const stub = policyTestStubFor(other);
+
+    expect(stub).toContain("import { archivePost } from './actions'");
+    expect(stub).toContain('contractTestsFor(archivePost)');
+    expect(stub).not.toContain('publishPost');
   });
 });
