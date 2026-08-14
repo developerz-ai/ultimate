@@ -13,9 +13,10 @@ import { type Infer, t } from '@ultimat3/schema';
 /**
  * Hop 4 of the type chain (docs/architecture/05-type-chain.md): every field below except
  * `authorName` must still name a real column on `posts`. `authorName` has no column of its own —
- * it comes from the join in `repo.ts` — so it is added back, not picked. A column renamed or
- * dropped in `packages/db/src/schema/posts.ts` fails to compile on the object literal below,
- * instead of surfacing three hops downstream as a field that silently arrives `undefined`.
+ * it comes from the `author` relation `repo.ts` preloads — so it is added back, not picked. A
+ * column renamed or dropped in `packages/db/src/schema/posts.ts` fails to compile on the object
+ * literal below, instead of surfacing three hops downstream as a field that silently arrives
+ * `undefined`.
  */
 type PostViewKeys = Exclude<keyof Post, 'createdAt' | 'updatedAt'> | 'authorName';
 
@@ -42,6 +43,15 @@ export type PostView = Infer<typeof PostView>;
 export const PostSummary = PostView.omit('body');
 
 export type PostSummary = Infer<typeof PostSummary>;
+
+/**
+ * The `author` relation, as this feature reads it. `preload('author')` attaches the related row as
+ * `unknown` on purpose — the other side is parsed by whoever needs it, never asserted into shape by
+ * the reader — so the one field the view carries is narrowed here, where every other shape lives.
+ */
+export const PostAuthor = t.object({ name: t.string });
+
+export type PostAuthor = Infer<typeof PostAuthor>;
 
 export const CommentView = t.object({
   id: t.uuid,

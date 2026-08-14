@@ -213,10 +213,19 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     expect(harnessFault(before)).toBe('');
     const beforeKeys = new Set(before.diagnostics.map(key));
 
-    // Sanity: the two files the rename is about to hit compile clean today. Otherwise a
+    // Sanity: every file the rename is about to hit compiles clean today. Otherwise a
     // diagnostic appearing "after" the rename could just be pre-existing noise wearing a new line
     // number, and the diff below would prove nothing.
-    const touchedFiles = ['apps/web/app/posts/entity.ts', 'packages/db/seeds/dev.ts'];
+    //
+    // `posts/repo.ts` joined the list when it was rewritten onto @ultimat3/entity's real surface:
+    // it spells the column three times now — the view mapper, the feed projection, the insert
+    // shape — where the builder API it used to call named no column at all.
+    const touchedFiles = [
+      'apps/web/app/posts/entity.ts',
+      'apps/web/app/posts/repo.ts',
+      'apps/web/app/posts/repo.test.ts',
+      'packages/db/seeds/dev.ts',
+    ];
     for (const file of touchedFiles) {
       expect(before.diagnostics.filter((d) => d.file === file)).toEqual([]);
     }
@@ -225,11 +234,12 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
      * Files that already fail today. The diff below ignores them, and that is the same rule the
      * `touchedFiles` sanity check above states — just enforced instead of assumed.
      *
-     * `apps/web/app/posts/repo.ts` is the case that forced this: it carries 18 pre-existing errors
-     * (it calls `.join()`, `.returning()` and friends that `@ultimat3/entity` has never had — the
-     * gap `EXPECTED_RED` pins), and the rename REWORDS one of them, because the message quotes the
-     * column list. A reworded message is a new `key`, so a keyed diff reads it as introduced. It
-     * is not: nothing there compiled before and nothing there compiles after.
+     * `apps/web/app/posts/repo.ts` is the case that forced it: it used to carry 18 errors of its
+     * own (it called `.join()`, `.returning()` and friends that `@ultimat3/entity` has never had),
+     * and the rename REWORDED one of them, because the message quotes the column list. A reworded
+     * message is a new `key`, so a keyed diff reads it as introduced when nothing there compiled
+     * before OR after. That file is repaired and pinned above now; the rule stays, because the
+     * app's baseline is still red elsewhere and any of those messages can be reworded the same way.
      *
      * Deriving the set from the baseline rather than listing it keeps this honest — a file that
      * gets repaired drops out on its own, and its next real regression is caught.
@@ -262,7 +272,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // list on purpose, in the same commit, the same discipline `KNOWN_GAPS` in
     // `packages/cli/src/scaffold-typecheck.ts` uses for pinned compiler drift.
     expect(new Set(introduced.map((d) => d.file))).toEqual(new Set(touchedFiles));
-    expect(introduced).toHaveLength(5);
+    expect(introduced).toHaveLength(14);
 
     // `entity.ts`: the view's field list no longer names a real column (hop 4).
     expect(
@@ -270,6 +280,13 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
         (d) => d.file === 'apps/web/app/posts/entity.ts' && d.message.includes("'excerpt'"),
       ),
     ).toBe(true);
+
+    // `repo.ts`: the view mapper, the feed projection and the insert shape each name the column,
+    // and the projection's two readers cascade off it (hop 2 → 3).
+    expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.ts')).toHaveLength(8);
+
+    // `repo.test.ts`: a test seeding a row is an insert literal like any other (hop 1 → 2).
+    expect(introduced.filter((d) => d.file === 'apps/web/app/posts/repo.test.ts')).toHaveLength(1);
 
     // `seeds/dev.ts`: raw insert literals no longer match the entity's columns (hop 1 → 2).
     expect(introduced.filter((d) => d.file === 'packages/db/seeds/dev.ts')).toHaveLength(4);

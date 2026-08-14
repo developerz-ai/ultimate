@@ -37,11 +37,12 @@ export interface PostsService {
   /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
   publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
   /**
-   * The two columns `postPublish` decides about, for `publishPost`'s `row:` loader. Unscoped by
-   * design — the rule compares tenancy itself, and `null` here means the post does not exist at
-   * all, which the rule reads as a denial rather than as nothing to object to.
+   * The two columns `postPublish` decides about, for `publishPost`'s `row:` loader. Scoped to the
+   * org the caller names: `null` then means "no such post in that org", which the rule reads as a
+   * denial exactly as it reads a row from another org — and an unscoped read of a tenant-columned
+   * entity is `X_TENANCY_UNSCOPED`, so the org is not optional here.
    */
-  authorship(postId: PostId): Promise<PostRow | null>;
+  authorship(orgId: OrgId, postId: PostId): Promise<PostRow | null>;
 }
 
 export interface OrgsService {
