@@ -124,6 +124,13 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `@ultimat3/action` `Mutator` assigns with no cast — a function-typed property would not.
 - `useLive`'s thunk input is read once, at subscribe time. There is no reactive runtime here to
   re-run it, and pretending otherwise would be a silently stale subscription.
+- Every subscription handle client code gets back — `LiveHandle` (`useLive`'s return, and
+  `LiveRows` one layer up through the hook), `Unsubscribe` (`client.subscribe(topic, …)`'s return)
+  — is `Disposable`. `[Symbol.dispose]` is the exact same function reference as `unsubscribe`,
+  never a second implementation that could drift from it, so `using sub = client.useLive(...)` and
+  `sub.unsubscribe()` are one teardown path either way. Pinned in `type-pins.ts`
+  (`_LiveHandleIsDisposable`, `_LiveRowsIsDisposable`, `_UnsubscribeIsDisposable`) so a refactor
+  that drops the member fails the build, not a call site months later.
 - `liveHookFor(query)` is the typed projection the wiki promises as `useLiveFeed({ orgId })`. It
   **binds** `useLive` — it never re-implements a subscribe path, because two of those is two places
   a subscription can be opened wrong. It names `Query`'s shape structurally (`LiveQuerySource`)

@@ -36,13 +36,18 @@ export interface ClientSocket {
 
 export type LiveState = 'loading' | 'live' | 'stale' | 'offline';
 
-export interface LiveHandle<R extends Row = Row> {
+export interface LiveHandle<R extends Row = Row> extends Disposable {
   /** The reactive accessor. In an app this is the Solid signal `useLive` returns. */
   readonly rows: () => readonly R[];
   readonly state: () => LiveState;
   readonly cursor: () => LiveCursor | null;
   unsubscribe(): void;
+  /** The same call as `unsubscribe`, so `using sub = client.useLive(...)` just works. */
+  [Symbol.dispose](): void;
 }
+
+/** What `subscribe()` returns for a tier-1 topic: callable to unsubscribe, and `using`-able too. */
+export type Unsubscribe = (() => void) & Disposable;
 
 export interface LiveQueryRef {
   readonly name: string;
@@ -210,24 +215,26 @@ export class LiveClient<T extends TableMap = TableMap> {
     };
     this.#registrations.set(sid, registration);
     if (this.#connected()) this.#sendSubscribe(registration);
+    const unsubscribe = (): void => {
+      this.#registrations.delete(sid);
+      this.#send({
+        type: 'subscribe',
+        v: PROTOCOL_VERSION,
+        op: 'drop',
+        sid,
+        target: { kind: 'query', qid: query.name, input, cursor: null },
+      });
+    };
     return {
       rows: rows as () => readonly R[],
       state,
       cursor,
-      unsubscribe: () => {
-        this.#registrations.delete(sid);
-        this.#send({
-          type: 'subscribe',
-          v: PROTOCOL_VERSION,
-          op: 'drop',
-          sid,
-          target: { kind: 'query', qid: query.name, input, cursor: null },
-        });
-      },
+      unsubscribe,
+      [Symbol.dispose]: unsubscribe,
     };
   }
 
-  subscribe(name: Topic, handler: (message: JsonObject) => void): () => void {
+  subscribe(name: Topic, handler: (message: JsonObject) => void): Unsubscribe {
     const handlers = this.#topics.get(name) ?? new Set<(message: JsonObject) => void>();
     handlers.add(handler);
     this.#topics.set(name, handlers);
@@ -238,7 +245,9 @@ export class LiveClient<T extends TableMap = TableMap> {
       sid: name,
       target: { kind: 'topic', topic: name },
     });
-    return () => {
+    // A function is an object: attaching `[Symbol.dispose]` keeps the existing callable contract
+    // (`const unsub = channel.subscribe(...); unsub()`) intact while adding `using sub = ...`.
+    const unsubscribe: Unsubscribe = (): void => {
       handlers.delete(handler);
       if (handlers.size > 0) return;
       this.#topics.delete(name);
@@ -250,6 +259,8 @@ export class LiveClient<T extends TableMap = TableMap> {
         target: { kind: 'topic', topic: name },
       });
     };
+    unsubscribe[Symbol.dispose] = unsubscribe;
+    return unsubscribe;
   }
 
   /** Tier 1 publish. The server re-checks the topic policy; this is a request, not an assertion. */

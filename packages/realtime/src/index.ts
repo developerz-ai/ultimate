@@ -48,6 +48,7 @@ export {
   type LiveState,
   type MutatorRef,
   type SignalFactory,
+  type Unsubscribe,
 } from './client';
 // ---- reconnect ----------------------------------------------------------------------------------
 export {

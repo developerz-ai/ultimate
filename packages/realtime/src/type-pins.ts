@@ -7,6 +7,8 @@
 // stops catching the typo that makes a subscription match nothing.
 
 import type { Query } from '@ultimat3/query';
+import type { LiveHandle, Unsubscribe } from './client';
+import type { LiveRows } from './hooks';
 import type { LiveQueryHook, LiveQuerySource } from './query-hook';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -55,3 +57,16 @@ export type _WrongInputKeyIsRefused = Assert<
 export type _DeclaredQueryBindsToTheHook = Assert<
   [Query] extends [LiveQuerySource<InputOf<Query>, Record<string, unknown>>] ? true : false
 >;
+
+/**
+ * The handle `LiveClient.useLive()` returns must stay `Disposable`, or `using sub =
+ * client.useLive(...)` silently degrades to "never unsubscribes" the moment someone drops the
+ * `[Symbol.dispose]` member while refactoring `unsubscribe`.
+ */
+export type _LiveHandleIsDisposable = Assert<[LiveHandle] extends [Disposable] ? true : false>;
+
+/** Same pin, one layer up: the hook's callable result set must stay `Disposable` too. */
+export type _LiveRowsIsDisposable = Assert<[LiveRows] extends [Disposable] ? true : false>;
+
+/** `channel.subscribe()`'s return must stay both callable and `Disposable`. */
+export type _UnsubscribeIsDisposable = Assert<[Unsubscribe] extends [Disposable] ? true : false>;

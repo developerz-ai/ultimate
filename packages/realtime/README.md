@@ -80,6 +80,7 @@ const queue = useMutationQueue();                               // .pending .fai
 | Every member is a **getter**, every result set an **accessor** | a value snapshotted at hook time never re-renders |
 | A thunk `input` is read **once**, at subscribe time | nothing here re-runs it; changing input is a new subscription |
 | The caller owns `unsubscribe` | this layer does not know what a mount is |
+| Every subscription handle (`useLive`'s return, `client.subscribe(topic, …)`'s return) is `Disposable` | `using sub = client.useLive(...)` unsubscribes on scope exit — the same call as `unsubscribe()`, never a second teardown path |
 | `pending` / `failed` are read off the queue, through an invalidation signal refreshed on each `mutate` and `drain` | the count is never a second copy of the queue, and `OfflineQueue` holds arrays, not signals |
 
 Tier 2 has no queue, so `pending` is `0` there — stated, not guessed.

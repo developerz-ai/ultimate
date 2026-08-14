@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
+import type { Topic } from './channel';
 import { type ClientSocket, LiveClient, type SignalFactory } from './client';
 import type { Row } from './json';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
@@ -337,5 +338,62 @@ describe('LiveClient dead-socket writes', () => {
     client.close();
     handle.unsubscribe();
     expect(sockets[0]?.sent).toHaveLength(afterSubscribe);
+  });
+});
+
+describe('Disposable subscription handles', () => {
+  test('using a useLive() handle sends the drop frame on scope exit', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const before = sockets[0]?.sent.length ?? 0;
+
+    {
+      using handle = client.useLive<Row>(feed, { orgId: 'o1' });
+      expect(handle.rows()).toEqual([]);
+    }
+
+    // add frame (subscribing) + drop frame (the `using` scope exiting).
+    const sent = sockets[0]?.sent.slice(before) ?? [];
+    expect(sent).toHaveLength(2);
+    const dropFrame = decode(sent[1] ?? '') as Frame & { op?: string };
+    expect(dropFrame.type).toBe('subscribe');
+    expect(dropFrame.op).toBe('drop');
+  });
+
+  test('[Symbol.dispose] is the same function as unsubscribe(), not a second teardown path', () => {
+    const { client } = harness();
+    client.connect();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+    expect(handle[Symbol.dispose]).toBe(handle.unsubscribe);
+  });
+
+  test('a topic subscription is still directly callable, and using it unsubscribes on scope exit', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const messages: unknown[] = [];
+    const before = sockets[0]?.sent.length ?? 0;
+
+    {
+      using unsub = client.subscribe('org.o1.cursors' as Topic, (message) => {
+        messages.push(message);
+      });
+      expect(typeof unsub).toBe('function');
+    }
+
+    const sent = sockets[0]?.sent.slice(before) ?? [];
+    // add frame (subscribing) + drop frame (the `using` scope exiting).
+    expect(sent).toHaveLength(2);
+    const dropFrame = decode(sent[1] ?? '') as Frame & { op?: string };
+    expect(dropFrame.type).toBe('subscribe');
+    expect(dropFrame.op).toBe('drop');
+  });
+
+  test('a topic Unsubscribe is directly callable as [Symbol.dispose]', () => {
+    const { client } = harness();
+    client.connect();
+    const unsub = client.subscribe('org.o1.cursors' as Topic, () => {});
+    expect(unsub[Symbol.dispose]).toBe(unsub);
   });
 });

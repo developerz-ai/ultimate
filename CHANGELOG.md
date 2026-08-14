@@ -47,6 +47,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **Realtime subscription handles are `Disposable` — `using sub = client.useLive(...)` unsubscribes on scope exit.** `LiveHandle` (`useLive`'s return, and `LiveRows` one layer up through the `useLive` hook) and `Unsubscribe` (`client.subscribe(topic, handler)`'s return) now carry `[Symbol.dispose]`, wired to the exact same function `unsubscribe` already was — never a second teardown implementation to drift from it. Purely additive: `unsubscribe()` and the callable topic-unsubscribe function both still work exactly as before, so no call site needs to change. Pinned in `packages/realtime/src/type-pins.ts` so a future refactor that drops the member fails the build rather than a call site months later.
 - **`findById` batches itself — one microtask of point lookups is one `where "id" in (…)`.** A page that resolves an author per row sent one `select … where "id" = $1` per row. Inside a request, `postgresRepo()` now collects the lookups issued in the same microtask and sends one statement for all of them:
 
   ```ts
