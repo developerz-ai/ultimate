@@ -28,6 +28,7 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'query', name: 'invoice-search', feature: 'invoice' },
   { kind: 'query', name: 'invoice-feed', feature: 'invoice', live: true },
   { kind: 'job', name: 'sweep-invoices', feature: 'invoice' },
+  { kind: 'backfill', name: 'reindex-invoices', feature: 'invoice' },
   { kind: 'task', name: 'nightly-sweep', feature: 'invoice' },
   { kind: 'route', name: 'pricing', surface: 'site' },
   { kind: 'route', name: 'billing', surface: 'app' },

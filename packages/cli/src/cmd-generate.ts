@@ -24,6 +24,7 @@ import { flagBool, flagList, flagString } from './parse';
 import type { GeneratedFile, Surface } from './templates';
 import {
   actionFiles,
+  backfillFiles,
   CATALOG_ROOT,
   entityFiles,
   i18nIndex,
@@ -40,6 +41,7 @@ export const GENERATORS = [
   'resource',
   'action',
   'mutator',
+  'backfill',
   'job',
   'route',
   'policy',
@@ -167,6 +169,8 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       return dedupe(actionFiles(options.name, target));
     case 'mutator':
       return dedupe(actionFiles(options.name, { ...target, mutator: true }));
+    case 'backfill':
+      return dedupe(backfillFiles(options.name, target));
     case 'entity':
       return dedupe(entityFiles(options.name, target));
     case 'policy':
