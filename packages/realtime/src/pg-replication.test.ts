@@ -3,6 +3,7 @@ import { PgLogicalReplicationFeed } from './changefeed';
 import { pgTimestampToEpochMs } from './pg-bytes';
 import { changeLsn, commitPositionOf } from './pg-replication';
 import {
+  BrokenWriteWalsender,
   begin,
   commit,
   copyDone,
@@ -19,6 +20,7 @@ import {
   relation,
   remove,
   start,
+  UncloseableWalsender,
   update,
   xlog,
 } from './pg-replication-fixture';
@@ -375,6 +377,68 @@ describe('a stream that dies', () => {
     server.release();
     await stopping;
     expect(server.closed).toBe(true);
+  });
+
+  test('a goodbye that fails still closes the socket, and reports only once it has', async () => {
+    const server = new BrokenWriteWalsender();
+    const feed = feedOver(() => Promise.resolve(server));
+    await feed.start({ onChange: () => undefined });
+
+    await expect(feed.stop()).rejects.toThrow('socket is already closed');
+    // The confirm threw, and under the old code it left `stop()` right there: the socket stayed
+    // open and the slot stayed `active`, while the supervisor had already been told the teardown
+    // was over. Closed *by the time the failure is observed* is the whole assertion.
+    expect(server.closed).toBe(true);
+  });
+
+  test('a boot failure is what start() reports, not the teardown that failed after it', async () => {
+    const server = new UncloseableWalsender({ walLevel: 'replica' });
+    const feed = feedOver(() => Promise.resolve(server));
+
+    const failure = await feed
+      .start({ onChange: () => undefined })
+      .catch((error: unknown) => error);
+    // `start()` fails over `stop()`, which now raises on its own once cleanup has settled. The
+    // wal_level is the diagnosis the operator can act on; the close that also failed is not.
+    expect((failure as { code?: string }).code).toBe('X_REPLICATION_FAILED');
+    expect((failure as { fix?: string }).fix).toContain("ALTER SYSTEM SET wal_level = 'logical'");
+    expect(server.closed).toBe(true);
+  });
+
+  test('a restart waits for the dead pump to let go of the slot before it dials', async () => {
+    const parking = new ParkingWalsender();
+    const restarted = new FakeWalsender();
+    const dials: { readonly deadSocketClosed: boolean }[] = [];
+    const feed = feedOver(() => {
+      const server = dials.length === 0 ? parking : restarted;
+      dials.push({ deadSocketClosed: parking.closed });
+      return Promise.resolve(server);
+    });
+    await feed.start({ onChange: () => undefined });
+    parking.push(copyDone());
+    // `#die` has cleared `#running` and nulled `#connection`, and is now parked mid-goodbye — so
+    // the walsender that "died" still owns the replication slot.
+    await parking.parked;
+
+    let started = false;
+    const restarting = feed.start({ onChange: () => undefined }).then(() => {
+      started = true;
+    });
+    await settle();
+
+    // Dialling here is the collision: two walsenders, one slot, and the loser gets "already active".
+    expect(dials).toHaveLength(1);
+    expect(started).toBe(false);
+
+    parking.release();
+    await restarting;
+    expect(dials.map((dial) => dial.deadSocketClosed)).toEqual([false, true]);
+
+    await feed.stop();
+    // And the `stop()` that follows owns the connection the restart opened — it cannot return on a
+    // pump that a restart replaced, because a restart no longer replaces one that is still going.
+    expect(restarted.standby).not.toHaveLength(0);
+    expect(restarted.closed).toBe(true);
   });
 });
 

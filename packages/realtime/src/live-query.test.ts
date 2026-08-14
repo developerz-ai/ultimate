@@ -90,7 +90,7 @@ describe('live queries', () => {
     expect(first.frame.type).toBe('snapshot');
     expect(second.frame.type).toBe('snapshot');
     if (first.frame.type !== 'snapshot' || second.frame.type !== 'snapshot') {
-      throw new Error('unreachable');
+      expect.unreachable('both subscribes answer with a snapshot');
     }
     expect(first.frame.rows.map((row) => row.id)).toEqual(['p1']);
     expect(second.frame.rows.map((row) => row.id)).toEqual(['p2']);
@@ -116,7 +116,7 @@ describe('live queries', () => {
     expect(alice.ws.frames).toHaveLength(0);
     expect(bob.ws.frames).toHaveLength(1);
     const frame = bob.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a patch frame');
+    if (frame?.type !== 'patch') expect.unreachable('expected a patch frame');
     // Minimal patch: the changed column plus the id, never the whole row.
     expect(frame.patches[0]?.row).toEqual({ id: 'p2', likes: 1 });
   });
@@ -132,7 +132,7 @@ describe('live queries', () => {
     await registry.deliver(change({ ...target, ownerId: 'carol' }, target));
 
     const frame = bob.ws.frames[0];
-    if (frame?.type !== 'patch') throw new Error('expected a patch frame');
+    if (frame?.type !== 'patch') expect.unreachable('expected a patch frame');
     expect(frame.patches[0]?.op).toBe('delete');
     expect(frame.patches[0]?.id).toBe('p2');
   });
@@ -158,7 +158,7 @@ describe('live queries', () => {
         () => null,
         (thrown: unknown) => thrown as { cause: string; fix: string; docs: string },
       );
-    if (error === null) throw new Error('expected the subscribe to be refused');
+    if (error === null) expect.unreachable('expected the subscribe to be refused');
     expect(error.cause).toContain('liveFed');
     expect(error.fix).toContain('x queries list');
     expect(error.fix).not.toContain('redeploy');

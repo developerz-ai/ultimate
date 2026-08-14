@@ -5,8 +5,9 @@ import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
 import { liveQueryDefinition } from './live-definition';
-import { LiveQueryRegistry, type RowDenied } from './live-query';
+import { LiveQueryRegistry } from './live-query';
 import { SyncSocket, type WsLike } from './socket';
+import type { RowDenied } from './subscriber-gate';
 import { decode, type Frame } from './sync-protocol';
 
 interface FeedRow extends Row {

@@ -1,7 +1,8 @@
 // The reconnect: the one behaviour of `client.ts` no other suite can reach, because `hooks.test.ts`
-// drives the client but has to call `connect()` a second time by hand. Everything here is about the
-// timer — that it is armed, that it dials, that the server's delay survives the close it triggers,
-// and that `close()` cancels it. The scheduler is injected, so nothing sleeps.
+// drives the client but has to call `connect()` a second time by hand. Everything here is the timer
+// — that only the live socket's close arms one, that it dials, that the server's delay survives the
+// close it triggers, that a refused dial is reported rather than thrown out of a timer nobody
+// awaits, and that `close()` cancels it. The scheduler is injected, so nothing sleeps.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
@@ -87,7 +88,7 @@ class ManualScheduler {
 
   fire(): void {
     const armed = this.#armed;
-    if (armed === null) throw new Error('nothing armed');
+    if (armed === null) expect.unreachable('nothing armed');
     this.#armed = null;
     armed.fn();
   }
@@ -99,6 +100,8 @@ interface Harness {
   /** Every socket the client dialled, oldest first. A reconnect is a new entry here. */
   readonly sockets: FakeSocket[];
   readonly clock: ReturnType<typeof frozenClock>;
+  /** Everything the client reported through `onError`, in order. The host's `window.onerror`. */
+  readonly errors: unknown[];
   /** Makes the next `count` dials throw — the socket constructor a browser is allowed to refuse. */
   failNextDials(count: number): void;
 }
@@ -106,6 +109,7 @@ interface Harness {
 function harness(): Harness {
   const timers = new ManualScheduler();
   const sockets: FakeSocket[] = [];
+  const errors: unknown[] = [];
   const clock = frozenClock(1_000);
   let failures = 0;
   const client = new LiveClient({
@@ -113,7 +117,9 @@ function harness(): Harness {
     connect: () => {
       if (failures > 0) {
         failures -= 1;
-        throw new Error('socket refused');
+        // What a browser actually throws when it refuses `new WebSocket(...)`, so the fixture is
+        // the real failure rather than a framework error this code path can never produce.
+        throw new TypeError('socket refused');
       }
       const socket = new FakeSocket();
       sockets.push(socket);
@@ -123,12 +129,16 @@ function harness(): Harness {
     backoff,
     clock,
     scheduler: timers.schedule,
+    onError: (error) => {
+      errors.push(error);
+    },
   });
   return {
     client,
     timers,
     sockets,
     clock,
+    errors,
     failNextDials: (count) => {
       failures = count;
     },
@@ -234,14 +244,19 @@ describe('LiveClient reconnect', () => {
     expect(sockets).toHaveLength(2);
   });
 
-  test('a dial that throws arms the next attempt instead of ending the chain', () => {
-    const { client, timers, sockets, failNextDials } = harness();
+  test('a dial that throws is reported, not rethrown, and the next attempt is armed', () => {
+    const { client, timers, sockets, errors, failNextDials } = harness();
     client.connect();
     sockets[0]?.open();
     sockets[0]?.close(1006);
 
     failNextDials(1);
-    expect(() => timers.fire()).toThrow('socket refused');
+    // Nothing awaits a timer: a throw out of one is `window.onerror` in a tab and an uncaught
+    // exception under Bun — the retry killing the process that was going to run it.
+    expect(() => timers.fire()).not.toThrow();
+    expect(errors).toHaveLength(1); // reported through the seam instead
+    expect(errors[0]).toBeInstanceOf(TypeError);
+    expect(String(errors[0])).toBe('TypeError: socket refused');
     expect(sockets).toHaveLength(1); // the dial produced nothing…
     expect(timers.pending).toBe(1000); // …and the chain is still armed, one attempt further on
 
@@ -251,13 +266,14 @@ describe('LiveClient reconnect', () => {
   });
 
   test('a connect() the caller made itself arms nothing when it throws', () => {
-    const { client, timers, failNextDials } = harness();
+    const { client, timers, errors, failNextDials } = harness();
     failNextDials(1);
 
     // The timer owns the chain; a direct call is the app's, and swallowing it here would retry
-    // behind the back of a caller who is holding the error.
+    // behind the back of a caller who is holding the error — so it is never reported either.
     expect(() => client.connect()).toThrow('socket refused');
     expect(timers.pending).toBeNull();
+    expect(errors).toEqual([]);
   });
 
   test('an explicit connect() cancels the pending reconnect instead of racing it', () => {
@@ -271,6 +287,37 @@ describe('LiveClient reconnect', () => {
     expect(timers.pending).toBeNull();
     sockets[1]?.open();
     expect(sockets).toHaveLength(2); // the cancelled timer never dialled a third
+  });
+});
+
+describe('LiveClient close events', () => {
+  test("the live socket's own close goes offline and arms a reconnect", () => {
+    const { client, timers, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+
+    sockets[0]?.close(1006);
+    expect(client.connected).toBe(false);
+    expect(handle.state()).toBe('offline');
+    expect(timers.pending).toBe(500);
+  });
+
+  test('a close from a socket the client already replaced changes nothing', () => {
+    const { client, timers, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+
+    const stale = sockets[0];
+    client.connect(); // e.g. a forced redial after an auth refresh — the old socket is still open
+    sockets[1]?.open();
+
+    stale?.close(1006); // the replaced socket's close lands late
+    expect(client.connected).toBe(true); // the live connection is not the corpse's to end
+    expect(handle.state()).toBe('loading'); // untouched: only the live socket's close moves it
+    expect(timers.pending).toBeNull(); // a backoff here dials a third socket behind a healthy one
+    expect(timers.delays).toEqual([]);
   });
 });
 
@@ -298,6 +345,19 @@ describe('LiveClient.close', () => {
     expect(client.connected).toBe(false);
     expect(timers.pending).toBeNull();
     expect(timers.delays).toEqual([]);
+  });
+
+  test('reports every subscription offline itself, now that the close it triggers returns', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+
+    client.close();
+    // `useConnection().offline` going true while a `useLive` handle still reads 'live' is one dead
+    // socket told two ways.
+    expect(handle.state()).toBe('offline');
+    expect(client.connected).toBe(false);
   });
 
   test('connect() after close() starts over rather than staying dead', () => {

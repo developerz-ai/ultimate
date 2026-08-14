@@ -305,13 +305,16 @@ export class LiveRowUnidentifiedError extends RealtimeError {
  * The name it prints is the one the client sent; the registry is never enumerated back over the
  * wire, because an unauthenticated socket asking for "a" through "zz" is not entitled to a list of
  * every read this app declares.
+ *
+ * `fix` is the command and nothing else. What to do with what it prints belongs in `cause`: a fix
+ * line is pasted into a shell, so prose appended to it is a command that does not run.
  */
 export class LiveQueryUnknownError extends RealtimeError {
   constructor(args: { name: string }) {
     super({
       code: 'X_LIVE_QUERY_UNKNOWN',
-      cause: `no live query is registered as "${args.name}" on this node`,
-      fix: 'x queries list --json — subscribe under a name it prints, and pass the query to defineApi({ queries }) if it is missing',
+      cause: `no live query is registered as "${args.name}" on this node — subscribe under a name the registry prints, or pass the query to defineApi({ queries }) if it is missing`,
+      fix: 'x queries list --json',
     });
   }
 }

@@ -4,12 +4,17 @@
 // awaiting its way through. The rule under test: one lane per query id, and one read per entry.
 
 import { describe, expect, test } from 'bun:test';
-import { type Actor, userActor } from '@ultimat3/core';
+import { type Actor, frozenClock, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
-import type { ResumeSource } from './cursor';
+import { makeCursor, type ResumeSource } from './cursor';
 import type { JsonValue, Row, RowPatch } from './json';
-import { type LiveQueryDefinition, LiveQueryRegistry, type SnapshotResult } from './live-query';
+import {
+  type LiveQueryDefinition,
+  LiveQueryRegistry,
+  qidOf,
+  type SnapshotResult,
+} from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
@@ -36,7 +41,9 @@ class FlakyBuffer implements ResumeSource {
   append(qid: string, patch: RowPatch): void {
     if (this.failNext) {
       this.failNext = false;
-      throw new Error('retained window is full');
+      // A `TypeError`, not a bare `Error`: what is simulated is a failure from outside the
+      // framework, and reading it as a policy denial is the bug the gate's classification prevents.
+      throw new TypeError('retained window is full');
     }
     this.#inner.append(qid, patch);
   }
@@ -206,7 +213,7 @@ describe('the shared window is read once per entry', () => {
     // N cold subscribers on one query id being N reads is the shared window not existing.
     expect(reads).toBe(1);
     if (first.frame.type !== 'snapshot' || second.frame.type !== 'snapshot') {
-      throw new Error('expected two snapshot frames');
+      expect.unreachable('expected two snapshot frames');
     }
     // One read, two result sets: sharing the read must not share the decision.
     expect(first.frame.rows.map((row) => row.id)).toEqual(['p1']);
@@ -250,7 +257,7 @@ describe('the shared window is read once per entry', () => {
     const bob = socketFor('s-bob', actor('bob'));
     const { frame } = await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input });
 
-    if (frame.type !== 'snapshot') throw new Error('expected a snapshot frame');
+    if (frame.type !== 'snapshot') expect.unreachable('expected a snapshot frame');
     // Rewinding would hand this subscriber `likes: 0` at lsn 1 and then never correct it: the
     // change that made it 9 is behind its cursor, so nothing will ever send it again.
     expect(frame.rows).toEqual([{ ...bobsRow, likes: 9 }]);
@@ -269,8 +276,71 @@ describe('the shared window is read once per entry', () => {
     const bob = socketFor('s-bob', actor('bob'));
     const { frame } = await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input });
 
-    if (frame.type !== 'snapshot') throw new Error('expected a snapshot frame');
+    if (frame.type !== 'snapshot') expect.unreachable('expected a snapshot frame');
     expect(frame.rows).toEqual([{ ...bobsRow, likes: 7 }]);
     expect(frame.cursor.lsn).toBe(formatLsn(9));
+  });
+});
+
+describe('one query id failing costs one query id', () => {
+  test('the entries behind it still see the change, and its own subscribers are desynced', async () => {
+    const source = new FlakyBuffer();
+    const registry = new LiveQueryRegistry({ source }).register(feed({ visible: () => true }));
+    const bob = socketFor('s-bob', actor('bob'));
+    const carol = socketFor('s-carol', actor('carol'));
+    const first = await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input });
+    const second = await registry.subscribe({
+      socket: carol.socket,
+      name: 'liveFeed',
+      input: { orgId: 'o1', tag: 'other' },
+    });
+    bob.ws.frames.length = 0;
+    carol.ws.frames.length = 0;
+
+    // The first entry's append is the one that blows up. Awaiting one entry at a time, the loop
+    // ended here: the second query id never saw this change and nobody was desynced to correct it,
+    // so its subscriber kept a cursor below the change and no later flush re-snapshotted it.
+    source.failNext = true;
+    await expect(registry.deliver(change(2, { ...bobsRow, likes: 1 }, bobsRow))).rejects.toThrow(
+      'retained window is full',
+    );
+
+    expect(carol.ws.frames).toHaveLength(1);
+    expect(bob.socket.desynced.has(first.subscription.sid)).toBe(true);
+    expect(carol.socket.desynced.has(second.subscription.sid)).toBe(false);
+  });
+});
+
+describe('a delta resume decides about whole rows', () => {
+  test('an entry nothing has read yet is filled before a patch reaches the rule', async () => {
+    const seen: Row[] = [];
+    const source = new RingChangeBuffer();
+    const registry = new LiveQueryRegistry({ source, clock: frozenClock(1_000) }).register(
+      feed({
+        snapshot: async () => ({ rows, lsn: formatLsn(3) }),
+        visible: ({ row }) => {
+          seen.push(row);
+          return true;
+        },
+      }),
+    );
+    const qid = qidOf('liveFeed', input);
+    // The retained window holds pre-policy patches, and an update patch is the changed column plus
+    // the id — never the whole row. Nothing has read this entry, so the shared window is empty.
+    source.append(qid, { op: 'update', id: 'p2', row: { id: 'p2', likes: 1 }, lsn: formatLsn(2) });
+    const bob = socketFor('s-bob', actor('bob'));
+
+    const { frame } = await registry.subscribe({
+      socket: bob.socket,
+      name: 'liveFeed',
+      input,
+      cursor: makeCursor(qid, formatLsn(1), rows, 1_000),
+    });
+
+    if (frame.type !== 'patch') expect.unreachable('expected a patch frame');
+    expect(seen[0]).toEqual({ ...bobsRow, likes: 1 });
+    expect(frame.patches).toEqual([
+      { op: 'update', id: 'p2', row: { id: 'p2', likes: 1 }, lsn: formatLsn(2) },
+    ]);
   });
 });

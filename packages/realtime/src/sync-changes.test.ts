@@ -58,7 +58,9 @@ function harness(registry: LiveQueryRegistry): {
 /** A registry whose fanout raises — a broken matcher, a full retained window, a dead gate. */
 class FailingRegistry extends LiveQueryRegistry {
   override async deliver(): Promise<number> {
-    throw new Error('fanout could not finish');
+    // Not an `UltimateError`: the node has to log and survive a fanout failure it cannot classify,
+    // so the fixture throws something no code path could have recognised.
+    throw new TypeError('fanout could not finish');
   }
 }
 

@@ -1,8 +1,7 @@
 // The client half. Framework-agnostic on purpose: the reactive primitive is injected, so this
-// package never imports solid-js and can be exercised by `bun test` with two closures.
-//
-// One client serves all three tiers. `useLive` is tier 2; passing a `store` + `queue` makes the
-// same call tier 3. Nothing about the subscription changes — that is the ladder's whole promise.
+// package never imports solid-js and can be exercised by `bun test` with two closures. One client
+// serves all three tiers: `useLive` is tier 2, and a `store` + `queue` makes the same call tier 3
+// with nothing about the subscription changing — that is the ladder's whole promise.
 
 import { type Clock, systemClock, uuid } from '@ultimat3/core';
 import { applyPatches } from './apply-patches';
@@ -76,7 +75,14 @@ export interface LiveClientOptions<T extends TableMap = TableMap> {
   readonly clock?: Clock;
   /** How a pending reconnect is armed. Defaults to `setTimeout`; tests fire theirs by hand. */
   readonly scheduler?: Scheduler;
+  /** Where a dial failure inside the reconnect timer is reported. Defaults to `reportToConsole`. */
+  readonly onError?: (error: unknown) => void;
 }
+
+/** The default reporter: `console.error`, never core's `logger` — that writes `process.stderr`. */
+const reportToConsole = (error: unknown): void => {
+  console.error(error);
+};
 
 interface Registration {
   readonly sid: string;
@@ -92,6 +98,7 @@ interface Registration {
 export class LiveClient<T extends TableMap = TableMap> {
   readonly #options: LiveClientOptions<T>;
   readonly #clock: Clock;
+  readonly #onError: (error: unknown) => void;
   readonly #registrations = new Map<string, Registration>();
   readonly #topics = new Map<string, Set<(message: JsonObject) => void>>();
   readonly #setUpdate: (buildId: string | null) => void;
@@ -116,17 +123,13 @@ export class LiveClient<T extends TableMap = TableMap> {
   /** A signal, not a field: `connected` is rendered, so a plain boolean would never re-render. */
   readonly #connected: () => boolean;
   readonly #setConnected: (next: boolean) => void;
-  /**
-   * Subscribers notified after every offline-queue mutation: a manual drain, the automatic drain
-   * `connect()` runs on every reconnect, or an async ack/fail frame. `hooks.ts` wires its
-   * invalidation signal through `onQueueChange` rather than each call site remembering to bump it
-   * itself — see there for why that matters.
-   */
+  /** Notified after every offline-queue mutation; `onQueueChange` says who subscribes, and why. */
   readonly #queueListeners = new Set<() => void>();
 
   constructor(options: LiveClientOptions<T>) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
+    this.#onError = options.onError ?? reportToConsole;
     this.signal = options.signal;
     this.queue = options.queue;
     const [update, setUpdate] = options.signal<string | null>(null);
@@ -170,9 +173,11 @@ export class LiveClient<T extends TableMap = TableMap> {
       this.#onFrame(decode(data));
     });
     socket.onClose(() => {
-      // Drop the dead socket before anything can write to it: `#send` is fire-and-forget, so a
-      // retained reference turns every later frame into a silent no-op the caller believes landed.
-      if (this.#socket === socket) this.#socket = null;
+      // A close speaks only for its own socket: `connect()` may already have installed a newer one,
+      // and a corpse marking the live connection offline and arming a backoff is a working socket
+      // killed by a dead one. Dropping ours first keeps fire-and-forget `#send` out of the corpse.
+      if (this.#socket !== socket) return;
+      this.#socket = null;
       this.#setConnected(false);
       for (const registration of this.#registrations.values()) registration.setState('offline');
       // A `reconnect` frame armed the server's own delay before closing us; rescheduling here would
@@ -195,6 +200,8 @@ export class LiveClient<T extends TableMap = TableMap> {
     this.#socket = null;
     socket?.close(code, reason);
     this.#setConnected(false);
+    // The close this triggers is a dropped socket's, so it returns: going offline is our job now.
+    for (const registration of this.#registrations.values()) registration.setState('offline');
   }
 
   /** Tier 2 and tier 3 alike. The returned accessor is the reactive result set. */
@@ -461,11 +468,13 @@ export class LiveClient<T extends TableMap = TableMap> {
       try {
         this.connect();
       } catch (error) {
-        // A socket constructor that throws (mixed content, a URL the page may not open) would
-        // otherwise end the chain here — this attempt failed, so it counts as one and the next is
-        // armed before the error leaves. Rethrown, never swallowed: the host still reports it.
+        // A socket constructor may refuse (mixed content, a URL the page may not open), and one
+        // refusal ending the chain is the same outage as never arming — so the next attempt is put
+        // on first. Reported, never rethrown: nothing awaits a timer, so a throw out of one is an
+        // uncaught exception that can kill the process that was going to retry. Only this path
+        // changes — a `connect()` the app called itself still throws to it, and still arms nothing.
         this.#scheduleReconnect(null);
-        throw error;
+        this.#onError(error);
       }
     }, delay);
   }

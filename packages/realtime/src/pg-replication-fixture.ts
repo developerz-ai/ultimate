@@ -236,6 +236,31 @@ export class ParkingWalsender extends FakeWalsender {
   }
 }
 
+/** `d` — the tag on every frontend CopyData, which is what a standby status update travels in. */
+const COPY_DATA = 0x64;
+
+/**
+ * A walsender whose socket is gone by the time the shutdown reaches it: every frontend `CopyData`
+ * — the standby status update `stop()` confirms with, before anything else — rejects. Production's
+ * version is a connection reset landing between the last WAL read and the SIGTERM.
+ */
+export class BrokenWriteWalsender extends FakeWalsender {
+  override write(bytes: Uint8Array): Promise<void> {
+    // A socket that refuses a write is not a framework fault and not a policy denial, so a
+    // non-framework error class is the honest fixture for one.
+    if (bytes[0] === COPY_DATA) return Promise.reject(new TypeError('socket is already closed'));
+    return super.write(bytes);
+  }
+}
+
+/** A socket whose `close()` raises — the one way a teardown failure reaches a caller of `start()`. */
+export class UncloseableWalsender extends FakeWalsender {
+  override close(): void {
+    super.close();
+    throw new TypeError('socket close failed');
+  }
+}
+
 export interface FeedOptions {
   readonly entities?: readonly string[];
   readonly statusIntervalMs?: number;

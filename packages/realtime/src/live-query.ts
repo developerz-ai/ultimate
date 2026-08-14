@@ -175,6 +175,11 @@ export class LiveQueryRegistry {
         snapshot: async () => await this.#read(entry, { sid, actor: args.socket.actor }),
       });
       if (resumed.kind === 'delta') {
+        // The gate decides about whole rows out of the shared window, and an entry nothing has read
+        // yet has none — every patch would meet an empty window and be withheld. Filling is
+        // conditional on purpose: a restart storm resumes onto entries that already hold a live
+        // window, and re-reading per resuming subscriber is the cost a delta resume exists to skip.
+        if (entry.lsn === '') await this.#fill(entry);
         // The live entry on purpose: a resume runs outside the lane, so the window under it may
         // have moved on — always forwards, and a row whose grant was revoked in the meantime is
         // one this pass must refuse rather than replay from the state it had at the cursor's lsn.
@@ -276,14 +281,37 @@ export class LiveQueryRegistry {
    * `void registry.deliver(change)` straight off the bus subscription, so two changes arriving back
    * to back would otherwise interleave inside one query id — lsn 2 delivered before lsn 1, the
    * subscriber's cursor rewound to 1, and every gate deciding against whichever window won.
+   *
+   * Every lane is *entered* before any of them is awaited, and nothing inside a fanout takes a
+   * second lane, so holding all of them at once cannot be a cycle. That is what makes the ordering
+   * claim true: two deliveries queue onto each query id in call order, serialized per query id and
+   * never per node — awaiting one entry before entering the next made one slow policy pass the
+   * whole node's pace, and let a lane that threw skip every entry behind it with nobody desynced.
    */
   async deliver(change: ChangeEvent): Promise<number> {
+    const lanes = [...this.#entries.values()].map(async (entry) => {
+      try {
+        return await entry.lock.run(() => this.#fanout(entry, change));
+      } catch (error) {
+        // The window advanced under a fanout that did not finish, so every subscriber of this one
+        // query id now holds a cursor below the change and no later flush would correct them:
+        // desynced here, re-snapshotted on the next one. Silent divergence is the whole reason
+        // `markDesynced` exists, and skipping this is how a failure became one.
+        for (const subscription of entry.subscribers.values()) {
+          subscription.socket.markDesynced(subscription.sid);
+        }
+        throw error;
+      }
+    });
+    // `allSettled`, so one lane's rejection neither cancels the others nor goes unhandled. The
+    // first failure still reaches the caller — `sync` logs it — but it costs one query id.
     let sent = 0;
-    // One lane at a time, never two held at once: entries are visited in the same order by every
-    // caller, so a queue behind one entry can never be a cycle with the queue behind another.
-    for (const entry of this.#entries.values()) {
-      sent += await entry.lock.run(() => this.#fanout(entry, change));
+    let failure: { readonly error: unknown } | null = null;
+    for (const lane of await Promise.allSettled(lanes)) {
+      if (lane.status === 'fulfilled') sent += lane.value;
+      else failure ??= { error: lane.reason };
     }
+    if (failure !== null) throw failure.error;
     return sent;
   }
 

@@ -179,3 +179,71 @@ describe('SubscriberGate — patches', () => {
     expect(gate.rowsDenied).toBe(2);
   });
 });
+
+describe('SubscriberGate — a patch whose row the window does not hold', () => {
+  /** The columns an update patch carries: the change and the id, never the whole row. */
+  const partial: RowPatch = { op: 'update', id: 'p9', row: { title: 'edited' }, lsn: '2' };
+
+  test('never reaches the rule, so nothing decides on the columns nobody sent', async () => {
+    const seen: Row[] = [];
+    const gate = new SubscriberGate({});
+    // The shape that leaks rather than fail-closed: `undefined !== true` reads as "public", so the
+    // merged partial row would have been authorized on a column the patch never carried.
+    const target = targetFor(({ row }) => {
+      seen.push(row);
+      return row['private'] !== true;
+    });
+
+    await expect(gate.patch(target, who, partial, false)).resolves.toBeNull();
+
+    expect(seen).toEqual([]);
+  });
+
+  test('a subscriber holding it is told the row is gone, not left rendering it', async () => {
+    const gate = new SubscriberGate({});
+    const target = targetFor(() => true);
+
+    await expect(gate.patch(target, who, partial, true)).resolves.toEqual({
+      op: 'delete',
+      id: 'p9',
+      row: null,
+      lsn: '2',
+    });
+  });
+
+  test('is neither a denial nor a gate failure — the window simply does not hold the row', async () => {
+    const denials: RowDenied[] = [];
+    const failures: GateFailed[] = [];
+    const gate = new SubscriberGate({
+      onRowDenied: (event) => denials.push(event),
+      onGateFailed: (event) => failures.push(event),
+    });
+
+    await gate.filterPatches(
+      targetFor(() => true),
+      who,
+      [partial],
+      new Set(['p9']),
+    );
+
+    expect(denials).toEqual([]);
+    expect(failures).toEqual([]);
+    expect(gate.rowsDenied).toBe(0);
+    expect(gate.gateFailures).toBe(0);
+  });
+
+  test('an insert carrying the whole row is decided on, never withheld', async () => {
+    const gate = new SubscriberGate({});
+    const target = targetFor(({ row }) => row['ownerId'] === 'alice');
+    const insert: RowPatch = {
+      op: 'insert',
+      id: 'p3',
+      row: { id: 'p3', ownerId: 'alice', title: 'new' },
+      lsn: '2',
+    };
+
+    // The window is read at gate time, so a row `applyToWindow` has already landed is a whole one.
+    const target3 = { ...target, rows: [...rows, insert.row as Row] };
+    await expect(gate.patch(target3, who, insert, false)).resolves.toBe(insert);
+  });
+});

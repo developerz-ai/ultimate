@@ -23,7 +23,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   and the registry that would have shown the mismatch never gets opened. The fix line is
   `x queries list --json`. The name the client sent is echoed back; the registry is never
   enumerated over the wire, because an unauthenticated socket walking `a`…`zz` is not entitled to
-  a list of every read this app declares. It is a client fault, so it never pages anyone.
+  a list of every read this app declares. It is a client fault, so it never pages anyone. `fix` is
+  the command and nothing else — what to do with what it prints is in `cause`, because a fix line
+  is pasted into a shell and prose appended to one is a command that does not run.
 - **One build per `(query, input)`, and the window reads through it.** `target.live()` produces the
   descriptor *and* runs the read (`LiveQuery.execute`) — a second subject-less `sourceFor` for the
   rows was two descriptions of one read that agreed only by luck, at twice the parse and twice the
@@ -39,7 +41,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   still the subscribe-time decision and still runs per socket.
 - Every policy call in `live-query.ts` takes a `Subscriber`. That is the enforcement: there is no
   path through the gate that reads a query id and no actor.
-- The row policy always sees the *whole* row from the shared window, never a partial patch.
+- **The row policy always sees the *whole* row from the shared window, never a partial patch — and
+  a window that does not hold the row is not a partial one.** An update patch carries the changed
+  columns plus the id, so merging it onto nothing and calling that a row hands `visible` a
+  `undefined` for every column the change did not touch: fail-closed for `row.ownerId === actor.id`,
+  and a leak for every `!row.private`. So a patch whose row the window does not hold is **withheld**
+  — dropped, or the one `delete` frame that tells a subscriber holding it that it is gone. It is
+  neither `rowsDenied` nor `gateFailures`: nothing decided anything, the window simply *is* the
+  result set. The one path that could meet an empty window is a delta resume onto an entry nothing
+  has read yet, and `subscribe` fills it first (`entry.lsn === ''`) rather than withholding
+  everything — conditional on purpose, because re-reading per resuming subscriber is exactly the
+  cost a delta resume exists to skip in a restart storm.
 - **A denial is a decision; everything else is a failure, and the two never share an answer.** A
   bare `catch { return false }` in the row gate read a dead pool as "you may not see this row" —
   the rows left the screen, `live.rows_denied` counted the drop, and the outage shipped as a
@@ -58,9 +70,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   their way through a per-subscriber gate in between. Unordered, a subscriber is handed lsn 2 and
   then asked to fold lsn 1 on top of it, its cursor rewound to 1 — a reconnect then replays what it
   already applied, over newer state, and the row stays at the older value. `WindowLock` (`run`)
-  gives each entry a FIFO lane; `deliver` takes one entry's lane at a time, never two at once, and
-  every caller visits entries in the same order, so a queue is never a cycle. The lane chains on a
-  settled shadow of each task: one fanout that threw must not reject every fanout behind it.
+  gives each entry a FIFO lane. `deliver` *enters* every lane before awaiting any of them, and no
+  fanout ever takes a second lane, so holding all of them at once cannot be a cycle — and two
+  deliveries queue onto each query id in call order, which is what makes "per query id, not per
+  node" true. Awaiting one entry before entering the next was two bugs in one line: one slow policy
+  pass set the whole node's pace, and a lane that threw ended the loop, so every entry behind it
+  missed the change with **nobody desynced** — the silent divergence `markDesynced` exists to
+  prevent. A lane that fails now desyncs its own subscribers and the first failure still reaches
+  the caller, but it costs one query id. The lane chains on a settled shadow of each task: one
+  fanout that threw must not reject every fanout behind it.
 - **The definition's read is once per entry, not once per subscriber.** A cold subscriber arriving
   while another's read is in flight joins that read — N cold subscribers on one query id being N
   reads is the shared window not existing. It is a share, not a cache: the in-flight promise is
@@ -106,6 +124,17 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   that goes live clears the previous failure, and `stop()` awaits the pump even when the connection
   is already gone — `#die` nulls it *before* closing it, so returning early reports a released slot
   to the supervisor that is about to start the next process.
+- **`#pump` *is* the terminal cleanup, so a restart awaits it before it dials.** `#drain` awaits
+  `#die` and `#die` awaits `connection.close()`, but `#die` clears `#running` and nulls
+  `#connection` before that close settles: a `start()` checking `#running` alone dialled into a
+  slot the dead walsender still owned and replaced `#pump` with its own, so the next `stop()`
+  awaited only the new pump. `start()` takes the previous pump and awaits it first; its failure
+  path calls `stop().catch(() => undefined)` because the boot diagnosis is the one an operator acts
+  on and a teardown that also failed must not replace it.
+- **`stop()` releases everything before it reports anything.** A `#confirm` or an `endCopy` that
+  threw skipped the close and the pump await, leaking the socket and telling a supervisor the
+  teardown was over before it had begun. Every step runs whatever the step before it did, and the
+  first failure is rethrown only once the connection is closed and the pump has ended.
 - A change lsn is `<16 hex commit position><8 hex row position in that transaction>`. Never order by
   either half alone: the commit lsn repeats within a transaction, and per-record WAL positions are
   not monotonic across transactions. Never make it depend on wall time, the entity list or a process
@@ -146,10 +175,16 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   hold the arming together: `onClose` nulls `#socket` (a retained dead socket makes `#send` a
   silent no-op), it only schedules when nothing is armed (a `reconnect` frame arms the node's
   spread slot *before* closing, and a local backoff would overwrite it), and `close()` cancels —
-  a client whose owner is gone must stop dialling, while `connect()` starts it over. A dial that
-  throws inside the timer arms the next attempt before rethrowing: a socket constructor may refuse,
-  and one refusal ending the chain is the same outage as never arming. Only the timer owns the
-  chain — a `connect()` the app called itself throws to the app and arms nothing.
+  a client whose owner is gone must stop dialling, while `connect()` starts it over. A close speaks
+  only for **its own** socket: `onClose` returns before touching any state when `#socket` is no
+  longer the socket that closed, because a replaced socket closing late must not mark the live
+  connection offline or arm a backoff behind it — and `close()` therefore reports its subscriptions
+  offline itself. A dial that throws inside the timer arms the next attempt and is **reported
+  through `onError`** (default `console.error`; never `logger`, whose writer is `process.stderr`
+  and this is browser code): a socket constructor may refuse, one refusal ending the chain is the
+  same outage as never arming, and nothing awaits a timer — a throw out of one is an uncaught
+  exception that can kill the process that was going to retry. Only the timer owns the chain and
+  only the timer reports — a `connect()` the app called itself throws to the app and arms nothing.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).

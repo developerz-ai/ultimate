@@ -130,13 +130,17 @@ export class SubscriberGate {
     holds: boolean,
   ): Promise<RowPatch | null> {
     if (patch.op === 'delete' || patch.row === null) return patch;
-    // The policy always sees the whole row from the shared window — a patch carries changed
-    // columns only, and authorizing a partial row is how a row policy silently starts failing.
     const full = target.rows.find((row) => row.id === patch.id);
-    const row: Row = { ...(full ?? {}), ...patch.row, id: patch.id };
+    // No whole row means no decision to take. An update patch carries the changed columns only, so
+    // a rule reading `row.ownerId` on one reads `undefined` and answers as if the row had said so —
+    // fail-closed for `=== actor.id`, and a leak for every `!row.private`. It is not a gate that
+    // failed either: the shared window *is* the result set, so a row it does not hold is a row this
+    // subscriber is not entitled to keep, and one that holds it is told so.
+    if (full === undefined) return holds ? withdrawn(patch) : null;
+    const row: Row = { ...full, ...patch.row, id: patch.id };
     if (await this.#visible(target, who, row, 'patch')) return patch;
     this.#denied(target.qid, who, patch.id);
-    return holds ? { op: 'delete', id: patch.id, row: null, lsn: patch.lsn } : null;
+    return holds ? withdrawn(patch) : null;
   }
 
   /**
@@ -191,3 +195,15 @@ export class SubscriberGate {
 }
 
 const actorIdOf = (who: Subscriber): string | null => (who.actor === null ? null : who.actor.id);
+
+/**
+ * The one frame a subscriber gets for a row it may no longer keep, whether a rule refused it or the
+ * window stopped holding it. Written once so the two paths cannot answer differently: a client left
+ * holding the row instead renders a revoked grant until something else reconnects it.
+ */
+const withdrawn = (patch: RowPatch): RowPatch => ({
+  op: 'delete',
+  id: patch.id,
+  row: null,
+  lsn: patch.lsn,
+});

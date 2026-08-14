@@ -94,7 +94,9 @@ describe('visibleWithPolicy', () => {
         permissions: [],
         children: [],
         run: () => {
-          throw new Error('connection pool exhausted');
+          // A `TypeError` on purpose: what the gate must not do is read *any* non-denial as one,
+          // and a framework error would leave "it matched a code" as an explanation for passing.
+          throw new TypeError('connection pool exhausted');
         },
       },
       options(),

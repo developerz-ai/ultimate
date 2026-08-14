@@ -65,7 +65,9 @@ describe('WindowLock', () => {
 
     const failed = lock.run(async () => {
       ran.push('failed');
-      throw new Error('fanout blew up');
+      // Deliberately not an `UltimateError`: the lane must isolate whatever a task throws, and a
+      // framework error here would let the isolation be mistaken for code-aware handling.
+      throw new TypeError('fanout blew up');
     });
     const after = lock.run(async () => {
       ran.push('after');
@@ -81,7 +83,9 @@ describe('WindowLock', () => {
   test('a task that throws before its first await rejects rather than escaping the lane', async () => {
     const lock = new WindowLock();
     const thrown = lock.run(() => {
-      throw new Error('synchronous');
+      // A non-framework class again, for the same reason, and it keeps this file free of bare
+      // `Error` — the rule the framework itself is held to.
+      throw new TypeError('synchronous');
     });
 
     await expect(thrown).rejects.toThrow('synchronous');
