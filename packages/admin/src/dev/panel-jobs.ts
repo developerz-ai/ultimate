@@ -2,7 +2,7 @@
 // Kills: "is the queue moving, and which step failed?" — queue depth, per-run step traces,
 // the retry-from-step target, and the dead letter.
 
-import type { JobDefFact, JobRunFact, QueueFact, TaskFact } from './facts';
+import type { BackfillFact, JobDefFact, JobRunFact, QueueFact, TaskFact } from './facts';
 import type { DevPanel } from './panel';
 
 export interface RetryTarget {
@@ -22,6 +22,14 @@ export interface JobsPanelData {
   readonly deadLetter: readonly JobRunFact[];
   readonly retryTargets: readonly RetryTarget[];
   readonly totalDepth: number;
+  /** Every pass the `x_backfills` ledger holds, newest first — see `backfillsInFlight`. */
+  readonly backfills: readonly BackfillFact[];
+  /**
+   * The sweeps still going, split out rather than left for the reader to filter: a `?queue=`
+   * filter scopes the runs on this panel and a backfill is not a queue, so the one number that
+   * would otherwise be missed is how many passes are moving right now.
+   */
+  readonly backfillsInFlight: number;
 }
 
 const firstFailedStep = (run: JobRunFact): RetryTarget | null => {
@@ -41,11 +49,12 @@ export const jobsPanel: DevPanel<JobsPanelData> = {
   titleKey: 'dev.panel.jobs.title',
   questionKey: 'dev.panel.jobs.question',
   async data(sources, params): Promise<JobsPanelData> {
-    const [queues, jobs, tasks, runs] = await Promise.all([
+    const [queues, jobs, tasks, runs, backfills] = await Promise.all([
       sources.queues(),
       sources.jobDefs(),
       sources.tasks(),
       sources.jobRuns(),
+      sources.backfills(),
     ]);
     const queueFilter = params.get('queue');
     const scoped = queueFilter === null ? runs : runs.filter((run) => run.queue === queueFilter);
@@ -61,6 +70,8 @@ export const jobsPanel: DevPanel<JobsPanelData> = {
         .map(firstFailedStep)
         .filter((target): target is RetryTarget => target !== null),
       totalDepth: queues.reduce((sum, queue) => sum + queue.depth, 0),
+      backfills,
+      backfillsInFlight: backfills.filter((pass) => pass.status === 'running').length,
     };
   },
 };

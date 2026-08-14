@@ -103,6 +103,89 @@ Step names are the replay key, so they must be deterministic and unique in a run
 duplicate is `X_STEP_DUPLICATE`, not a silent overwrite. Suspension is control flow
 (`StepSuspension`), never a failure: it does not burn a retry attempt.
 
+## Backfills are jobs
+
+`backfill()` is a **factory over `job()`**, not a ninth primitive — one pass over every row a
+chain matches, with the retry policy, the queue, the cancellation and the dead-letter path a job
+already has.
+
+```ts
+import { backfill } from '@ultimat3/jobs';
+import { db } from '@postly/db';
+
+export const rewriteSlugs = backfill({
+  name: 'rewrite-slugs',                                   // REQUIRED: a durable key
+  batch: 1_000,                                            // rows per statement and per step
+  rate: 5,                                                 // batches/sec — the default
+  source: () => db.posts.where({ published: true }),
+  async handle({ rows }) {
+    await db.posts.upsertAll(rows.map(slugged), { onConflict: ['id'] });
+  },
+});
+
+await rewriteSlugs.enqueue({});                            // it is a JobHandle
+```
+
+The source is read through `inBatches()` — one statement per page, keyset, never OFFSET — and
+each page is handled inside its own `step.run`, named `batch:0`, `batch:1`, … A run killed
+mid-pass therefore **resumes on the page it stopped at**: completed steps replay from storage
+without a statement, and the iteration reopens at the cursor they left behind.
+
+| Rule | Why |
+|---|---|
+| the checkpoint is a cursor and a count, never the page | a completed step's output is retained for the whole run — checkpointing rows would hold every processed row until the job ends |
+| `handle` is given no `step` | a step name minted inside it collides with itself on batch 2 (`X_STEP_DUPLICATE`) |
+| `handle` is given a `signal` | the run's deadline composed with the batch's own ceiling — hand it to whatever the body calls |
+| `handle` runs at least once per page | an attempt cancelled between the last row and the checkpoint replays it — write through `upsertAll` / `updateWhere`, never `count + 1` |
+| `idempotencyKey` is the backfill's name | re-enqueueing a live pass is the same pass, not a second writer on one table |
+| `batch` is refused at declaration | `0`, `1.5` and a `NaN` from an env var fail the build, not the fourth attempt |
+| `rate` throttles, and there is no way off | a sweep shares its pool with the requests the app is still serving; to go faster raise the number |
+| the pause is spent **inside** the step | a resumed attempt replays 500 checkpoints and re-pays none of their pauses |
+
+### The throttle
+
+`rate` is batches per second, defaulting to `DEFAULT_BACKFILL_RATE` (5) — 5,000 rows/sec at the
+default batch, one statement every 200ms, so the pool spends the rest of each interval on the
+app. A rate above what the batches can actually achieve produces no wait, which is why there is
+no unthrottled mode to reach for: `rate: 200` is the fast sweep. Fractions are rates too
+(`rate: 0.5` is one batch every two seconds), a rate that is not finite and positive is refused
+where it was written, and the wait unwinds on the run's cancellation (`X_ABORTED`) rather than
+sitting in a timer nobody is waiting for. `rate` is **not** part of the definition checksum, for
+the reason `batch` is not: pacing is tuning, and changing it does not make a completed sweep a
+different sweep.
+
+### The `x_backfills` ledger
+
+What has already been swept, the twin of `x_migrations`. It ships in the same DDL as `x_jobs`,
+hangs off the queue driver as `driver.backfills`, and carries one row per **pass**: name,
+definition checksum, status, app version, rows processed, last cursor, started/completed.
+
+```ts
+await rewriteSlugs.enqueue({});                  // completed already? no-op with a report
+// → { name: 'rewrite-slugs', batches: 0, rows: 0, skipped: true, previousRunId: '…' }
+
+await rewriteSlugs.enqueue({ force: true });     // sweeps again, into a NEW row
+```
+
+| Rule | Why |
+|---|---|
+| only a **completed** row blocks | a `running` row is this pass resuming, a `failed` one is an attempt the queue is about to retry |
+| `force` writes a new row | reruns are history, never an edit of the row they rerun |
+| a moved checksum **warns** | it hashes function source text, which a bundler moves without behaviour changing — `@ultimat3/db` throws on the same fact because SQL text is what it applied |
+| the row is a report, never a resume source | where a resumed pass restarts is the step checkpoints' answer, and there is only one |
+| a retry adopts its own row | `started_at` is when the pass began, not when this attempt did |
+| a driver without a ledger runs the pass anyway | the same degradation `introspect` has — no bookkeeping, never a refusal |
+
+Three surfaces read it, all through one projection (`inspectBackfills()`), so none of them can
+report a different number:
+
+| Surface | Shows |
+|---|---|
+| `x db backfill --list` | the whole ledger, `--name` / `--status` / `--limit`, and `--json` |
+| `x jobs ls` | the passes **in flight** — rows so far and cursor, beside the queue depth |
+| `x jobs show <id>` | the ledger row for that run, under `backfill` (`null` for any other job) |
+| `/_x` → jobs | the whole ledger plus a live count, alongside the queues and the step traces |
+
 ## The deadline cancels
 
 A job's `timeout` aborts `ctx.signal` **before** it fails the attempt, because the nack that

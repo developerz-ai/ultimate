@@ -51,28 +51,37 @@ Worked trace for the canonical job:
 
 ## Driver interface
 
-One interface, three implementations. **Job code never changes.**
+One interface, four implementations — three for production plus `memory`, which is the one every framework test and `x dev` run against. **Job code never changes.**
+
+Six required methods, the `steps` store, and three optional members. A driver that ships none of the three is still a working queue: `introspect` absent is `x jobs ls` with nothing to list, `backfills` absent is a `backfill()` pass that runs with no bookkeeping rather than one that is refused, and `close` absent is a driver holding nothing to hand back.
 
 ```ts
 export interface JobDriver {
-  enqueue(job: JobRef, input: unknown, opts: EnqueueOpts, tx?: Tx): Promise<JobId>;
-  claim(queue: string, limit: number): Promise<ClaimedJob[]>;
-  heartbeat(id: JobId): Promise<void>;
-  complete(id: JobId, result: unknown): Promise<void>;
-  fail(id: JobId, err: SerializedError, retryAt: Date | null): Promise<void>;
-  saveStep(id: JobId, name: string, result: unknown): Promise<void>;
-  loadSteps(id: JobId): Promise<Record<string, unknown>>;
-  sleepUntil(id: JobId, at: Date): Promise<void>;
+  readonly name: string;
+  /** Step persistence lives with the queue: one store, one transaction boundary. */
+  readonly steps: StepStore;
+  enqueue(request: EnqueueRequest): Promise<EnqueueResult>;
+  claim(options: ClaimOptions): Promise<readonly ClaimedJob[]>;
+  ack(jobId: string): Promise<void>;
+  nack(jobId: string, options: NackOptions): Promise<void>;
+  heartbeat(jobId: string, options: { readonly visibilityTimeoutMs: number }): Promise<void>;
+  stats(): Promise<readonly QueueStats[]>;
+  readonly backfills?: BackfillLedger;
+  readonly introspect?: JobIntrospection;
+  close?(): Promise<void>;
 }
 ```
 
-| Driver | State | Trade-off |
-|---|---|---|
-| `pg` (default) | `x_jobs`, `x_job_steps`, `x_outbox`, `x_rate_buckets` | outbox is free (same DB, same tx); `SKIP LOCKED` claiming; zero extra infra |
-| `redis` | streams + consumer groups, outbox relay in front | high throughput, short jobs; loses "queue state in one backup" |
-| `nats` | JetStream, outbox relay in front | strongest delivery semantics, most operational surface. `As of 2026-07` `claim` throws `X_NOT_IMPLEMENTED` with `fix: set jobs.driver = "pg" in app.config.ts` |
+| Driver | State | `backfills` | Trade-off |
+|---|---|---|---|
+| `pg` (default) | `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`, `x_rate_buckets` | yes | outbox is free (same DB, same tx); `SKIP LOCKED` claiming; zero extra infra |
+| `memory` | in-process maps, lost with the process | yes | tests and `x dev` only — nothing survives a restart, so it is never a deployment target |
+| `redis` | streams + consumer groups, outbox relay in front | no | high throughput, short jobs; loses "queue state in one backup" |
+| `nats` | JetStream, outbox relay in front | no | strongest delivery semantics, most operational surface. `As of 2026-07` `claim` throws `X_NOT_IMPLEMENTED` with `fix: set jobs.driver = "pg" in app.config.ts` |
 
-Because `saveStep`/`loadSteps` are driver methods, step persistence works identically on all three. Switching is a config line plus `x jobs drain --to redis` for in-flight rows.
+`x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
+
+Because `steps` is a driver member, step persistence works identically on all four. Switching is a config line plus `x jobs drain --to redis` for in-flight rows.
 
 ## The pg claim loop
 

@@ -4,6 +4,7 @@
 export type { ActionOptions } from './action';
 export { actionFiles } from './action';
 export { adminFiles } from './admin';
+export { backfillFiles } from './backfill';
 export type { FeatureTarget } from './entity';
 export { entityFiles } from './entity';
 export { jobFiles, taskFiles } from './job';

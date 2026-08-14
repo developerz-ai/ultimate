@@ -5,6 +5,7 @@
 
 export { type DevSourceOptions, defaultDevSources, staticDevSources } from './data';
 export type {
+  BackfillFact,
   CacheEdgeFact,
   ColumnFact,
   DevSources,

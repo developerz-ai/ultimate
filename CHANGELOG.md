@@ -84,6 +84,33 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`backfill()` — one pass over a table, declared as a `job`.** `@ultimat3/jobs` gains a factory, not a ninth primitive: a backfill is durable work with an input schema, a retry policy, an idempotency key and a queue, so `backfill({ name, source, batch, handle })` *returns* a `JobHandle` and inherits `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row with no line of its own. Same rule `llm()` follows: a new capability arrives as a factory over an existing primitive.
+
+  ```ts
+  export const rewriteSlugs = backfill({
+    name: 'rewrite-slugs',
+    batch: 1_000,
+    source: () => db.posts.where({ published: true }),
+    async handle({ rows }) {
+      await db.posts.upsertAll(rows.map(slugged), { onConflict: ['id'] });
+    },
+  });
+  ```
+
+  `source` is read through `inBatches()` — one statement per page, keyset, never OFFSET — and every page is handled inside its own `step.run`, named `batch:0`, `batch:1`, … So a run killed mid-pass resumes on the page it stopped at: the completed steps replay from storage without touching the database, and the iteration is opened at the cursor they leave behind. What a step persists is that cursor and a row count, **never the page** — `steps.ts` hands a completed step's output back for the whole run, so checkpointing rows would retain every row already processed until the job ended. The body is handed no `step` for the same reason step names are positional: a name minted inside it would collide with itself on the second batch. `idempotencyKey` is the backfill's name, so re-enqueueing a live pass is the same pass.
+
+  **`handle` is at least once, and that is a requirement on the handler.** It runs *before* its checkpoint lands, so an attempt killed, cancelled or lease-expired between the last row and the step record hands the same page to the next attempt: write through `upsertAll`, `updateWhere` or a statement whose second run changes nothing, never `count + 1` and never an unguarded external side effect. The order is the only one that is safe — a checkpoint written first would report a page as swept that no attempt ever wrote, and a lost page is unrecoverable where a repeated one is a handler's problem to be idempotent about.
+
+  **`x_backfills` records what has already been swept**, the twin of `x_migrations` one level up: name, definition checksum, status, app version, rows processed, last cursor, started/completed. It ships in the same DDL as `x_jobs` and `x_job_steps` and hangs off the queue driver as `driver.backfills`, so a ledger a pass cannot write is a queue it could not have been claimed from — and a driver without one runs backfills with no bookkeeping rather than refusing them, exactly as `introspect` already degrades. Re-enqueueing a **completed** name is a no-op with a report (`{ skipped: true, previousRunId }`) — no statement, no body call, no row. `enqueue({ force: true })` sweeps again and writes a **new** row: reruns are history, never an edit of the row they rerun. A definition whose checksum moved since the completed pass **warns** and still does not run, because this checksum is over function source text, which a bundler can move without a line of behaviour changing — where `@ultimat3/db`'s `auditLedger` throws on the same fact, since SQL text is what it applied.
+
+  The row is a **report**, never a resume source: where a resumed pass restarts is decided by the step checkpoints and by nothing else. A retry adopts its own row (`started_at` is when the pass began, not this attempt) and clears `completed_at`, which `finish` stamps for `failed` as well as for `completed` — every surface projects that column, so a running pass keeping it would render with a completion time in the past. An attempt that failed is recorded as `failed` with its cursor kept, because where a pass stopped is the first thing anyone asks about one.
+
+  **A backfill is throttled, and the default is slow.** `rate` is batches per second and defaults to `DEFAULT_BACKFILL_RATE` (5) — 5,000 rows/sec at the default batch, one statement every 200ms, so the pool spends the rest of each interval serving the requests the app is still taking. There is **no unthrottled mode**: to sweep faster you raise the number, and a rate above what the batches can achieve simply produces no wait. The pause is spent **inside** each batch's `step.run`, which is what stops a resumed attempt from re-paying the throttle of the five hundred batches it is replaying, and it unwinds on the run's cancellation (`X_ABORTED`) rather than sitting in a timer nobody is waiting for. `rate` is not part of the definition checksum, for the reason `batch` is not: pacing is tuning, and changing it does not make a completed sweep a different sweep.
+
+  **Progress is readable from three surfaces, all reading the one ledger.** `x db backfill --list` prints it (`--name`, `--status`, `--limit`, and `--json` carrying the same rows); `x jobs ls` reports the passes **in flight** with rows-so-far and cursor, and `x jobs show <id>` carries the ledger row for that run under `backfill`; `/_x`'s jobs panel carries the whole ledger plus a live count. One projection behind all of them — `inspectBackfills()` in `@ultimat3/jobs` — so the dashboard renders what `--json` prints. `x db backfill` without `--list` is refused with the command that works, because `x db backfill <name>` will one day *run* a pass and a bare invocation that quietly listed would be a silent no-op the day it lands.
+
+- **`appVersion()` in `@ultimat3/core`.** One reader for `APP_VERSION`, defaulting to `dev`. It was spelled inside `@ultimat3/db`'s `runningAppVersion`, which now delegates — `x_migrations.app_version` and `x_backfills.app_version` are two durable columns an operator reads side by side, `@ultimat3/jobs` cannot reach `db` for the answer, and two packages defaulting the key their own way would put two names on one build.
+
 - **The destructive-SQL rail: a migration that destroys data must say so, and `x verify` refuses one that does not.** `x db gen` now writes `-- destructive: true` into any migration whose `up` drops a table, drops a column, truncates or retypes; `x verify`'s `drift` step reads the committed files back and fails an unmarked one with the new `X_MIGRATION_DESTRUCTIVE`. The strong-migrations idea, enforced rather than documented — a drop is allowed, an *undeclared* drop is not.
 
   ```text

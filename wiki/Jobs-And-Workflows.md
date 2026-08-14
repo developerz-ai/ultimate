@@ -161,10 +161,14 @@ export interface JobDriver {
   nack(jobId: string, options: NackOptions): Promise<void>;
   heartbeat(jobId: string, options: { readonly visibilityTimeoutMs: number }): Promise<void>;
   stats(): Promise<readonly QueueStats[]>;
+  /** The `x_backfills` ledger, when the driver ships one. `postgres` and `memory` do. */
+  readonly backfills?: BackfillLedger;
   readonly introspect?: JobIntrospection;
   close?(): Promise<void>;
 }
 ```
+
+The three optional members degrade rather than refuse: no `introspect` is `x jobs ls` with nothing to list, no `backfills` is a `backfill()` pass that runs with no bookkeeping, and no `close` is a driver holding nothing to hand back.
 
 Two implementations ship in 1.0.0. Two more are **v2** — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
 
@@ -195,9 +199,10 @@ Draining a worker mid-job is safe: it finishes the current step, persists it, an
 
 | Surface | Contents |
 |---|---|
-| `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job |
-| `x jobs ls --json` | one row per job: state, queue, attempts, `runAt`, idempotency key |
-| `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason |
+| `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job, and the whole `x_backfills` ledger with a live count |
+| `x jobs ls --json` | one row per job: state, queue, attempts, `runAt`, idempotency key — plus the `backfill()` passes **in flight**, with rows so far and cursor |
+| `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason, and this run's ledger row under `backfill` when the job is a backfill |
+| `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference#x-db) |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
 | Metrics | `queue_depth{queue}`, `jobs_total{queue,outcome}`, `job_leases_lost_total{queue}` → [Observability](Observability) |
@@ -241,7 +246,7 @@ Asserted by the runner: step replay, idempotency-key dedupe, retry/backoff, conc
 
 ## Rules
 
-- Never assume a job runs once. Assume at-least-once.
+- Never assume a job runs once. Assume at-least-once. A `backfill()`'s `handle` is the same rule one level down: it runs *before* its checkpoint lands, so an attempt cancelled between the two hands that page to the next one — write through `upsertAll`, `updateWhere` or a statement whose second run changes nothing.
 - Never put durable business state only in the payload.
 - Never do slow work inline in an action — enqueue a job.
 - A job never renders, redirects, or reads headers. Actor and tenant come from `ctx`.

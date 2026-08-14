@@ -3,6 +3,7 @@
 // app-version fence is the `migrate` role's contract — a pod must refuse to migrate a database
 // another build already owns, because the alternative is two schemas racing during a rollout.
 
+import { appVersion } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { migrationConflict } from './errors';
 import { expectedQueryLoop } from './expected-loop';
@@ -68,8 +69,13 @@ export function migrationChecksum(migration: Migration): string {
   return migration.checksum ?? checksumOf(migration.up);
 }
 
+/**
+ * Core's, never a second read of the key: `x_migrations.app_version` and `x_backfills.app_version`
+ * are two durable columns an operator reads side by side, and a package defaulting `APP_VERSION`
+ * its own way would put two names on one build.
+ */
 export function runningAppVersion(explicit?: string | undefined): string {
-  return explicit ?? process.env['APP_VERSION'] ?? 'dev';
+  return explicit ?? appVersion();
 }
 
 export async function ensureLedger(client: DbClient): Promise<void> {

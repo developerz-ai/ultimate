@@ -321,6 +321,11 @@ cannot be an identifier at all.
 rail's wording and the rail reads SQL text: leaving the blanker in `readonly.ts` would have put the
 error registry, which registers codes at module evaluation, inside an import cycle.
 
+`runningAppVersion()` delegates to `@ultimat3/core`'s `appVersion()` and keeps its explicit
+override — `x_migrations.app_version` and `@ultimat3/jobs`' `x_backfills.app_version` are two
+durable columns an operator reads side by side, and `jobs` cannot import this package for the
+answer, so the key has one reader at tier 0 rather than one per writer.
+
 `checkDrift()` is the **post-migrate verification** and the only drift question that needs a
 database: the live catalog against the ledger the run just wrote. It is asked where a connection is
 open — `@ultimat3/cli`'s `runMigrations`, which is `x db migrate`, `x db reset` and `ROLE=migrate`

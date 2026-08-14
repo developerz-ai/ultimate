@@ -30,7 +30,7 @@ x version              # CLI version
 | `x new <name>` | scaffold a monorepo that already runs | shipped |
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
-| `x db <sub>` | gen, migrate, reset, studio, branch | shipped |
+| `x db <sub>` | gen, migrate, reset, studio, branch, backfill | shipped |
 | `x verify [--workers N]` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
@@ -208,6 +208,7 @@ Alias: `x generate`.
 
 ```bash
 x db gen "add publish_at" | migrate | reset | studio | branch <name>
+     | backfill --list [--name n] [--status s] [--limit n] [--json]
 ```
 
 | Subcommand | Does | Notes |
@@ -217,11 +218,34 @@ x db gen "add publish_at" | migrate | reset | studio | branch <name>
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
 | `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating |
+| `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | `--list` is required, and its absence is `X_CLI_BAD_FLAG` naming the invocation that works: `x db backfill <name>` will one day *run* a pass, and a bare command that quietly listed would become a silent no-op the day it does |
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
-| `--name` | string | — | migration or branch name, when you would rather not pass it positionally |
+| `--name` | string | — | migration or branch name, or the backfill to filter the ledger by, when you would rather not pass it positionally |
 | `--allow-destructive` | boolean | `false` | let `gen` emit a DROP whose `down` cannot restore the rows. `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line names it |
+| `--list` | boolean | `false` | `backfill`: print the ledger. The only shape this subcommand ships |
+| `--status` | string | — | `backfill`: `running`, `completed` or `failed`. Anything else is `X_CLI_BAD_FLAG` naming the three |
+| `--limit` | string | `100` | `backfill`: max ledger rows |
+
+**The backfill ledger is what has already been SWEPT.** One row per pass — name, status, rows
+processed, last cursor, the app version that started it, started/completed — keyed by run rather
+than by name, so `enqueue({ force: true })` writes a *new* row instead of editing the one it
+reruns. A completed row is what makes re-enqueueing that name a no-op.
+
+```bash
+$ x db backfill --list
+  name           status     rows   cursor      started-at                duration-ms  run-id
+  reindex-posts  completed  84000  -           2026-08-14T09:00:00.000Z  240000       9c1e…
+  recount-likes  running    12500  post_12500  2026-08-14T09:31:12.004Z  -            7f3a…
+✓ 2 backfill pass(es)
+```
+
+`started-at` is the ledger's own ISO string, printed verbatim — this repo formats no date without
+an explicit IANA `timeZone`, and not formatting is the one rendering with no zone to get wrong.
+An empty ledger exits **0**: "nothing has swept this database yet" is an answer. `--json` carries
+the same rows plus the definition checksum. The live half of the same ledger is on `x jobs ls`,
+and `/_x`'s jobs panel carries the whole of it.
 
 **One migration engine, everywhere.** `gen` calls `@ultimat3/db`'s `generateMigration()`;
 `migrate` and `reset` call `migrate()` — the same `x_migrations` ledger, the same per-migration
@@ -590,12 +614,16 @@ x jobs [ls|show <id>|retry <id>|drain --to <driver>] [--queue q] [--state s] [--
 
 | Subcommand | Does |
 |---|---|
-| `ls` | queue depth, the matching rows, and the dead-letter list — a dead job is never filtered out of view |
-| `show <id>` | state, attempt, every step's result, and the remaining retry delays |
+| `ls` | queue depth, the matching rows, the dead-letter list — a dead job is never filtered out of view — and the `backfill()` passes **in flight**, with rows so far and cursor |
+| `show <id>` | state, attempt, every step's result, the remaining retry delays, and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
 | `retry <id>` | re-queue; `--from-step <name>` drops that step so it re-executes while everything before it replays from storage |
 | `drain --to memory\|redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another driver; `--dry-run` reports the plan and moves nothing |
 
 Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it.
+
+`ls` reports only the sweeps still **running**, because it is a live view of the queue; the whole
+ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
+answers with no passes rather than failing the command — the queue is still the question here.
 
 Errors: `X_JOB_UNKNOWN`, `X_CLI_BAD_FLAG`, and `X_NOT_IMPLEMENTED` from a driver with no introspection.
 

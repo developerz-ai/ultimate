@@ -10,6 +10,31 @@ import './register';
 /** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
+export type {
+  BackfillBatch,
+  BackfillDefinition,
+  BackfillInput,
+  BackfillReport,
+} from './backfill';
+export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
+export type { BackfillProgress } from './backfill-inspect';
+export { backfillForRun, inspectBackfills, toBackfillProgress } from './backfill-inspect';
+export type {
+  BackfillFilter,
+  BackfillLedger,
+  BackfillRun,
+  BackfillStatus,
+  BackfillVerdict,
+} from './backfill-ledger';
+export {
+  BACKFILL_STATUSES,
+  backfillChecksum,
+  createMemoryBackfillLedger,
+  decideBackfill,
+  isBackfillStatus,
+} from './backfill-ledger';
+export type { Pacer, PacerOptions } from './backfill-rate';
+export { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,
@@ -41,6 +66,10 @@ export { createPgDriver, createPgLeader } from './driver-pg';
 export {
   SQL_ACK,
   SQL_ADVISORY_UNLOCK,
+  SQL_BACKFILL_FINISH,
+  SQL_BACKFILL_LIST,
+  SQL_BACKFILL_PROGRESS,
+  SQL_BACKFILL_START,
   SQL_CLAIM,
   SQL_ENQUEUE,
   SQL_HEARTBEAT,

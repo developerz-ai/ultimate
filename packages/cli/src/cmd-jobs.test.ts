@@ -1,5 +1,5 @@
 // The command surface of `x jobs`: the spec, the `--to` validation, and what `run()` actually
-// renders. Driven through an ambient `createMemoryDriver()` so `withDriver` reuses it instead of
+// renders. Driven through an ambient `createMemoryDriver()` so `withJobDriver` reuses it instead of
 // booting a queue — a real driver, real claim/ack semantics, no database and no app to load.
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -51,7 +51,7 @@ const contextFor = (root: string, options: RunOptions): CommandContext => ({
   bunVersion: '1.3.0',
 });
 
-/** Install the driver `withDriver` must reuse, so no command under test boots a second queue. */
+/** Install the driver `withJobDriver` must reuse, so no command under test boots a second queue. */
 function runJobs(driver: JobDriver, options: RunOptions = {}): Promise<CommandResult> {
   setJobDriver(driver);
   return jobsCommand.run(contextFor(appRoot(), options));
@@ -117,6 +117,62 @@ describe('unit · x jobs ls rendering', () => {
     expect(rendered).toContain(`x jobs retry ${id}`);
     // The catalog is the only source: a key that is missing renders ⟦key⟧, never English.
     expect(rendered).not.toContain('⟦');
+  });
+
+  test('a pass in flight is reported with how far it has got, and finished ones are not', async () => {
+    const driver = createMemoryDriver();
+    await driver.backfills?.start({
+      runId: 'run_live',
+      name: 'reindex-posts',
+      checksum: 'abc123',
+      appVersion: '1.2.0',
+    });
+    await driver.backfills?.progress('run_live', { rows: 250, cursor: 'post_250' });
+    await driver.backfills?.start({
+      runId: 'run_old',
+      name: 'recount-likes',
+      checksum: 'abc123',
+      appVersion: '1.2.0',
+    });
+    await driver.backfills?.finish('run_old', { status: 'completed', rows: 900 });
+
+    const result = await runJobs(driver, { subcommand: 'ls' });
+    const rendered = (result.lines ?? []).join('\n');
+
+    expect(rendered).toContain(msg('cli.jobs.backfills', { count: 1 }));
+    expect(rendered).toContain(
+      msg('cli.jobs.backfillRow', { name: 'reindex-posts', rows: 250, cursor: 'post_250' }),
+    );
+    expect(rendered).toContain('run_live');
+    // `x jobs ls` is the LIVE queue — a pass that finished is `x db backfill --list`'s answer.
+    expect(rendered).not.toContain('recount-likes');
+    expect(rendered).not.toContain('⟦');
+    expect(result.data).toMatchObject({ backfills: [{ runId: 'run_live', status: 'running' }] });
+  });
+
+  test('a pass that has not reached its first batch says so instead of printing null', async () => {
+    const driver = createMemoryDriver();
+    await driver.backfills?.start({
+      runId: 'run_new',
+      name: 'reindex-posts',
+      checksum: 'abc123',
+      appVersion: '1.2.0',
+    });
+
+    const rendered = ((await runJobs(driver, { subcommand: 'ls' })).lines ?? []).join('\n');
+
+    expect(rendered).toContain(msg('cli.jobs.backfillNoCursor'));
+    expect(rendered).not.toContain('null');
+  });
+
+  test('no backfill in flight renders no section at all', async () => {
+    const driver = createMemoryDriver();
+    await enqueue(driver, 'send-email');
+
+    const result = await runJobs(driver, { subcommand: 'ls' });
+
+    expect((result.lines ?? []).join('\n')).not.toContain(msg('cli.jobs.backfills', { count: 0 }));
+    expect(result.data).toMatchObject({ backfills: [] });
   });
 
   test('a bad --limit fails the command through X_CLI_BAD_FLAG', async () => {

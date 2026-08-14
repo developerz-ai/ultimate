@@ -47,6 +47,22 @@ create table if not exists x_job_steps (
   error        text,
   primary key (run_id, name)
 );
+
+-- The backfill ledger. Keyed by RUN, not by name: a completed name blocks a re-run, and a forced
+-- one writes a new row, so what each pass swept survives the rerun that followed it.
+create table if not exists x_backfills (
+  run_id         uuid primary key,
+  name           text        not null,
+  checksum       text        not null,
+  status         text        not null default 'running',
+  app_version    text        not null,
+  rows_processed bigint      not null default 0,
+  last_cursor    text,
+  started_at     timestamptz not null default now(),
+  completed_at   timestamptz
+);
+
+create index if not exists x_backfills_name_idx on x_backfills (name, started_at desc);
 `.trim();
 
 export const SQL_ENQUEUE = `
@@ -167,4 +183,55 @@ on conflict (run_id, name) do update
    set status = excluded.status, output = excluded.output,
        completed_at = excluded.completed_at, wake_at = excluded.wake_at,
        attempts = excluded.attempts, error = excluded.error
+`.trim();
+
+/**
+ * Open the row, or adopt the one an earlier attempt of the SAME run opened. `do update` rather
+ * than `do nothing` because a failed attempt left `failed` behind and this one is running:
+ * `started_at`, `app_version` and `checksum` stay as the pass began, and the progress columns
+ * stay where the last attempt got to.
+ *
+ * `completed_at` is cleared, and is the one column here that is not preserved: `finish` stamps it
+ * for `failed` as well as for `completed`, so a retried run that kept it would report a running
+ * pass with a completion time in the past — on `x db backfill --list`, on `x jobs show` and in
+ * `/_x`, all of which project that column straight through.
+ */
+export const SQL_BACKFILL_START = `
+insert into x_backfills (run_id, name, checksum, app_version)
+values ($1, $2, $3, $4)
+on conflict (run_id) do update set status = 'running', completed_at = null
+`.trim();
+
+export const SQL_BACKFILL_PROGRESS = `
+update x_backfills
+   set rows_processed = $2, last_cursor = $3
+ where run_id = $1
+`.trim();
+
+/** A failure KEEPS its cursor: where a pass stopped is the first thing anyone asks about one. */
+export const SQL_BACKFILL_FINISH = `
+update x_backfills
+   set status         = $2,
+       rows_processed = $3,
+       completed_at   = now(),
+       last_cursor    = case when $2 = 'completed' then null else last_cursor end
+ where run_id = $1
+`.trim();
+
+/**
+ * `$3::uuid`, where its two neighbours are `::text`, because `run_id` IS a uuid: the cast on the
+ * null test is what tells Postgres the parameter's type, and `::text` there pins it to text for
+ * the comparison below it — `uuid = text` has no operator, so every call failed, filtered or not.
+ * Nothing hand-types this value; it arrives from a job record the same database wrote.
+ */
+export const SQL_BACKFILL_LIST = `
+select run_id, name, checksum, status, app_version, rows_processed, last_cursor,
+       (extract(epoch from started_at)   * 1000)::bigint as started_at,
+       (extract(epoch from completed_at) * 1000)::bigint as completed_at
+  from x_backfills
+ where ($1::text is null or name = $1)
+   and ($2::text is null or status = $2)
+   and ($3::uuid is null or run_id = $3)
+ order by started_at desc
+ limit $4
 `.trim();

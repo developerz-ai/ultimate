@@ -3,6 +3,7 @@
 // enforceable if the projections sit together where one missing `?? null` is visible.
 
 import type {
+  BackfillProgress,
   DeadLetterEntry,
   JobRecord,
   JobTrace,
@@ -26,6 +27,26 @@ function stepTraceToJson(step: StepTrace): JsonValue {
   };
 }
 
+/**
+ * One `x_backfills` row. Every absent value is already `null` at the source (`toBackfillProgress`
+ * makes it so), which is what lets this be a straight field list — and it is spelled out rather
+ * than spread so a field added upstream arrives here as a decision, not as untyped passthrough.
+ */
+export function backfillToJson(progress: BackfillProgress): JsonValue {
+  return {
+    runId: progress.runId,
+    name: progress.name,
+    status: progress.status,
+    checksum: progress.checksum,
+    appVersion: progress.appVersion,
+    rows: progress.rows,
+    cursor: progress.cursor,
+    startedAt: progress.startedAt,
+    completedAt: progress.completedAt,
+    durationMs: progress.durationMs,
+  };
+}
+
 export function jobTraceToJson(trace: JobTrace): JsonValue {
   return {
     id: trace.id,
@@ -41,6 +62,9 @@ export function jobTraceToJson(trace: JobTrace): JsonValue {
     tenantId: trace.tenantId,
     steps: trace.steps.map(stepTraceToJson),
     retryDelaysMs: trace.retryDelaysMs.map((ms) => ms),
+    // `null` for every job that is not a `backfill()` pass. Dropped, `x jobs show <id> --json`
+    // would answer "how far has it got" with silence for the one job kind that can say.
+    backfill: trace.backfill === null ? null : backfillToJson(trace.backfill),
   };
 }
 

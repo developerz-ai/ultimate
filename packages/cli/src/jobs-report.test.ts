@@ -137,6 +137,29 @@ describe('unit · listJobs', () => {
     await expect(listJobs(driver, { state: 'exploded' })).rejects.toThrow(BadFlagError);
     await expect(listJobs(driver, { limit: '3.5' })).rejects.toThrow(BadFlagError);
   });
+
+  test('only the backfills still sweeping come back — a finished one is history', async () => {
+    const driver = createMemoryDriver();
+    for (const runId of ['run_live', 'run_old']) {
+      await driver.backfills?.start({
+        runId,
+        name: `pass-${runId}`,
+        checksum: 'abc123',
+        appVersion: '1.2.0',
+      });
+    }
+    await driver.backfills?.progress('run_live', { rows: 42, cursor: 'post_42' });
+    await driver.backfills?.finish('run_old', { status: 'completed', rows: 900 });
+
+    const result = await listJobs(driver);
+
+    expect(result.backfills.map((pass) => pass.runId)).toEqual(['run_live']);
+    expect(result.backfills[0]).toMatchObject({ rows: 42, cursor: 'post_42', status: 'running' });
+  });
+
+  test('a queue with no ledger rows reports no backfills rather than failing', async () => {
+    expect((await listJobs(createMemoryDriver())).backfills).toEqual([]);
+  });
 });
 
 describe('unit · showJob and retryJob', () => {

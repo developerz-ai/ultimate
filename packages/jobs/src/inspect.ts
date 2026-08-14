@@ -2,6 +2,8 @@
 // object so `x jobs ... --json` and the MCP tool share one shape — an agent debugging a stuck
 // queue reads exactly what the dashboard renders.
 
+import type { BackfillProgress } from './backfill-inspect';
+import { backfillForRun } from './backfill-inspect';
 import type { JobDriver, JobFilter, JobRecord, QueueStats } from './driver';
 import { JobsNotImplementedError } from './errors';
 import { registeredJobs } from './job';
@@ -70,6 +72,12 @@ export interface JobTrace {
   readonly steps: readonly StepTrace[];
   /** Remaining retry delays in ms, jitter excluded. */
   readonly retryDelaysMs: readonly number[];
+  /**
+   * The `x_backfills` row this run wrote, when the job is a `backfill()`. `null` for every other
+   * job and for a driver with no ledger — a step trace says which batch is next, and this says how
+   * many rows the pass has actually put behind it.
+   */
+  readonly backfill: BackfillProgress | null;
 }
 
 const iso = (ms: number | undefined): string | null =>
@@ -103,6 +111,7 @@ export async function inspectJob(driver: JobDriver, jobId: string): Promise<JobT
   if (record === undefined) return undefined;
   const steps = await driver.steps.list(record.runId);
   const handle = registeredJobs().find((candidate) => candidate.name === record.name);
+  const backfill = await backfillForRun(driver, record.runId);
   return {
     id: record.id,
     name: record.name,
@@ -117,6 +126,7 @@ export async function inspectJob(driver: JobDriver, jobId: string): Promise<JobT
     tenantId: record.tenantId ?? null,
     steps: steps.map(toStepTrace),
     retryDelaysMs: handle === undefined ? [] : [...retrySchedule(handle.retry)],
+    backfill: backfill ?? null,
   };
 }
 

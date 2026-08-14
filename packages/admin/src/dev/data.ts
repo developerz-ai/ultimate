@@ -11,6 +11,7 @@ import type { JobState, StepStatus } from '@ultimat3/jobs';
 import type { AdminActor, AdminAuthz } from '../authz';
 import { DevSourceUnavailableError } from '../errors';
 import type {
+  BackfillFact,
   CacheEdgeFact,
   DevSources,
   DriftFact,
@@ -46,6 +47,7 @@ export function staticDevSources(facts: Partial<DevSources> = {}): DevSources {
     jobDefs: facts.jobDefs ?? ((): Promise<readonly JobDefFact[]> => empty([])),
     queues: facts.queues ?? ((): Promise<readonly QueueFact[]> => empty([])),
     jobRuns: facts.jobRuns ?? ((): Promise<readonly JobRunFact[]> => empty([])),
+    backfills: facts.backfills ?? ((): Promise<readonly BackfillFact[]> => empty([])),
     tasks: facts.tasks ?? ((): Promise<readonly TaskFact[]> => empty([])),
     tables: facts.tables ?? ((): Promise<readonly TableFact[]> => empty([])),
     drift: facts.drift ?? ((): Promise<readonly DriftFact[]> => empty([])),
@@ -251,6 +253,31 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
             error: step.error,
           })),
         }));
+    },
+
+    /**
+     * The whole ledger, newest first — not just the passes in flight. `x jobs ls` reports the live
+     * queue and says so; a panel is read to answer "has this backfill ever run here, and what did
+     * it sweep", and the completed rows ARE that answer.
+     *
+     * `inspectBackfills` returns `[]` for a driver that ships no ledger, so only a process with no
+     * queue at all refuses here — which is the same line `queues` and `jobRuns` draw.
+     */
+    async backfills(): Promise<readonly BackfillFact[]> {
+      const { inspectBackfills, jobDriver } = await import('@ultimat3/jobs');
+      const driver = jobDriver();
+      if (driver === undefined) throw unavailable('backfills', 'jobs');
+      return (await inspectBackfills(driver)).map((pass) => ({
+        runId: pass.runId,
+        name: pass.name,
+        status: pass.status,
+        rows: pass.rows,
+        cursor: pass.cursor,
+        startedAt: pass.startedAt,
+        completedAt: pass.completedAt,
+        durationMs: pass.durationMs,
+        appVersion: pass.appVersion,
+      }));
     },
 
     async tasks(): Promise<readonly TaskFact[]> {

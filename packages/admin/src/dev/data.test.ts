@@ -162,6 +162,55 @@ describe('hooks', () => {
   });
 });
 
+describe('the backfill ledger source', () => {
+  test('the WHOLE ledger comes back, completed passes included', async () => {
+    const { createMemoryDriver, resetJobDriver, setJobDriver } = await import('@ultimat3/jobs');
+    const driver = createMemoryDriver();
+    setJobDriver(driver);
+    try {
+      const ledger = driver.backfills;
+      // An assertion rather than a throw: `backfills` is optional on `JobDriver`, so this is a
+      // claim about the memory driver worth failing on by name — and it narrows the type.
+      expect(ledger).toBeDefined();
+      if (ledger === undefined) return;
+      await ledger.start({ runId: 'r1', name: 'sweep', checksum: 'aa', appVersion: '1.2.0' });
+      await ledger.progress('r1', { rows: 40, cursor: 'p40' });
+      await ledger.finish('r1', { status: 'completed', rows: 40 });
+      await ledger.start({ runId: 'r2', name: 'recount', checksum: 'bb', appVersion: '1.2.0' });
+      await ledger.progress('r2', { rows: 7, cursor: 'p7' });
+
+      const facts = await defaultDevSources().backfills();
+
+      // Filtered to `running`, this panel would report a finished sweep as one that never
+      // happened — which is the question `x jobs ls` deliberately does NOT answer and this one
+      // does. `completed` clears the cursor; the row count is what survives.
+      expect(facts.map((fact) => [fact.runId, fact.status, fact.rows])).toEqual([
+        ['r2', 'running', 7],
+        ['r1', 'completed', 40],
+      ]);
+      expect(facts[1]?.durationMs).not.toBeNull();
+      expect(facts[0]?.durationMs).toBeNull();
+      expect(facts[0]?.cursor).toBe('p7');
+    } finally {
+      resetJobDriver();
+      await driver.close();
+    }
+  });
+
+  test('no queue at all refuses, naming the source and the panel', async () => {
+    // The same line `queues` and `jobRuns` draw: a process with no driver cannot answer "what has
+    // been swept", and `[]` there would claim nothing ever has. A driver that merely ships no
+    // ledger is the other case — `inspectBackfills` answers `[]` for it, in `@ultimat3/jobs`.
+    const caught = (await defaultDevSources()
+      .backfills()
+      .catch((error: unknown) => error)) as { cause: string; fix: string };
+
+    expect(caught).toBeUltimateError('X_NOT_IMPLEMENTED');
+    expect(caught.cause).toContain('backfills');
+    expect(caught.cause).toContain('jobs');
+  });
+});
+
 describe('staticDevSources', () => {
   test('still answers empty for everything — the explicit-fixture path must not throw', async () => {
     const sources = staticDevSources();
@@ -174,6 +223,7 @@ describe('staticDevSources', () => {
     await expect(sources.jobDefs()).resolves.toEqual([]);
     await expect(sources.queues()).resolves.toEqual([]);
     await expect(sources.jobRuns()).resolves.toEqual([]);
+    await expect(sources.backfills()).resolves.toEqual([]);
     await expect(sources.tasks()).resolves.toEqual([]);
     await expect(sources.tables()).resolves.toEqual([]);
     await expect(sources.drift()).resolves.toEqual([]);

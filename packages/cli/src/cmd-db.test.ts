@@ -3,14 +3,19 @@
 // own function — and nothing anywhere shells out to a second migrator. Its post-condition is one
 // check too: the live schema against the ledger, which is what `runMigrations` returns.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 // `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { JobDriver } from '@ultimat3/jobs';
+import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
+import { BadFlagError } from './errors';
 import { exec } from './exec';
+import { msg } from './messages';
+import type { CommandResult } from './output';
 import { flagBool, parseArgs } from './parse';
 import { SPECS } from './registry';
 
@@ -168,5 +173,95 @@ describe('unit · the post-migrate report renders the pinned contract output', (
 
   test('a clean database reports nothing, so x db migrate exits 0', () => {
     expect(driftFindings({ ok: true, differences: [] })).toEqual([]);
+  });
+});
+
+/** Install the driver `withJobDriver` must reuse, so no test here boots a queue or a database. */
+async function runBackfill(driver: JobDriver, argv: readonly string[]): Promise<CommandResult> {
+  setJobDriver(driver);
+  const root = await appRoot();
+  try {
+    return await dbCommand.run(ctxFor(argv, root));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function seedPass(driver: JobDriver, runId: string, name: string): Promise<void> {
+  await driver.backfills?.start({ runId, name, checksum: 'abc123', appVersion: '1.2.0' });
+  await driver.backfills?.progress(runId, { rows: 250, cursor: 'post_250' });
+}
+
+afterEach(() => {
+  resetJobDriver();
+});
+
+describe('unit · x db backfill', () => {
+  test('the subcommand and its three filter flags are declared, so the parser reaches them', () => {
+    expect(DB_SUBCOMMANDS).toContain('backfill');
+    const flags = dbCommand.spec.flags?.map((flag) => flag.name) ?? [];
+    expect(flags).toContain('list');
+    expect(flags).toContain('status');
+    expect(flags).toContain('limit');
+    // `--name` already meant "migration or branch"; one declaration, widened, never a second.
+    expect(flags.filter((flag) => flag === 'name')).toHaveLength(1);
+  });
+
+  test('without --list it refuses and names the invocation that works', async () => {
+    const driver = createMemoryDriver();
+    const thrown: unknown = await runBackfill(driver, ['db', 'backfill']).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    // Not X_NOT_IMPLEMENTED: this subcommand ships the ledger. Not a silent default-to-list
+    // either — running a pass is the shape `x db backfill <name>` is reserved for.
+    expect(thrown).toBeInstanceOf(BadFlagError);
+    expect((thrown as BadFlagError).fix).toBe('x db backfill --list');
+    expect((thrown as BadFlagError).cause).toContain('x db backfill --list');
+  });
+
+  test('--list prints the ledger as a table and carries the same rows in data', async () => {
+    const driver = createMemoryDriver();
+    await seedPass(driver, 'run_1', 'reindex-posts');
+
+    const result = await runBackfill(driver, ['db', 'backfill', '--list']);
+    const rendered = (result.lines ?? []).join('\n');
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(msg('cli.db.backfill.listed', { count: 1 }));
+    expect(rendered).toContain('started-at');
+    expect(rendered).toContain('reindex-posts');
+    expect(rendered).toContain('post_250');
+    expect(rendered).not.toContain('⟦');
+    expect(result.data).toMatchObject([
+      { runId: 'run_1', name: 'reindex-posts', status: 'running', rows: 250, cursor: 'post_250' },
+    ]);
+  });
+
+  test('an empty ledger is ok: nothing has swept this database yet is an answer', async () => {
+    const result = await runBackfill(createMemoryDriver(), ['db', 'backfill', '--list']);
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(msg('cli.db.backfill.empty'));
+    expect(result.lines).toEqual([]);
+    expect(result.data).toEqual([]);
+  });
+
+  test('--name and --status filter the ledger the command prints', async () => {
+    const driver = createMemoryDriver();
+    await seedPass(driver, 'run_1', 'reindex-posts');
+    await seedPass(driver, 'run_2', 'recount-likes');
+
+    const named = await runBackfill(driver, [
+      'db',
+      'backfill',
+      '--list',
+      '--name',
+      'recount-likes',
+    ]);
+    expect(named.data).toMatchObject([{ runId: 'run_2' }]);
+
+    const done = await runBackfill(driver, ['db', 'backfill', '--list', '--status', 'completed']);
+    expect(done.data).toEqual([]);
   });
 });

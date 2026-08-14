@@ -122,12 +122,79 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `accept` phase while it runs, handed back in the teardown's `finally` so a `release()` that
   threw still gives it up, `isLeader` cleared there too because a lock this process could not
   hand back is never treated as still held.
+- **`backfill()` is a FACTORY over `job()`, never a ninth primitive.** Same rule `llm()` follows
+  in `@ultimat3/ai`: a new capability arrives as a factory over an existing primitive, so a
+  backfill inherits `.enqueue()`, the retry policy, the cancellation, the dead-letter path and
+  its manifest row instead of re-declaring them. Three things in `backfill.ts` are load-bearing
+  and none is an implementation detail: a step's persisted output is the CURSOR and a row count
+  and never the page, because `steps.ts` retains a completed step's output for the whole run and
+  a page there is every processed row held until the job ends; step names are positional
+  (`batch:<index>`) so the next attempt mints the same key the last one wrote, which is also why
+  `handle` is handed no `step` — a name minted inside a per-batch body collides with itself on
+  batch 2; and the iteration is rebuilt whenever `batches.cursor` disagrees with the checkpoint,
+  because `retryFromStep` re-opens ONE step in the middle of a finished run and the cursor then
+  jumps over a page the live iteration never read. A checkpoint READ back is checked rather than
+  trusted — `step.run` replays it through an unchecked `as T`, and an absent cursor is not `null`,
+  so the pass would silently reopen the source at the top and walk the whole table again.
+- **`handle` is AT LEAST ONCE, and the ordering that makes it so is deliberate.** The body runs
+  inside the step and the record is written after it returns, so an attempt killed, cancelled or
+  lease-expired between the two hands that page to the next attempt — which is why the doc comment,
+  the CHANGELOG, `CLAUDE.md` and `x g backfill`'s generated source all say the handler must be
+  idempotent. Never invert it: checkpointing first would report a page as swept that nobody wrote,
+  and a lost page is unrecoverable where a repeated one is the handler's problem.
+- **`x_backfills` is what has already been SWEPT, and the step checkpoints are where a pass
+  resumes. Never the other way round.** The ledger row (`backfill-ledger.ts`) is a report an
+  operator reads and the record that a completed name is done; the checkpoints are written in step
+  with the work. A resume driven off `last_cursor` would be a second answer to "where were we"
+  against a row that is not transactional with the rows it describes. Keyed by RUN, not by name,
+  because `force` writes a NEW row rather than editing the one it reruns — history, not an edit of
+  it. Only `completed` blocks: a `running` row is this pass resuming or one holding the single live
+  idempotency key, a `failed` one is an attempt the queue is about to retry, and `start()` puts an
+  adopted row back to `running` keeping the `started_at` the PASS began at and CLEARING
+  `completed_at` — `finish` stamps that column for `failed` as well as for `completed`, and all
+  four surfaces project it, so a retried run that kept it renders as running with a completion time
+  in the past. A moved checksum WARNS
+  and still does not run — it hashes `source` and `handle`'s source text with a `\u0000` between
+  them (raw concatenation would hash a boundary, not a pair), and a bundler moves that text without
+  a line of behaviour changing, which is why `@ultimat3/db`'s `auditLedger` may throw on the same
+  fact and this may not. `force` is the only override, and it rides the input rather than the
+  idempotency key: one live pass per name, forced or not, or "kick it again" becomes a second
+  writer on one table.
+- **The throttle is spent INSIDE the batch's own `step.run`, and that is the whole of it.**
+  `backfill-rate.ts` owns one pacer per declaration (`rate`, batches/sec, default 5); the wait is
+  the first statement of the step body, never around it. Outside the step, an attempt resuming at
+  batch 500 would replay 500 completed checkpoints — which run no body and touch no database — and
+  still pay the full throttle of everything it had already done before reading a new row. The
+  pacer takes the step's `signal` and rejects `X_ABORTED` both before the wait and after it, for
+  the reason `execute.ts` cancels before it rejects: the wait's sleeper settles early on abort, so
+  what it means is "the wait is over", never "the slot arrived". Built once at declaration, like
+  the checksum: the interval belongs to the table and the pool, not to whichever attempt holds the
+  run. `rate` is deliberately NOT in the checksum, for the reason `batch` is not. `createPacer` is
+  exported, so it asserts the rate itself rather than trusting `backfill()` to have done it: `0`
+  makes the interval `Infinity`, which the timer clamps to about a millisecond — an unvalidated
+  zero is "no throttle at all", the one setting this module exists to make unreachable.
+- **`inspectBackfills()` is the ONE projection of the ledger, and there is no second reader.**
+  `backfill-inspect.ts` maps a `BackfillRun` to a plain JSON object (epochs to ISO, absent to
+  `null`) for `x db backfill --list`, `x jobs ls`, `x jobs show` and `/_x`'s jobs panel — four
+  surfaces that must not disagree about how many rows a pass has swept. It reads no clock: a
+  running row's elapsed time is a different number in every process that asks, so `durationMs` is
+  the pass's own completed span or `null`. It answers `[]` — never a throw — for a driver with no
+  ledger, because `x jobs ls` is asked about the queue and must not fail over a fact nobody asked
+  for; the surface that IS asking (`x db backfill --list`) says so in its own summary. `JobTrace`
+  carries `backfill` for the same reason `steps` is on it: a step trace says which batch is next,
+  the ledger row says what is behind it.
+- **The ledger hangs off the queue driver (`driver.backfills`), optional like `introspect`.**
+  `x_backfills` ships in `SQL_JOBS_TABLE`, so a ledger a pass cannot write is a queue it could not
+  have been claimed from — and `dev-queue.ts` applies that one constant, so `x dev` and production
+  create the same table. A driver that ships none (`driver-redis`, `driver-nats`, a hand-rolled
+  one) runs backfills with NO bookkeeping rather than refusing them: nothing blocks a completed
+  name there, and that degradation is the price of one install point.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
 - All time is epoch ms from an injected `Clock`, read via `nowMs()` in `clock.ts`.
-- Drivers implement exactly the six `JobDriver` methods plus optional `introspect`.
-  New capabilities go behind the interface, never as a driver-specific export.
+- Drivers implement exactly the six `JobDriver` methods plus optional `introspect` and
+  `backfills`. New capabilities go behind the interface, never as a driver-specific export.
 - `inspect.ts` returns plain JSON-serialisable objects — CLI, `/_x` and MCP share them.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a job/task file imports
   one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
@@ -164,6 +231,11 @@ picture from the other side.
 | File | Owns |
 |---|---|
 | `job.ts` | the `job()` primitive + registry + the handle's fluent surface + `registerJob` |
+| `backfill.ts` | `backfill()` — a factory over `job()`: the declaration, its checksum and its input |
+| `backfill-pass.ts` | one pass: the batched iteration, its cursor checkpoints and its ledger row |
+| `backfill-ledger.ts` | `x_backfills` — the contract, `BACKFILL_STATUSES`, the checksum, the verdict, the memory ledger |
+| `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
+| `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
@@ -181,6 +253,15 @@ picture from the other side.
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` | stored event bus for `step.waitForEvent` |
 | `inspect.ts` | `--json` introspection |
+
+The pass is pinned across three files off **one** fixture. `backfill-pass-fixture.ts` owns the
+harness — a real `@ultimat3/entity` chain over a real `memoryRepo`, wrapped so statements,
+iterations and closes are counted, plus `installLedger()`; `backfill-pass.test.ts` drives the
+iteration and its checkpoints, `backfill-pass-ledger.test.ts` the `x_backfills` row the same pass
+writes. Split at the 500-line ceiling, and shared rather than copied because two harnesses that
+drifted would be two different passes agreeing only by construction. The throttle left earlier, as
+`backfill-throttle.test.ts` with a fixture of its own (it needs a clock the pacer can be watched
+against, which the shared harness deliberately does not have).
 
 `*.job.test.ts` is the opt-in suite the `job` verify step runs: `replay.job.test.ts`,
 `idempotency.job.test.ts` and `outbox-atomicity.job.test.ts` each prove one named guarantee (step
