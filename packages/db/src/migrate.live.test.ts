@@ -6,6 +6,12 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createPostgresClient, type PostgresClient } from './client';
+import type {
+  ColumnDescriptionLike,
+  EntityDescriptionLike,
+  IndexDescriptionLike,
+} from './generate';
+import { generateMigration } from './generate';
 import { LEDGER_TABLE, type Migration, migrate, rollback } from './migrate';
 import { raw } from './sql';
 
@@ -142,6 +148,128 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate applies a script', ()
     expect(reverted).toEqual([script.id]);
     const after = await freshClient().query<{ n: number }>(
       raw(`select count(*)::int as n from pg_tables where tablename = 'live_script_posts'`),
+    );
+    expect(after[0]?.n).toBe(0);
+  }, 15_000);
+});
+
+/**
+ * End to end, the way `x db gen` then `x db migrate` actually runs it: an entity description
+ * through `generateMigration` — never hand-written SQL — applied by the real ledger engine,
+ * `migrate()`, against a server. The bug `04c974f` fixed lived in the generator: a composite
+ * index recovered its column list by parsing the index *name*, which does not run backwards
+ * (`_` both joins columns and appears inside them), so two columns applied as
+ * `("org_id_created_at")` — a column that does not exist, `42703`. Proving the generated SQL is
+ * correct (`generate.test.ts`) and proving `migrate()` can apply a multi-statement script
+ * (the test above) are each necessary and neither alone is the fix — this is the join of both,
+ * the one path nothing else here exercises.
+ */
+describe.skipIf(!hasPostgres)('live · postgres · migrate applies a composite index', () => {
+  const clients: PostgresClient[] = [];
+
+  const freshClient = (): PostgresClient => {
+    const client = createPostgresClient({ url: url ?? '' });
+    clients.push(client);
+    return client;
+  };
+
+  const column = (
+    name: string,
+    overrides: Partial<ColumnDescriptionLike> = {},
+  ): ColumnDescriptionLike => ({
+    property: name,
+    column: name,
+    kind: 'text',
+    notNull: false,
+    primaryKey: false,
+    unique: false,
+    hasDefault: false,
+    check: null,
+    references: null,
+    ...overrides,
+  });
+
+  const index = (
+    name: string,
+    columns: readonly string[],
+    overrides: Partial<IndexDescriptionLike> = {},
+  ): IndexDescriptionLike => ({
+    name,
+    columns,
+    unique: false,
+    where: null,
+    order: null,
+    ...overrides,
+  });
+
+  const entity: EntityDescriptionLike = {
+    name: 'LiveCompositePost',
+    table: 'live_composite_posts',
+    primaryKey: ['id'],
+    columns: [
+      column('id', { kind: 'uuid', notNull: true, primaryKey: true }),
+      column('org_id', { kind: 'uuid', notNull: true }),
+      column('created_at', { kind: 'timestamptz', notNull: true }),
+    ],
+    indexes: [
+      index('live_composite_posts_org_id_created_at_idx', ['org_id', 'created_at']),
+      index('live_composite_posts_org_id_id_key', ['org_id', 'id'], { unique: true }),
+    ],
+  };
+
+  const generated = generateMigration({
+    entities: [entity],
+    name: 'live composite index',
+    now: new Date('2026-08-14T00:00:00.000Z'),
+  });
+  // `generateMigration` is the same function `x db gen` calls — a hand-written `up`/`down` here
+  // would test `migrate()` alone, which the plain script test above already covers.
+  const composite: Migration = {
+    id: generated.id,
+    name: 'live composite index',
+    up: generated.up,
+    down: generated.down,
+  };
+
+  beforeEach(async () => {
+    const client = freshClient();
+    await client.execute(raw('drop table if exists "live_composite_posts" cascade'));
+    await client.execute(raw(`drop table if exists ${LEDGER_TABLE}`));
+  });
+
+  afterEach(async () => {
+    await Promise.all(clients.splice(0).map((client) => client.close()));
+  });
+
+  test('a composite index and a composite unique index both apply, in full, and rollback drops them', async () => {
+    // Never the collapsed `("org_id_created_at")` the name-parsing bug used to emit.
+    expect(composite.up).toContain(
+      'create index "live_composite_posts_org_id_created_at_idx" ' +
+        'on "live_composite_posts" ("org_id", "created_at");',
+    );
+    expect(composite.up).toContain(
+      'create unique index "live_composite_posts_org_id_id_key" ' +
+        'on "live_composite_posts" ("org_id", "id");',
+    );
+
+    const report = await migrate({ migrations: [composite], client: freshClient() });
+    expect(report.applied.map((applied) => applied.id)).toEqual([composite.id]);
+
+    const client = freshClient();
+    const indexes = await client.query<{ indexname: string; indexdef: string }>(
+      raw(`select indexname, indexdef from pg_indexes where tablename = 'live_composite_posts'`),
+    );
+    const byName = new Map(indexes.map((index) => [index.indexname, index.indexdef]));
+    // The server's own catalog, not just the generated text — the columns really landed.
+    expect(byName.get('live_composite_posts_org_id_created_at_idx')).toContain(
+      '(org_id, created_at)',
+    );
+    expect(byName.get('live_composite_posts_org_id_id_key')).toContain('(org_id, id)');
+
+    const reverted = await rollback({ migrations: [composite], client: freshClient() });
+    expect(reverted).toEqual([composite.id]);
+    const after = await freshClient().query<{ n: number }>(
+      raw(`select count(*)::int as n from pg_tables where tablename = 'live_composite_posts'`),
     );
     expect(after[0]?.n).toBe(0);
   }, 15_000);

@@ -243,6 +243,10 @@ new part of an index is added to `IndexDescriptionLike` and spelled in `createIn
 into the name for a reader to parse back out. An index naming no column is `X_INVARIANT` through
 core's `assert` — `entity()` refuses `on: []` at declaration, so nothing the framework produces can
 reach it, and a hand-built description gets the error rather than DDL Postgres cannot parse.
+`generate.test.ts` pins the generated SQL text; `migrate.live.test.ts`'s composite-index describe
+block is the join of that fix with the engine it ships through — an entity description into
+`generateMigration`, applied by `migrate()` itself against a real server, columns confirmed against
+`pg_indexes`, rather than either half alone.
 
 **One send is one statement, so `migrate()` and `rollback()` split the script.** `tx.execute(raw(
 migration.up))` on a text holding two commands is where the two drivers disagreed, and the
