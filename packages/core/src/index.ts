@@ -326,9 +326,11 @@ export type { RequestSample } from './runtime-metrics';
 export {
   connections,
   jobs,
+  leasesLost,
   queueDepth,
   recordConnection,
   recordJob,
+  recordLeaseLost,
   recordQueueDepth,
   recordRequest,
   requestDuration,

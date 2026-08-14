@@ -200,8 +200,11 @@ Draining a worker mid-job is safe: it finishes the current step, persists it, an
 | `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
+| Metrics | `queue_depth{queue}`, `jobs_total{queue,outcome}`, `job_leases_lost_total{queue}` → [Observability](Observability) |
 
 Every command supports `--json`. See [CLI reference](CLI-Reference).
+
+**A lease that lapses is reported, never swallowed.** A worker renews the visibility window every `heartbeatIntervalMs` (default a third of the window) for as long as a job runs. One failed renewal is `jobs.heartbeat.failed` at `warn` — the window still has room for the next. A whole window with none landing is `jobs.lease.lost` at `error` plus one point on `job_leases_lost_total{queue}`: the queue is now free to hand that job to another worker while this one is still running it, which is at-least-once becoming exactly-twice. Alert on any non-zero rate. The window is measured from the last renewal that **landed**, on the worker's own clock, so a `heartbeat` that hangs is caught the same as one that rejects.
 
 ## Errors
 

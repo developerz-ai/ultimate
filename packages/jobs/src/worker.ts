@@ -10,6 +10,7 @@ import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
 import type { JobExecution, JobOutcome } from './execute';
 import { executeJob } from './execute';
+import { startLeaseHeartbeat } from './heartbeat';
 import { getJob } from './job';
 import type { Limiter } from './limits';
 import { createLimiter } from './limits';
@@ -148,9 +149,18 @@ export function createWorker(options: WorkerOptions): Worker {
       };
     }
 
-    const heartbeat = setInterval(() => {
-      void options.driver.heartbeat(claimed.id, { visibilityTimeoutMs }).catch(() => undefined);
-    }, heartbeatIntervalMs);
+    // The lease, kept alive and NOT kept quiet: a renewal that stops landing means the queue hands
+    // this job to another worker while this one is still running it, and `.catch(() => undefined)`
+    // made that — the one failure a queue cannot recover from on its own — indistinguishable from
+    // a healthy run.
+    const heartbeat = startLeaseHeartbeat({
+      driver: options.driver,
+      claimed,
+      visibilityTimeoutMs,
+      intervalMs: heartbeatIntervalMs,
+      workerId,
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+    });
 
     try {
       return await withSpan(`job.${handle.name}`, () =>
@@ -164,16 +174,23 @@ export function createWorker(options: WorkerOptions): Worker {
         }),
       );
     } finally {
-      clearInterval(heartbeat);
+      heartbeat.stop();
     }
   };
 
   /** The drain's one question: may this worker still take work off the queue? */
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
 
-  const claimRound = async (): Promise<readonly JobExecution[]> => {
+  /**
+   * One claim pass: every queue asked once, and everything it hands back STARTED. It does not wait
+   * for the jobs — a slot is free again the moment its own job settles and the limiter releases
+   * the lease, so the next pass refills exactly that slot. Waiting for the whole batch made a pool
+   * as slow as its slowest member and, because the pass walks every queue before it waits, left
+   * every OTHER queue idle behind one long-running job too.
+   */
+  const claimRound = async (): Promise<readonly Promise<JobExecution>[]> => {
     await publishQueueDepth();
-    const results: JobExecution[] = [];
+    const started: Promise<JobExecution>[] = [];
 
     for (const queue of queues) {
       // Re-read per queue, not once at the top: a `stop()` between two queues means "stop
@@ -207,7 +224,6 @@ export function createWorker(options: WorkerOptions): Worker {
 
         const running = runClaimed(job)
           .then((execution) => {
-            results.push(execution);
             if (execution.outcome === 'completed') processed += 1;
             else if (execution.outcome === 'suspended') suspended += 1;
             else if (execution.outcome === 'retried') failed += 1;
@@ -224,33 +240,61 @@ export function createWorker(options: WorkerOptions): Worker {
             lease.release();
           });
 
+        started.push(running);
         inFlight.add(running);
-        void running.finally(() => inFlight.delete(running));
+        // The claim loop no longer awaits these, so this is the one place a rejection is observed:
+        // unobserved it is an unhandled rejection, which on Bun's default is the whole process.
+        // `executeJob` settles the job itself, so reaching here means the driver could not be
+        // told how it ended — the lease will lapse and the queue will deliver it again.
+        void running.then(
+          () => {
+            inFlight.delete(running);
+          },
+          (error: unknown) => {
+            inFlight.delete(running);
+            logger.error('jobs.worker.settle-failed', {
+              workerId,
+              job: job.name,
+              jobId: job.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        );
       }
     }
 
-    await Promise.allSettled([...inFlight]);
-    return results;
+    return started;
   };
 
   /**
-   * One claim round, tracked. The guard and the registration are one synchronous step — no await
-   * between them — so a round is either refused by a drain already under way or visible to every
-   * drain that starts after it. A round that reached `claim()` first is the one `stop()` must
+   * One claim pass, tracked. The guard and the registration are one synchronous step — no await
+   * between them — so a pass is either refused by a drain already under way or visible to every
+   * drain that starts after it. A pass that reached `claim()` first is the one `stop()` must
    * wait out: it is still adding to `inFlight`.
    */
-  const tick = (): Promise<readonly JobExecution[]> => {
+  const round = (): Promise<readonly Promise<JobExecution>[]> => {
     if (!claiming()) return Promise.resolve([]);
-    const round = claimRound().finally(() => {
-      rounds.delete(round);
+    const pass = claimRound().finally(() => {
+      rounds.delete(pass);
     });
-    rounds.add(round);
-    return round;
+    rounds.add(pass);
+    return pass;
   };
 
+  /** One claim+run round: the pass, then the jobs THIS pass started — never the whole pool. */
+  const tick = async (): Promise<readonly JobExecution[]> => {
+    const settled = await Promise.allSettled(await round());
+    return settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  };
+
+  /**
+   * The claim loop re-arms on the PASS, not on the jobs: polling is how a free slot gets refilled,
+   * and a loop that waited for the last job of the previous pass could not refill one until the
+   * whole batch was done.
+   */
   const schedule = (): void => {
     loop = setTimeout(() => {
-      void tick()
+      void round()
         .catch((error: unknown) => {
           logger.error('jobs.worker.tick-failed', {
             workerId,

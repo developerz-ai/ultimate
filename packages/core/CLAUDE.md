@@ -89,6 +89,7 @@ the bug:
 | `recordConnection` | `@ultimat3/realtime` `socket.ts`, `SocketRegistry.add`/`remove` | the only definition of a live connection; close, idle sweep and drain all pass through it, so the gauge cannot leak |
 | `recordQueueDepth` | `@ultimat3/jobs` `worker.ts`, throttled inside `tick()` | the worker is the only process that reads its own queue |
 | `recordJob` | `@ultimat3/jobs` `worker.ts`, the outcome branch inside `tick()` | the loop is where the queue name is in scope; `JOB_OUTCOME_LABELS` maps the four outcomes onto three labels and drops `suspended`, because parking a run is control flow |
+| `recordLeaseLost` | `@ultimat3/jobs` `heartbeat.ts`, once per lease that lapsed | the lease heartbeat is the only thing that knows a renewal stopped landing; deliberately not an `outcome` on `jobs_total`, because nothing failed and nothing finished — the queue simply re-delivered a job this process was still running |
 
 `error-reporter.ts` is the same shape a third time: `ErrorReporter`, a no-op default, a memory
 reporter for tests, and a transport on the wire (`error-reporter-sentry.ts`, an optional separate

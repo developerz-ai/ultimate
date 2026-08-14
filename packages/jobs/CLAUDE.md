@@ -63,6 +63,24 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   snapshots `inFlight` has decided there is nothing to wait for, and `close()` then lands under a
   live job. The round re-reads the state before each queue — "stop claiming" means this round
   too — and what it already holds runs to the end.
+- **A lease is HELD, not owned, and losing one is said out loud.** `heartbeat.ts` renews the
+  window `claim()` bought and decides between two facts: one failed renewal is not a lost lease
+  (`jobs.heartbeat.failed`, warn — the window has room for the next), a window that passes with
+  nothing landing is (`jobs.lease.lost`, error, plus `recordLeaseLost(queue)`). `.catch(() =>
+  undefined)` made both look like a healthy run while the queue re-delivered the job. The window is
+  measured on THIS process's clock from the last renewal that LANDED, never against
+  `claimed.visibleAt` — that is the driver's clock, and comparing the two makes every lease
+  decision a function of skew. Expiry is checked before the driver is asked, because a heartbeat
+  hung on a dead connection never rejects; a renewal that lands after the loss does not revive it,
+  because that window is somebody else's now.
+- **The claim loop re-arms on the PASS, never on the jobs.** A slot belongs to its own job and is
+  free the moment it settles, so `claimRound` starts what it claimed and returns the promises —
+  ending the pass on `Promise.allSettled([...inFlight])` made the pool as slow as its slowest
+  member and left every OTHER queue unasked behind it. `tick()` still resolves with the executions
+  THAT pass started (never the whole pool), which is what tests drive. Nothing awaits a job promise
+  in the timer path, so the loop observes each one itself: unobserved is an unhandled rejection,
+  and `jobs.worker.settle-failed` is where a job that could not be settled with the driver becomes
+  visible.
 - **`state` is set in the teardown's `finally`, never after the close.** A `driver.close()` that
   threw pinned it at `'draining'`: `stats()` reported a drain that had finished and `start()`,
   which leaves only `'idle'` or `'stopped'`, refused that worker for the life of the process.
@@ -134,6 +152,7 @@ picture from the other side.
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
 | `retry.ts` | backoff arithmetic, dead-letter decision |
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
+| `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `worker.ts` | `worker` role, claim loop, drain |
 | `scheduler.ts` | `task()` primitive + registry + `registerTask`, `scheduler` role, catch-up, leader election |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |

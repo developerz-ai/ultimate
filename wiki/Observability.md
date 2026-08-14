@@ -97,19 +97,21 @@ Declared in `runtime-metrics.ts`, so the role table, the Helm chart and the scra
 | `connections` | `connections` | gauge | `{connection}` | none |
 | `queueDepth` | `queue_depth` | gauge | `{job}` | `queue` |
 | `jobs` | `jobs_total` | counter | `{job}` | `queue`, `outcome` (`ok \| failed \| dead`) |
+| `leasesLost` | `job_leases_lost_total` | counter | `{job}` | `queue` |
 
 `SCALING_METRICS` maps each `ScalingSignal` to its series: `rps` → `http_requests_total`, `ws-connections` → `connections`, `queue-depth` → `queue_depth`; `singleton`, `run-once` and `per-database` map to `null`, because a role pinned at one replica has nothing to scale on. **`rps` is derived from the monotonic counter** — a rate is not a series, so nothing exports one.
 
-Recorders: `recordRequest({ method, route, status, durationMs })`, `recordConnection(delta)`, `recordQueueDepth(queue, depth)`, `recordJob(queue, outcome)`.
+Recorders: `recordRequest({ method, route, status, durationMs })`, `recordConnection(delta)`, `recordQueueDepth(queue, depth)`, `recordJob(queue, outcome)`, `recordLeaseLost(queue)`.
 
-Three of the four are wired `As of 2026-08`, each in the package that owns the event:
+All five are wired `As of 2026-08`, each in the package that owns the event:
 
 | Recorder | Called from | Note |
 |---|---|---|
 | `recordRequest` | `packages/http/src/pipeline.ts` — a `finally` around `execute` | counts every request exactly once, including a finalize stage that throws on its own. The label is the route **pattern** (`/posts/:id`), never the concrete path; unmatched paths collapse to one `unmatched` series, so a scanner hitting `/wp-admin` and `/.env` cannot mint series |
 | `recordConnection` | `packages/realtime/src/socket.ts` — `SocketRegistry.add` / `remove` | the only definition of a live connection on a node. Decrements only on a real delete, so a double close cannot drive the gauge negative, and the idle sweep now routes through `remove()` — that was the one leaking path |
 | `recordQueueDepth` | `packages/jobs/src/worker.ts` — top of `tick()` | throttled to 15s, not per poll: `driver.stats()` aggregates the whole jobs table, and a scrape reads it every ~15s anyway. Records `ready` only — a job parked until Tuesday is not backlog. A `stats()` failure is logged and never costs a tick |
-| `recordJob` | **nothing yet** | `jobs_total` is declared and not emitted |
+| `recordJob` | `packages/jobs/src/worker.ts` — the outcome branch of a finished job | labelled by queue and outcome only; a label per job name is unbounded in the app's own vocabulary. `suspended` is deliberately unmapped — parking a run with `step.sleep` is control flow, and counting it would make the failure ratio meaningless |
+| `recordLeaseLost` | `packages/jobs/src/heartbeat.ts` — once per job whose lease lapsed | the worker could not renew the visibility window for longer than the window itself, so the queue is free to hand that job to another worker while this one still runs it. One point = one job that ran twice. Alert on any non-zero rate |
 
 CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. That is why the two custom series exist → [Deployment](Deployment).
 

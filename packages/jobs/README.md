@@ -162,7 +162,7 @@ debugging a stuck queue can read and run the exact statement.
 
 | Role | Entry | Behaviour |
 |---|---|---|
-| `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
+| `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
 | `scheduler` | `createScheduler({ driver, leader })` | advisory-lock leader, one dispatcher per tick, catch-up policy |
 
 ```ts
@@ -194,6 +194,22 @@ retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
 Per-tenant concurrency (`tenantId` = the actor's `orgId`, carried on the queue row), a
 per-queue cap and a global cap. Over a cap, the claim is handed straight back without
 burning an attempt — one org's 50k-row import cannot starve the fleet.
+
+## Leases
+
+A claim buys `visibilityTimeoutMs` of invisibility; the worker renews it every
+`heartbeatIntervalMs` (default a third of the window) for as long as the job runs. Renewal
+failures are not swallowed:
+
+| Fact | Signal |
+|---|---|
+| a renewal failed, the window still has room | `jobs.heartbeat.failed` (warn) |
+| a whole window passed with none landing | `jobs.lease.lost` (error) + `job_leases_lost_total{queue}` |
+
+The second one means the queue is free to hand that job to another worker while this one is
+still running it — at-least-once turning into twice. Alert on any non-zero rate. The window is
+measured from the last renewal that **landed**, on this process's clock, so a driver whose
+heartbeat hangs is caught the same as one that rejects.
 
 ## Introspection
 

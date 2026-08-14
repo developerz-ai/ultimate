@@ -47,6 +47,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`job_leases_lost_total{queue}` — a counter for jobs the queue took back while they were still running.** Declared beside the other runtime series in `@ultimat3/core` (`leasesLost`, `recordLeaseLost(queue)`) and emitted from one place, the worker's lease heartbeat. Alert on any non-zero rate: it is the one queue failure that at-least-once delivery cannot paper over, and until now it was invisible. See the `Fixed` entry below.
 - **Realtime subscription handles are `Disposable` — `using sub = client.useLive(...)` unsubscribes on scope exit.** `LiveHandle` (`useLive`'s return, and `LiveRows` one layer up through the `useLive` hook) and `Unsubscribe` (`client.subscribe(topic, handler)`'s return) now carry `[Symbol.dispose]`, wired to the exact same function `unsubscribe` already was — never a second teardown implementation to drift from it. Purely additive: `unsubscribe()` and the callable topic-unsubscribe function both still work exactly as before, so no call site needs to change. Pinned in `packages/realtime/src/type-pins.ts` so a future refactor that drops the member fails the build rather than a call site months later.
 - **`findById` batches itself — one microtask of point lookups is one `where "id" in (…)`.** A page that resolves an author per row sent one `select … where "id" = $1` per row. Inside a request, `postgresRepo()` now collects the lookups issued in the same microtask and sends one statement for all of them:
 
@@ -250,6 +251,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`statementFingerprint()`, `statementKind()` and `statementVerb()` from `@ultimat3/db`.** What shape a statement is — `entity.op` when attributed, its own whitespace-collapsed text when not; read or write from the leading verb — is now one rule next to the `StatementEvent` it reads, rather than a copy per detector. `x dev`'s ledger and the `statements` fixture group by the same identity by construction, and `statementSpanName` reads its verb from the same scanner.
 
 ### Fixed
+
+- **A lost lease was the quietest bug a queue can have.** The worker's heartbeat ended in `.catch(() => undefined)`, so a renewal that stopped landing — a connection reset, a pool exhausted, a Postgres failover — produced nothing at all: no line, no series, no signal. The visibility timeout then expired under a job that was still running, the queue handed it to the next worker that claimed, and the only evidence was a job that ran twice for reasons nobody could reconstruct.
+
+  A renewal now decides between two different facts. **One failed renewal is not a lost lease** — there is a whole visibility window left and, at the default interval, three tries inside it — so it logs `jobs.heartbeat.failed` at `warn` and nothing more. **A window that passes with no renewal landing is a lost lease**: `jobs.lease.lost` at `error`, with the job, the queue and the attempt, plus one point on the new `job_leases_lost_total{queue}` counter. Every point on that series is one job that ran twice, which is why it is a series of its own and not an outcome on `jobs_total`.
+
+  The window is measured on the worker's own clock from the last renewal that **landed**, not on `claimed.visibleAt` — that timestamp comes from the driver's clock, and comparing the two would make every lease decision a function of clock skew. Two failure modes fall out of it that a rejection-only check could never see: a heartbeat hung on a dead connection (it neither resolves nor rejects, so expiry is checked before the driver is asked), and a renewal that lands long after the window is gone (a late success is not a lease — the job belongs to another worker now, and renewing would extend theirs).
+
+- **One slow job froze the whole worker.** A claim pass ended on `Promise.allSettled([...inFlight])` — every job the process held, across every queue — so nothing was claimed again until the slowest member of the batch finished. A `concurrency: 10` pool ran the ten it started and then sat idle behind one long job; a second queue was not asked at all.
+
+  The claim loop now re-arms on the **pass**, not on the jobs. A slot belongs to its own job and is free the moment that job settles, so the next poll refills exactly that slot and every other queue keeps being served. `worker.tick()` still resolves with the executions **that pass** started, so tests read unchanged; a saturated queue still costs zero driver calls, because free slots are counted before anything is claimed.
+
+- **A job that could not be settled with its driver vanished.** `allSettled` swallowed the rejection, so an `ack` that failed on a closed connection left no trace anywhere. It is now `jobs.worker.settle-failed` at `error` — and, since nothing else awaits those promises any more, the one place a job's failure is observed at all.
 
 - **A job that hit its `timeout` kept running beside its own retry.** The deadline rejected the attempt and nothing told the body about it: the rejection nacked the job, the queue handed it to the next worker that claimed, and the original handler carried on — two copies of one job, in one process or two, both writing steps into the same `runId`. The one thing that had to happen first — telling the body to stop — never happened at all.
 
