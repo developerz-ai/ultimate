@@ -3,7 +3,8 @@
  * `blog` is written — which is what `publishPost` declares in its `cache.invalidates`.
  *
  * The route never touches the database. `prerender` and the page body both go through the typed
- * client, so this file has no edge into `app/` and stays inside the 0kb budget.
+ * read client — `Api['queries']` is a type, so this file has no edge into `app/` and stays inside
+ * the 0kb budget.
  */
 
 import { tag } from '@postly/db';
@@ -14,20 +15,27 @@ import { ld } from '@ultimat3/seo';
 import { DateTime } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import { client } from '../../../shared/client';
+import { queries } from '../../../shared/client';
 import { blogHref, toCardPost } from '../../../shared/entities';
+import { oneRow } from '../../../shared/rows';
 import { anonymousViewer } from '../../../shared/viewer';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'isr',
   revalidate: { tags: [tag.blog] },
-  /** One page per published slug; unpublishing removes it from the sitemap in the same build. */
-  prerender: () => client.publicPostSlugs({}),
+  /**
+   * One page per published slug; unpublishing removes it from the sitemap in the same build. A
+   * read answers rows and a prerender answers params, so the slug is projected out — a bare
+   * string fills this route's single dynamic segment, and handing the row over whole would put
+   * its `updatedAt` in the param map as a second segment nothing routes.
+   */
+  prerender: async () => (await queries.publicPostSlugs({})).map((post) => post.slug),
   offline: 'runtime',
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1800 },
-  load: ({ params }) => client.publicPost({ slug: params.slug }),
+  load: async ({ params }) =>
+    oneRow(await queries.publicPost({ slug: params.slug }), params.slug ?? ''),
   meta: ({ data, t, url }) => ({
     title: data.title,
     description: data.excerpt,
@@ -45,7 +53,8 @@ export const config = defineRoute({
   }),
 });
 
-type BlogPost = Awaited<ReturnType<typeof client.publicPost>>;
+/** The row the loader unwrapped, not the page of rows the read answered. */
+type BlogPost = Awaited<ReturnType<typeof queries.publicPost>>[number];
 
 export function Page(props: {
   readonly data: BlogPost;

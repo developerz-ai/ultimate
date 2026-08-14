@@ -23,10 +23,14 @@ export {
 export type {
   FetchLike,
   QueryCallOptions,
+  QueryClient,
   QueryClientMethod,
   QueryClientOptions,
+  QueryLike,
+  QueryMap,
 } from './client';
-export { queryClientMethodFor } from './client';
+/** `queryClient` is the map-wide read client; `queryClientMethodFor` is what `.client()` binds. */
+export { queryClient, queryClientMethodFor } from './client';
 export type { QueryProblem } from './errors';
 export {
   CursorInvalidError,

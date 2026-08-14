@@ -10,7 +10,8 @@ import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import { useCan } from '../../../shared/actor';
-import { client } from '../../../shared/client';
+import { client, queries } from '../../../shared/client';
+import { oneRow } from '../../../shared/rows';
 import { Layout } from '../../layout';
 import { useViewer } from '../../viewer-context';
 import { LikeButton } from '../ui/like-button';
@@ -21,7 +22,10 @@ export const config = defineRoute({
   offline: 'network-only',
   hydrate: 'interaction',
   budget: { js: '40kb', lcp: 2000 },
-  load: ({ params }) => client.postById({ postId: params.id }),
+  // `postById` is a read, so it comes off the query client — `client` posts actions, and the two
+  // registries are separate keys on `Api` precisely so this cannot be confused.
+  load: async ({ params }) =>
+    oneRow(await queries.postById({ postId: params.id }), params.id ?? ''),
   meta: ({ data, t }) => ({
     title: t('app.post.metaTitle', { title: data.title }),
     description: data.excerpt,
@@ -29,7 +33,8 @@ export const config = defineRoute({
   }),
 });
 
-type PostPage = Awaited<ReturnType<typeof client.postById>>;
+/** The row the loader unwrapped, not the page of rows the read answered. */
+type PostPage = Awaited<ReturnType<typeof queries.postById>>[number];
 
 export function Page(props: { readonly data: PostPage }): JSX.Element {
   const t = useT();

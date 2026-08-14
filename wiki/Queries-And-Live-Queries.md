@@ -99,6 +99,23 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 | Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
 | Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
 
+### Two spellings of that client, one URL
+
+`.client({ baseUrl })` binds one read; `queryClient<Api['queries']>({ baseUrl })` binds every registered read at once, the way `rpc<Api['actions']>` does for writes. Both run `queryClientMethodFor`, so the URL cannot differ between them.
+
+```ts
+// apps/web/shared/client.ts — the app's one place for both
+export const client = rpc<Api['actions']>({ baseUrl });         // writes
+export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
+```
+
+| Fact | Rule |
+|---|---|
+| When the map-wide one is the only option | a surface that may not import the feature — `site/`, where an edge into `app/` is `X_BOUNDARY_VIOLATION`. `.client()` needs the query object; `queryClient` needs only the `Api` **type** |
+| Why two clients and not one | actions and queries are two registries (`defineApi`'s `actions:` and `queries:` keys) answering two methods. A read taken off the action client is a name that does not exist on `Api['actions']` — a compile error, which is the point |
+| Types | the read's own `input` and row type. A read answers `readonly TRow[]`, `limit(1)` included: a detail route unwraps the row, it is never handed one by the client |
+| Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML is `X_RPC_FAILED` naming the read |
+
 ## Owns / never
 
 | Aspect | Rule |

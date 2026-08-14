@@ -86,6 +86,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`queryClient` — the map-wide typed read client, the mirror of `rpc`.** `@ultimat3/query` shipped
+  `.client({ baseUrl })`, which needs the query object — so the one surface that most needs a typed
+  read could not have one: a `site/` route importing a feature's `live.ts` to reach it is
+  `X_BOUNDARY_VIOLATION`, and the reference app had all seven of its read call sites taken off the
+  **action** client instead, where none of those names exist. `queryClient<Api['queries']>({ baseUrl })`
+  binds every registered read off the `Api` **type** alone, exactly as `rpc<Api['actions']>` binds
+  every write. Both spellings proxy to `queryClientMethodFor`, so a read has one URL however it is
+  addressed.
+
+  ```ts
+  // apps/web/shared/client.ts — two registries, two clients, one origin
+  export const client = rpc<Api['actions']>({ baseUrl });          // writes
+  export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
+  ```
+
 - **`backfill()` — one pass over a table, declared as a `job`.** `@ultimat3/jobs` gains a factory, not a ninth primitive: a backfill is durable work with an input schema, a retry policy, an idempotency key and a queue, so `backfill({ name, source, batch, handle })` *returns* a `JobHandle` and inherits `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row with no line of its own. Same rule `llm()` follows: a new capability arrives as a factory over an existing primitive.
 
   ```ts

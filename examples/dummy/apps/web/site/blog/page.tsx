@@ -11,7 +11,7 @@ import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
-import { client } from '../../shared/client';
+import { queries } from '../../shared/client';
 import { blogHref, toCardPost } from '../../shared/entities';
 import { anonymousViewer } from '../../shared/viewer';
 import styles from './page.module.scss';
@@ -23,7 +23,7 @@ export const config = defineRoute({
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1500 },
   feed: { formats: ['rss', 'atom', 'json'] },
-  load: () => client.publicPostSlugs({}),
+  load: () => queries.publicPostSlugs({}),
   meta: ({ t, url }) => ({
     title: t('site.blog.metaTitle'),
     description: t('site.blog.metaDescription'),
@@ -36,7 +36,8 @@ export const config = defineRoute({
   }),
 });
 
-type BlogIndex = Awaited<ReturnType<typeof client.publicPostSlugs>>;
+/** A list route renders the page of rows the read answered, unwrapped by nothing. */
+type BlogIndex = Awaited<ReturnType<typeof queries.publicPostSlugs>>;
 
 export function Page(props: {
   readonly data: BlogIndex;
