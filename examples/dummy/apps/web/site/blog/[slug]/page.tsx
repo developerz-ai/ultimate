@@ -7,7 +7,6 @@
  * the 0kb budget.
  */
 
-import { tag } from '@postly/db';
 import { useT } from '@postly/i18n';
 import { PostCard } from '@postly/ui';
 import { defineRoute } from '@ultimat3/render';
@@ -18,6 +17,7 @@ import { Show } from 'solid-js';
 import { queries } from '../../../shared/client';
 import { blogHref, toCardPost } from '../../../shared/entities';
 import { oneRow } from '../../../shared/rows';
+import { tag } from '../../../shared/tags';
 import { anonymousViewer } from '../../../shared/viewer';
 import styles from './page.module.scss';
 

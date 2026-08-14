@@ -4,7 +4,6 @@
  * itself never does arithmetic and never sees a formatted string.
  */
 
-import { tag } from '@postly/db';
 import {
   BILLING_CURRENCIES,
   PLAN_CATALOG,
@@ -19,6 +18,7 @@ import { ld } from '@ultimat3/seo';
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
 import { currencyFromUrl, currencyOf } from '../../shared/currency';
+import { tag } from '../../shared/tags';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
