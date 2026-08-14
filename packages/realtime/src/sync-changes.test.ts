@@ -110,4 +110,20 @@ describe('the change bus subscription', () => {
 
     expect(registry.delivered).toEqual([]);
   });
+
+  test('a drain releases it too, because a drain is terminal whether or not stop() follows', async () => {
+    const registry = new RecordingRegistry({ source: new RingChangeBuffer() });
+    const { node, publish } = harness(registry);
+    await node.start();
+    await node.drain({ graceMs: 0 });
+
+    await publish(change);
+
+    // `drain()` closes the hub and evicts every socket. A subscription left behind goes on
+    // pulling changes off the bus and fanning them out through a hub that is already closed.
+    expect(registry.delivered).toEqual([]);
+    // The listener's shutdown does both, in this order — releasing twice has to be a no-op.
+    await node.stop();
+    expect(registry.delivered).toEqual([]);
+  });
 });

@@ -5,11 +5,15 @@ import { changeLsn, commitPositionOf } from './pg-replication';
 import {
   begin,
   commit,
+  copyDone,
+  FakeWalsender,
   type FixtureColumn,
+  feedOver,
   INT8,
   insert,
   keepalive,
   OTHER_OID,
+  ParkingWalsender,
   POST_COLUMNS,
   POSTS_OID,
   relation,
@@ -271,6 +275,106 @@ describe('decoded changes', () => {
     // A dead loop must stop telling the walsender it is keeping up.
     expect(server.standby.length).toBe(confirmations);
     await feed.stop();
+  });
+});
+
+// ---- what a dead pump has to release ----------------------------------------------------------
+
+/** Nothing here is real I/O, so draining the microtask queue is a deterministic "let it finish". */
+const settle = async (): Promise<void> => {
+  for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+};
+
+/** A feed that dials a *fresh* walsender each time — the only way to watch a restart redial. */
+const redialable = (): { feed: PgLogicalReplicationFeed; servers: FakeWalsender[] } => {
+  const servers: FakeWalsender[] = [];
+  return {
+    servers,
+    feed: feedOver(() => {
+      const server = new FakeWalsender();
+      servers.push(server);
+      return Promise.resolve(server);
+    }),
+  };
+};
+
+describe('a stream that dies', () => {
+  test('a walsender that ends the copy is a failure, not a stream still reporting itself live', async () => {
+    const { feed, servers } = redialable();
+    await feed.start({ onChange: () => undefined });
+    servers[0]?.push(copyDone());
+    await settle();
+
+    // A `null` failure here is a replicator that reads no WAL and answers /readyz as ready.
+    expect(feed.stats().failure).toContain('ended the copy stream');
+    expect(servers[0]?.closed).toBe(true);
+    await feed.stop();
+  });
+
+  test('a pump that threw closes its connection instead of leaving the socket open', async () => {
+    const { server, feed } = await start({ entities: ['audit_log'] });
+    server.push(xlog(relation(OTHER_OID, 'audit_log', [{ name: 'seq', key: true }])));
+    server.push(xlog(begin(0x7200n, 0n, 23)));
+    server.push(xlog(insert(OTHER_OID, ['1'])));
+    await settle();
+
+    expect(feed.stats().failure).toContain('X_REPLICATION_PROTOCOL');
+    // The failure was already recorded before this fix; what was leaked is the connection.
+    expect(server.closed).toBe(true);
+    await feed.stop();
+  });
+
+  test('a restart dials again, and never inherits the death that preceded it', async () => {
+    const { feed, servers } = redialable();
+    await feed.start({ onChange: () => undefined });
+    servers[0]?.push(copyDone());
+    await settle();
+
+    // The dead stream left `#running` true, so this `start()` used to be a silent no-op — and
+    // when it was not, it overwrote a `#connection` nobody had closed.
+    await feed.start({ onChange: () => undefined });
+    expect(servers).toHaveLength(2);
+    expect(feed.stats().failure).toBeNull();
+
+    await feed.stop();
+    // The goodbye reached the connection this start opened, which is the one `stop()` owns.
+    expect(servers[1]?.standby).not.toHaveLength(0);
+    expect(servers[1]?.closed).toBe(true);
+  });
+
+  test('stop() after a death is a no-op, not a confirm written to a dead socket', async () => {
+    const { feed, servers } = redialable();
+    await feed.start({ onChange: () => undefined });
+    const before = servers[0]?.standby.length ?? -1;
+    servers[0]?.push(copyDone());
+    await settle();
+    await feed.stop();
+
+    expect(servers[0]?.standby).toHaveLength(before);
+  });
+
+  test('stop() waits for a pump that is still releasing its connection', async () => {
+    const server = new ParkingWalsender();
+    const feed = feedOver(() => Promise.resolve(server));
+    await feed.start({ onChange: () => undefined });
+    server.push(copyDone());
+    // The death is now parked mid-goodbye: `#connection` is already null, the socket is not.
+    await server.parked;
+
+    let stopped = false;
+    const stopping = feed.stop().then(() => {
+      stopped = true;
+    });
+    await settle();
+
+    // A `stop()` that returns here reports a released slot to a supervisor that is about to
+    // start the next process — which then finds the slot still `active`.
+    expect(stopped).toBe(false);
+    expect(server.closed).toBe(false);
+
+    server.release();
+    await stopping;
+    expect(server.closed).toBe(true);
   });
 });
 

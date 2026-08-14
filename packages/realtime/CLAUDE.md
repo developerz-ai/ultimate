@@ -87,7 +87,25 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   could reach a different one than the container it is standing in for. The KV bucket and the
   presence TTL come back with the transport for the same reason: they are one decision.
 - `sync` is stateless: no sticky sessions, nothing on a socket survives a restart.
+- **`drain()` and `stop()` both release what `start()` acquired, and releasing twice is a no-op.**
+  A `drain()` is terminal on its own — it closes the hub and evicts every socket — and nothing
+  obliges a `stop()` to follow it, so leaving the change subscription and the presence sweep to
+  `stop()` alone is a drained node still pulling every change off the bus into a fanout with no
+  sockets, and still sweeping a room it left, through a hub it already closed. One `release()`,
+  called by both. `drain()` calls it after the sockets are gone and before `hub.close()`: a client
+  is entitled to its patches for the whole grace window, and to get them through a hub that is
+  still open.
 - Exactly one `replicator` per DB, enforced by a session-level advisory lock.
+- **The replication pump has one way out, and it closes what it held.** Both exits — a decode error
+  and `nextCopyData()` returning `undefined`, which is the walsender ending the copy — run `#die`:
+  record `stats().failure`, stop the confirm timer, close the connection and null it. Each one left
+  behind is a dead replicator claiming to be a live one. A `null` failure answers `/readyz` ready
+  for a loop reading no WAL; a live `#running` makes the next `start()` a silent no-op; a retained
+  timer keeps telling the walsender a dead stream is keeping up; a retained `#connection` is a
+  socket the next `start()` overwrites rather than closes, holding the slot `active`. A `start()`
+  that goes live clears the previous failure, and `stop()` awaits the pump even when the connection
+  is already gone — `#die` nulls it *before* closing it, so returning early reports a released slot
+  to the supervisor that is about to start the next process.
 - A change lsn is `<16 hex commit position><8 hex row position in that transaction>`. Never order by
   either half alone: the commit lsn repeats within a transaction, and per-record WAL positions are
   not monotonic across transactions. Never make it depend on wall time, the entity list or a process

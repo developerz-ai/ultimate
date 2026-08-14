@@ -150,6 +150,9 @@ export class PgReplicationStream {
       throw failure;
     }
     this.#running = true;
+    // A restart that kept the last death in `stats()` reports a live stream as failed, and the
+    // supervisor that reads it never sees the replicator come back.
+    this.#failure = null;
     this.#timer = setInterval(() => {
       void this.#confirm();
     }, this.#options.statusIntervalMs ?? DEFAULT_STATUS_INTERVAL_MS);
@@ -160,22 +163,54 @@ export class PgReplicationStream {
 
   async stop(): Promise<void> {
     this.#running = false;
-    if (this.#timer !== null) {
-      clearInterval(this.#timer);
-      this.#timer = null;
-    }
+    this.#clearTimer();
     const connection = this.#connection;
     this.#connection = null;
-    if (connection === null) return;
-    // Confirming before the goodbye is what stops a restart from replaying the whole window.
-    if (connection.inCopyBoth) {
-      await this.#confirm(connection);
-      await connection.endCopy();
+    if (connection !== null) {
+      // Confirming before the goodbye is what stops a restart from replaying the whole window.
+      if (connection.inCopyBoth) {
+        await this.#confirm(connection);
+        await connection.endCopy();
+      }
+      await connection.close();
     }
-    await connection.close();
+    // Awaited even when the stream died on its own: `#die` nulls the connection *before* closing
+    // it, so returning here would report the socket as released while it is still going down.
     const pump = this.#pump;
     this.#pump = null;
     if (pump !== null) await pump;
+  }
+
+  /**
+   * The pump's only way out, however it ended — a decode error, or a walsender that said goodbye.
+   * The four things it owns go together or not at all, because each one left behind is a dead
+   * replicator claiming to be a live one: a `null` failure for a loop that stopped reading, a
+   * confirm timer still telling the walsender the stream is keeping up, a socket nobody closed,
+   * and a `#connection` the next `start()` overwrites instead of releasing. A `stop()` that got
+   * here first owns the connection, and its exit is an orderly one, not a failure.
+   */
+  async #die(reason: string): Promise<void> {
+    if (!this.#running) return;
+    this.#running = false;
+    this.#failure = reason;
+    this.#clearTimer();
+    const connection = this.#connection;
+    this.#connection = null;
+    // The supervisor reads /readyz, so the loop records, reports and ends rather than throwing
+    // into a promise nothing awaits.
+    logger.error('replication stream ended', { slot: this.#options.slot, error: reason });
+    try {
+      await connection?.close();
+    } catch {
+      // The socket is already unusable and `failure` above is the report that matters — a
+      // goodbye that throws must not become the rejection `#drain` promised never to produce.
+    }
+  }
+
+  #clearTimer(): void {
+    if (this.#timer === null) return;
+    clearInterval(this.#timer);
+    this.#timer = null;
   }
 
   /** The read loop. It owns no timers and no state beyond the current transaction. */
@@ -183,7 +218,12 @@ export class PgReplicationStream {
     try {
       for (;;) {
         const payload = await connection.nextCopyData();
-        if (payload === undefined) return;
+        if (payload === undefined) {
+          // The walsender ended the copy. However politely it said so, nothing reads the slot
+          // again until something restarts this — which is a failure, not a shutdown.
+          await this.#die('the walsender ended the copy stream');
+          return;
+        }
         const reader = new ByteReader(payload, 'copy-data');
         const tag = reader.tag();
         if (tag === 'w') {
@@ -207,20 +247,7 @@ export class PgReplicationStream {
         }
       }
     } catch (failure) {
-      if (!this.#running) return;
-      this.#running = false;
-      // The supervisor reads /readyz, so the loop records, reports and ends rather than throwing
-      // into a timer callback nothing awaits — and the confirm timer stops with the loop it
-      // confirms for, or it keeps telling the walsender a dead stream is still keeping up.
-      this.#failure = failure instanceof Error ? failure.message : String(failure);
-      if (this.#timer !== null) {
-        clearInterval(this.#timer);
-        this.#timer = null;
-      }
-      logger.error('replication stream ended', {
-        slot: this.#options.slot,
-        error: this.#failure,
-      });
+      await this.#die(failure instanceof Error ? failure.message : String(failure));
     }
   }
 

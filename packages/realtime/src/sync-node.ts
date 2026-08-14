@@ -115,6 +115,21 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     });
   };
 
+  /**
+   * Everything `start()` acquired that is not a socket: the change subscription and the presence
+   * sweep. Both `drain()` and `stop()` run it, because a `drain()` is terminal on its own — it
+   * closes the hub — and `listenSyncNode` is the only caller that follows one with the other. A
+   * node that drained and kept its subscription goes on pulling changes off the bus and sweeping
+   * presence for a fleet it has already left, with no socket to deliver either to. Idempotent:
+   * running it twice is the normal case.
+   */
+  const release = (): void => {
+    changes?.unsubscribe();
+    changes = null;
+    if (sweeping !== null) clearInterval(sweeping);
+    sweeping = null;
+  };
+
   const routeFrame = async (socket: SyncSocket, frame: Frame): Promise<void> => {
     socket.touch();
     switch (frame.type) {
@@ -249,10 +264,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
     async stop(): Promise<void> {
       ready = false;
-      changes?.unsubscribe();
-      changes = null;
-      if (sweeping !== null) clearInterval(sweeping);
-      sweeping = null;
+      release();
     },
 
     fetch(request: Request, server: UpgradeTarget): Response | undefined {
@@ -358,6 +370,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         socket.close(CLOSE.goingAway, 'drain');
         sockets.remove(socket.id);
       }
+      // Released once the sockets are gone rather than at the top: a client is entitled to its
+      // patches for the whole grace window, and it is entitled to them *before* the hub the
+      // fanout writes through is closed.
+      release();
       await options.hub.close();
       return plan;
     },
