@@ -45,6 +45,15 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`) and `task.enqueue()`'s
   is the job's plain key. Deliberate: the first stops two schedulers double-firing a tick, the
   second is a manual run with no occurrence to scope to.
+- **One shutdown hook per worker, and `stop()` is what hands it back.** `start()` keeps the
+  unregister `onShutdown` returns; the teardown releases it in a `finally`, so a close that threw
+  still gives it up. Discarding it was a hook per `start()` — the `start()` guard reads a
+  standstill, so start -> stop -> start stacked a second registration retaining a stopped
+  worker's driver, and the next process-wide drain ran all of them. `start()` refuses while
+  draining for the same reason: a claim loop back on a driver the drain is about to close.
+- **One teardown, joined.** `stop()` shares the in-flight teardown promise, so a SIGTERM landing
+  on a manual stop waits out the same in-flight jobs instead of closing the driver underneath
+  it. The promise is cleared as it settles — a close that threw is retryable, not replayed.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.

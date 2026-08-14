@@ -251,6 +251,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **The jobs worker leaked a shutdown hook per `start()`.** `onShutdown` returns an unregister and `createWorker`'s `start()` threw it away, while `stop()` unregistered nothing — so a stopped worker stayed on the process's drain list forever, holding its driver, its in-flight set and the whole worker closure alive. The `start()` guard read `'running'`, so start → stop → start stacked a second registration on the first, and every later drain called all of them. `@ultimat3/realtime`'s `listenSyncNode` and `@ultimat3/http`'s `server.ts` already kept theirs; the worker now does too, released in a `finally` so a `driver.close()` that throws still hands it back.
+
+  Two rules fall out of making the registration single:
+
+  - **`start()` only starts from a standstill.** It used to restart mid-drain, putting the claim loop back on a driver the drain was about to close — and stacking a hook on the one still running, which is the leak again by another route.
+  - **`stop()` is one teardown, joined.** A SIGTERM landing on a manual stop used to run the whole drain a second time and close the driver underneath it. Concurrent callers now await the same promise, which is cleared as it settles so a close that threw is retryable rather than replayed from a rejected promise.
+
+  `@ultimat3/core` exports a test-only `shutdownHookCount()` — the same shape as `idleWaiterCount()` — so "one hook while it runs, none once it has stopped" is assertable rather than asserted in prose.
+
 - **`LiveClient` never reconnected.** `#scheduleReconnect` computed the delay, incremented the attempt counter and published `reconnectAt` — and armed nothing. No `setTimeout`, no call to `connect()` from any close path; `reconnectAt` was read in exactly one place, `useConnection()`, to render a countdown that then expired and sat there. A client that lost its socket stayed offline until the app called `connect()` itself, which meant every deploy, every idle timeout and every dropped Wi-Fi packet ended the session. `drainPlan()`, the `reconnect` frame and `AcceptBudget` — the three mechanisms that spread a reconnect herd — were spreading clients that were never coming back.
 
   The timer is now armed by the same method, through an injected `Scheduler` (`(fn, ms) => cancel`) defaulting to `timeoutScheduler`, so the reconnect is provable without sleeping. Four consequences fall out of making it real:

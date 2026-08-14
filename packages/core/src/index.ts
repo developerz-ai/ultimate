@@ -255,6 +255,7 @@ export {
   readyzPayload,
   resetLifecycle,
   SHUTDOWN_PHASES,
+  shutdownHookCount,
 } from './lifecycle';
 export {
   isSelfOrigin,

@@ -248,6 +248,10 @@ export function createWorker(options: WorkerOptions): Worker {
   const inFlight = new Set<Promise<unknown>>();
   let state: WorkerStats['state'] = 'idle';
   let loop: ReturnType<typeof setTimeout> | undefined;
+  /** The `onShutdown` registration this worker holds while it runs. Handed back by `stop()`. */
+  let releaseShutdownHook: (() => void) | undefined;
+  /** The teardown in flight, so a second `stop()` joins it instead of running a second one. */
+  let stopping: Promise<void> | undefined;
   let processed = 0;
   let failed = 0;
   let suspended = 0;
@@ -391,26 +395,50 @@ export function createWorker(options: WorkerOptions): Worker {
     }, pollIntervalMs);
   };
 
-  const stop = async (reason = 'stop'): Promise<void> => {
-    if (state === 'stopped') return;
+  const teardown = async (reason: string): Promise<void> => {
     state = 'draining';
     if (loop !== undefined) clearTimeout(loop);
     loop = undefined;
     logger.info('jobs.worker.draining', { workerId, reason, inFlight: inFlight.size });
-    // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
-    await Promise.allSettled([...inFlight]);
-    await options.driver.close?.();
-    state = 'stopped';
+    try {
+      // Stop claiming, finish what we hold, then close. Anything else re-runs work on deploy.
+      await Promise.allSettled([...inFlight]);
+      await options.driver.close?.();
+      state = 'stopped';
+    } finally {
+      // Whatever the close did, the hook goes back. It exists only to call this, so one left
+      // registered drains a stopped worker on the next process-wide shutdown — through a driver
+      // already closed — and keeps this closure, its driver and its in-flight set alive with it.
+      releaseShutdownHook?.();
+      releaseShutdownHook = undefined;
+    }
+  };
+
+  const stop = async (reason = 'stop'): Promise<void> => {
+    if (state === 'stopped') return;
+    // One teardown, joined rather than repeated: a SIGTERM landing on a manual stop must wait out
+    // the same in-flight work, not close the driver a second time underneath it. Cleared as it
+    // settles, so a close that threw can be retried rather than replayed from a rejected promise.
+    stopping ??= teardown(reason).finally(() => {
+      stopping = undefined;
+    });
+    await stopping;
   };
 
   return {
     start() {
-      if (state === 'running') return;
+      // Only from a standstill. A start mid-drain would put the claim loop back on a driver the
+      // drain is about to close, and stack a second shutdown hook on the one still running.
+      if (state !== 'idle' && state !== 'stopped') return;
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
-      // 'accept' phase: stop claiming before core waits on in-flight jobs.
+      // 'accept' phase: stop claiming before core waits on in-flight jobs. The unregister is
+      // kept, never discarded: `stop()` hands it back, so start -> stop -> start holds ONE hook
+      // rather than one per start, each retaining the driver of a worker that is already gone.
       if (options.drainOnShutdown !== false) {
-        onShutdown(`jobs.worker.${workerId}`, () => stop('SIGTERM'), { phase: 'accept' });
+        releaseShutdownHook = onShutdown(`jobs.worker.${workerId}`, () => stop('SIGTERM'), {
+          phase: 'accept',
+        });
       }
       schedule();
     },

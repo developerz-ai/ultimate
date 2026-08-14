@@ -220,7 +220,10 @@ nothing and still reports healthy.
   in process, free until `configureMetrics({ exporter })`. See below.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
   deadline; `readyzPayload()` flips to 503 the moment draining starts, `healthzPayload()` stays
-  200 until stopped.
+  200 until stopped. It **returns an unregister**, and a caller that starts and stops more than
+  once has to keep it: a discarded one is a hook per `start()`, each retaining the resource it
+  was going to drain, and the next drain runs every one of them against a torn-down copy.
+  `shutdownHookCount()` is the test-only probe that makes the leak assertable.
 - Anything that opens a socket calls `markListening(server.url.origin)` and releases it on close.
   That is what tells the sealed test network a loopback request is this process, not egress.
 

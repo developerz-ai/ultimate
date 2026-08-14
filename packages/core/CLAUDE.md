@@ -114,6 +114,10 @@ Gotchas:
 - `Ctx` carries a string index signature so apps can augment `CtxServices` for `ctx.posts`.
 - Tests that touch the registry, the lifecycle or the listener table must call
   `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
+- `onShutdown`'s return value is the unregister, and every caller that can be started twice owns
+  it — `@ultimat3/http`'s `server.ts`, `@ultimat3/realtime`'s `listenSyncNode`, `@ultimat3/jobs`'
+  worker, `@ultimat3/cli`'s `hold.ts`. `shutdownHookCount()` is the test-only probe, the same
+  shape as `idleWaiterCount()`: a count that climbs across a start/stop cycle is a leak.
 - The error-code registry is process-global and every package fills it once, at import time. A
   test that resets it must take `errorCodeSnapshot()` first and call the returned undo in
   `afterAll` — a reset that is not handed back strips the titles of every package imported before
