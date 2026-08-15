@@ -3,9 +3,13 @@
  * offline strategy, hydration timing and metadata, and it hands back a descriptor that is
  * already normalized: `meta` always awaits, `budget` is always there.
  *
- * `offline`, `hydrate` and `meta` are REQUIRED BY THE TYPE. That is axiom 3 — enforced,
- * not documented — expressed in the type system: a route that forgets its offline
- * strategy or its `<head>` is a compile error, not a checklist item nobody reads.
+ * `offline` and `meta` are REQUIRED BY THE TYPE. That is axiom 3 — enforced, not documented —
+ * expressed in the type system: a route that forgets its offline strategy or its `<head>` is a
+ * compile error, not a checklist item nobody reads.
+ *
+ * `hydrate` is not on that list, since 1.2.0: it is the one key the framework can work out from
+ * the page's own declarations, and requiring a value it already knows is not enforcement, it is a
+ * second place to get one thing wrong.
  */
 
 import type { CacheTag } from '@ultimat3/cache';
@@ -13,6 +17,8 @@ import { serializeTags } from '@ultimat3/cache';
 import type { Translator } from '@ultimat3/i18n';
 import type { RouteMeta } from '@ultimat3/seo';
 import { RouteLoadInvalidError, RouteMetaMissingError, RouteOfflineMissingError } from './errors';
+import type { IslandSpec } from './island';
+import { drainDeclaredIslands } from './island';
 import { assertModeShape } from './modes';
 
 export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
@@ -21,6 +27,15 @@ export type HydrateStrategy = 'idle' | 'visible' | 'interaction' | 'never';
 
 export const OFFLINE_STRATEGIES = ['precache', 'runtime', 'network-only'] as const;
 export const HYDRATE_STRATEGIES = ['idle', 'visible', 'interaction', 'never'] as const;
+
+/**
+ * What a page that declares an island hydrates as when it says nothing. The most conservative of
+ * the three that ship JavaScript: nothing runs until the visitor acts, and `interaction` is the
+ * only one that also replays the event that woke the island, so the first click is answered rather
+ * than swallowed. An island wanting `visible` (an infinite scroll) still says so once — on the
+ * route, the same key that overrides this one, never a second declaration on the island itself.
+ */
+export const DEFAULT_ISLAND_HYDRATE: HydrateStrategy = 'interaction';
 
 export type RouteParams = Readonly<Record<string, string>>;
 export type RouteData = Readonly<Record<string, unknown>>;
@@ -134,7 +149,17 @@ export interface RouteDefinition<TData = RouteData> {
   readonly revalidate?: RevalidateConfig;
   readonly prerender?: PrerenderFn;
   readonly offline: OfflineStrategy;
-  readonly hydrate: HydrateStrategy;
+  /**
+   * Optional since 1.2.0, and derived when omitted: a page that declares an island hydrates
+   * (`DEFAULT_ISLAND_HYDRATE`), a page that declares none ships nothing (`'never'`). Stating it is
+   * still the one override, and still the only way to say `visible` or `idle`.
+   *
+   * It was required, and the two failures that made it worth deriving were both the framework
+   * asking for a value it could already work out: an island on a route still at `'never'` is
+   * `X_ISLAND_NOT_HYDRATED`, and a `site/` route off `'never'` with no `budget.js` is refused at
+   * registration. Two punishments for one omission the declaration above already answered.
+   */
+  readonly hydrate?: HydrateStrategy;
   readonly budget?: RouteBudget;
   readonly load?: RouteLoadFn<TData>;
   readonly meta: RouteMetaFn<TData>;
@@ -144,16 +169,24 @@ export interface RouteDefinition<TData = RouteData> {
 /**
  * The frozen descriptor. `kind` lets the registry reject non-route exports.
  *
- * Two fields are narrower here than in the declaration so every consumer reads one shape:
- * `meta` always returns a promise, and `budget` is always an object. Its *fields* stay
- * optional — `budget.js === undefined` still means "this route declared no JS budget",
- * which is exactly what `modes.ts` fails a hydrating `site/` route on.
+ * Three fields are narrower here than in the declaration so every consumer reads one shape:
+ * `meta` always returns a promise, `budget` is always an object, and `hydrate` is always one of
+ * the four strategies — resolved, so nothing downstream repeats the derivation. `budget`'s
+ * *fields* stay optional; `budget.js === undefined` still means "no JS budget declared", which is
+ * what `registry.ts` fills in for an island route and `modes.ts` fails a hydrating `site/` route on.
  */
 export interface RouteConfig<TData = RouteData> extends RouteDefinition<TData> {
   readonly kind: 'route';
   readonly meta: RouteMetaAsyncFn<TData>;
   readonly load?: RouteLoadAsyncFn<TData>;
+  readonly hydrate: HydrateStrategy;
   readonly budget: RouteBudget;
+  /**
+   * The islands this module declared, in declaration order. Never written by an author — drained
+   * from `island()`, and the reason `hydrate` and `budget.js` do not have to be. Also what finally
+   * populates `RouteEntry.islands`, which `routeJsBytes` has always read and nothing ever filled.
+   */
+  readonly islands: readonly IslandSpec[];
 }
 
 /** What every render mode hands back to `@ultimat3/http`'s `html()` / `stream()`. */
@@ -212,11 +245,17 @@ export function defineRoute<TData = RouteData>(
 
   const declaredMeta = def.meta;
   const declaredLoad = def.load;
+  // Drained unconditionally, even when `hydrate` is stated: the list must not survive into the
+  // next route defined in this process, and `RouteEntry.islands` wants it either way.
+  const islands = drainDeclaredIslands();
   const config: RouteConfig<TData> = {
     kind: 'route',
     render: def.render as RenderMode,
     offline: def.offline,
-    hydrate: def.hydrate as HydrateStrategy,
+    islands,
+    // Declared wins, always — including `hydrate: 'never'` on a page that has an island, which is
+    // a contradiction an author stated on purpose and `X_ISLAND_NOT_HYDRATED` still refuses.
+    hydrate: def.hydrate ?? (islands.length > 0 ? DEFAULT_ISLAND_HYDRATE : 'never'),
     // Wrapped rather than stored: the declaration may be sync, the descriptor never is.
     // A meta that throws synchronously becomes a rejection here, so `await config.meta(d)`
     // is the one way to fail as well as the one way to succeed.

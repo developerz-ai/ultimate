@@ -63,9 +63,9 @@ export interface GenerateOptions {
   /** Every locale a generated i18n catalog entry ships for. Defaults to `['en']`. */
   readonly locales?: readonly string[];
   /**
-   * `island` only: the directory the client entry lands in. Named rather than derived, because
-   * `X_ISLAND_INVALID`'s cause already holds the path a page's `src` resolved to — its `fix:`
-   * hands that path straight back.
+   * `island` and `admin:page`: the directory the generated files land in. Named rather than
+   * derived, because neither destination is derivable — `X_ISLAND_INVALID`'s cause already holds
+   * the path a page's `src` resolved to, and an app's admin is wherever its `defineAdmin` is.
    */
   readonly at?: string;
   /** `admin:page` only: the permission the page's own work needs, on top of `admin:read`. */
@@ -179,6 +179,8 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       return dedupe(
         adminPageFiles(options.name, {
           permission: options.permission ?? `${kebab(options.name)}:read`,
+          // The same `--at` `island` takes: an app's admin is wherever its `defineAdmin` is.
+          ...(options.at === undefined ? {} : { dir: options.at }),
           ...(options.locales === undefined ? {} : { locales: options.locales }),
         }),
       );
@@ -345,7 +347,7 @@ export const generateCommand: CliCommand = {
       { name: 'live', type: 'boolean', summary: 'subscribable query' },
       { name: 'admin', type: 'boolean', summary: 'resource: also emit the admin override' },
       { name: 'locales', type: 'string', summary: 'comma-separated locales, default en' },
-      { name: 'at', type: 'string', summary: 'island: directory for the client entry' },
+      { name: 'at', type: 'string', summary: 'island, admin:page: directory to write into' },
       { name: 'permission', type: 'string', summary: 'admin:page: the permission it needs' },
       { name: 'force', type: 'boolean', summary: 'overwrite existing files' },
       { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },

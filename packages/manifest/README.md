@@ -87,6 +87,32 @@ past 200 lines, or claims to be generated. Those warnings ride in the step's `ou
 generated half — and unlike the drift check it applies everywhere, including a repo that has
 never run `x manifest`. Enforced, not documented: both codes below can actually fail a build.
 
+## Local docs: read, never emitted
+
+`scanPackageDocs()` / `scanInstalledDocs()` read an installed package tree and return `DocEntry`
+values; `searchDocs()` ranks them against a question. This is what `x docs "how does job() retry"`
+answers from — offline, from `node_modules`, with no filename known in advance.
+
+There is **no generated `docs.json`**, on purpose. The published artifact *is* the source
+(`PUBLISHING.md`): `files` ships `src/**`, `README.md` and `CLAUDE.md`, and Bun runs the
+TypeScript directly. Every doc is therefore already inside the tarball — what was missing was
+retrieval, not payload. A per-package `docs.json` would be a **second copy** of bytes the install
+already has, and the second copy is the one that goes stale. Reading the installed source cannot
+disagree with the installed version, because it *is* the installed version.
+
+| Entry | Source | Topic |
+|---|---|---|
+| `module` | the file header comment on a module `src/index.ts` re-exports, plus its public symbols | `jobs.retry` |
+| `guide` | a `##` section of `README.md` or `CLAUDE.md`, quoted verbatim | `money.README#why-no-floats` |
+
+The **file header** is the doc unit, not JSDoc: measured across this repo, 99.8% of source files
+carry a 1–4 line header (2,510 of 2,514) while only 42% of public exports have JSDoc directly
+above the declaration — `job()` itself has none. Ranking a question against 42% coverage would
+have missed the framework's most-used export.
+
+Same split as `AGENTS.md` above: this module **derives** facts and **quotes** human prose. It
+never writes, and it never synthesises a sentence.
+
 ## Errors
 
 | Code | Meaning | Fix |

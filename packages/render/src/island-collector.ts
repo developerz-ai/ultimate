@@ -103,14 +103,18 @@ function buildDirective(
  * An island on a route that ships no JS is a button that does nothing — and it is also how the
  * budget stops meaning anything, because `hydrate: 'never'` is what excuses a `site/` route from
  * declaring `budget.js` at all.
+ *
+ * Still reachable with `hydrate` derived, and for exactly two reasons: the route stated `'never'`
+ * next to an island (a contradiction an author wrote on purpose), or the `island()` call is below
+ * the `defineRoute` that would have drained it. The fix names both, in that order.
  */
 function assertHydrates(strategy: HydrateStrategy, spec: IslandSpec, file: string): void {
   if (strategy !== 'never') return;
   throw new IslandNotHydratedError(
-    `${file} renders the ${spec.moduleId} island but declares hydrate: 'never', so the browser ` +
+    `${file} renders the ${spec.moduleId} island but resolves to hydrate: 'never', so the browser ` +
       'would receive its markup and never the JavaScript that makes it do anything',
-    `set hydrate: 'interaction' (or 'idle' | 'visible') and budget: { js: '10kb' } in ${file}, ` +
-      `or remove <${spec.moduleId}> from the page`,
+    `remove hydrate: 'never' from ${file} — a page that declares an island hydrates on its own — ` +
+      `and move the island() call above defineRoute so the route can see it`,
   );
 }
 

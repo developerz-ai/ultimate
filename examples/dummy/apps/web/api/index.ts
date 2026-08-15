@@ -21,6 +21,8 @@
  */
 
 import { defineApi } from '@ultimat3/action';
+import * as contactActions from '../app/contact/actions';
+import * as contactJobs from '../app/contact/jobs';
 import * as digestJobs from '../app/digest/jobs';
 import * as orgActions from '../app/orgs/actions';
 import * as orgJobs from '../app/orgs/jobs';
@@ -41,10 +43,10 @@ import * as settingsMutators from '../app/settings/mutator';
 import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
-  actions: [postActions, orgActions, settingsActions],
+  actions: [postActions, orgActions, settingsActions, contactActions],
   mutators: [postMutators, settingsMutators],
   queries: [postQueries],
-  jobs: [postJobs, orgJobs, digestJobs],
+  jobs: [postJobs, orgJobs, digestJobs, contactJobs],
   tasks: [scheduledTasks],
 });
 

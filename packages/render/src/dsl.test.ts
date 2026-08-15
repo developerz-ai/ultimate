@@ -22,7 +22,15 @@ const codeOf = (run: () => unknown): string => {
 // The exact contract: `RouteConfig` (route.ts). Kept in sync by hand on purpose — a
 // silent drift here is exactly the regression this file exists to catch. Optional
 // declaration keys are omitted rather than set to undefined, so they are not listed.
-const DESCRIPTOR_MEMBERS = ['kind', 'render', 'offline', 'hydrate', 'meta', 'budget'] as const;
+const DESCRIPTOR_MEMBERS = [
+  'kind',
+  'render',
+  'offline',
+  'hydrate',
+  'meta',
+  'budget',
+  'islands',
+] as const;
 
 const minimal: RouteDefinition = {
   render: 'ssr',

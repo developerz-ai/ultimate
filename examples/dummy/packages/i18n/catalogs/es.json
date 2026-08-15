@@ -47,7 +47,18 @@
       "seats_other": "{count} asientos",
       "cta": "Elegir {plan}",
       "included": "Incluido en todos los planes",
-      "includedList": "Feeds en vivo, «me gusta» sin conexión, resumen diario, dos idiomas y acceso MCP"
+      "includedList": "Feeds en vivo, «me gusta» sin conexión, resumen diario, dos idiomas y acceso MCP",
+      "contact": {
+        "open": "Hablar con ventas",
+        "intro": "Cuéntanos cuántas plazas necesitas y qué plan estabas mirando. Respondemos en un día laborable.",
+        "email": "Tu correo",
+        "plan": "Plan sobre el que preguntas",
+        "message": "¿Qué necesitas?",
+        "send": "Enviar consulta",
+        "sending": "Enviando tu consulta…",
+        "sent": "Gracias: te enviamos una copia a tu bandeja de entrada.",
+        "failed": "No se pudo enviar. Inténtalo otra vez o escribe a sales@postly.example."
+      }
     },
     "blog": {
       "metaTitle": "El blog de Postly",
@@ -186,6 +197,11 @@
       "subject": "{inviter} te ha invitado a {org} en Postly",
       "body": "Te han añadido como {role}. Acepta la invitación para empezar a escribir.",
       "cta": "Aceptar la invitación"
+    },
+    "contactSales": {
+      "subject": "Recibimos tu consulta de Postly",
+      "body": "Gracias por preguntar por el plan {plan}, con precio en {currency}. Alguien de ventas responderá en un día laborable.",
+      "quote": "Escribiste: {message}"
     }
   },
   "digest": {

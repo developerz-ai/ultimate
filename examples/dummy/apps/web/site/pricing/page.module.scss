@@ -70,3 +70,69 @@
   margin-block-start: var(--space-12);
   padding-block-start: var(--space-6);
 }
+
+// The contact enquiry. A <details> rather than a <dialog>: the panel has to open with scripting
+// off, and only the browser can do that on its own. Tokens only, and the open/closed state is the
+// element's own, so the highlight cannot drift from what a screen reader announces.
+.contact {
+  border: 1px solid rgb(var(--color-line));
+  border-radius: var(--radius-lg);
+  margin-block-start: var(--space-12);
+  padding: var(--space-6);
+}
+
+.contactTrigger {
+  color: rgb(var(--color-accent));
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.contactForm {
+  display: grid;
+  gap: var(--space-4);
+  margin-block-start: var(--space-6);
+  max-inline-size: 32rem;
+}
+
+.contactIntro {
+  color: rgb(var(--color-fg-muted));
+  margin: 0;
+}
+
+.contactField {
+  display: grid;
+  gap: var(--space-1);
+
+  input,
+  select,
+  textarea {
+    background-color: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-line));
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-fg));
+    font: inherit;
+    padding: var(--space-2);
+  }
+}
+
+// Empty until the island writes an outcome into it, so it takes no room in the server's layout.
+.contactStatus {
+  color: rgb(var(--color-fg-muted));
+  margin: 0;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.contactSubmit {
+  background-color: rgb(var(--color-accent));
+  border: 0;
+  border-radius: var(--radius-md);
+  color: rgb(var(--color-accent-fg));
+  cursor: pointer;
+  font-weight: 600;
+  justify-self: start;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-4);
+}

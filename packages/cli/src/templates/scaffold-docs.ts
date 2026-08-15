@@ -1,9 +1,11 @@
 // The human-authored half of what `x new` writes: the READMEs, the agent-facing convention files,
 // the bin/ shims and the optional dev compose. Separated from the config half so neither file has
 // to be scrolled to find the other — one file, one job applies to templates too. The image, its
-// ignore file, the production topology and the deploy page are `scaffold-container.ts`.
+// ignore file, the production topology and the deploy page are `scaffold-container.ts`; the
+// `.claude/` harness that reads AGENTS.md is `scaffold-claude.ts`.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { claudeFiles } from './scaffold-claude';
 import { containerFiles } from './scaffold-container';
 
 const agents = (app: NameSet): string => `# AGENTS.md
@@ -37,6 +39,10 @@ ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in t
   only place that list is stated.
 - Destructive DB work goes in a branch: \`x db branch <name>\`, never the shared dev DB.
 - \`x doctor\` explains a broken environment and prints the fix command for every finding.
+
+\`.claude/\` holds the harness that reads this file: \`/feature\`, \`/planx\`, \`/verify\` and four
+boundary-scoped subagents. It is yours — \`.claude/README.md\` says what each one costs, and every
+file in it is deletable.
 `;
 
 const readme = (app: NameSet): string => `# ${app.pascal}
@@ -127,6 +133,9 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'bin/dev', contents: binDev() },
     { path: 'bin/check', contents: binCheck() },
     { path: 'docker/docker-compose.dev.yml', contents: composeDev(app) },
+    // The harness half of the same job AGENTS.md does. It lands in the app's own repo rather than
+    // in a global config, so it is visible in the scaffold's diff and deletable in one line.
+    ...claudeFiles(app),
     ...containerFiles(app),
   ];
 }

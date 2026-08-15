@@ -1,76 +1,71 @@
-// `/admin/ops` — the page no generator would have written, and the reason "easy custom pages" is a
-// claim this app can show rather than assert. It is a plain route file with its own stylesheet, it
-// reaches the SAME `pageDecision` gate every generated screen uses, and it renders three facts a
-// CRUD table cannot: the cron schedule with its zone, the uploads breakdown the sweep acts on, and
-// the demo-reset cadence.
+// `/admin/ops` — the MOUNT, not the page. The screen itself is `../pages/ops`, declared as a
+// `pages:` entry on `defineAdmin`; everything this file exports comes out of the route table that
+// declaration built.
 //
-// Nothing here re-derives anything. The schedule is `registeredTasks()` — the exact table
-// `x tasks list --json` prints — so the page and the CLI can never disagree.
+// That is the whole point. `config` is the `defineRoute` `routes.ts` composed — with `policy`
+// already set from `pagePermissions()` — and `render` is the `guardedPage()` wrapper, which asks
+// the same `decideAll` every CRUD call asks and audits the refusal. Until 1.2.0 this file wrote
+// both by hand: its own `defineRoute`, its own `policy:` line and its own `pageDecision('job')`
+// branch. All three were correct and none was enforced, which is the privilege hole `pages:`
+// closes — a custom admin page that forgets one of them now cannot exist.
 
-import { t } from '@ultimat3/i18n';
-import { registeredTasks } from '@ultimat3/jobs';
-import { defineRoute } from '@ultimat3/render';
+import {
+  type AdminPageComponent,
+  AdminPagePathInvalidError,
+  type AdminRouteConfig,
+  adminRoutes,
+} from '@ultimat3/admin';
+import type { JSX } from 'solid-js';
+import { admin, adminCtxForRequest } from '../admin';
 import { actorLabel } from '../label';
-import { mediaStateCounts } from '../repo';
-import { pageDecision, visibleNavFor } from '../screen';
+import { opsPage } from '../pages/ops';
+import { visibleNavFor } from '../screen';
 import { AdminShell } from '../views';
-import shell from '../views.module.scss';
-import styles from './page.module.scss';
 
-export const config = defineRoute({
-  render: 'ssr',
-  hydrate: 'never',
-  offline: 'network-only',
-  policy: { permission: 'admin:read' },
-  budget: { js: '0kb', lcp: 3000 },
-  meta: () => ({ title: t('admin.ops.title'), description: t('admin.ops.description') }),
-});
+const OPS_PATH = `${admin.basePath}${opsPage.path}`;
 
-export async function Page() {
-  const decision = pageDecision('job');
-  const tasks = decision.allowed ? registeredTasks().map((handle) => handle.describe()) : [];
-  const counts = decision.allowed ? await mediaStateCounts() : {};
+/**
+ * The route `defineAdmin` built for this page, or the failure that names the missing wiring. A
+ * `find` that answered `undefined` and rendered nothing would be the unguarded second way in all
+ * over again, one release later.
+ */
+function mountedOps(): {
+  readonly config: AdminRouteConfig['config'];
+  readonly render: AdminPageComponent;
+} {
+  const route = adminRoutes(admin).find((candidate) => candidate.path === OPS_PATH);
+  if (route === undefined || route.component === null) {
+    throw new AdminPagePathInvalidError({
+      path: opsPage.path,
+      cause: 'is not a guarded page in the admin route table',
+      fix: 'add opsPage to `pages:` in apps/admin/app/admin/admin.ts',
+    });
+  }
+  return { config: route.config, render: route.component };
+}
+
+const ops = mountedOps();
+
+export const config = ops.config;
+
+/**
+ * The frame around the guarded page. The shell is this app's — nav, actor label, title — and the
+ * body is whatever `guardedPage()` returned: the board for an operator who holds `job:read`, and
+ * `AdminPageDenied` naming the permission for one who does not.
+ */
+export async function Page(props: {
+  readonly params: Readonly<Record<string, string>>;
+  readonly url: string;
+}): Promise<JSX.Element> {
+  const body = await ops.render({
+    ctx: adminCtxForRequest(),
+    params: props.params,
+    url: props.url,
+  });
 
   return (
-    <AdminShell titleKey="admin.ops.title" nav={visibleNavFor()} actorLabel={actorLabel()}>
-      {decision.allowed ? (
-        <div class={styles.board}>
-          <section class={styles.card}>
-            <h2 class={styles.cardTitle}>{t('admin.ops.uploads')}</h2>
-            <dl class={styles.stats}>
-              {Object.entries(counts).map(([state, count]) => (
-                <div class={styles.stat} data-state={state}>
-                  <dt>{t(`admin.media.state.${state}`)}</dt>
-                  <dd>{String(count)}</dd>
-                </div>
-              ))}
-            </dl>
-            <p class={styles.hint}>{t('admin.ops.uploadsHint')}</p>
-          </section>
-
-          <section class={styles.card}>
-            <h2 class={styles.cardTitle}>{t('admin.ops.schedule')}</h2>
-            <ul class={styles.schedule}>
-              {tasks.map((descriptor) => (
-                <li class={styles.entry}>
-                  <span class={styles.entryName}>{descriptor.name}</span>
-                  <code class={styles.cron}>{descriptor.cron}</code>
-                  {/* The zone is on screen because an unzoned cron is a bug waiting for March. */}
-                  <span class={styles.zone}>{descriptor.tz}</span>
-                  <span class={styles.enqueues}>
-                    {t('admin.ops.enqueues', { jobs: descriptor.jobs.join(', ') })}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p class={styles.hint}>{t('admin.ops.scheduleHint')}</p>
-          </section>
-        </div>
-      ) : (
-        <p class={shell.refusal}>
-          {t('admin.denied.body', { permission: decision.permission, reason: decision.reason })}
-        </p>
-      )}
+    <AdminShell titleKey={opsPage.titleKey} nav={visibleNavFor()} actorLabel={actorLabel()}>
+      {body}
     </AdminShell>
   );
 }

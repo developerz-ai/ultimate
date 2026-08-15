@@ -38,9 +38,10 @@ export function AdminShell(props: AdminShellProps) {
             </ul>
           </nav>
         ))}
-        <a class={styles.navLink} href={`${admin.basePath}/ops`}>
-          {t('admin.ops.title')}
-        </a>
+        {/* `/admin/ops` used to be a raw anchor right here, hard-coded and visible to everyone
+            who could open the dashboard — the one link in this sidebar that no permission
+            filtered. It is a `pages:` entry now, so it arrives through `props.nav` above with the
+            rest, and `visibleNav` drops it for an actor the page would refuse. */}
         {/* The way out. `apps/admin` is a separate surface, so nothing in its own route table
             points back at the app — an operator who opened the dashboard had no link home and
             had to edit the URL bar, which is the same defect as the app having no link IN. */}

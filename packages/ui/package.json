@@ -25,6 +25,7 @@
     "src",
     "!src/**/*.test.ts",
     "CATALOG.md",
+    "CLAUDE.md",
     "README.md",
     "LICENSE"
   ],

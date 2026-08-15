@@ -49,3 +49,12 @@ export const roles = defineRoles({
  * the prerender list. Splitting it would give a draft two ways to leak instead of none.
  */
 export const publicPostRead = allow('post:read-public');
+
+/**
+ * The other one, and the only *write* the anonymous surface is allowed: a sales enquiry from
+ * `/pricing`'s contact modal. Spelled out for the same reason the read above is — an action
+ * without a policy is a build error, so "anyone may send this" has to be a declaration too, and
+ * writing it here keeps both public rules in the one file a reviewer reads to answer "what can a
+ * stranger do?".
+ */
+export const contactSubmit = allow('contact:submit');

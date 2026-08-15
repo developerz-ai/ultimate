@@ -57,6 +57,8 @@ export {
 } from './hydrate';
 export type { IslandComponent, IslandDeclaration, IslandNode, IslandSpec } from './island';
 export {
+  clearDeclaredIslands,
+  drainDeclaredIslands,
   ISLAND_EXTENSION,
   ISLAND_NODE,
   isEmittableSpecifier,
@@ -84,7 +86,9 @@ export type { ModeCheckContext, ModeSpec, RouteShape } from './modes';
 export {
   assertModeInvariants,
   assertModeShape,
+  DEFAULT_ISLAND_JS_BYTES,
   defaultHydrate,
+  defaultIslandBudget,
   MODE_SPECS,
   RENDER_MODES,
 } from './modes';
@@ -181,6 +185,7 @@ export type {
   RouteParams,
 } from './route';
 export {
+  DEFAULT_ISLAND_HYDRATE,
   defineRoute,
   HYDRATE_STRATEGIES,
   isRouteConfig,

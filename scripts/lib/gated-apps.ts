@@ -51,7 +51,11 @@ export const GATED_APPS: readonly GatedApp[] = [
         'loader makes before its policy runs — data substrate',
       live: 'the live suite reads through the same unscoped repo — data substrate',
       job: 'the digest job writes through the same unscoped repo — data substrate',
-      e2e: 'the built output serves pages backed by the same repo — data substrate',
+      e2e:
+        'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
+        'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +
+        'this line used to blame — no repo, no query and no migration is involved in the failure. ' +
+        'Closed by installing a browser driver in scripts/test-setup.ts',
       drift: 'migrations predate the current entity set; regenerated with the schema',
       budgets:
         'X_BUDGET_UNMEASURED on all 8 routes that declare a `budget:`. The step used to skip its ' +

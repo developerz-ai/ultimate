@@ -1,6 +1,64 @@
 {
   "components": {
     "schemas": {
+      "ContactSalesInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "enum": [
+              "USD",
+              "EUR"
+            ],
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "es"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "plan": {
+            "enum": [
+              "free",
+              "team",
+              "business"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "plan",
+          "currency",
+          "message",
+          "locale"
+        ],
+        "type": "object"
+      },
+      "ContactSalesOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "received": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "received"
+        ],
+        "type": "object"
+      },
       "CreateCommentInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -1719,6 +1777,65 @@
         }
       }
     },
+    "/api/sales/contact": {
+      "post": {
+        "operationId": "contactSales",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactSalesInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactSalesOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          }
+        },
+        "summary": "contactSales",
+        "tags": [
+          "sales"
+        ],
+        "x-ultimate": {
+          "capability": "contact:submit",
+          "idempotent": false,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/summarizes/invoke": {
       "post": {
         "operationId": "summarize",
@@ -1864,6 +1981,9 @@
     },
     {
       "name": "preferences"
+    },
+    {
+      "name": "sales"
     },
     {
       "name": "summarizes"

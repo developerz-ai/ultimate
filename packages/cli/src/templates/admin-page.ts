@@ -9,23 +9,34 @@ import { catalogPath, resolveLocales } from './locales';
 import type { GeneratedFile } from './naming';
 import { camel, kebab, pascal } from './naming';
 
+/** Where an admin lives when the caller does not say. `x new` scaffolds this layout. */
+export const DEFAULT_ADMIN_PAGE_DIR = 'apps/admin/src/pages';
+
 export interface AdminPageOptions {
   /** The permission the page's own work needs. `admin:read` is composed in front of it. */
   readonly permission: string;
+  /**
+   * Directory the page lands in, app-root-relative and POSIX — the same `--at` `x g island` takes,
+   * and for the same reason: an app's admin is wherever its `defineAdmin` is, which no generator
+   * can derive. `apps/admin/app/admin/` is as real a layout as the scaffold's, and a hardcoded
+   * destination means every such app moves the two files by hand after every run.
+   */
+  readonly dir?: string;
   readonly locales?: readonly string[];
 }
 
 const titleKeyFor = (name: string): string => `admin.${name}.title`;
 
-const pageSource = (name: string, permission: string): string => {
+const pageSource = (name: string, permission: string, dir: string): string => {
   const Name = pascal(name);
   const declaration = camel(name);
   return `// Admin page: /${name}. An ORDINARY component — there is no \`defineRoute\` here, deliberately:
 // \`pages:\` is what puts this in the admin's route table and \`guardedPage()\` is what decides it,
 // so a route declaration in this file would be a second, unguarded way in.
 //
-// Wire it in once, and add \`navGroup\` to link it in the sidebar:
-//   import { ${declaration}Page } from './pages/${name}';
+// Wire it in once, and add \`navGroup\` to link it in the sidebar — this file is ${dir}/${name}.tsx,
+// so the specifier is relative to wherever \`defineAdmin\` lives:
+//   import { ${declaration}Page } from './${name}';
 //   defineAdmin({ …, pages: […, ${declaration}Page] })
 
 import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';
@@ -76,9 +87,10 @@ export function adminPageFiles(
   options: AdminPageOptions,
 ): readonly GeneratedFile[] {
   const name = kebab(rawName);
-  const dir = 'apps/admin/src/pages';
+  // Trailing slashes trimmed exactly as `islandFiles` does — one `--at`, one normalization.
+  const dir = (options.dir ?? DEFAULT_ADMIN_PAGE_DIR).replace(/\/+$/, '');
   return [
-    { path: `${dir}/${name}.tsx`, contents: pageSource(name, options.permission) },
+    { path: `${dir}/${name}.tsx`, contents: pageSource(name, options.permission, dir) },
     { path: `${dir}/${name}.test.ts`, contents: pageTest(name, options.permission) },
     ...resolveLocales(options.locales).map((locale) => ({
       path: catalogPath(locale),

@@ -12,6 +12,17 @@ export type { ManifestSources } from './build';
 export { buildManifest, canonical, contentHash } from './build';
 export type { ChangeKind, ManifestChange, ManifestDiff } from './diff';
 export { diffManifest, formatDiff } from './diff';
+export type { DocEntry, DocEntryKind } from './docs-scan';
+export {
+  headerComment,
+  parseGuideSections,
+  parseReExports,
+  scanInstalledDocs,
+  scanPackageDocs,
+  shortName,
+} from './docs-scan';
+export type { DocHit } from './docs-search';
+export { nearestTopics, searchDocs, tokenize } from './docs-search';
 export type { EmitInput, EmitResult } from './emit';
 export {
   assertNoDrift,

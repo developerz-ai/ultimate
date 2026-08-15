@@ -40,7 +40,8 @@
       "signedIn": "{id} — roles: {roles}"
     },
     "group": {
-      "data": "Data"
+      "data": "Data",
+      "operations": "Operations"
     },
     "matrix": {
       "operation": "Operation",

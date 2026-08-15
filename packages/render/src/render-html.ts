@@ -42,11 +42,14 @@ async function unwrap(value: unknown, depth: number, walk: RenderHtmlOptions): P
   if (typeof value === 'string') return escapeText(value);
   if (typeof value === 'number' || typeof value === 'bigint') return escapeText(String(value));
   if (value instanceof Promise) return unwrap(await value, depth, walk);
+  // Before the array branch, never after: an island node IS an array — the only object shape the
+  // configured `JSX.Element` admits — so the generic branch would render its empty contents and
+  // drop the island, its props script and its budget line without a word.
+  if (isIslandNode(value)) return renderIsland(value, depth, walk);
   if (Array.isArray(value)) {
     const parts = await Promise.all(value.map((item) => unwrap(item, depth + 1, walk)));
     return parts.join('');
   }
-  if (isIslandNode(value)) return renderIsland(value, depth, walk);
   if (isJsxNode(value)) return renderNode(value.type, value.props, depth, walk);
   if (typeof value === 'function') return unwrap((value as () => unknown)(), depth + 1, walk);
   return escapeText(String(value));
