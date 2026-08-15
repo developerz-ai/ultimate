@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { systemClock, withSpan } from '@ultimat3/core';
 import { createCdnTier } from './cdn';
 import { CacheDriverUnavailableError, CacheTagUnknownError } from './errors';
@@ -118,11 +118,17 @@ const brokenRedisTier = (): CacheTier => ({
   },
 });
 
-beforeEach(() => {
+function clearRegistries(): void {
   resetTiers();
   resetGraph();
   resetDeclaredTags();
-});
+}
+
+beforeEach(clearRegistries);
+
+// The tiers this file registers are process-wide: without this the LAST test's tier stayed in the
+// registry for every file that ran after it in the same `bun test` process.
+afterAll(clearRegistries);
 
 describe('invalidateTags fan-out', () => {
   test('reaches every registered tier and reports what each one dropped', async () => {

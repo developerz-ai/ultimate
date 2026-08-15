@@ -7,6 +7,8 @@ import {
   type Frame,
   type FrameKind,
   PROTOCOL_VERSION,
+  toWireError,
+  type WireError,
 } from './sync-protocol';
 
 const cursor = {
@@ -132,5 +134,42 @@ describe('sync-protocol', () => {
   test('decode accepts the binary form Bun hands a WS handler', () => {
     const bytes = new TextEncoder().encode(encode(fixtures.ack));
     expect(decode(bytes)).toEqual(fixtures.ack);
+  });
+});
+
+// `toWireError` is how `sync-node.ts` answers a socket for anything a mutator, a live query or a
+// policy threw — app code, so an app value. `String()` runs the value's own `toString`, and the
+// throw it raises escapes the handler's catch: the client is left waiting on a frame the node
+// never sent, which a reconnect cannot repair because the mutation throws again.
+describe('toWireError over a throwable it does not control', () => {
+  const hostile = (): ReadonlyMap<string, unknown> =>
+    new Map<string, unknown>([
+      [
+        'a hostile toString',
+        {
+          toString: () => {
+            throw new Error('gotcha');
+          },
+        },
+      ],
+      ['a null-prototype object', Object.create(null)],
+    ]);
+
+  for (const [label, value] of hostile()) {
+    test(`still projects a three-field wire error for ${label}`, () => {
+      let wire: WireError | undefined;
+      expect(() => {
+        wire = toWireError(value);
+      }).not.toThrow();
+      expect(wire?.code).toBe('X_PROTOCOL_VERSION');
+      expect(wire?.fix).toBe('x doctor realtime');
+      expect(wire?.cause.length).toBeGreaterThan(0);
+    });
+  }
+
+  test('a throwable carrying the contract keeps every field it named', () => {
+    expect(
+      toWireError({ code: 'X_TOPIC_FORBIDDEN', cause: 'no guard', fix: 'declare one' }),
+    ).toEqual({ code: 'X_TOPIC_FORBIDDEN', cause: 'no guard', fix: 'declare one' });
   });
 });

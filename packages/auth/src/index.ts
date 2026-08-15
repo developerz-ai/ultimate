@@ -35,6 +35,7 @@ export type {
   AuthMfaPolicy,
   LoginInput,
   LoginResult,
+  OAuthLinkPolicy,
   RegisterInput,
 } from './auth';
 export {
@@ -66,10 +67,14 @@ export {
   forbidden,
   mfaRequired,
   oauthAccountNotLinked,
+  oauthDenied,
   oauthExchangeFailed,
+  oauthLinkingDisabled,
+  oauthProviderUnknown,
   oauthStateInvalid,
   oauthTokenInvalid,
   passwordWeak,
+  restartAt,
   sessionExpired,
   sessionUnknown,
   unauthenticated,
@@ -145,8 +150,17 @@ export type {
 export { exchangeOAuthCode, oauthCredentials } from './oauth-exchange';
 export type { CompleteOAuthLoginInput, OAuthSignInInput } from './oauth-login';
 export { completeOAuthLogin, signInWithOAuth } from './oauth-login';
+export {
+  OAUTH_BASE_PATH,
+  OAUTH_CALLBACK_ROUTE_PATH,
+  OAUTH_START_ROUTE_PATH,
+  oauthCallbackPath,
+  oauthStartPath,
+} from './oauth-paths';
 export type { OAuthProfile, OAuthProfileOptions } from './oauth-profile';
 export { oauthProfile } from './oauth-profile';
+export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
+export { oauthLogin } from './oauth-route';
 export type {
   PasswordParams,
   PasswordPolicy,

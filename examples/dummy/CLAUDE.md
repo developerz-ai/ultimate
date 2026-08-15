@@ -142,3 +142,16 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
   remaining instances, not a pattern to copy.
 - Uploads are `grantUpload` wrapped in an app `action` — the app owns the policy, the framework
   owns the key and the signature. Nothing here builds an object key by hand.
+- `app/auth/login.ts` is the whole of "log in with GitHub" — `defineAuth` + `oauthLogin`, and the
+  three decisions an app owns: `providers`, `link` and where a signed-in member lands. Its two
+  route descriptors are **declared and driven by `login.test.ts`, but not served**, and that is a
+  framework gap rather than a shortcut here: an app's HTTP surface is composed in
+  `packages/cli/src/serve.ts` out of actions, queries, assets, storage, islands and page routes,
+  and there is no seam by which an app contributes a raw `Route` — `configureAuthenticator()` is
+  the only app-installed hook of that shape. So `start`/`callback` stay exported and unmounted
+  until that seam exists. Two things then remain here: mounting them, and the `x_users` /
+  `x_sessions` / `x_accounts` tables `BuiltinAdapter` reads, which no migration in
+  `packages/db/migrations` creates — `AUTH_TABLES` is DDL the framework exports and `x db gen`
+  generates only from this app's own entities, so neither half is a file to hand-write. Until
+  both land nobody can hold a Postly session, which is also why `configureAuthenticator()` is
+  still uncalled and `ctx.auth` still undeclared.

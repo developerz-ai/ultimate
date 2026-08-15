@@ -3,7 +3,7 @@
  * DST ambiguity is a real state of the world, so it gets a code instead of a guess.
  */
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
 
 export const TIME_ERROR_CODES = [
   'X_TIMEZONE_INVALID',
@@ -54,7 +54,9 @@ export class TimeError extends UltimateError {
 export function scheduleInvalid(field: string, value: unknown, range: string): TimeError {
   return new TimeError({
     code: 'X_SCHEDULE_INVALID',
-    cause: `${field} must be ${range}, got ${String(value)}`,
+    // `value` is whatever a caller put in a `LocalSlot` — this factory is exported, so it is a form
+    // field or a config value as often as it is the `number` the in-package caller passes.
+    cause: `${field} must be ${range}, got ${renderCauseValue(value)}`,
     fix: `pass an integer in ${range} for ${field} — wall-clock fields are not wrapped or clamped, because a silently shifted schedule is worse than a failed one`,
   });
 }

@@ -21,6 +21,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
+| `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty |
+| `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -218,4 +220,24 @@ integration — never for a socket test.
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
-`X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED`
+`X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
+
+## One process, one registry
+
+`bun test` runs every file of one invocation in the same process — only `x verify`'s shards pass
+`--isolate`. A file that leaves a process-global registry dirty therefore changes what every later
+file sees, and the failure lands on an innocent suite in another package: `bun test packages/query
+packages/cli` failed five tests in `query`, all of them installed by `cli`, while either package
+alone was green.
+
+The preload installs the guard. It samples the cache tag set and the cache tier registry at each
+file's first `beforeEach` — after the file's module graph has evaluated, so an app's own boot
+declarations are its environment — and reports what the file's tests added and did not put back:
+
+```
+X_TEST_REGISTRY_LEAK: a test file left a process-global registry dirty —
+packages/cli/src/cmd-dev.test.ts left cache tags declared (devfixture) after its last test
+```
+
+The fix is `isolateDeclaredTags()` (`@ultimat3/cache`) or `afterAll(resetTiers)`, never a loosened
+assertion in the file that paid for it.

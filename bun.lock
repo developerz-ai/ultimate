@@ -459,6 +459,7 @@
       "name": "@ultimat3/testing",
       "version": "1.2.0",
       "dependencies": {
+        "@ultimat3/cache": "1.2.0",
         "@ultimat3/core": "1.2.0",
         "@ultimat3/db": "1.2.0",
         "@ultimat3/entity": "1.2.0",

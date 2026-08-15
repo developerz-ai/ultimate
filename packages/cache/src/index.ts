@@ -62,6 +62,7 @@ export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';
 export {
   assertKnownTags,
   declareTags,
+  isolateDeclaredTags,
   knownTags,
   parseTag,
   resetDeclaredTags,

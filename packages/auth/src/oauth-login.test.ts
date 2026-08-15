@@ -131,6 +131,36 @@ describe('signInWithOAuth', () => {
     expect((await adapter.listAccounts('user-1')).length).toBe(1);
   });
 
+  test("link: 'never' refuses a collision even when both halves verified the address", async () => {
+    const strict = defineAuth({
+      adapter,
+      clock: frozenClock(NOW),
+      providers: ['github'],
+      link: 'never',
+    });
+    const existing = await adapter.createUser({
+      id: 'user-1',
+      email: 'ada@example.com',
+      passwordHash: 'argon2id$…',
+      orgId: null,
+      roles: [],
+      createdAt: NOW,
+    });
+    await adapter.updateUser(existing.id, { emailVerifiedAt: NOW });
+
+    const denied = signInWithOAuth(strict, { profile: profile(), tokens: tokens() });
+    expect(await codeOf(denied)).toBe('X_UNAUTHENTICATED');
+    await expect(denied).rejects.toThrow(/link: 'never'/);
+    expect(await adapter.findAccount('github', '583231')).toBeNull();
+    // The address stays a redactable `meta` key here too, never part of the sentence.
+    const error = await denied.catch((thrown: unknown) => thrown);
+    expect(isUltimateError(error) && error.cause).not.toContain('ada@example.com');
+  });
+
+  test("'verified-email' is the default, so an app that says nothing gets the strict rule", () => {
+    expect(defineAuth({ adapter, clock: frozenClock(NOW) }).link).toBe('verified-email');
+  });
+
   test('it refuses to take over an account that never verified its own address', async () => {
     await adapter.createUser({
       id: 'user-1',

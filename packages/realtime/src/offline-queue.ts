@@ -6,6 +6,7 @@
 //      already queued (double click, replay after a crash) collapses onto the existing entry and
 //      never gets a new sequence number.
 
+import { renderCauseValue } from '@ultimat3/core';
 import type { JsonValue } from './json';
 import { type Frame, PROTOCOL_VERSION, type WireError } from './sync-protocol';
 
@@ -200,7 +201,9 @@ function toQueueError(error: unknown): WireError {
   const shape = error as { code?: unknown; cause?: unknown; fix?: unknown } | null;
   return {
     code: typeof shape?.code === 'string' ? shape.code : 'X_TRANSPORT_UNAVAILABLE',
-    cause: typeof shape?.cause === 'string' ? shape.cause : String(error),
+    // Whatever the sender threw. `String()` here escaped `drain`'s own catch, so the queue's
+    // stop-at-the-first-failure contract broke on the failure it exists to record.
+    cause: typeof shape?.cause === 'string' ? shape.cause : renderCauseValue(error),
     fix: typeof shape?.fix === 'string' ? shape.fix : 'the queue retries on the next reconnect',
   };
 }

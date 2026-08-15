@@ -96,6 +96,14 @@ export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
+export { isolateEntityRegistry } from './registry-isolation';
+export type { RegistryLeak, RegistrySample } from './registry-leak-guard';
+export {
+  installRegistryLeakGuard,
+  leakBetween,
+  RegistryLeakError,
+  sampleRegistries,
+} from './registry-leak-guard';
 export type { MockRoute, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process

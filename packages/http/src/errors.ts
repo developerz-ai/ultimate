@@ -1,7 +1,7 @@
 // The HTTP layer's stable error codes. Every throw in this package goes through a
 // factory here so a code, a cause and an exact fix always travel together — the
 // terminal, the dev overlay and `--json` all render the same three strings.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const HTTP_OWNED_ERROR_CODES = [
@@ -167,8 +167,10 @@ export const pipelineNoResponse = (stage: string): HttpError =>
 export const finalizeFailed = (stage: string, cause: unknown): HttpError =>
   new HttpError({
     code: 'X_PIPELINE_FINALIZE_FAILED',
+    // A stage throws whatever the app threw, and this factory is the last thing standing between
+    // that value and `finalize.ts`'s promise that `handle()` resolves to a Response.
     cause: `the "${stage}" stage threw while finishing the response: ${
-      cause instanceof Error ? cause.message : String(cause)
+      cause instanceof Error ? cause.message : renderCauseValue(cause)
     }`,
     fix: 'return a Response built here — json(), text(), html() or redirect() from @ultimat3/http; one whose headers cannot be set, like Response.redirect(), cannot take the final headers',
   });

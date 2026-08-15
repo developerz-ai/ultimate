@@ -27,6 +27,7 @@
     "@postly/ui": "0.0.1",
     "@ultimat3/action": "1.2.0",
     "@ultimat3/ai": "1.2.0",
+    "@ultimat3/auth": "1.2.0",
     "@ultimat3/core": "1.2.0",
     "@ultimat3/flags": "1.2.0",
     "@ultimat3/jobs": "1.2.0",

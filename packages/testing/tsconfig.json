@@ -9,6 +9,9 @@
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {
+      "path": "../cache"
+    },
+    {
       "path": "../core"
     },
     {

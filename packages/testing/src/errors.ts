@@ -15,6 +15,7 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_NETWORK_RACE',
   'X_TEST_FACTORY_TRAIT_UNKNOWN',
   'X_TEST_FACTORY_NOT_PERSISTED',
+  'X_TEST_REGISTRY_LEAK',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -32,6 +33,7 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_NETWORK_RACE: 'a request raced unsealNetwork() and lost the patched fetch',
   X_TEST_FACTORY_TRAIT_UNKNOWN: 'a factory was asked for a trait it does not declare',
   X_TEST_FACTORY_NOT_PERSISTED: 'a factory create() had nowhere to write the row',
+  X_TEST_REGISTRY_LEAK: 'a test file left a process-global registry dirty',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

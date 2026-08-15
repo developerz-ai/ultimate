@@ -19,7 +19,13 @@ export interface OAuthProvider {
    */
   readonly issuers: readonly string[];
   readonly scopes: readonly string[];
-  readonly usesPkce: boolean;
+  /**
+   * The literal `true`, not `boolean`. A provider config saying `usesPkce: false` was always
+   * invalid — an authorization code with no proof-of-possession is stealable from a redirect —
+   * and a comment saying so is not a build error. This is, and it deletes every downstream
+   * `if (provider.usesPkce)` branch along with the state it could ever have been false in.
+   */
+  readonly usesPkce: true;
   /** OIDC providers echo `nonce` in the id token; it binds the token to this browser. */
   readonly usesNonce: boolean;
   readonly clientIdEnv: string;
@@ -159,7 +165,8 @@ export function assertOAuthCallback(handshake: OAuthHandshake, callback: OAuthCa
   if (!timingSafeEqual(handshake.state, callback.state)) {
     throw oauthStateInvalid(provider.id, 'state did not match the stored handshake');
   }
-  if (provider.usesPkce && handshake.verifier.length < 43) {
+  // Unconditional: `usesPkce` is the literal `true`, so there is no provider to exempt.
+  if (handshake.verifier.length < 43) {
     throw oauthStateInvalid(provider.id, 'no PKCE verifier was stored for this handshake');
   }
   if (callback.nonce !== undefined && !timingSafeEqual(handshake.nonce, callback.nonce)) {

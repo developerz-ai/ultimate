@@ -5,7 +5,7 @@ authorizes on a session row, a user row or an api key — http, actions, jobs an
 `ctx.actor` and hand it to `@ultimat3/policy`. One authz system, never two.
 
 ```ts
-import { BuiltinAdapter, defineAuth, login } from '@ultimat3/auth';
+import { BuiltinAdapter, defineAuth, login, oauthLogin } from '@ultimat3/auth';
 
 export const auth = defineAuth({
   adapter: new BuiltinAdapter(),          // or MemoryAdapter, or your Better Auth binding
@@ -13,9 +13,13 @@ export const auth = defineAuth({
   password: { minLength: 12 },
   mfa: { issuer: 'Acme' },
   providers: ['github', 'google'],
+  link: 'verified-email',                 // the default; `'never'` is the only other value
 });
 
 const { actor, token, cookie } = await login(auth, { email, password, ip });
+
+// "Log in with GitHub" is a link to /auth/oauth/github. These two routes are what serves it.
+const { start, callback } = oauthLogin(auth);
 ```
 
 ## Rules
@@ -23,7 +27,8 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
 - Every login failure throws `loginFailed()` from `rate-limit.ts`. Never a specific message.
 - Session ids are opaque random tokens; only `sha256(secret)` reaches the database.
 - Absolute and idle expiry are evaluated **independently**. Activity never moves the ceiling.
-- PKCE is mandatory on every provider. A missing verifier fails the callback.
+- PKCE is mandatory on every provider — `OAuthProvider.usesPkce` is the literal `true`, so
+  `usesPkce: false` does not typecheck and there is no branch that skips the verifier.
 - Recovery codes, verification tokens and api keys are hashed at rest and single-use.
 - A verification token is consumed **only when its hash matches**, in the same statement — the
   store takes `(purpose, identifier, tokenHash)`. Consuming first and comparing afterwards made an
@@ -89,37 +94,64 @@ x db gen "auth tables"     # emits AUTH_TABLES into a migration
 | `__Host-` + `Path=/` + no `Domain` | a sibling subdomain overwriting it (session fixation) |
 | `Max-Age` | a client keeping it past the server's absolute ceiling |
 
-## OAuth
+## OAuth — log in with GitHub
 
-Two calls: one to leave, one to come back. Provider configs are pure data — importing
-`oauth.ts` performs no network I/O and reads no env.
-
-```ts
-// GET /auth/oauth/:provider — redirect, keeping nothing on the server
-export async function GET(request: Request): Promise<Response> {
-  const handshake = beginOAuth({ provider: 'github', clientId, redirectUri });
-  return new Response(null, {
-    status: 302,
-    headers: { location: handshake.authorizeUrl, 'set-cookie': handshakeCookie(handshake) },
-  });
-}
-```
+`oauthLogin(auth)` **is** the flow. Two route descriptors, mounted at two fixed paths, composing
+`beginOAuth`, the handshake cookie and `completeOAuthLogin`. Provider configs stay pure data —
+importing `oauth.ts` performs no network I/O and reads no env.
 
 ```ts
-// GET /auth/oauth/:provider/callback — a separate request; the cookie is all that crossed
-export async function GET(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const { cookie } = await completeOAuthLogin(auth, {
-    handshake: readHandshakeCookie(request, 'github'),
-    callback: { state: url.searchParams.get('state') ?? '', code: url.searchParams.get('code') ?? '' },
-  });
-  const headers = new Headers({ location: '/' });
-  // Both, always: a code is single-use, so the handshake that authorised it must not outlive it.
-  headers.append('set-cookie', cookie);
-  headers.append('set-cookie', clearHandshakeCookie('github'));
-  return new Response(null, { status: 302, headers });
-}
+const { start, callback } = oauthLogin(auth);
+
+Bun.serve({
+  fetch(request) {
+    const { pathname } = new URL(request.url);
+    if (pathname.endsWith('/callback')) return callback.handle(request);
+    if (pathname.startsWith('/auth/oauth/')) return start.handle(request);
+    return new Response(null, { status: 404 });
+  },
+});
 ```
+
+| | `start` | `callback` |
+|---|---|---|
+| path | `/auth/oauth/:provider` | `/auth/oauth/:provider/callback` |
+| success | `302` to the provider, `Set-Cookie: __Host-x_oauth_<provider>` | `303` to `successPath`, `Set-Cookie: __Host-x_session` **and** the handshake cleared |
+| failure | the coded JSON body, status per code | the same, handshake cleared either way |
+
+A **descriptor**, never a mounted handler — the same category as `mcpHttpRoute()`. `@ultimat3/http`
+is tier 2 like this package, so auth may not import it, and `defineRoute` is tier 4 and describes
+a rendered page. A bare `Request` in, a `Response` out: drivable from a test, mountable by any
+router that can match a `:param`.
+
+**The paths are not configurable.** `X_OAUTH_STATE_INVALID` has always told the caller to restart
+at `GET /auth/oauth/<provider>`; it now quotes `oauthStartPath()`, the same declaration the mount
+reads. A movable base path is that sentence going stale again.
+
+**Failure is JSON, not a redirect carrying `?error=`.** The callback is the one request whose
+failure a developer must read, and there is no `?next=` on the success hop either: an
+attacker-supplied return target on the endpoint that hands out a session is the classic open
+redirect, and `nextAfterSignIn` in `@ultimat3/http` is the one implementation of that check.
+
+`beginOAuth` / `handshakeCookie` / `completeOAuthLogin` stay exported for a flow that needs the
+seams — but they are the seams, not the path.
+
+### Account linking
+
+```ts
+defineAuth({ adapter, providers: ['github'], link: 'verified-email' })  // the default
+```
+
+| `link` | a provider identity becomes an **existing** user when |
+|---|---|
+| `'verified-email'` (default) | the provider asserted the address verified **and** that account had verified it too |
+| `'never'` | never — a collision is `X_UNAUTHENTICATED` and the caller uses their own credentials |
+
+There is deliberately **no third value**. "Link on whatever address the provider sent" is not
+spelled here at all: a provider that does not verify addresses turns it into account takeover —
+register the victim's address there, press the button, inherit the account. Unrepresentable beats
+explicit, the same way `PkcePair.method` is the literal `'S256'` and never `'plain'`. An app that
+truly wants something looser wraps `signInWithOAuth` and resolves the user itself.
 
 The handshake carries `state`, `nonce` and the PKCE verifier across two requests, so it needs a
 home. `handshakeCookie` is that home — sealed with `SESSION_SECRET`, `HttpOnly; Secure;
@@ -154,6 +186,7 @@ JWT signed with the `.p8` key, which Apple expires every six months.
 
 | Step | Does | Fails with |
 |---|---|---|
+| `oauthLogin(auth)` | the two routes: redirect out, session back | `X_OAUTH_PROVIDER_UNKNOWN`, `X_OAUTH_DENIED` |
 | `handshakeCookie` / `readHandshakeCookie` | seals the handshake onto the redirect, opens it on the callback | `X_OAUTH_STATE_INVALID`, `X_ENV_MISSING` |
 | `exchangeOAuthCode` | POSTs the code + PKCE verifier, verifies the id token | `X_OAUTH_EXCHANGE_FAILED`, `X_OAUTH_TOKEN_INVALID` |
 | `oauthProfile` | id-token claims, else userinfo → one normalised identity | `X_OAUTH_EXCHANGE_FAILED` |
@@ -165,8 +198,8 @@ JWT signed with the `.p8` key, which Apple expires every six months.
   token, because that is where the code flow actually carries it.
 - GitHub reports a bad, reused or expired code as **HTTP 200 with an `error` field**. Trusting
   the status alone there mints a session from a failed exchange.
-- An address is only linked to an existing account when **both** sides verified it. Otherwise
-  whoever registered the address first inherits the login.
+- An address is only linked to an existing account when **both** sides verified it (`link:
+  'verified-email'`). Otherwise whoever registered the address first inherits the login.
 
 ## API keys — how an agent authenticates
 
@@ -191,6 +224,8 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match |
 | `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange, or returned no usable identity |
 | `X_OAUTH_TOKEN_INVALID` | the id token failed its issuer, audience or expiry check |
+| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider `defineAuth({ providers })` did not enable |
+| `X_OAUTH_DENIED` | the user pressed Cancel, or the provider declined — `403`, never a `502` |
 | `X_PASSWORD_WEAK` | strength check rejected the password |
 | `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong |

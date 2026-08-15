@@ -4,7 +4,7 @@
 // `read.test.ts`. Here the tier is driven directly, so a failure names the tier and not the read.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { tag } from '@ultimat3/cache';
+import { declareTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import type { ReadCache, ReadCacheEntry } from './read-cache';
 import {
   DEFAULT_READ_CACHE_MAX_BYTES,
@@ -18,6 +18,16 @@ import {
 const original = getReadCache();
 let tier = new MemoryReadCache();
 
+/**
+ * The entities this file's tags belong to, declared here rather than inherited. `assertKnownTags`
+ * validates nothing while NOTHING has been declared, so these tests used to pass only because no
+ * file that ran before them had declared an entity — and failed with X_CACHE_TAG_UNKNOWN the
+ * moment one had (`bun test packages/query packages/cli`). Declaring them is also the stricter
+ * run: the fan-out below is now checked against a real registry instead of a disabled one.
+ */
+const restoreTags = isolateDeclaredTags();
+declareTags(['post', 'comment']);
+
 beforeEach(() => {
   tier = new MemoryReadCache();
   setReadCache(tier);
@@ -26,6 +36,7 @@ beforeEach(() => {
 // The installed tier is process-wide; a leaked one reroutes every later read in this process.
 afterAll(() => {
   setReadCache(original);
+  restoreTags();
 });
 
 describe('the installed tier', () => {

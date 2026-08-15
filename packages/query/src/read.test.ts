@@ -2,8 +2,8 @@
 // the declaration store (`hasDef`/`defOf`/`stashDef`), `queryName`, the authz-before-execute
 // ordering proved with a spy, impersonation via `options.actor`, and `buildSource`'s `total()`.
 
-import { describe, expect, test } from 'bun:test';
-import { tag } from '@ultimat3/cache';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { declareTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -26,6 +26,15 @@ interface Row {
   readonly id: string;
   readonly orgId: string;
 }
+
+/**
+ * The `cache:` block below tags `post`, and `invalidateQueryTags` validates a tag against the
+ * declared entities. Declared here so the fan-out runs against a real registry instead of the
+ * disabled one an empty registry means — and restored, so no later file inherits it.
+ */
+const restoreTags = isolateDeclaredTags();
+declareTags(['post']);
+afterAll(restoreTags);
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 const Input = t.object({ orgId: t.uuid });

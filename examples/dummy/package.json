@@ -24,6 +24,7 @@
     "manifest": "x manifest --json"
   },
   "devDependencies": {
+    "@ultimat3/cache": "1.2.0",
     "@ultimat3/entity": "1.2.0",
     "@ultimat3/testing": "1.2.0",
     "typescript": "5.9.2"

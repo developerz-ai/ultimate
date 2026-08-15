@@ -1,6 +1,7 @@
 // The one place a framework error code becomes an HTTP status. A table, not a
 // switch chain: adding a code elsewhere in the framework means adding a row here,
 // and a missing row is a loud 500 rather than a silently wrong 200.
+import { renderCauseValue } from '@ultimat3/core';
 import { errorStatusInvalid, HTTP_ERROR_TITLES } from './errors';
 
 /**
@@ -169,7 +170,10 @@ export const factsOf = (error: unknown): ErrorFacts => {
     HTTP_ERROR_TITLES[code as keyof typeof HTTP_ERROR_TITLES] ??
     str(record, 'message') ??
     'unhandled server error';
-  const cause = str(record, 'cause') ?? str(record, 'message') ?? String(error);
+  // The last fallback is the only one that touches the throwable whole, and every throwable a
+  // request produces reaches it. `String()` runs the value's own `toString`, so the value that
+  // took the request down took the 500 renderer with it and the server had nothing left to send.
+  const cause = str(record, 'cause') ?? str(record, 'message') ?? renderCauseValue(error);
   return {
     code,
     title,

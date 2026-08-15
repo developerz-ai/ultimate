@@ -11,6 +11,8 @@ import {
   mfaRequired,
   oauthAccountNotLinked,
   oauthExchangeFailed,
+  oauthLinkingDisabled,
+  restartAt,
 } from './errors';
 import type { OAuthCallback, OAuthHandshake } from './oauth';
 import {
@@ -50,7 +52,7 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
       provider: input.profile.provider,
       stage: 'userinfo',
       detail: 'the provider returned an identity with no email address',
-      fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then restart the flow`,
+      fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then ${restartAt(input.profile.provider)}`,
     });
   }
   const created = await auth.adapter.createUser({
@@ -79,6 +81,9 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
  * An address alone is not proof of ownership on either side. Attaching a provider identity to a
  * local account that never verified its own email hands the login to whoever registered that
  * address first, so both halves must have proven it before they are treated as one person.
+ *
+ * `auth.link` is the app's one say in that. `'never'` skips the address step entirely and refuses
+ * a collision; `'verified-email'` — the default — is the both-halves-proven rule below.
  */
 async function resolveUser(
   auth: Auth,
@@ -91,6 +96,9 @@ async function resolveUser(
   if (email === null) return await createUserFor(auth, input);
   const existing = await auth.adapter.findUserByEmail(email);
   if (existing === null) return await createUserFor(auth, input);
+  // Checked before `disabledAt`: under `'never'` this identity is not that user at all, so its
+  // login state is not this caller's business and answering from it would be an oracle.
+  if (auth.link === 'never') throw oauthLinkingDisabled(provider, email);
   if (existing.disabledAt !== null) throw loginFailed();
   // The provider did not vouch for the address, so nothing here proves the two are one person.
   if (!emailVerified) throw loginFailed();

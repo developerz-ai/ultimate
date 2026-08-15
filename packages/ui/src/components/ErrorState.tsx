@@ -2,7 +2,7 @@
 // code, cause, fix. Identical text in the CLI, the overlay, and `--json` is the
 // whole point of the error contract — this component must not paraphrase.
 
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, renderCauseValue } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
@@ -39,7 +39,11 @@ export function errorParts(error: unknown): ErrorParts {
       docs: error.docs,
     };
   }
-  const message = error instanceof Error ? error.message : String(error);
+  // `props.error` is any thrown value, so `String()` ran the app's own `toString` — and this is the
+  // component that RENDERS an error, so its throw replaced the screen that was reporting one with a
+  // blank tree. Laundering it through a local `message` is exactly what `scripts/error-render.ts`
+  // says it cannot see, which is why this one shipped.
+  const message = error instanceof Error ? error.message : renderCauseValue(error);
   return {
     code: 'X_INTERNAL',
     title: 'unexpected internal framework error',

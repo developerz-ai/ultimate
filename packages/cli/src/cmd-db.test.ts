@@ -17,6 +17,7 @@ import {
   resetJobs,
   setJobDriver,
 } from '@ultimat3/jobs';
+import { isolateEntityRegistry } from '@ultimat3/testing';
 import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { BadFlagError } from './errors';
@@ -46,6 +47,11 @@ async function appRoot(): Promise<string> {
 
 describe('unit · x db gen', () => {
   test('an unchanged schema generates nothing and still exits ok', async () => {
+    // "Unchanged" means "no entity declares a table" — a premise this test used to inherit rather
+    // than state, and `entity()` registers process-globally at module scope. `bun test
+    // packages/jobs packages/cli` therefore generated a migration for `backfill_test_rows`, a
+    // fixture two files away, and this failed for a reason nothing here named.
+    const restoreEntities = isolateEntityRegistry();
     const root = await appRoot();
     try {
       const result = await dbCommand.run(ctxFor(['db', 'gen', 'nothing to do'], root));
@@ -53,6 +59,7 @@ describe('unit · x db gen', () => {
       expect(result.data).toMatchObject({ migration: null });
     } finally {
       rmSync(root, { recursive: true, force: true });
+      restoreEntities();
     }
   });
 

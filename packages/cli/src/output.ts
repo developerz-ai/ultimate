@@ -2,6 +2,7 @@
 // and the JSON renderer are projections of it, so `--json` can never drift from the terminal
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
+import { renderCauseValue } from '@ultimat3/core';
 import { msg } from './messages';
 
 export interface Finding {
@@ -85,7 +86,9 @@ export function findingFrom(value: unknown): Finding {
       ? { code: value.code, cause: value.cause, fix: value.fix }
       : { code: value.code, cause: value.cause, fix: value.fix, docs };
   }
-  const cause = value instanceof Error ? value.message : String(value);
+  // This is the LAST renderer between a thrown value and the terminal: `String()` on a hostile
+  // `toString` here loses the whole report, not one line of it.
+  const cause = value instanceof Error ? value.message : renderCauseValue(value);
   return {
     code: 'X_CLI_UNEXPECTED',
     cause,

@@ -7,6 +7,7 @@ is a change to every package.
 |---|---|
 | Deps | none (`bun-types` only) |
 | Errors | subclass `UltimateError`; never `throw new Error` |
+| Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
 | New code | add to `CORE_CODE_TITLES` in `error-codes.ts`, else the title is auto-humanised |
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
@@ -17,6 +18,17 @@ is a change to every package.
 Deliberate cycles (safe — nothing is referenced at module-evaluation time):
 `errors.ts ⇄ error-codes.ts`. Keep it that way: no top-level `UltimateError` use in
 `error-codes.ts`.
+
+`error-render.ts` imports nothing, including from this package — an error factory that dies
+formatting its own message is the failure it exists to prevent, so it cannot depend on anything
+that could itself throw. The same defect shipped three times (`entity`, `flags`, `cli`) before
+this file existed; `renderCauseValue` is `@ultimat3/entity`'s `renderValue` moved down a tier
+VERBATIM, `a object` included, so a package adopting it changes no message. `toUltimateError`,
+`parseId` and `readPackageVersion` are its first callers. The mechanical half is
+`scripts/error-render.ts` on `x verify`'s `errors` step (`X_ERROR_RENDER_UNSAFE`) — it reads
+parameters typed `unknown` that reach a `cause:` / `fix:`, and it cannot see a value laundered
+through a local helper first (`packages/ui/src/components/ErrorState.tsx` builds a `message`
+const, then assigns it).
 
 `logger.ts` must not import `context.ts`. `context.ts` injects the ids via
 `setLoggerContextFields()`. It **does** import `secret.ts`, one way only: `secret.ts` owns

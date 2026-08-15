@@ -2,6 +2,7 @@
 // offline mutation drain are frames in the same union. Moving a route from tier 2 to tier 3 is a
 // config flag (`persist: true`), never a new protocol — that promise is enforced here.
 
+import { renderCauseValue } from '@ultimat3/core';
 import type { LiveCursor } from './cursor';
 import { ProtocolVersionError } from './errors';
 import {
@@ -274,7 +275,10 @@ export function decode(raw: string | Uint8Array): Frame {
 export function toWireError(error: unknown): WireError {
   const shape = error as { code?: unknown; cause?: unknown; fix?: unknown; docs?: unknown } | null;
   const code = typeof shape?.code === 'string' ? shape.code : 'X_PROTOCOL_VERSION';
-  const cause = typeof shape?.cause === 'string' ? shape.cause : String(error);
+  // The throwable is an app mutator's, a live query's or a policy's, so its `toString` is the
+  // app's too: `String()` here raised inside the handler's catch and the socket got no frame at
+  // all, which a reconnect cannot repair because the same call throws the same way.
+  const cause = typeof shape?.cause === 'string' ? shape.cause : renderCauseValue(error);
   const fix = typeof shape?.fix === 'string' ? shape.fix : 'x doctor realtime';
   return typeof shape?.docs === 'string'
     ? { code, cause, fix, docs: shape.docs }

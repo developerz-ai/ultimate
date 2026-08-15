@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 // checked-out `src/` layout and the published `dist/` one, each exactly one level below the
 // package root.
 import { resolve } from 'node:path';
+import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';
 
 const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
@@ -39,7 +40,7 @@ export function readPackageVersion(manifestPath: string): string {
   if (typeof version !== 'string' || !SEMVER.test(version)) {
     throw new UltimateError({
       code: 'X_INVARIANT',
-      cause: `${manifestPath} has no valid semver "version" field (found ${JSON.stringify(version)})`,
+      cause: `${manifestPath} has no valid semver "version" field (found ${renderCauseValue(version)})`,
       fix: `set a semver "version" in ${manifestPath}, then re-run: bun run verify`,
     });
   }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c2d1866784dda5595c722a9b49dbb296c132b0c27745ce2b5ee0513f1eeb5d3f",
+  "buildId": "913fb7e62b5b286b2a61e252faea78bb4e6e63bdb485f43bb7d16ee9367d3a64",
   "tiers": {
     "0": [
       "core",
@@ -711,6 +711,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_ERROR_RENDER_UNSAFE",
+      "owner": "scripts",
+      "at": "scripts/error-render.ts"
+    },
+    {
       "code": "X_ERROR_REPORTER_DSN_INVALID",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
@@ -1156,7 +1161,17 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_OAUTH_DENIED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
       "code": "X_OAUTH_EXCHANGE_FAILED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_OAUTH_PROVIDER_UNKNOWN",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },
@@ -1772,6 +1787,11 @@
     },
     {
       "code": "X_TEST_NONDETERMINISTIC",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_REGISTRY_LEAK",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

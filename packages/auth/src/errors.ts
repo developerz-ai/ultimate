@@ -4,6 +4,7 @@
 // every credential path must throw, and nothing else describes *why* a credential failed.
 
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { oauthStartPath } from './oauth-paths';
 
 /** Codes this package declares and owns. `X_UNAUTHENTICATED` is auth's; http only borrows it. */
 export const AUTH_OWNED_ERROR_CODES = [
@@ -13,6 +14,8 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_OAUTH_STATE_INVALID',
   'X_OAUTH_EXCHANGE_FAILED',
   'X_OAUTH_TOKEN_INVALID',
+  'X_OAUTH_PROVIDER_UNKNOWN',
+  'X_OAUTH_DENIED',
   'X_PASSWORD_WEAK',
   'X_ACCOUNT_LOCKED',
   'X_API_KEY_INVALID',
@@ -26,7 +29,16 @@ export const AUTH_OWNED_ERROR_CODES = [
  * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. No titles here on purpose — a second copy of a title
  * is a title that drifts, and registering one of these would be `X_ERROR_CODE_DUPLICATE`.
  */
-export const AUTH_BORROWED_ERROR_CODES = ['X_FORBIDDEN', 'X_NOT_IMPLEMENTED'] as const;
+// `X_ENV_MISSING` and `X_CONFIG_INVALID` were thrown here long before they were declared here —
+// oauth-cookie.ts and oauth-exchange.ts refuse on a missing secret, oauth-login.ts on a bad
+// config. An undeclared borrow is a code the manifest cannot attribute to the package that throws
+// it, so `x errors` could not point a reader at this file.
+export const AUTH_BORROWED_ERROR_CODES = [
+  'X_FORBIDDEN',
+  'X_NOT_IMPLEMENTED',
+  'X_ENV_MISSING',
+  'X_CONFIG_INVALID',
+] as const;
 
 /** Every code auth can throw: the ones it owns plus the ones it borrows. */
 export const AUTH_ERROR_CODES = [...AUTH_OWNED_ERROR_CODES, ...AUTH_BORROWED_ERROR_CODES] as const;
@@ -41,6 +53,8 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_OAUTH_STATE_INVALID: 'oauth state, nonce or pkce verifier did not match',
   X_OAUTH_EXCHANGE_FAILED: 'the oauth provider refused the exchange or returned no usable identity',
   X_OAUTH_TOKEN_INVALID: 'id token failed its issuer, audience or expiry check',
+  X_OAUTH_PROVIDER_UNKNOWN: 'the URL named a provider this app has not enabled',
+  X_OAUTH_DENIED: 'the user or the provider declined the authorization',
   X_PASSWORD_WEAK: 'password does not meet the configured policy',
   X_ACCOUNT_LOCKED: 'too many failed attempts; this key is locked out',
   X_API_KEY_INVALID: 'api key is unknown, revoked, expired or wrong',
@@ -114,11 +128,53 @@ export const mfaRequired = (userId: string): AuthError =>
     fix: 'POST /auth/mfa/verify { code } with the 6-digit code, then retry',
   });
 
+/**
+ * The `fix:` quotes `oauthStartPath` rather than a hand-written path. That is not tidiness: this
+ * line shipped naming `GET /auth/oauth/<provider>` while `@ultimat3/auth` mounted no route at all,
+ * so every caller who followed it hit a 404. One declaration, read by the mount and by the fix,
+ * is what stops that recurring — `oauthLogin()` cannot move without moving this sentence.
+ */
 export const oauthStateInvalid = (provider: string, part: string): AuthError =>
   new AuthError({
     code: 'X_OAUTH_STATE_INVALID',
     cause: `${provider} callback rejected: ${part}`,
-    fix: `restart the flow at GET /auth/oauth/${provider} — a callback URL is single-use`,
+    fix: `${restartAt(provider)} — a callback URL is single-use`,
+    meta: { provider },
+  });
+
+/** The one phrase every "start over" fix is built from, so none of them can name a dead route. */
+export const restartAt = (provider: string): string =>
+  `restart the flow at GET ${oauthStartPath(provider)}`;
+
+/**
+ * The provider came back with `error=` and no code — almost always the user pressing Cancel.
+ * A separate code from `X_OAUTH_EXCHANGE_FAILED` on purpose: nothing was exchanged, nothing is
+ * misconfigured, and folding the single commonest non-success outcome of a login into the code
+ * that means "the client secret is wrong" makes both unreadable in a log and pages the wrong person.
+ */
+export const oauthDenied = (
+  provider: string,
+  reason: string,
+  description: string | null,
+): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_DENIED',
+    cause: `${provider} declined the authorization: ${reason}${description === null ? '' : ` (${description})`}`,
+    fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
+    meta: { provider, reason },
+  });
+
+/**
+ * A URL segment naming a provider that is not in `OAUTH_PROVIDERS`, or is but was left out of
+ * `defineAuth({ providers })`. One refusal for both: which of the two it is describes the app's
+ * configuration to an unauthenticated caller, and the fix is the same sentence either way.
+ */
+export const oauthProviderUnknown = (provider: string, enabled: readonly string[]): AuthError =>
+  new AuthError({
+    code: 'X_OAUTH_PROVIDER_UNKNOWN',
+    cause: `no oauth provider is mounted at ${oauthStartPath(provider)}`,
+    fix: `add '${provider}' to defineAuth({ providers: [...] }) — currently ${enabled.length === 0 ? 'none are enabled' : enabled.join(', ')}`,
+    meta: { provider, enabled: [...enabled] },
   });
 
 export interface OAuthExchangeFailure {
@@ -163,6 +219,19 @@ export const oauthAccountNotLinked = (provider: string, email: string): AuthErro
     code: 'X_UNAUTHENTICATED',
     cause: `an account holds this ${provider} address but never verified it, so ${provider} may not claim it`,
     fix: `sign in with that account's password and confirm the email-verify link, then retry ${provider}`,
+    meta: { provider, email },
+  });
+
+/**
+ * `link: 'never'` and a local account already holds the address. Same code and same disclosure
+ * rule as `oauthAccountNotLinked` — the caller proved to the provider that the address is theirs,
+ * so naming the collision is not enumeration — and the address rides in `meta`, never in `cause`.
+ */
+export const oauthLinkingDisabled = (provider: string, email: string): AuthError =>
+  new AuthError({
+    code: 'X_UNAUTHENTICATED',
+    cause: `an account already holds this address and defineAuth({ link: 'never' }) forbids ${provider} from claiming it`,
+    fix: "sign in with that account's own credentials, or set link: 'verified-email' in defineAuth to let a provider-verified address claim a locally-verified account",
     meta: { provider, email },
   });
 

@@ -79,6 +79,25 @@ export const VerificationSchema = t.object({
   createdAt: t.date,
 });
 
+/**
+ * When a provider identity with no linked account is allowed to become an EXISTING local user.
+ *
+ * There are two values and there is deliberately no third. The dangerous one an app would reach
+ * for — "link on whatever address the provider sent" — is not spelled here at all, because a
+ * provider that does not verify addresses turns it into account takeover: register the victim's
+ * address at a sloppy provider, press the button, inherit the account. Unrepresentable beats
+ * explicit, the same way `PkcePair.method` is the literal `'S256'` and never `'plain'`.
+ *
+ * | value | a provider identity becomes an existing user when |
+ * |---|---|
+ * | `'verified-email'` (default) | the provider asserted the address verified AND that user had verified it too |
+ * | `'never'` | never — an address collision is refused and the caller signs in with their own credentials |
+ *
+ * An app that genuinely wants something else composes it: wrap `signInWithOAuth` and resolve the
+ * user yourself. That is the seam, and it keeps the framework from shipping the loose default.
+ */
+export type OAuthLinkPolicy = 'verified-email' | 'never';
+
 export interface AuthMfaPolicy {
   /** Shown in the authenticator app. Usually the product name. */
   readonly issuer: string;
@@ -100,6 +119,8 @@ export interface AuthConfigInput {
   readonly limiter?: AuthLimiter | undefined;
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
   readonly providers?: readonly OAuthProviderId[] | undefined;
+  /** Defaults to `'verified-email'` — both halves proven. See `OAuthLinkPolicy`. */
+  readonly link?: OAuthLinkPolicy | undefined;
 }
 
 export interface Auth {
@@ -111,6 +132,7 @@ export interface Auth {
   readonly limiter: AuthLimiter;
   readonly mfa: AuthMfaPolicy;
   readonly providers: readonly OAuthProviderId[];
+  readonly link: OAuthLinkPolicy;
 }
 
 export function defineAuth(config: AuthConfigInput): Auth {
@@ -129,6 +151,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
     limiter,
     mfa: { issuer: config.mfa?.issuer ?? 'Ultimate', required: config.mfa?.required ?? false },
     providers: config.providers ?? OAUTH_PROVIDER_IDS,
+    link: config.link ?? 'verified-email',
   });
 }
 

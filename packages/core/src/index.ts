@@ -125,6 +125,7 @@ export {
   registerErrorCodes,
   resetErrorCodes,
 } from './error-codes';
+export { renderCauseValue, renderFixLiteral } from './error-render';
 export type {
   ErrorReport,
   ErrorReporter,

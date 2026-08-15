@@ -11,7 +11,7 @@
 // directory tree. `node:path` for `join` — Bun exposes no path joiner.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { resolveEnvironment } from '@ultimat3/core';
+import { renderCauseValue, resolveEnvironment } from '@ultimat3/core';
 import { branchPglite, type DriftReport, driftError } from '@ultimat3/db';
 import { BackfillPendingError } from '@ultimat3/jobs';
 import { loadApp } from './app-load';
@@ -63,7 +63,9 @@ const stepFinding = (error: unknown, code: string): Finding =>
     ? findingFrom(error)
     : {
         code,
-        cause: error instanceof Error ? error.message : String(error),
+        // The engine may throw a non-Error; `String()` would run its `toString` and lose the
+        // refusal to a TypeError raised while reporting it.
+        cause: error instanceof Error ? error.message : renderCauseValue(error),
         fix: 'x doctor --json',
         docs: `https://ultimate.dev/errors/${code}`,
       };
