@@ -61,6 +61,8 @@ Follow in order. Every command and every output was executed against the publish
 |---|---|
 | [Realtime](Realtime) | channels → live queries → local-first, the pipeline, the reconnect problem |
 | [Caching and invalidation](Caching-And-Invalidation) | four tiers, one tag graph, one-hop fanout |
+| [Batching and preloading](Batching-And-Preloading) | JIT preload, `.preload()`, `insertAll`/`upsertAll`/`updateWhere`, `inBatches`, the tenancy guarantee |
+| [N+1 detection](N-Plus-One-Detection) | the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing |
 | [PWA and offline](PWA-And-Offline) | generated `sw.js`, precache budgets, version skew |
 | [MCP and AI](MCP-And-AI) | the dev MCP server, every action as a tool, the `llm()` gateway, evals |
 | [Admin dashboard](Admin-Dashboard) | the generated admin app and its MCP surface |
@@ -74,6 +76,8 @@ Follow in order. Every command and every output was executed against the publish
 | [UI components](UI-Components) | the four page composites, and the generated 46-component catalog |
 | [Timezones and dates](Timezones-And-Dates) | store UTC, format with an explicit IANA zone, frozen clocks in tests |
 | [Money](Money) | `Money = { minor, currency }`, never a float |
+| [Resource management](Resource-Management) | `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins |
+| [Migrations and backfills](Migrations-And-Backfills) | one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory |
 | [Testing](Testing) | six test types, cloned databases, sealed network, `x verify` |
 
 ## Reference
