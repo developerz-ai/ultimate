@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { createContext, runWithContext, userActor, withChildContext } from '@ultimat3/core';
 import { text, uuid } from './columns';
 import { entity } from './entity';
+import type { EntityError } from './errors';
 import { clearRegistry } from './registry';
 import { memoryRepo } from './repo';
 import {
@@ -32,6 +33,20 @@ const posts = entity('tenancy_test_posts', {
 const settings = entity('tenancy_test_settings', {
   columns: { id: uuid().primaryKey(), key: text() },
 });
+
+/**
+ * The thrown error, or `undefined` — the same helper `plan.test.ts` and five siblings define. A
+ * sentinel `throw new Error('expected a throw')` would be a bare `Error` in a repo that has none,
+ * and it fails on an absent `cause` rather than on the code that was supposed to be raised.
+ */
+const caught = (run: () => unknown): EntityError | undefined => {
+  try {
+    run();
+    return undefined;
+  } catch (error) {
+    return error as EntityError;
+  }
+};
 
 afterAll(() => {
   clearRegistry();
@@ -81,14 +96,10 @@ describe('an explicitly declared tenant', () => {
         tenant: 'notAColumn' as 'id',
         columns: { id: uuid().primaryKey(), workspaceId: uuid() },
       });
-    try {
-      withRenamedColumn();
-      throw new Error('expected a throw');
-    } catch (error) {
-      expect((error as { code?: string }).code).toBe('X_INVARIANT_VIOLATED');
-      // The cause lists the columns, so the fix is readable without opening the file.
-      expect(String((error as { cause?: string }).cause)).toContain('workspaceId');
-    }
+    const error = caught(withRenamedColumn);
+    expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
+    // The cause lists the columns, so the fix is readable without opening the file.
+    expect(String(error?.cause)).toContain('workspaceId');
   });
 });
 
@@ -100,12 +111,9 @@ describe('assertScoped', () => {
   });
 
   test('the fix line names the call that has to change', () => {
-    try {
-      assertScoped('post', 'orgId', 'findMany', emptyPlan('post'));
-      throw new Error('expected a throw');
-    } catch (error) {
-      expect(String((error as { fix?: string }).fix)).toContain('orgScoped(');
-    }
+    const error = caught(() => assertScoped('post', 'orgId', 'findMany', emptyPlan('post')));
+    expect(error).toBeUltimateError('X_TENANCY_UNSCOPED');
+    expect(String(error?.fix)).toContain('orgScoped(');
   });
 
   test('passes once the org predicate is present', () => {
@@ -206,14 +214,51 @@ describe('the tenant a plan actually runs under', () => {
   });
 
   test('the mismatch names both tenants, so a reader can tell an attack from a typo', () => {
-    try {
-      asPlan(() => scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_B)));
-      throw new Error('expected a throw');
-    } catch (error) {
-      const cause = String((error as { cause?: string }).cause);
-      expect(cause).toContain(ORG_A);
-      expect(cause).toContain(ORG_B);
+    const error = caught(() =>
+      asPlan(() => scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_B))),
+    );
+    expect(error).toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
+    expect(String(error?.cause)).toContain(ORG_A);
+    expect(String(error?.cause)).toContain(ORG_B);
+  });
+
+  test('the fix a mismatch prints is runnable, whatever the predicate held', () => {
+    // A cause may describe any value; a fix has to parse. `in` and `is-null` both reach the same
+    // refusal, and neither `orgId: ["a","b"]` nor `orgId: undefined` is an org anybody can act as.
+    const set = {
+      ...emptyPlan('post'),
+      where: [{ column: 'orgId', op: 'in' as const, value: [ORG_A, ORG_B] }],
+    };
+    const absent = {
+      ...emptyPlan('post'),
+      where: [{ column: 'orgId', op: 'is-null' as const }],
+    };
+    for (const plan of [set, absent]) {
+      const fix = String(
+        caught(() => asPlan(() => scopedPlan('post', 'orgId', 'find', plan)))?.fix,
+      );
+      expect(fix).toContain("orgId: '<org>'");
+      expect(fix).not.toContain('orgId: undefined');
+      expect(fix).not.toContain('orgId: [');
     }
+  });
+
+  test('an unscoped plan says which of the two situations it is', () => {
+    // `assertScoped` verifies a plan it did not build, so it is the one path that can refuse an
+    // unscoped plan while an actor IS carrying a tenant — and it must not claim there was none.
+    const withActor = caught(() =>
+      asPlan(() => {
+        assertScoped('post', 'orgId', 'findMany', emptyPlan('post'));
+      }),
+    );
+    expect(withActor).toBeUltimateError('X_TENANCY_UNSCOPED');
+    expect(String(withActor?.cause)).toContain(ORG_A);
+    expect(String(withActor?.fix)).toContain('scopedPlan(');
+
+    const noContext = caught(() => assertScoped('post', 'orgId', 'findMany', emptyPlan('post')));
+    expect(noContext).toBeUltimateError('X_TENANCY_UNSCOPED');
+    expect(String(noContext?.cause)).toContain('no request context');
+    expect(String(noContext?.fix)).toContain('runWithContext(');
   });
 
   test('an actor carrying no tenant is refused, never handed the tenant it asked for', async () => {

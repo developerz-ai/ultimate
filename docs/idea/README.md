@@ -4,7 +4,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 
 | Doc | Hook |
 |---|---|
-| [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary user is an AI agent — plus the steal-explicitly table and the 7 axioms. |
+| [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary user is an AI agent — plus the steal-explicitly table and the 8 axioms. |
 | [`01-stack.md`](./01-stack.md) | One locked choice per layer; Bun natives delete ~40 dependencies before you write a line. |
 | [`02-primitives.md`](./02-primitives.md) | Eight primitives. `action` projects to six artifacts. Two authz systems is how every Meteor-like framework died. |
 | [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is a config flag. |
@@ -58,7 +58,7 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 
 ## Status
 
-`As of 2026-08`: **1.2.0, shipped.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — publish to npm in lockstep, over OIDC trusted publishing. Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
+`As of 2026-08`: **1.2.0, shipped.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep and published over OIDC trusted publishing. `@ultimat3/flags` has never reached npm and still needs its one-time manual bootstrap ([#84](https://github.com/developerz-ai/ultimate/issues/84)), so the registry is not yet in lockstep with the repo. Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 
 Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
 

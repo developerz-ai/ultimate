@@ -89,17 +89,31 @@ export const invariantViolated = (
   });
 
 /**
- * Reached only where there is no actor to derive the tenant from — outside every request context,
- * which is a script, a boot path or a test harness. Inside one the tenant is the actor's and this
- * plan would have been scoped without anybody naming it, so the fix leads with the context rather
- * than with the argument: naming the tenant by hand is the fallback, and it is now checked against
- * the actor wherever there is one.
+ * One code, two situations, and they do not share a repair — so the cause and the fix branch on
+ * which one it is rather than one wording claiming the other's facts.
+ *
+ * `actorOrg` absent: no request context at all, which is a script, a boot path or a test harness.
+ * Nothing derived the tenant because there was no actor to derive it from, so the fix leads with
+ * the context and offers naming the tenant by hand as the fallback.
+ *
+ * `actorOrg` present: `assertScoped` was handed a plan somebody else built. It cannot derive — a
+ * verifier has nowhere to put a predicate — so the fix names the two calls that can.
  */
-export const tenancyUnscoped = (entityName: string, operation: string): EntityError =>
+export const tenancyUnscoped = (
+  entityName: string,
+  operation: string,
+  actorOrg?: string,
+): EntityError =>
   new EntityError({
     code: 'X_TENANCY_UNSCOPED',
-    cause: `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column, and no request context carried an actor to take the tenant from`,
-    fix: `run it inside runWithContext(createContext({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`,
+    cause:
+      actorOrg === undefined
+        ? `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column, and no request context carried an actor to take the tenant from`
+        : `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${JSON.stringify(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
+    fix:
+      actorOrg === undefined
+        ? `run it inside runWithContext(createContext({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
+        : `build the plan with scopedPlan('${entityName}', tenantColumn, '${operation}', plan) — it applies the actor's tenant — or add the predicate first: orgScoped(plan, ${JSON.stringify(actorOrg)})`,
   });
 
 /**
@@ -121,10 +135,15 @@ export const tenancyActorMismatch = (init: {
   // `JSON.stringify` answers it with `undefined` rather than a string, which would render the two
   // halves of the cause differently.
   const named = JSON.stringify(init.named) ?? 'undefined';
+  // The cause may describe any value the predicate held; the fix has to PARSE. `where('orgId',
+  // 'in', [a, b])` and `is-null` both reach here, and neither `orgId: ["a","b"]` nor
+  // `orgId: undefined` is an org anybody can act as — so a non-string becomes the placeholder,
+  // and the cause above is where the reader finds what was actually named.
+  const asTenant = typeof init.named === 'string' ? JSON.stringify(init.named) : "'<org>'";
   return new EntityError({
     code: 'X_TENANCY_ACTOR_MISMATCH',
     cause: `${init.entityName}.${init.operation}() was scoped to tenant ${named} but the acting actor's tenant is ${JSON.stringify(init.actorOrg)}`,
-    fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${named} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
+    fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${asTenant} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
   });
 };
 

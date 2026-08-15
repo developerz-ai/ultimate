@@ -161,7 +161,10 @@ const verifyScope = (
   actorOrg: string | undefined,
 ): void => {
   const named = plan.where.filter((predicate) => predicate.column === tenantColumn);
-  if (named.length === 0) throw tenancyUnscoped(entityName, operation);
+  // `actorOrg` goes in so the refusal states which of the two situations this is: `scopedPlan`
+  // never reaches here with an actor (it derives first), but `assertScoped` verifies plans it did
+  // not build, and telling that caller "no actor carried a tenant" would be false.
+  if (named.length === 0) throw tenancyUnscoped(entityName, operation, actorOrg);
   if (actorOrg === undefined) return;
   for (const predicate of named) {
     if (predicate.op !== 'eq' || predicate.value !== actorOrg) {

@@ -18,7 +18,9 @@ export {
   url,
   uuid,
 } from './columns';
-export { CROSS_TENANT_SCOPE, crossTenant, crossTenantReason } from './cross-tenant';
+// `crossTenantReason` stays internal: an app that could read the flag would have a second way to
+// reason about tenant scope — branch on it — next to the one way, which is entering the scope.
+export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
@@ -29,7 +31,10 @@ export type {
   QueryLoopBatch,
   WriteLoopBatch,
 } from './errors';
+// Every error factory this package owns, its three tenancy siblings included: `Driver` is public,
+// so a third-party driver has to be able to raise the same refusals the two shipped ones do.
 export {
+  crossTenantDenied,
   dbDrift,
   ENTITY_ERROR_CODES,
   ENTITY_ERROR_TITLES,
@@ -41,6 +46,8 @@ export {
   nPlusOneWrite,
   patchEmpty,
   preloadUnknownRelation,
+  tenancyActorMismatch,
+  tenancyActorOrgRequired,
   tenancyUnscoped,
   writeUnfiltered,
 } from './errors';
