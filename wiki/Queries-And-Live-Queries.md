@@ -115,6 +115,8 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 | Why two clients and not one | actions and queries are two registries (`defineApi`'s `actions:` and `queries:` keys) answering two methods. A read taken off the action client is a name that does not exist on `Api['actions']` — a compile error, which is the point |
 | Types | the read's own `input` and row type. A read answers `readonly TRow[]`, `limit(1)` included: a detail route unwraps the row, it is never handed one by the client |
 | Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML is `X_RPC_FAILED` naming the read |
+| Rows are JSON | what `response.json()` parsed, exactly as `rpc` hands back. A query declares no output schema — row types come from the `SqlSource` its `sql:` returns — so a `Date` column arrives as the ISO string, and the surface that formats one converts at its `load` |
+| `then` is not a read | the proxy answers `undefined` for it, so `await queries` resolves to the client instead of fetching `/_x/query/then`. Same rule in `rpc` |
 
 ## Owns / never
 

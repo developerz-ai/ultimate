@@ -55,5 +55,13 @@ export const toggleDigestOptIn = mutator({
   // Compliance, not preference — the one place `last-write-wins` is the wrong default. An
   // unsubscribe the server already recorded must stay unsubscribed even if a stale offline
   // toggle races it back on; a resubscribe has no such rule, so only the `false` side is sticky.
-  conflict: custom<MemberView>((local, server) => (server.digestOptIn ? local : server)),
+  //
+  // The server row is the base and one field is resolved on top of it. Returning `local` whole
+  // handed back every OTHER field as this device last saw it — a theme, a locale or a role
+  // changed elsewhere while the toggle sat in the offline queue would be reverted by a mutator
+  // that is about a subscription. A conflict resolver owns the field it is for, not the row.
+  conflict: custom<MemberView>((local, server) => ({
+    ...server,
+    digestOptIn: server.digestOptIn ? local.digestOptIn : false,
+  })),
 });

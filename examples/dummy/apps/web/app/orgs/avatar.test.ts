@@ -14,6 +14,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { memberId as toMemberId, orgId as toOrgId } from '@postly/domain';
 import { frozenClock } from '@ultimat3/core';
+import type { ListOptions, ListPage, StorageDriver } from '@ultimat3/storage';
 import {
   attachmentKey,
   defineStorage,
@@ -141,6 +142,31 @@ describe('the rendered avatar', () => {
     expect(verified.constraints.method).toBe('GET');
     expect(verified.constraints.expiresAt).toBe(clock.now().getTime() + AVATAR_URL_TTL_MS);
     expect(new TextDecoder().decode((await disk().get(grant.key)).bytes)).toBe('pretend-png');
+  });
+
+  test('is the last upload even when it lands past the first page of the listing', async () => {
+    const target = avatarTarget(MEMBER);
+    await put(attachmentKey(ORG, target, 'a-first.png'), 'old');
+    await put(attachmentKey(ORG, target, 'b-second.png'), 'new');
+
+    // One object per page — S3's own shape at 1000 keys, made cheap. A single `list` call sees
+    // only `a-first.png`, so the read half must follow the cursor to find the current avatar.
+    const inner = disk();
+    const paged: StorageDriver = {
+      ...inner,
+      async list(options?: ListOptions): Promise<ListPage> {
+        const all = await inner.list({ ...options, cursor: undefined });
+        const from = options?.cursor === undefined ? 0 : Number(options.cursor);
+        const next = from + 1;
+        return next < all.objects.length
+          ? { objects: all.objects.slice(from, next), truncated: true, cursor: String(next) }
+          : { objects: all.objects.slice(from, next), truncated: false };
+      },
+    };
+    resetStorage();
+    defineStorage({ disks: { local: paged }, default: 'local' });
+
+    expect((await signedAvatarUrl(ORG, MEMBER)) ?? '').toContain('b-second.png');
   });
 
   test('is the last upload, and never another member’s', async () => {

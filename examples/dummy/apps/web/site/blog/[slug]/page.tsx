@@ -19,6 +19,7 @@ import { blogHref, toCardPost } from '../../../shared/entities';
 import { oneRow } from '../../../shared/rows';
 import { tag } from '../../../shared/tags';
 import { anonymousViewer } from '../../../shared/viewer';
+import { wireDate } from '../../../shared/wire';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -34,9 +35,15 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1800 },
+  /**
+   * `publishedAt` is rehydrated here and nowhere else: the read answered over HTTP, so the
+   * instant arrived as the string `JSON.stringify` wrote, and `meta` below calls `toISOString()`
+   * on it. One conversion at the loader, rather than a `Date` cast at each render.
+   */
   load: async ({ params }) => {
     const slug = params.slug ?? '';
-    return oneRow(await queries.publicPost({ slug }), slug);
+    const post = oneRow(await queries.publicPost({ slug }), slug);
+    return { ...post, publishedAt: wireDate(post.publishedAt) };
   },
   /**
    * `dateModified` is deliberately absent: `PostView` excludes `updatedAt` (`app/posts/entity.ts`)

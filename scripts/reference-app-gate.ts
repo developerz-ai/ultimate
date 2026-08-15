@@ -37,7 +37,7 @@ export const REPRODUCE = `cd ${REFERENCE_APP} && bun run ../../packages/cli/src/
  */
 export const EXPECTED_RED: Readonly<Record<string, string>> = {
   typecheck:
-    '136 errors as of `bunx tsc -b --pretty false` — 135 inside examples/dummy, 1 leaking ' +
+    '137 errors as of `bunx tsc -b --pretty false` — 136 inside examples/dummy, 1 leaking ' +
     'through project refs from packages/mcp/src/transport-stdio.ts:35 (a ReadableStream missing ' +
     '[Symbol.asyncIterator]). NOT the builder-method/tenancy-escape-hatch pair this line used to ' +
     'blame: the posts repo was rewritten onto the real @ultimat3/entity surface and the query ' +
@@ -46,9 +46,11 @@ export const EXPECTED_RED: Readonly<Record<string, string>> = {
     '.insert().returning() the posts repo used to; every *.contract/.live/.job.test.ts calling ' +
     '`seed`/`actorFor` has no type augmentation for the fixtures scripts/test-setup.ts wires in ' +
     "only at runtime; `Actor` is missing `memberId`/`tz` (named, not new, in this app's own " +
-    'CLAUDE.md); and a scatter of UI prop drift (`SpaceStep`, `DateTimeFormatter`) plus one ' +
-    'Date/Instant brand mismatch in packages/core/src/digest-schedule.ts:29. Still the ' +
-    "data-substrate work's to close",
+    'CLAUDE.md); and a scatter of UI prop drift (`SpaceStep`, `DateTimeFormatter`) plus a ' +
+    'Date/Instant brand mismatch on every toZoned call in packages/core/src/digest-schedule.ts. ' +
+    'The count moved 136 → 137 with previousDigestAt and its digestPreview caller, which are two ' +
+    "more instances of those same two classes, not new ones. Still the data-substrate work's to " +
+    'close',
   contract:
     "X_TENANCY_UNSCOPED on every post write, and on the read that publishPost's `row:` loader " +
     'makes before its policy runs — data substrate',

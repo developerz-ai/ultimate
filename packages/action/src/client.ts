@@ -58,7 +58,10 @@ export function rpc<TActions extends ActionMap>(options: ClientOptions): Client<
     {},
     {
       get(_target, property: string | symbol) {
-        if (typeof property !== 'string') return undefined;
+        // `then` is `undefined` for the same reason a symbol is, and `queryClient` draws the line
+        // in the same place: `await client` reads it, so a method there makes the client a
+        // thenable that posts an action named "then" and resolves the await to its answer.
+        if (typeof property !== 'string' || property === 'then') return undefined;
         return clientMethodFor(property, options);
       },
     },

@@ -16,7 +16,7 @@ Needs data? Take it as an argument. The caller's `repo.ts` does the loading.
 | File | Owns |
 |---|---|
 | `src/billing.ts` | plan upgrade quotes + seat limits, minor-unit arithmetic, the billing period |
-| `src/digest-schedule.ts` | next 09:00 local per zone, DST-correct; local calendar date |
+| `src/digest-schedule.ts` | next *and previous* 09:00 local per zone, DST-correct; local calendar date |
 | `src/membership.ts` | the authz predicates policies wrap |
 | `src/errors.ts` | `X_BILLING_SEATS_EXCEEDED`, `X_BILLING_NOT_AN_UPGRADE` |
 
@@ -34,4 +34,7 @@ Needs data? Take it as an argument. The caller's `repo.ts` does the loading.
   charge, because refunds are a different product decision.
 - `nextDigestAt` returns the *next* occurrence strictly after the given instant — calling it at
   exactly 09:00 local gives tomorrow, so a retry cannot double-send.
+- `previousDigestAt` is the digest window's lower bound, and the reason it exists is that
+  `slot - 86400000` is not it: consecutive slots are 23 hours apart on spring-forward and 25 on
+  autumn-back, so a fixed day of milliseconds ships an hour of posts twice or to nobody.
 - Day arithmetic is done on local calendar fields and then converted, never by adding 86400000ms.

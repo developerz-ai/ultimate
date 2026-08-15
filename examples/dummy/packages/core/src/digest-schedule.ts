@@ -57,6 +57,25 @@ export const nextDigestAt = (after: Date, zone: string, hour: number = DIGEST_LO
   );
 };
 
+/**
+ * The slot one local day BEFORE `slot` — a digest's window opens at the previous digest and
+ * closes at this one, so no post is in two digests and none is in neither.
+ *
+ * `slot - 86_400_000` is the bug this exists to refuse: consecutive slots are 23 hours apart on
+ * spring-forward and 25 on autumn-back, so a fixed day of milliseconds reaches an hour PAST the
+ * previous slot in March (those posts ship twice) and stops an hour SHORT of it in October (those
+ * ship to nobody). Same calendar math as `nextDigestAt`, in the other direction.
+ */
+export const previousDigestAt = (
+  slot: Date,
+  zone: string,
+  hour: number = DIGEST_LOCAL_HOUR,
+): Date =>
+  fromZoned(
+    { ...addDays(toCalendarDay(toZoned(slot, zone)), -1), hour, minute: 0, second: 0 },
+    zone,
+  );
+
 const toCalendarDay = (parts: { year: number; month: number; day: number }): CalendarDay => ({
   year: parts.year,
   month: parts.month,

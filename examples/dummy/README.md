@@ -24,7 +24,7 @@ x db seed dev                 # 2 orgs, 5 members across 4 timezones, 2 currenci
 | `entity` | [`apps/web/app/posts/entity.ts`](apps/web/app/posts/entity.ts) | the feature's view schema (`PostView`) over the shared table |
 | `policy` | [`apps/web/app/posts/policy.ts`](apps/web/app/posts/policy.ts) | `post:publish` = owns-or-org-admin, one definition, five surfaces |
 | `action` | [`apps/web/app/posts/actions.ts`](apps/web/app/posts/actions.ts) | `createPost`, `publishPost`, and `summarize` — an `llm()` model call, which is an action factory rather than a ninth primitive |
-| `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic), `grantAvatarUpload` — a presigned PUT `@ultimat3/storage` keys and signs ([`avatar.ts`](apps/web/app/orgs/avatar.ts)) |
+| `action` | [`apps/web/app/orgs/actions.ts`](apps/web/app/orgs/actions.ts) | `inviteMember`, `upgradePlan` (minor-unit arithmetic), `grantAvatarUpload` — a presigned PUT whose key and signature are `@ultimat3/storage`'s ([`avatar.ts`](apps/web/app/orgs/avatar.ts)) |
 | `action` | [`apps/web/app/settings/actions.ts`](apps/web/app/settings/actions.ts) | `savePreferences` — a one-action slice still gets an `actions.ts` |
 | `mutator` | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` — optimistic local twin, offline queue, `conflict: 'server-wins'` |
 | `mutator` | [`apps/web/app/settings/mutator.ts`](apps/web/app/settings/mutator.ts) | `setTheme` (`'last-write-wins'`) and `toggleDigestOptIn` (`custom`, sticky unsubscribe) — the other two conflict strategies |

@@ -88,11 +88,29 @@ const newest = (objects: readonly StorageObject[]): StorageObject | undefined =>
     return delta > 0 || (delta === 0 && object.key > best.key) ? object : best;
   }, undefined);
 
-/** A signed GET for the member's current avatar, or `null` before they have uploaded one. */
+/**
+ * A signed GET for the member's current avatar, or `null` before they have uploaded one.
+ *
+ * The prefix is listed to exhaustion, not one page deep: `list` answers `truncated` with a
+ * `cursor` (S3 pages at 1000 keys, and the local driver declares the same contract), so a member
+ * who has re-uploaded past a page boundary would otherwise keep rendering whichever avatar
+ * happened to land on page one. Folded a page at a time rather than collected — the answer is one
+ * object, so holding every key to pick from is a list this function never needs.
+ */
 export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise<string | null> {
   const driver = disk();
-  const page = await driver.list({ prefix: attachmentPrefix(orgId, avatarTarget(memberId)) });
-  const current = newest(page.objects);
+  const prefix = attachmentPrefix(orgId, avatarTarget(memberId));
+  let current: StorageObject | undefined;
+  let cursor: string | undefined;
+
+  do {
+    const page = await driver.list({ prefix, cursor });
+    current = newest(current === undefined ? page.objects : [current, ...page.objects]);
+    // A truncated page with no cursor is a driver that cannot continue: stop, rather than ask
+    // for the same first page forever.
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor !== undefined);
+
   if (current === undefined) return null;
   return driver.signedUrl(current.key, { method: 'GET', expiresInMs: AVATAR_URL_TTL_MS });
 }

@@ -23,7 +23,11 @@ export class NotAMember extends UltimateError {
     super({
       code: 'X_ORG_NOT_A_MEMBER',
       cause: `actor ${JSON.stringify(actorId)} carries no org and no membership role`,
-      fix: 'call it through an action whose policy is memberSelf, or build the actor with actorFor(member)',
+      // Runnable, not advice: the caller either has a membership row or does not, and this is the
+      // statement that answers it. `actorFor(member)` is what a test does with the row it finds.
+      fix:
+        'confirm the caller has a membership row, then build the actor with actorFor(member): ' +
+        `x db query "select id, org_id, role from members where id = '${actorId}'" --json`,
       docs: 'https://ultimate.dev/errors/X_ORG_NOT_A_MEMBER',
     });
   }

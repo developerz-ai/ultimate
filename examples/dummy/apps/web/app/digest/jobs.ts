@@ -13,15 +13,34 @@
  * `t` comes from @ultimat3/jobs, not @ultimat3/schema: a job file imports one package.
  */
 
-import { localDateIn, scheduleByOrgAndZone } from '@postly/core';
+import { localDateIn, previousDigestAt, scheduleByOrgAndZone } from '@postly/core';
 import { SUPPORTED_ZONES, orgId as toOrgId } from '@postly/domain';
+import { assert } from '@ultimat3/core';
 import { defineFlag, isEnabled } from '@ultimat3/flags';
 import { job, t } from '@ultimat3/jobs';
 import { send } from '@ultimat3/mail';
 import { digestEmail } from './mail';
 
-/** 24h back from the slot. A digest names its window; it never measures one from `ctx.now()`. */
-const DIGEST_WINDOW_MS = 86_400_000;
+/** The shape the nightly task sends, and the only one the slot arithmetic below can read. */
+const RUN_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The occurrence's own instant: midnight UTC of the date the task fired for.
+ *
+ * Asserted here rather than narrowed on `input:` — tightening a shipped job's input schema is a
+ * breaking contract change (`x verify`'s `contract-diff` step is where that is decided), and the
+ * payloads already on the queue were written against `t.string`. Without the guard a malformed
+ * date reaches `toZoned` as an Invalid Date and throws a `RangeError` naming neither this job nor
+ * the field.
+ */
+const startOfRunDate = (runDate: string): Date => {
+  assert(
+    RUN_DATE.test(runDate),
+    `sendDigest was enqueued with runDate ${JSON.stringify(runDate)}, which is not YYYY-MM-DD`,
+    'enqueue it from the nightly task, which formats the occurrence: x jobs show sendDigest --json',
+  );
+  return new Date(`${runDate}T00:00:00.000Z`);
+};
 
 /**
  * Ops kill switch: flip this off and the nightly fan-out stops scheduling deliveries without a
@@ -56,7 +75,13 @@ export const sendDigest = job({
 
     // One `runAt` per zone rather than per member — 500 members in Madrid share one computation,
     // and the slot is DST-correct because @postly/core does calendar math, not millisecond math.
-    const groups = scheduleByOrgAndZone(recipients, ctx.now());
+    //
+    // Based on the OCCURRENCE, never `ctx.now()`: this line runs on every attempt while only the
+    // enqueues already stored replay, so a second attempt taken after a zone's 09:00 had passed
+    // would roll that zone's slot into tomorrow and enqueue the groups it had not reached yet
+    // with a next-day `slotAt` and `localDate` — a different digest, under a step name carrying
+    // no date to catch it. `runDate` is the same on every attempt, so the slots are too.
+    const groups = scheduleByOrgAndZone(recipients, startOfRunDate(input.runDate));
 
     for (const group of groups) {
       // ONE enqueue per step, so the step is the retry unit it claims to be: a driver blip on
@@ -108,13 +133,15 @@ export const deliverDigest = job({
   async run({ input, step, ctx }) {
     const orgId = toOrgId(input.orgId);
 
-    // The 24h window ends at the slot, never at execution time: the digest dated `localDate`
-    // must contain the posts of that day whether it went out on time or after three retries.
-    // The group's zone is already inside `slotAt` — the fan-out resolved it with calendar math,
-    // so there is nothing left to convert here. Same window `postly.digestPreview` promises.
+    // The window ends at the slot, never at execution time: the digest dated `localDate` must
+    // contain the posts of that day whether it went out on time or after three retries. It OPENS
+    // at the previous slot — the same calendar math, not `slotAt - 86_400_000`, because
+    // consecutive slots are 23h apart on spring-forward and 25h on autumn-back, and a fixed day
+    // of milliseconds mails those posts twice in March and to nobody in October. Same window
+    // `postly.digestPreview` promises.
     //
     // ONE read for every reader of this digest, which is the whole reason the group exists.
-    const since = new Date(input.slotAt - DIGEST_WINDOW_MS);
+    const since = previousDigestAt(new Date(input.slotAt), input.zone);
     const posts = await step.run('load-posts', () => ctx.posts.publishedSince(orgId, since));
 
     // An empty digest is not a digest. Skipping still records the step, so a retry does not

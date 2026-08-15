@@ -1,10 +1,7 @@
 /**
  * The org feed. `stream` — the `app/` default — but not because of the rows: the rows arrive over
- * `useLive`'s socket subscription, not a resolving promise, so there is no hole for them to fill
- * and the loading gate below is still the live query's own `state()`, a plain reactive read. The
- * one genuine hole is the activity badge in the header: `queries.feedActivity` is its own read,
- * with its own cache tag, and the shell (heading, "new post" link, the feed's own loading gate)
- * has no reason to wait on it.
+ * `useLive`'s socket subscription, not a resolving promise, so the loading gate below is the live
+ * query's own `state()`, a plain reactive read.
  *
  * `useLive` returns a signal backed by the persisted local store, which is why this page is
  * readable in a tunnel and why a like taken offline is still here when the tunnel ends.
@@ -20,7 +17,6 @@ import { For, Show } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { queries } from '../../shared/client';
 import { postHref, toCardPost } from '../../shared/entities';
-import { Suspense } from '../../shared/suspense';
 import { Layout } from '../layout';
 import { LikeButton } from '../posts/ui/like-button';
 import { useViewer } from '../viewer-context';
@@ -36,36 +32,22 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'idle',
   budget: { js: '60kb', lcp: 2000 },
+  /**
+   * The badge's count is a read, so it is resolved here — the same place `postById` is resolved
+   * for `/posts/{id}`, and the only place this app fetches. It was an async component inside a
+   * `<Suspense>` until 2026-08, which bought nothing and cost a second data-fetching path:
+   * nothing splits a page into holes yet (`packages/cli/src/dev-render.ts`'s `stream` case), so
+   * the shell waited for the count anyway and the fallback was never rendered. When holes land,
+   * the boundary goes back here, around a component that still takes its rows as props.
+   */
+  load: () => queries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 
-/**
- * The one async component on this page — its own read via the typed client, exactly like a
- * route's `load()` already does for `postById`, so a slow count never holds up the shell above.
- * Today's renderer resolves it before the first flush anyway (see `shared/suspense.ts`); this is
- * the shape that stops costing anything the day the hole actually streams.
- *
- * Cast at the bottom, not typed `async` directly: `render-html.ts`'s `unwrap` already awaits
- * whatever a component returns, so an async component works at runtime, but solid-js's `JSX`
- * namespace has no signature for one — a plain function returning `JSX.Element` is the only shape
- * it accepts as a component. The mismatch is type-only.
- */
-async function activityBadge(props: { readonly orgId: string }): Promise<JSX.Element> {
-  const t = useT();
-  const [activity] = await queries.feedActivity({ orgId: props.orgId });
-  const count = activity?.publishedCount ?? 0;
-  return (
-    <Text tone="muted" class={styles.activity}>
-      {t('app.feed.activity', { count })}
-    </Text>
-  );
-}
+/** The rows the read answered: one synthetic row per org, or none before the first post. */
+type FeedActivity = Awaited<ReturnType<typeof queries.feedActivity>>;
 
-const ActivityBadge = activityBadge as unknown as (props: {
-  readonly orgId: string;
-}) => JSX.Element;
-
-export function Page(): JSX.Element {
+export function Page(props: { readonly data: FeedActivity }): JSX.Element {
   const t = useT();
   const actor = useActor();
   const viewer = useViewer();
@@ -76,9 +58,9 @@ export function Page(): JSX.Element {
     <Layout>
       <header class={styles.header}>
         <h1>{t('app.feed.heading', { org: actor.org.name })}</h1>
-        <Suspense fallback={<Skeleton rows={1} label={t('app.feed.loading')} />}>
-          <ActivityBadge orgId={actor.orgId} />
-        </Suspense>
+        <Text tone="muted" class={styles.activity}>
+          {t('app.feed.activity', { count: props.data[0]?.publishedCount ?? 0 })}
+        </Text>
         <a class={styles.new} href="/posts/new">
           {t('app.feed.newPost')}
         </a>

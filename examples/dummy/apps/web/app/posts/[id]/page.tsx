@@ -12,6 +12,7 @@ import { For, Show } from 'solid-js';
 import { useActor, useCan } from '../../../shared/actor';
 import { client, queries } from '../../../shared/client';
 import { oneRow } from '../../../shared/rows';
+import { wireDate } from '../../../shared/wire';
 import { Layout } from '../../layout';
 import { useViewer } from '../../viewer-context';
 import { LikeButton } from '../ui/like-button';
@@ -33,7 +34,17 @@ export const config = defineRoute({
    */
   load: async ({ params }) => {
     const postId = params.id ?? '';
-    return oneRow(await queries.postById({ orgId: useActor().orgId, postId }), postId);
+    const post = oneRow(await queries.postById({ orgId: useActor().orgId, postId }), postId);
+    // Both instants are rehydrated here, where the wire ends: the read answered JSON, so what
+    // `<DateTime>` would otherwise be handed is the ISO string, not the `Date` the row type says.
+    return {
+      ...post,
+      publishedAt: wireDate(post.publishedAt),
+      comments: post.comments.map((comment) => ({
+        ...comment,
+        createdAt: wireDate(comment.createdAt),
+      })),
+    };
   },
   meta: ({ data, t }) => ({
     title: t('app.post.metaTitle', { title: data.title }),

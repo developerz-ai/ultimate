@@ -14,7 +14,13 @@
  * `t` comes from @ultimat3/mcp, not @ultimat3/schema: an MCP file imports one package.
  */
 
-import { localDateIn, nextDigestAt, quoteUpgrade, seatsRemaining } from '@postly/core';
+import {
+  localDateIn,
+  nextDigestAt,
+  previousDigestAt,
+  quoteUpgrade,
+  seatsRemaining,
+} from '@postly/core';
 import { PLAN_CODES, seatLimit } from '@postly/domain';
 import { defineAppMcp, t } from '@ultimat3/mcp';
 
@@ -36,9 +42,12 @@ export const mcp = defineAppMcp({
       destructive: false,
       async handle({ ctx }) {
         const at = nextDigestAt(ctx.now(), ctx.actor.tz);
+        // The delivery's own window, to the millisecond: `previousDigestAt`, not
+        // `at - 86_400_000`, or this preview disagrees with tonight's mail on the two days a
+        // year the member's clock moves. A preview that is not the digest is not a preview.
         const posts = await ctx.posts.publishedSince(
           ctx.actor.orgId,
-          new Date(at.getTime() - 86_400_000),
+          previousDigestAt(at, ctx.actor.tz),
         );
         return {
           deliverAt: at.toISOString(),

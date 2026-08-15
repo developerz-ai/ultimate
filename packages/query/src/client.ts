@@ -3,6 +3,11 @@
  * the same pure derivation the server uses, so a renamed query is a compile error
  * in a Solid component rather than a 404 at runtime. Browser-safe on purpose: no
  * server imports, nothing here touches a context, a policy or a database.
+ *
+ * Rows arrive as JSON and are handed back as parsed, exactly as `rpc` does: a query declares no
+ * output schema — row types come from the `SqlSource` its `sql:` returns — so there is nothing
+ * here to rehydrate a `Date` with, and an instant reaches a caller as the ISO string
+ * `JSON.stringify` wrote. A surface that formats one converts at its own edge.
  */
 
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -65,7 +70,12 @@ export function queryClient<TQueries extends QueryMap>(
     {},
     {
       get(_target, property: string | symbol) {
-        if (typeof property !== 'string') return undefined;
+        // `then` is answered with `undefined` for the same reason a symbol is: `await client`,
+        // `Promise.resolve(client)` and returning the client from an async function all read it,
+        // and a method there makes the client a thenable that fetches a read named "then" and
+        // resolves the await to its rows. No query may be called `then` — it is the one name the
+        // language reserves at this seam.
+        if (typeof property !== 'string' || property === 'then') return undefined;
         return queryClientMethodFor(property, options);
       },
     },

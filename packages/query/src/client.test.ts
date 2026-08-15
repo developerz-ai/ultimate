@@ -1,3 +1,8 @@
+/**
+ * unit — no server, no socket. The fetch is injected, so what is pinned here is the URL the
+ * client derives, the headers it sends and the property names the proxy may answer.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -143,5 +148,21 @@ describe('the map-wide read client', () => {
 
     expect(asRecord[Symbol.toPrimitive]).toBeUndefined();
     expect(asRecord[Symbol.iterator]).toBeUndefined();
+  });
+
+  test('`then` is undefined, so awaiting the client resolves to the client', async () => {
+    // The symbols above never covered this: `then` is a plain string key, so the proxy answered
+    // it with a read method and `await client` fetched `/_x/query/then` instead of resolving.
+    let called = 0;
+    const fetch: FetchLike = () => {
+      called += 1;
+      return Promise.resolve(new Response('[]', { status: 200 }));
+    };
+    const client = queryClient<typeof queries>({ baseUrl: 'https://app.test', fetch });
+
+    expect((client as unknown as Record<string, unknown>)['then']).toBeUndefined();
+    expect(await client).toBe(client);
+    expect(await Promise.resolve(client)).toBe(client);
+    expect(called).toBe(0);
   });
 });

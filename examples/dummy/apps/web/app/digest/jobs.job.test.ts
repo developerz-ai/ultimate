@@ -10,7 +10,7 @@
 
 import { expect, test } from 'bun:test';
 import { localDateIn } from '@postly/core';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
 import { applyFlagSnapshot } from '@ultimat3/flags';
 import type { JobDriver, StepRunner, StepStore } from '@ultimat3/jobs';
 import {
@@ -90,9 +90,14 @@ interface Reads {
 
 const noReads = (): Reads => ({ windows: [], recipients: 0, orgs: 0 });
 
-const contextFor = (reads: Reads, posts: readonly ReturnType<typeof summary>[]): Ctx =>
+const contextFor = (
+  reads: Reads,
+  posts: readonly ReturnType<typeof summary>[],
+  now?: string,
+): Ctx =>
   createContext({
     role: 'worker',
+    ...(now === undefined ? {} : { clock: frozenClock(now) }),
     services: {
       posts: {
         publishedSince: (orgId: string, since: Date) => {
@@ -224,6 +229,69 @@ test('a blip on the third member re-sends the third, not the first two', async (
   }
 });
 
+test('the window opens at the PREVIOUS slot, which is 23 hours on a spring-forward day', async () => {
+  const reads = noReads();
+  const mail = mailFailingOn(NEVER);
+  const runner = runnerOn(createMemoryStepStore(), 'deliverDigest');
+  /** 09:00 CEST on 2026-03-29 — the morning after Madrid's clocks went forward. */
+  const springForward = Date.parse('2026-03-29T07:00:00.000Z');
+
+  try {
+    await deliverDigest.run({
+      input: { orgId: TINTA, zone: MADRID, localDate: '2026-03-29', slotAt: springForward },
+      step: runner.step,
+      ctx: contextFor(reads, [summary('raii')]),
+      attempt: 1,
+      jobId: 'job-digest-dst',
+      runId: RUN,
+    });
+  } finally {
+    mail.restore();
+  }
+
+  // 08:00Z is the 28th's own 09:00 slot. `slotAt - 86_400_000` is 07:00Z — an hour BEFORE it,
+  // so every post published in that hour would go out in this digest and the one before it.
+  expect(reads.windows).toEqual([{ orgId: TINTA, since: Date.parse('2026-03-28T08:00:00.000Z') }]);
+  expect((springForward - (reads.windows[0]?.since ?? 0)) / 3_600_000).toBe(23);
+});
+
+test('the fan-out enqueues the same slots on a late attempt as on the first', async () => {
+  const previous = jobDriver();
+
+  /** One fan-out for the same occurrence, on its own queue, at a chosen worker clock. */
+  const slotsAt = async (now: string, jobId: string): Promise<readonly string[]> => {
+    const queue: JobDriver = createQueue();
+    setJobDriver(queue);
+    await sendDigest.run({
+      input: { runDate: '2026-08-12' },
+      step: runnerOn(createMemoryStepStore(), 'sendDigest').step,
+      ctx: contextFor(noReads(), [], now),
+      attempt: 1,
+      jobId,
+      runId: `${RUN}-${jobId}`,
+    });
+    const queued = (await queue.introspect?.list({ name: deliverDigest.name, limit: 50 })) ?? [];
+    return queued.map((record) => {
+      const input = record.input as { zone: string; slotAt: number; localDate: string };
+      return `${input.zone}@${input.slotAt}/${input.localDate}`;
+    });
+  };
+
+  try {
+    // Attempt 1 at 02:00Z, attempt 2 fourteen hours later — past 09:00 in Madrid, so a slot read
+    // off the worker clock rolls that zone into the 13th and the groups this attempt had not
+    // reached yet become a different digest from the ones already stored.
+    const first = await slotsAt('2026-08-12T02:00:00.000Z', 'job-fanout-early');
+    const late = await slotsAt('2026-08-12T16:00:00.000Z', 'job-fanout-late');
+
+    expect(first).toHaveLength(4);
+    expect(late).toEqual([...first]);
+  } finally {
+    if (previous === undefined) resetJobDriver();
+    else setJobDriver(previous);
+  }
+});
+
 test('an empty window costs one statement and mails nobody', async () => {
   const reads = noReads();
   const mail = mailFailingOn(NEVER);
@@ -265,7 +333,7 @@ test('the ops kill switch stops the fan-out from scheduling anything', async () 
 
     // Off means no recipient read either: the switch is checked before any step runs.
     expect(runner.usedNames()).toEqual([]);
-    expect(await queue.introspect?.list({ name: 'deliverDigest', limit: 50 })).toHaveLength(0);
+    expect(await queue.introspect?.list({ name: deliverDigest.name, limit: 50 })).toHaveLength(0);
   } finally {
     applyFlagSnapshot({ [digestEnabled.key]: { default: true } });
     if (previous === undefined) resetJobDriver();
@@ -311,7 +379,7 @@ test('the fan-out enqueues one delivery per (org, zone), each in its own step', 
       `schedule:${NUBE}:${TOKYO}`,
     ]);
 
-    const queued = await queue.introspect?.list({ name: 'deliverDigest', limit: 50 });
+    const queued = await queue.introspect?.list({ name: deliverDigest.name, limit: 50 });
     expect(queued).toHaveLength(4);
     for (const record of queued ?? []) {
       const input = record.input as { zone: string; slotAt: number; localDate: string };
