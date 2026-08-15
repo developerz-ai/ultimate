@@ -123,6 +123,7 @@ export {
   ErrorCodeUnknownError,
   FixTargetUnknownError,
   JobUnknownError,
+  MissingPositionalError,
   NoTestFilesError,
   NotInAppError,
   PortInvalidError,
@@ -217,7 +218,7 @@ export type {
 export { VERIFY_STEP_NAMES } from './verify-step';
 export type { TestType } from './verify-tests';
 export { TEST_STEPS, TEST_TYPES, testStepCommand, typeFilterOf } from './verify-tests';
-export type { ManifestFacts } from './workspace-checks';
+export type { ManifestFacts, PackageShapeOptions } from './workspace-checks';
 export {
   checkFileSizes,
   checkLockstep,
@@ -226,5 +227,7 @@ export {
   hasWorkspacePackages,
   LINE_CEILING,
   PACKAGE_FILES,
+  SEMVER,
   workspacePackages,
 } from './workspace-checks';
+export { writeLine } from './write-line';

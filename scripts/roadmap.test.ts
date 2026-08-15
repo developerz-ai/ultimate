@@ -6,6 +6,7 @@ import { repoRoot } from './lib/run';
 import {
   checkRoadmap,
   MILESTONE_NUMBERS,
+  milestoneNumbersIn,
   milestoneRow,
   REQUIRED_ARTIFACTS,
   ROADMAP_FILE,
@@ -123,5 +124,37 @@ describe('unit · status and title are read from the table, never mirrored', () 
       expect(milestoneRow(real, n)).toBeDefined();
       expect(REQUIRED_ARTIFACTS[n]?.length ?? 0).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('unit · a milestone row the code has never heard of', () => {
+  // `MILESTONE_NUMBERS` came off the hardcoded artifact map, so rule (2) only ever asked about
+  // 0-11: appending a row 12 with no status marker was a row nothing looked at.
+  const withRow12 = (cell: string): string =>
+    `${roadmapWith(Object.fromEntries(MILESTONE_NUMBERS.map((n) => [n, STATUS_MARK.shipped])))}\n| 12 | ${cell} | **Multi-region** | ships | done |`;
+
+  test('the row scan reads every number the table holds, not just the tracked ones', async () => {
+    expect(milestoneNumbersIn(withRow12(''))).toEqual([...MILESTONE_NUMBERS, 12]);
+    // Bounded by the table: a numeric first cell in a later table is not a milestone.
+    const real = await Bun.file(join(repoRoot(), ROADMAP_FILE)).text();
+    expect(milestoneNumbersIn(real)).toEqual([...MILESTONE_NUMBERS]);
+  });
+
+  test('an untracked row with no status marker is X_ROADMAP_STATUS_MISSING', async () => {
+    await inTempRepo(withRow12(''), async (dir) => {
+      const codes = (await checkRoadmap(dir)).map((finding) => finding.code);
+      expect(codes).toContain('X_ROADMAP_STATUS_MISSING');
+    });
+  });
+
+  test('an untracked row that IS marked shipped verifies nothing, and says so', async () => {
+    await inTempRepo(withRow12(STATUS_MARK.shipped), async (dir) => {
+      const finding = (await checkRoadmap(dir)).find(
+        (entry) => entry.code === 'X_ROADMAP_MILESTONE_UNTRACKED',
+      );
+      expect(finding?.cause).toContain('milestone 12');
+      expect(finding?.fix).toContain('REQUIRED_ARTIFACTS');
+      expect(finding?.at).toBe(ROADMAP_FILE);
+    });
   });
 });

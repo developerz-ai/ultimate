@@ -106,7 +106,9 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` |
 | 5 | `ui`, `admin`, `testing`, `cli` |
 
-Declared sideways edges, each earning its line: `admin → ui`, `realtime → query`, `cli → admin`, `create-ultimate → cli`.
+Declared sideways edges, each earning its line: `admin → ui`, `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`.
+
+**`cli → testing` was declared 2026-08**, when `bun run boundaries` learned to follow relative specifiers. `packages/cli/src/serve.live.test.ts` had been importing `../../testing/src/sealed-network` with a comment saying the package specifier "is a sideways import the boundary check refuses" — an evasion the check could not see. `@ultimat3/testing` was already a runtime `dependencies` entry of `@ultimat3/cli`, so the manifest had crossed the edge all along; declaring it makes the rule enforce what shipping already assumed. `create-ultimate` sits above the table at tier 6 and its declared edge is its *only* permitted import.
 
 **`db` is tier 1, decided 2026-08.** It imports `core` and nothing else, so tier 1 is the lowest its real imports allow — and that is what lets `entity` (tier 2) hold its own Postgres driver (`postgresDriver()`) instead of exiling it to a tier-3 package. Two things would have been wrong: a second package owning `Driver`'s only production implementation (two places to look for "where rows live"), and `database()` callers importing the seam from one package and the driver from another. Same shape as `auth → db`.
 

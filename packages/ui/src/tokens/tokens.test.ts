@@ -84,11 +84,42 @@ describe('SCSS <-> TS token parity', () => {
     }
   });
 
-  test('every colour role is used through a custom property, never inlined', async () => {
-    // A raw hex anywhere outside the canonical channel maps is a lint failure.
-    for (const file of ['_mixins.scss', 'reset.scss', 'theme.scss']) {
-      expect(await scss(file)).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  /**
+   * EVERY stylesheet this package ships, not a hand-listed three. Biome ignores `.scss` entirely
+   * (`bunx biome check packages/ui/src/global.scss` answers "these paths were provided but
+   * ignored"), so this test is the only enforcement of the no-raw-colours rule in the repo — and
+   * it used to name `_mixins.scss`, `reset.scss` and `theme.scss` and nothing else, which is none
+   * of the 51 component stylesheets a raw hex would actually break theming in.
+   *
+   * The two exemptions are the canonical sources a literal is *supposed* to live in: the channel
+   * triples every role resolves through, and the elevation ramp, which is per-theme by
+   * construction and has no role to point at.
+   */
+  const CANONICAL_COLOUR_FILES = new Set(['tokens/_colors.scss', 'tokens/_shadow.scss']);
+
+  /** A hex literal, or a colour function called with numbers instead of `var(--color-…)`. */
+  const RAW_COLOUR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(\s*[\d.]/;
+
+  const stylesheets = async (): Promise<readonly string[]> => {
+    const root = `${here}..`;
+    const found: string[] = [];
+    for await (const path of new Bun.Glob('**/*.scss').scan({ cwd: root, absolute: false })) {
+      found.push(path.split('\\').join('/'));
     }
+    return found.sort();
+  };
+
+  test('every colour role is used through a custom property, never inlined', async () => {
+    const files = await stylesheets();
+    // A glob that found nothing would pass forever — the failure mode this test exists to prevent.
+    expect(files.length).toBeGreaterThan(50);
+    expect(files).toContain('components/Button.module.scss');
+    const offenders: string[] = [];
+    for (const path of files) {
+      if (CANONICAL_COLOUR_FILES.has(path)) continue;
+      if (RAW_COLOUR.test(await Bun.file(`${here}../${path}`).text())) offenders.push(path);
+    }
+    expect(offenders).toEqual([]);
   });
 });
 

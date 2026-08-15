@@ -283,6 +283,26 @@ describe('checkLockstep', () => {
     expect(checkLockstep([pkg({ dir: 'db', private: true })])).toEqual([]);
     expect(checkLockstep([])).toEqual([]);
   });
+
+  // Without an external anchor the rule compares packages only to EACH OTHER, so a repo where all
+  // 29 sit at 1.2.0 is green even though the tag being published says v1.10.1 — and `npm publish`
+  // then dies `EPUBLISHCONFLICT` on all 29. The gate was green while the tag lied.
+  test('a release version anchors the check outside the repo', () => {
+    const manifests = [
+      pkg({ dir: 'core' }),
+      pkg({ dir: 'jobs', frameworkDeps: [['@ultimat3/core', '1.0.0']] }),
+    ];
+    expect(checkLockstep(manifests)).toEqual([]);
+    const findings = checkLockstep(manifests, '1.10.1');
+    expect(findings.map((finding) => finding.code)).toEqual([
+      'X_RELEASE_VERSION_SKEW',
+      'X_RELEASE_VERSION_SKEW',
+      'X_RELEASE_VERSION_SKEW',
+    ]);
+    expect(findings[0]?.cause).toContain('not the lockstep version 1.10.1');
+    // The version being released is the anchor whether or not any package already carries it.
+    expect(checkLockstep(manifests, '1.0.0')).toEqual([]);
+  });
 });
 
 describe('frameworkDepsOf', () => {

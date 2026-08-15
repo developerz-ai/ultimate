@@ -44,6 +44,15 @@ export const GLOBAL_FLAGS: readonly FlagSpec[] = [
   { name: 'verbose', type: 'boolean', summary: 'include step output on success' },
 ];
 
+/**
+ * Whether raw argv asked for JSON, readable BEFORE the parse succeeds. The parse-failure path in
+ * `dispatch.ts` has no `ParsedArgs` to read `--json` off — and it used to test `argv.includes`
+ * for the long form only, so `x doctor -j --bogusflag` rendered its `X_CLI_BAD_FLAG` as prose to
+ * an agent that had asked for JSON and then called `JSON.parse` on it. One detection, two callers.
+ */
+export const wantsJson = (argv: readonly string[]): boolean =>
+  argv.some((token) => token === '--json' || token === '-j');
+
 const HELP_ALIASES = new Set(['--help', '-h', 'help']);
 const VERSION_ALIASES = new Set(['--version', '-v', '-V']);
 
@@ -118,7 +127,7 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
   // `help` and `version` short-circuit the flag loop below, so `--json` has to be read here or the
   // two commands silently print prose to an agent that asked for JSON — and every `fix:` naming
   // `x help --json` would be a command that does not do what it says.
-  const json = tokens.some((token) => token === '--json' || token === '-j');
+  const json = wantsJson(tokens);
   if (VERSION_ALIASES.has(first)) return blank('version', specs, json);
   if (HELP_ALIASES.has(first)) {
     const rest = tokens.slice(1).filter((token) => !token.startsWith('-'));

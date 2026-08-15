@@ -3,6 +3,9 @@
 // before anything runs, so a red line here names a selection bug and never a wiring one.
 
 import { describe, expect, test } from 'bun:test';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { NoTestFilesError } from './errors';
 import type { CommandSpec, ParsedArgs } from './parse';
 import { parseArgs } from './parse';
@@ -10,6 +13,7 @@ import type { TestFile } from './test-select';
 import {
   belongsToType,
   bySizeThenPath,
+  discoverTests,
   missingSelection,
   readSample,
   readType,
@@ -149,5 +153,29 @@ describe('unit · sampleFiles', () => {
     expect(sampleFiles(files, 2).map((file) => file.path)).toEqual(
       sampleFiles(files, 2).map((file) => file.path),
     );
+  });
+});
+
+describe('unit · discoverTests sees every test file the root runner sees', () => {
+  // Zero `.test.tsx` exist today, which is exactly why the gap was invisible: `TEST_GLOB` was
+  // `**/*.test.ts`, so a JSX test would be dropped from the gate's parallel unit/contract/job
+  // steps — green over a file that never executed — while `bun run test` ran it and failed.
+  test('a .test.tsx file is discovered and typed like its .ts twin', async () => {
+    const root = join(tmpdir(), `ultimate-test-select-${Bun.randomUUIDv7()}`);
+    await Bun.write(join(root, 'button.test.tsx'), 'export {};\n');
+    await Bun.write(join(root, 'api.contract.test.tsx'), 'export {};\n');
+    await Bun.write(join(root, 'plain.test.ts'), 'export {};\n');
+    try {
+      const paths = (await discoverTests(root)).map((file) => file.path).sort();
+      expect(paths).toEqual(['api.contract.test.tsx', 'button.test.tsx', 'plain.test.ts']);
+      expect(
+        (await discoverTests(root, undefined, 'unit')).map((file) => file.path).sort(),
+      ).toEqual(['button.test.tsx', 'plain.test.ts']);
+      expect((await discoverTests(root, undefined, 'contract')).map((file) => file.path)).toEqual([
+        'api.contract.test.tsx',
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

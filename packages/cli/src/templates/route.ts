@@ -1,6 +1,8 @@
 // `x g route <path>` — a URL, its render mode, its metadata, its offline strategy and its budget.
-// The generated test pins metadata presence and the offline fallback: a route with no title is an
-// SEO regression and a route with no fallback is a blank screen on a train.
+// Two generated tests, because the gate types a test by its filename: `page.test.ts` pins metadata
+// presence and the budget declaration on the `unit` step, `page.e2e.test.ts` pins the offline
+// fallback on the `e2e` step. A route with no title is an SEO regression and a route with no
+// fallback is a blank screen on a train.
 
 import { catalogJson } from './catalog-json';
 import { catalogPath, resolveLocales } from './locales';
@@ -22,12 +24,35 @@ const budgetLiteral = (surface: Surface): string =>
 /** `isr` without a trigger is `static` wearing a costume — @ultimat3/render rejects it at boot. */
 const REVALIDATE: Record<Surface, string> = { site: "\n  revalidate: { ttl: '1h' },", app: '' };
 
-const routeDir = (surface: Surface, path: string): string =>
-  `apps/web/${surface}/${path
+/** `[slug]`, `[...rest]` — the repo's own convention (`app/posts/[id]`, `site/blog/[slug]`). */
+const DYNAMIC_SEGMENT = /^\[(?<spread>\.\.\.)?(?<name>[^\]]+)\]$/;
+
+/**
+ * One URL segment. `kebab()` strips `[` and `]` along with every other non-alphanumeric, so
+ * `x g route "posts/[slug]"` scaffolded `apps/web/app/posts/slug/page.tsx` — a different, STATIC
+ * route — and reported `ok:true` with no warning. Only the parameter NAME is kebabed now.
+ */
+export const routeSegment = (part: string): string => {
+  const match = DYNAMIC_SEGMENT.exec(part);
+  if (match === null) return kebab(part);
+  return `[${match.groups?.['spread'] ?? ''}${kebab(match.groups?.['name'] ?? '')}]`;
+};
+
+const segmentsOf = (path: string): readonly string[] =>
+  path
     .split('/')
     .filter((part) => part.length > 0)
-    .map(kebab)
-    .join('/')}`;
+    .map(routeSegment);
+
+/** Every `[param]` the URL declares, in order — what a render actually hands the page. */
+export const routeParams = (path: string): readonly string[] =>
+  segmentsOf(path).flatMap((part) => {
+    const name = DYNAMIC_SEGMENT.exec(part)?.groups?.['name'];
+    return name === undefined ? [] : [name];
+  });
+
+const routeDir = (surface: Surface, path: string): string =>
+  `apps/web/${surface}/${segmentsOf(path).join('/')}`;
 
 const pageSource = (surface: Surface, path: string): string => {
   const name = pascal(
@@ -75,17 +100,36 @@ const styleSource =
 }
 `;
 
+/** A value for a `[param]`, distinct per parameter so a two-param URL reads unambiguously. */
+const sampleValue = (name: string): string => `${name}-1`;
+
+/** The URL a render would actually match, with every `[param]` filled in. */
+const sampleUrl = (path: string): string =>
+  segmentsOf(path)
+    .map((part) => {
+      const name = DYNAMIC_SEGMENT.exec(part)?.groups?.['name'];
+      return name === undefined ? part : sampleValue(name);
+    })
+    .join('/');
+
+/** The params object that URL implies. `{}` was a lie for every dynamic route. */
+const paramsLiteral = (path: string): string => {
+  const params = routeParams(path);
+  if (params.length === 0) return '{}';
+  return `{ ${params.map((name) => `${name}: '${sampleValue(name)}'`).join(', ')} }`;
+};
+
 const routeTest = (
   surface: Surface,
   path: string,
 ): string => `import { metaContextFor, routeDataFor } from '@ultimat3/render';
-import { e2eTest, expect, unitTest } from '@ultimat3/testing';
+import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
 // What a render gives this route: the URL it matched and the params in it. \`routeDataFor\` is the
 // one resolver — with no \`load\` the context IS the data, and with one the loader decides — so a
 // test asserts on the same object the page component and \`meta\` are handed in production.
-const ctx = { params: {}, url: 'https://example.test/${path}' };
+const ctx = { params: ${paramsLiteral(path)}, url: 'https://example.test/${sampleUrl(path)}' };
 
 unitTest('/${path} declares metadata', async () => {
   expect(config.kind).toBe('route');
@@ -107,8 +151,20 @@ unitTest('/${path} stays inside its byte budget declaration', () => {
   expect(config.budget.js).toBe('${BUDGET[surface].js}');
 });
 
+`;
+
+/**
+ * The offline assertion, in its own file — and that is the whole point of the split. The gate
+ * types a test by its FILENAME, so an `e2eTest` living in `page.test.ts` was classified as a UNIT
+ * test and could never reach the `e2e` step no matter what drove it. `page.e2e.test.ts` is the
+ * name the `e2e` step selects on.
+ */
+const routeE2eTest = (path: string): string => `import { e2eTest, expect } from '@ultimat3/testing';
+
+// Runs under the \`e2e\` step, against the BUILT output. Without a registered browser driver
+// \`e2eTest\` reports itself skipped, naming the command that builds what it would drive.
 e2eTest('/${path} renders offline from its fallback', async ({ page, offline }) => {
-  await page.goto('/${path}');
+  await page.goto('/${sampleUrl(path)}');
   await offline();
   await page.reload();
   expect(await page.title()).not.toBe('');
@@ -135,6 +191,7 @@ export function routeFiles(rawPath: string, options: RouteOptions): readonly Gen
     { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path) },
     { path: `${dir}/page.module.scss`, contents: styleSource() },
     { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
+    { path: `${dir}/page.e2e.test.ts`, contents: routeE2eTest(path) },
     ...locales.map((locale) => ({
       path: catalogPath(locale),
       contents: catalogSource(path),

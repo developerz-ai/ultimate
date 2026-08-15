@@ -279,7 +279,8 @@ describe('unit · app identity', () => {
     await withPackageJson(undefined, (shape) => {
       expect(shape.code).toBe('X_APP_PACKAGE_INVALID');
       expect(shape.cause).toContain('does not exist');
-      expect(shape.fix).toBe('bun pm pkg set name=<app> version=0.1.0');
+      // A real name, not `<app>`: the line is copied into a shell, and `<app>` is a redirect.
+      expect(shape.fix).toBe('bun pm pkg set name=my-app version=0.1.0');
     });
   });
 

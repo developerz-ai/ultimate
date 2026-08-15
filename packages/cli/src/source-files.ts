@@ -4,6 +4,10 @@
 
 export const SOURCE_GLOBS = [
   'packages/*/src/**/*.{ts,tsx}',
+  // Three packages carry an `e2e` directory beside `src`. It is shipped source by every rule that
+  // matters here — a 900-line file or an unrunnable `fix:` in one was invisible to `filesize` and
+  // `errors` alike, and `scripts/boundaries.ts` walked past it for the same reason.
+  'packages/*/e2e/**/*.{ts,tsx}',
   'scripts/**/*.{ts,tsx}',
   'site/**/*.{ts,tsx}',
   'app/**/*.{ts,tsx}',

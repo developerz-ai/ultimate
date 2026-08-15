@@ -7,6 +7,7 @@ import {
   checkSharedLeaf,
   collectAdminFiles,
   collectSharedFiles,
+  collectSourceFiles,
   findingFor,
   packageOf,
   resolveSpecifier,
@@ -44,7 +45,7 @@ describe('unit · boundaries', () => {
     const finding = findingFor(violation);
     expect(finding.code).toBe('X_BOUNDARY_VIOLATION');
     expect(finding.cause).toContain('http (tier 2) imports @ultimat3/query (tier 3)');
-    expect(finding.cause).toContain('allowed tiers: 0-1');
+    expect(finding.cause).toContain('allowed: 0-1');
     expect(finding.fix.length).toBeGreaterThan(0);
     expect(finding.at).toBe('packages/http/src/server.ts');
   });
@@ -88,12 +89,97 @@ describe('unit · boundaries', () => {
     expect(findingFor(violation).fix).toContain('scripts/lib/tiers.ts');
   });
 
-  test('type-only imports do not count: they vanish at runtime', () => {
+  // Inverted deliberately. This used to assert that a type-only import "does not count", which is
+  // the hole: `scanImports` erases the statement, so tier 0 could name tier 5 and the script
+  // reported clean — while CLAUDE.md says a tier violation is a build error, full stop.
+  test('a type-only import is a violation: the erased statement still couples two packages', () => {
+    const violations = checkBoundaries([
+      file('packages/core/src/types.ts', "import type { Route } from '@ultimat3/render';"),
+    ]);
+    expect(violations[0]).toMatchObject({ from: 'core', to: 'render', reason: 'upward' });
+  });
+
+  test('`export type … from` is caught too, and a type ALIAS is left alone', () => {
     expect(
       checkBoundaries([
-        file('packages/core/src/types.ts', "import type { Route } from '@ultimat3/render';"),
+        file('packages/schema/src/index.ts', "export type { CliCommand } from '@ultimat3/cli';"),
+      ])[0]?.to,
+    ).toBe('cli');
+    // `export type Foo = string` is not an import; rewriting it would be a syntax error that the
+    // transpiler reports instead of the imports this pass exists to find.
+    expect(
+      checkBoundaries([
+        file(
+          'packages/render/src/value.ts',
+          "export type InterpolationValue = string | number;\nimport { x } from '@ultimat3/core';",
+        ),
       ]),
     ).toEqual([]);
+  });
+
+  test('a type-only import inside a template literal is not this file’s import', () => {
+    // packages/cli/src/templates/*.ts emit generated app source. A regex over raw text would read
+    // the generated line as cli's own; the transpiler still sees a string.
+    expect(
+      checkBoundaries([
+        file(
+          'packages/core/src/template.ts',
+          "export const page = () => `import type { Route } from '@ultimat3/render';`;",
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('a RELATIVE cross-package import is checked exactly like the package specifier', () => {
+    const violations = checkBoundaries([
+      file('packages/core/src/x.ts', "import { render } from '../../render/src/index';"),
+    ]);
+    expect(violations[0]).toMatchObject({ from: 'core', to: 'render', reason: 'upward' });
+    // A relative path INSIDE the package is still not a cross-package import.
+    expect(
+      checkBoundaries([file('packages/core/src/x.ts', "import { y } from './sibling';")]),
+    ).toEqual([]);
+  });
+
+  test('the declared cli -> testing edge is what serve.live.test.ts imports through', () => {
+    expect(
+      checkBoundaries([
+        file(
+          'packages/cli/src/serve.live.test.ts',
+          "import { allowHost } from '@ultimat3/testing';",
+        ),
+      ]),
+    ).toEqual([]);
+    // …and the relative spelling of the same edge resolves to the same verdict, rather than
+    // being invisible the way it was.
+    expect(
+      checkBoundaries([
+        file(
+          'packages/cli/src/serve.live.test.ts',
+          "import { allowHost } from '../../testing/src/sealed-network';",
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
+  test('create-ultimate may import its declared edge and nothing else', () => {
+    expect(
+      checkBoundaries([
+        file('packages/create-ultimate/src/index.ts', "import { dispatch } from '@ultimat3/cli';"),
+      ]),
+    ).toEqual([]);
+    // Above tier 5 used to mean "every framework package is a legal lower-tier import", which made
+    // the declared edge restrict nothing at all.
+    const violation = checkBoundaries([
+      file(
+        'packages/create-ultimate/src/index.ts',
+        "import { defineRoute } from '@ultimat3/render';",
+      ),
+    ])[0];
+    expect(violation?.reason).toBe('edge-only');
+    expect(findingFor(violation as NonNullable<typeof violation>).cause).toContain(
+      'allowed: only @ultimat3/cli',
+    );
   });
 
   test('dynamic imports and re-exports are checked too', () => {
@@ -214,6 +300,25 @@ describe('unit · shared/ is a leaf', () => {
     const files = await collectSharedFiles(repoRoot());
     expect(files.map((entry) => entry.path)).toContain(LEAF);
     expect(checkSharedLeaf(files)).toEqual([]);
+  });
+
+  // The demo app is the one CI publishes an image for on every push to main, and its 8 shared/
+  // modules were outside the glob — checked by nothing blocking.
+  test('the collector reaches the DEPLOYED demo app’s shared/ too', async () => {
+    const paths = (await collectSharedFiles(repoRoot())).map((entry) => entry.path);
+    expect(paths.some((path) => path.startsWith('dummy/social-media-clone/apps/web/shared/'))).toBe(
+      true,
+    );
+  });
+});
+
+describe('unit · the source set is every directory a package ships from', () => {
+  // `packages/*/e2e` held real source that `filesize`, `errors` and this file all walked past.
+  test('collectSourceFiles includes packages/*/e2e, not just src/', async () => {
+    const paths = (await collectSourceFiles(repoRoot())).map((entry) => entry.path);
+    expect(paths).toContain('packages/cli/src/bin.ts');
+    expect(paths.some((path) => /^packages\/[^/]+\/e2e\//.test(path))).toBe(true);
+    expect(new Set(paths).size).toBe(paths.length);
   });
 });
 

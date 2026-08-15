@@ -34,7 +34,7 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     name: 'branch',
     summary: 'copy-on-write branch environments with a preview URL',
     usage: 'x branch [<name>|rm <name>] [--json]',
-    fix: 'x db branch <name>   # the database half, shipped today',
+    fix: 'x db branch ls --json   # the database half, shipped today',
   },
   {
     name: 'status',

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { CLI_ERROR_CODES } from './error-codes';
-import { explainErrorCode } from './mcp-errors';
+import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
@@ -54,7 +54,7 @@ describe('unit · errors.explain', () => {
   test('a fix that runs another tool is left exactly as written', () => {
     expect(explainErrorCode('X_BUN_VERSION')?.fix).toBe('bun upgrade');
     expect(explainErrorCode('X_APP_PACKAGE_INVALID')?.fix).toBe(
-      'bun pm pkg set name=<app> version=0.1.0',
+      'bun pm pkg set name=my-app version=0.1.0',
     );
   });
 
@@ -62,12 +62,31 @@ describe('unit · errors.explain', () => {
   // where a shell never sees it.
   test('a trailing note stays a note, after the flag', () => {
     expect(explainErrorCode('X_SCAFFOLD_PATH_ESCAPE')?.fix).toBe(
-      'x g route <name> --json   # a path with no ".." segment',
+      'x g route posts --json   # a path with no ".." segment',
     );
   });
 
   test('a chained fix carries the flag on both halves', () => {
     expect(explainErrorCode('X_BUDGET_UNMEASURED')?.fix).toBe('x build --json && x verify --json');
     expect(explainErrorCode('X_NOT_IN_APP')?.fix).toBe('x new myapp --json && cd myapp');
+  });
+});
+
+describe('unit · every fix in the table is a line a shell can run', () => {
+  // A `<placeholder>` before the `#` is a REDIRECT, not an argument: `x g route <name>` pasted
+  // into bash is `bash: name: No such file or directory`. The runnable part of every fix is
+  // everything ahead of the note, so that half may not contain one.
+  test('no runnable half carries an angle-bracket placeholder', () => {
+    const offenders = explainEveryErrorCode()
+      .filter((entry) => CLI_ERROR_CODES.includes(entry.code as (typeof CLI_ERROR_CODES)[number]))
+      .filter((entry) => /<[a-zA-Z]/.test(entry.fix.split('#')[0] ?? ''))
+      .map((entry) => `${entry.code}: ${entry.fix}`);
+    expect(offenders).toEqual([]);
+  });
+
+  test('the new storage-secret code explains itself with the command that sets the key', () => {
+    expect(explainErrorCode('X_STORAGE_SECRET_DEV')?.fix).toBe(
+      'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
+    );
   });
 });

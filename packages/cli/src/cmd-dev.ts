@@ -33,6 +33,7 @@ import type { DevServices } from './dev-services';
 import { describeServices, resolveServices } from './dev-services';
 import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
+import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -265,7 +266,13 @@ export const devCommand: CliCommand = {
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('dev', ctx.cwd).dir;
-    const port = Number.parseInt(flagString(ctx.args, 'port') ?? String(DEFAULT_PORT), 10);
+    // Validated, not `parseInt`'d: `x dev --port abc` handed `NaN` to `Bun.serve`, which binds an
+    // arbitrary port — a dev server reachable at an address nothing printed.
+    const port = intFlagOr(
+      ctx.args,
+      { name: 'port', command: 'dev', ...PORT_RANGE, example: `x dev --port ${DEFAULT_PORT}` },
+      DEFAULT_PORT,
+    );
     const roles = selectRoles(flagString(ctx.args, 'role'));
     const server = await startDev({
       root,

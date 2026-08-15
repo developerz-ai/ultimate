@@ -5,6 +5,9 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | Rule | Detail |
 |---|---|
 | Entry | `src/bin.ts` (`#!/usr/bin/env bun`) — argv, stdout, exit code only |
+| stdout | `write-line.ts`'s `writeLine` — synchronous fd 1, never `process.stdout.write`, which truncates at the 64KB pipe buffer when `process.exit` follows. Exported, because `create-ultimate`'s entry point needs the same one |
+| Numeric flags | `flag-number.ts` — one reader for `--port` / `--workers` / `--shard`. A bare `Number.parseInt` accepts `4abc` and answers `NaN`, which turned three checks into ones that cannot fail |
+| Missing positionals | `MissingPositionalError`, never `BadFlagError` (names a flag that does not exist) and never `UnknownCommandError` (says a known command form is not one). Its `example` is a REAL invocation — `x g route <name>` in a shell is a redirect |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |

@@ -5,13 +5,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { usesDevCursorSecret } from '@ultimat3/core';
+import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { ICON_SOURCE } from './dev-assets';
 import { checkSourceDrift } from './drift';
+import { intFlagOr, PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { flagString } from './parse';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -26,6 +27,13 @@ export interface DoctorProbe {
   readonly port: number;
   /** True while cursors are signed with the key shipped in the published package. */
   readonly devCursorSecret: boolean;
+  /**
+   * True while the local disk WOULD sign upload grants with the key shipped in the published
+   * package. Same semantics as `devCursorSecret`, environment only — an app that passes an
+   * explicit `signingSecret` in `app.config.ts` never consults the env var, so this can read true
+   * for an app that is fine. The finding is worded as a condition to check, not a certainty.
+   */
+  readonly devStorageSecret: boolean;
   /** True when this process believes it is serving real clients. */
   readonly production: boolean;
   exists(relativePath: string): boolean;
@@ -41,6 +49,9 @@ const finding = (code: string, cause: string, fix: string, at?: string): Finding
     : { code, cause, fix, docs: docs(code), at };
 
 export const OFFLINE_FALLBACK = 'apps/web/app/offline.tsx';
+
+/** The port `x dev` binds by default, so the probe answers about the port the developer will use. */
+const DEFAULT_DOCTOR_PORT = 3000;
 
 /**
  * Ordered cheapest-first so the first failure is usually the root cause: a wrong Bun explains
@@ -85,6 +96,21 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
         'X_CURSOR_SECRET_DEV',
         'cursors are signed with the shipped development key, so a client can forge a page position',
         'export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"',
+      ),
+    );
+  }
+  // The storage twin of the cursor key above, and the more expensive one to get wrong: the
+  // published string mints a signed `PUT` for any key with any `maxBytes` and `contentType`, and
+  // `acceptSignedUpload` trusts the signed constraints over the app's own `uploadPolicy`.
+  // Production only, for the reason the cursor check gives — every dev environment signs with the
+  // shipped key on purpose. `@ultimat3/storage` refuses this at construction; `x doctor` is what
+  // reports it before a deploy reaches the refusal.
+  if (probe.production && probe.devStorageSecret) {
+    findings.push(
+      finding(
+        'X_STORAGE_SECRET_DEV',
+        `${STORAGE_SIGNING_SECRET_KEY} is unset or holds the shipped development key, so a local-disk deploy would accept forged upload grants that override its own uploadPolicy`,
+        'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
       ),
     );
   }
@@ -145,6 +171,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     root,
     port,
     devCursorSecret: usesDevCursorSecret(),
+    devStorageSecret: usesDevStorageSecret(),
     // `X_ENV` first, then `NODE_ENV`: the order `@ultimat3/admin`'s dev-server guard already
     // reads them in, and a second order would be a second convention.
     production: (Bun.env['X_ENV'] ?? Bun.env['NODE_ENV']) === 'production',
@@ -159,10 +186,21 @@ export const doctorCommand: CliCommand = {
     name: 'doctor',
     summary: 'environment, versions, drift, ports, PWA prerequisites — each with a fix command',
     usage: 'x doctor [--port 3000] [--json]',
-    flags: [{ name: 'port', type: 'string', summary: 'port to test', default: '3000' }],
+    flags: [
+      {
+        name: 'port',
+        type: 'string',
+        summary: 'port to test',
+        default: String(DEFAULT_DOCTOR_PORT),
+      },
+    ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const port = Number.parseInt(flagString(ctx.args, 'port') ?? '3000', 10);
+    const port = intFlagOr(
+      ctx.args,
+      { name: 'port', command: 'doctor', ...PORT_RANGE, example: 'x doctor --port 3000' },
+      DEFAULT_DOCTOR_PORT,
+    );
     const findings = await runDoctor(probeFor(ctx.cwd, ctx.bunVersion, port));
     return {
       ok: findings.length === 0,

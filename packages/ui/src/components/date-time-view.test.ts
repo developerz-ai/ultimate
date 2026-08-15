@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { TimeZone } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
-import { type DateTimeFormatter, dateTimeView, toIsoInstant } from './date-time-view';
+import { type DateTimeFormatter, dateTimeView, toDate, toIsoInstant } from './date-time-view';
 
 const seen: Array<{ locale: string; zone: string; iso: string }> = [];
 const format: DateTimeFormatter = (at, options) => {
@@ -71,5 +71,34 @@ describe('dateTimeView', () => {
       expect(err.code).toBe(UI_ERROR_CODES.invalidValue);
       expect(err.fix).toContain('loader');
     }
+  });
+});
+
+describe('unit · the parse is zoned too, not just the format', () => {
+  // `new Date('2026-08-14T09:00')` resolves in the HOST's zone, so the same props rendered
+  // `Aug 14, 09:00` on a TZ=UTC runner and `Aug 14, 00:00` on TZ=Asia/Tokyo — an ambient default
+  // inside the one package that forbids them, and no error either way.
+  test('an offset-less datetime string is refused, whatever the host zone is', () => {
+    for (const value of ['2026-08-14T09:00', '2026-08-14T09:00:00', '2026-08-14 09:00']) {
+      expect(() => toDate(value)).toThrow();
+      const error = (() => {
+        try {
+          toDate(value);
+        } catch (caught) {
+          return caught as { code?: string; fix?: string };
+        }
+        return {};
+      })();
+      expect(error.code).toBe('X_UI_INVALID_VALUE');
+    }
+  });
+
+  test('Z, an offset, a date-only string, a Date and epoch millis all still parse', () => {
+    expect(toDate('2026-08-14T09:00:00.000Z').toISOString()).toBe('2026-08-14T09:00:00.000Z');
+    expect(toDate('2026-08-14T09:00+02:00').toISOString()).toBe('2026-08-14T07:00:00.000Z');
+    // Date-only is zone-independent by spec: the parse is UTC, so nothing ambient decides it.
+    expect(toDate('2026-08-14').toISOString()).toBe('2026-08-14T00:00:00.000Z');
+    expect(toDate(new Date(0)).toISOString()).toBe('1970-01-01T00:00:00.000Z');
+    expect(toDate(0).toISOString()).toBe('1970-01-01T00:00:00.000Z');
   });
 });

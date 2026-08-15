@@ -17,7 +17,7 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { allowedTiersFor, checkTier, tierOf } from './lib/tiers';
+import { allowedImportsFor, checkTier, tierOf } from './lib/tiers';
 
 export interface SourceFile {
   /** Path relative to the repo root, POSIX separators. */
@@ -48,9 +48,40 @@ export const scopedName = (specifier: string): string | undefined =>
     ? (specifier.slice(SCOPE.length).split('/')[0] ?? undefined)
     : undefined;
 
+/**
+ * Which framework package a specifier reaches, however it is spelled. A RELATIVE path that leaves
+ * its own package is a cross-package import wearing a costume — `packages/cli/src/x.test.ts`
+ * importing `../../testing/src/sealed-network` is `cli -> testing`, and reading only `@ultimat3/…`
+ * meant any package could step outside its tier by writing `../../<pkg>/src/…` instead.
+ */
+export function targetPackage(fromFile: string, specifier: string): string | undefined {
+  if (specifier.startsWith(SCOPE)) return scopedName(specifier);
+  if (!specifier.startsWith('.')) return undefined;
+  return packageOf(`${normalize(joinPosix(dirname(fromFile), specifier))}/`);
+}
+
 /** The transpiler rejects a shebang, and `bin.ts` legitimately has one. */
 export const stripShebang = (source: string): string =>
   source.startsWith('#!') ? source.slice(source.indexOf('\n') + 1) : source;
+
+/**
+ * `scanImports` ERASES `import type` / `export type`, so `packages/core/src/x.ts` could name
+ * `@ultimat3/cli` — tier 0 reaching tier 5 — and this script reported clean, while the contract
+ * says a tier violation is a build error. Dropping the keyword before the parse makes the
+ * transpiler report it as an ordinary import.
+ *
+ * Done as a rewrite fed BACK THROUGH the transpiler rather than as a regex over raw text, because
+ * the raw text is full of decoys: `packages/cli/src/templates/*.ts` emit generated app source
+ * inside template literals, and doc blocks quote import lines verbatim. The transpiler still sees
+ * those as a string and a comment; a regex would report them as this file's own imports.
+ */
+const TYPE_ONLY_CLAUSE = /\b(import|export)\s+type\s+(?=[{*]|[A-Za-z_$][\w$]*\s+from\b)/g;
+
+export const dropTypeKeyword = (source: string): string =>
+  // The lookahead is what keeps `export type Foo = string` — a type ALIAS, not an import — from
+  // becoming `export Foo = string`, which is a syntax error the transpiler then reports instead
+  // of the imports this pass exists to find.
+  source.replace(TYPE_ONLY_CLAUSE, '$1 ');
 
 /** Bun's transpiler is the parser: type-only imports are erased, dynamic imports are included. */
 export function importsOf(file: SourceFile): readonly string[] {
@@ -58,6 +89,19 @@ export function importsOf(file: SourceFile): readonly string[] {
   return new Bun.Transpiler({ loader })
     .scanImports(stripShebang(file.source))
     .map((entry) => entry.path);
+}
+
+/**
+ * Every specifier the file names, type-only ones included. The tier rule applies to both — a
+ * type-only edge still couples two packages' release cycles. `checkSharedLeaf` deliberately does
+ * NOT use this: naming an `app/` type from a leaf is legal there, loading its module is not.
+ */
+export function allImportsOf(file: SourceFile): readonly string[] {
+  const loader = file.path.endsWith('x') ? 'tsx' : 'ts';
+  const typed = new Bun.Transpiler({ loader })
+    .scanImports(dropTypeKeyword(stripShebang(file.source)))
+    .map((entry) => entry.path);
+  return [...new Set([...importsOf(file), ...typed])];
 }
 
 /**
@@ -69,8 +113,8 @@ export function checkBoundaries(files: readonly SourceFile[]): readonly Violatio
   for (const file of files) {
     const from = packageOf(file.path);
     if (from === undefined) continue;
-    for (const specifier of importsOf(file)) {
-      const to = scopedName(specifier);
+    for (const specifier of allImportsOf(file)) {
+      const to = targetPackage(file.path, specifier);
       if (to === undefined || to === from) continue;
       const verdict = checkTier(from, to);
       if (verdict.allowed) continue;
@@ -81,7 +125,7 @@ export function checkBoundaries(files: readonly SourceFile[]): readonly Violatio
         fromTier: tierOf(from),
         toTier: tierOf(to),
         reason: verdict.reason,
-        allowedTiers: allowedTiersFor(from),
+        allowedTiers: allowedImportsFor(from),
       });
     }
   }
@@ -91,21 +135,37 @@ export function checkBoundaries(files: readonly SourceFile[]): readonly Violatio
 const REASON_CAUSE: Readonly<Record<string, string>> = {
   'same-tier': 'sideways import inside the same tier',
   upward: 'import from a higher tier',
+  'edge-only': 'import outside this package’s declared edges',
   'unknown-package': 'import of a package that is not in the tier table',
+};
+
+const DEFAULT_BOUNDARY_FIX =
+  'move the shared code down to a lower tier, or invert the dependency and pass it in';
+
+/** One runnable edit per reason. `edge-only` names the map entry, because for that package the
+ * declared edge IS the whole allowance — there is no lower tier to move code down to. */
+const fixFor = (violation: Violation): string => {
+  if (violation.reason === 'unknown-package') {
+    return `add "${violation.to}" to the tier table in scripts/lib/tiers.ts, or drop the import`;
+  }
+  if (violation.reason === 'edge-only') {
+    return (
+      `drop the import from ${violation.file}, or add "${violation.to}" to ` +
+      `SIDEWAYS_ALLOW["${violation.from}"] in scripts/lib/tiers.ts with the line that earns it`
+    );
+  }
+  return DEFAULT_BOUNDARY_FIX;
 };
 
 export function findingFor(violation: Violation): Finding {
   const cause =
     `${violation.from} (tier ${violation.fromTier}) imports @ultimat3/${violation.to} ` +
     `(tier ${violation.toTier}) — ${REASON_CAUSE[violation.reason] ?? violation.reason}; ` +
-    `allowed tiers: ${violation.allowedTiers}`;
+    `allowed: ${violation.allowedTiers}`;
   return {
     code: 'X_BOUNDARY_VIOLATION',
     cause,
-    fix:
-      violation.reason === 'unknown-package'
-        ? `add "${violation.to}" to the tier table in scripts/lib/tiers.ts, or drop the import`
-        : `move the shared code down to a lower tier, or invert the dependency and pass it in`,
+    fix: fixFor(violation),
     at: violation.file,
   };
 }
@@ -121,8 +181,24 @@ async function readFiles(root: string, pattern: string): Promise<readonly Source
   return files;
 }
 
+/**
+ * `src/` is not all of a package's source: three packages carry an `e2e` directory beside it,
+ * and every rule here was blind to them — `packages/core/e2e/version.e2e.test.ts` could import
+ * `@ultimat3/cli` (tier 0 reaching tier 5) and this script reported "no boundary violations".
+ */
+const SOURCE_PATTERNS = ['packages/*/src/**/*.{ts,tsx}', 'packages/*/e2e/**/*.{ts,tsx}'] as const;
+
 export async function collectSourceFiles(root: string): Promise<readonly SourceFile[]> {
-  return readFiles(root, 'packages/*/src/**/*.{ts,tsx}');
+  const seen = new Set<string>();
+  const files: SourceFile[] = [];
+  for (const pattern of SOURCE_PATTERNS) {
+    for (const file of await readFiles(root, pattern)) {
+      if (seen.has(file.path)) continue;
+      seen.add(file.path);
+      files.push(file);
+    }
+  }
+  return files;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +267,10 @@ export function sharedLeafFindingFor(violation: SharedLeafViolation): Finding {
 /** Tests are excluded, as they are in `checkAppBoundaries`: a test is never bundled, and the leaf
  * rule exists to keep bundle graphs apart (axiom 6). */
 export async function collectSharedFiles(root: string): Promise<readonly SourceFile[]> {
-  const files = await readFiles(root, 'examples/*/apps/*/shared/**/*.{ts,tsx}');
+  // `{examples,dummy}`: the demo app under `dummy/` is the one CI publishes an image for on every
+  // push to main, and the header's reason for checking the rule here — that the app gate runs
+  // advisory-only — applies to it verbatim. Its 8 `shared/` modules were checked by nothing.
+  const files = await readFiles(root, '{examples,dummy}/*/apps/*/shared/**/*.{ts,tsx}');
   return files.filter((file) => !file.path.includes('.test.'));
 }
 

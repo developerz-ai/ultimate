@@ -114,6 +114,7 @@ describe('unit · what a planned command tells the caller', () => {
 
   test('x branch points at the database half that is shipped', () => {
     const planned = PLANNED_COMMANDS.find((entry) => entry.name === 'branch');
-    expect(planned?.fix).toBe('x db branch <name>   # the database half, shipped today');
+    // `x db branch <name>` pasted into a shell is a redirect; `ls` is the subcommand that runs.
+    expect(planned?.fix).toBe('x db branch ls --json   # the database half, shipped today');
   });
 });

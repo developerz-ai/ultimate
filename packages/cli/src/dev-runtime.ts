@@ -12,6 +12,7 @@ import {
   resetTiers,
   selectPurgeDriver,
 } from '@ultimat3/cache';
+import { isLocal, resolveEnvironment } from '@ultimat3/core';
 import type { EventBus, JobDriver } from '@ultimat3/jobs';
 import { createMemoryEventBus, setEventBus } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
@@ -19,11 +20,11 @@ import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from
 import type { Transport, TransportSelection } from '@ultimat3/realtime';
 import { selectTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, s3Driver } from '@ultimat3/storage';
+import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import type { DevDbClient } from './dev-queue';
 import { startQueue } from './dev-queue';
 import type { DevServices, Env } from './dev-services';
-import { StorageUnwritableError } from './errors';
+import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import { msg } from './messages';
 
 export interface RunningServices {
@@ -138,6 +139,19 @@ export function startStorage(services: DevServices, env: Env): Storage {
   }
 
   const root = binding.url.slice(FILE_SCHEME.length);
+  // The embedded disk is what this branch falls back to whenever `S3_ENDPOINT`/`S3_BUCKET` are
+  // unset — including in `production` and `staging`, where an unset `STORAGE_SIGNING_SECRET` means
+  // every signed upload grant is minted with the string published in this repo, and
+  // `acceptSignedUpload` trusts a signed constraint over the app's own `uploadPolicy`.
+  //
+  // `localDriver` refuses that at construction on its own (`X_ENV_MISSING`). Pre-empted here so
+  // the message names the STORAGE CHOICE and both ways out, rather than arriving as "a secret is
+  // missing" from a helper the operator never configured. Not an outright ban on the local disk in
+  // production: a single-node Compose deploy on a mounted volume WITH a real secret is a rung on
+  // the scale ladder, and refusing it would be a deploy-shape decision, not a security fix.
+  if (!isLocal() && usesDevStorageSecret()) {
+    throw new LocalDiskUnsafeError({ environment: resolveEnvironment(), root });
+  }
   try {
     mkdirSync(root, { recursive: true });
   } catch (cause) {

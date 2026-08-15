@@ -81,13 +81,24 @@ export type E2eBody = (fixtures: E2eFixtures) => Promise<void>;
 let e2eDriver: ((name: string, body: E2eBody) => void) | undefined;
 
 /**
- * Register the Playwright-backed driver. The e2e package wires this up; without it e2e tests are
- * skipped loudly rather than failing on a missing browser, and `x verify` reports the step as
- * skipped rather than green.
+ * Register the browser-backed driver. Without one, `e2eTest` skips loudly — the skipped test's own
+ * NAME carries the reason and the command that would build what it drives.
+ *
+ * What the gate then reports is a **pass over an all-skipped suite**, and that is stated here
+ * rather than claimed away: this used to say "`x verify` reports the step as skipped rather than
+ * green", which nothing implements. The step shells out to `bun test`, `bun test` exits 0 on a
+ * skip, and an exit code is the only channel between the two — the driver is registered inside the
+ * CHILD process, so the step cannot ask. Closing it means a channel the step can read, which is a
+ * design decision and not a docstring. `As of 2026-08` there are zero registered drivers, so every
+ * `e2eTest` in the tree is a skip; the framework's own `e2e` suites use plain `bun:test`.
  */
 export function useE2eDriver(driver: (name: string, body: E2eBody) => void): void {
   e2eDriver = driver;
 }
+
+/** Whether a driver is registered. Exported so a harness can say which of the two states it is in
+ * instead of reading an all-skipped run as a green one. */
+export const hasE2eDriver = (): boolean => e2eDriver !== undefined;
 
 export const e2eTest = (name: string, body: E2eBody): void => {
   if (e2eDriver === undefined) {

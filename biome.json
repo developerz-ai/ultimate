@@ -38,7 +38,8 @@
     "rules": {
       "preset": "recommended",
       "style": {
-        "noNonNullAssertion": "warn",
+        "noNonNullAssertion": "error",
+        "noDefaultExport": "error",
         "useImportType": "error",
         "useExportType": "error"
       },
@@ -67,6 +68,12 @@
       "indentWidth": 2
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/scss.d.ts"],
+      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
+    }
+  ],
   "assist": {
     "actions": {
       "source": {

@@ -124,7 +124,7 @@ there is no flag on the fixture and no code to silence.
 | `contractTest` | OpenAPI diff vs the committed spec, MCP exposure | `contract` |
 | `liveTest` | exactly what each subscriber receives | `live` |
 | `jobTest` | step sequence, retries, idempotency | `job` |
-| `e2eTest` | Playwright incl. offline mode + SW update | `e2e` |
+| `e2eTest` | a browser driver incl. offline mode + SW update; with none registered it SKIPS, and the gate's `e2e` step passes over the skip — ask `hasE2eDriver()` rather than reading that as a pass | `e2e` |
 | `evalTest` | LLM output scoring against a threshold | `eval` |
 
 Each helper prefixes the test name with its type (`job · onboards an org`), which is what
