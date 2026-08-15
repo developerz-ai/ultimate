@@ -63,6 +63,33 @@ Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 50000` — the c
 
 ---
 
+## Why Bun, why SolidJS
+
+Two picks that are load-bearing rather than fashionable, and both for the same reason: they remove
+a layer an agent would otherwise have to reason about.
+
+**Bun** is one toolchain where there were six. Runtime, bundler, test runner, package manager,
+`node:` compatibility, an HTTP and WebSocket server, hashing and SQLite are the same binary — so
+there is no `tsconfig`-versus-bundler-versus-jest disagreement to debug, and no chain of tools each
+with its own idea of what a module is. It runs TypeScript directly, which is why **the tarball
+published to npm is the source you read**: no `dist/`, no source-map hop when an agent steps into
+`node_modules`. And the natives are why the dependency list is two packages long — HTTP, WS,
+hashing, SQLite, test running and bundling are already there, so most of what a framework would
+reach for is not a decision at all.
+
+**SolidJS** compiles away. Fine-grained reactivity means an update touches the one text node that
+changed rather than re-running a component and diffing a virtual DOM, and there is no re-render
+model to hold in your head — no dependency arrays, no memo hooks, no rules about where state may be
+read. That matters twice here: the runtime is small enough that `render: 'static'` genuinely ships
+**zero** JavaScript, and the mental model is small enough that an agent writing its four-hundredth
+component is not carrying a rulebook about when a closure captures a stale value.
+
+Neither is a bet on popularity. They are the two choices that make the framework's own promises
+cheap to keep — one command that means shippable, and a static path that never pays for the app
+path.
+
+---
+
 ## The thesis
 
 Every framework built in the last fifteen years optimised for a human typing code. Ultimate assumes the code is written by an agent and reviewed by a tired senior engineer working through their own AI agent and AI reviewer.
