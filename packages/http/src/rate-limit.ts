@@ -198,6 +198,17 @@ export const rateLimitKey = (parts: RateLimitKeyParts): string => {
 export interface RateLimiter {
   /** The store's scope, carried up so the boot check has one thing to read. */
   readonly scope: RateLimitScope;
+  /**
+   * The table this limiter resolves a bucket NAME against. Declared, never inferred — the same
+   * rule as `RateLimitStore.scope` and `@ultimat3/auth`'s `AuthLimiter.policy`, and for the same
+   * reason: `createRateLimiter` closes over its config, so nothing outside can see which buckets
+   * it actually holds. `createPipeline` compares this against the buckets the ROUTES declare, and
+   * an unknown name is refused instead of falling through `bucketFor` to `default`.
+   *
+   * Optional only so an existing external implementation still type-checks; an absent table
+   * cannot be checked, so it is refused exactly as a wrong one is.
+   */
+  readonly buckets?: Readonly<Record<string, Bucket>> | undefined;
   check(key: string, bucketName: string, cost?: number): Promise<RateLimitDecision>;
   headers(decision: RateLimitDecision): Record<string, string>;
   /** Throws `X_RATE_LIMITED` when the bucket is empty. */
@@ -221,6 +232,9 @@ export const createRateLimiter = (options: {
 
   return {
     scope: store.scope,
+    // Published, not private: this is the table `bucketFor` above reads, and the boot check has
+    // no other way to learn what this limiter can enforce.
+    buckets: options.config.buckets,
     check,
     headers: (decision) => ({
       'ratelimit-limit': String(decision.limit),

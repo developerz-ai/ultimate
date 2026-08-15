@@ -233,8 +233,8 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 16 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(16);
+  test('contains exactly the 18 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(18);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
@@ -253,6 +253,8 @@ describe('HTTP_ERROR_CODES', () => {
         'X_ERROR_STATUS_INVALID',
         'X_CORS_CONFIG_INVALID',
         'X_RATE_LIMIT_NOT_SHARED',
+        'X_RATE_LIMIT_BUCKET_CONFLICT',
+        'X_RATE_LIMIT_BUCKET_UNBOUND',
       ].sort(),
     );
   });

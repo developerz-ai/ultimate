@@ -65,6 +65,12 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_BOUNDARY_APP_TO_API',
   'X_BOUNDARY_ROUTE_TO_DB',
   'X_BOUNDARY_SERVICE_TO_HTTP',
+  // The three ways an app's own guard can fail to be one. A guard is the app's convention made
+  // into a build error, so a guard the gate cannot trust has to be a finding rather than a skip:
+  // an app that believes its rule is enforced and is not is worse off than one with no rule.
+  'X_GUARD_INVALID',
+  'X_GUARD_FAILED',
+  'X_GUARD_FINDING_INVALID',
   // The two halves of `x secrets edit` that belong to the terminal rather than to the envelope.
   // `@ultimat3/core` owns every X_SECRETS_* code about the file and the key; an editor is the
   // CLI's problem alone, and core would have no `fix:` to offer for one.
@@ -152,6 +158,9 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_BOUNDARY_APP_TO_API: 'app/ imported api/ at runtime',
   X_BOUNDARY_ROUTE_TO_DB: 'a route touched the database',
   X_BOUNDARY_SERVICE_TO_HTTP: 'a service imported HTTP',
+  X_GUARD_INVALID: 'a file in guards/ exports no usable guard',
+  X_GUARD_FAILED: 'an app guard threw instead of returning findings',
+  X_GUARD_FINDING_INVALID: "an app guard's finding breaks the error contract",
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
 };

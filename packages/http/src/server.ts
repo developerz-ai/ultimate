@@ -22,6 +22,7 @@ import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
 import { createRateLimiter, type RateLimitStore } from './rate-limit';
+import { withRouteBuckets } from './rate-limit-buckets';
 import { json } from './response';
 import { createRouter, describeRoutes, type Route, type RouteDescription } from './router';
 
@@ -70,9 +71,14 @@ export interface ServerHandle {
 const roleFromEnv = (): Role => (Bun.env['ROLE'] ?? 'web') as Role;
 
 export const createServer = (options: ServerOptions): ServerHandle => {
-  const config = options.config ?? defineHttpConfig();
   const role = options.role ?? roleFromEnv();
   const table = createRouter(options.routes);
+  // Merged here as well as in `createPipeline`, and for the store's sake: the limiter below is
+  // built from `config.rateLimit`, so a table without the routes' own buckets would resolve a
+  // declared name to `default` — the very hole this closes. `withRouteBuckets` is idempotent, so
+  // the pipeline's second pass changes nothing. `handle.config` is the merged one for the same
+  // reason: `server.config.rateLimit.buckets` has to be what the limiter runs on.
+  const config = withRouteBuckets(options.config ?? defineHttpConfig(), table.routes);
   // The store feeds the limiter seam `PipelineDeps` already had, rather than becoming a second
   // one: the bucket maths stays in `createRateLimiter`, so every driver agrees on the numbers.
   const pipeline = createPipeline({

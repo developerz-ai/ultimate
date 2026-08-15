@@ -34,6 +34,30 @@ describe('unit · scanPackageDocs', () => {
     expect(entries[0]?.symbols).toEqual(['job']);
   });
 
+  // @ultimat3/ui ships ~40 components as .tsx. Resolving only `.ts` indexed none of them, so a
+  // shipped command was blind to a whole package — and silently, because a missing file is a skip.
+  test('a .tsx module is indexed, not skipped as missing', async () => {
+    const dir = fixture({
+      'package.json': '{"name":"@ultimat3/ui"}',
+      'src/index.ts': "export { Dialog } from './components/Dialog';",
+      'src/components/Dialog.tsx': '// A modal dialog.\nexport function Dialog() {}',
+    });
+    const entries = await scanPackageDocs(dir);
+    expect(entries.map((entry) => entry.topic)).toEqual(['ui.components/Dialog']);
+    expect(entries[0]?.symbols).toEqual(['Dialog']);
+  });
+
+  test('a .ts module still wins when both spellings exist', async () => {
+    const dir = fixture({
+      'package.json': '{"name":"@ultimat3/ui"}',
+      'src/index.ts': "export { Both } from './both';",
+      'src/both.ts': '// The .ts one.\nexport function Both() {}',
+      'src/both.tsx': '// The .tsx one.\nexport function Both() {}',
+    });
+    const entries = await scanPackageDocs(dir);
+    expect(entries[0]?.title).toBe('The .ts one.');
+  });
+
   test('a module index.ts names but the tarball does not ship is skipped', async () => {
     const dir = fixture({
       'package.json': '{"name":"@ultimat3/jobs"}',

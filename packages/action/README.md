@@ -192,6 +192,21 @@ LocalTables { posts: PostRow } }`.
 name-sorted, and reads no clock, env or random source — same registry ⇒ same bytes ⇒
 `x verify` can diff the spec and fail on `X_CONTRACT_DRIFT`.
 
+## `rateLimit:` is the enforced limit
+
+```ts
+rateLimit: { limit: 5, windowMs: 600_000 },   // 5 held, one back every two minutes
+```
+
+One declaration, three places it lands: the bucket the limiter runs on (named after the action,
+registered by `@ultimat3/http`'s `withRouteBuckets` when the route is mounted), the
+`ratelimit-limit` header the caller reads, and `x-ultimate.rateLimit` in the OpenAPI operation.
+`toBucket` is the only conversion — `capacity: limit`, `refillPerSecond: limit / (windowMs / 1000)`
+— so the published numbers and the enforced ones cannot differ. An action that declares nothing
+stays on the `default` bucket. An app that also configures `http.rateLimit.buckets.<actionName>`
+with **different** numbers is `X_RATE_LIMIT_BUCKET_CONFLICT` at boot: neither source wins, because
+the loser would go on being read as enforced.
+
 `idempotent: true` + an `Idempotency-Key` header replays the first response
 (`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new
 payload, is `X_IDEMPOTENCY_CONFLICT`. Store is swappable via `setIdempotencyStore()`.
@@ -322,6 +337,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_ACTION_DUPLICATE` | two actions registered under one name | rename one export |
 | `X_ACTION_PATH_DUPLICATE` | two actions derive one HTTP path (`archiveOrder` / `archiveOrders`) | rename one export |
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
+| `X_ACTION_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely | make both positive, or delete the block |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |

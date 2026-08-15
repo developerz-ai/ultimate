@@ -1,12 +1,13 @@
 // The tail of the lifecycle, guarded. `Pipeline.handle` promises a Response to every caller, and
-// the recover and finalize stages are the ones with nothing above them to catch a throw. Split out
-// of `pipeline.ts`, which owns the ORDER of the stages; this file owns the promise.
+// the recover and finalize stages are the ones with nothing above them to catch a throw. One of three:
+// `pipeline.ts` owns the ORDER of the stages, `stages.ts` owns what each one does, this file owns
+// the promise.
 import { logger } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { finalizeFailed } from './errors';
-import type { Stage } from './pipeline';
 import type { UltimateRequest } from './request';
 import { problem } from './response';
+import type { Stage } from './stages';
 
 /** Renders whatever sits on `ctx.error` into a Response. Never throws, by construction. */
 export type Recover = (request: UltimateRequest, ctx: RequestContext) => Promise<Response>;

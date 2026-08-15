@@ -1,6 +1,6 @@
 # Thesis
 
-Rails' philosophy — convention over configuration, generators, one blessed path, batteries included — applied to Bun + Postgres + SolidJS, where **the primary user is an AI agent**.
+Rails' philosophy — convention over configuration, generators, one blessed path, batteries included — applied to Bun + Postgres + SolidJS, where **the primary developer is an AI agent**.
 
 ## Who it is for
 

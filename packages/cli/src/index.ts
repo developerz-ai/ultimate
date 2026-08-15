@@ -133,6 +133,8 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
+export type { Guard } from './guards';
+export { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
 export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
 export { drainJobs } from './jobs-drain';
 export type { JobsListFilter, JobsListResult } from './jobs-report';

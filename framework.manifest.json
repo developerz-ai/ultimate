@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e1278ef15787f3bfaa77805ef39f34773d3c3a435df2332401022b0cf9865646",
+  "buildId": "c2d1866784dda5595c722a9b49dbb296c132b0c27745ce2b5ee0513f1eeb5d3f",
   "tiers": {
     "0": [
       "core",
@@ -247,6 +247,11 @@
     },
     {
       "code": "X_ACTION_POLICY_MISSING",
+      "owner": "action",
+      "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_ACTION_RATE_LIMIT_INVALID",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
     },
@@ -796,6 +801,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_GUARD_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GUARD_FINDING_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GUARD_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ID_INVALID",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
@@ -1284,6 +1304,16 @@
       "code": "X_QUERY_UNREGISTERED",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_BUCKET_CONFLICT",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_BUCKET_UNBOUND",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_RATE_LIMIT_NOT_SHARED",

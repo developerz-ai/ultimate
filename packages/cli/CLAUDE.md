@@ -408,6 +408,78 @@ A subcommand stays in its command's `subcommands` list — the parser reaches it
 it — and the owning `run` does `throw plannedSubcommand('db', 'studio')`. Dropping it from the list
 instead would answer `X_CLI_UNKNOWN_SUBCOMMAND`, which is the same lie the table above closes.
 
+## `guards/` is how an app makes its own convention a build error
+
+Axiom 3 says a convention that is not a build error does not exist, and until 1.2.0 the framework
+gave an app no way to create one: `VERIFY_STEP_NAMES` is a closed literal list with no extension
+point. A file in `guards/` closes it.
+
+| File | Job |
+|---|---|
+| `guards.ts` | what a guard IS, how the directory is read, and what a guard is held to |
+| `templates/guard.ts` | `x g guard <name>` — the emitted rule, its pure half and its test |
+| `cmd-verify.ts` | one line in the `boundaries` step: `guardFindings(ctx.root)` |
+
+**It rides on `boundaries`, and it is not an eighteenth step.** The `HostCheck` contract already
+says the shape — *a host adds findings to a step; it can never add, remove, reorder or skip one* —
+so "green" keeps meaning exactly what it meant, whatever an app writes. `boundaries` is the step
+whose host slot already carries "rules this repo makes about itself that the framework cannot
+know" (the monorepo's tier table arrives through it), and it runs third, before any suite, so a
+convention failure comes back in seconds. `guardFindings` is *typed* as a `HostCheck` and is
+composed by the step rather than registered as one: the slot is `Partial<Record<VerifyStepName,
+HostCheck>>`, one function per step, so an app registering there would evict the framework's own
+tier check — and `verifyCommand.run` passes no `hostChecks` at all, which is why an app-supplied
+check could not have reached the gate through that field in the first place.
+
+**Discovered, never registered.** `guards/*.ts`, minus `*.test.ts`, sorted. Nothing imports a
+guard, nothing lists one, and there is no `defineGuard` to call — a guard that has to announce
+itself is a guard an app can forget to announce, which is the coupling axiom 8's extension model
+rejects. A `*.test.ts` beside a guard is its test: importing it would run a suite inside the gate.
+
+**A guard returns `Finding[]`, so it inherits everything.** `--json`, the step table, the summary
+counts and the exit code are all projections of what it returns (axiom 2); a guard that printed or
+chose an exit code would be a second gate. It never throws for a normal result — a throw is
+`X_GUARD_FAILED`, reported as a finding rather than taking the run down.
+
+**And what it returns is held to the error contract.** `findingProblem` demands an
+`X_SCREAMING_SNAKE` code, a non-empty cause, and a `fix:` that passes `fixProblem` — the *same*
+rule `x verify`'s `errors` step applies to every shipped `fix:` in this repo. It runs on the
+returned value, which is the half a static scan cannot reach: a `fix` assembled at run time has no
+literal to read. Three codes, one per way a guard can fail to be one — `X_GUARD_INVALID` (no
+usable export), `X_GUARD_FAILED` (it threw), `X_GUARD_FINDING_INVALID` (what it returned is not a
+finding). Anything else about a guard is the app's business: no size ceiling, no budget, no rule
+about what it may check.
+
+**The validator may never be the thing that crashes.** `findingProblem` names an offending value
+through `shown()` and not `JSON.stringify` — which refuses a BigInt — and every candidate is read
+inside a `try`, because reading one can throw on its own (a getter that raises, a proxy that
+refuses). A guard returning `[1n]` is `X_GUARD_FINDING_INVALID`, per candidate, so one unreadable
+entry costs its own line and not the real findings beside it. The mechanism whose job is producing
+structured failures handing back a stack trace is the one outcome it exists to prevent.
+
+`x g guard <name>` writes `guards/<name>.ts` and its test, and nothing else — no index, no
+registry row, no manifest entry. The emitted rule is the class of failure a guard exists for: a
+migration that adds a `NOT NULL` column with no `DEFAULT` applies cleanly to an empty local
+database and fails on the first production table that already holds rows. The `drift` step reads
+those same files and asks a different question, and a test suite runs against a database the
+statement has never met — which is exactly when an app needs a rule of its own. Its code is
+DERIVED from the guard's name (`guardCode`), never written as a literal: an `X_*` literal in
+framework source is a framework code and `error-catalog.test.ts` requires it to be registered.
+
+That rule is held to a real bar, because it is the worked example every app starts from and a
+demonstration that is wrong on realistic input teaches the wrong shape. Block comments are
+stripped before line comments and both before statements are split, so a commented-out
+`ALTER TABLE` is a note and not a finding that blocks `x verify` over nothing; and `DEFAULT NULL`
+counts as **no** default, because it is one in syntax and none in effect — every existing row still
+takes NULL and still violates `NOT NULL`. Both cases are in the emitted test, which is what proves
+an app's copy still works, and both run through the real seam in `guards.test.ts`.
+
+It is in `FIXTURE_GENERATORS` like the other two, and it is the only generated file that imports
+`@ultimat3/cli` for its types — so the scaffold gate compiling it is what proves a scaffolded app
+can write one at all. The root `tsconfig.json` `x new` scaffolds has no `include`, so `guards/` is
+typechecked there by default; an app whose tsconfig names an explicit `include` list has to add
+`guards/**/*` to it, or its guards compile nowhere.
+
 ## Two generators that scaffold something other than a primitive
 
 `x g island <name> [--at <dir>]` writes a **client entry point**, not a component: the filename is
@@ -417,12 +489,15 @@ the directory directly rather than deriving one, because the caller that cannot 
 `X_ISLAND_INVALID` — its cause already holds the exact path a page's `src` resolved to, so its
 `fix:` hands that path straight back.
 
-`x g admin:page <name> --permission <perm>` writes an ordinary TSX component and **no `defineRoute`
-call**, deliberately. `@ultimat3/admin`'s `pages:` is the one thing that puts a page in the route
+`x g admin:page <name> --permission <perm> [--at <dir>]` writes an ordinary TSX component and **no
+`defineRoute` call**, deliberately. `@ultimat3/admin`'s `pages:` is the one thing that puts a page in the route
 table and `guardedPage()` is the one thing that decides it; a generator that emitted a route
 declaration would hand back the unguarded second way in that seam exists to close. The emitted test
 asserts the absence. `--permission` defaults to `<name>:read` rather than to nothing, because an
-empty permission list is `X_ADMIN_PAGE_UNGUARDED` at declaration time.
+empty permission list is `X_ADMIN_PAGE_UNGUARDED` at declaration time. `--at` is the same flag
+`x g island` takes and for the same reason — an app's admin is wherever its `defineAdmin` is, which
+no generator can derive, and the hardcoded `apps/admin/src/pages` sent every other layout (the
+demo's is `apps/admin/app/admin`) to `git mv` after every run.
 
 Both are in `FIXTURE_GENERATORS`, so both are compiled by the scaffold gate.
 

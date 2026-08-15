@@ -59,6 +59,7 @@ export {
   ActionForeignError,
   ActionPathDuplicateError,
   ActionPolicyMissingError,
+  ActionRateLimitInvalidError,
   ActionUnregisteredError,
   AuditSinkFailedError,
   AuditSinkMissingError,
@@ -74,6 +75,7 @@ export {
   BUILD_ID_HEADER,
   IDEMPOTENCY_HEADER,
   REPLAYED_HEADER,
+  toBucket,
   toOpenApiOperation,
   toRoute,
 } from './http';

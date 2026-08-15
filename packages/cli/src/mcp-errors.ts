@@ -90,6 +90,13 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # then: x fix boundary <the file the finding names> --json',
   X_BOUNDARY_SERVICE_TO_HTTP:
     'x verify --json   # then: x fix boundary <the file the finding names> --json',
+  // The app's own guards. All three are reported by the gate and by nothing else, so the runnable
+  // half is the gate — the narrowing behind the `#` is the edit, because only the finding knows
+  // which file in `guards/` is the one to open.
+  X_GUARD_INVALID: 'x verify --json   # then export a `guard` from the file the finding names',
+  X_GUARD_FAILED: 'x verify --json   # the cause carries the throw the guard raised, verbatim',
+  X_GUARD_FINDING_INVALID:
+    'x verify --json   # then give the finding an X_ code, a cause and a fix naming a command',
   // `EDITOR=` inline rather than `export`: the variable is only needed for the one invocation, and
   // an agent copying this line gets a working command instead of a shell it has to keep.
   X_SECRETS_EDITOR_MISSING: 'EDITOR=nano x secrets edit',

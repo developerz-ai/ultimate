@@ -115,7 +115,7 @@ function assertHydrates(strategy: HydrateStrategy, spec: IslandSpec, file: strin
   // Only on the failure path: the happy path returned above and never touches the list.
   const undrained = islandNeverDrained(spec);
   const cause = undrained
-    ? `no defineRoute in that module ever drained the ${spec.moduleId} declaration, so the route ` +
+    ? `no defineRoute in that module drained the ${spec.moduleId} declaration and the route ` +
       "derived hydrate: 'never'"
     : `the route declares hydrate: 'never'`;
   throw new IslandNotHydratedError(

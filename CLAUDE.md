@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Ultimate
 
-A full-stack, **Bun-only**, opinionated web framework. Rails' philosophy on a Bun + Postgres + SolidJS stack, where **the primary user is an AI agent** and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
+A full-stack, **Bun-only**, opinionated web framework. Rails' philosophy on a Bun + Postgres + SolidJS stack, where **the primary developer is an AI agent** and the secondary developer is a tired senior engineer working through their own AI agent and AI reviewer.
 
 Rails' actual promise, applied to agents: **reduce the number of problems the author has to worry about**, so the work goes into the app's features instead of the app's infrastructure. Every decision the framework makes is a decision an agent does not have to.
 

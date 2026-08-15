@@ -30,7 +30,7 @@ Declared in `api/` or a feature's `actions.ts`. Named export, never default. The
 | `mcp.expose` | `boolean` | no (opt-in) | only a literal `true` makes the action a tool; silence exposes nothing. One predicate answers it everywhere — the tool, the LLM tool list, `describe().mcp.expose`, and `openapi.json`'s `x-ultimate.mcpTool` (which is `null` when there is no tool). Listing an un-exposed action in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot |
 | `mcp.description` | `string` | no | the tool description an agent reads, and the OpenAPI `summary`. Contract text, so it stays outside `t()` — `openapi.json` must not depend on a locale. Write it for a stranger |
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
-| `rateLimit` | `{ limit: number; windowMs: number }` | no | per-actor limit enforced at the HTTP and MCP edges |
+| `rateLimit` | `{ limit: number; windowMs: number }` | no | registers a bucket named after the action, enforced at the **HTTP** edge — the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. Keyed actor → org → IP. **Not** read at the MCP edge: `/mcp` buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) and never sees this declaration |
 | `idempotent` | `boolean` | no | marks the action safe to retry with an `Idempotency-Key` header |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 

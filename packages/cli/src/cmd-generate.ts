@@ -37,6 +37,7 @@ import {
   backfillFiles,
   CATALOG_ROOT,
   entityFiles,
+  guardFiles,
   i18nIndex,
   islandFiles,
   jobFiles,
@@ -174,6 +175,10 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       return dedupe(taskFiles(options.name, target));
     case 'island':
       return dedupe(islandFiles(options.name, { dir: options.at ?? `${surfaceDir}/${feature}` }));
+    // No `--at`, no surface, no feature: `guards/` is the one directory the gate discovers, and a
+    // guard that lived anywhere else would need an app-side registration to be found.
+    case 'guard':
+      return dedupe(guardFiles(options.name));
     case 'admin:page':
       // A default permission, never none: an empty list is `X_ADMIN_PAGE_UNGUARDED` on sight.
       return dedupe(
@@ -381,7 +386,7 @@ export const generateCommand: CliCommand = {
         command: 'g',
         summary: msg('cli.generate.planned', { count: files.length, kind, name }),
         data: { files: files.map((file) => file.path), dryRun: true },
-        lines: files.map((file) => `  + ${file.path}`),
+        lines: files.map((file) => msg('cli.file.added', { path: file.path })),
       };
     }
     const report = await writeFiles(root, files, flagBool(ctx.args, 'force'));
@@ -392,12 +397,16 @@ export const generateCommand: CliCommand = {
     // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.
+    //
+    // REFRESHED, never introduced. An app that has not run `x manifest` has no committed contract
+    // to keep current, and writing one here hands the repo a generated file it never asked to
+    // maintain — `x g island` in such an app created `x.manifest.json` out of nothing.
     let buildId: string | undefined;
     // A module that would not load is omitted from the registries, so a manifest written over a
     // partial load would replace the compatibility contract with a subset of the app. The scaffold
     // stays on disk — only the projection is withheld, and the load failures travel as findings.
     const loadFailures: Finding[] = [];
-    if (report.written.length > 0) {
+    if (report.written.length > 0 && existsSync(containedPath(root, MANIFEST_FILENAME))) {
       const { manifest, findings } = await appManifest(root);
       if (findings.length === 0) {
         await writeAppManifest(root, manifest);
@@ -405,18 +414,19 @@ export const generateCommand: CliCommand = {
       } else loadFailures.push(...findings);
     }
     const findings = [...report.conflicts, ...loadFailures];
+    // One list behind all three renderings. The manifest was printed as a `+` line while the count
+    // beside it came from `report.written` alone, so `x g island` said "wrote 2 file(s)" over three
+    // lines — and `--json` carried the shorter list, which is the drift `--json` exists to prevent.
+    const written = [...report.written, ...(buildId === undefined ? [] : [MANIFEST_FILENAME])];
     return {
       ok: findings.length === 0,
       command: 'g',
-      summary: msg('cli.generate.wrote', { count: report.written.length, kind, name }),
+      summary: msg('cli.generate.wrote', { count: written.length, kind, name }),
       data: {
-        files: report.written,
+        files: written,
         ...(buildId === undefined ? {} : { manifest: { buildId } }),
       },
-      lines: [
-        ...report.written.map((path) => `  + ${path}`),
-        ...(buildId === undefined ? [] : [`  + ${MANIFEST_FILENAME}`]),
-      ],
+      lines: written.map((path) => msg('cli.file.added', { path })),
       findings,
     };
   },

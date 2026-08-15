@@ -37,6 +37,11 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // The row exists because this table is the closed one: a code missing from it is a 500 anyway,
   // and a code the framework owns must never fall through to the app's table.
   X_RATE_LIMIT_NOT_SHARED: 500,
+  // Same construction-time class as the row above: a route and the config declare one bucket
+  // differently, and the process refuses to start rather than pick.
+  X_RATE_LIMIT_BUCKET_CONFLICT: 500,
+  // Construction time as well: the limiter installed cannot enforce a bucket a route declares.
+  X_RATE_LIMIT_BUCKET_UNBOUND: 500,
   // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
   // the primitive declared. 400 because that is what the published OpenAPI operation promises for
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,

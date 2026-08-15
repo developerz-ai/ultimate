@@ -3,7 +3,7 @@
   Ultimate
 </h1>
 
-<p align="center"><strong>The full-stack framework where the primary user is an AI agent.</strong></p>
+<p align="center"><strong>The full-stack framework where the primary developer is an AI agent.</strong></p>
 
 <p align="center"><em>Rails' opinions. Bun's speed. One command that means shippable.</em></p>
 
