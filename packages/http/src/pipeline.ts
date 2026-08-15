@@ -11,7 +11,7 @@ import { recoverWith, runFinalize } from './finalize';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { assertRateLimitScope, createRateLimiter, type RateLimiter } from './rate-limit';
-import { withRouteBuckets } from './rate-limit-buckets';
+import { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
 import { UltimateRequest } from './request';
 import { problem } from './response';
 import type { RouteTable } from './router';
@@ -90,8 +90,10 @@ export interface PipelineDeps {
   /**
    * A limiter built elsewhere — `createServer({ rateLimitStore })` is the one supported way, and
    * it hands over a limiter built from the SAME merged config this constructor would have built.
-   * Anything else passing one here owns the bucket table it was given: route-declared buckets are
-   * registered into `config` either way, but a foreign limiter resolves names against its own.
+   * One passed from anywhere else resolves bucket names against the table IT closed over, which
+   * is why `assertRouteBuckets` compares that table against the routes' declarations and refuses
+   * a limiter that cannot enforce one (`X_RATE_LIMIT_BUCKET_UNBOUND`) rather than letting the
+   * name fall through to `default`.
    */
   readonly limiter?: RateLimiter;
 }
@@ -120,7 +122,9 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
   const limiter = deps.limiter ?? createRateLimiter({ config: config.rateLimit });
   // Here rather than in `createServer`: this is the one construction path every server, test and
   // embedder shares, so a limiter that cannot keep the app's declaration is refused exactly once.
+  // Two halves of one question — where the counters live, and which buckets the limiter holds.
   assertRateLimitScope(config.rateLimit, limiter);
+  assertRouteBuckets(limiter, deps.table.routes);
   const run = stageRunners({
     table: deps.table,
     config,

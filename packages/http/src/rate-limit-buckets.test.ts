@@ -5,7 +5,12 @@ import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { HttpError } from './errors';
 import { createPipeline } from './pipeline';
-import { type Bucket, memoryRateLimitStore } from './rate-limit';
+import {
+  type Bucket,
+  createRateLimiter,
+  DEFAULT_RATE_LIMIT,
+  memoryRateLimitStore,
+} from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
 import { createRouter, type Route } from './router';
 import { createServer } from './server';
@@ -106,6 +111,69 @@ describe('withRouteBuckets', () => {
     expect((await call()).headers.get('ratelimit-limit')).toBe('5');
     for (let i = 0; i < 4; i += 1) await call();
     expect((await call()).status).toBe(429);
+  });
+
+  // The seam a sophisticated app takes. The limiter it built closed over a config that never saw
+  // a route, so `bucketFor('contactSales')` fell through to `default` — 120 burst for a route
+  // declaring 5, which is this slice's defect surviving through the one path we did not check.
+  test('a limiter that cannot hold the route bucket is refused, not silently run on default', () => {
+    const foreign = createRateLimiter({ config: DEFAULT_RATE_LIMIT });
+    const error = (() => {
+      try {
+        createPipeline({ table: createRouter([route('contactSales', TIGHT)]), limiter: foreign });
+        return null;
+      } catch (thrown) {
+        return thrown as HttpError;
+      }
+    })();
+    expect(error?.code).toBe('X_RATE_LIMIT_BUCKET_UNBOUND');
+    expect(error?.cause).toContain('5 / 0.008');
+    expect(error?.cause).toContain('would run on the default one');
+    // Axiom 4: one executable path out, not "reconcile your limiter".
+    expect(error?.fix).toContain('createServer({ routes, rateLimitStore })');
+  });
+
+  test('a limiter holding the right name but the wrong numbers is refused too', () => {
+    const wrong = createRateLimiter({
+      config: {
+        ...DEFAULT_RATE_LIMIT,
+        buckets: {
+          ...DEFAULT_RATE_LIMIT.buckets,
+          contactSales: { capacity: 50, refillPerSecond: 1 },
+        },
+      },
+    });
+    expect(() =>
+      createPipeline({ table: createRouter([route('contactSales', TIGHT)]), limiter: wrong }),
+    ).toThrow(/holds 50 \/ 1 for it/);
+  });
+
+  test('a limiter built from the merged config is accepted, and enforces it', async () => {
+    const config = withRouteBuckets(defineHttpConfig(), [route('contactSales', TIGHT)]);
+    const pipeline = createPipeline({
+      table: createRouter([route('contactSales', TIGHT)]),
+      config,
+      limiter: createRateLimiter({ config: config.rateLimit }),
+    });
+    const response = await pipeline.handle(
+      new Request('http://dev.test/api/contactSales', { method: 'POST' }),
+      { role: 'web' },
+    );
+    expect(response.headers.get('ratelimit-limit')).toBe('5');
+  });
+
+  test('a limiter declaring no table at all cannot be proven, so it is refused', () => {
+    const opaque = { ...createRateLimiter({ config: DEFAULT_RATE_LIMIT }), buckets: undefined };
+    expect(() =>
+      createPipeline({ table: createRouter([route('contactSales', TIGHT)]), limiter: opaque }),
+    ).toThrow(/X_RATE_LIMIT_BUCKET_UNBOUND/);
+  });
+
+  test('a route that declares nothing never consults the limiter table', () => {
+    const foreign = createRateLimiter({ config: DEFAULT_RATE_LIMIT });
+    expect(() =>
+      createPipeline({ table: createRouter([route('listPosts')]), limiter: foreign }),
+    ).not.toThrow();
   });
 
   test('the pipeline enforces the registered bucket, not the default one', async () => {

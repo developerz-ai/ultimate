@@ -53,18 +53,23 @@ export interface MigrationFile {
 export function unsafeAdditions(files: readonly MigrationFile[]): readonly Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
-    // Line comments first: \`-- add column slug text not null\` in a note is not a statement.
-    for (const statement of file.sql.replaceAll(/--[^\\n]*/g, ' ').split(';')) {
+    // Comments first, block before line: a statement inside \`/* … */\` is a note, and reading one
+    // as real is a finding an author cannot act on — it blocks \`x verify\` over nothing.
+    const sql = file.sql.replaceAll(/\\/\\*[\\s\\S]*?\\*\\//g, ' ').replaceAll(/--[^\\n]*/g, ' ');
+    for (const statement of sql.split(';')) {
       if (!/\\balter\\s+table\\b/i.test(statement)) continue;
       for (const match of statement.matchAll(ADD_COLUMN)) {
         const definition = match[2] ?? '';
         if (!/\\bnot\\s+null\\b/i.test(definition)) continue;
-        if (/\\bdefault\\b/i.test(definition)) continue;
+        // \`DEFAULT NULL\` is a default in syntax and none in effect: every existing row still
+        // takes NULL and still violates NOT NULL, which is this rule's whole subject.
+        const nullDefault = /\\bdefault\\s+\\(?\\s*null\\b/i.test(definition);
+        if (/\\bdefault\\b/i.test(definition) && !nullDefault) continue;
         const column = match[1] ?? 'the column';
         findings.push({
           code: CODE,
-          cause: \`\${file.path} adds \${column} NOT NULL with no DEFAULT — every row already in the table violates it the moment this runs against data\`,
-          fix: \`give \${column} a DEFAULT in \${file.path}, then: x db migrate\`,
+          cause: \`\${file.path} adds \${column} NOT NULL with no usable DEFAULT — every row already in the table takes NULL and violates it the moment this runs against data\`,
+          fix: \`give \${column} a non-null DEFAULT in \${file.path}, then: x db migrate\`,
           at: file.path,
         });
       }
@@ -110,9 +115,21 @@ unitTest('a DEFAULT makes the same addition safe', () => {
   expect(unsafeAdditions(migration(sql))).toHaveLength(0);
 });
 
+unitTest('DEFAULT NULL is a default in syntax and none in effect', () => {
+  const sql = 'ALTER TABLE posts ADD COLUMN slug text NOT NULL DEFAULT NULL;';
+  expect(unsafeAdditions(migration(sql))).toHaveLength(1);
+});
+
 unitTest('a nullable column was always safe, and a new table is not an addition', () => {
   expect(unsafeAdditions(migration('ALTER TABLE posts ADD COLUMN slug text;'))).toHaveLength(0);
   expect(unsafeAdditions(migration('CREATE TABLE posts (slug text NOT NULL);'))).toHaveLength(0);
+});
+
+unitTest('a commented-out statement is not a statement', () => {
+  const block = '/* ALTER TABLE posts ADD COLUMN slug text NOT NULL; */';
+  expect(unsafeAdditions(migration(block))).toHaveLength(0);
+  const line = '-- ALTER TABLE posts ADD COLUMN slug text NOT NULL;';
+  expect(unsafeAdditions(migration(line))).toHaveLength(0);
 });
 `;
 

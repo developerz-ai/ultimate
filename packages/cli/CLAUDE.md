@@ -450,6 +450,13 @@ usable export), `X_GUARD_FAILED` (it threw), `X_GUARD_FINDING_INVALID` (what it 
 finding). Anything else about a guard is the app's business: no size ceiling, no budget, no rule
 about what it may check.
 
+**The validator may never be the thing that crashes.** `findingProblem` names an offending value
+through `shown()` and not `JSON.stringify` — which refuses a BigInt — and every candidate is read
+inside a `try`, because reading one can throw on its own (a getter that raises, a proxy that
+refuses). A guard returning `[1n]` is `X_GUARD_FINDING_INVALID`, per candidate, so one unreadable
+entry costs its own line and not the real findings beside it. The mechanism whose job is producing
+structured failures handing back a stack trace is the one outcome it exists to prevent.
+
 `x g guard <name>` writes `guards/<name>.ts` and its test, and nothing else — no index, no
 registry row, no manifest entry. The emitted rule is the class of failure a guard exists for: a
 migration that adds a `NOT NULL` column with no `DEFAULT` applies cleanly to an empty local
@@ -458,6 +465,14 @@ those same files and asks a different question, and a test suite runs against a 
 statement has never met — which is exactly when an app needs a rule of its own. Its code is
 DERIVED from the guard's name (`guardCode`), never written as a literal: an `X_*` literal in
 framework source is a framework code and `error-catalog.test.ts` requires it to be registered.
+
+That rule is held to a real bar, because it is the worked example every app starts from and a
+demonstration that is wrong on realistic input teaches the wrong shape. Block comments are
+stripped before line comments and both before statements are split, so a commented-out
+`ALTER TABLE` is a note and not a finding that blocks `x verify` over nothing; and `DEFAULT NULL`
+counts as **no** default, because it is one in syntax and none in effect — every existing row still
+takes NULL and still violates `NOT NULL`. Both cases are in the emitted test, which is what proves
+an app's copy still works, and both run through the real seam in `guards.test.ts`.
 
 It is in `FIXTURE_GENERATORS` like the other two, and it is the only generated file that imports
 `@ultimat3/cli` for its types — so the scaffold gate compiling it is what proves a scaffolded app

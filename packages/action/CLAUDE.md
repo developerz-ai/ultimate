@@ -54,8 +54,11 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   same: looser in practice than what the author wrote, which is the dangerous direction. `toBucket`
   is the **only** conversion between `{ limit, windowMs }` and `{ capacity, refillPerSecond }`, and
   both projections that read the declaration call it, so the spec cannot publish a pair the limiter
-  refuses: a non-positive or non-finite half is `X_ACTION_RATE_LIMIT_INVALID`, because
-  `windowMs: 0` is an infinite refill — a declared limit that enforces nothing.
+  refuses. `X_ACTION_RATE_LIMIT_INVALID` covers all three checks, and the third is the one that is
+  easy to miss: the **computed** rate, not just the two declared halves. `windowMs: 0` is an
+  infinite refill, and so is `{ limit: Number.MAX_VALUE, windowMs: 1 }` — two finite positive
+  numbers whose division enforces nothing. `limit` must also be at least one whole token, or the
+  first caller is already refused and the endpoint is closed rather than limited.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
 - **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased

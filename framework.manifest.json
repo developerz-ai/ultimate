@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f5855ada58f679669c797e1fe21ce46fd7d4464962e4f1aeb1c9f5a50287a7b9",
+  "buildId": "c2d1866784dda5595c722a9b49dbb296c132b0c27745ce2b5ee0513f1eeb5d3f",
   "tiers": {
     "0": [
       "core",
@@ -1307,6 +1307,11 @@
     },
     {
       "code": "X_RATE_LIMIT_BUCKET_CONFLICT",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_BUCKET_UNBOUND",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
     },

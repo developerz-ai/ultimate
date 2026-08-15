@@ -69,6 +69,10 @@ const CATALOG = {
   'cli.docs.unresolved': 'the installed framework packages could not be located',
   'cli.errors.count': '{count} registered error code(s)',
   'cli.errors.explained': '{code} — {title}',
+  // One rendering of "this file was written", for every command that writes files — `x g`, its
+  // own `--dry-run`, and `x new`. Three copies of the same two characters is how a fourth writer
+  // arrives with a fifth marker; `--json` carries the paths themselves in `data.files`.
+  'cli.file.added': '  + {path}',
   'cli.fix.clean': 'no boundary violation involves {file}',
   'cli.fix.plan': '{count} boundary violation(s) involve {file} — {edits} edit(s) to make',
   'cli.generate.wrote': 'wrote {count} file(s) for {kind} {name}',

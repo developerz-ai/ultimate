@@ -134,6 +134,16 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   the socket opens — the same shape as `assertRateLimitScope` and as `@ultimat3/auth`'s
   `AuthLimiter` policy check, and for the same reason: the declaration that lost would go on being
   read as enforced. Never make one side the default winner.
+- **Registering into the config is only half of it — the installed LIMITER must hold the bucket
+  too.** `createRateLimiter` closes over its config, so a limiter handed to `PipelineDeps.limiter`
+  resolves names against the table it was built with; one built before the routes existed misses
+  the route's name, falls through `bucketFor` to `default`, and was measured at 120 burst and 21
+  of 21 requests allowed for a route declaring 5. `RateLimiter.buckets` publishes that table —
+  declared, never inferred, exactly as `RateLimitStore.scope` is — and `assertRouteBuckets` runs
+  beside `assertRateLimitScope` in `createPipeline`. **Refused, never rebound**: a `RateLimiter`
+  is opaque, so rebinding means discarding the caller's limiter and the store it carries, and a
+  caller who built their own may have meant their own numbers. A limiter that declares no table
+  is refused too — what cannot be shown to hold is not assumed to hold.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.

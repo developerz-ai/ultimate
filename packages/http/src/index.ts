@@ -44,6 +44,7 @@ export {
   pathInvalid,
   pipelineNoResponse,
   rateLimitBucketConflict,
+  rateLimitBucketUnbound,
   rateLimited,
   rateLimitNotShared,
   routeConflict,
@@ -87,7 +88,7 @@ export {
   memoryRateLimitStore,
   rateLimitKey,
 } from './rate-limit';
-export { withRouteBuckets } from './rate-limit-buckets';
+export { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';

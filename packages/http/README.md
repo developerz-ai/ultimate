@@ -47,6 +47,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
 | `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `createServer`, because N replicas each holding their own counters enforce N × every configured number |
 | a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `createServer`, because the loser would be a number someone read and nothing applied |
+| an injected limiter that does not hold a bucket a route declares | `X_RATE_LIMIT_BUCKET_UNBOUND` at `createPipeline`, because the name would fall through to `default` — measured at 120 burst for a route declaring 5 |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
@@ -95,7 +96,18 @@ declaring `limit: 5` ran on 120 burst, and the number reached the OpenAPI docume
 
 Neither source wins a disagreement, because whichever lost would stay a number an author read and
 nothing enforced. `@ultimat3/action`'s `toBucket` is the one conversion from a declaration's
-`{ limit, windowMs }` to a bucket's `{ capacity, refillPerSecond }`.
+`{ limit, windowMs }` to a bucket's `{ capacity, refillPerSecond }`, and it refuses a pair the
+limiter could not run on — including one whose two halves look fine and whose **division** does
+not, like `{ limit: Number.MAX_VALUE, windowMs: 1 }` computing to an infinite refill.
+
+Registering into the config is only half of it, because the limiter resolves names against the
+table **it** closed over. `RateLimiter.buckets` publishes that table — declared, never inferred,
+the same rule as `RateLimitStore.scope` — and `assertRouteBuckets` compares it against the routes
+at construction. A limiter passed to `PipelineDeps.limiter` that cannot enforce a declared bucket
+is refused rather than rebound: a `RateLimiter` is opaque, so rebinding would mean discarding the
+store it carries, and a caller who built their own limiter may have meant their own numbers. Pass
+the **store** — `createServer({ routes, rateLimitStore })` — and the pipeline builds the limiter
+from the merged table for you.
 
 ## Routing
 

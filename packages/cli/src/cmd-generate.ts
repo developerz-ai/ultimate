@@ -386,7 +386,7 @@ export const generateCommand: CliCommand = {
         command: 'g',
         summary: msg('cli.generate.planned', { count: files.length, kind, name }),
         data: { files: files.map((file) => file.path), dryRun: true },
-        lines: files.map((file) => `  + ${file.path}`),
+        lines: files.map((file) => msg('cli.file.added', { path: file.path })),
       };
     }
     const report = await writeFiles(root, files, flagBool(ctx.args, 'force'));
@@ -426,7 +426,7 @@ export const generateCommand: CliCommand = {
         files: written,
         ...(buildId === undefined ? {} : { manifest: { buildId } }),
       },
-      lines: written.map((path) => `  + ${path}`),
+      lines: written.map((path) => msg('cli.file.added', { path })),
       findings,
     };
   },

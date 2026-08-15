@@ -4,8 +4,8 @@
 // and a bucket name with nothing behind it falls through `bucketFor` to `default`.
 
 import type { HttpConfig } from './config';
-import { rateLimitBucketConflict } from './errors';
-import type { Bucket } from './rate-limit';
+import { rateLimitBucketConflict, rateLimitBucketUnbound } from './errors';
+import type { Bucket, RateLimiter } from './rate-limit';
 import type { Route } from './router';
 
 const same = (a: Bucket, b: Bucket): boolean =>
@@ -56,4 +56,31 @@ export const withRouteBuckets = (config: HttpConfig, routes: readonly Route[]): 
   const buckets: Record<string, Bucket> = { ...config.rateLimit.buckets };
   for (const [name, entry] of declared) buckets[name] = entry.bucket;
   return { ...config, rateLimit: { ...config.rateLimit, buckets } };
+};
+
+/**
+ * The other half of registration: the limiter actually installed must hold what the routes
+ * declared. `withRouteBuckets` puts the numbers in the CONFIG, which is enough only when the
+ * pipeline builds the limiter from that config. A limiter handed in through `PipelineDeps.limiter`
+ * closed over a table of its own, and a name it does not hold falls through `bucketFor` to
+ * `default` — silently, and looser than the declaration. So the two tables are compared once, at
+ * construction, exactly as `assertRateLimitScope` compares the two scopes.
+ *
+ * A limiter that declares no table at all is refused for the same reason a per-process store under
+ * a `'shared'` declaration is: what cannot be shown to hold is not assumed to hold.
+ */
+export const assertRouteBuckets = (limiter: RateLimiter, routes: readonly Route[]): void => {
+  for (const route of routes) {
+    const bucket = route.meta.rateLimitBucket;
+    const name = route.meta.rateLimit;
+    if (bucket === undefined || name === undefined) continue;
+    const found = limiter.buckets?.[name];
+    if (found !== undefined && same(found, bucket)) continue;
+    throw rateLimitBucketUnbound({
+      bucket: name,
+      route: route.meta.name,
+      declared: bucket,
+      found: found ?? null,
+    });
+  }
 };

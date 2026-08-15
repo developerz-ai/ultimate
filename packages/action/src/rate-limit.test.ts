@@ -123,8 +123,38 @@ describe('a rate limit the limiter could not run on is refused', () => {
     ['a limit nobody can spend', { limit: 0, windowMs: 60_000 }],
     ['a negative limit', { limit: -1, windowMs: 60_000 }],
     ['a window that is not a number', { limit: 5, windowMs: Number.NaN }],
+    // Both halves finite and positive, and the DIVISION is what the limiter cannot run on.
+    ['a rate that overflows to Infinity', { limit: Number.MAX_VALUE, windowMs: 1 }],
+    // Caught by the capacity check before the division — a limit under one token can never
+    // admit a request, which is why the rate can no longer underflow to zero at all.
+    ['a limit smaller than one token', { limit: Number.MIN_VALUE, windowMs: 1e10 }],
+    ['a capacity below one request', { limit: 0.5, windowMs: 1_000 }],
   ])('%s is X_ACTION_RATE_LIMIT_INVALID', (_label, rateLimit) => {
     expect(() => toRoute(declaring(rateLimit))).toThrow(/X_ACTION_RATE_LIMIT_INVALID/);
+  });
+
+  test('the cause names which of the three checks the pair failed', () => {
+    const reason = (rateLimit: { limit: number; windowMs: number }): string => {
+      try {
+        toBucket('contactSales', rateLimit);
+        return 'accepted';
+      } catch (error) {
+        return (error as { cause: string }).cause;
+      }
+    };
+    expect(reason({ limit: Number.MAX_VALUE, windowMs: 1 })).toContain('never empties');
+    expect(reason({ limit: 0.5, windowMs: 1_000 })).toContain('at least 1 request');
+    expect(reason({ limit: 5, windowMs: 0 })).toContain('windowMs must be finite');
+    // The smallest rate a valid pair can reach, so the `<= 0` guard below it is unreachable —
+    // pinned here because that is what makes relaxing `limit >= 1` a visible decision.
+    expect(reason({ limit: 1, windowMs: Number.MAX_VALUE })).toBe('accepted');
+  });
+
+  test('an ordinary declaration still converts, and the arithmetic is exact', () => {
+    expect(toBucket('contactSales', { limit: 5, windowMs: 600_000 })).toEqual({
+      capacity: 5,
+      refillPerSecond: 5 / 600,
+    });
   });
 
   test('the OpenAPI operation refuses the same numbers, so no spec publishes them', () => {

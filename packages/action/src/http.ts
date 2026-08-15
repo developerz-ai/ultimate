@@ -148,14 +148,38 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
  * minutes. The only conversion between the declaration and the enforcement, so the numbers
  * `toOpenApiOperation` publishes and the numbers `withRouteBuckets` registers cannot drift.
  *
- * Refused rather than derived from nonsense: `windowMs: 0` is an infinite refill — a bucket that
- * never empties, i.e. the declaration read as no limit at all — and a non-positive `limit` is an
- * endpoint nobody can call. Both are the kind of quiet answer axiom 3 says must be a stop.
+ * **The COMPUTED rate is validated, not just the two declared halves.** The division is where a
+ * pair that reads fine becomes one the limiter cannot run on, in both directions:
+ * `{ limit: Number.MAX_VALUE, windowMs: 1 }` computes to `Infinity` — a bucket that never empties,
+ * which is the same "declared a limit, enforced nothing" as `windowMs: 0` — and a tiny limit over
+ * a huge window underflows to `0`, a bucket that never refills, so the endpoint is closed after
+ * its first burst rather than limited. `capacity` is checked against the cost of one request for
+ * the mirror reason: below one token, the first caller is already refused.
  */
 export function toBucket(name: string, limit: ActionRateLimit): Bucket {
-  const ok = (value: number): boolean => Number.isFinite(value) && value > 0;
-  if (!ok(limit.limit) || !ok(limit.windowMs)) throw new ActionRateLimitInvalidError(name, limit);
-  return { capacity: limit.limit, refillPerSecond: limit.limit / (limit.windowMs / 1000) };
+  const finite = (value: number): boolean => Number.isFinite(value);
+  const refuse = (reason: string): never => {
+    throw new ActionRateLimitInvalidError(name, limit, reason);
+  };
+  // A capacity under one token cannot admit a single request, so the endpoint is closed, not
+  // limited — a policy's job, never a rate limit's.
+  if (!finite(limit.limit) || limit.limit < 1) {
+    refuse('limit must be a finite number of at least 1 request');
+  }
+  if (!finite(limit.windowMs) || limit.windowMs <= 0) {
+    refuse('windowMs must be finite and greater than zero');
+  }
+  const refillPerSecond = limit.limit / (limit.windowMs / 1000);
+  // `<= 0` is kept though the two checks above make it unreachable today — with `limit >= 1` and a
+  // finite window the smallest rate is `1000 / MAX_VALUE`, ~5.6e-306, which is normal, not zero.
+  // It is the guard that has to move first if `limit >= 1` is ever relaxed: an underflow to 0 is a
+  // bucket that never refills, i.e. an endpoint closed after its first burst.
+  if (!finite(refillPerSecond) || refillPerSecond <= 0) {
+    refuse(
+      `the refill rate it computes to is ${refillPerSecond} per second, which is a bucket that never empties — nothing would be enforced`,
+    );
+  }
+  return { capacity: limit.limit, refillPerSecond };
 }
 
 function rateLimitMeta(

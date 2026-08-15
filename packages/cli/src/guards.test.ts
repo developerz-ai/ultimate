@@ -97,6 +97,59 @@ describe('unit · a guard that cannot be trusted is a finding, never a silent pa
     });
   });
 
+  // The validator is the thing that turns a guard's output into a structured failure. If IT is
+  // what crashes, the gate hands an app author a stack trace out of framework internals for a bug
+  // in their own guard — the one outcome this whole seam exists to prevent.
+  test('a value the validator cannot even print is a finding, not a crash', async () => {
+    const source = `export const guard = { summary: 'a rule', check: () => [1n] };\n`;
+    await withGuards({ 'bigint.ts': source }, async (root) => {
+      expect(codes(await guardFindings(root))).toEqual(['X_GUARD_FINDING_INVALID']);
+    });
+  });
+
+  test('a field the validator cannot serialize is a finding, not a crash', async () => {
+    const source = `export const guard = {
+  summary: 'a rule',
+  check: () => [{ code: 1n, cause: 'a thing is wrong', fix: 'x verify' }],
+};
+`;
+    await withGuards({ 'bigint-code.ts': source }, async (root) => {
+      expect(codes(await guardFindings(root))).toEqual(['X_GUARD_FINDING_INVALID']);
+    });
+  });
+
+  test('a field that throws on read is a finding, not a crash', async () => {
+    const source = `export const guard = {
+  summary: 'a rule',
+  check: () => [
+    {
+      get code() {
+        throw new Error('hostile getter');
+      },
+      cause: 'a thing is wrong',
+      fix: 'x verify',
+    },
+  ],
+};
+`;
+    await withGuards({ 'hostile.ts': source }, async (root) => {
+      const findings = await guardFindings(root);
+      expect(codes(findings)).toEqual(['X_GUARD_FINDING_INVALID']);
+      expect(findings[0]?.cause).toContain('hostile getter');
+    });
+  });
+
+  test('one unreadable finding does not cost the readable ones beside it', async () => {
+    const source = `export const guard = {
+  summary: 'a rule',
+  check: () => [1n, { code: 'X_APP_RULE', cause: 'a real one', fix: 'x verify' }],
+};
+`;
+    await withGuards({ 'mixed.ts': source }, async (root) => {
+      expect(codes(await guardFindings(root))).toEqual(['X_GUARD_FINDING_INVALID', 'X_APP_RULE']);
+    });
+  });
+
   test('a guard that returns something other than a list of findings is refused', async () => {
     const source = `export const guard = { summary: 'a rule', check: () => 'ok' };\n`;
     await withGuards({ 'wrong.ts': source }, async (root) => {
@@ -192,6 +245,29 @@ describe('unit · what x g guard writes is a guard the seam can actually run', (
       const findings = await guardFindings(root);
       expect(codes(findings)).toEqual(['X_MIGRATION_SAFETY']);
       expect(findings[0]?.at).toBe('packages/db/migrations/0002_add_slug.sql');
+    });
+  });
+
+  // The emitted rule is the worked example every app starts from, so the two inputs it has to get
+  // right are exercised through the real seam, not asserted against the template's own text.
+  test('a commented-out statement is not one, and DEFAULT NULL is not a default', async () => {
+    const files = guardFiles('migration-safety');
+    const written = Object.fromEntries(
+      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), file.contents]),
+    );
+    await withGuards(written, async (root) => {
+      const migration = async (name: string, sql: string): Promise<void> => {
+        await Bun.write(join(root, `packages/db/migrations/${name}`), sql);
+      };
+      await migration('0002_commented.sql', '/* ALTER TABLE posts ADD COLUMN a text NOT NULL; */');
+      await migration(
+        '0003_null.sql',
+        'ALTER TABLE posts ADD COLUMN b text NOT NULL DEFAULT NULL;',
+      );
+      await migration('0004_safe.sql', "ALTER TABLE posts ADD COLUMN c text NOT NULL DEFAULT '';");
+      const findings = await guardFindings(root);
+      expect(codes(findings)).toEqual(['X_MIGRATION_SAFETY']);
+      expect(findings[0]?.at).toBe('packages/db/migrations/0003_null.sql');
     });
   });
 });

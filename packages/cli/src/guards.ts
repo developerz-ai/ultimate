@@ -39,6 +39,15 @@ const isGuard = (value: unknown): value is Guard =>
 const CODE = /^X_[A-Z0-9_]+$/;
 
 /**
+ * A value named in a cause, without ever throwing to name it. `JSON.stringify` refuses a BigInt
+ * and a template literal refuses a symbol — and the one thing this validator may never do is fail
+ * while it is explaining a failure, because then a bug in an app's guard reaches its author as a
+ * stack trace out of framework internals.
+ */
+const shown = (value: unknown): string =>
+  typeof value === 'string' ? `"${value}"` : `${typeof value} ${String(value)}`;
+
+/**
  * Why a returned value is not a finding, or `undefined` when it is one. The `fix:` half is
  * `fixProblem` — the identical rule `x verify`'s `errors` step applies to every shipped `fix:` in
  * the framework — because a mechanism for producing errors that are not instructions is worse than
@@ -46,10 +55,10 @@ const CODE = /^X_[A-Z0-9_]+$/;
  * static scan cannot reach: a `fix` assembled at run time has no literal to read.
  */
 export function findingProblem(value: unknown): string | undefined {
-  if (!isRecord(value)) return `${String(JSON.stringify(value))} is not a finding object`;
+  if (!isRecord(value)) return `${shown(value)} is not a finding object`;
   const code = value['code'];
   if (typeof code !== 'string' || !CODE.test(code)) {
-    return `${JSON.stringify(code)} is not an X_SCREAMING_SNAKE code, so nothing can explain it`;
+    return `${shown(code)} is not an X_SCREAMING_SNAKE code, so nothing can explain it`;
   }
   const cause = value['cause'];
   if (typeof cause !== 'string' || cause.trim() === '') return `${code} states no cause`;
@@ -145,9 +154,16 @@ async function runGuard(root: string, path: string): Promise<readonly Finding[]>
   }
   const findings: Finding[] = [];
   for (const candidate of returned as readonly unknown[]) {
-    const problem = findingProblem(candidate);
-    if (problem !== undefined) findings.push(findingInvalid(path, problem));
-    else findings.push(findingOf(candidate as Record<string, unknown>, path));
+    // Reading a candidate can throw on its own — a getter that raises, a proxy that refuses — and
+    // `findingProblem` is total only for values it can read. Per candidate, so one unreadable
+    // entry costs its own line and not the readable findings beside it.
+    try {
+      const problem = findingProblem(candidate);
+      if (problem !== undefined) findings.push(findingInvalid(path, problem));
+      else findings.push(findingOf(candidate as Record<string, unknown>, path));
+    } catch (error) {
+      findings.push(findingInvalid(path, `it could not be read: ${messageOf(error)}`));
+    }
   }
   return findings;
 }

@@ -102,7 +102,7 @@ export const newCommand: CliCommand = {
         command: 'new',
         summary: msg('cli.new.done', { name: app.kebab }),
         data: { dir: target, files: files.map((file) => file.path), dryRun: true },
-        lines: files.map((file) => `  + ${app.kebab}/${file.path}`),
+        lines: files.map((file) => msg('cli.file.added', { path: `${app.kebab}/${file.path}` })),
       };
     }
     if (existsSync(target) && !flagBool(ctx.args, 'force')) {
