@@ -21,6 +21,7 @@ import { serverNotStarted } from './errors';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
 import { createPipeline, type Pipeline } from './pipeline';
+import { createRateLimiter, type RateLimitStore } from './rate-limit';
 import { json } from './response';
 import { createRouter, describeRoutes, type Route, type RouteDescription } from './router';
 
@@ -39,6 +40,13 @@ export interface ServerOptions {
   readonly role?: Role;
   readonly hooks?: ServerHooks;
   readonly middleware?: readonly Middleware[];
+  /**
+   * Where the rate limiter keeps its counters. Omitted means `memoryRateLimitStore()`, which is
+   * one process' worth of state — correct for dev and tests, and N × every configured number for
+   * N replicas. An app that runs more than one process declares `rateLimit.scope: 'shared'` and
+   * passes a store that says the same, or `createServer` refuses here.
+   */
+  readonly rateLimitStore?: RateLimitStore;
 }
 
 export interface ServerHandle {
@@ -65,11 +73,18 @@ export const createServer = (options: ServerOptions): ServerHandle => {
   const config = options.config ?? defineHttpConfig();
   const role = options.role ?? roleFromEnv();
   const table = createRouter(options.routes);
+  // The store feeds the limiter seam `PipelineDeps` already had, rather than becoming a second
+  // one: the bucket maths stays in `createRateLimiter`, so every driver agrees on the numbers.
   const pipeline = createPipeline({
     table,
     config,
     ...(options.hooks === undefined ? {} : { hooks: options.hooks }),
     ...(options.middleware === undefined ? {} : { middleware: options.middleware }),
+    ...(options.rateLimitStore === undefined
+      ? {}
+      : {
+          limiter: createRateLimiter({ config: config.rateLimit, store: options.rateLimitStore }),
+        }),
   });
 
   // The one HTTP-owned knob feeds core's deadline, so there is a single drain budget.

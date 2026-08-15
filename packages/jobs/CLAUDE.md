@@ -173,6 +173,39 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   exported, so it asserts the rate itself rather than trusting `backfill()` to have done it: `0`
   makes the interval `Infinity`, which the timer clamps to about a millisecond — an unvalidated
   zero is "no throttle at all", the one setting this module exists to make unreachable.
+- **A backfill STAMPS its own handle; an app registers nothing.** `backfill-registry.ts` is the
+  `origin` WeakMap `task.ts` already uses, not a second mechanism — `stampBackfill` is called by
+  `backfill()` and is deliberately **not** in `src/index.ts`, for the reason `registerJob` is not:
+  a second way to claim backfill-hood would let a plain `job()` inherit the pending diff, the gate
+  and the deploy trigger it was never declared for. `registeredBackfills()` is derived from
+  `registeredJobs()` and never from a registry of its own — a backfill IS a job, and two registries
+  disagreeing about one name would be two answers to "does this pass exist". Requiring an app to
+  call `registerBackfill()` was rejected outright: that coupling is what axiom 8's extension model
+  refuses, and a declaration an app has to declare twice is one half the apps will forget.
+- **The ledger says what RAN; the registry says what EXISTS; `backfill-pending.ts` is the diff.**
+  That diff is the whole defect this subsystem had: `inspectBackfills` and `x db backfill --list`
+  both read `x_backfills`, so a sweep merged and never enqueued had no row and was invisible on
+  every surface. `pendingBackfills()` takes `BackfillProgress` rows — the one projection, never the
+  driver's own `BackfillRun` — and `pending` deliberately excludes `running` (a pass in flight is
+  progress, and a check red for the duration of every sweep gets muted within a week) and
+  `excluded` (a declaration this environment may not run is not drift).
+- **`requires` / `environments` / `count` are DATA on the declaration, and each is enforced exactly
+  once.** `environments` in the PASS (`backfill-pass.ts`, ahead of the ledger open, so a
+  wrong-environment enqueue leaves no row claiming a sweep started) — app code that calls
+  `.enqueue()` never passes through a command, so a rail only the CLI holds is a convention rather
+  than a build error. `requires` in `x db backfill`, because that is where `x_migrations` is
+  readable and this package holds no `@ultimat3/db` dependency; growing one so a tier-3 queue could
+  read a migration ledger is the import this file refuses. `count` in the pass, ONCE, after the last
+  batch: it is the same predicate `source` selects on, so a source that ran out while the count
+  still matches rows means the two disagree — `X_BACKFILL_STALLED`, thrown inside the `try` so the
+  ledger records `failed` and no completed row stops the next deploy re-running it. Never a
+  hardcoded "cleanups are production" and never a per-cleanup `dependsOn` graph: the real dependency
+  is "after code tolerating both shapes is serving", which the framework cannot observe.
+- **`gateBackfill()` RETURNS its refusal, it does not throw one.** `x db backfill --all` isolates
+  per name and continues past a failure — a thrown verdict would let one wedged cleanup block every
+  later one forever. Order is the order an operator can act in: environment, then the migration it
+  waits on, then whether it already ran. A live pass is judged by the ENQUEUE and not here, because
+  only the enqueue can see the one live idempotency key without racing it.
 - **`inspectBackfills()` is the ONE projection of the ledger, and there is no second reader.**
   `backfill-inspect.ts` maps a `BackfillRun` to a plain JSON object (epochs to ISO, absent to
   `null`) for `x db backfill --list`, `x jobs ls`, `x jobs show` and `/_x`'s jobs panel — four
@@ -257,6 +290,9 @@ picture from the other side.
 | `backfill.ts` | `backfill()` — a factory over `job()`: the declaration, its checksum and its input |
 | `backfill-pass.ts` | one pass: the batched iteration, its cursor checkpoints and its ledger row |
 | `backfill-ledger.ts` | `x_backfills` — the contract, `BACKFILL_STATUSES`, the checksum, the verdict, the memory ledger |
+| `backfill-registry.ts` | what was DECLARED: the `origin` stamp, `isBackfill`, `registeredBackfills` |
+| `backfill-gate.ts` | may this sweep run here and now — environment, `requires`, already-applied |
+| `backfill-pending.ts` | declared minus completed, per environment: the alarm `--pending` reads |
 | `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
 | `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |

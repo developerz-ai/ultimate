@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { type Clock, frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth, login, register } from './auth';
 import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import type { PasswordParams } from './password';
 import {
+  type AuthLimiter,
   type AuthRateLimitPolicy,
   accountKey,
   createAuthLimiter,
@@ -58,7 +59,7 @@ describe('auth rate limiting', () => {
     // The sixth attempt never reaches the KDF: the bucket answers first.
     const locked = await caught(() => login(auth, { email: EMAIL, password: PASSWORD }));
     expect(locked.code).toBe('X_ACCOUNT_LOCKED');
-    expect(auth.limiter.lockedUntil(`account:${EMAIL}`)).not.toBeNull();
+    expect(await auth.limiter.lockedUntil(`account:${EMAIL}`)).not.toBeNull();
   });
 
   test('an unknown account and a wrong password render an identical error', async () => {
@@ -101,81 +102,145 @@ describe('auth rate limiting', () => {
       ...over,
     });
 
-    test('forgets a key once its window has emptied', () => {
+    test('forgets a key once its window has emptied', async () => {
       const clock = frozenClock(0);
       const limiter = createAuthLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 1_000 }));
-      limiter.recordFailure(ipKey('198.51.100.9'));
+      await limiter.recordFailure(ipKey('198.51.100.9'));
       expect(limiter.size).toBe(1);
 
       // Past the window AND past the sweep interval: the entry answers as a missing one would.
       clock.advance(120_000);
-      limiter.recordFailure(ipKey('203.0.113.7'));
+      await limiter.recordFailure(ipKey('203.0.113.7'));
       expect(limiter.size).toBe(1);
     });
 
-    test('holds a locked key for the whole lockout, not just the window', () => {
+    test('holds a locked key for the whole lockout, not just the window', async () => {
       const clock = frozenClock(0);
       const limiter = createAuthLimiter(clock, policy({ windowMs: 1_000, lockoutMs: 600_000 }));
       const victim = accountKey('ada@example.test');
-      for (let attempt = 1; attempt <= 5; attempt += 1) limiter.recordFailure(victim);
+      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.recordFailure(victim);
 
       // Long past the failure window, well inside the lockout.
       clock.advance(120_000);
-      limiter.recordFailure(ipKey('203.0.113.7'));
-      expect(limiter.lockedUntil(victim)).not.toBeNull();
+      await limiter.recordFailure(ipKey('203.0.113.7'));
+      expect(await limiter.lockedUntil(victim)).not.toBeNull();
       expect(limiter.size).toBe(2);
     });
 
-    test('a rotating-address spray cannot grow the table past its cap', () => {
+    test('a rotating-address spray cannot grow the table past its cap', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 10 }));
       for (let index = 0; index < 500; index += 1) {
-        limiter.recordFailure(ipKey(`2001:db8::${index.toString(16)}`));
+        await limiter.recordFailure(ipKey(`2001:db8::${index.toString(16)}`));
         expect(limiter.size).toBeLessThanOrEqual(10);
       }
     });
 
-    test('the cap evicts an unlocked key before a locked one', () => {
+    test('the cap evicts an unlocked key before a locked one', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 4 }));
       const victim = accountKey('ada@example.test');
-      for (let attempt = 1; attempt <= 5; attempt += 1) limiter.recordFailure(victim);
-      expect(limiter.lockedUntil(victim)).not.toBeNull();
+      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.recordFailure(victim);
+      expect(await limiter.lockedUntil(victim)).not.toBeNull();
 
       for (let index = 0; index < 200; index += 1) {
-        limiter.recordFailure(ipKey(`2001:db8::${index.toString(16)}`));
+        await limiter.recordFailure(ipKey(`2001:db8::${index.toString(16)}`));
       }
 
       expect(limiter.size).toBeLessThanOrEqual(4);
       // Filling the table is not a way to buy attempts back against one account.
-      expect(limiter.lockedUntil(victim)).not.toBeNull();
+      expect(await limiter.lockedUntil(victim)).not.toBeNull();
     });
 
-    test('a success and a reset both shrink the table', () => {
+    test('a success and a reset both shrink the table', async () => {
       const limiter = createAuthLimiter(frozenClock(0));
-      limiter.recordFailure(ipKey('198.51.100.9'));
-      limiter.recordFailure(accountKey('ada@example.test'));
+      await limiter.recordFailure(ipKey('198.51.100.9'));
+      await limiter.recordFailure(accountKey('ada@example.test'));
       expect(limiter.size).toBe(2);
 
-      limiter.recordSuccess(accountKey('ada@example.test'));
+      await limiter.recordSuccess(accountKey('ada@example.test'));
       expect(limiter.size).toBe(1);
-      limiter.reset();
+      await limiter.reset();
       expect(limiter.size).toBe(0);
     });
 
-    test('an evicted key throttles again from a clean window, not a corrupt one', () => {
+    test('an evicted key throttles again from a clean window, not a corrupt one', async () => {
       const limiter = createAuthLimiter(frozenClock(0), policy({ maxKeys: 1 }));
       const victim = ipKey('198.51.100.9');
-      limiter.recordFailure(victim);
-      limiter.recordFailure(ipKey('203.0.113.7'));
+      await limiter.recordFailure(victim);
+      await limiter.recordFailure(ipKey('203.0.113.7'));
 
-      expect(() => limiter.assertAllowed(victim)).not.toThrow();
-      for (let attempt = 1; attempt <= 5; attempt += 1) limiter.recordFailure(victim);
-      expect(limiter.lockedUntil(victim)).not.toBeNull();
+      await expect(limiter.assertAllowed(victim)).resolves.toBeUndefined();
+      for (let attempt = 1; attempt <= 5; attempt += 1) await limiter.recordFailure(victim);
+      expect(await limiter.lockedUntil(victim)).not.toBeNull();
     });
 
     test('the shipped policy carries a finite cap', () => {
       expect(DEFAULT_AUTH_RATE_LIMIT.maxKeys).toBe(DEFAULT_MAX_AUTH_LIMIT_KEYS);
       expect(DEFAULT_MAX_AUTH_LIMIT_KEYS).toBeGreaterThan(1_000);
       expect(Number.isFinite(DEFAULT_MAX_AUTH_LIMIT_KEYS)).toBe(true);
+    });
+  });
+
+  /**
+   * A lockout is a count of attempts against one identity, so it has to be one count. Two `Auth`
+   * runtimes stand in for two replicas of a deployment: each holding its own table means the
+   * account survives `maxAttempts × replicas` guesses, and the lockout one replica established
+   * is invisible to the others.
+   */
+  describe('a lockout that must hold across replicas', () => {
+    /** One process standing in for a shared tier: the memory limiter, declared shared. */
+    const shared = (clock: Clock): AuthLimiter => {
+      const backing = createAuthLimiter(clock);
+      return {
+        scope: 'shared',
+        assertAllowed: backing.assertAllowed,
+        recordFailure: backing.recordFailure,
+        recordSuccess: backing.recordSuccess,
+        lockedUntil: backing.lockedUntil,
+        reset: backing.reset,
+      };
+    };
+
+    test('two replicas behind one limiter lock at the configured count, not twice it', async () => {
+      const clock = frozenClock(1_700_000_000_000);
+      const adapter = new MemoryAdapter();
+      const limiter = shared(clock);
+      const replica = (): Auth =>
+        defineAuth({
+          adapter,
+          clock,
+          limiter,
+          password: { minLength: 12, params: FAST_PARAMS },
+          rateLimit: { maxAttempts: 5, windowMs: 900_000, lockoutMs: 900_000, scope: 'shared' },
+        });
+      const a = replica();
+      const b = replica();
+      await register(a, { email: EMAIL, password: PASSWORD });
+
+      // Five failures spread across both replicas — the attacker picks which one answers.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const error = await caught(() =>
+          login(attempt % 2 === 0 ? a : b, { email: EMAIL, password: 'wrong-password-1' }),
+        );
+        expect(error.code).toBe('X_UNAUTHENTICATED');
+      }
+
+      // The correct password on the replica that saw only two of them: still locked out.
+      const locked = await caught(() => login(b, { email: EMAIL, password: PASSWORD }));
+      expect(locked.code).toBe('X_ACCOUNT_LOCKED');
+    });
+
+    test('a shared declaration with a per-process limiter refuses at defineAuth', () => {
+      expect(() =>
+        defineAuth({
+          adapter: new MemoryAdapter(),
+          clock: frozenClock(0),
+          rateLimit: { scope: 'shared' },
+        }),
+      ).toThrow(/X_AUTH_LIMITER_NOT_SHARED/);
+    });
+
+    test('the default declaration still builds the in-memory limiter', () => {
+      expect(newAuth().limiter.scope).toBe('process');
     });
   });
 

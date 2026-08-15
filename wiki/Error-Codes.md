@@ -119,6 +119,7 @@ The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the 
 | `X_UNAUTHENTICATED` | route requires an authenticated actor | no session cookie or bearer token | send credentials, or set the route's `auth` to `'public'` |
 | `X_FORBIDDEN` | policy denied this actor | the actor exists but the policy said no | `x policy explain <path> --json` |
 | `X_RATE_LIMITED` | rate limit exhausted for this key | bucket empty | retry after `Retry-After`, or raise `rateLimit.buckets` in `app.config.ts` |
+| `X_RATE_LIMIT_NOT_SHARED` | the app declared a fleet-wide rate limit and the store keeps its counters per process | `http.rateLimit.scope: 'shared'` against `memoryRateLimitStore()`, whose `scope` is `'process'` — N replicas would enforce N × the bucket, silently. Also raised when `enabled: false` sits under `scope: 'shared'`: a fleet-wide limit switched off is a claim with nothing behind it | install a shared store — `createServer({ rateLimitStore })` — or drop to `scope: 'process'` and terminate the limit at a shared proxy instead |
 | `X_BUILD_SKEW` | client build id does not match the server build id | a tab open across an incompatible deploy | reload; the SW fetches the new build manifest. See [PWA and offline](PWA-And-Offline) |
 | `X_SERVER_NOT_STARTED` | server handle used before `start()` | reading `url()` too early in a test | `await createServer({ … }).start()` first |
 | `X_PIPELINE_NO_RESPONSE` | a pipeline stage produced no response | a middleware returned `undefined` | return a `Response` from the stage or from the handler |
@@ -136,7 +137,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_POLICY_MISSING` | an action was declared without a policy | a new action shipped with no `policy:` | add `policy: can('<resource>:<verb>')`, or `allow('public')` to say so explicitly |
 | `X_PERMISSION_UNKNOWN` | permission string is not in the permission set | typo, or a permission never declared | add it to `definePermissions([…])` |
 | `X_TENANCY_UNSCOPED` | a tenant-scoped query has no org predicate | a repo call outside any request context, so there is no actor to derive the tenant from; a plan handed to the verify-only `assertScoped()` while an actor *is* present; or an `upsertAll(rows, { onMatch: 'update' })` whose `onConflict` omits the tenant column — a collision there lands on another tenant's row | the cause says which of the two it is. No context: `runWithContext(createContext({ actor }), fn)` from the script or seed. Actor present: build the plan through `scopedPlan()`, or `orgScoped(plan, ctx.actor.orgId)`. For the upsert: put the tenant column in `onConflict` |
-| `X_TENANCY_ACTOR_MISMATCH` | a query named a tenant other than the actor's | an `orgId` that arrived as action input, a query string or a path parameter, passed into a repo call — the cause names both tenants | drop the `orgId` argument, the actor's tenant scopes the plan; or act as that tenant with `withChildContext({ actor })`; a read that must span tenants is `crossTenant('<why>', fn)` |
+| `X_TENANCY_ACTOR_MISMATCH` | a call named a tenant other than the actor's — as a query predicate, or as the tenant column of a row being written | an `orgId` that arrived as action input, a query string or a path parameter, passed into a repo call; or an `insert`/`upsertAll` row, or an `update` patch, naming another tenant — the cause names both tenants | drop the `orgId` argument, the actor's tenant scopes the plan; or act as that tenant with `withChildContext({ actor })`; a read that must span tenants is `crossTenant('<why>', fn)` |
 | `X_TENANCY_ACTOR_ORG_REQUIRED` | the acting actor carries no tenant | anonymous, or a service actor minted without an `orgId`, reading a tenant-scoped entity | mint the actor with its tenant at the request boundary — `userActor({ id, orgId })` — or `crossTenant('<why>', fn)` |
 | `X_TENANCY_CROSS_DENIED` | a cross-tenant read was entered without the capability | `crossTenant()` called by an actor lacking `tenancy:cross`, or outside every request context — the capability is re-checked on every plan built inside the scope, so an actor swapped in by `withChildContext()` does not inherit the reach | mint the actor with the scope — `serviceActor({ id: 'reconciler', scopes: ['tenancy:cross'] })` — run inside `runWithContext(createContext({ actor }), fn)`, and wrap the reads in `crossTenant('<why this spans tenants>', fn)`; the reason is required and non-blank, because it is what the next reader greps for |
 | `X_ACTION_POLICY_MISSING` | an action was registered without a policy | build-time check on the action registry | add `policy: can('<name>')` to the declaration |
@@ -154,6 +155,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_OAUTH_TOKEN_INVALID` | the id token failed its issuer, audience or expiry check | the client id in `.env` is not the one the authorize URL was built with, or this host's clock is skewed | match `<PROVIDER>_CLIENT_ID` to the id `beginOAuth()` used, then restart the flow |
 | `X_PASSWORD_WEAK` | strength check rejected the password | too short, or a known-common password | choose a longer, uncommon password — or relax `defineAuth({ password: { minLength } })` |
 | `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout | repeated failed attempts | `x auth unlock <key>` — `cause` names the key and the remaining seconds — or raise `defineAuth({ rateLimit })` |
+| `X_AUTH_LIMITER_NOT_SHARED` | the app declared a fleet-wide credential throttle and the limiter keeps its counters per process | `defineAuth({ rateLimit: { scope: 'shared' } })` against the built-in limiter, whose `scope` is `'process'` — account lockout would be `maxAttempts × replicas`, and a lockout on one replica invisible to the others. Refused at `defineAuth`, never at a request | pass a shared `AuthLimiter` to `defineAuth({ limiter })`, or drop to `scope: 'process'` |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong | one shape for all four — a precise message is an enumeration oracle | `x auth keys list --json`, then issue a fresh key |
 | `X_AUTH_WRITE_FAILED` | an adapter write returned no row, so it cannot be confirmed | an `insert … returning *` wrote nothing — the table is missing its migration, or a trigger or RLS policy swallowed the row | `x db migrate`, then confirm the table with `x db query "select 1 from x_users limit 1" --json` |
 
@@ -193,6 +195,8 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | `X_ACTION_UNREGISTERED` | an action was projected before it was registered, so it has no name | `.tool()` / `.client()` / `.job()` / `.openapi()` on an action `registerActions()` never named | `registerActions(await import('./actions'))` at boot, before mounting routes |
 | `X_IDEMPOTENCY_CONFLICT` | idempotency key reused with a different payload, or still in flight | a retried request mutated its body | send a fresh `Idempotency-Key` for a different payload; otherwise retry after the first settles |
 | `X_CONTRACT_DRIFT` | the published contract changed | input/output shape moved without a version bump | give new inputs a `.default()`, or bump the package version |
+| `X_AUDIT_SINK_MISSING` | an action declares `audit: true` and no sink is installed | `setAuditSink()` never ran at boot. Raised **before the input parse** — it is the one audit failure with nothing committed behind it, and there is deliberately no logger-backed default: a line nobody stores would satisfy the declaration while recording nothing | `call setAuditSink(yourSink) from '@ultimat3/action' at boot, before registerActions()` |
+| `X_AUDIT_SINK_FAILED` | an action ran and its sink refused the record, so the change is unrecorded | the sink threw on an `allowed` record — the handler had **already committed**, so this is not a rollback. A refused `denied`/`failed` record is logged instead and the original error still reaches the caller, because answering with an audit error there would hide the `X_FORBIDDEN` and turn the audit backend's health into an oracle | fix the sink, then retry under the **same** `Idempotency-Key` — the replay path re-attempts the record without re-running the handler |
 | `X_RPC_FAILED` | the typed client could not reach the action or the query | gateway, network, a non-JSON response, or a body whose `code` is not a framework code in `X_` SCREAMING_SNAKE form — `""`, `error` and `x_input_invalid` are all refused, not just a missing prefix | check the gateway, then `x actions describe <name> --json` (`x queries describe <name> --json` for a read) |
 
 A code the SERVER threw keeps its own code on the client — including one this table never
@@ -222,6 +226,20 @@ synthesizes `https://ultimate.dev/errors/<code>` for a code no page here documen
 | `X_JOB_TIMEOUT` | a job exceeded its wall-clock limit | one long step | raise `timeout`, or split the work into more `step.run()` calls |
 | `X_OUTBOX_NO_TX` | enqueue outside a transaction | `<job>.enqueue` called with no ambient tx | wrap in `ctx.tx(async (tx) => …)`, or enqueue with `{ outbox: false }` deliberately |
 | `X_DRIVER_UNAVAILABLE` | the queue driver is unreachable | Redis/NATS down, or the URL is wrong | `x doctor --json`; check the driver URL in `app.config.ts` |
+
+### Backfills
+
+Seven codes because each sends the reader somewhere different. Full walkthrough: [Migrations and backfills](Migrations-And-Backfills#errors).
+
+| Code | Means | Typical cause | Fix |
+|---|---|---|---|
+| `X_BACKFILL_PENDING` | a declared backfill has never completed | `x g backfill`, merged, deployed — and nothing ever enqueued it | `x db backfill <name> --write --json` |
+| `X_BACKFILL_APPLIED` | the ledger already holds a completed pass | a rerun asked for without `--force` | `x db backfill <name> --write --force --json` — a rerun writes a NEW ledger row |
+| `X_BACKFILL_ENVIRONMENT` | the backfill is not declared for this environment | `environments:` does not include the one `ULTIMATE_ENV` resolved | run it where the declaration allows, or add this environment to `environments` |
+| `X_BACKFILL_MIGRATION_PENDING` | the migration this backfill requires is not applied | `requires:` names an id `x_migrations` does not record | `x db migrate --json` |
+| `X_BACKFILL_RUNNING` | a pass under this name is already live | one live pass per name — the enqueue deduped onto it | `x jobs show <id> --json`; a pass that is not advancing is a lost lease — `x jobs drain` |
+| `X_BACKFILL_STALLED` | the sweep ended with rows its own count still matches | `count()` and `source()` select on different predicates | make `count()` select on exactly what `source()` selects on |
+| `X_BACKFILL_UNKNOWN` | no declaration carries this backfill name | a typo, or a sweep whose module was deleted | `x db backfill --pending --json` lists every declared name |
 
 ## Realtime
 

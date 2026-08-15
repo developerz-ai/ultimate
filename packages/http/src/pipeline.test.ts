@@ -110,6 +110,7 @@ const pipelineWith = (options: PipelineTestOptions) => {
       config: {
         enabled: true,
         defaultBucket: 'default',
+        scope: 'process',
         buckets: {
           default: { capacity: options.rateLimitCapacity ?? 100, refillPerSecond: 0.001 },
         },

@@ -33,6 +33,10 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // Thrown while `app.config.ts` resolves, so no request is ever answered with it — the row exists
   // because a code with no status is a 500 anyway and this table is the closed one.
   X_CORS_CONFIG_INVALID: 500,
+  // Thrown while the server is being constructed, so no request is ever answered with it either.
+  // The row exists because this table is the closed one: a code missing from it is a 500 anyway,
+  // and a code the framework owns must never fall through to the app's table.
+  X_RATE_LIMIT_NOT_SHARED: 500,
   // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
   // the primitive declared. 400 because that is what the published OpenAPI operation promises for
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,

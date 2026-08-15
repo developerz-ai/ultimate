@@ -17,6 +17,8 @@ export type {
   BackfillReport,
 } from './backfill';
 export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
+export type { BackfillGate, BackfillGateInput } from './backfill-gate';
+export { checkBackfillEnvironment, gateBackfill } from './backfill-gate';
 export type { BackfillProgress } from './backfill-inspect';
 export { backfillForRun, inspectBackfills, toBackfillProgress } from './backfill-inspect';
 export type {
@@ -33,8 +35,24 @@ export {
   decideBackfill,
   isBackfillStatus,
 } from './backfill-ledger';
+export type {
+  BackfillPendingReport,
+  BackfillState,
+  BackfillStateRow,
+} from './backfill-pending';
+export { BACKFILL_STATES, pendingBackfills } from './backfill-pending';
 export type { Pacer, PacerOptions } from './backfill-rate';
 export { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+export type { BackfillCount, BackfillDeclaration, BackfillOrigin } from './backfill-registry';
+// `stampBackfill` is deliberately absent, for the reason `registerJob` is: a second way to make a
+// handle claim it is a backfill would let a plain `job()` inherit the pending diff and the gate.
+export {
+  backfillOrigin,
+  declarationOf,
+  getBackfill,
+  isBackfill,
+  registeredBackfills,
+} from './backfill-registry';
 export type { JobDescriptor } from './describe';
 export type {
   ClaimedJob,
@@ -84,6 +102,13 @@ export type { RedisDriverOptions } from './driver-redis';
 export { createRedisDriver } from './driver-redis';
 export type { JobErrorCode } from './errors';
 export {
+  BackfillAppliedError,
+  BackfillEnvironmentError,
+  BackfillMigrationPendingError,
+  BackfillPendingError,
+  BackfillRunningError,
+  BackfillStalledError,
+  BackfillUnknownError,
   DriverUnavailableError,
   IdempotencyRequiredError,
   JOB_ERROR_CODES,

@@ -1,15 +1,25 @@
-<h1 align="center">Ultimate ⚡</h1>
+<p align="center">
+  <img src="assets/logo.svg" alt="" width="88" height="88" />
+</p>
+
+<h1 align="center">Ultimate</h1>
 
 <p align="center"><strong>The full-stack framework where the primary user is an AI agent.</strong></p>
 
 <p align="center"><em>Rails' opinions. Bun's speed. One command that means shippable.</em></p>
+
+<p align="center">
+  <img src="assets/never-send-a-human.webp" alt="Agent Smith: &quot;Never send a human to do a machine's job.&quot;" width="480" />
+</p>
+
+<p align="center"><sub><em>The Matrix</em> (1999). Built by agents, for agents, maintained by agents.</sub></p>
 
 <div align="center">
 
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
 
 </div>
 

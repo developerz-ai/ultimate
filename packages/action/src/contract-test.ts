@@ -151,6 +151,11 @@ async function expectThrow(
   } catch (error) {
     if (!isUltimateError(error)) throw error;
     if (error.code === code) return;
+    // `X_AUDIT_SINK_MISSING` is the one refusal `invoke` raises BEFORE the input parse, so
+    // "the schema accepted garbage" is a false statement about it and `input:` is not what
+    // answers it. It keeps its own code and its own runnable fix — the same rule `expectDenied`
+    // follows for every code it cannot attribute to `input:`.
+    if (error.code === 'X_AUDIT_SINK_MISSING') throw error;
     throw new ContractDriftError(`${cause} (got ${error.code}, expected ${code})`, fix);
   }
   throw new ContractDriftError(cause, fix);

@@ -101,6 +101,9 @@ backfill<Row>({
   queue?: string,
   retry?: RetryPolicy,                                   // default DEFAULT_RETRY
   timeout?: DurationInput,                                // per attempt, not per pass
+  requires?: string,                                      // a migration id, checked before a run
+  environments?: readonly Environment[],                  // omitted = every environment
+  count?(args: { ctx: Ctx }): Promise<number> | number,    // the same predicate, counted
 }): JobHandle<{ force?: boolean }>
 ```
 
@@ -110,15 +113,24 @@ backfill<Row>({
 
 The batch runs inside its own durable step, and the checkpoint is written **after** it returns — never the other way round. An attempt cancelled between the last row and the checkpoint replays that whole page on the next attempt. `handle` must therefore be idempotent: `upsertAll`, `updateWhere`, or any statement whose second run changes nothing — never `count + 1`. What a step persists across a replay is the **cursor and a row count**, never the page itself; `steps.ts` retains a completed step's output for the whole run, and a page held there for every batch of a million-row sweep is every processed row kept in memory until the job ends.
 
-Re-enqueueing a backfill that has already run to completion is a no-op that reports what happened, not a second sweep:
+Re-enqueueing a backfill that has already run to completion runs a **real job** whose pass is the no-op. The two are different facts and only the second one is dedupe:
 
 ```ts
 const first = await normalizePostTitles.enqueue({});
 first.deduped;   // false — this is the run
 
-const again = await normalizePostTitles.enqueue({});
-again.deduped;   // true — one live run per name, forced or not
+// While the first is still LIVE: one live run per name, forced or not.
+const live = await normalizePostTitles.enqueue({});
+live.deduped;    // true — the partial index covers ready | delayed | running | suspended
+
+// Once the first has COMPLETED: a completed job is in none of those states, so this is not a
+// dedupe. A real job row is created and a worker runs it — the PASS then reads x_backfills and
+// returns { skipped: true, previousRunId }, having touched no row.
+const after = await normalizePostTitles.enqueue({});
+after.deduped;   // false
 ```
+
+The dedupe is the live-run index; the ledger is what makes the second pass do nothing.
 
 `--force` (or `{ force: true }`) is the only override, and it rides the **input**, not the idempotency key — `idempotencyKey` is always `() => definition.name`, so "kick it again" stays one live pass rather than becoming a second writer racing the first. A forced rerun writes a **new** ledger row: history is never overwritten, so what each pass swept stays readable. A completed row is the only one that blocks a rerun — a `running` row is this pass resuming (or the one live idempotency key already holding it), and a `failed` row is an attempt the queue is about to retry anyway.
 
@@ -150,11 +162,69 @@ One projection, four surfaces, so none of them can disagree about how far a pass
 | Surface | Shows |
 |---|---|
 | `x db backfill --list` | the whole ledger, newest first, filterable by name/status |
-| `x jobs ls` | ordinary job rows, **plus** `backfill()` passes in flight with rows-so-far and cursor |
+| `x jobs ls` | ordinary job rows, plus the `backfill()` passes whose ledger row is **`running`** — `jobs-report.ts` filters `{ status: 'running' }`, so a completed or failed pass is not on this surface |
 | `x jobs show <id>` | one job's full state — step trace, next retry — plus this run's ledger row under `backfill` when the job is one |
 | `/_x` jobs panel | the same ledger, live |
 
 All four read `inspectBackfills(driver, filter?)` from `backfill-inspect.ts` — there is no second reader. It answers `[]`, never a throw, for a driver whose `JobDriver.backfills` is absent (a driver that ships no ledger, e.g. `driver-redis`/`driver-nats`): the surfaces asking about the *queue* must not fail over a fact nobody asked for, though `x db backfill --list` — the surface that **is** the question — says so in its own summary.
+
+### Declared, and never run — the other half of the ledger
+
+`x_backfills` answers "which passes have run". Nothing answered "which passes exist", so a cleanup could be authored with `x g backfill`, merged and deployed, and **never run**, with no surface anywhere saying so. `backfill()` now stamps its own handle — through the same `origin` `WeakMap` `task()` uses, with no `registerBackfill()` call for an app to forget — and the diff between the two halves is a command:
+
+```
+x db backfill --pending --json
+```
+
+Non-zero exit when anything is unswept, so a cron or a deploy check reads the exit code and never the table.
+
+| State | Means | Counts as pending |
+|---|---|---|
+| `pending` | declared, and `x_backfills` holds no row under this name | yes |
+| `failed` | the newest pass failed — the queue may already have dead-lettered it | yes |
+| `running` | a pass is in flight | no — an alarm red for the whole of every sweep gets muted within a week |
+| `completed` | a completed row exists, so nothing re-runs without `--force` | no |
+| `excluded` | `environments` does not include this one | no |
+
+`orphaned` is the mirror image: a ledger name no declaration carries, i.e. a sweep whose module was deleted after it ran.
+
+### Three optional declarations, all of them data
+
+| Field | Rail | Enforced where |
+|---|---|---|
+| `requires: '<migration id>'` | `X_BACKFILL_MIGRATION_PENDING` | `x db backfill`, which is where `x_migrations` is readable — `@ultimat3/jobs` holds no `@ultimat3/db` dependency and does not grow one to read a ledger |
+| `environments: [...]` | `X_BACKFILL_ENVIRONMENT` | **the pass itself**, ahead of the ledger open, so a `.enqueue()` from app code is covered too — and `x db backfill` up front |
+| `count()` | `X_BACKFILL_STALLED` | the pass, once, after the last batch |
+
+`environments` ships as declared **data** and never as a hardcoded "cleanups are production": a staging rehearsal is correct practice, so which deploys a sweep belongs to is the app's own convention and this field is only the mechanism carrying it. There is deliberately **no** `dependsOn` graph over other backfills — the real dependency is almost always "after code that tolerates both shapes is serving", which the framework cannot observe and would therefore encode wrongly.
+
+`count()` is the same predicate `source` selects on, counted rather than read. It is what makes a dry run honest and turns "did it converge" into arithmetic: a pass that exhausts its source while `count()` still answers above zero has two predicates that disagree, so it **fails** rather than writing a completed row that stops the next deploy re-running it. Left out, the pass converges by definition — the framework will not guess a number on the author's behalf.
+
+### Running one — `x db backfill`
+
+```
+x db backfill --list                        # the x_backfills ledger, newest first
+x db backfill --pending                     # declared minus completed; non-zero when unswept
+x db backfill normalize-post-titles         # DRY RUN — --write is never implied
+x db backfill normalize-post-titles --write # gate, then enqueue; the workers sweep
+x db backfill --all --write                 # every pending one, isolated per name
+x db backfill normalize-post-titles --write --force   # a completed name, into a NEW ledger row
+```
+
+A bare `x db backfill` is refused rather than defaulted: the four shapes answer four different questions.
+
+`--write` **enqueues** — it never runs the pass inside the CLI process, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero and naming each, so one wedged cleanup cannot block every later one forever.
+
+### `ROLE=backfill` triggers; it never gates
+
+`DEPLOY_ROLES` is `migrate → web → sync → worker → scheduler → backfill`, and the position is the design:
+
+| Role | Shape | Why there |
+|---|---|---|
+| `migrate` | `run --rm`, **first** | a schema change must land before anything serves it, and drift after it fails the deploy |
+| `backfill` | `run --rm`, **last** | a slow `UPDATE` inside a release gate holds the deploy open against a database still serving the *previous* release — so the sweeps are enqueued after the new pods serve, and the workers already draining the queue perform them |
+
+Backfills are therefore **never** wired into `runMigrations()`. The `backfill` container runs `x db backfill --all --write --json` and exits.
 
 ### `x g backfill` — the generator
 
@@ -170,7 +240,21 @@ Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/
 | `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | restore the sidecar from version control, or delete and regenerate that migration |
 | `X_DB_DRIFT` | the live schema, or the source, disagrees with the migrations | `x db gen "<name>"` — see [Entities and migrations → Drift is a `x verify` failure](Entities-And-Migrations#drift-is-a-x-verify-failure) |
 
-Backfills declare no error code of their own. A bad `batch`/`rate` throws `@ultimat3/core`'s `assert`, which is `X_INVARIANT` — borrowed, not declared, and it carries its own cause and fix at the declaration site:
+Seven codes, and each one exists because it sends the reader somewhere different — run it, force it, change environment, migrate first, wait, fix the predicates, fix the name. All are `@ultimat3/jobs`': the CLI throws the framework package's errors rather than minting a parallel set, and the pass enforces two of them itself.
+
+| Code | Cause | Fix |
+|---|---|---|
+| `X_BACKFILL_PENDING` | declared, and `x_backfills` holds no completed pass for it in this environment | `x db backfill <name> --write --json` |
+| `X_BACKFILL_APPLIED` | the ledger already records a completed pass and `--force` was not given | `x db backfill <name> --write --force --json` — a rerun is a NEW row, never an edit |
+| `X_BACKFILL_ENVIRONMENT` | `environments` does not include the one this process resolved | run it where `ULTIMATE_ENV` matches, or add this environment to the declaration |
+| `X_BACKFILL_MIGRATION_PENDING` | `requires` names a migration `x_migrations` does not record as applied | `x db migrate --json` |
+| `X_BACKFILL_RUNNING` | the enqueue deduped — one live pass per name, and this name already has one | `x jobs show <id> --json`; a pass that is not advancing is a worker that lost its lease |
+| `X_BACKFILL_STALLED` | the source is exhausted and `count()` still matches rows — the two predicates disagree | make `count()` select on exactly what `source()` selects on |
+| `X_BACKFILL_UNKNOWN` | no declaration in this app carries that name | `x db backfill --pending --json` lists every declared name |
+
+`X_BACKFILL_WRITE_UNCONFIRMED` was considered and **rejected**: a dry run that wrote nothing did exactly what it was asked to, and a code whose fix line duplicates another one's is code inflation.
+
+A bad `batch`/`rate` throws `@ultimat3/core`'s `assert`, which is `X_INVARIANT` — borrowed, not declared, and it carries its own cause and fix at the declaration site:
 
 | Code | Cause | Fix |
 |---|---|---|

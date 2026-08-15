@@ -39,7 +39,9 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_ENTITY_DUPLICATE: 'two entities claim the same name',
   X_INVARIANT_VIOLATED: 'a domain invariant rejected this row',
   X_TENANCY_UNSCOPED: 'a tenant-scoped query has no org predicate',
-  X_TENANCY_ACTOR_MISMATCH: "a query named a tenant other than the actor's",
+  // "call", not "query": the same code covers a predicate that names another tenant and a row or
+  // patch that writes one, because they are one mistake made in two places.
+  X_TENANCY_ACTOR_MISMATCH: "a call named a tenant other than the actor's",
   X_TENANCY_ACTOR_ORG_REQUIRED: 'the acting actor carries no tenant',
   X_TENANCY_CROSS_DENIED: 'a cross-tenant read was entered without the capability',
   X_NOT_FOUND: 'no row for that id',
@@ -146,6 +148,29 @@ export const tenancyActorMismatch = (init: {
     fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${asTenant} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
   });
 };
+
+/**
+ * The write half of the same mistake, and deliberately the SAME code: a tenant the caller chose,
+ * named in a row or a patch instead of in a predicate. One situation, one code — the shape
+ * `crossTenantUpsert` and `tenancyUnscoped` already share in `bulk-write.ts` — because a caller
+ * catching "the tenant you named is not yours" has no reason to care which argument carried it.
+ * Only the repair differs, so only the `fix` does.
+ *
+ * The actor's own tenant goes in the fix because it is the value that makes the call legal and it
+ * is pasteable; the row's is in the cause, where a non-scalar can do no harm.
+ */
+export const tenancyRowMismatch = (init: {
+  entityName: string;
+  operation: string;
+  column: string;
+  named: unknown;
+  actorOrg: string;
+}): EntityError =>
+  new EntityError({
+    code: 'X_TENANCY_ACTOR_MISMATCH',
+    cause: `${init.entityName}.${init.operation}() would write ${init.column} ${JSON.stringify(init.named) ?? 'undefined'} but the acting actor's tenant is ${JSON.stringify(init.actorOrg)}`,
+    fix: `set ${init.column} to ${JSON.stringify(init.actorOrg)} in the row passed to ${init.entityName}.${init.operation}(), or write into another tenant deliberately: crossTenant('<why>', fn)`,
+  });
 
 /**
  * A tenant-scoped read by an actor that carries no tenant — anonymous, or a service actor minted

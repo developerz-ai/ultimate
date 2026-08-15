@@ -28,6 +28,10 @@ const CATALOG = {
   'cli.db.backfill.listed': '{count} backfill pass(es)',
   /** The empty cell in a `x db backfill --list` column — a value, not a column key. */
   'cli.db.backfill.none': '-',
+  'cli.db.backfill.pending': '{count} of {declared} declared backfill(s) never completed',
+  'cli.db.backfill.swept': 'every one of {declared} declared backfill(s) has completed',
+  'cli.db.backfill.planned': '{count} backfill(s): {enqueued} enqueued, {blocked} blocked',
+  'cli.db.backfill.dryRun': '{count} backfill(s) would run — nothing written without --write',
   'cli.db.branch.ready': 'branch {name} ready',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',

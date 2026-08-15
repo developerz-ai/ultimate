@@ -120,6 +120,17 @@ services:
     environment: [ROLE=migrate]
     restart: 'no'
 
+  # Run-once, AFTER the new version serves. Deliberately NOT part of the release gate: a slow
+  # UPDATE there holds the deploy open against a database still serving the previous version.
+  # Dry run is the default, so \`--write\` is explicit.
+  backfill:
+    <<: *image
+    command: ['db', 'backfill', '--all', '--write', '--json']
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    restart: 'no'
+
   web:
     <<: *image
     environment: [ROLE=web]

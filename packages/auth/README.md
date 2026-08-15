@@ -29,6 +29,27 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
   store takes `(purpose, identifier, tokenHash)`. Consuming first and comparing afterwards made an
   unauthenticated wrong guess destroy the victim's live reset link.
 - Guards assert on the actor. They never evaluate a policy.
+- The lockout counts attempts against one identity, so it has to be **one** count. `AuthLimiter`
+  is async on every member and declares its `scope`; the app declares the scope it needs.
+
+## The lockout across replicas
+
+`createAuthLimiter` keeps its table in the process, so `maxAttempts: 5` at `replicas: 3` lets an
+account survive 15 guesses and hides each replica's lockout from the other two. An app that runs
+more than one process says so and brings a limiter that says the same:
+
+```ts
+defineAuth({
+  adapter,
+  rateLimit: { scope: 'shared' },  // maxAttempts is the whole fleet's allowance
+  limiter: myLimiter,              // whose own scope is 'shared'
+});
+```
+
+`'shared'` with a per-process limiter is `X_AUTH_LIMITER_NOT_SHARED` at `defineAuth`, not at the
+first spray. The default stays `'process'`: correct for dev, tests and a single node, and the only
+thing this package can promise without being told. **No shared limiter ships yet** —
+`createAuthLimiter` is the only implementation in the framework.
 
 ## Adapter seam
 

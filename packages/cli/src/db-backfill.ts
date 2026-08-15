@@ -1,13 +1,42 @@
-// The `x_backfills` ledger as `x db backfill --list` reports it: the filter flags, the driver
-// read and the fixed-width table. A driver plus plain strings in, plain data out — the
-// `cmd-jobs.ts` / `jobs-report.ts` split repeated, so every projection here is testable with no
-// `ParsedArgs`, no app boot and no queue. `cmd-db.ts` is the CLI wiring and nothing else.
+// `x db backfill`, everything except the argv: the ledger `--list` reports, the declared-minus-
+// completed diff `--pending` reports, and the gate-plus-enqueue `<name>`/`--all` performs. A
+// driver plus plain strings in, plain data out — the `cmd-jobs.ts` / `jobs-report.ts` split
+// repeated, so every projection here is testable with no `ParsedArgs`, no app boot and no queue.
+// `cmd-db.ts` is the CLI wiring and nothing else.
+//
+// The decisions themselves are `@ultimat3/jobs`': `gateBackfill`, `pendingBackfills` and
+// `registeredBackfills` all live there, because the pass enforces the same rails and two copies of
+// "may this sweep run" would be two answers. What is decided HERE is only what the CLI knows —
+// which names were asked for, whether `--write` was passed, and what `x_migrations` says.
 
-import type { BackfillProgress, BackfillStatus, JobDriver } from '@ultimat3/jobs';
-import { BACKFILL_STATUSES, inspectBackfills, isBackfillStatus } from '@ultimat3/jobs';
+import type { Environment } from '@ultimat3/core';
+import { createContext } from '@ultimat3/core';
+import { db, readLedger } from '@ultimat3/db';
+import type {
+  BackfillDeclaration,
+  BackfillPendingReport,
+  BackfillProgress,
+  BackfillState,
+  BackfillStatus,
+  JobDriver,
+} from '@ultimat3/jobs';
+import {
+  BACKFILL_STATUSES,
+  BackfillRunningError,
+  BackfillUnknownError,
+  backfillOrigin,
+  gateBackfill,
+  getBackfill,
+  inspectBackfills,
+  isBackfillStatus,
+  pendingBackfills,
+  registeredBackfills,
+} from '@ultimat3/jobs';
 import { BadFlagError } from './errors';
 import { parseLimitFlag } from './jobs-report';
 import { msg } from './messages';
+import type { Finding, JsonValue } from './output';
+import { findingFrom } from './output';
 import { renderTable } from './table';
 
 /**
@@ -71,4 +100,266 @@ export function renderBackfillTable(rows: readonly BackfillProgress[]): readonly
       row.runId,
     ]),
   );
+}
+
+// ── declared minus completed ──────────────────────────────────────────────
+
+/**
+ * Every declaration this app made, judged against every pass the ledger holds. The ledger read is
+ * `inspectBackfills` and never a second one, and the arithmetic is `@ultimat3/jobs`' — this
+ * function is the join and nothing else.
+ */
+export async function pendingReport(
+  driver: JobDriver,
+  environment: Environment,
+): Promise<BackfillPendingReport> {
+  return pendingBackfills({
+    declarations: registeredBackfills(),
+    // Unfiltered and unlimited: a name whose only pass scrolled past a `--limit` would be reported
+    // as never run, which is the one answer this diff must never get wrong.
+    runs: await inspectBackfills(driver, { limit: Number.MAX_SAFE_INTEGER }),
+    environment,
+  });
+}
+
+const PENDING_HEADER = ['name', 'state', 'requires', 'environments', 'last-run-id'] as const;
+
+export function renderPendingTable(report: BackfillPendingReport): readonly string[] {
+  const none = msg('cli.db.backfill.none');
+  return renderTable(
+    PENDING_HEADER,
+    report.rows.map((row) => [
+      row.name,
+      row.state,
+      row.requires ?? none,
+      row.environments === null ? none : row.environments.join('|'),
+      row.lastRunId ?? none,
+    ]),
+  );
+}
+
+export function pendingToJson(report: BackfillPendingReport): JsonValue {
+  return {
+    environment: report.environment,
+    declared: report.rows.length,
+    pending: report.pending.map((row) => row.name),
+    orphaned: [...report.orphaned],
+    rows: report.rows.map((row) => ({
+      name: row.name,
+      state: row.state,
+      checksum: row.checksum,
+      ledgerChecksum: row.ledgerChecksum,
+      changed: row.changed,
+      requires: row.requires,
+      environments: row.environments === null ? null : [...row.environments],
+      lastRunId: row.lastRunId,
+      rows: row.rows,
+    })),
+  };
+}
+
+// ── running one ───────────────────────────────────────────────────────────
+
+/**
+ * Migration ids `x_migrations` records as applied, or `undefined` when this process could not read
+ * the ledger at all — an embedded database that has never been migrated, or a driver with no
+ * `db()` installed. `undefined` is deliberately not `[]`: the gate treats "I could not check" as
+ * no obstacle, and an empty list would block every `requires:` the app declares.
+ */
+export async function readAppliedMigrations(): Promise<readonly string[] | undefined> {
+  try {
+    return (await readLedger(db())).map((row) => row.id);
+  } catch {
+    return undefined;
+  }
+}
+
+/** What one name's turn produced. `planned` is the dry run — `--write` is never implied. */
+export type BackfillAction = 'planned' | 'enqueued' | 'deduped' | 'blocked';
+
+export interface BackfillPlanRow {
+  readonly name: string;
+  readonly action: BackfillAction;
+  readonly state: BackfillState | null;
+  /** The queue row a `--write` created. `null` for every dry run and every refusal. */
+  readonly jobId: string | null;
+  /** What `count()` still matches, when the declaration has one and it could be asked. */
+  readonly remaining: number | null;
+  readonly finding: Finding | null;
+}
+
+/**
+ * `count()` is the same predicate `source` selects on, so this is the one number that keeps a dry
+ * run honest. A tenanted sweep counts within one org — its `ctx.actor` carries none here — so a
+ * throw is reported as `null` rather than guessed at: a dry run that invented a row count is the
+ * failure `count()` exists to close.
+ */
+async function remainingFor(declaration: BackfillDeclaration): Promise<number | null> {
+  if (!declaration.counts) return null;
+  const handle = getBackfill(declaration.name);
+  const count = handle === undefined ? undefined : backfillOrigin(handle)?.count;
+  if (count === undefined) return null;
+  try {
+    return await count({ ctx: createContext({ role: 'migrate' }) });
+  } catch {
+    return null;
+  }
+}
+
+export interface BackfillRunInput {
+  readonly driver: JobDriver;
+  /** The names asked for, or every PENDING one when `--all` was passed. */
+  readonly names: readonly string[] | 'all';
+  readonly write: boolean;
+  readonly force: boolean;
+  readonly environment: Environment;
+  readonly appliedMigrations: readonly string[] | undefined;
+}
+
+/**
+ * One turn per name, isolated: a refusal or a throw becomes that name's row and the loop goes on.
+ * That isolation is the whole point of `--all` — one wedged cleanup must not block every later one
+ * forever, which is exactly what a `for` loop over a throwing gate would have done.
+ */
+export async function runBackfills(input: BackfillRunInput): Promise<readonly BackfillPlanRow[]> {
+  const report = await pendingReport(input.driver, input.environment);
+  const declarations = registeredBackfills();
+  const byName = new Map(declarations.map((row) => [row.name, row]));
+  // `--all` sweeps what is PENDING, and `--all --force` every name this environment may run: a
+  // forced rerun of a completed name is a decision, so it is never what a bare `--all` performs.
+  const targets =
+    input.names === 'all'
+      ? report.rows
+          .filter((row) => (input.force ? row.state !== 'excluded' : report.pending.includes(row)))
+          .map((row) => row.name)
+      : input.names;
+
+  const rows: BackfillPlanRow[] = [];
+  for (const name of targets) {
+    const declaration = byName.get(name);
+    const state = report.rows.find((row) => row.name === name)?.state ?? null;
+    if (declaration === undefined) {
+      rows.push({
+        name,
+        action: 'blocked',
+        state,
+        jobId: null,
+        remaining: null,
+        finding: findingFrom(
+          new BackfillUnknownError({ backfill: name, known: declarations.map((row) => row.name) }),
+        ),
+      });
+      continue;
+    }
+    const verdict = gateBackfill({
+      declaration,
+      environment: input.environment,
+      appliedMigrations: input.appliedMigrations,
+      // Only fetched for a name the diff already judged completed — the gate wants the row, and
+      // the diff is what knows whether there is one to want.
+      completed: state === 'completed' ? await newestCompleted(input.driver, name) : undefined,
+      force: input.force,
+    });
+    if (!verdict.run) {
+      rows.push({
+        name,
+        action: 'blocked',
+        state,
+        jobId: null,
+        remaining: null,
+        finding: findingFrom(verdict.error),
+      });
+      continue;
+    }
+    const remaining = await remainingFor(declaration);
+    if (!input.write) {
+      rows.push({ name, action: 'planned', state, jobId: null, remaining, finding: null });
+      continue;
+    }
+    rows.push(await enqueueOne(name, state, remaining, input.force));
+  }
+  return rows;
+}
+
+const newestCompleted = async (
+  driver: JobDriver,
+  name: string,
+): Promise<BackfillProgress | undefined> =>
+  (await inspectBackfills(driver, { name, status: 'completed', limit: 1 }))[0];
+
+/**
+ * The queue is a job's execution surface, so `--write` ENQUEUES and never runs the pass inline —
+ * the rule `handle.as()` already states. That is also what makes `ROLE=backfill` a trigger rather
+ * than a gate: the container puts the sweeps on the queue and exits, and the workers already
+ * serving the new release are what drain them.
+ */
+async function enqueueOne(
+  name: string,
+  state: BackfillState | null,
+  remaining: number | null,
+  force: boolean,
+): Promise<BackfillPlanRow> {
+  const handle = getBackfill(name);
+  if (handle === undefined) {
+    return {
+      name,
+      action: 'blocked',
+      state,
+      jobId: null,
+      remaining,
+      finding: findingFrom(new BackfillUnknownError({ backfill: name, known: [] })),
+    };
+  }
+  try {
+    const result = await handle.enqueue({ force });
+    // One live pass per name, forced or not. A deduped enqueue started nothing, so the operator who
+    // asked for a pass has to hear about the one already holding the key.
+    return result.deduped
+      ? {
+          name,
+          action: 'deduped',
+          state,
+          jobId: result.id,
+          remaining,
+          finding: findingFrom(new BackfillRunningError({ backfill: name, jobId: result.id })),
+        }
+      : { name, action: 'enqueued', state, jobId: result.id, remaining, finding: null };
+  } catch (error) {
+    return { name, action: 'blocked', state, jobId: null, remaining, finding: findingFrom(error) };
+  }
+}
+
+const PLAN_HEADER = ['name', 'action', 'state', 'remaining', 'job-id'] as const;
+
+export function renderPlanTable(rows: readonly BackfillPlanRow[]): readonly string[] {
+  const none = msg('cli.db.backfill.none');
+  return renderTable(
+    PLAN_HEADER,
+    rows.map((row) => [
+      row.name,
+      row.action,
+      row.state ?? none,
+      row.remaining === null ? none : String(row.remaining),
+      row.jobId ?? none,
+    ]),
+  );
+}
+
+export function planToJson(rows: readonly BackfillPlanRow[]): JsonValue {
+  return rows.map((row) => ({
+    name: row.name,
+    action: row.action,
+    state: row.state,
+    remaining: row.remaining,
+    jobId: row.jobId,
+    finding:
+      row.finding === null
+        ? null
+        : {
+            code: row.finding.code,
+            cause: row.finding.cause,
+            fix: row.finding.fix,
+            docs: row.finding.docs ?? null,
+          },
+  }));
 }

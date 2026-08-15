@@ -215,6 +215,27 @@ describe('policyTestStubFor', () => {
     expect(stub).toContain('await contract.run();');
   });
 
+  test('an audited action with no sink keeps X_AUDIT_SINK_MISSING, not a drift about `input:`', async () => {
+    const audited = contractTestsFor(
+      action({
+        input: Input,
+        output: Output,
+        policy: can('post:publish'),
+        audit: true,
+        handle: ({ input }) => ({ id: input.postId, published: input.notify }),
+      }).named('publishPost'),
+    );
+
+    const failure = await garbage(audited)
+      .run()
+      .catch((error: unknown) => error);
+
+    // It is raised BEFORE the input parse, so "the schema accepted garbage" is a false statement
+    // about it and `tighten input:` is a fix that changes nothing. Same rule as assertion 2's.
+    expect((failure as { code?: string }).code).toBe('X_AUDIT_SINK_MISSING');
+    expect((failure as { fix?: string }).fix).toContain('setAuditSink');
+  });
+
   test('names whichever action is passed, not a fixed literal', () => {
     const other = action({
       input: Input,

@@ -313,3 +313,39 @@ describe('the tenant a plan actually runs under', () => {
     await expect(repo.findMany({})).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
   });
 });
+
+// The write half of the same rule: a row carries its tenant as a value, and a value the caller
+// chose is exactly as untrustworthy in a row as it is in a predicate.
+describe('the tenant a row is written under', () => {
+  const ORG_A = '11111111-1111-4111-8111-111111111111';
+  const ORG_B = '22222222-2222-4222-8222-222222222222';
+  const MINE = '88888888-8888-4888-8888-888888888888';
+  const seeded = [{ id: MINE, orgId: ORG_A, title: 'ours' }];
+  const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
+    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+
+  test('an insert into another tenant is refused, and stores nothing', async () => {
+    const repo = memoryRepo(posts, []);
+    await asOrgA(async () => {
+      await expect(
+        repo.insert({ id: '99999999-9999-4999-8999-999999999999', orgId: ORG_B, title: 'theirs' }),
+      ).rejects.toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
+    });
+    // Refused before the row lands, not after: a guard that threw on the way out would leave the
+    // row in the table and the caller believing it failed.
+    expect(await repo.findMany({ orgId: ORG_B })).toEqual({ rows: [], nextCursor: null });
+  });
+
+  test('a patch cannot move a row this tenant owns into another one', async () => {
+    const repo = memoryRepo(posts, seeded);
+    await asOrgA(async () => {
+      await expect(repo.update(MINE, { orgId: ORG_B })).rejects.toBeUltimateError(
+        'X_TENANCY_ACTOR_MISMATCH',
+      );
+      await expect(repo.updateWhere({ id: MINE }, { orgId: ORG_B })).rejects.toBeUltimateError(
+        'X_TENANCY_ACTOR_MISMATCH',
+      );
+    });
+    expect((await repo.findMany({ orgId: ORG_A })).rows).toHaveLength(1);
+  });
+});

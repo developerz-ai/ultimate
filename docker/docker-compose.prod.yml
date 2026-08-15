@@ -21,6 +21,14 @@ services:
     environment: { ROLE: migrate }
     restart: 'no'
 
+  # Run-once, AFTER the new pods serve. Not a gate: a slow UPDATE inside the release step would
+  # hold the deploy open against a database still serving the previous version, so backfills are
+  # triggered by the deploy and never block it. Dry run is the default, so `--write` is explicit.
+  backfill:
+    <<: *common
+    command: ['db', 'backfill', '--all', '--write', '--json']
+    restart: 'no'
+
   # Scales on RPS. Stateless, behind a CDN.
   web:
     <<: *common

@@ -26,6 +26,13 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   lockout outranks its own deadline** in the comparator: without that rank a spray recorded a
   second later sorts ahead of the account it just locked, and filling the table becomes a way to
   buy attempts back. Never reduce that sort to recency.
+- **`AuthLimiter` is async on every member, and its `scope` is declared, never inferred.** A
+  synchronous signature is one no shared implementation can satisfy — a lockout that holds across
+  replicas is a network round trip — so the interface the comment always promised was unreachable
+  by construction. `policy.scope` says what the deployment requires, the limiter says what it
+  provides, and `assertAuthLimiterScope` compares them inside `defineAuth`:
+  `X_AUTH_LIMITER_NOT_SHARED` at boot, never at the first spray. Nothing here reads the
+  environment to guess a replica count. `defineAuth({ limiter })` is the one install point.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent. `usesPkce: false` is not a valid provider config.
 - The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`
@@ -62,7 +69,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
-| `rate-limit.ts` | per-ip + per-account buckets, lockout, `loginFailed()` |
+| `rate-limit.ts` | per-ip + per-account buckets, lockout, scope check, `loginFailed()` |
 | `oauth.ts` | provider data, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-cookie.ts` | the handshake's home between the two legs: seal, open, the cookie |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |

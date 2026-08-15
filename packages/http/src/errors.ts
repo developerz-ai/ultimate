@@ -18,6 +18,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_NO_REQUEST',
   'X_ERROR_STATUS_INVALID',
   'X_CORS_CONFIG_INVALID',
+  'X_RATE_LIMIT_NOT_SHARED',
 ] as const;
 
 /**
@@ -49,6 +50,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_NO_REQUEST: 'the inbound request is not in scope here',
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
   X_CORS_CONFIG_INVALID: 'the cors config can never produce a working response',
+  X_RATE_LIMIT_NOT_SHARED: 'the rate limit is declared fleet-wide and the store is per-process',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -196,6 +198,22 @@ export const corsConfigInvalid = (reason: string): HttpError =>
     code: 'X_CORS_CONFIG_INVALID',
     cause: `cors config rejected: ${reason}`,
     fix: "in app.config.ts set http.cors.credentials: false, or replace http.cors.origins: ['*'] with the exact origins allowed to call this app",
+  });
+
+/**
+ * At `createServer`/`createPipeline`, never on the request. `replicas: 3` behind one config means
+ * each process holds its own counters, so every configured number is enforced three times over —
+ * a green `x verify` and a limit that is not the limit. The declaration is the app's because the
+ * framework cannot see its replica count, and a framework that guessed would guess wrong.
+ */
+export const rateLimitNotShared = (found: 'process' | 'disabled'): HttpError =>
+  new HttpError({
+    code: 'X_RATE_LIMIT_NOT_SHARED',
+    cause:
+      found === 'disabled'
+        ? "http.rateLimit.scope is 'shared' but http.rateLimit.enabled is false, so the fleet-wide limit is enforced nowhere"
+        : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
+    fix: "pass a store whose scope is 'shared' — createServer({ routes, rateLimitStore }) — or set http.rateLimit.scope: 'process' in app.config.ts to accept per-replica limits",
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>

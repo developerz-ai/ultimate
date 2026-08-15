@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { HttpError } from './errors';
 import {
+  assertRateLimitScope,
   type Bucket,
   createRateLimiter,
   DEFAULT_MAX_RATE_LIMIT_KEYS,
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
+  type RateLimitConfig,
   rateLimitKey,
 } from './rate-limit';
 
@@ -13,6 +16,7 @@ const limiterAt = (clock: { ms: number }, capacity: number, refillPerSecond: num
     config: {
       enabled: true,
       defaultBucket: 'default',
+      scope: 'process',
       buckets: { default: { capacity, refillPerSecond } },
     },
     now: () => clock.ms,
@@ -145,6 +149,66 @@ describe('the memory store is bounded', () => {
     const fresh = await store.take('a', FAST, 1, 0);
     expect(fresh.allowed).toBe(true);
     expect(fresh.limit).toBe(1);
+  });
+});
+
+// The declaration is the app's: a framework cannot see `replicas: 3`, and one that inferred it
+// from the environment would be wrong on the first deployment that scaled differently.
+describe('scope is declared, and checked once', () => {
+  const config = (over: Partial<RateLimitConfig>): RateLimitConfig => ({
+    ...DEFAULT_RATE_LIMIT,
+    ...over,
+  });
+
+  test('the memory store is per-process, and says so', () => {
+    expect(memoryRateLimitStore().scope).toBe('process');
+    expect(createRateLimiter({ config: DEFAULT_RATE_LIMIT }).scope).toBe('process');
+  });
+
+  test('a limiter carries its store scope up, so the check reads one value', () => {
+    const shared = { ...memoryRateLimitStore(), scope: 'shared' as const };
+    expect(createRateLimiter({ config: DEFAULT_RATE_LIMIT, store: shared }).scope).toBe('shared');
+  });
+
+  test("the default declaration accepts the per-process store — that is what 'process' means", () => {
+    const limiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT });
+    expect(() => assertRateLimitScope(DEFAULT_RATE_LIMIT, limiter)).not.toThrow();
+  });
+
+  test('a shared declaration refuses a per-process limiter, with the fix in the error', () => {
+    const declared = config({ scope: 'shared' });
+    const limiter = createRateLimiter({ config: declared });
+    expect(() => assertRateLimitScope(declared, limiter)).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
+    let thrown: unknown;
+    try {
+      assertRateLimitScope(declared, limiter);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpError);
+    // Both exits are in the fix line: install a shared store, or accept per-replica limits.
+    if (thrown instanceof HttpError) {
+      expect(thrown.fix).toContain('rateLimitStore');
+      expect(thrown.fix).toContain("http.rateLimit.scope: 'process'");
+    }
+  });
+
+  test('a shared declaration accepts a shared limiter', () => {
+    const declared = config({ scope: 'shared' });
+    const store = { ...memoryRateLimitStore(), scope: 'shared' as const };
+    expect(() =>
+      assertRateLimitScope(declared, createRateLimiter({ config: declared, store })),
+    ).not.toThrow();
+  });
+
+  // A fleet-wide limit that is switched off is the claim with nothing behind it, so it is refused
+  // too — otherwise `enabled: false` is a way to keep the declaration and lose the enforcement.
+  test('a shared declaration with the limiter disabled is refused', () => {
+    const declared = config({ scope: 'shared', enabled: false });
+    const store = { ...memoryRateLimitStore(), scope: 'shared' as const };
+    expect(() =>
+      assertRateLimitScope(declared, createRateLimiter({ config: declared, store })),
+    ).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
   });
 });
 

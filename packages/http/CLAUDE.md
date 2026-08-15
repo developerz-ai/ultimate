@@ -103,6 +103,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   and it evicts the entries **closest to full** first: throwing away a spent bucket is a free
   reset for whoever spent it, so the most-throttled key is the last one to go. Never swap that
   comparator for insertion order or an LRU — recency is not the same as worthlessness here.
+- **Where the limiter's counters live is DECLARED by the app, never inferred, and refused at
+  boot.** `RateLimitStore.scope` says what a driver provides; `config.rateLimit.scope` says what
+  the deployment requires; `assertRateLimitScope` compares them once, inside `createPipeline` —
+  the one construction path `createServer`, the tests and any embedder all share. `'shared'` over
+  a per-process store is `X_RATE_LIMIT_NOT_SHARED` before the socket opens, because the failure it
+  replaces is silent: `docker-compose.prod.yml` runs `web` at `replicas: 3`, so every configured
+  bucket was being enforced three times over with a green `x verify`. Nothing here reads the
+  environment to guess a replica count — an app that scales is the only thing that knows. The
+  supported way to install one is `createServer({ rateLimitStore })`, which builds the limiter
+  through `createRateLimiter` and hands it to the `PipelineDeps.limiter` seam that already
+  existed; never add a second limiter entry point beside it.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.

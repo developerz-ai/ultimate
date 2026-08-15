@@ -11,11 +11,25 @@
 // directory tree. `node:path` for `join` — Bun exposes no path joiner.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { resolveEnvironment } from '@ultimat3/core';
 import { branchPglite, type DriftReport, driftError } from '@ultimat3/db';
+import { BackfillPendingError } from '@ultimat3/jobs';
+import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
-import { listBackfills, renderBackfillTable } from './db-backfill';
+import type { BackfillPlanRow } from './db-backfill';
+import {
+  listBackfills,
+  pendingReport,
+  pendingToJson,
+  planToJson,
+  readAppliedMigrations,
+  renderBackfillTable,
+  renderPendingTable,
+  renderPlanTable,
+  runBackfills,
+} from './db-backfill';
 import { generateAppMigration } from './db-generate';
 import { resolveServices } from './dev-services';
 import { BadFlagError, CliNotImplementedError } from './errors';
@@ -126,12 +140,24 @@ export const dbCommand: CliCommand = {
     name: 'db',
     summary: 'gen, migrate, reset, studio, branch, backfill',
     usage:
-      'x db gen "add publish_at" | migrate | reset | studio | branch <name> | backfill --list [--name n] [--status s] [--limit n]',
+      'x db gen "add publish_at" | migrate | reset | studio | branch <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
     requiresApp: true,
     subcommands: DB_SUBCOMMANDS,
     flags: [
       { name: 'name', type: 'string', summary: 'migration or branch name, or backfill to filter' },
       { name: 'list', type: 'boolean', summary: 'backfill: print the x_backfills ledger' },
+      {
+        name: 'pending',
+        type: 'boolean',
+        summary: 'backfill: declared minus completed; non-zero exit when anything is unswept',
+      },
+      { name: 'all', type: 'boolean', summary: 'backfill: every pending sweep, isolated per name' },
+      { name: 'write', type: 'boolean', summary: 'backfill: enqueue the pass; dry run without it' },
+      {
+        name: 'force',
+        type: 'boolean',
+        summary: 'backfill: sweep a name the ledger records as completed, as a NEW ledger row',
+      },
       {
         name: 'status',
         type: 'string',
@@ -273,24 +299,31 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
 }
 
 /**
- * `--list` is the only shape this subcommand ships, and its absence is refused rather than
- * defaulted: `x db backfill <name>` will one day RUN a pass, so a bare `x db backfill` that quietly
- * printed the ledger would be a second spelling of one command today and a silent no-op the day
- * the runner lands. Not `X_NOT_IMPLEMENTED` either — that is for a subcommand that ships nothing,
- * and this one ships the ledger. The reason names the invocation that works, verbatim.
+ * Four shapes, one subcommand: `--list` reads the `x_backfills` ledger, `--pending` diffs it
+ * against what the app DECLARED, and `<name>` / `--all` gate a pass and put it on the queue. A
+ * bare `x db backfill` is still refused rather than defaulted — the four answer four different
+ * questions, and picking one for the operator is the ambiguity axiom 1 exists to refuse.
  *
  * An empty ledger is `ok: true`. "Nothing has swept this database yet" is an answer to the
  * question asked, and a command that failed over it would be unrunnable on a fresh app.
  */
 async function runBackfill(ctx: CommandContext, root: string): Promise<CommandResult> {
-  if (!flagBool(ctx.args, 'list')) {
-    throw new BadFlagError({
-      flag: 'list',
-      command: 'db',
-      reason: 'x db backfill reports the ledger and runs nothing yet: x db backfill --list',
-      fix: 'x db backfill --list',
-    });
-  }
+  if (flagBool(ctx.args, 'list')) return runBackfillList(ctx, root);
+  const all = flagBool(ctx.args, 'all');
+  const name = ctx.args.positionals[0] ?? flagString(ctx.args, 'name');
+  if (flagBool(ctx.args, 'pending')) return runBackfillPending(ctx, root);
+  if (all) return runBackfillPass(ctx, root, 'all');
+  if (name !== undefined) return runBackfillPass(ctx, root, [name]);
+  throw new BadFlagError({
+    flag: 'list',
+    command: 'db',
+    reason:
+      'x db backfill needs a shape: --list (the ledger), --pending (declared minus completed), <name> or --all (run one, or every pending one)',
+    fix: 'x db backfill --pending --json',
+  });
+}
+
+async function runBackfillList(ctx: CommandContext, root: string): Promise<CommandResult> {
   return withJobDriver(root, ctx, async (driver) => {
     const rows = await listBackfills(driver, {
       name: flagString(ctx.args, 'name'),
@@ -308,4 +341,84 @@ async function runBackfill(ctx: CommandContext, root: string): Promise<CommandRe
       data: rows.map(backfillToJson),
     };
   });
+}
+
+/**
+ * The alarm the framework did not have. Non-zero when anything is unswept, so a cron or a deploy
+ * check can read the exit code — a `--json` nobody has to parse to know something is wrong.
+ * `loadApp` first: importing the app's modules IS the declaration, and a diff run without it
+ * would report a clean database against an empty declaration list.
+ */
+async function runBackfillPending(ctx: CommandContext, root: string): Promise<CommandResult> {
+  await loadApp(root);
+  const environment = resolveEnvironment({ env: ctx.env });
+  return withJobDriver(root, ctx, async (driver) => {
+    const report = await pendingReport(driver, environment);
+    return {
+      ok: report.pending.length === 0,
+      command: 'db',
+      summary:
+        report.pending.length === 0
+          ? msg('cli.db.backfill.swept', { declared: report.rows.length })
+          : msg('cli.db.backfill.pending', {
+              count: report.pending.length,
+              declared: report.rows.length,
+            }),
+      findings: report.pending.map((row) =>
+        findingFrom(new BackfillPendingError({ backfill: row.name, environment })),
+      ),
+      lines: report.rows.length === 0 ? [] : renderPendingTable(report).map((line) => `  ${line}`),
+      data: pendingToJson(report),
+    };
+  });
+}
+
+/**
+ * DRY RUN by default: `--write` is never implied, because the alternative is a command whose
+ * inspection form writes to a production table. What `--write` does is ENQUEUE — the queue is a
+ * job's execution surface, so the sweep runs on the workers already serving the new release
+ * rather than inside this process.
+ */
+async function runBackfillPass(
+  ctx: CommandContext,
+  root: string,
+  names: readonly string[] | 'all',
+): Promise<CommandResult> {
+  await loadApp(root);
+  const environment = resolveEnvironment({ env: ctx.env });
+  const write = flagBool(ctx.args, 'write');
+  return withJobDriver(root, ctx, async (driver) => {
+    const rows = await runBackfills({
+      driver,
+      names,
+      write,
+      force: flagBool(ctx.args, 'force'),
+      environment,
+      appliedMigrations: await readAppliedMigrations(),
+    });
+    return backfillPassResult(rows, write);
+  });
+}
+
+/**
+ * A blocked or deduped name is a finding and a non-zero exit, and every OTHER name still ran —
+ * that isolation is what stops one wedged cleanup blocking every later one forever.
+ */
+function backfillPassResult(rows: readonly BackfillPlanRow[], write: boolean): CommandResult {
+  const findings = rows.flatMap((row) => (row.finding === null ? [] : [row.finding]));
+  const enqueued = rows.filter((row) => row.action === 'enqueued').length;
+  return {
+    ok: findings.length === 0,
+    command: 'db',
+    summary: write
+      ? msg('cli.db.backfill.planned', {
+          count: rows.length,
+          enqueued,
+          blocked: rows.length - enqueued,
+        })
+      : msg('cli.db.backfill.dryRun', { count: rows.length }),
+    findings,
+    lines: rows.length === 0 ? [] : renderPlanTable(rows).map((line) => `  ${line}`),
+    data: planToJson(rows),
+  };
 }

@@ -4,7 +4,13 @@
 // bypassable. `loginFailed()` lives here so the throttle and the message can never drift apart.
 
 import type { Clock } from '@ultimat3/core';
-import { AuthError, accountLocked } from './errors';
+import { AuthError, accountLocked, authLimiterNotShared } from './errors';
+
+/**
+ * Where a limiter's counters live. A limiter says which it provides; `AuthRateLimitPolicy` says
+ * which the deployment requires, and the two are checked against each other once, at `defineAuth`.
+ */
+export type AuthLimiterScope = 'process' | 'shared';
 
 /**
  * Hard bound on tracked keys. A key is one identity — `account:<email>` or `ip:<addr>` — so the
@@ -19,6 +25,13 @@ export interface AuthRateLimitPolicy {
   readonly lockoutMs: number;
   /** Bound on the in-memory table. Defaults to `DEFAULT_MAX_AUTH_LIMIT_KEYS`. */
   readonly maxKeys?: number | undefined;
+  /**
+   * What this deployment requires of the limiter. `'shared'` says `maxAttempts` is the whole
+   * fleet's allowance, and a per-process limiter then refuses to build — because N replicas each
+   * counting their own failures let an account survive `maxAttempts × N` guesses, and a lockout
+   * one replica established is invisible to the rest.
+   */
+  readonly scope: AuthLimiterScope;
 }
 
 export const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimitPolicy = Object.freeze({
@@ -26,16 +39,26 @@ export const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimitPolicy = Object.freeze({
   windowMs: 15 * 60 * 1000,
   lockoutMs: 15 * 60 * 1000,
   maxKeys: DEFAULT_MAX_AUTH_LIMIT_KEYS,
+  // One process is the only thing this package can promise without being told.
+  scope: 'process',
 });
 
+/**
+ * Async on every member, so a shared implementation can exist at all: a lockout that holds across
+ * replicas is a network round trip, and a synchronous signature has no way to wait for one. The
+ * in-memory limiter below answers immediately — the cost is one already-settled promise per call,
+ * on a path that is about to run a KDF.
+ */
 export interface AuthLimiter {
-  /** Throws `X_ACCOUNT_LOCKED` if the key is inside a lockout. Call before any KDF work. */
-  assertAllowed(key: string): void;
-  recordFailure(key: string): void;
+  /** The counters this limiter keeps: per-process, or shared with every other replica. */
+  readonly scope: AuthLimiterScope;
+  /** Rejects with `X_ACCOUNT_LOCKED` if the key is inside a lockout. Call before any KDF work. */
+  assertAllowed(key: string): Promise<void>;
+  recordFailure(key: string): Promise<void>;
   /** A success clears the window: a legitimate user is not punished for a typo yesterday. */
-  recordSuccess(key: string): void;
-  lockedUntil(key: string): Date | null;
-  reset(): void;
+  recordSuccess(key: string): Promise<void>;
+  lockedUntil(key: string): Promise<Date | null>;
+  reset(): Promise<void>;
 }
 
 /** What `createAuthLimiter` returns: the interface, plus the bound it keeps, observable. */
@@ -110,17 +133,18 @@ export function createAuthLimiter(
   };
 
   return {
+    scope: 'process',
     get size() {
       return buckets.size;
     },
-    assertAllowed(key) {
+    async assertAllowed(key) {
       const bucket = buckets.get(key);
       if (bucket === undefined) return;
       const nowMs = clock.now().getTime();
       if (bucket.lockedUntilMs <= nowMs) return;
       throw accountLocked(key, Math.ceil((bucket.lockedUntilMs - nowMs) / 1000));
     },
-    recordFailure(key) {
+    async recordFailure(key) {
       const nowMs = clock.now().getTime();
       const bucket = bucketFor(key);
       bucket.failures = bucket.failures.filter((at) => at > nowMs - policy.windowMs);
@@ -133,18 +157,30 @@ export function createAuthLimiter(
       bucket.forgetAtMs = Math.max(bucket.lockedUntilMs, nowMs + policy.windowMs);
       if (buckets.size > maxKeys || nowMs - lastSweepMs >= SWEEP_EVERY_MS) sweep(nowMs);
     },
-    recordSuccess(key) {
+    async recordSuccess(key) {
       buckets.delete(key);
     },
-    lockedUntil(key) {
+    async lockedUntil(key) {
       const bucket = buckets.get(key);
       if (bucket === undefined || bucket.lockedUntilMs <= clock.now().getTime()) return null;
       return new Date(bucket.lockedUntilMs);
     },
-    reset() {
+    async reset() {
       buckets.clear();
     },
   };
+}
+
+/**
+ * At `defineAuth`, never at the first login. A per-node limiter under a `'shared'` declaration is
+ * an account lockout worth `maxAttempts × replicas`, which is a number nobody configured and
+ * nothing reports. The declaration is the app's: this package cannot see how many processes the
+ * image is running, and one that inferred it from the environment would be wrong the first time
+ * the app scaled.
+ */
+export function assertAuthLimiterScope(policy: AuthRateLimitPolicy, limiter: AuthLimiter): void {
+  if (policy.scope !== 'shared' || limiter.scope === 'shared') return;
+  throw authLimiterNotShared(limiter.scope);
 }
 
 /**

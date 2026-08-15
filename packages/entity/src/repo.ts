@@ -16,6 +16,7 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
+import { assertRowTenant } from './tenancy';
 import type { IdOf } from './types';
 
 export interface Tx {
@@ -263,11 +264,16 @@ export const memoryRepo = <Row>(
     return { plan, found: rowsOf(plan, args) };
   };
 
-  const write = (given: Row, options: RepoOptions | undefined): Row => {
+  const write = (given: Row, options: RepoOptions | undefined, operation: string): Row => {
     // `MoneyInput` lets a writer hand a `bigint`; a stored row holds the value type. The Postgres
     // driver narrows in `bindValues` and reads its answer back through `returning *`, so without
     // this an in-memory row would be the one row in the framework `JSON.stringify` refuses.
     const row = narrowMoney(entity.$columns, given);
+    // Beside `$assert`, and before the row lands: a write is judged by the tenant it names as well
+    // as by the invariants it declares, and the Postgres driver runs the same pair in `writeRows`.
+    // `update` reaches here with the STORED row merged under its patch, so a patch that moves a row
+    // out of this tenant is refused by the same call that refuses an insert into another one.
+    assertRowTenant(entity.$name, entity.$tenantColumn, operation, row);
     entity.$assert(row);
     const key = keyOf(row);
     const previous = rows.get(key);
@@ -325,18 +331,29 @@ export const memoryRepo = <Row>(
     },
 
     async insert(values, options) {
-      return write(values, options);
+      return write(values, options, 'insert');
     },
 
     async insertAll(batch, options) {
       // The whole batch is judged before any of it lands: Postgres refuses the statement as one,
-      // so a row an invariant rejects must not leave the rows before it stored here either.
-      for (const row of batch) entity.$assert(row);
-      return batch.map((row) => write(row, options));
+      // so a row an invariant rejects — or one naming a tenant this actor may not write — must not
+      // leave the rows before it stored here either. `write` re-checks both per row; this loop is
+      // what makes the batch all-or-nothing, which is the half a per-row check cannot give.
+      for (const row of batch) {
+        assertRowTenant(entity.$name, entity.$tenantColumn, 'insertAll', row);
+        entity.$assert(row);
+      }
+      return batch.map((row) => write(row, options, 'insertAll'));
     },
 
     async upsertAll(batch, args) {
-      for (const row of batch) entity.$assert(row);
+      // The INCOMING rows, judged before any of them is matched: under `onMatch: 'nothing'` a
+      // colliding row is skipped and never reaches `write()`, so checking only what lands would
+      // let a row naming another tenant through whenever it happened to collide.
+      for (const row of batch) {
+        assertRowTenant(entity.$name, entity.$tenantColumn, 'upsertAll', row);
+        entity.$assert(row);
+      }
       const plan = upsertPlan(entity, batch, args.onConflict, args.onMatch ?? 'update');
       const keys = conflictKeys(entity, plan, batch);
       // The stored rows under the same key, so "does this collide" is the question the unique
@@ -365,7 +382,7 @@ export const memoryRepo = <Row>(
               );
         // `UpsertArgs extends RepoOptions`, so the args ARE the options — one bag, and a `tx`
         // passed to an upsert registers its undo exactly as it does for every other write here.
-        const result = write(merged, args);
+        const result = write(merged, args, 'upsertAll');
         // Filed as it lands, so a later row of the same batch collides with an earlier one exactly
         // as it would with a row the request stored a moment before it.
         if (key !== undefined) stored.set(key, result);
@@ -375,14 +392,18 @@ export const memoryRepo = <Row>(
     },
 
     async update(id, patch, options) {
-      return write(Object.assign({}, addressed(id, options, 'update'), patch), options);
+      return write(Object.assign({}, addressed(id, options, 'update'), patch), options, 'update');
     },
 
     async delete(id, options) {
       const current = addressed(id, options, 'delete');
       // Soft delete hides the row without losing it; the column's presence is the switch.
       if (entity.$softDelete) {
-        write(Object.assign({}, current, { [SOFT_DELETE_COLUMN]: systemClock.now() }), options);
+        write(
+          Object.assign({}, current, { [SOFT_DELETE_COLUMN]: systemClock.now() }),
+          options,
+          'delete',
+        );
         return;
       }
       const key = keyOf(current);
@@ -398,7 +419,11 @@ export const memoryRepo = <Row>(
       const doomed = rowsOf(deletePlan(entity, filter, options, 'deleteWhere'), {});
       for (const row of doomed) {
         if (entity.$softDelete) {
-          write(Object.assign({}, row, { [SOFT_DELETE_COLUMN]: systemClock.now() }), options);
+          write(
+            Object.assign({}, row, { [SOFT_DELETE_COLUMN]: systemClock.now() }),
+            options,
+            'deleteWhere',
+          );
           continue;
         }
         const key = keyOf(row);
@@ -413,7 +438,7 @@ export const memoryRepo = <Row>(
       // `addressed()` — patching a row the app has already deleted is not an update, it is a
       // resurrection nobody asked for. `write` re-asserts the invariants on each result.
       const found = rowsOf(updatePlan(entity, filter, patch, options, 'updateWhere'), {});
-      for (const row of found) write(Object.assign({}, row, patch), options);
+      for (const row of found) write(Object.assign({}, row, patch), options, 'updateWhere');
       return found.length;
     },
 

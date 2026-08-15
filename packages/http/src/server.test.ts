@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { inflightCount, lifecycleState, resetLifecycle } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
+import { memoryRateLimitStore, type RateLimitStore } from './rate-limit';
 import { json, text } from './response';
 import type { Route } from './router';
 import { createServer } from './server';
@@ -66,6 +67,59 @@ describe('createServer', () => {
         .describe()
         .map((route) => route.name),
     ).toEqual(['ping', 'posts.show']);
+  });
+});
+
+/**
+ * A limit configured once must be enforced once, not once per process. Two handles stand in for
+ * two replicas of one deployment: `docker-compose.prod.yml` ships `web` at `replicas: 3`, so a
+ * limiter each replica keeps to itself multiplies every configured number by the replica count
+ * and nothing says so.
+ */
+describe('rate limiting across replicas', () => {
+  /** The memory store held by both handles: one process standing in for a shared tier. */
+  const sharedStore = (): RateLimitStore => {
+    const backing = memoryRateLimitStore();
+    return { scope: 'shared', take: backing.take, reset: backing.reset };
+  };
+
+  const replica = (store: RateLimitStore) =>
+    createServer({
+      routes,
+      role: 'web',
+      config: defineHttpConfig({
+        port: 0,
+        dev: false,
+        rateLimit: {
+          enabled: true,
+          scope: 'shared',
+          defaultBucket: 'default',
+          // No refill: the burst is the whole allowance, so a second one is unmistakable.
+          buckets: { default: { capacity: 3, refillPerSecond: 0 } },
+        },
+      }),
+      rateLimitStore: store,
+    });
+
+  test('two replicas behind one store spend a single burst between them', async () => {
+    const store = sharedStore();
+    const a = replica(store);
+    const b = replica(store);
+    const statuses: number[] = [];
+    for (const handle of [a, b, a, b]) {
+      statuses.push((await handle.fetch(new Request('http://local/ping'))).status);
+    }
+    expect(statuses).toEqual([200, 200, 200, 429]);
+  });
+
+  test('a shared declaration on a per-process store refuses at boot, not at the first burst', () => {
+    expect(() => replica(memoryRateLimitStore())).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
+  });
+
+  test('the default declaration still boots on the memory store', () => {
+    expect(() =>
+      createServer({ routes, role: 'web', config: defineHttpConfig({ port: 0 }) }),
+    ).not.toThrow();
   });
 });
 

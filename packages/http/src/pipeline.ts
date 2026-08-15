@@ -32,7 +32,12 @@ import type { ServerHooks } from './hooks';
 import { negotiateLocale, readCookie, resolveTimeZone } from './locale';
 import { compose, type Middleware } from './middleware';
 import { overlayResponse, wantsOverlay } from './overlay';
-import { createRateLimiter, type RateLimiter, rateLimitKey } from './rate-limit';
+import {
+  assertRateLimitScope,
+  createRateLimiter,
+  type RateLimiter,
+  rateLimitKey,
+} from './rate-limit';
 import { UltimateRequest } from './request';
 import { addVary, applyCacheHeaders, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
@@ -395,6 +400,9 @@ export interface Pipeline {
 export const createPipeline = (deps: PipelineDeps): Pipeline => {
   const config = deps.config ?? defineHttpConfig();
   const limiter = deps.limiter ?? createRateLimiter({ config: config.rateLimit });
+  // Here rather than in `createServer`: this is the one construction path every server, test and
+  // embedder shares, so a limiter that cannot keep the app's declaration is refused exactly once.
+  assertRateLimitScope(config.rateLimit, limiter);
   const run = runners(deps, config, limiter);
   const stages: readonly Stage[] = PIPELINE_STAGES.map((doc) => ({ ...doc, run: run[doc.name] }));
 
