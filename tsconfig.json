@@ -6,6 +6,9 @@
   "files": [],
   "references": [
     {
+      "path": "./dummy/social-media-clone"
+    },
+    {
       "path": "./packages/action"
     },
     {

@@ -4,7 +4,7 @@
 
 import { driver, schema } from '@social-media-clone/db';
 import type { AdminFilter, AdminListQuery, AdminRepo, AdminRow } from '@ultimat3/admin';
-import type { ColumnMap, Entity, Operator, Predicate, SortKey } from '@ultimat3/entity';
+import type { ColumnMap, Entity, IdOf, Operator, Predicate, SortKey } from '@ultimat3/entity';
 
 /** `contains` is the admin's word for it; `like` with both wildcards is what a driver runs. */
 const OPERATOR_OF: Readonly<Record<AdminFilter['op'], Operator>> = {
@@ -90,6 +90,10 @@ export function adminRepoFor<Row extends AdminRow, C extends ColumnMap>(
   // `client.ts` exports the driver precisely so a second caller reads the store the first writes.
   const repo = driver.repo(entity);
   const idField = entity.$primaryKey[0] ?? 'id';
+  // `AdminRepo` carries `id: string` — a URL param, untyped by nature — while `Repo<Row>` wants
+  // `IdOf<Row>`. Re-branding here, once, is the whole fix: the entity's own `$parse` still
+  // rejects anything else once the row itself is validated.
+  const brand = (id: string): IdOf<Row> => id as IdOf<Row>;
 
   return {
     async list(query: AdminListQuery): Promise<readonly Row[]> {
@@ -101,15 +105,15 @@ export function adminRepoFor<Row extends AdminRow, C extends ColumnMap>(
       });
       return dropThroughTie(page.rows, query, idField).slice(0, query.limit);
     },
-    find: (id) => repo.findById(id),
+    find: (id) => repo.findById(brand(id)),
     create: (input) => repo.insert(entity.$parse(input)),
     async update(id, patch) {
-      const before = await repo.findById(id);
+      const before = await repo.findById(brand(id));
       // Re-parsed as a whole row: a patch validated field-by-field can still leave the row
       // violating an invariant that spans two columns.
-      return repo.update(id, entity.$parse({ ...(before ?? {}), ...patch }));
+      return repo.update(brand(id), entity.$parse({ ...(before ?? {}), ...patch }));
     },
-    destroy: (id) => repo.delete(id),
+    destroy: (id) => repo.delete(brand(id)),
     count: (where) => repo.count({ where: (where ?? []).map(predicateOf) }),
   };
 }

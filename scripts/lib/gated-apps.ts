@@ -64,11 +64,6 @@ export const GATED_APPS: readonly GatedApp[] = [
     dir: 'dummy/social-media-clone',
     reference: './dummy/social-media-clone',
     expectedRed: {
-      typecheck:
-        '4 errors, all one class: apps/admin/app/admin/repo.ts:104,107,110,112 pass a bare ' +
-        '`string` where @ultimat3/entity wants `IdOf<Row>`, because the admin repo erases the ' +
-        'row type behind its own `Row` generic and never re-brands the id. Owned by the ' +
-        'migration onto the real entity API',
       boundaries:
         'X_BOUNDARY_SITE_TO_APP ×3 — apps/web/site/feed/page.tsx imports ' +
         'apps/web/app/posts/service.ts, which drags policy.ts and repo.ts across the static/app ' +
