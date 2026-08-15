@@ -28,6 +28,9 @@ const TEST_GLOB = '**/*.test.ts';
  * comment above claimed the two agreed and they did not: `x test unit` discovered 464 files where
  * the gate's `unit` step ran 441, so the gate's own test steps — which now select through this
  * function — would have started running a nested demo app's suite on the framework's gate.
+ *
+ * Both directories are gated where they belong, by `scripts/reference-app-gate.ts` running
+ * `x verify` inside each app — see `NEVER_A_TEST` for why that is the only place they run.
  */
 const IGNORED = ['/dist/', '/build/', '/node_modules/', '/examples/', '/dummy/'];
 

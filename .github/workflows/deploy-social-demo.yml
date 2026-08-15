@@ -28,6 +28,9 @@ concurrency:
 
 permissions:
   contents: read
+  # Read-only, and only so this workflow can read the app gate's verdict on the commit it is about
+  # to publish. See the `build` job's first real step.
+  checks: read
 
 env:
   IMAGE: registry.digitalocean.com/developerz-ai/ultimate-social
@@ -38,11 +41,23 @@ jobs:
   # duplicated: it added ~70s to every publish and went red on a flake that the gate on the same
   # commit had already passed, holding back an image whose source was proven green.
   #
-  # What protects production is not this job; it is that the image updater only rolls a `sha-<7>`
-  # tag, and this workflow only pushes one for a commit that is already on main.
+  # As of 2026-08 that gate covers THIS app: `ci.yml`'s `reference-app-verify` job runs
+  # `x verify` in dummy/social-media-clone against the ratchet in scripts/lib/gated-apps.ts. Until
+  # then the image published here was the only place the app was exercised at all.
+  #
+  # Covering the app is not the same as gating the image, and this workflow used to confuse the
+  # two: a separate workflow is not a dependency, `main` carries no branch protection (checked
+  # 2026-08 — `branches/main/protection` is 404), and both workflows start from the same push. So
+  # the publish now READS the gate's verdict for its own commit before it pushes anything — not a
+  # second run of the gate, which is the duplicate path axiom 1 forbids, but the one bit that run
+  # produced. Fails closed: no verdict inside the window does not publish.
+  #
+  # What protects production past that is the tag contract: the image updater only rolls a
+  # `sha-<7>` tag, and this workflow only pushes one for a commit that is already on main.
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 for the build, plus the ≤10 the gate wait below can spend.
+    timeout-minutes: 30
     environment:
       name: social-demo
       url: https://social-media.ultimate.demo.developerz.ai
@@ -59,6 +74,43 @@ jobs:
             echo "sha=$sha"
             echo "short=sha-$(printf '%.7s' "$sha")"
           } >> "$GITHUB_OUTPUT"
+
+      # The gate's verdict on THIS commit, before a single layer is pushed. `ci.yml` runs on the
+      # same push, so the check usually appears within seconds and concludes in under a minute
+      # (measured 24-53s); the window is 10 minutes so a queued runner is waited out rather than
+      # published around. A conclusion that is not `success` — and a commit that never gets one,
+      # which is what a `workflow_dispatch` off an ungated ref looks like — stops the publish.
+      - name: require the app gate's verdict for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.built.outputs.sha }}
+          CHECK: reference-app-verify
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            # `|| true`: a transient API failure is "no verdict yet", not a publish. Under
+            # `set -e` the bare substitution would end the job on one 502 and read as a red gate.
+            conclusion="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?check_name=${CHECK}" \
+              --jq '[.check_runs[] | select(.status == "completed")]
+                      | sort_by(.completed_at) | last | .conclusion // ""' || true)"
+            case "$conclusion" in
+              success)
+                echo "ok: ${CHECK} passed for ${SHA}"
+                exit 0
+                ;;
+              '')
+                echo "attempt ${attempt}/40: ${CHECK} has no verdict yet for ${SHA}"
+                sleep 15
+                ;;
+              *)
+                echo "::error::${CHECK} concluded '${conclusion}' for ${SHA} — not publishing"
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::${CHECK} reported no verdict for ${SHA} within 10 minutes — not publishing"
+          exit 1
 
       - uses: docker/setup-buildx-action@v3
 

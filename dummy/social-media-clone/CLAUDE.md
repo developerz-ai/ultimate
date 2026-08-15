@@ -4,6 +4,14 @@ social-media-clone — a real social network on Ultimate, and the framework's st
 A router, not an encyclopedia. Facts live in `x.manifest.json`; this file holds what you cannot
 infer from the code.
 
+`x verify` here is **blocking on the framework repo's CI**, through the ratchet in
+`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries` and `drift` —
+2 red of 17 as of 2026-08 — and every other step must stay green. `examples/dummy` has its own
+table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
+delete its pin in the same change
+(`bun run ../../scripts/reference-app-gate.ts --unpin dummy/social-media-clone:<step>`). This app is not the reference app — `examples/dummy` decides idiom — but it is deployed
+(`.github/workflows/deploy-social-demo.yml`), which is why it is gated.
+
 ## Response rules
 
 Lead with the action. No preamble. Parallel tool calls when the calls are independent. Read before

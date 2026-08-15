@@ -4,7 +4,8 @@
 
 import { driver, schema } from '@social-media-clone/db';
 import type { AdminFilter, AdminListQuery, AdminRepo, AdminRow } from '@ultimat3/admin';
-import type { ColumnMap, Entity, Operator, Predicate, SortKey } from '@ultimat3/entity';
+import type { ColumnMap, Entity, IdOf, Operator, Predicate, SortKey } from '@ultimat3/entity';
+import { invariantViolated } from '@ultimat3/entity';
 
 /** `contains` is the admin's word for it; `like` with both wildcards is what a driver runs. */
 const OPERATOR_OF: Readonly<Record<AdminFilter['op'], Operator>> = {
@@ -90,6 +91,22 @@ export function adminRepoFor<Row extends AdminRow, C extends ColumnMap>(
   // `client.ts` exports the driver precisely so a second caller reads the store the first writes.
   const repo = driver.repo(entity);
   const idField = entity.$primaryKey[0] ?? 'id';
+  const idColumn = entity.$columns[idField];
+  /**
+   * `AdminRepo` carries `id: string` — a URL param, untyped by nature — while `Repo<Row>` wants
+   * `IdOf<Row>`. The primary key column's OWN `$parse` is what earns the crossing: `/posts/nope`
+   * is rejected here, at the door, instead of reaching the driver as a cast nobody made good on.
+   * `entity.$parse` cannot answer for it — that validates a whole row, not one id. The assertion
+   * afterwards adds nothing to check: a brand is a compile-time tag with no runtime witness, and
+   * the string it tags has already been through the column's guard.
+   */
+  const idOf = (id: string): IdOf<Row> => {
+    const parsed = idColumn === undefined ? id : idColumn.$parse(id);
+    if (typeof parsed !== 'string') {
+      throw invariantViolated(entity.$name, idField, `expected a string id, got ${typeof parsed}`);
+    }
+    return parsed as IdOf<Row>;
+  };
 
   return {
     async list(query: AdminListQuery): Promise<readonly Row[]> {
@@ -101,15 +118,17 @@ export function adminRepoFor<Row extends AdminRow, C extends ColumnMap>(
       });
       return dropThroughTie(page.rows, query, idField).slice(0, query.limit);
     },
-    find: (id) => repo.findById(id),
+    // `async`, so a refused id arrives as a rejection: these return promises, and a caller that
+    // chains `.catch()` instead of `await`ing would never see a synchronous throw.
+    find: async (id) => repo.findById(idOf(id)),
     create: (input) => repo.insert(entity.$parse(input)),
     async update(id, patch) {
-      const before = await repo.findById(id);
+      const before = await repo.findById(idOf(id));
       // Re-parsed as a whole row: a patch validated field-by-field can still leave the row
       // violating an invariant that spans two columns.
-      return repo.update(id, entity.$parse({ ...(before ?? {}), ...patch }));
+      return repo.update(idOf(id), entity.$parse({ ...(before ?? {}), ...patch }));
     },
-    destroy: (id) => repo.delete(id),
+    destroy: async (id) => repo.delete(idOf(id)),
     count: (where) => repo.count({ where: (where ?? []).map(predicateOf) }),
   };
 }

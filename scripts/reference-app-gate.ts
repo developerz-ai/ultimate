@@ -1,64 +1,39 @@
 #!/usr/bin/env bun
-// The reference app's own `x verify`, run as a BLOCKING check on this repo. Postly is not green
-// yet, so the check is a ratchet rather than a pass/fail: every step passing today must keep
-// passing, every step pinned as failing must still be failing, and the moment `typecheck` comes
-// off the pin the app has to join the root `tsc -b` solution. Red never becomes the resting state.
+// Every tracked app's own `x verify`, run as a BLOCKING check on this repo — `examples/dummy` and
+// the deployed `dummy/social-media-clone`. Neither is green yet, so the check is a ratchet rather
+// than a pass/fail: every step passing today must keep passing, every step pinned in that app's
+// `expectedRed` must still be failing, and the moment an app's `typecheck` comes off the pin it
+// has to join the root `tsc -b` solution. Red never becomes the resting state.
 //
 //   bun run scripts/reference-app-gate.ts [--json]
+//   bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]   # shrink the ratchet
+//
+// The pins live in scripts/lib/gated-apps.ts; this file owns only what the ratchet does with them.
 
-// `join` builds the host-separator paths to the app root and the CLI entry point; Bun ships no
+// `join` builds the host-separator paths to each app root and the CLI entry point; Bun ships no
 // equivalent, and both must be absolute so the subprocess's cwd cannot change what runs.
 import { join } from 'node:path';
-import type { Runner, VerifyStepName } from '@ultimat3/cli';
+import type { Runner } from '@ultimat3/cli';
 import { exec, VERIFY_STEP_NAMES } from '@ultimat3/cli';
-import { parseScriptArgs } from './lib/args';
-import type { Finding } from './lib/log';
+import { flagString, parseScriptArgs } from './lib/args';
+import type { GatedApp } from './lib/gated-apps';
+import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
+import type { Finding, ScriptResult } from './lib/log';
 import { renderFinding, report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { parseUnpin, pinnedSteps, removePins } from './lib/unpin';
 
-export const REFERENCE_APP = 'examples/dummy';
 export const ROOT_TSCONFIG = 'tsconfig.json';
-export const GATE_FILE = 'scripts/reference-app-gate.ts';
 
-/** The `references` entry that puts the app in the root `tsc -b` solution. */
-export const REFERENCE_ENTRY = './examples/dummy';
+/** The command that performs the stale-pin edit, so the finding can hand over a runnable line. */
+export const unpinCommand = (app: GatedApp, steps: readonly string[]): string =>
+  `bun run scripts/reference-app-gate.ts --unpin ${app.dir}:${steps.join(',')}`;
 
 /** Runnable from the repo root, and the same gate this script runs — just rendered for a human. */
-export const REPRODUCE = `cd ${REFERENCE_APP} && bun run ../../packages/cli/src/bin.ts verify`;
-
-/**
- * Steps of the app's gate allowed to fail today, each naming the work that owns it. A step absent
- * from this table MUST pass — that is what makes the reference app blocking while it is still
- * being repaired. Lines are only ever deleted: a new red step is a regression, and a pinned step
- * that turns green fails this check until its line goes. An empty table means 17 of 17.
- *
- * `satisfies` against the gate's own step names, so a pin for a step that does not exist is a
- * compile error rather than a line that quietly excuses nothing.
- */
-export const EXPECTED_RED: Readonly<Record<string, string>> = {
-  typecheck:
-    '137 errors as of `bunx tsc -b --pretty false` — 136 inside examples/dummy, 1 leaking ' +
-    'through project refs from packages/mcp/src/transport-stdio.ts:35 (a ReadableStream missing ' +
-    '[Symbol.asyncIterator]). NOT the builder-method/tenancy-escape-hatch pair this line used to ' +
-    'blame: the posts repo was rewritten onto the real @ultimat3/entity surface and the query ' +
-    'client landed, which is what took the count from 227 to here. What remains: ' +
-    'apps/web/app/orgs/repo.ts still chains the same phantom .update().returning() / ' +
-    '.insert().returning() the posts repo used to; every *.contract/.live/.job.test.ts calling ' +
-    '`seed`/`actorFor` has no type augmentation for the fixtures scripts/test-setup.ts wires in ' +
-    "only at runtime; `Actor` is missing `memberId`/`tz` (named, not new, in this app's own " +
-    'CLAUDE.md); and a scatter of UI prop drift (`SpaceStep`, `DateTimeFormatter`) plus a ' +
-    'Date/Instant brand mismatch on every toZoned call in packages/core/src/digest-schedule.ts. ' +
-    'The count moved 136 → 137 with previousDigestAt and its digestPreview caller, which are two ' +
-    "more instances of those same two classes, not new ones. Still the data-substrate work's to " +
-    'close',
-  contract:
-    "X_TENANCY_UNSCOPED on every post write, and on the read that publishPost's `row:` loader " +
-    'makes before its policy runs — data substrate',
-  live: 'the live suite reads through the same unscoped repo — data substrate',
-  job: 'the digest job writes through the same unscoped repo — data substrate',
-  e2e: 'the built output serves pages backed by the same repo — data substrate',
-  drift: 'migrations predate the current entity set; regenerated with the schema',
-} satisfies Partial<Record<VerifyStepName, string>>;
+export const reproduce = (app: GatedApp): string => {
+  const up = '../'.repeat(app.dir.split('/').length);
+  return `cd ${app.dir} && bun run ${up}packages/cli/src/bin.ts verify`;
+};
 
 export interface GateStep {
   readonly name: string;
@@ -151,8 +126,8 @@ export const declaredStepIssues = (
 };
 
 export interface GateInput {
+  readonly app: GatedApp;
   readonly steps: readonly GateStep[] | undefined;
-  readonly expectedRed: Readonly<Record<string, string>>;
   readonly referenced: boolean;
   /** The complete step set a real run reports against — `VERIFY_STEP_NAMES` at the real call
    * site. A parameter, not a hardcoded import, so a test can pin a small closed world instead of
@@ -160,16 +135,21 @@ export interface GateInput {
   readonly declaredSteps: readonly string[];
 }
 
-/** The whole decision, separated from running anything so it can be tested both ways round. */
+/**
+ * The whole decision for ONE app, separated from running anything so it can be tested both ways
+ * round. Every finding names the app: with more than one gated app, "typecheck regressed" with no
+ * directory is a finding the reader has to reproduce twice to place.
+ */
 export const gateFindings = (input: GateInput): readonly Finding[] => {
-  const { steps, expectedRed, referenced, declaredSteps } = input;
+  const { app, steps, referenced, declaredSteps } = input;
+  const expectedRed = app.expectedRed;
   if (steps === undefined || steps.length === 0) {
     return [
       {
         code: 'X_REFERENCE_APP_REGRESSED',
-        cause: `${REFERENCE_APP} printed no step table, so not one step could be checked`,
-        fix: REPRODUCE,
-        at: REFERENCE_APP,
+        cause: `${app.dir} printed no step table, so not one step could be checked`,
+        fix: reproduce(app),
+        at: app.dir,
       },
     ];
   }
@@ -182,9 +162,9 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
   if (shapeIssues.length > 0) {
     findings.push({
       code: 'X_REFERENCE_APP_REGRESSED',
-      cause: `${REFERENCE_APP}'s step table does not match the declared steps: ${shapeIssues.join('; ')}`,
-      fix: REPRODUCE,
-      at: REFERENCE_APP,
+      cause: `${app.dir}'s step table does not match the declared steps: ${shapeIssues.join('; ')}`,
+      fix: reproduce(app),
+      at: app.dir,
     });
   }
 
@@ -194,9 +174,9 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
   if (regressed.length > 0) {
     findings.push({
       code: 'X_REFERENCE_APP_REGRESSED',
-      cause: `${regressed.join(', ')} passed for the reference app and now ${regressed.length === 1 ? 'fails' : 'fail'}`,
-      fix: REPRODUCE,
-      at: REFERENCE_APP,
+      cause: `${regressed.join(', ')} passed for ${app.dir} and now ${regressed.length === 1 ? 'fails' : 'fail'}`,
+      fix: reproduce(app),
+      at: app.dir,
     });
   }
 
@@ -204,28 +184,30 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
   if (stale.length > 0) {
     findings.push({
       code: 'X_REFERENCE_APP_PIN_STALE',
-      cause: `${stale.join(', ')} now ${stale.length === 1 ? 'passes' : 'pass'} but ${stale.length === 1 ? 'is' : 'are'} still pinned as failing`,
-      fix: `delete the ${stale.join(', ')} entr${stale.length === 1 ? 'y' : 'ies'} from EXPECTED_RED in ${GATE_FILE}`,
-      at: GATE_FILE,
+      cause: `${stale.join(', ')} now ${stale.length === 1 ? 'passes' : 'pass'} for ${app.dir} but ${stale.length === 1 ? 'is' : 'are'} still pinned as failing`,
+      // Runnable, not prose: this is the edit every landed fix makes, and `at` still names the
+      // file for a reader who would rather delete the lines themselves.
+      fix: unpinCommand(app, stale),
+      at: PINS_FILE,
     });
   }
 
-  // The build-graph half of the same promise: a reference app that compiles has no excuse for
-  // sitting outside `tsc -b`, and only the root solution proves the packages' emitted .d.ts are
-  // consumable by a real app rather than only their own sources.
+  // The build-graph half of the same promise: an app that compiles has no excuse for sitting
+  // outside `tsc -b`, and only the root solution proves the packages' emitted .d.ts are consumable
+  // by a real app rather than only their own sources.
   if (!(red.includes('typecheck') || referenced)) {
     findings.push({
       code: 'X_REFERENCE_APP_UNREFERENCED',
-      cause: `${REFERENCE_APP} typechecks but is not a project the root ${ROOT_TSCONFIG} references`,
-      fix: `add { "path": "${REFERENCE_ENTRY}" } to the "references" array in ${ROOT_TSCONFIG}`,
+      cause: `${app.dir} typechecks but is not a project the root ${ROOT_TSCONFIG} references`,
+      fix: `add { "path": "${app.reference}" } to the "references" array in ${ROOT_TSCONFIG}`,
       at: ROOT_TSCONFIG,
     });
   }
   return findings;
 };
 
-/** Whether the app is in the root build graph. An unreadable root config counts as "not in it". */
-export const referencesApp = async (root: string): Promise<boolean> => {
+/** Whether an app is in the root build graph. An unreadable root config counts as "not in it". */
+export const referencesApp = async (root: string, entry: string): Promise<boolean> => {
   const parsed: unknown = await Bun.file(join(root, ROOT_TSCONFIG))
     .json()
     .catch(() => undefined);
@@ -234,10 +216,10 @@ export const referencesApp = async (root: string): Promise<boolean> => {
   // A malformed entry (`null`, a bare string, a number) is a non-reference, not a crash: reading
   // `.path` off it without this guard throws before the real entries ever get a chance to match.
   return references.some(
-    (entry) =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      (entry as { readonly path?: unknown }).path === REFERENCE_ENTRY,
+    (ref) =>
+      typeof ref === 'object' &&
+      ref !== null &&
+      (ref as { readonly path?: unknown }).path === entry,
   );
 };
 
@@ -256,41 +238,143 @@ export const stepLines = (
   return lines;
 };
 
-export const runReferenceAppGate = async (
+/** The red steps this app's table pins. The rest of `red` is a regression, never a held pin. */
+export const pinnedRedSteps = (app: GatedApp, red: readonly string[]): readonly string[] =>
+  red.filter((name) => name in app.expectedRed);
+
+/**
+ * One app's line in the summary. Red and pinned-red are separate numbers because they are separate
+ * facts: reporting every red step as "pinned red" described the failing run — the one this line
+ * exists to explain — as if the ratchet were holding.
+ */
+export const tally = (app: GatedApp, red: readonly string[], total: number): string =>
+  `${app.dir} ${total - red.length}/${total}, ${red.length} red (${pinnedRedSteps(app, red).length} pinned)`;
+
+export const runAppGate = async (
   root: string,
   runner: Runner,
+  dir: string,
 ): Promise<readonly GateStep[] | undefined> => {
   const result = await runner(
     ['bun', 'run', join(root, 'packages/cli/src/bin.ts'), 'verify', '--json'],
-    { cwd: join(root, REFERENCE_APP) },
+    { cwd: join(root, dir) },
   );
   return parseSteps(result.stdout);
+};
+
+const SCRIPT = 'reference-app-gate';
+
+const badFlag = (cause: string, fix: string): ScriptResult => ({
+  ok: false,
+  script: SCRIPT,
+  summary: cause,
+  findings: [{ code: 'X_CLI_BAD_FLAG', cause, fix, at: PINS_FILE }],
+});
+
+/**
+ * `--unpin <app>:<step>[,<step>]`, performed: the edit `X_REFERENCE_APP_PIN_STALE` names, so an
+ * agent shrinks the ratchet with the line the gate printed instead of hand-editing a table.
+ *
+ * Fails closed at every disagreement. The steps must be pinned for that app, and the entries the
+ * text parser finds must be exactly the keys the gate's own import sees — a pins file this cannot
+ * read is a hand edit, never a guess at which lines to delete.
+ */
+export const unpin = async (root: string, token: string): Promise<ScriptResult> => {
+  const request = parseUnpin(token);
+  const shape = `bun run scripts/reference-app-gate.ts --unpin ${GATED_APPS[0]?.dir ?? '<app>'}:drift`;
+  if (request === undefined)
+    return badFlag(`--unpin "${token}" is not <app>:<step>[,<step>]`, shape);
+  const app = GATED_APPS.find((candidate) => candidate.dir === request.app);
+  if (app === undefined) {
+    return badFlag(
+      `--unpin names ${request.app}, which is not a gated app`,
+      `bun run scripts/reference-app-gate.ts --unpin <${GATED_APPS.map((a) => a.dir).join('|')}>:<step>`,
+    );
+  }
+  const declared = Object.keys(app.expectedRed);
+  const unknown = request.steps.filter((step) => !declared.includes(step));
+  if (unknown.length > 0) {
+    return badFlag(
+      `${unknown.join(', ')} is not pinned for ${app.dir}${declared.length === 0 ? ' — its table is already empty' : `; it pins ${declared.join(', ')}`}`,
+      `bun run scripts/reference-app-gate.ts --json   # the pins each app still carries`,
+    );
+  }
+  const path = join(root, PINS_FILE);
+  const source = await Bun.file(path).text();
+  const onFile = pinnedSteps(source, app.dir);
+  const next = removePins(source, app.dir, request.steps);
+  if (next === undefined || onFile === undefined || onFile.join() !== declared.join()) {
+    const cause = `${PINS_FILE} no longer reads as the table this edit understands, so ${app.dir}'s pins were left alone`;
+    return {
+      ok: false,
+      script: SCRIPT,
+      summary: cause,
+      findings: [
+        {
+          code: 'X_REFERENCE_APP_PIN_STALE',
+          cause,
+          fix: `delete the ${request.steps.join(', ')} entr${request.steps.length === 1 ? 'y' : 'ies'} from ${app.dir}'s expectedRed in ${PINS_FILE}`,
+          at: PINS_FILE,
+        },
+      ],
+    };
+  }
+  await Bun.write(path, next);
+  const left = pinnedSteps(next, app.dir) ?? [];
+  return {
+    ok: true,
+    script: SCRIPT,
+    summary: `${app.dir}: unpinned ${request.steps.join(', ')} — ${left.length === 0 ? 'no pins left, the app is asserting 17 of 17' : `${left.join(', ')} still pinned`}`,
+    lines: [`  ${PINS_FILE} rewritten`, '  now run: bun run scripts/reference-app-gate.ts'],
+    data: { app: app.dir, removed: request.steps, pinned: left },
+  };
 };
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const steps = await runReferenceAppGate(root, exec);
-  const referenced = await referencesApp(root);
-  const findings = gateFindings({
-    steps,
-    expectedRed: EXPECTED_RED,
-    referenced,
-    declaredSteps: VERIFY_STEP_NAMES,
-  });
-  const red = steps === undefined ? [] : redSteps(steps);
-  const total = steps?.length ?? 0;
+  const requested = flagString(args, 'unpin');
+  // The edit, not the gate: running both would report the ratchet as it was a moment ago.
+  if (requested !== undefined) report(await unpin(root, requested), args.json);
+  const findings: Finding[] = [];
+  const lines: string[] = [];
+  const data: Record<string, unknown>[] = [];
+  // Per-app, and in the summary rather than only in `lines`: `--json` drops `lines` entirely, and
+  // "the apps hold" without the counts tells a CI reader nothing about which way they are moving.
+  const tallies: string[] = [];
+
+  // Sequentially, not `Promise.all`: each app's `x verify` runs its own test workers, boots an
+  // embedded Postgres and binds the e2e server's port. Two at once would race for all three, and
+  // the shared runner has two cores to give them anyway.
+  for (const app of GATED_APPS) {
+    const steps = await runAppGate(root, exec, app.dir);
+    const referenced = await referencesApp(root, app.reference);
+    findings.push(...gateFindings({ app, steps, referenced, declaredSteps: VERIFY_STEP_NAMES }));
+    const red = steps === undefined ? [] : redSteps(steps);
+    const total = steps?.length ?? 0;
+    tallies.push(tally(app, red, total));
+    lines.push(`${app.dir}: ${total - red.length} of ${total} pass, ${red.length} red`);
+    lines.push(...(steps === undefined ? [] : stepLines(steps, app.expectedRed)));
+    data.push({
+      app: app.dir,
+      red,
+      pinnedRed: pinnedRedSteps(app, red),
+      pinned: Object.keys(app.expectedRed),
+      referenced,
+    });
+  }
+
   report(
     {
       ok: findings.length === 0,
       script: 'reference-app-gate',
       summary:
         findings.length === 0
-          ? `${REFERENCE_APP}: ${total - red.length} of ${total} steps pass, ${red.length} pinned`
-          : `${findings.length} reference-app finding(s) across ${total} steps`,
+          ? `every pin holds — ${tallies.join('; ')}`
+          : `${findings.length} app finding(s) — ${tallies.join('; ')}`,
       findings,
-      lines: steps === undefined ? [] : stepLines(steps, EXPECTED_RED),
-      data: { app: REFERENCE_APP, red, pinned: Object.keys(EXPECTED_RED), referenced },
+      lines,
+      data: { apps: data },
     },
     args.json,
   );
