@@ -21,7 +21,7 @@
 
 ## Built by agents, for agents, maintained by agents
 
-Nobody writes this code by hand any more, and the framework is designed for that rather than
+Nobody writes this code by hand anymore, and the framework is designed for that rather than
 retrofitted to it. A coding agent works 24/7/365, and — the part that actually matters — it writes
 the tenth feature the way it wrote the first. No Friday-afternoon shortcut, no "I'll clean this up
 later", no second way of doing a thing because someone new joined. Consistency at volume is the

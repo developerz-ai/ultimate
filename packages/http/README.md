@@ -75,7 +75,7 @@ createServer({
 
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
 maths stays in `createRateLimiter`, so every driver agrees on the numbers. **No shared store ships
-yet** — `memoryRateLimitStore()` is the only implementation in the framework.
+yet, `As of 2026-08`** — `memoryRateLimitStore()` is the only implementation in the framework.
 
 ## Routing
 

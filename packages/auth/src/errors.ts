@@ -250,8 +250,8 @@ export const authLimiterPolicyMismatch = (
 ): AuthError =>
   new AuthError({
     code: 'X_AUTH_LIMITER_POLICY_MISMATCH',
-    cause: `defineAuth declares rateLimit.${field} = ${declared} but the limiter passed to it enforces ${enforced}`,
-    fix: `construct the limiter with rateLimit.${field} = ${declared}, or declare rateLimit.${field}: ${enforced} in defineAuth so the config states what is enforced`,
+    cause: `defineAuth declares rateLimit.${field} = ${declared} but the limiter passed to it enforces ${enforced}; if ${enforced} is the number this deployment means to enforce, then the declaration is the half that is wrong`,
+    fix: `construct the limiter with ${field}: ${declared} — defineAuth({ rateLimit, limiter }) compares the two, and the declaration is what Auth.rateLimit reports`,
     meta: { field, declared, enforced },
   });
 

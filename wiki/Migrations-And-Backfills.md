@@ -230,7 +230,7 @@ A bare `x db backfill` is refused rather than defaulted: the four shapes answer 
 
 Backfills are therefore **never** wired into `runMigrations()`. The `backfill` container runs `x db backfill --all --write --json` and exits.
 
-Position in the plan is **necessary and not sufficient**: `docker compose up -d` returns when a container has started, not when the app inside it serves. The barrier that makes "after" true is declarative — the `backfill` service carries `depends_on: { web: { condition: service_healthy } }`, which `docker compose run` honours. `As of 2026-08` that service is not yet in either committed compose file.
+Position in the plan is **necessary and not sufficient**: `docker compose up -d` returns when a container has started, not when the app inside it serves. The barrier that makes "after" true is declarative — the `backfill` service carries `depends_on: { web: { condition: service_healthy } }`, which `docker compose run` honours. `As of 2026-08` that service ships with the barrier in both committed compose files: [`docker/docker-compose.prod.yml`](../docker/docker-compose.prod.yml) and the one `x new` scaffolds. In the scaffolded app the condition is satisfied by the image's own `HEALTHCHECK` on `/healthz`, so an app that removes it also removes the barrier.
 
 ### `x g backfill` — the generator
 

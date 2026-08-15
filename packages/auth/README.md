@@ -59,8 +59,8 @@ refuses any pairing that would make it a lie:
 
 `maxKeys` is not compared — it bounds one process' table, not a limit. A custom limiter therefore
 does **not** own its own configuration: the policy stays the app's single statement of the limits,
-and the boot check is what keeps it true. **No shared limiter ships yet** — `createAuthLimiter` is
-the only implementation in the framework.
+and the boot check is what keeps it true. **No shared limiter ships yet, `As of 2026-08`** —
+`createAuthLimiter` is the only implementation in the framework.
 
 ## Adapter seam
 
