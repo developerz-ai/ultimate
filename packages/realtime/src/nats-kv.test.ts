@@ -1,12 +1,12 @@
 // Tests for the JetStream KV layer: the bucket guards, the direct reads, and `TransportSet` on top
-// of them. Everything runs against the in-memory server, so expiry is driven by a frozen clock the
-// server and the set share — the same clock the real server would be keeping on its own.
+// of them. Everything runs against the in-memory broker, so expiry is driven by a frozen clock the
+// broker and the set share — the same clock the real server would be keeping on its own.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { topic } from './channel';
-import { NatsConnection } from './nats-connection';
-import { FakeNatsServer } from './nats-fake';
+import type { NatsClient } from './nats-client';
+import { FakeNatsBroker } from './nats-fake';
 import {
   assertBucket,
   assertServerVersion,
@@ -16,19 +16,9 @@ import {
   kvWrite,
 } from './nats-jetstream';
 import { decodeToken, encodeToken, NatsKvSet } from './nats-kv';
-import type { NatsTarget } from './nats-socket';
 import { PresenceRegistry } from './presence';
 
-const encoder = new TextEncoder();
-
-const TARGET: NatsTarget = {
-  host: 'bus.test',
-  port: 4222,
-  tls: false,
-  user: undefined,
-  pass: undefined,
-  token: undefined,
-};
+const BUCKET = 'x-test';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -50,26 +40,18 @@ const thrown = (fn: () => unknown): unknown => {
 
 interface Harness {
   readonly set: NatsKvSet;
-  readonly server: FakeNatsServer;
-  readonly connection: NatsConnection;
+  readonly broker: FakeNatsBroker;
+  readonly client: NatsClient;
   readonly tick: (ms: number) => void;
 }
 
 async function harness(options: { version?: string } = {}): Promise<Harness> {
   const clock = frozenClock(1_700_000_000_000);
-  const server = new FakeNatsServer({ clock, ...options });
-  const connection = await NatsConnection.open({
-    stream: server.connect(),
-    target: TARGET,
-    requestTimeoutMs: 200,
-  });
-  await ensureKvBucket(connection, 'x-test', 30_000);
-  const set = new NatsKvSet({
-    connection: () => Promise.resolve(connection),
-    bucket: 'x-test',
-    clock,
-  });
-  return { set, server, connection, tick: (ms) => clock.advance(ms) };
+  const broker = new FakeNatsBroker({ clock, ...options });
+  const client = broker.client();
+  await ensureKvBucket(client, BUCKET, 30_000);
+  const set = new NatsKvSet({ client: async () => client, bucket: BUCKET, clock });
+  return { set, broker, client, tick: (ms) => clock.advance(ms) };
 }
 
 describe('guards', () => {
@@ -91,23 +73,24 @@ describe('guards', () => {
   });
 
   test('ensureKvBucket refuses to run against a server that is too old', async () => {
-    const server = new FakeNatsServer({ version: '2.9.5' });
-    const connection = await NatsConnection.open({ stream: server.connect(), target: TARGET });
+    const broker = new FakeNatsBroker({ version: '2.9.5' });
+    const client = broker.client();
 
-    expect(codeOf(await caught(ensureKvBucket(connection, 'x-test', 1_000)))).toBe(
+    expect(codeOf(await caught(ensureKvBucket(client, BUCKET, 1_000)))).toBe(
       'X_TRANSPORT_PROTOCOL',
     );
-    await connection.close();
+    expect(broker.streams).toEqual([]);
+    await client.close();
   });
 });
 
 describe('the bucket', () => {
   test('a missing bucket is created with history 1, direct reads and per-message TTL', async () => {
-    const { server } = await harness();
+    const { broker } = await harness();
 
-    const config = server.streamConfig('KV_x-test');
+    const config = broker.streamConfig('KV_x-test');
 
-    expect(server.streamCreates).toBe(1);
+    expect(broker.streams).toEqual(['KV_x-test']);
     expect(config?.['subjects']).toEqual(['$KV.x-test.>']);
     expect(config?.['max_msgs_per_subject']).toBe(1);
     expect(config?.['discard']).toBe('new');
@@ -117,37 +100,46 @@ describe('the bucket', () => {
   });
 
   test('an existing bucket is left alone: create runs once, not on every connect', async () => {
-    const { connection, server } = await harness();
-    await kvWrite(connection, 'x-test', 'a.b', 'kept', new Map());
+    const { client, broker } = await harness();
+    await kvWrite(client, BUCKET, 'a.b', 'kept', new Map());
+    // A second create would be refused outright, so a green second call is proof none was sent.
+    broker.fail('STREAM.CREATE', 1);
 
-    await ensureKvBucket(connection, 'x-test', 30_000);
+    await ensureKvBucket(client, BUCKET, 30_000);
 
-    expect(server.streamCreates).toBe(1);
-    expect((await kvGet(connection, 'x-test', 'a.b'))?.value).toBe('kept');
+    expect(broker.streams).toEqual(['KV_x-test']);
+    expect((await kvGet(client, BUCKET, 'a.b'))?.value).toBe('kept');
   });
 
   test('kvGet on a key nobody wrote is undefined, never a throw', async () => {
-    const { connection } = await harness();
+    const { client } = await harness();
 
-    expect(await kvGet(connection, 'x-test', 'nothing')).toBeUndefined();
+    expect(await kvGet(client, BUCKET, 'nothing')).toBeUndefined();
+  });
+
+  test('kvGet carries the tombstone marker the caller decides on', async () => {
+    const { client } = await harness();
+    await kvWrite(client, BUCKET, 'a.b', '', new Map([['KV-Operation', 'DEL']]));
+
+    expect((await kvGet(client, BUCKET, 'a.b'))?.operation).toBe('DEL');
   });
 
   test('kvLast answers with every current value under the filter, and nothing else', async () => {
-    const { connection } = await harness();
-    await kvWrite(connection, 'x-test', 'set.one', '1', new Map());
-    await kvWrite(connection, 'x-test', 'set.two', '2', new Map());
-    await kvWrite(connection, 'x-test', 'other.three', '3', new Map());
+    const { client } = await harness();
+    await kvWrite(client, BUCKET, 'set.one', '1', new Map());
+    await kvWrite(client, BUCKET, 'set.two', '2', new Map());
+    await kvWrite(client, BUCKET, 'other.three', '3', new Map());
 
-    const records = await kvLast(connection, 'x-test', 'set.*');
+    const records = await kvLast(client, BUCKET, 'set.*');
 
     expect(records.map((record) => record.value).sort()).toEqual(['1', '2']);
     expect(records.map((record) => record.key).sort()).toEqual(['set.one', 'set.two']);
   });
 
   test('kvLast on an empty prefix is an empty list, not a hang or a throw', async () => {
-    const { connection } = await harness();
+    const { client } = await harness();
 
-    expect(await kvLast(connection, 'x-test', 'nothing.*')).toEqual([]);
+    expect(await kvLast(client, BUCKET, 'nothing.*')).toEqual([]);
   });
 });
 
@@ -226,12 +218,12 @@ describe('NatsKvSet', () => {
   });
 
   test('a key this bucket did not write is skipped, not a throw that hides every member', async () => {
-    const { set, connection } = await harness();
+    const { set, client } = await harness();
     await set.put('presence.room', 'm1', 'a', 30_000);
     // Something else's key under the same prefix: the member token is not base64url at all.
     await kvWrite(
-      connection,
-      'x-test',
+      client,
+      BUCKET,
       `${encodeToken('presence.room')}.not-a-token!`,
       JSON.stringify({ v: 'b', t: 30_000 }),
       new Map(),
@@ -250,57 +242,37 @@ describe('NatsKvSet', () => {
 
     expect(entries.map((entry) => entry.member)).toEqual(['socket.7']);
   });
-});
 
-describe('the in-memory server', () => {
-  test('a payload split mid-character still frames the command behind it', async () => {
-    const server = new FakeNatsServer();
-    const stream = server.connect();
-    const first = JSON.stringify({ v: 'ünïcøde ☃', t: 30_000 });
-    const second = JSON.stringify({ v: 'plain', t: 1 });
-    const frame = encoder.encode(
-      `PUB $KV.x-test.a.b ${encoder.encode(first).length}\r\n${first}\r\n` +
-        `PUB $KV.x-test.c.d ${encoder.encode(second).length}\r\n${second}\r\n`,
+  test('a write the bus refused raises: a lost put must never read as stored', async () => {
+    const { set, broker } = await harness();
+    broker.fail('$KV.x-test', 1);
+
+    expect(codeOf(await caught(set.put('presence.room', 'm1', 'a', 30_000)))).toBe(
+      'X_TRANSPORT_UNAVAILABLE',
     );
-    // The cut lands inside the first multi-byte character: decoding per chunk turns it into
-    // U+FFFD, and counting it as one unit rather than two bytes slices every later command short.
-    const split = frame.findIndex((byte) => byte >= 0x80) + 1;
-
-    await stream.write(frame.subarray(0, split));
-    await stream.write(frame.subarray(split));
-
-    expect(server.stored.get('$KV.x-test.a.b')).toBe(first);
-    expect(server.stored.get('$KV.x-test.c.d')).toBe(second);
+    expect(await set.entries('presence.room')).toEqual([]);
   });
 });
 
 describe('presence over the bus', () => {
   test('a member joined on one node is listed on another, and expires without a sweeper', async () => {
     const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock });
-    const nodes = await Promise.all(
-      [0, 1].map(async () =>
-        NatsConnection.open({ stream: server.connect(), target: TARGET, requestTimeoutMs: 200 }),
-      ),
-    );
+    const broker = new FakeNatsBroker({ clock });
+    const nodes = [broker.client(), broker.client()];
     const [first, second] = nodes;
     expect(first).toBeDefined();
     expect(second).toBeDefined();
     if (first === undefined || second === undefined) return;
-    await ensureKvBucket(first, 'x-test', 30_000);
+    await ensureKvBucket(first, BUCKET, 30_000);
     const registries = [first, second].map(
-      (connection) =>
+      (client) =>
         new PresenceRegistry({
           transport: {
             name: 'nats',
             publish: async () => undefined,
             subscribe: async () => ({ subject: '', unsubscribe: () => undefined }),
             close: async () => undefined,
-            shared: new NatsKvSet({
-              connection: () => Promise.resolve(connection),
-              bucket: 'x-test',
-              clock,
-            }),
+            shared: new NatsKvSet({ client: async () => client, bucket: BUCKET, clock }),
           },
           clock,
           ttlMs: 30_000,

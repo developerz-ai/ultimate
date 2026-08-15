@@ -280,7 +280,7 @@ If the cache seam is fixed, this is what running it costs. Operational evidence 
 
 Apache-2.0, and it stayed that way: the 2025 Synadia/CNCF trademark dispute resolved on 2025-05-01 with the trademarks assigned to the Linux Foundation, the domain and repos with CNCF, and the server still Apache-2.0. Only Synadia's commercial products are proprietary.
 
-The framework speaks NATS with its own client — no dependency — and needs JetStream, because presence is a KV bucket and the bucket's per-message TTL and batch direct get landed in **2.11**. An older server fails the first dial with `X_TRANSPORT_PROTOCOL`.
+The framework speaks NATS through the official `nats` client (`nats@2.29.3`, pinned exact — its one external runtime dependency, `As of 2026-08`, admitted at the transport seam behind a port: [`18-build-vs-wrap.md`](./18-build-vs-wrap.md)), and needs JetStream, because presence is a KV bucket and the bucket's per-message TTL and batch direct get landed in **2.11**. Those two are also why the bucket is built on the JetStream API directly rather than on the library's KV, which expresses neither. An older server fails the first dial with `X_TRANSPORT_PROTOCOL`.
 
 **2.11 is the floor, not the version to run.** NATS supports the current and previous minor series only; as of 2026-08 that is **2.14** and **2.12**, and 2.11 is end-of-life. `docker-compose.dev.yml` pins `nats:2.11-alpine` — correct as a compatibility floor, stale as a deployment. Pin 2.12 or 2.14 in production.
 

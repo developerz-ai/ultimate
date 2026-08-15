@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { InProcessTransport } from './fanout';
-import { FakeNatsServer } from './nats-fake';
+import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport } from './nats-transport';
 import {
   DEFAULT_PRESENCE_BUCKET,
@@ -28,15 +28,15 @@ const caught = (run: () => unknown): unknown => {
   }
 };
 
-/** A selection wired to an in-memory nats-server, so `connect()` is a real dial with no network. */
+/** A selection wired to an in-memory bus, so `connect()` is a real dial with no network. */
 function onBus(env: Record<string, string | undefined>): {
-  server: FakeNatsServer;
+  broker: FakeNatsBroker;
   selection: ReturnType<typeof selectTransport>;
 } {
-  const server = new FakeNatsServer();
+  const broker = new FakeNatsBroker();
   return {
-    server,
-    selection: selectTransport(env, { clock: frozenClock(0), open: async () => server.connect() }),
+    broker,
+    selection: selectTransport(env, { clock: frozenClock(0), connect: fakeNatsConnect(broker) }),
   };
 }
 
@@ -82,38 +82,38 @@ describe('selectTransport', () => {
   });
 
   test('selection is pure: constructing the bus touches no socket until connect()', async () => {
-    const { server, selection } = onBus({ NATS_URL: URL });
+    const { broker, selection } = onBus({ NATS_URL: URL });
 
-    expect(server.connections).toBe(0);
+    expect(broker.clients).toHaveLength(0);
     await selection.connect();
 
-    expect(server.connections).toBe(1);
+    expect(broker.clients).toHaveLength(1);
     await selection.transport.close();
   });
 
   test('connect() creates the KV bucket presence needs, under the selected name', async () => {
-    const { server, selection } = onBus({ NATS_URL: URL, NATS_KV_BUCKET: 'postly' });
+    const { broker, selection } = onBus({ NATS_URL: URL, NATS_KV_BUCKET: 'postly' });
     await selection.connect();
 
     // The whole point of naming the bucket: two apps on one cluster keep separate presence.
-    expect(server.streamConfig('KV_postly')).toBeDefined();
-    expect(server.streamConfig(`KV_${DEFAULT_PRESENCE_BUCKET}`)).toBeUndefined();
+    expect(broker.streamConfig('KV_postly')).toBeDefined();
+    expect(broker.streamConfig(`KV_${DEFAULT_PRESENCE_BUCKET}`)).toBeUndefined();
     await selection.transport.close();
   });
 
   test('the bucket the bus creates outlives the TTL the registry will be given', async () => {
     // Above the bucket's own one-minute floor on purpose: at the default the floor alone would
     // satisfy this, and a TTL that never reached the transport would still read as correct.
-    const server = new FakeNatsServer();
+    const broker = new FakeNatsBroker();
     const selection = selectTransport(
       { NATS_URL: URL },
-      { presenceTtlMs: 120_000, clock: frozenClock(0), open: async () => server.connect() },
+      { presenceTtlMs: 120_000, clock: frozenClock(0), connect: fakeNatsConnect(broker) },
     );
     await selection.connect();
 
     // Nanoseconds, and never below the presence TTL: a bucket that aged out first would drop a
     // member the registry still counts as present, with no leave and nothing to read.
-    const maxAge = Number(server.streamConfig(`KV_${DEFAULT_PRESENCE_BUCKET}`)?.['max_age'] ?? 0);
+    const maxAge = Number(broker.streamConfig(`KV_${DEFAULT_PRESENCE_BUCKET}`)?.['max_age'] ?? 0);
     expect(maxAge).toBeGreaterThanOrEqual(selection.presenceTtlMs * 1_000_000);
     await selection.transport.close();
   });

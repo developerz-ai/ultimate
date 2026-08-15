@@ -9,7 +9,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `@ultimat3/core`, `@ultimat3/query` | anything tier 4+ (`render`, `pwa`, `mcp`, `ui`, `cli`) |
 | `@ultimat3/policy` **only via** `@ultimat3/query`'s `guard` | a second authz path of any kind |
 | — | `solid-js` (the client takes an injected signal factory) |
-| — | external deps. Bun natives only |
+| `nats` (the one external dependency, pinned exact) — from `nats-lib-client.ts`, and no other file | `nats` from anywhere else: a second importer is the failure this row exists to prevent. Every other file is written against the port in `nats-client.ts` |
 
 ## Rules
 
@@ -101,6 +101,22 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   died is never announced as gone, and the survivors render a cursor that stopped moving. It has to
   be an interval — a sweep only reports members a previous sweep saw, which is how a member that
   joined on another node becomes leavable here at all.
+- **The wire is the library's, the integration is ours, and `nats-client.ts` is the line between
+  them.** `nats` is imported by exactly one file — `nats-lib-client.ts` — and everything else in the
+  package, the transport and the JetStream bucket and the KV presence set and every test, is written
+  against that port. It is what lets the fake be an in-memory bus with *server* semantics instead of
+  431 lines of forged wire bytes, and what made deleting 1,019 LOC of framing, parser, PING/PONG and
+  session a swap rather than a rewrite ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)).
+  The consequence that has to be held: **reconnect and re-subscription are the library's job now.** A
+  subscription outlives a dropped connection because the client re-establishes it underneath the
+  caller, so `NatsTransport` must never re-grow subscription bookkeeping of its own — a map of wanted
+  subjects, a dial promise, a loss counter, a rebind loop. Two things re-subscribing is a doubled
+  delivery on every reconnect and a subscription the caller's `unsubscribe` no longer reaches — the
+  hand-rolled client's lifecycle bugs were deleted with it rather than fixed for exactly that reason.
+  What stays above the port is what the library has no opinion on: our thundering-herd jitter, handed
+  over as its `reconnectDelayHandler` because spreading a restart herd is the framework's decision,
+  and the KV semantics presence needs (`nats-jetstream.ts`, `nats-kv.ts`) — a per-message TTL and a
+  batch direct get, which the library's own KV abstraction cannot express.
 - One place reads `NATS_URL`, and it is `selectTransport` — a boot that resolved the bus itself
   could reach a different one than the container it is standing in for. The KV bucket and the
   presence TTL come back with the transport for the same reason: they are one decision.
@@ -141,9 +157,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   counter — a replay must produce byte-identical lsns or at-least-once turns into duplicate delivery.
 - Slot, publication and entity names are interpolated into a replication command, so they are
   checked against `[a-z_][a-z0-9_]*` first. That regex is a security boundary, not a style rule.
-- Same rule on the bus: a subject or bucket name goes straight into a NATS control line, so it is
-  checked first (`assertSubject`, `assertBucket`). A presence key or member id is user data, so it
-  is base64url-encoded (`encodeToken`) rather than validated — no name is refused for its spelling.
+- Same rule on the bus, for the half that is still ours: a bucket name is interpolated into a
+  JetStream stream name and its API subjects, so it is checked first (`assertBucket` in
+  `nats-jetstream.ts`, `X_TRANSPORT_PROTOCOL`). Subject validation went with the hand-rolled client —
+  the library refuses a malformed subject itself, and a second spelling of that rule here is a second
+  place it can drift. A presence key or member id is user data, so it is base64url-encoded
+  (`encodeToken`) rather than validated — no name is refused for its spelling.
 - `local(tx, input)` is pure: no I/O, no `Date.now()`, no `Math.random()`. Rebase replays it.
 - One registered `LiveClient` per app (`setLiveClient`), and every hook reads it through that seam —
   no hook takes a client argument, and an unregistered one is `X_LIVE_CLIENT_MISSING`, never a
@@ -198,9 +217,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `live-query.ts` / `live-definition.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `transport-env.ts` / `matcher-bridge.ts` | tier 2 |
 | `pg-bytes.ts` / `pg-wire.ts` / `pg-auth.ts` / `pg-connection.ts` / `pg-socket.ts` | the Postgres v3 client: bytes, frames, SASL, session, socket |
 | `pgoutput.ts` / `pg-entity-row.ts` / `pg-replication.ts` | WAL decode → `ChangeEvent`, and the lsn that orders it |
-| `nats-protocol.ts` / `nats-commands.ts` / `nats-socket.ts` / `nats-connection.ts` | the NATS client: decode, encode, socket, session |
-| `nats-jetstream.ts` / `nats-kv.ts` / `nats-transport.ts` | the JetStream KV bucket, presence over it, and the production `Transport` |
-| `nats-fake.ts` | an in-memory nats-server — the only way to prove multi-node fanout under a sealed network |
+| `nats-client.ts` | the bus port: publish/subscribe/request/requestMany/close/version/connected, and `parseNatsUrl` — the library takes `host:port` plus credentials and never reads a URL's userinfo |
+| `nats-lib-client.ts` | the `nats` adapter — **the only file in the repo that imports `nats`** |
+| `nats-jetstream.ts` / `nats-kv.ts` / `nats-transport.ts` | the JetStream KV bucket, presence over it, and the production `Transport` — all three written against the port |
+| `nats-fake.ts` | an in-memory bus implementing the port — server semantics, not wire bytes; the only way to prove multi-node fanout under a sealed network |
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
 | `client.ts` / `sync-node.ts` | the two halves — `client.test.ts` owns the reconnect timer |

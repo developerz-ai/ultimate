@@ -59,44 +59,68 @@ multiplexed wire protocol like NATS. Covered by the framework's test pass
 (`docs/plans/2026/08/12/101-framework-audit-raii-batching-nplusone/04-tests.md`). Revisit only if a
 Bun-native SMTP client emerges.
 
-### NATS — WRAP, decided 2026-08-12, pending PR 21
+### NATS — WRAP, decided 2026-08-12, **adopted `As of 2026-08`**
 
-`packages/realtime/src/nats-socket.ts` and `nats-connection.ts` are 464 LOC of hand-rolled wire
-protocol with zero integration benefit — the transport seam (`packages/realtime/src/nats-transport.ts`,
-`fanout.ts`'s `Transport` interface) already isolates NATS from the rest of `realtime`, so nothing
-about connection lifecycle needs to live inside the framework. Verdict: replace it with the
-official `nats` (nats.js) client behind that existing seam, gated on Bun compatibility.
+`nats-protocol.ts`, `nats-commands.ts`, `nats-socket.ts` and `nats-connection.ts` were 1,019 LOC of
+hand-rolled wire protocol with zero integration benefit — the transport seam
+(`packages/realtime/src/nats-transport.ts`, `fanout.ts`'s `Transport` interface) already isolated
+NATS from the rest of `realtime`, so nothing about connection lifecycle needed to live inside the
+framework. They are deleted, with their tests, their connection fixture and the 431-line wire-level
+fake. The official `nats` (nats.js) client sits behind that unchanged seam.
 
-**Gate:** `packages/realtime/src/nats-transport.live.test.ts` and `presence.live.test.ts` must pass
-**unmodified and actually running** (not `describe.skipIf`-skipped on a missing `TEST_NATS_URL`) —
-today's ~1.4k LOC of protocol code is validated only against the fake it was co-written with, so a
-green run against the fake proves nothing about a swap. If adopted, the 02 audit's fixes for this
-client's connection lifecycle are deleted rather than applied, since the library owns that state
-machine now. **If Bun compatibility fails, the reversal is recorded in this section** and the 02
-lifecycle fixes are applied to the hand-rolled client instead of the swap.
+**Gate: passed, 2026-08-14.** The Bun-compatibility condition the verdict was gated on, exercised
+through the library on **Bun 1.3 against a real nats-server 2.11.17**:
 
-Status: **pending** — PR 21 in the audit plan has not landed. This page will be updated with the
-outcome (swap landed, or reversal + fixes applied) once it does.
+| Proven through the library | Why it was the gate |
+|---|---|
+| connect, core publish/subscribe | the fanout path; a Bun socket the library dials itself |
+| the JetStream API | the presence bucket is created and read over it |
+| per-message TTL (`Nats-TTL`) | presence expires on the server's clock; without it a dead node's members are never announced gone |
+| batch direct get (`multi_last`) | a room is listed in one round trip, not one read per member |
+
+What landed, layer by layer:
+
+| Layer | After the swap |
+|---|---|
+| the port | `nats-client.ts` — publish, subscribe, request, requestMany, close, version, connected, and nothing else. Plus `parseNatsUrl`: the library takes `host:port` with credentials as options and never reads a URL's userinfo, so URL parsing stays ours |
+| the adapter | `nats-lib-client.ts` — the only file in the repo that imports `nats` |
+| the fake | `nats-fake.ts`, rewritten as an in-memory bus implementing the port: server semantics, not wire bytes. Multi-node fanout is still provable under the sealed-network preload |
+| the seam | **unchanged** — `Transport` in `fanout.ts`, `NatsTransport` and its options, `selectTransport` in `transport-env.ts` |
+| reconnect | the library's. The hand-rolled dial/rebind/loss-recovery bookkeeping is deleted rather than fixed, so the 02 audit's connection-lifecycle findings for this client are moot; the thundering-herd jitter is kept and handed over as the library's `reconnectDelayHandler` — the herd is ours to spread |
+| the test seam | one level up: an injected client (`connect?: NatsConnect`) instead of an injected byte stream (`open: (target) => Promise<NatsStream>`), on `NatsTransportOptions` and on `selectTransport`'s options |
+
+**What the wrap did not take: the library's KV abstraction.** `nats-jetstream.ts` (the bucket's
+stream and the direct reads) and `nats-kv.ts` (`TransportSet` over it) stay ours, retyped onto the
+port and unchanged in responsibility. This version of the library's KV cannot express a per-message
+TTL (`Nats-TTL`) or a batch `multi_last` direct get — the two 2.11 features that make presence
+expire on the server's clock and list a room in one round trip. Consistent with the criterion: the
+wrap takes the wire, not the semantics presence is built on.
+
+The verdict in one line: 1,019 LOC of protocol with zero integration benefit, and an agent knows the
+dominant client's semantics from training data but can never know a reimplementation.
 
 ## Dependency ledger
 
 Every dependency admitted at a driver/transport seam under this criterion, in one place.
 
-| Library | Seam | Why | Pinned since |
-|---|---|---|---|
-| _(none yet)_ | | | |
+| Library | Version | Seam | Why | Pinned since |
+|---|---|---|---|---|
+| `nats` (nats.js) | `2.29.3`, exact — no caret | `@ultimat3/realtime`'s bus port (`nats-client.ts`), imported by `nats-lib-client.ts` and nothing else | the NATS wire protocol, framing, PING/PONG, the TLS upgrade and the reconnect state machine — 1,019 LOC of ours deleted for it | 2026-08-14 |
 
-A row is added only when the dependency lands, with the actual pinned version and PR. This table
-is the single source for "what did we decide to depend on and why" — it is not restated in
-package `CLAUDE.md` files or the changelog beyond a link back here. `As of 2026-08`, no dependency
-has been admitted under this criterion: `@ultimat3/*` has zero runtime dependencies outside Bun's
-natives.
+`nats` is the **first external runtime dependency any `@ultimat3/*` package has taken**, `As of
+2026-08`. It brings two transitive packages, `nkeys.js` and `tweetnacl` — no native addon in either,
+so the "no native addons in the dependency graph" property holds.
+
+A row is added only when the dependency lands, with the actual pinned version. This table is the
+single source for "what did we decide to depend on and why" — a package `CLAUDE.md` states its own
+import boundary and links back here rather than restating the argument, and the changelog names the
+version and nothing more.
 
 ### Approved, not yet landed
 
-A verdict is not a dependency. These have a WRAP verdict above and no row in the ledger — the row
-is written when the code lands, not when the argument is won.
+A verdict is not a dependency. A WRAP verdict with no row in the ledger belongs here — the row is
+written when the code lands, not when the argument is won.
 
 | Library | Verdict | Gate | Tracked by |
 |---|---|---|---|
-| `nats` (nats.js) | WRAP, decided 2026-08-12 | `nats-transport.live.test.ts` + `presence.live.test.ts` pass unmodified against a real broker | PR 21 |
+| _(none)_ | | | |

@@ -4,7 +4,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import type { TransportSet, TransportSetEntry } from './fanout';
-import type { NatsConnection } from './nats-connection';
+import type { NatsClient } from './nats-client';
 import { kvGet, kvLast, kvWrite } from './nats-jetstream';
 
 /** Per-message TTL is expressed in whole seconds, and must never expire before the logical one. */
@@ -51,8 +51,8 @@ const ttlHeader = (ttlMs: number): ReadonlyMap<string, string> =>
   new Map([['Nats-TTL', String(Math.ceil(ttlMs / 1_000) + TTL_GRACE_SECONDS)]]);
 
 export interface NatsKvSetOptions {
-  /** The live connection. Awaited per call, because the transport replaces it on a reconnect. */
-  readonly connection: () => Promise<NatsConnection>;
+  /** The live client. Awaited per call: the transport dials lazily and re-dials after a loss. */
+  readonly client: () => Promise<NatsClient>;
   readonly bucket: string;
   /** Only the fallback when a reply carries no server timestamp; the server's clock is the truth. */
   readonly clock: Clock;
@@ -69,7 +69,7 @@ export class NatsKvSet implements TransportSet {
   async put(key: string, member: string, value: string, ttlMs: number): Promise<void> {
     const stored: StoredValue = { v: value, t: ttlMs };
     await kvWrite(
-      await this.#options.connection(),
+      await this.#options.client(),
       this.#options.bucket,
       this.#key(key, member),
       JSON.stringify(stored),
@@ -80,7 +80,7 @@ export class NatsKvSet implements TransportSet {
   /** `false` when the member had already expired: the caller must re-`put`, which is a re-join. */
   async touch(key: string, member: string, ttlMs: number): Promise<boolean> {
     const record = await kvGet(
-      await this.#options.connection(),
+      await this.#options.client(),
       this.#options.bucket,
       this.#key(key, member),
     );
@@ -98,7 +98,7 @@ export class NatsKvSet implements TransportSet {
    */
   async drop(key: string, member: string): Promise<void> {
     await kvWrite(
-      await this.#options.connection(),
+      await this.#options.client(),
       this.#options.bucket,
       this.#key(key, member),
       '',
@@ -111,7 +111,7 @@ export class NatsKvSet implements TransportSet {
 
   async entries(key: string): Promise<readonly TransportSetEntry[]> {
     const records = await kvLast(
-      await this.#options.connection(),
+      await this.#options.client(),
       this.#options.bucket,
       `${encodeToken(key)}.*`,
     );

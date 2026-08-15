@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@ultimat3/core": "1.2.0",
-    "@ultimat3/query": "1.2.0"
+    "@ultimat3/query": "1.2.0",
+    "nats": "2.29.3"
   }
 }

@@ -1,45 +1,18 @@
-// Tests for the production transport: cross-node fanout, and the reconnect that re-establishes
-// every subscription. Subscriptions are held as intent, so the interesting case is a bus that
-// disappears mid-flight — after it returns, a publish must still reach a subscriber that never
-// re-subscribed itself. Sleeps are injected so the backoff costs no wall-clock time.
+// Tests for the production transport: cross-node fanout, the bucket it asserts on every connect,
+// and what it does with a client that drops. The wire and the reconnect belong to the library now,
+// so what is proven here is the integration — the bucket, the error contract, the one dial, and the
+// jitter we still hand down — never a control line or a re-bind.
 
 import { describe, expect, spyOn, test } from 'bun:test';
 import { frozenClock, isUltimateError, logger } from '@ultimat3/core';
 import { TransportUnavailableError } from './errors';
-import { FakeNatsServer } from './nats-fake';
-import type { NatsStream } from './nats-socket';
+import type { NatsClientOptions, NatsConnect } from './nats-client';
+import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
-
-const decoder = new TextDecoder();
+import { backoffDelay, defaultBackoff } from './thundering-herd';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
-
-/** A socket that refuses one control line — a dial failing after the connection is already up. */
-const refusing = (stream: NatsStream, needle: string): NatsStream => ({
-  ...stream,
-  write: async (bytes) => {
-    if (decoder.decode(bytes).includes(needle)) {
-      throw new TransportUnavailableError({
-        transport: 'nats',
-        reason: `the socket refused "${needle}"`,
-      });
-    }
-    await stream.write(bytes);
-  },
-});
-
-/** A socket the server tears down as one control line goes out: a connection lost mid-dial. */
-const droppingOn = (stream: NatsStream, needle: string): NatsStream => ({
-  ...stream,
-  write: async (bytes) => {
-    if (decoder.decode(bytes).includes(needle)) {
-      stream.close();
-      return;
-    }
-    await stream.write(bytes);
-  },
-});
 
 const caught = (promise: Promise<unknown>): Promise<unknown> =>
   promise.then(
@@ -52,48 +25,70 @@ const settle = async (): Promise<void> => {
 };
 
 interface Bus {
-  readonly server: FakeNatsServer;
+  readonly broker: FakeNatsBroker;
   /** Whatever the transport reported in the background. Collected so it never reaches the log. */
   readonly reported: readonly unknown[];
   readonly transport: (overrides?: Partial<NatsTransportOptions>) => NatsTransport;
   readonly dials: () => number;
+  /** What the transport handed the client as its reconnect policy, from the last dial. */
+  readonly reconnectDelay: () => (() => number) | undefined;
 }
 
-function bus(): Bus {
+function bus(options: { version?: string } = {}): Bus {
   const clock = frozenClock(1_700_000_000_000);
-  const server = new FakeNatsServer({ clock });
+  const broker = new FakeNatsBroker({ clock, ...options });
   const reported: unknown[] = [];
+  const open = fakeNatsConnect(broker);
   let dials = 0;
+  let delay: (() => number) | undefined;
+  const connect: NatsConnect = (clientOptions: NatsClientOptions) => {
+    dials += 1;
+    delay = clientOptions.reconnectDelay;
+    return open(clientOptions);
+  };
   return {
-    server,
+    broker,
     reported,
     dials: () => dials,
+    reconnectDelay: () => delay,
     transport: (overrides = {}) =>
       new NatsTransport({
         url: 'nats://bus.test:4222',
         bucket: 'x-test',
         clock,
         rng: () => 0.5,
-        sleep: async () => undefined,
         onError: (error) => reported.push(error),
-        open: (): Promise<NatsStream> => {
-          dials += 1;
-          return Promise.resolve(server.connect());
-        },
+        connect,
         ...overrides,
       }),
   };
 }
 
 describe('NatsTransport', () => {
-  test('connect() opens the session and creates the bucket up front', async () => {
+  test('connect() dials once and creates the bucket up front', async () => {
     const harness = bus();
     const transport = harness.transport();
 
     await transport.connect();
 
     expect(transport.connected).toBe(true);
-    expect(harness.server.connections).toBe(1);
+    expect(harness.dials()).toBe(1);
+    expect(harness.broker.streams).toEqual(['KV_x-test']);
+    await transport.close();
+  });
+
+  test('callers that race the first dial share it rather than opening one connection each', async () => {
+    const harness = bus();
+    const transport = harness.transport();
+
+    await Promise.all([
+      transport.connect(),
+      transport.publish('x.change.posts', 'one'),
+      transport.subscribe('x.change.>', () => undefined),
+    ]);
+
+    expect(harness.dials()).toBe(1);
+    expect(harness.broker.clients).toHaveLength(1);
     await transport.close();
   });
 
@@ -140,7 +135,6 @@ describe('NatsTransport', () => {
     await transport.publish('x.change.posts', 'one');
     await settle();
     subscription.unsubscribe();
-    await settle();
     await transport.publish('x.change.posts', 'two');
     await settle();
 
@@ -166,7 +160,7 @@ describe('NatsTransport', () => {
     await transport.close();
   });
 
-  test('a bus restart re-dials and re-subscribes without the caller doing anything', async () => {
+  test('a bus restart keeps every subscription, and the caller does nothing', async () => {
     const harness = bus();
     const transport = harness.transport();
     const seen: string[] = [];
@@ -174,26 +168,53 @@ describe('NatsTransport', () => {
     await transport.publish('x.change.posts', 'before');
     await settle();
 
-    harness.server.dropAll();
-    await settle();
+    harness.broker.drop();
+    expect(transport.connected).toBe(false);
+    // A caller that arrives mid-drop gets the same client back. Dialling a second one here is the
+    // bug the library's own reconnect exists to prevent: it would come back alongside the one
+    // already recovering, with its own copy of every subscription, and double every change.
+    await transport.publish('x.change.posts', 'during');
+    expect(harness.dials()).toBe(1);
+    harness.broker.restore();
     await settle();
 
     expect(transport.connected).toBe(true);
-    expect(harness.dials()).toBe(2);
+    expect(harness.dials()).toBe(1);
     await transport.publish('x.change.posts', 'after');
     await settle();
     expect(seen).toEqual(['before', 'after']);
     await transport.close();
   });
 
-  test('presence survives the restart: the KV bucket outlives the connection', async () => {
+  test('a reconnect re-asserts the bucket: the cluster behind it may never have held one', async () => {
+    const harness = bus();
+    const transport = harness.transport();
+    await transport.connect();
+    await transport.shared.put('presence.room', 'm1', 'alice', 30_000);
+
+    // A restarted single node comes back with no bucket at all. Nothing below the transport knows
+    // that a KV bucket was ever meant to exist there.
+    harness.broker.drop();
+    harness.broker.forget();
+    harness.broker.restore();
+    await settle();
+
+    expect(harness.broker.streams).toEqual(['KV_x-test']);
+    await transport.shared.put('presence.room', 'm2', 'bob', 30_000);
+    expect((await transport.shared.entries('presence.room')).map((entry) => entry.value)).toEqual([
+      'bob',
+    ]);
+    await transport.close();
+  });
+
+  test('presence survives a drop and a restore: the bucket outlives the connection', async () => {
     const harness = bus();
     const transport = harness.transport();
     await transport.subscribe('x.change.>', () => undefined);
     await transport.shared.put('presence.room', 'm1', 'alice', 30_000);
 
-    harness.server.dropAll();
-    await settle();
+    harness.broker.drop();
+    harness.broker.restore();
     await settle();
 
     expect((await transport.shared.entries('presence.room')).map((entry) => entry.value)).toEqual([
@@ -202,174 +223,77 @@ describe('NatsTransport', () => {
     await transport.close();
   });
 
-  test('a bus that never answers fails after the retry budget, not forever', async () => {
-    const attempts: number[] = [];
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      maxReconnectAttempts: 3,
-      sleep: async () => undefined,
-      rng: () => 0.5,
-      open: () => {
-        attempts.push(1);
-        return Promise.reject(
-          new (class extends Error {
-            override name = 'refused';
-          })('connection refused'),
-        );
-      },
-    });
+  test('the reconnect delay is our jitter policy, not the library default', async () => {
+    const harness = bus();
+    const transport = harness.transport();
+    await transport.connect();
 
-    const error = await caught(transport.connect());
+    const delay = harness.reconnectDelay();
 
-    expect(attempts).toHaveLength(4);
-    expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
+    expect(delay).toBeDefined();
+    // Attempt by attempt, and the spread comes from the injected rng — a cluster restart must not
+    // bring every node back on the same millisecond.
+    expect([delay?.(), delay?.(), delay?.()]).toEqual([
+      backoffDelay(0, defaultBackoff, () => 0.5),
+      backoffDelay(1, defaultBackoff, () => 0.5),
+      backoffDelay(2, defaultBackoff, () => 0.5),
+    ]);
     await transport.close();
   });
 
-  test('a server too old for the KV bucket fails on the first dial, not after the budget', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock, version: '2.10.29' });
-    let dials = 0;
-    let sleeps = 0;
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      clock,
-      rng: () => 0.5,
-      sleep: async () => {
-        sleeps += 1;
-      },
-      open: () => {
-        dials += 1;
-        return Promise.resolve(server.connect());
-      },
-    });
+  test('a bus that cannot be reached fails rather than hanging', async () => {
+    const harness = bus();
+    harness.broker.offline = true;
+    const transport = harness.transport();
 
     const error = await caught(transport.connect());
 
-    expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
-    expect([dials, sleeps]).toEqual([1, 0]);
-    // The dial got as far as a live socket before the bucket check refused the server: a rejected
-    // connect() that still holds one open is a leak, and `connected` would be answering for it.
-    expect(server.connections).toBe(0);
+    expect(codeOf(error)).toBe('X_TRANSPORT_UNAVAILABLE');
     expect(transport.connected).toBe(false);
     await transport.close();
   });
 
-  test('a dial that fails after the socket is up closes it, rather than leaking one per retry', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock });
-    let dials = 0;
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      clock,
-      rng: () => 0.5,
-      sleep: async () => undefined,
-      onError: () => undefined,
-      open: () => {
-        dials += 1;
-        const stream = server.connect();
-        return Promise.resolve(dials <= 2 ? refusing(stream, '$JS.API.STREAM.INFO') : stream);
-      },
-    });
+  test('a server too old for the KV bucket fails the dial, and closes the client it opened', async () => {
+    const harness = bus({ version: '2.10.29' });
+    const transport = harness.transport();
 
+    const error = await caught(transport.connect());
+
+    expect(codeOf(error)).toBe('X_TRANSPORT_PROTOCOL');
+    // The dial got as far as a live client before the bucket check refused the server: a rejected
+    // connect() that still holds one open is a leak, and `connected` would be answering for it.
+    expect(harness.broker.clients).toHaveLength(0);
+    expect(transport.connected).toBe(false);
+    await transport.close();
+  });
+
+  test('a dial that fails after the client is up closes it, rather than leaking one per retry', async () => {
+    const harness = bus();
+    const transport = harness.transport({ onError: () => undefined });
+    harness.broker.fail('$JS.API.STREAM.INFO');
+
+    expect(codeOf(await caught(transport.connect()))).toBe('X_TRANSPORT_UNAVAILABLE');
+    expect(harness.broker.clients).toHaveLength(0);
+
+    // The next caller dials again: a failed attempt parks nothing, so nothing has to be reset.
     await transport.connect();
-
-    expect(dials).toBe(3);
-    expect(server.connections).toBe(1);
-    await transport.close();
-    expect(server.connections).toBe(0);
-  });
-
-  test('a dial that fails mid-rebind leaves no second subscription delivering the same change', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock });
-    const seen: string[] = [];
-    let dials = 0;
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      clock,
-      rng: () => 0.5,
-      sleep: async () => undefined,
-      onError: () => undefined,
-      // The dial after the restart binds `alpha` and is then refused `beta`: a half-done rebind.
-      open: () => {
-        dials += 1;
-        const stream = server.connect();
-        return Promise.resolve(dials === 2 ? refusing(stream, 'SUB x.change.beta') : stream);
-      },
-    });
-    await transport.subscribe('x.change.alpha', (payload) => seen.push(payload));
-    await transport.subscribe('x.change.beta', () => undefined);
-
-    server.dropAll();
-    await settle();
-    await settle();
-    await transport.publish('x.change.alpha', 'once');
-    await settle();
-
-    expect(seen).toEqual(['once']);
-    expect(dials).toBe(3);
-    expect(server.connections).toBe(1);
+    expect(harness.dials()).toBe(2);
+    expect(harness.broker.clients).toHaveLength(1);
     await transport.close();
   });
 
-  test('a connection lost mid-dial is not reported as the live one going down', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock });
-    const reported: unknown[] = [];
-    const seen: string[] = [];
-    let dials = 0;
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      clock,
-      rng: () => 0.5,
-      sleep: async () => undefined,
-      onError: (error) => reported.push(error),
-      // The retry's socket dies while the bucket check is in flight. That connection was never
-      // published, so the dial owns its failure — reporting it again is a loss that never was.
-      open: () => {
-        dials += 1;
-        const stream = server.connect();
-        return Promise.resolve(dials === 2 ? droppingOn(stream, '$JS.API.STREAM.INFO') : stream);
-      },
-    });
-    await transport.subscribe('x.change.>', (payload) => seen.push(payload));
-
-    server.dropAll();
-    await settle();
-    await settle();
-    await transport.publish('x.change.posts', 'after');
-    await settle();
-
-    expect(reported).toHaveLength(1);
-    expect(seen).toEqual(['after']);
-    expect(transport.connected).toBe(true);
-    expect(server.connections).toBe(1);
-    await transport.close();
-  });
-
-  test('a dial that lands after close() closes its connection instead of publishing it', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock });
+  test('a dial that lands after close() closes its client instead of publishing it', async () => {
+    const harness = bus();
     let release = (): void => undefined;
     const gate = new Promise<void>((resolve) => {
       release = () => resolve();
     });
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      clock,
-      rng: () => 0.5,
-      sleep: async () => undefined,
+    const open = fakeNatsConnect(harness.broker);
+    const transport = harness.transport({
       onError: () => undefined,
-      open: async () => {
+      connect: async (options) => {
         await gate;
-        return server.connect();
+        return open(options);
       },
     });
 
@@ -379,20 +303,12 @@ describe('NatsTransport', () => {
 
     expect(codeOf(await dialing)).toBe('X_TRANSPORT_UNAVAILABLE');
     expect(transport.connected).toBe(false);
-    expect(server.connections).toBe(0);
+    expect(harness.broker.clients).toHaveLength(0);
   });
 
   test('a background failure with no onError reaches the log rather than silence', async () => {
-    const clock = frozenClock(1_700_000_000_000);
-    const server = new FakeNatsServer({ clock });
-    const transport = new NatsTransport({
-      url: 'nats://bus.test:4222',
-      bucket: 'x-test',
-      clock,
-      rng: () => 0.5,
-      sleep: async () => undefined,
-      open: () => Promise.resolve(server.connect()),
-    });
+    const harness = bus();
+    const transport = harness.transport({ onError: undefined });
     const logged = spyOn(logger, 'error').mockImplementation(() => undefined);
 
     try {
@@ -411,6 +327,18 @@ describe('NatsTransport', () => {
       logged.mockRestore();
       await transport.close();
     }
+  });
+
+  test('a connection lost in the background is reported, never swallowed', async () => {
+    const harness = bus();
+    const transport = harness.transport();
+    await transport.connect();
+
+    harness.broker.drop();
+    await settle();
+
+    expect(harness.reported.map((error) => codeOf(error))).toEqual(['X_TRANSPORT_UNAVAILABLE']);
+    await transport.close();
   });
 
   test('publish and subscribe on a closed transport are X_TRANSPORT_UNAVAILABLE', async () => {

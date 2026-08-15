@@ -52,7 +52,7 @@ frame handler is unchanged between rungs.
 | tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
 | replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
-| the bus client | `NatsConnection`, `NatsProtocolParser`, `NatsKvSet`, `ensureKvBucket`, `parseNatsUrl`, `bunNatsStream`, `FakeNatsServer` |
+| the bus, behind `NatsTransport` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
 | reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `Scheduler`, `timeoutScheduler`, `drainPlan`, `AcceptBudget` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
@@ -200,14 +200,19 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
   `presenceTtlMs` comes back with it because the bucket's whole-stream age limit was derived from
   it — a `PresenceRegistry` given a different number would report members leaving that never left.
   Selection is pure; `connect()` is the dial, so an unreachable bus fails at boot.
-- **`NatsTransport` speaks NATS itself** — its own protocol codec and session over `Bun.connect`,
-  no client dependency. Fanout is core NATS; `shared` is a JetStream KV bucket the transport
-  creates on first connect, one key per presence member, expired by the **server's** per-message
-  TTL so a node that dies needs nobody to notice. Subscriptions are held as *intent*, so a lost
-  connection re-dials and re-subscribes underneath the caller — which is what makes `sync`
-  stateless. That bucket needs nats-server ≥ 2.11 (batch direct get, per-message TTL); an older
-  one is `X_TRANSPORT_PROTOCOL` on the first dial, never a retry loop, because no amount of
-  reconnecting makes a server newer.
+- **`NatsTransport` runs on the official `nats` client** — `nats@2.29.3`, pinned exact, admitted at
+  this transport seam and nowhere else
+  ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)). The package reaches it
+  through one port, `NatsClient`, and exactly one file imports the library to implement it, so a
+  test injects a client rather than a socket. Fanout is core NATS. `shared` is a JetStream KV bucket the transport creates on
+  first connect, one key per presence member, expired by the **server's** per-message TTL so a node
+  that dies needs nobody to notice — that bucket and its direct reads stay the framework's, because
+  the library's own KV abstraction expresses neither a per-message TTL nor a batch direct get.
+  Reconnect and re-subscription are the library's: a lost connection is re-established underneath
+  the caller, which is what makes `sync` stateless, and the jitter that spreads a restart herd is
+  handed to it as its reconnect delay rather than re-implemented above it. The bucket needs
+  nats-server ≥ 2.11 (batch direct get, per-message TTL); an older one is `X_TRANSPORT_PROTOCOL` on
+  the first dial, never a retry loop, because no amount of reconnecting makes a server newer.
 - **The lsn is `<commit position><row position in the transaction>`, 24 hex characters.** Neither
   half works alone: every row of one transaction shares a commit lsn, and logical decoding emits
   *transactions* in commit order, so per-record WAL positions are not monotonic across them. The

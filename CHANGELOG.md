@@ -44,6 +44,39 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — the NATS wire client is `nats@2.29.3`, behind the transport seam that did not
+  move.** `@ultimat3/realtime` hand-rolled the protocol: `nats-protocol.ts`, `nats-commands.ts`,
+  `nats-socket.ts` and `nats-connection.ts` — 1,019 LOC of framing, parser, PING/PONG, TLS upgrade,
+  inbox muxing and reconnect, with zero integration benefit, plus a 431-line fake nats-server to
+  test them. All of it is deleted. The criterion is
+  [`docs/idea/18-build-vs-wrap.md`](docs/idea/18-build-vs-wrap.md): own what must join the
+  transaction, context and error machinery; wrap a wire protocol with a dominant maintained client,
+  because an agent knows that client's semantics from training and can never know a
+  reimplementation. `nats` is the first external runtime dependency any `@ultimat3/*` package has
+  taken, pinned exact, importable from exactly one file (`nats-lib-client.ts`) — every other file
+  is written against the port in `nats-client.ts`.
+
+  What did not change is the point: `Transport`, `NatsTransport`, `NatsTransportOptions` and
+  `selectTransport` are the same seam, and `presence.live.test.ts` passes **unmodified** against a
+  real nats-server. What did: reconnect and re-subscription are the library's, so the transport
+  keeps no subscription bookkeeping at all — our thundering-herd jitter is handed down as its
+  `reconnectDelayHandler`, and the JetStream KV layer stays ours because this client's KV
+  abstraction expresses neither per-message TTL (`Nats-TTL`) nor a batch `multi_last` direct get.
+  The test seam moved up one level, from an injected byte stream to an injected client:
+
+  ```ts
+  new NatsTransport({ url, bucket, open: (target) => Promise.resolve(stream) });  // before
+  new NatsTransport({ url, bucket, connect: fakeNatsConnect(broker) });           // after
+  ```
+
+  Removed exports: `NatsConnection`, `NatsConnectionOptions`, `NatsConnectOptions`,
+  `NatsProtocolParser`, `NatsOperation`, `NatsServerInfo`, `NatsStream`, `natsStreamOver`,
+  `bunNatsStream`, `FakeNatsServer`, `fakeNatsStream`. Added: `NatsClient`, `NatsConnect`,
+  `NatsClientOptions`, `NatsRequestOptions`, `NatsRequestManyOptions`, `openNatsClient`,
+  `FakeNatsBroker`, `fakeNatsConnect`. `NatsHeaders`, `NatsMessage`, `NatsMessageHandler`,
+  `NatsSubscription`, `NatsTarget` and `parseNatsUrl` keep their names and move to
+  `nats-client.ts`.
+
 - **BREAKING — `@ultimat3/cli` exports `checkSourceDrift`, not `checkDrift`.** Two functions named
   `checkDrift` answered two different questions; the name now says which is which. `@ultimat3/db`'s
   `checkDrift()` keeps its name and its meaning — the live database against the ledger, the
