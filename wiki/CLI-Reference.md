@@ -199,6 +199,8 @@ Alias: `x generate`.
 | `--feature` | string | derived from the name | feature slice to write into |
 | `--surface` | string | `app` | `site` or `app` |
 | `--live` | boolean | `false` | for `query`: make it subscribable |
+| `--admin` | boolean | `false` | `resource` only: also emit the per-entity admin override |
+| `--locales` | string | `en` | comma-separated locales; lands each generator's catalog entry in every one, and for `resource` extends `packages/i18n/catalogs/` on disk |
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 

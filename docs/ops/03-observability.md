@@ -125,7 +125,10 @@ reads the command next to the failure instead of a stack trace.
 | realtime | the sync node's frame handler and its detached presence writes | everything that is not a client fault (`X_TOPIC_FORBIDDEN`, `X_SUBSCRIPTION_LIMIT`, `X_PROTOCOL_VERSION`, `X_LIVE_QUERY_UNKNOWN`, `X_CURSOR_STALE`, `X_REBASE_CONFLICT`, `X_FORBIDDEN`, `X_UNAUTHENTICATED`) |
 
 The default reporter is a **no-op**, so an unconfigured app and every test pay nothing and page
-nobody. `x serve` switches it on when the environment carries a DSN:
+nobody. There is no `x serve` command — a container runs the scaffolded `apps/web/server.ts`,
+whose boot (`configureReporting` in
+[`packages/cli/src/serve.ts`](../../packages/cli/src/serve.ts)) switches the reporter on when the
+environment carries a DSN:
 
 ```bash
 SENTRY_DSN=https://<publicKey>@<your-monitor-host>/<projectId>
@@ -139,8 +142,9 @@ organisation and no vendor endpoint: the DSN is your app's typed env, pointing a
 that never failed.
 
 Every event is tagged with `release` = the deploy's **build id** — the same value
-`x-ultimate-build` carries and the same one `x serve` computed, never a second identity — plus
-`environment`, the `X_*` code, the source (`http`/`job`/`realtime`) and the role. Group on the code.
+`x-ultimate-build` carries and the same one `apps/web/server.ts`'s boot computed, never a second
+identity — plus `environment`, the `X_*` code, the source (`http`/`job`/`realtime`) and the role.
+Group on the code.
 
 To send somewhere else, implement `ErrorReporter` and call `configureErrorReporting({ reporter })`
 in the app entry. `memoryErrorReporter()` is the one to use in tests.

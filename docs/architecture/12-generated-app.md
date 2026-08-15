@@ -141,13 +141,20 @@ The directory is the URL; the filename names the kind of file, never a URL segme
 | `apps/web/site/blog/[slug]/page.tsx` | `/blog/:slug` |
 | `apps/web/site/docs/[...path]/page.tsx` | `/docs/*path` |
 | `apps/web/app/dashboard/page.tsx` | `/dashboard` |
-| `apps/web/api/posts/route.ts` | `/api/posts` |
 
-`page.tsx` on `site/` and `app/`, `route.ts` on `api/`. `index.tsx` is not a page filename and
-`<name>.tsx` is not a route — `registerRoute()` refuses any other filename, enforced with
-`X_ROUTE_FILE_INVALID`. One directory per route is what lets `page.tsx`, `page.module.scss` and
-`page.test.ts` co-locate, gives a dynamic segment (`blog/[slug]/`) its own directory for its own
-stylesheet, and makes "is this file a route?" mechanically decidable from the filename alone.
+`page.tsx` on `site/` and `app/`. `index.tsx` is not a page filename and `<name>.tsx` is not a
+route — `registerRoute()` refuses any other filename, enforced with `X_ROUTE_FILE_INVALID`. One
+directory per route is what lets `page.tsx`, `page.module.scss` and `page.test.ts` co-locate,
+gives a dynamic segment (`blog/[slug]/`) its own directory for its own stylesheet, and makes "is
+this file a route?" mechanically decidable from the filename alone.
+
+`api/` doesn't use this convention at all: nothing under it is a `route` primitive, so nothing is
+named `route.ts`. An action, mutator, query, job or task module keeps whatever name its feature
+gives it (`app/posts/actions.ts`, `app/digest/jobs.ts`, …), and `apps/web/api/index.ts` collects
+them into one `defineApi()` call, which is what actually projects the HTTP routes, `openapi.json`,
+the typed client and the job handles. `route.ts` is reserved for `@ultimat3/render`'s `route`
+primitive (`registerRoute`'s `ROUTE_FILENAME['api']`), which a hand-written raw HTTP route could
+use, but no scaffolded or reference app does — `x g route` only targets `site/`/`app/`.
 
 ## What `x g resource` generates
 
