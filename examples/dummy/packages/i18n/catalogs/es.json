@@ -81,7 +81,9 @@
       "empty": "Todavía no hay artículos. El primero es el difícil.",
       "newPost": "Nuevo artículo",
       "loading": "Cargando el feed",
-      "offlineNotice": "Sin conexión: se muestra la copia de este dispositivo."
+      "offlineNotice": "Sin conexión: se muestra la copia de este dispositivo.",
+      "activity_one": "{count} artículo publicado",
+      "activity_other": "{count} artículos publicados"
     },
     "post": {
       "metaTitle": "{title}",

@@ -9,8 +9,10 @@ import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
-import { useCan } from '../../../shared/actor';
-import { client } from '../../../shared/client';
+import { useActor, useCan } from '../../../shared/actor';
+import { client, queries } from '../../../shared/client';
+import { oneRow } from '../../../shared/rows';
+import { wireDate } from '../../../shared/wire';
 import { Layout } from '../../layout';
 import { useViewer } from '../../viewer-context';
 import { LikeButton } from '../ui/like-button';
@@ -21,15 +23,38 @@ export const config = defineRoute({
   offline: 'network-only',
   hydrate: 'interaction',
   budget: { js: '40kb', lcp: 2000 },
-  load: ({ params }) => client.postById({ postId: params.id }),
+  /**
+   * `postById` is a read, so it comes off the query client — `client` posts actions, and the two
+   * registries are separate keys on `Api` precisely so this cannot be confused.
+   *
+   * The org is required input, not an optional filter: `postRead` decides on it, and a
+   * tenant-columned read that names no org is `X_TENANCY_UNSCOPED`. It comes off the actor rather
+   * than the URL because `/posts/{id}` carries no tenant and an id from another org must read as
+   * absent, which is exactly what an org-scoped read of a foreign id answers.
+   */
+  load: async ({ params }) => {
+    const postId = params.id ?? '';
+    const post = oneRow(await queries.postById({ orgId: useActor().orgId, postId }), postId);
+    // Both instants are rehydrated here, where the wire ends: the read answered JSON, so what
+    // `<DateTime>` would otherwise be handed is the ISO string, not the `Date` the row type says.
+    return {
+      ...post,
+      publishedAt: wireDate(post.publishedAt),
+      comments: post.comments.map((comment) => ({
+        ...comment,
+        createdAt: wireDate(comment.createdAt),
+      })),
+    };
+  },
   meta: ({ data, t }) => ({
     title: t('app.post.metaTitle', { title: data.title }),
     description: data.excerpt,
-    robots: 'noindex',
+    robots: { index: false },
   }),
 });
 
-type PostPage = Awaited<ReturnType<typeof client.postById>>;
+/** The row the loader unwrapped, not the page of rows the read answered. */
+type PostPage = Awaited<ReturnType<typeof queries.postById>>[number];
 
 export function Page(props: { readonly data: PostPage }): JSX.Element {
   const t = useT();

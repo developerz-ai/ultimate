@@ -4,16 +4,17 @@
  * the sitemap entry, in one build.
  */
 
-import { tag } from '@postly/db';
 import { useT } from '@postly/i18n';
 import { PostCard } from '@postly/ui';
 import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
-import { client } from '../../shared/client';
+import { queries } from '../../shared/client';
 import { blogHref, toCardPost } from '../../shared/entities';
+import { tag } from '../../shared/tags';
 import { anonymousViewer } from '../../shared/viewer';
+import { wireDate } from '../../shared/wire';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -22,21 +23,36 @@ export const config = defineRoute({
   offline: 'runtime',
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1500 },
-  feed: { formats: ['rss', 'atom', 'json'] },
-  load: () => client.publicPostSlugs({}),
+  // No `feed:` key: `defineRoute` takes the contract's nine keys and nothing else, so the one
+  // that used to sit here declared three feed formats and emitted none. A feed is its own URL —
+  // `buildFeed` from @ultimat3/seo, behind an `api/` route — never a flag on the HTML page.
+  // Rehydrated at the loader, like the article route: the cards render `publishedAt` through
+  // `<DateTime>`, and what a JSON response carries there is a string.
+  load: async () =>
+    (await queries.publicPosts({})).map((post) => ({
+      ...post,
+      publishedAt: wireDate(post.publishedAt),
+    })),
   meta: ({ t, url }) => ({
     title: t('site.blog.metaTitle'),
     description: t('site.blog.metaDescription'),
     og: { image: '/og/blog.png' },
-    alternates: { canonical: url },
-    ld: ld.BreadcrumbList([
-      { name: 'Postly', url: '/' },
-      { name: 'Blog', url },
-    ]),
+    canonical: url,
+    // Every crumb through `t()`: a breadcrumb is what a search result shows a reader, so it is a
+    // user-facing string in the surface whose entire purpose is being read by strangers.
+    ld: [
+      ld.BreadcrumbList({
+        items: [
+          { name: t('common.appName'), url: '/' },
+          { name: t('site.blog.metaTitle'), url },
+        ],
+      }),
+    ],
   }),
 });
 
-type BlogIndex = Awaited<ReturnType<typeof client.publicPostSlugs>>;
+/** A list route renders the page of rows the read answered, unwrapped by nothing. */
+type BlogIndex = Awaited<ReturnType<typeof queries.publicPosts>>;
 
 export function Page(props: {
   readonly data: BlogIndex;

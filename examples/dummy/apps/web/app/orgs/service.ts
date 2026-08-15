@@ -4,13 +4,21 @@
  * tool call.
  */
 
-import { assertSeatsAvailable, endOfBillingPeriod, quoteUpgrade } from '@postly/core';
+import {
+  assertSeatsAvailable,
+  endOfBillingPeriod,
+  type Actor as Member,
+  memberOf,
+  quoteUpgrade,
+} from '@postly/core';
 import type { AppLocale, AppTheme, AppZone } from '@postly/domain';
 import { type MemberId, type OrgId, type PlanCode, seatLimit } from '@postly/domain';
 import { type Ctx, defineService } from '@ultimat3/core';
+import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import { daysBetween, instant } from '@ultimat3/time';
+import { mintAvatarGrant, signedAvatarUrl } from './avatar';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from './entity';
-import { OrgNotFound } from './errors';
+import { NotAMember, OrgNotFound } from './errors';
 import {
   allDigestRecipients,
   digestRecipients,
@@ -21,6 +29,17 @@ import {
   setPlan,
   updatePreferences,
 } from './repo';
+
+/**
+ * Who the avatar calls act for. `memberOf` is the same projection every policy predicate starts
+ * from, so the service and the rule that guards it read one definition of "a member" — and an
+ * actor without one is refused here rather than reaching storage with an undefined org.
+ */
+const actingMember = (actor: Ctx['actor']): Member => {
+  const member = memberOf(actor);
+  if (member === null) throw new NotAMember(actor.id);
+  return member;
+};
 
 export const orgsService = defineService('orgs', (ctx: Ctx) => ({
   async byId(orgId: OrgId): Promise<OrgView> {
@@ -92,11 +111,25 @@ export const orgsService = defineService('orgs', (ctx: Ctx) => ({
     return member;
   },
 
-  /** Provisioning is a step in `onboardOrg`, so it must be safe to call twice. */
-  async provision(orgId: OrgId): Promise<OrgView> {
-    const org = await this.byId(orgId);
-    await ctx.storage.ensureBucket(`org-${org.slug}`);
-    return org;
+  /**
+   * A presigned PUT for the acting member's own avatar. The org is the actor's, never the
+   * request's, and the key is derived from it inside `@ultimat3/storage` — see `avatar.ts`.
+   */
+  async grantAvatarUpload(request: UploadRequest): Promise<UploadGrant> {
+    const member = actingMember(ctx.actor);
+    return mintAvatarGrant({
+      orgId: member.orgId,
+      memberId: member.memberId,
+      request,
+      // The request clock, so a grant minted inside a frozen test expires at a knowable instant.
+      clock: ctx.clock,
+    });
+  },
+
+  /** The acting member's current avatar as a short-lived signed URL, or `null` if they have none. */
+  async avatarUrl(): Promise<string | null> {
+    const member = actingMember(ctx.actor);
+    return signedAvatarUrl(member.orgId, member.memberId);
   },
 
   digestRecipients,

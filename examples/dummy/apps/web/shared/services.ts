@@ -21,6 +21,7 @@ import type {
   PlanCode,
   PostId,
 } from '@postly/domain';
+import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
@@ -37,25 +38,37 @@ export interface PostsService {
   /** What the digest mails. Bounded and ordered, so a big org does not mail a book. */
   publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
   /**
-   * The two columns `postPublish` decides about, for `publishPost`'s `row:` loader. Unscoped by
-   * design — the rule compares tenancy itself, and `null` here means the post does not exist at
-   * all, which the rule reads as a denial rather than as nothing to object to.
+   * The two columns `postPublish` decides about, for `publishPost`'s `row:` loader. Scoped to the
+   * org the caller names: `null` then means "no such post in that org", which the rule reads as a
+   * denial exactly as it reads a row from another org — and an unscoped read of a tenant-columned
+   * entity is `X_TENANCY_UNSCOPED`, so the org is not optional here.
    */
-  authorship(postId: PostId): Promise<PostRow | null>;
+  authorship(orgId: OrgId, postId: PostId): Promise<PostRow | null>;
 }
 
 export interface OrgsService {
   byId(orgId: OrgId): Promise<OrgView>;
   invite(input: InviteInput): Promise<MemberView>;
   upgrade(plan: PlanCode): Promise<UpgradeReceipt>;
+  /**
+   * Every field optional: `actions.ts`'s bulk save writes all four, but `mutator.ts`'s `setTheme`
+   * and `toggleDigestOptIn` each write one — a partial write is what keeps the field a single
+   * mutator owns from also needing a second, competing write path through this method.
+   */
   savePreferences(values: {
-    locale: AppLocale;
-    tz: AppZone;
-    theme: AppTheme;
-    digestOptIn: boolean;
+    locale?: AppLocale;
+    tz?: AppZone;
+    theme?: AppTheme;
+    digestOptIn?: boolean;
   }): Promise<MemberView>;
   memberById(memberId: MemberId): Promise<MemberView>;
-  provision(orgId: OrgId): Promise<OrgView>;
+  /**
+   * A presigned PUT for the acting member's own avatar. No `orgId` parameter on purpose: the key
+   * is derived from the actor's org, so there is no value a caller could pass to widen it.
+   */
+  grantAvatarUpload(request: UploadRequest): Promise<UploadGrant>;
+  /** The acting member's avatar as a short-lived signed URL, `null` until they upload one. */
+  avatarUrl(): Promise<string | null>;
   digestRecipients(orgId: OrgId): Promise<MemberView[]>;
   /** Cross-tenant on purpose, and only reachable from the scheduler's job. */
   allDigestRecipients(): Promise<MemberView[]>;

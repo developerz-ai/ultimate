@@ -81,7 +81,9 @@
       "empty": "No posts yet. The first one is the hardest.",
       "newPost": "New post",
       "loading": "Loading the feed",
-      "offlineNotice": "Offline — showing the copy on this device."
+      "offlineNotice": "Offline — showing the copy on this device.",
+      "activity_one": "{count} post published",
+      "activity_other": "{count} posts published"
     },
     "post": {
       "metaTitle": "{title}",

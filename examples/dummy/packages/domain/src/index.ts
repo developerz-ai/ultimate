@@ -7,10 +7,12 @@ export type { BillingCurrency, Plan, PlanCode } from './plans';
 export {
   assertBillingCurrency,
   BILLING_CURRENCIES,
+  DEFAULT_BILLING_CURRENCY,
   isUpgrade,
   PLAN_CATALOG,
   PLAN_CODES,
   PLAN_ORDER,
+  priceDecimalOf,
   priceOf,
   seatLimit,
 } from './plans';

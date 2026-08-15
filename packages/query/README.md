@@ -39,6 +39,20 @@ app's. The search string is coerced at the wire and validated by the read's own 
 `orgId` is the query's `X_INPUT_INVALID` and a 400; the answer is `no-store`, because the URL
 names no actor while the rows are scoped to one.
 
+`queryClient` is the same method for **every** registered read at once — the read half of
+`@ultimat3/action`'s `rpc`, and the one spelling available to a surface that may not import a
+feature:
+
+```ts
+import { queryClient } from '@ultimat3/query';
+import type { Api } from '../api';                 // a TYPE, so no module-graph edge
+
+export const queries = queryClient<Api['queries']>({ baseUrl });
+const [post] = await queries.publicPost({ slug }); // typed input, typed rows
+```
+
+Both spellings run `queryClientMethodFor`, so a read has one URL however it is addressed.
+
 The declaration is lifted too: `.input`, `.policy`, `.cache`, `.mcp`, `.isLive`. `sql` is not
 among them — it lives in a private store inside `read.ts`, so `sourceFor` is the only thing
 that can build a source and there is nowhere for a second authz path to hide. Something that

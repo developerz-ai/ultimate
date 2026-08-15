@@ -8,6 +8,11 @@
   margin-block-end: var(--space-6);
 }
 
+.activity {
+  margin-inline-start: auto;
+  margin-inline-end: var(--space-4);
+}
+
 .new {
   background-color: rgb(var(--color-accent));
   border-radius: var(--radius-md);

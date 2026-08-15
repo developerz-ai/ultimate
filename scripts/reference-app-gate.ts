@@ -37,15 +37,20 @@ export const REPRODUCE = `cd ${REFERENCE_APP} && bun run ../../packages/cli/src/
  */
 export const EXPECTED_RED: Readonly<Record<string, string>> = {
   typecheck:
-    'the app calls builder methods @ultimat3/entity does not have — .join(), .with(), ' +
-    '.returning(), .onConflictDoNothing(), .returningInserted() — and needs one deliberately ' +
-    'cross-tenant read that X_TENANCY_UNSCOPED refuses with no escape hatch. 227 errors, and ' +
-    'the data-substrate work owns them. NOT the EntitySet variance bug this line used to blame: ' +
-    "that was Invariant.holds being a function-typed property, it is fixed, and packages/db's " +
-    'schema now typechecks clean',
-  boundaries:
-    'three site/ routes read @postly/db directly; they need the bounded queries the ' +
-    'data-substrate work adds',
+    '137 errors as of `bunx tsc -b --pretty false` — 136 inside examples/dummy, 1 leaking ' +
+    'through project refs from packages/mcp/src/transport-stdio.ts:35 (a ReadableStream missing ' +
+    '[Symbol.asyncIterator]). NOT the builder-method/tenancy-escape-hatch pair this line used to ' +
+    'blame: the posts repo was rewritten onto the real @ultimat3/entity surface and the query ' +
+    'client landed, which is what took the count from 227 to here. What remains: ' +
+    'apps/web/app/orgs/repo.ts still chains the same phantom .update().returning() / ' +
+    '.insert().returning() the posts repo used to; every *.contract/.live/.job.test.ts calling ' +
+    '`seed`/`actorFor` has no type augmentation for the fixtures scripts/test-setup.ts wires in ' +
+    "only at runtime; `Actor` is missing `memberId`/`tz` (named, not new, in this app's own " +
+    'CLAUDE.md); and a scatter of UI prop drift (`SpaceStep`, `DateTimeFormatter`) plus a ' +
+    'Date/Instant brand mismatch on every toZoned call in packages/core/src/digest-schedule.ts. ' +
+    'The count moved 136 → 137 with previousDigestAt and its digestPreview caller, which are two ' +
+    "more instances of those same two classes, not new ones. Still the data-substrate work's to " +
+    'close',
   contract:
     "X_TENANCY_UNSCOPED on every post write, and on the read that publishPost's `row:` loader " +
     'makes before its policy runs — data substrate',

@@ -25,7 +25,7 @@ import { publicPostRead } from '@postly/web/shared/policies';
 import { from, query, t } from '@ultimat3/query';
 import type { PostSummary, PostView } from './entity';
 import { feedRead, postRead } from './policy';
-import type { PostWithComments, PublishedSlug } from './repo';
+import type { ActivitySummary, PostWithComments, PublishedSlug } from './repo';
 import * as repo from './repo';
 
 export const liveFeed = query({
@@ -57,6 +57,24 @@ export const postById = query({
 });
 
 /**
+ * The feed's activity badge: how many posts this org has published, not live and not bundled
+ * with `liveFeed` — its own read, its own cache tag, so `app/feed/page.tsx` can stream it in a
+ * `<Suspense>` boundary independently of the rows, which arrive over the socket and never through
+ * this client.
+ */
+export const feedActivity = query({
+  input: t.object({ orgId: t.uuid }),
+  policy: feedRead,
+  cache: { tags: [tag.post], ttlMs: 60_000 },
+  mcp: { expose: true, description: 'How many posts this org has published' },
+  sql: ({ orgId }) =>
+    from<ActivitySummary>('posts', () => repo.activitySummary(toOrgId(orgId)))
+      .where({ orgId })
+      .orderBy('orgId')
+      .limit(1),
+});
+
+/**
  * The public blog's reads. Anonymous by policy — `publicPostRead` is written down in
  * `shared/policies.ts` rather than being the absence of a rule. "Published only" is the `where`
  * below, not the policy: a policy owns the yes/no, a query owns the rows. `site/` reaches these
@@ -73,6 +91,25 @@ export const publicPost = query({
       .orderBy('publishedAt', 'desc')
       .orderBy('id')
       .limit(1),
+});
+
+/**
+ * The public blog index. A `PostSummary`, not a slug: the index renders the same `<PostCard>` the
+ * org feed does, and a card needs a title, an excerpt and a byline. `publicPostSlugs` below stays
+ * what it is — the prerender enumeration — because a URL list and a page of cards are two reads
+ * with two cache lifetimes, not one read used twice.
+ */
+export const publicPosts = query({
+  input: t.object({ limit: t.number.int().min(1).max(50).default(20) }),
+  policy: publicPostRead,
+  cache: { tags: [tag.blog], ttlMs: 3_600_000 },
+  mcp: { expose: true, description: 'List the published posts on the public blog' },
+  sql: ({ limit }) =>
+    from<PostSummary>('posts', () => repo.publishedPage(limit))
+      .where({ status: 'published' })
+      .orderBy('publishedAt', 'desc')
+      .orderBy('id')
+      .limit(limit),
 });
 
 /**

@@ -4,11 +4,13 @@
  * here first, visibly, instead of rotting quietly while attention goes to the app.
  */
 
+import { priceDecimalOf } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import { Image, Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
+import { currencyFromUrl } from '../shared/currency';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -17,17 +19,30 @@ export const config = defineRoute({
   /** Nothing here needs JavaScript: the nav toggle is CSS, the form posts natively. */
   hydrate: 'never',
   budget: { js: '0kb', lcp: 1200 },
-  meta: ({ t, url }) => ({
-    title: t('site.hero.metaTitle'),
-    description: t('site.hero.metaDescription'),
-    og: { image: '/og/home.png' },
-    ld: ld.SoftwareApplication({
-      name: 'Postly',
-      applicationCategory: 'BusinessApplication',
-      url,
-      offers: { price: 0, priceCurrency: 'USD' },
-    }),
-  }),
+  /**
+   * The offer is the free plan read out of the catalog, in the currency the URL names — the same
+   * rule `/pricing` renders from, through the same helper. A price written into this file would
+   * be a second price list, and a currency written into it would contradict `?currency=` the
+   * moment someone followed a link that carried one.
+   */
+  meta: ({ t, url }) => {
+    const currency = currencyFromUrl(url);
+    return {
+      title: t('site.hero.metaTitle'),
+      description: t('site.hero.metaDescription'),
+      og: { image: '/og/home.png' },
+      ld: [
+        ld.SoftwareApplication({
+          name: t('common.appName'),
+          applicationCategory: 'BusinessApplication',
+          // schema.org's vocabulary, not a user-facing string: a web app runs anywhere.
+          operatingSystem: 'Any',
+          url,
+          offers: { price: priceDecimalOf('free', currency), priceCurrency: currency },
+        }),
+      ],
+    };
+  },
 });
 
 export function Page(): JSX.Element {

@@ -1,6 +1,8 @@
 /**
  * When to deliver a member's digest. The promise is "09:00, where you are" — so the only correct
- * unit of scheduling is a member, and the only correct input is an IANA zone.
+ * input is an IANA zone, and the only correct unit of *timing* is a member. The unit of WORK is
+ * one step coarser: members of one org who share a zone share an instant and a post window, and
+ * `scheduleByOrgAndZone` is where that pair becomes one group.
  */
 
 import { DIGEST_LOCAL_HOUR } from '@postly/domain';
@@ -55,28 +57,76 @@ export const nextDigestAt = (after: Date, zone: string, hour: number = DIGEST_LO
   );
 };
 
+/**
+ * The slot one local day BEFORE `slot` — a digest's window opens at the previous digest and
+ * closes at this one, so no post is in two digests and none is in neither.
+ *
+ * `slot - 86_400_000` is the bug this exists to refuse: consecutive slots are 23 hours apart on
+ * spring-forward and 25 on autumn-back, so a fixed day of milliseconds reaches an hour PAST the
+ * previous slot in March (those posts ship twice) and stops an hour SHORT of it in October (those
+ * ship to nobody). Same calendar math as `nextDigestAt`, in the other direction.
+ */
+export const previousDigestAt = (
+  slot: Date,
+  zone: string,
+  hour: number = DIGEST_LOCAL_HOUR,
+): Date =>
+  fromZoned(
+    { ...addDays(toCalendarDay(toZoned(slot, zone)), -1), hour, minute: 0, second: 0 },
+    zone,
+  );
+
 const toCalendarDay = (parts: { year: number; month: number; day: number }): CalendarDay => ({
   year: parts.year,
   month: parts.month,
   day: parts.day,
 });
 
+/** One digest: the members of one org who share one zone, and the instant their clock reads 09:00. */
+export interface DigestSlot<T> {
+  readonly orgId: string;
+  readonly zone: string;
+  readonly at: Date;
+  readonly members: readonly T[];
+}
+
+/** Neither half can contain a NUL, so no pair of values can collide on the joined key. */
+const slotKey = (orgId: string, zone: string): string => `${orgId}\u0000${zone}`;
+
 /**
- * Group members by zone so the digest job enqueues one delivery per member with the right
- * `runAt`, in a single pass, without asking the database for a zone-shaped query.
+ * Group members by (org, zone) so the digest enqueues one delivery per group rather than one per
+ * member — which is what lets that delivery read its org's post window once instead of once per
+ * reader. The zone half is not an optimisation: the window is org-scoped and its bound is the
+ * group's own `at`, so two zones inside one org are two different windows and two different mails.
+ *
+ * `nextDigestAt` still runs once per ZONE, not once per group: 500 members in Madrid share one
+ * calculation whether they sit in one org or fifty. Order follows `members`, so a caller that
+ * reads its rows in a stable order gets stable group names to key durable steps on.
  */
-export const scheduleByZone = <T extends { readonly tz: string }>(
+export const scheduleByOrgAndZone = <T extends { readonly tz: string; readonly orgId: string }>(
   members: readonly T[],
   after: Date,
-): ReadonlyMap<string, { readonly at: Date; readonly members: readonly T[] }> => {
-  const grouped = new Map<string, { at: Date; members: T[] }>();
+): readonly DigestSlot<T>[] => {
+  const slots = new Map<string, Date>();
+  const grouped = new Map<string, { orgId: string; zone: string; at: Date; members: T[] }>();
+
   for (const member of members) {
-    const bucket = grouped.get(member.tz);
+    const bucket = grouped.get(slotKey(member.orgId, member.tz));
     if (bucket) {
       bucket.members.push(member);
       continue;
     }
-    grouped.set(member.tz, { at: nextDigestAt(after, member.tz), members: [member] });
+    let at = slots.get(member.tz);
+    if (at === undefined) {
+      at = nextDigestAt(after, member.tz);
+      slots.set(member.tz, at);
+    }
+    grouped.set(slotKey(member.orgId, member.tz), {
+      orgId: member.orgId,
+      zone: member.tz,
+      at,
+      members: [member],
+    });
   }
-  return grouped;
+  return [...grouped.values()];
 };

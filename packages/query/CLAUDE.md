@@ -56,6 +56,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   predicate every reader in the framework asks — rather than spelling `=== true` a second time.
 - `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
   is the same tier, so its naming is ported here, never imported.
+- **`queryClient` is the map-wide read client and the mirror of `rpc`; both spellings run
+  `queryClientMethodFor`.** `queryClient<Api['queries']>({ baseUrl })` is how a surface that must
+  not import a feature reaches every registered read — `site/` in an app, whose one edge into
+  `app/` is a boundary violation, so `.client()` (which needs the query object) is unreachable
+  there. The map-wide client re-deriving a path from the property name would be the second URL
+  derivation this package spent a release removing; it proxies to the per-query method instead.
 - **`toQueryRoute` is the other half of `client()`, and the two derive the same URL from the same
   `naming.ts`.** The client shipped fetching `/_x/query/<kebab>` while nothing built a route for
   it, so every typed read compiled and 404'd; a projection whose only consumer is a URL string is

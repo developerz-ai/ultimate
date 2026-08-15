@@ -36,11 +36,13 @@ import * as postQueries from '../app/posts/live';
 import * as postMutators from '../app/posts/mutator';
 import '../app/posts/service';
 import * as settingsActions from '../app/settings/actions';
+// A mutator IS an action, exactly like `postMutators` above.
+import * as settingsMutators from '../app/settings/mutator';
 import * as scheduledTasks from './tasks';
 
 export const api = defineApi({
   actions: [postActions, orgActions, settingsActions],
-  mutators: [postMutators],
+  mutators: [postMutators, settingsMutators],
   queries: [postQueries],
   jobs: [postJobs, orgJobs, digestJobs],
   tasks: [scheduledTasks],

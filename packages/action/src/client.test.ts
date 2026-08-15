@@ -165,6 +165,21 @@ describe('typed client', () => {
     }
   });
 
+  test('`then` is undefined, so awaiting the client resolves to the client', async () => {
+    // A method under `then` makes the client a thenable: `await client` would post an action
+    // named "then" and resolve to its answer instead of handing back the client.
+    let called = 0;
+    const fetchStub: FetchLike = () => {
+      called += 1;
+      return Promise.resolve(Response.json({ id: POST_ID, published: true }));
+    };
+    const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
+
+    expect((api as unknown as Record<string, unknown>)['then']).toBeUndefined();
+    expect(await api).toBe(api);
+    expect(called).toBe(0);
+  });
+
   test('a server on another build raises X_CONTRACT_DRIFT', async () => {
     const fetchStub: FetchLike = async () =>
       Response.json(

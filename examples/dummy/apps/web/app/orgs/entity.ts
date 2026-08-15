@@ -58,6 +58,28 @@ export const UpgradeReceipt = t.object({
 
 export type UpgradeReceipt = Infer<typeof UpgradeReceipt>;
 
+/**
+ * What `grantAvatarUpload` hands a browser: where to PUT the bytes, and the two constraints the
+ * URL was signed with. `url` is `t.string` and not `t.url` because a disk mints a route-relative
+ * capability (`/_storage/<disk>/<key>?…`), which is not an absolute URL and must not become one.
+ */
+export const AvatarUploadGrant = t.object({
+  key: t.string,
+  url: t.string,
+  method: t.enumerated('PUT'),
+  contentType: t.string,
+  maxBytes: t.number.int(),
+  /** Epoch ms. The grant's view of the window; the signature is what enforces it. */
+  expiresAt: t.number.int(),
+});
+
+export type AvatarUploadGrant = Infer<typeof AvatarUploadGrant>;
+
+/** A member's current avatar, `null` until they upload one. */
+export const AvatarView = t.object({ url: t.nullable(t.string) });
+
+export type AvatarView = Infer<typeof AvatarView>;
+
 export const InviteInput = t.object({
   email: t.email,
   role: t.enumerated(...MEMBER_ROLES).default('author'),

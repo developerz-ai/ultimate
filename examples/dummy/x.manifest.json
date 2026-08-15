@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "8e87ab5d54a06788",
+  "buildId": "75e5b6d88e04aa77",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -48,7 +48,7 @@
     },
     {
       "url": "/feed",
-      "render": "ssr",
+      "render": "stream",
       "offline": "runtime",
       "hydrate": "idle",
       "revalidateTags": [],
@@ -657,6 +657,78 @@
       }
     },
     {
+      "name": "grantAvatarUpload",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "filename",
+          "contentType"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUT"
+            ]
+          },
+          "contentType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxBytes": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "url",
+          "method",
+          "contentType",
+          "maxBytes",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "inviteMember",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -900,6 +972,35 @@
       "mutator": true
     },
     {
+      "name": "memberAvatar",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "publishPost",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1141,6 +1242,115 @@
       }
     },
     {
+      "name": "setTheme",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          }
+        },
+        "required": [
+          "memberId",
+          "theme"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [
+        "member"
+      ],
+      "mcp": {
+        "expose": true,
+        "description": "Set the acting member’s theme"
+      },
+      "mutator": true
+    },
+    {
       "name": "summarize",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1189,6 +1399,110 @@
         "expose": true,
         "description": "Summarise a post into two sentences and up to four tags"
       }
+    },
+    {
+      "name": "toggleDigestOptIn",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "memberId",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "author",
+              "reader"
+            ]
+          },
+          "tz": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          },
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "digestOptIn": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "email",
+          "name",
+          "role",
+          "tz",
+          "locale",
+          "theme",
+          "digestOptIn"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "cacheInvalidates": [
+        "member"
+      ],
+      "mcp": {
+        "expose": true,
+        "description": "Toggle the acting member’s digest subscription"
+      },
+      "mutator": true
     },
     {
       "name": "upgradePlan",
@@ -1351,6 +1665,14 @@
   ],
   "queries": [
     {
+      "name": "feedActivity",
+      "policy": "feed:read",
+      "live": false,
+      "cacheTags": [
+        "post"
+      ]
+    },
+    {
       "name": "liveFeed",
       "policy": "feed:read",
       "live": true,
@@ -1388,6 +1710,14 @@
       "cacheTags": [
         "blog"
       ]
+    },
+    {
+      "name": "publicPosts",
+      "policy": "post:read-public",
+      "live": false,
+      "cacheTags": [
+        "blog"
+      ]
     }
   ],
   "jobs": [
@@ -1397,9 +1727,22 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "memberId": {
+          "orgId": {
             "type": "string",
             "format": "uuid"
+          },
+          "zone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "America/New_York",
+              "America/Sao_Paulo",
+              "Europe/Madrid",
+              "Europe/Berlin",
+              "Asia/Tokyo",
+              "Australia/Sydney",
+              "Pacific/Auckland"
+            ]
           },
           "localDate": {
             "type": "string",
@@ -1410,7 +1753,8 @@
           }
         },
         "required": [
-          "memberId",
+          "orgId",
+          "zone",
           "localDate",
           "slotAt"
         ],
@@ -1622,6 +1966,7 @@
     {
       "permission": "feed:read",
       "enforcedIn": [
+        "query:feedActivity",
         "query:liveFeed",
         "query:postBySlug"
       ]
@@ -1629,7 +1974,11 @@
     {
       "permission": "member:self",
       "enforcedIn": [
-        "action:savePreferences"
+        "action:grantAvatarUpload",
+        "action:memberAvatar",
+        "action:savePreferences",
+        "action:setTheme",
+        "action:toggleDigestOptIn"
       ]
     },
     {
@@ -1674,7 +2023,8 @@
       "permission": "post:read-public",
       "enforcedIn": [
         "query:publicPost",
-        "query:publicPostSlugs"
+        "query:publicPostSlugs",
+        "query:publicPosts"
       ]
     }
   ],
@@ -1694,6 +2044,10 @@
     "es"
   ],
   "errorCodes": [
+    {
+      "code": "X_ORG_NOT_A_MEMBER",
+      "package": "apps/web"
+    },
     {
       "code": "X_ORG_NOT_FOUND",
       "package": "apps/web"

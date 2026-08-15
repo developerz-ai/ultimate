@@ -93,8 +93,9 @@ export const postsService = defineService('posts', (ctx: Ctx) => ({
 
   /**
    * The row `postPublish` decides about, loaded by `publishPost`'s `row:` loader before the guard.
-   * Two columns, and no tenancy filter on purpose: tenancy is what the rule compares, so scoping
-   * this read would report a cross-org post as "no such row" instead of as the denial it is.
+   * Two columns, scoped to the org the caller named — the rule denies a null row exactly as it
+   * denies a row from another org, so the scope bounds the read without deciding anything, and an
+   * unscoped read of a tenant-columned entity is `X_TENANCY_UNSCOPED` with no way around it.
    */
   authorship: authorshipOf,
 }));

@@ -8,15 +8,14 @@
  * not merely the policy-object identity `actions.contract.test.ts` already pins for the direct
  * call.
  *
- * The write path is a separate, pre-existing gap this file does not chase: `repo.ts` was
- * written against query-builder methods (`.join()`, `.with()`, `.returning()`,
- * `.onConflictDoNothing()`) that `@ultimat3/entity`'s real `Table`/`ReadBuilder` interface
- * (`packages/entity/src/query.ts`) has never had, so every post handler throws before
- * returning a row — see `repo.ts` for the exact call sites. `createPost` and `createComment`
- * both decide purely on `actor` + `input`, before their handler ever runs, so their DENIAL path
- * is unaffected by that gap and is what this file proves end-to-end. `publishPost` loads a row
- * before its guard runs (`ctx.posts.authorship`, deliberately unscoped — see `policy.ts`) and
- * is blocked by the same gap on every surface equally; it is not exercised here.
+ * What this file proves is the DENIAL path, and that is a choice rather than a gap: `createPost`
+ * and `createComment` both decide on `actor` + `input` alone, before their handler ever runs, so
+ * a denial observed here is the authz decision itself and not a write that happened to fail after
+ * it. The allowed path writes rows, which is `actions.contract.test.ts`'s and the live suite's
+ * job — `repo.ts` runs on @ultimat3/entity's real surface now (`preload`, `upsertAll`,
+ * `deleteWhere`), so the handlers reach the driver instead of throwing at the builder.
+ * `publishPost` loads its row before the guard (`ctx.posts.authorship`, scoped to the org the
+ * input names — see `policy.ts`) and is exercised there, not here.
  */
 
 import { mcp } from '@postly/mcp';

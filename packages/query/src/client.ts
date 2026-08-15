@@ -3,11 +3,17 @@
  * the same pure derivation the server uses, so a renamed query is a compile error
  * in a Solid component rather than a 404 at runtime. Browser-safe on purpose: no
  * server imports, nothing here touches a context, a policy or a database.
+ *
+ * Rows arrive as JSON and are handed back as parsed, exactly as `rpc` does: a query declares no
+ * output schema — row types come from the `SqlSource` its `sql:` returns — so there is nothing
+ * here to rehydrate a `Date` with, and an instant reaches a caller as the ISO string
+ * `JSON.stringify` wrote. A surface that formats one converts at its own edge.
  */
 
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import { QueryRequestFailedError } from './errors';
 import { derivePath } from './naming';
+import type { Query } from './query';
 import { isJsonObject } from './stable';
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -28,7 +34,57 @@ export type QueryClientMethod<TInput extends StandardSchemaV1, TRow extends obje
   options?: QueryCallOptions,
 ) => Promise<readonly TRow[]>;
 
-/** One query's method — what `query.client()` returns. */
+/**
+ * Loose constraint on purpose: a map of concrete `Query<TInput, TRow>` values must be
+ * assignable to it, while `QueryClient<T>` still recovers each read's own input schema and
+ * row type. The mirror of `@ultimat3/action`'s `ActionLike`.
+ */
+export interface QueryLike {
+  readonly kind: 'query';
+  readonly name: string;
+}
+
+export type QueryMap = Record<string, QueryLike>;
+
+/** `queries.publicPost({ slug })`, with the input schema and the row type both inferred. */
+export type QueryClient<TQueries extends QueryMap> = {
+  readonly [K in keyof TQueries]: TQueries[K] extends Query<infer TInput, infer TRow>
+    ? QueryClientMethod<TInput, TRow>
+    : never;
+};
+
+/**
+ * The typed client for a whole query map: `queryClient<Api['queries']>({ baseUrl })`, the read
+ * half of `rpc<Api['actions']>`. A surface that must not import a feature — `site/`, whose one
+ * edge into `app/` would be a boundary violation — reaches every registered read through this
+ * and the `Api` TYPE, with no module-graph edge and no codegen step.
+ *
+ * One blessed name, and one implementation underneath it: every method is
+ * `queryClientMethodFor`, so the map-wide spelling and `read.client()` can never derive
+ * different URLs for the same read.
+ */
+export function queryClient<TQueries extends QueryMap>(
+  options: QueryClientOptions,
+): QueryClient<TQueries> {
+  const proxy = new Proxy(
+    {},
+    {
+      get(_target, property: string | symbol) {
+        // `then` is answered with `undefined` for the same reason a symbol is: `await client`,
+        // `Promise.resolve(client)` and returning the client from an async function all read it,
+        // and a method there makes the client a thenable that fetches a read named "then" and
+        // resolves the await to its rows. No query may be called `then` — it is the one name the
+        // language reserves at this seam.
+        if (typeof property !== 'string' || property === 'then') return undefined;
+        return queryClientMethodFor(property, options);
+      },
+    },
+  );
+  // The proxy realizes the mapped type structurally; TS cannot check a Proxy.
+  return proxy as QueryClient<TQueries>;
+}
+
+/** One query's method — what `query.client()` returns, and what `queryClient` proxies to. */
 export function queryClientMethodFor<TInput extends StandardSchemaV1, TRow extends object>(
   name: string,
   options: QueryClientOptions,
