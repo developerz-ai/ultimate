@@ -6,7 +6,8 @@ import { type AuditLog, memoryAuditLog } from './audit';
 import type { AdminActor, AdminAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import { permissionsForOperation } from './crud';
-import { adminNav, type NavGroup, type NavOptions, visibleNav } from './nav';
+import { adminNav, type NavGroup, type NavItem, type NavOptions, visibleNav } from './nav';
+import { type AdminCustomPage, type AdminPageComponent, pageNavItems, pageRoutes } from './pages';
 import type { AdminOperation } from './permissions';
 import type { AdminAction, AdminEntity, AdminJobSummary, AdminRow } from './registry';
 import {
@@ -31,7 +32,9 @@ export type AdminView =
   | 'search'
   | 'jobs'
   | 'audit'
-  | 'dashboard';
+  | 'dashboard'
+  /** A `pages:` entry: the app's own component, guarded by the frame. */
+  | 'page';
 
 /**
  * A route as data. `routes.ts` turns these into `defineRoute()` configs; keeping the table
@@ -43,6 +46,11 @@ export interface AdminRoute {
   readonly entity: string | null;
   readonly titleKey: string;
   readonly permissions: readonly string[];
+  /**
+   * Set only on `view: 'page'`. It is the AUTHOR's component, still unguarded — `routes.ts` is
+   * the only thing that may hand it out, and it hands out the wrapped one.
+   */
+  readonly component?: AdminPageComponent;
 }
 
 export interface DefineAdminInput {
@@ -52,6 +60,8 @@ export interface DefineAdminInput {
   /** Registered actions. Each is attached to `action.entity`, or the global toolbar. */
   readonly actions?: readonly AdminAction[];
   readonly jobs?: readonly AdminJobSummary[];
+  /** Screens the generator would never write. Declared here so they are not a second surface. */
+  readonly pages?: readonly AdminCustomPage[];
   readonly nav?: NavOptions;
   readonly branding?: Partial<AdminBranding>;
   readonly auth: AdminAuth;
@@ -80,7 +90,7 @@ export interface AdminApp {
 }
 
 const VIEW_OPERATION: Readonly<
-  Record<Exclude<AdminView, 'jobs' | 'audit' | 'dashboard'>, AdminOperation>
+  Record<Exclude<AdminView, 'jobs' | 'audit' | 'dashboard' | 'page'>, AdminOperation>
 > = {
   list: 'list',
   detail: 'detail',
@@ -92,7 +102,10 @@ const VIEW_OPERATION: Readonly<
 function resourceRoutes(basePath: string, resource: AdminResource): readonly AdminRoute[] {
   const base = `${basePath}${resource.path}`;
   const routes: AdminRoute[] = [];
-  const add = (view: Exclude<AdminView, 'jobs' | 'audit' | 'dashboard'>, path: string): void => {
+  const add = (
+    view: Exclude<AdminView, 'jobs' | 'audit' | 'dashboard' | 'page'>,
+    path: string,
+  ): void => {
     const op = VIEW_OPERATION[view];
     if (!resource.operations.includes(op)) return;
     routes.push({
@@ -128,8 +141,14 @@ export function defineAdmin(input: DefineAdminInput): AdminApp {
     });
   });
 
-  const nav = adminNav(resources, input.nav ?? {});
-  const routes: AdminRoute[] = [
+  const pages = input.pages ?? [];
+  const navOptions = input.nav ?? {};
+  const extra: readonly (NavItem & { readonly group: string })[] = [
+    ...(navOptions.extra ?? []),
+    ...pageNavItems(pages),
+  ];
+  const nav = adminNav(resources, { ...navOptions, extra });
+  const generated: AdminRoute[] = [
     {
       path: basePath,
       view: 'dashboard',
@@ -159,6 +178,16 @@ export function defineAdmin(input: DefineAdminInput): AdminApp {
       permissions: permissionsForOperation('audit', 'list'),
     },
     ...resources.flatMap((resource) => resourceRoutes(basePath, resource)),
+  ];
+
+  // Generated first, so a page that would shadow one is refused rather than deciding a race.
+  const routes: readonly AdminRoute[] = [
+    ...generated,
+    ...pageRoutes(
+      basePath,
+      pages,
+      generated.map((route) => route.path),
+    ),
   ];
 
   return {

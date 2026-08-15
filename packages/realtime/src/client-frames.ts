@@ -3,27 +3,15 @@
 // every piece of the client a frame may touch, so the blast radius of a new frame kind is a
 // reviewable list rather than "whatever the router could reach through `this`".
 
-import { applyPatches } from './apply-patches';
-import type { LiveCursor } from './cursor';
-import type { JsonObject, JsonValue, Row } from './json';
+import type { JsonObject, JsonValue } from './json';
+import type { Registration, RowWindows } from './live-rows';
 import type { LocalStore, TableMap } from './local-store';
 import type { OfflineQueue } from './offline-queue';
 import { type RebaseLog, reconcile } from './rebase';
 import type { Frame, PresenceMember } from './sync-protocol';
 
-/** One live query this client holds. Mutable: the rows and cursor a frame advances live here. */
-export interface Registration {
-  readonly sid: string;
-  readonly name: string;
-  readonly input: JsonValue;
-  readonly setRows: (rows: readonly Row[]) => void;
-  readonly setState: (state: LiveState) => void;
-  readonly setCursor: (cursor: LiveCursor | null) => void;
-  rows: readonly Row[];
-  cursor: LiveCursor | null;
-}
-
-export type LiveState = 'loading' | 'live' | 'stale' | 'offline';
+/** Declared with the window it projects; re-exported here because the router is what writes it. */
+export type { LiveState, Registration } from './live-rows';
 
 /**
  * Everything an inbound frame is allowed to reach. Narrow on purpose — a router that took the
@@ -32,6 +20,8 @@ export type LiveState = 'loading' | 'live' | 'stale' | 'offline';
  */
 export interface ClientFrameTarget<T extends TableMap = TableMap> {
   registration(sid: string): Registration | undefined;
+  /** The projection every live window renders through. Rows live in its map, never on a frame. */
+  readonly windows: RowWindows;
   topicHandlers(topic: string): ReadonlySet<(message: JsonObject) => void> | undefined;
   readonly queue: OfflineQueue | undefined;
   readonly store: LocalStore<T> | undefined;
@@ -54,9 +44,10 @@ export function applyFrame<T extends TableMap>(frame: Frame, target: ClientFrame
     case 'snapshot': {
       const registration = target.registration(frame.sid);
       if (!registration) return;
-      registration.rows = frame.rows;
+      // The entity is the server's, and it is what upgrades this window from its own private scope
+      // to the one every other query over the same entity shares.
+      target.windows.snapshot(registration, frame.entity ?? null, frame.rows);
       registration.cursor = frame.cursor;
-      registration.setRows(frame.rows);
       registration.setCursor(frame.cursor);
       registration.setState('live');
       return;
@@ -64,8 +55,7 @@ export function applyFrame<T extends TableMap>(frame: Frame, target: ClientFrame
     case 'patch': {
       const registration = target.registration(frame.sid);
       if (registration) {
-        registration.rows = applyPatches(registration.rows, frame.patches);
-        registration.setRows(registration.rows);
+        target.windows.patch(registration, frame.patches);
         registration.setState('live');
         return;
       }
@@ -91,15 +81,19 @@ export function applyFrame<T extends TableMap>(frame: Frame, target: ClientFrame
       const store = target.store;
       const log = target.log;
       if (!store || !log) return;
-      reconcile({
-        store,
-        log,
-        ack: {
-          key: frame.key,
-          entity: frame.entity,
-          id: frame.row?.id ?? frame.key,
-          row: frame.row,
-        },
+      // One batch for the whole reconcile — a rollback, server truth and every replayed mutator
+      // are one frame's worth of change, so a live window holding those rows renders once.
+      store.identity.batch(() => {
+        reconcile({
+          store,
+          log,
+          ack: {
+            key: frame.key,
+            entity: frame.entity,
+            id: frame.row?.id ?? frame.key,
+            row: frame.row,
+          },
+        });
       });
       return;
     }

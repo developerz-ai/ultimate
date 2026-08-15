@@ -4,6 +4,10 @@ Owns: the `route` primitive, the five render modes, the route table, the surface
 islands + budgets, hydration directives, the vendored client router, `<head>` merge, **the server
 JSX runtime and the two Bun loaders that make an app's `.tsx` and `.scss` runnable**.
 
+`island()` is a **factory over the route's own `hydrate`**, not a ninth primitive and not a
+second render mode — the same rule `llm()` and `backfill()` follow. It adds no key to
+`defineRoute`.
+
 Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cache`, `seo`,
 `entity`, `policy`, `http`, `action`, `query`. **Never** `pwa`, `mcp`, `ai`, `manifest`
 (sideways), never `ui`/`cli` (upward).
@@ -20,6 +24,13 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Descriptor `budget` | always an object, `{}` when undeclared. Its *fields* stay optional — `budget.js === undefined` is the site/ hydration failure. |
 | No `describe()` on a route | `describeRoutes()` is the one route list. A per-route projection would be a second one. |
 | Mode invariants | `modes.ts` only. Never inline a mode check in a render-\* file. |
+| Island declaration | `island({ src })` — a **specifier**, never an import. That is the whole boundary: a string has no scope to close over and no edge for a bundler or `checkSurfaceBoundary` to follow, so a `static` page's graph cannot grow the island's dependencies. Never add an overload that takes a component. |
+| Island filename | `*.island.tsx`, `ISLAND_EXTENSION` — one spelling, same rule as `page.tsx`: a module ships to the browser iff its name says so. Never widen it to accept a second, and never make it optional. |
+| Island timing | the route's `hydrate` and nothing else. An island declaring its own strategy would be a second way to say "this route hydrates" (axiom 1) and a second thing `budget.js` would have to chase. `hydrate: 'never'` + an island is `X_ISLAND_NOT_HYDRATED`. |
+| Island props | declared, JSON-safe, under `ISLAND_PROPS_MAX_BYTES` — `island-props.ts` is the one gate. A structural walk, never a `JSON.stringify` round trip: stringify drops a function and an `undefined` silently, which is the footgun rather than the check. |
+| Island collection | per render, passed as `renderToHtml(tree, { islands })`. Never module-global and never on an ambient context — two concurrent requests would bill one page for the other's JS, and `assertNoPerRequestState` refuses a live context under `static` anyway. |
+| Island bytes | `routeJsBytes` unions `entry.islands` with the rendered directives' `moduleId`s. Reading either alone is a budget that counts the runtime and not the chunk. |
+| Island markup | the props `<script>` is emitted INSIDE the wrapper by `render-html.ts`, so a document assembler has exactly one thing left to remember: `hydrateRuntime(directives)`. |
 | Route truth | `registry.ts`. Never keep a second route list anywhere. |
 | Route filename | `page.tsx` under `site/`/`app/`, `route.ts` under `api/` — `ROUTE_FILENAME`, one per surface. The URL is the directory path. Anything else is `X_ROUTE_FILE_INVALID`; never widen the table to accept a second spelling. |
 | Registry input | descriptors only. `registerRoute` refuses a raw declaration with `X_ROUTE_UNNORMALIZED` — `defineRoute` is the one normalizer, and every reader downstream assumes it ran. |

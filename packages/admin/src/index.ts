@@ -91,6 +91,8 @@ export {
   type AdminErrorCode,
   type AdminErrorParts,
   AdminFieldUnsupportedError,
+  AdminPagePathInvalidError,
+  AdminPageUnguardedError,
   AdminPolicyMissingError,
   adminErrorFrom,
   DevDashboardInProdError,
@@ -127,6 +129,15 @@ export {
   adminToolDecisions,
 } from './mcp-tools';
 export { adminNav, type NavGroup, type NavItem, type NavOptions, visibleNav } from './nav';
+export { AdminPageDenied, guardedPage } from './page-guard';
+export {
+  type AdminCustomPage,
+  type AdminPageComponent,
+  type AdminPageProps,
+  pageNavItems,
+  pagePermissions,
+  pageRoutes,
+} from './pages';
 export {
   type AdminCursor,
   type AdminPage,

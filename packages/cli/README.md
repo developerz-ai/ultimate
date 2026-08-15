@@ -65,6 +65,7 @@ There is no `--only` and no `--skip`; the exit code is non-zero if any step fail
 | `flag-number.ts` | the one integer-flag reader — `--port`, `--workers`, `--shard` |
 | `output.ts` | one data shape, two renderers, the 3-line error format |
 | `registry.ts` | the one command list |
+| `generate-kinds.ts` | which generators exist, and how a command line names one |
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `app-load.ts` | import an app's modules so the framework registries hold it |
@@ -73,6 +74,8 @@ There is no `--only` and no `--skip`; the exit code is non-zero if any step fail
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
 | `dev-*.ts` | what `x dev` boots: services, runtime, routes, hooks, roles, the `/_x` mount |
+| `island-bundle.ts` | every `*.island.tsx` built as its own entry point, content-hashed |
+| `island-routes.ts` | the one route those chunks are served from, in dev and in the container |
 | `mcp-host.ts` | the shell-side half of `@ultimat3/mcp`'s dev server — db, tests, logs, verify |
 | `verify-step.ts` | the step shape, the step names, the host-check hook |
 | `verify-tests.ts` | one `bun test` invocation per test type |
@@ -92,6 +95,8 @@ no second OpenAPI builder and no second surface-boundary walk anywhere in this p
 apps/web/app/<feature>/{entity,repo,service,policy,errors,ui}.ts
 apps/web/app/<feature>/{actions,queries,live,jobs,tasks}/<name>.ts
 apps/web/{site,app}/<path>/page.tsx
+apps/web/{site,app}/<path>/<name>.island.tsx     # x g island <name> --at <dir>
+apps/admin/src/pages/<name>.tsx                  # x g admin:page <name> --permission p
 ```
 
 Every emitted source has a `<file>.test.ts` beside it that passes on the first run.

@@ -40,6 +40,7 @@ const fixtures: Record<FrameKind, Frame> = {
     sid: 'sid-1',
     rows: [{ id: 'p1', title: 'hello' }],
     cursor,
+    entity: 'posts',
   },
   patch: {
     type: 'patch',
@@ -108,6 +109,24 @@ describe('sync-protocol', () => {
       ProtocolVersionError,
     );
     expect(() => decode('{not json')).toThrow(ProtocolVersionError);
+  });
+
+  /**
+   * `entity` is additive: it is the client's identity scope, and a node that predates it simply
+   * omits it. Refusing such a frame would be a protocol break for a field whose absence has a
+   * defined meaning — the subscription keeps its rows private — so both spellings must decode.
+   */
+  test('a snapshot without an entity decodes, and does not invent one', () => {
+    const { entity, ...withoutEntity } = fixtures.snapshot as Extract<Frame, { type: 'snapshot' }>;
+    expect(entity).toBe('posts');
+    const decoded = decode(JSON.stringify(withoutEntity));
+    expect(decoded).toEqual(withoutEntity);
+    expect('entity' in decoded).toBe(false);
+  });
+
+  test('a non-string entity is a malformed frame, never a scope the client would key rows by', () => {
+    const bad = JSON.stringify({ ...fixtures.snapshot, entity: 7 });
+    expect(() => decode(bad)).toThrow(ProtocolVersionError);
   });
 
   test('decode accepts the binary form Bun hands a WS handler', () => {

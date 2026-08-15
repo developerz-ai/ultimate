@@ -14,6 +14,9 @@ export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from
 export type { RenderErrorCode } from './errors';
 export {
   BudgetExceededError,
+  IslandInvalidError,
+  IslandNotHydratedError,
+  IslandPropsInvalidError,
   PrerenderFailedError,
   RENDER_ERROR_CODES,
   RENDER_ERROR_TITLES,
@@ -52,6 +55,19 @@ export {
   hydrateRuntimeBytes,
   requiredStrategies,
 } from './hydrate';
+export type { IslandComponent, IslandDeclaration, IslandNode, IslandSpec } from './island';
+export {
+  ISLAND_EXTENSION,
+  ISLAND_NODE,
+  isEmittableSpecifier,
+  isIslandNode,
+  island,
+  islandModuleId,
+} from './island';
+export type { IslandCollector, IslandCollectorInput } from './island-collector';
+export { createIslandCollector, islandModuleIds } from './island-collector';
+export type { IslandProps, JsonValue } from './island-props';
+export { checkIslandProps, ISLAND_PROPS_MAX_BYTES } from './island-props';
 export type { BudgetReport, BundleGraph, GraphName, Island, RouteBytes } from './islands';
 export {
   assertBudget,
@@ -100,6 +116,7 @@ export {
   routeFor,
   routePathFromFile,
 } from './registry';
+export type { RenderHtmlOptions } from './render-html';
 export { renderComponent, renderToHtml } from './render-html';
 export type {
   IsrController,

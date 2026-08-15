@@ -74,7 +74,14 @@ export function routeJsBytes(
   directives: readonly IslandDirective[] = [],
 ): RouteBytes {
   const graph = graphFor(entry.surface, islands);
-  const onRoute = graph.islands.filter((island) => entry.islands.includes(island.id));
+  // Two sources, unioned: `entry.islands` is what registration declared, and the directives are
+  // what the page actually rendered. Reading only the first is how the runtime bytes of an island
+  // could be charged while its chunk was not — a budget that counts the wrapper and not the code.
+  const onRoute = graph.islands.filter(
+    (island) =>
+      entry.islands.includes(island.id) ||
+      directives.some((directive) => (directive.moduleId ?? directive.islandId) === island.id),
+  );
   const islandBytes = onRoute.reduce((sum, island) => sum + island.bytes, 0);
   const runtimeBytes = directives.length > 0 ? hydrateRuntimeBytes(directives) : 0;
   const baseline = islandBytes === 0 && runtimeBytes === 0 ? 0 : graph.baselineBytes;

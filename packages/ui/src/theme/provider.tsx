@@ -4,6 +4,7 @@
 import { directionOf, type Locale, type Translator } from '@ultimat3/i18n';
 import type { TimeZone } from '@ultimat3/time';
 import type { JSX } from 'solid-js';
+import { providerNeedsRuntimeError } from '../errors';
 import type { Theme } from '../tokens/tokens';
 import {
   fallbackTranslator,
@@ -13,7 +14,7 @@ import {
   type UiContextValue,
   uiContext,
 } from './context';
-import { solid } from './solid-adapter';
+import { hasSolidRuntime, solid } from './solid-adapter';
 
 export interface UiProviderProps {
   theme?: Theme | undefined;
@@ -27,8 +28,13 @@ export interface UiProviderProps {
 /**
  * Also reflects `lang` and `dir` onto <html>, so the document, native form
  * controls, and every logical property agree with the injected locale.
+ *
+ * Client-only, and loud about it: `solid()` hands a server render an inert runtime so every other
+ * component still renders, but a Provider is the one thing that inert runtime cannot honour. On
+ * the server the same values reach `useUi()` from the request context instead.
  */
 export function UiProvider(props: UiProviderProps): JSX.Element {
+  if (!hasSolidRuntime()) throw providerNeedsRuntimeError();
   const rt = solid();
   const value = rt.createMemo<UiContextValue>(() => {
     const locale = props.locale ?? UI_DEFAULT_LOCALE;

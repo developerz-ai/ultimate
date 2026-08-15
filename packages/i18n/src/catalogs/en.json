@@ -193,23 +193,38 @@
   },
   "dev": {
     "panel": {
-      "routes": { "title": "Routes", "question": "which handler serves this?" },
+      "routes": {
+        "title": "Routes",
+        "question": "which handler serves this?"
+      },
       "timeline": {
         "title": "Timeline",
         "question": "where did the time go in this request?"
       },
-      "live": { "title": "Live", "question": "what does each subscriber receive, and why?" },
-      "jobs": { "title": "Jobs", "question": "is the queue moving, and which step failed?" },
+      "live": {
+        "title": "Live",
+        "question": "what does each subscriber receive, and why?"
+      },
+      "jobs": {
+        "title": "Jobs",
+        "question": "is the queue moving, and which step failed?"
+      },
       "db": {
         "title": "DB",
         "question": "what is in the table, and does the schema match the migrations?"
       },
-      "mail": { "title": "Mail", "question": "what did that email look like, in that locale?" },
+      "mail": {
+        "title": "Mail",
+        "question": "what did that email look like, in that locale?"
+      },
       "cache": {
         "title": "Cache",
         "question": "what invalidated what — and why is this still stale?"
       },
-      "policy": { "title": "Policy", "question": "can this actor do that, and why?" },
+      "policy": {
+        "title": "Policy",
+        "question": "can this actor do that, and why?"
+      },
       "manifest": {
         "title": "Manifest",
         "question": "is the committed x.manifest.json current?"
@@ -246,6 +261,50 @@
     },
     "relative": {
       "now": "just now"
+    }
+  },
+  "ui": {
+    "breadcrumb": "Breadcrumb",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "dismiss": "Dismiss",
+    "empty": "Nothing here yet.",
+    "error": {
+      "code": "Error code",
+      "cause": "What went wrong",
+      "fix": "How to fix it",
+      "title": "Something went wrong"
+    },
+    "language": "Language",
+    "load": {
+      "more": "Load more",
+      "end": "That's everything."
+    },
+    "loading": "Loading…",
+    "menu": "Menu",
+    "more": "More",
+    "navigation": "Navigation",
+    "next": "Next",
+    "optional": "Optional",
+    "page": "Page",
+    "previous": "Previous",
+    "required": "Required",
+    "results": {
+      "empty": "No matches"
+    },
+    "retry": "Try again",
+    "skip": "Skip to content",
+    "sort": {
+      "ascending": "Sort ascending",
+      "descending": "Sort descending"
+    },
+    "suggestions": "{count} suggestions",
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System",
+      "label": "Theme"
     }
   }
 }

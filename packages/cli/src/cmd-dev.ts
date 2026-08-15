@@ -35,6 +35,9 @@ import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
+import type { IslandBundle } from './island-bundle';
+import { buildIslands } from './island-bundle';
+import { islandRoutes } from './island-routes';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
@@ -67,6 +70,12 @@ interface DevState {
   reloads: number;
   /** A save that will not build. Replaced on every attempt, so a fixed file clears it. */
   reloadFinding: Finding | undefined;
+  /**
+   * The client entries, rebuilt on the same tick as the manifest. An island is the one module this
+   * process never imports, so a fresh `Bun.build` is the whole of its reload — no module cache to
+   * invalidate, which is exactly why editing one takes effect where editing a route does not.
+   */
+  islands: IslandBundle;
 }
 
 /** Debounced: a save that touches five files is one reload, not five. */
@@ -129,6 +138,7 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     manifest: (await appManifest(options.root)).manifest,
     reloads: 0,
     reloadFinding: undefined,
+    islands: await buildIslands(options.root),
   };
   // The manifest's build id is a content hash of every fact below it, so a dev document's
   // `x-ultimate-build` header names the exact shape the client was served against. Pinned at
@@ -166,7 +176,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     // never shadow `/icons` or `/media`.
     ...assetRoutes({ root: options.root, storage: runtime.storage }),
     ...storageRoutes({ storage: runtime.storage }),
-    ...appRoutes({ buildId }),
+    // The chunks the documents below name. Mounted before the app's routes for the reason
+    // `/icons` and `/media` are: a page route must not be able to shadow an asset URL.
+    ...islandRoutes(() => state.islands),
+    ...appRoutes({ buildId, resolveIsland: (file) => state.islands.resolverFor(file) }),
   ];
 
   const running = await startRoles({
@@ -194,9 +207,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
 
   const stopWatching = watchApp(options.root, (file) => {
     const started = performance.now();
-    void appManifest(options.root)
-      .then(({ manifest }) => {
+    void Promise.all([appManifest(options.root), buildIslands(options.root)])
+      .then(([{ manifest }, islands]) => {
         state.manifest = manifest;
+        state.islands = islands;
         state.reloads += 1;
         state.reloadFinding = undefined;
         options.onReload?.(file, Math.round(performance.now() - started));

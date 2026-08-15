@@ -54,6 +54,7 @@ frame handler is unchanged between rungs.
 | fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
 | the bus, behind `NatsTransport` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
 | reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `Scheduler`, `timeoutScheduler`, `drainPlan`, `AcceptBudget` |
+| the client store | `IdentityMap` — one row value per `(entity, id)` — plus `RowWindows`, `rowKey`, `privateScope`, `applyPatches`/`orderAfterPatches` |
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
@@ -109,6 +110,38 @@ Authz goes through `@ultimat3/query`'s `guard`, which is the only contact with `
 One authz system, never two: `policy` is evaluated **once per subscriber**, never once per query.
 Two actors on one live query get two different result sets, and a row that leaves an actor's policy
 is delivered to them as a `delete` — never as silence.
+
+## One row per `(entity, id)`
+
+Two components subscribing to two live queries that both return post #7 hold **one** row, not two
+copies of it. That is the client's whole store: a `LiveClient` owns one `IdentityMap`, every live
+window is an ordered list of ids over it, and the tier-3 local store's tables are membership over
+the same map. A write through any of them is the same row for all of them.
+
+```ts
+const feed = useLive(liveFeed, () => ({ orgId }));   // holds p1, p2, p7
+const pinned = useLive(livePinned, () => ({ orgId })); // holds p7
+
+await like({ postId: 'p7' });  // one optimistic write...
+feed()[2] === pinned()[0];     // ...and both views are looking at it
+```
+
+Nothing is declared to get this. There is no normalization schema, no cache key, no selector — an
+app writes `useLive` and `useMutation` exactly as before.
+
+| Rule | Why |
+|---|---|
+| Identity is `(entity, id)`, never `id` alone | two entities may spell one id the same way; `posts/7` and `users/7` are two rows |
+| The entity comes **from the server**, on the `snapshot` frame | the shape is compiled server-side out of `sql`; a browser cannot derive it, and a scope an app declares by hand is a second place for it to be wrong |
+| A subscription the server named no entity for keeps its rows in a scope private to itself | no sharing is a stale view; wrong sharing is two entities merged into one row |
+| A value is **replaced, never mutated** — every write is a new object | a mutated row is a render that never happens |
+| A write **merges** columns; it never drops one | two queries may project different columns of one row, and the narrower one must not blank what the wider one renders |
+| A row is dropped when the last window and the last table let go of it | an infinite scroll must not retain every row it ever saw |
+| A rebase rolls back through the same map | the optimistic write, the server's truth and the replay are one row's history, not a second copy's |
+
+`entity` on a `snapshot` frame is **additive**: an older node omits it and the client falls back to
+the private scope, a newer node sends it and an older client ignores it. Both skews are safe in
+both directions, which is why it carries no `PROTOCOL_VERSION` bump.
 
 ## Reconnect is the hard part
 
@@ -221,7 +254,12 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
 - **A live query needs `REPLICA IDENTITY FULL`.** Deciding whether a row *left* a result set needs
   the old values; with the default identity a delete replicates only the key columns.
 - Tier 3's OPFS SQLite store is browser-only and throws until the browser entry ships; `MemoryLocalStore`
-  implements the full journal/rollback/replay semantics today.
+  implements the full journal/rollback/replay semantics today. It holds membership and the journal;
+  the row values are the client's one `IdentityMap`, which is what a browser store has to inherit
+  rather than re-implement.
+- The identity map is **per client**, in memory, and it is not a query cache: it answers "what is
+  row X now", never "have I run this query before". Nothing evicts by time or size — a row lives
+  exactly as long as a window or a table holds it.
 
 ## Errors
 

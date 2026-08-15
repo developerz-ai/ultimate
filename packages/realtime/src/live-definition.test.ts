@@ -377,4 +377,41 @@ describe('a declared live query is subscribable, per subscriber', () => {
       { qid: result.subscription.qid, sid: result.subscription.sid, actorId: 'alice', rowId: 'p2' },
     ]);
   });
+  /**
+   * The identity scope, end to end from a real declaration — the half a browser cannot derive for
+   * itself, because the shape is compiled server-side out of `sql`. It is the SAME name a
+   * `ChangeEvent` carries and a mutator's `tx.<table>` writes, which is what lets one client hold
+   * one row for a live query and an optimistic write alike.
+   */
+  test("a snapshot names the entity its rows belong to, and it is the change feed's name", async () => {
+    const registry = registryFor();
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+
+    const result = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: INPUT,
+    });
+
+    if (result.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    expect(result.frame.entity).toBe('posts');
+    expect(result.frame.entity).toBe(change(ROWS[0] as FeedRow, null).entity);
+  });
+
+  test('a definition that states no entity sends no scope, rather than guessing one', async () => {
+    const target = declareFeed();
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
+    const { rowEntity: _dropped, ...silent } = liveQueryDefinition(target, { ctx: nodeCtx() });
+    registry.register(silent);
+    const alice = socketFor('s-alice', userActor({ id: 'alice', orgId: 'o1' }));
+
+    const result = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: INPUT,
+    });
+
+    if (result.frame.type !== 'snapshot') throw new Error('expected a snapshot');
+    expect(result.frame.entity).toBeUndefined();
+  });
 });

@@ -142,11 +142,89 @@ The import that costs you is three hops from the file anyone reviewed, so
 at build time and therefore never carry the boundary. `shared/` is a leaf; `app/ → api/` is
 types-only.
 
+## One interactive component on a static page
+
+`island()` — a marketing page with a contact modal, a docs page with a search box, a pricing page
+with a plan toggle. The page stays `render: 'static'`; the modal is the only JavaScript on it.
+
+```tsx
+const ContactModal = island({ src: './contact-modal.island.tsx', props: ['subject'] });
+
+export const config = defineRoute({
+  render: 'static', offline: 'precache',
+  hydrate: 'interaction',            // WHEN every island on this route wakes
+  budget: { js: '10kb' },            // already required: site/ + hydrate ≠ never
+  meta: ({ t }) => ({ title: t('pricing.title'), description: t('pricing.description') }),
+});
+
+export function Page() {
+  return <main><h1>Pricing</h1>
+    <ContactModal subject="pricing"><button>Contact us</button></ContactModal>
+  </main>;
+}
+```
+
+`hydrate` is not new. It has always accepted `idle | visible | interaction | never` and always
+forced a `budget.js` on `site/` — but nothing in the framework ever *had* a strategy applied to it:
+`IslandDirective` was constructed nowhere outside its own test, and `RouteEntry.islands` was a list
+no caller populated. `hydrate` was a promise with no referent. The island is the referent.
+
+| The route says | The island says |
+|---|---|
+| `hydrate` — WHEN it wakes, once, for the whole route | `src` — WHICH module, and `props` — what it may receive |
+| `budget.js` — how many bytes that is allowed to cost | `tag`, `events`, `rootMargin` — how the wrapper behaves |
+
+One spelling for "this route hydrates", and it is the one that already shipped.
+
+### Declared by specifier, never by import
+
+`src` is a string. The page never imports the client module, so:
+
+- **there is no import edge** for the bundler or `checkSurfaceBoundary()` to follow from
+  `page.tsx` into the island — the static page's graph cannot grow the island's dependencies;
+- **the component cannot close over anything.** A string does not capture a database handle,
+  a request, an actor or a row. There is no scope to leak.
+
+`.island.tsx` is the one spelling, for the reason `page.tsx` is: a file ships to the browser if
+and only if its name says so, decidable by `grep` and by the bundler without opening it. Anything
+else is `X_ISLAND_INVALID`, and the fix is the `git mv`.
+
+### Props are the only channel, and they are checked
+
+| Rule | Failure |
+|---|---|
+| every prop is declared in `props: [...]` | `X_ISLAND_PROPS_INVALID`, naming each undeclared key |
+| every value is JSON — no function, `Date`, class instance, `bigint`, `undefined`, cycle | `X_ISLAND_PROPS_INVALID`, naming the path and the type |
+| serialized props ≤ `ISLAND_PROPS_MAX_BYTES` (4096) | `X_ISLAND_PROPS_INVALID`, naming the measured size |
+
+`<ContactModal {...post} />` fails and names `email`, `passwordHash` — every column the spread
+would have shipped. The type refuses it first (`type-pins.ts` pins that); the render refuses it
+second, which for `static` and `isr` is build time. `children` are the server-rendered shell and
+are never serialized.
+
+### It counts against the route's budget
+
+```ts
+const collector = createIslandCollector({ file, hydrate: config.hydrate, resolve });
+const html = await renderToHtml(page, { islands: collector });
+document.body += hydrateRuntime(collector.directives);   // the one thing left to remember
+assertBudget(entry, measuredIslands, collector.directives);
+```
+
+`routeJsBytes` reads **both** sources — what registration declared in `entry.islands` and what the
+render actually pulled in. Reading only the first is how a page could be charged for the hydration
+runtime and not for the chunk it boots: a budget that counts the wrapper and not the code.
+
+An island on a route that declares `hydrate: 'never'`, or rendered with no collector, is
+`X_ISLAND_NOT_HYDRATED` — inert markup either way, and `hydrate: 'never'` is exactly what excuses
+a `site/` route from declaring `budget.js` at all.
+
 ## Public API
 
 | Export | Owns |
 |---|---|
 | `defineRoute` | the `route` primitive |
+| `island`, `createIslandCollector` | one interactive component on a static page |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
 | `registerRoute`, `describeRoutes`, `matchRoute`, `routePathFromFile` | the route table |
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
@@ -177,7 +255,8 @@ types-only.
 - **`hydrate: 'interaction'`** replays the event that woke the island; without replay the
   first click on a cold island is silently lost.
 - **`hydrate: 'never'`** emits no attributes beyond the marker and no runtime — the `site/`
-  0kb default is mechanical, not aspirational.
+  0kb default is mechanical, not aspirational. A page that renders an island anyway is
+  `X_ISLAND_NOT_HYDRATED`, not a silently dead button.
 - **The client router is vendored** rather than depending on a moving SolidStart alpha. It
   imports no `solid-js`: reactive primitives and the DOM host are injected.
 - `@ultimat3/http`'s `html()` / `stream()` turn a `RenderResult` into a `Response`; render

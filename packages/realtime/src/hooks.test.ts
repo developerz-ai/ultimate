@@ -1,133 +1,34 @@
 // The hooks are the whole surface an app component sees, so this covers the seam rather than the
 // client underneath it: the ambient registration and the error when it is missing, the callable
 // live accessor, the connection getters that have to stay live, and the two queue counts.
-// Signals are two closures — no solid-js in the test either, for the same reason as in the source.
+// The identity map the live accessor renders through is `hooks-identity.test.ts`.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, UltimateError } from '@ultimat3/core';
-import { type ClientSocket, LiveClient, type SignalFactory } from './client';
+import { LiveClient } from './client';
 import { makeCursor } from './cursor';
 import {
   clearLiveClient,
   hasLiveClient,
-  type MutatorLike,
   setLiveClient,
   useConnection,
   useLive,
   useMutation,
   useMutationQueue,
 } from './hooks';
-import type { Row } from './json';
-import { type LocalTx, MemoryLocalStore } from './local-store';
-import { MemoryQueueStore, OfflineQueue } from './offline-queue';
-import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
-
-type PostRow = Row & { readonly likedByMe: boolean; readonly likeCount: number };
-type Tables = { posts: PostRow };
-
-/** Synchronous and closure-backed: enough to prove an accessor re-reads, with no reactive runtime. */
-const signal: SignalFactory = <T>(initial: T) => {
-  let value = initial;
-  return [
-    () => value,
-    (next: T) => {
-      value = next;
-    },
-  ];
-};
-
-/** The injected socket, driven from the test: `open`/`deliver` are the server's half. */
-class FakeSocket implements ClientSocket {
-  readonly sent: string[] = [];
-  #open: (() => void) | null = null;
-  #message: ((data: string) => void) | null = null;
-  #closed: ((code: number) => void) | null = null;
-
-  send(data: string): void {
-    this.sent.push(data);
-  }
-
-  close(code = 1000): void {
-    this.#closed?.(code);
-  }
-
-  onOpen(handler: () => void): void {
-    this.#open = handler;
-  }
-
-  onMessage(handler: (data: string) => void): void {
-    this.#message = handler;
-  }
-
-  onClose(handler: (code: number) => void): void {
-    this.#closed = handler;
-  }
-
-  open(): void {
-    this.#open?.();
-  }
-
-  deliver(frame: Frame): void {
-    this.#message?.(encode(frame));
-  }
-
-  frames(): readonly Frame[] {
-    return this.sent.map((data) => decode(data));
-  }
-}
-
-interface Harness {
-  readonly client: LiveClient<Tables>;
-  readonly socket: FakeSocket;
-  readonly store: MemoryLocalStore<Tables>;
-  readonly queue: OfflineQueue;
-}
-
-/** Tier 3 by default — the queue is what most of these cases are about. */
-async function harness(): Promise<Harness> {
-  const socket = new FakeSocket();
-  const store = new MemoryLocalStore<Tables>({
-    posts: [{ id: 'p1', likedByMe: false, likeCount: 2 }],
-  });
-  const queue = await OfflineQueue.open(new MemoryQueueStore());
-  const client = new LiveClient<Tables>({
-    signal,
-    connect: () => socket,
-    buildId: 'build-1',
-    store,
-    queue,
-    clock: frozenClock(1_000),
-    rng: () => 0,
-    // Arms nothing: a closed socket here must not leave a real `setTimeout` dialling behind the
-    // test that closed it. The timer itself is `client.test.ts`'s subject, not this file's.
-    scheduler: () => () => {},
-  });
-  return { client, socket, store, queue };
-}
-
-/** The sid the client minted for its query subscription — the test never picks one. */
-function querySid(socket: FakeSocket, op: 'add' | 'drop'): string {
-  for (const frame of socket.frames()) {
-    if (frame.type === 'subscribe' && frame.op === op && frame.target.kind === 'query') {
-      return frame.sid;
-    }
-  }
-  return '';
-}
-
-/** The idempotency key of the mutation the client sent — so a test can ack/fail it by ref. */
-function sentMutateKey(socket: FakeSocket): string {
-  for (const frame of socket.frames()) {
-    if (frame.type === 'mutate') return frame.key;
-  }
-  return '';
-}
-
-/** Lets a fire-and-forget chain inside `client.ts` (a reconnect drain, an async ack) settle before
- * the test reads the state it produced. */
-function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
+import {
+  FakeSocket,
+  flush,
+  harness,
+  likePost,
+  liveFeed,
+  type PostRow,
+  querySid,
+  sentMutateKey,
+  signal,
+  type Tables,
+} from './hooks-fixture';
+import { PROTOCOL_VERSION } from './sync-protocol';
 
 /**
  * `useMutationQueue().pending`/`.failed` recompute from the queue on every read, so calling them
@@ -156,21 +57,6 @@ function codeOf(run: () => unknown): string {
   }
   return 'nothing was thrown';
 }
-
-const liveFeed = { name: 'liveFeed' };
-
-/**
- * Narrower than `MutatorLike` on both parameters, which is the point: this is the shape
- * `@ultimat3/action`'s `mutator()` produces, and it has to assign with no cast at the call site.
- */
-const likePost = {
-  name: 'likePost',
-  local(tx: LocalTx<Tables>, input: { readonly postId: string }): void {
-    tx.posts.update(input.postId, (post) =>
-      post.likedByMe ? {} : { likedByMe: true, likeCount: post.likeCount + 1 },
-    );
-  },
-} satisfies MutatorLike;
 
 beforeEach(() => {
   clearLiveClient();

@@ -90,6 +90,22 @@ export function runtimeMissingError(api: string, fix: string): UiError {
 }
 
 /**
+ * `<UiProvider>` on a server render. No new code: a reactive runtime is absent, which is exactly
+ * what X_UI_RUNTIME_MISSING already names — and a code is stable forever once shipped. The throw
+ * is the point. A Provider in an inert tree reaches no descendant (they are walked outside every
+ * owner), so rendering the children anyway would drop the locale, zone, currency and translator it
+ * was handed while looking like it worked.
+ */
+export function providerNeedsRuntimeError(): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.runtimeMissing,
+    cause:
+      '<UiProvider> needs a registered Solid runtime; a server render has none, and its values would reach no component',
+    fix: 'delete <UiProvider> from the server tree — useUi() already reads the request locale and time zone; keep the provider in the client entry, after setSolidRuntime()',
+  });
+}
+
+/**
  * `<Icon>` was handed glyph data it refuses to turn into markup. No new code: an unrenderable
  * glyph is exactly what X_UI_INVALID_VALUE already names, and a code is stable forever once shipped
  * — a second one for the same meaning is the thing the catalog exists to prevent.

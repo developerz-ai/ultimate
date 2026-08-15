@@ -5,14 +5,11 @@
 
 import { type Clock, systemClock, uuid } from '@ultimat3/core';
 import type { Topic } from './channel';
-import {
-  applyFrame,
-  type ClientFrameTarget,
-  type LiveState,
-  type Registration,
-} from './client-frames';
+import { applyFrame, type ClientFrameTarget } from './client-frames';
 import type { LiveCursor } from './cursor';
+import { IdentityMap, privateScope } from './identity-map';
 import type { JsonObject, JsonValue, Row } from './json';
+import { type LiveState, type Registration, RowWindows } from './live-rows';
 import type { LocalStore, LocalTx, TableMap } from './local-store';
 import { mutateFrame, type OfflineQueue } from './offline-queue';
 import type { ConflictStrategy, RebaseLog } from './rebase';
@@ -26,8 +23,8 @@ import {
   timeoutScheduler,
 } from './thundering-herd';
 
-/** The four states a live subscription renders. Declared with the router that writes them. */
-export type { LiveState } from './client-frames';
+/** The four states a live subscription renders. Declared with the window that holds them. */
+export type { LiveState } from './live-rows';
 
 /** Injected reactive primitive. `createSignal` from Solid satisfies this exactly. */
 export type SignalFactory = <T>(initial: T) => [get: () => T, set: (next: T) => void];
@@ -95,6 +92,7 @@ export class LiveClient<T extends TableMap = TableMap> {
   readonly #clock: Clock;
   readonly #onError: (error: unknown) => void;
   readonly #registrations = new Map<string, Registration>();
+  readonly #windows: RowWindows;
   readonly #topics = new Map<string, Set<(message: JsonObject) => void>>();
   readonly #setUpdate: (buildId: string | null) => void;
   readonly #setReconnectAt: (at: number | null) => void;
@@ -108,6 +106,12 @@ export class LiveClient<T extends TableMap = TableMap> {
   readonly signal: SignalFactory;
   /** The durable queue when tier 3 is configured, so a queue count is read off the queue itself. */
   readonly queue: OfflineQueue | undefined;
+  /**
+   * One row value per `(entity, id)` for this client. Taken from the local store when tier 3 is
+   * configured, so an optimistic write and the live query rendering that row are the same row —
+   * a second map here would be exactly the duplication an identity map exists to prevent.
+   */
+  readonly identity: IdentityMap;
 
   #socket: ClientSocket | null = null;
   #attempt = 0;
@@ -127,6 +131,8 @@ export class LiveClient<T extends TableMap = TableMap> {
     this.#onError = options.onError ?? reportToConsole;
     this.signal = options.signal;
     this.queue = options.queue;
+    this.identity = options.store?.identity ?? new IdentityMap();
+    this.#windows = new RowWindows(this.identity);
     const [update, setUpdate] = options.signal<string | null>(null);
     const [reconnectAt, setReconnectAt] = options.signal<number | null>(null);
     const [connected, setConnected] = options.signal<boolean>(false);
@@ -223,13 +229,18 @@ export class LiveClient<T extends TableMap = TableMap> {
       setRows,
       setState,
       setCursor,
-      rows: [],
+      // Private until the first snapshot names the entity: sharing rows with another query on a
+      // scope nobody confirmed would merge two entities that spell one id the same way.
+      scope: privateScope(query.name),
+      ids: [],
       cursor: null,
     };
     this.#registrations.set(sid, registration);
+    const close = this.#windows.open(registration);
     if (this.#connected()) this.#sendSubscribe(registration);
     const unsubscribe = (): void => {
       this.#registrations.delete(sid);
+      close();
       this.#send({
         type: 'subscribe',
         v: PROTOCOL_VERSION,
@@ -378,6 +389,7 @@ export class LiveClient<T extends TableMap = TableMap> {
   get #frameTarget(): ClientFrameTarget<T> {
     return {
       registration: (sid) => this.#registrations.get(sid),
+      windows: this.#windows,
       topicHandlers: (topic) => this.#topics.get(topic),
       queue: this.#options.queue,
       store: this.#options.store,

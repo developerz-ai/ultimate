@@ -163,6 +163,32 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   the library refuses a malformed subject itself, and a second spelling of that rule here is a second
   place it can drift. A presence key or member id is user data, so it is base64url-encoded
   (`encodeToken`) rather than validated — no name is refused for its spelling.
+- **One row value per `(entity, id)` per client, and `identity-map.ts` is the only place one lives.**
+  A live window is an ordered list of ids over that map and a local-store table is membership over
+  it — neither holds a row of its own, because two components holding two copies of post #7 is the
+  bug the map exists to make unrepresentable. A `LiveClient` takes the map off its store when tier 3
+  is configured (`options.store.identity`) and builds one otherwise: a second map here would be that
+  same duplication, one level up.
+- **The scope is `(entity, id)`, never `id` alone, and the entity comes from the server.** The
+  compiled shape's root entity (`live.shape.entity`) is the one name the live path, `ChangeEvent`,
+  a mutator's `tx.<table>` and `rebase`'s `ack.entity` all already agree on; a browser cannot derive
+  it, because the shape is compiled out of `sql`. It rides on the `snapshot` frame, and a
+  subscription that is told no entity keeps its rows under `?query:<name>` — private, colliding with
+  nothing. Wrong sharing merges two entities into one row; no sharing only costs a stale view.
+- **`snapshot.entity` is additive, and that is why `PROTOCOL_VERSION` did NOT move.** The bump rule
+  exists for a shape change that makes an old frame unreadable. This one is readable both ways — an
+  old node omits the field and the client falls back to the private scope, an old client drops it in
+  `decode` — so bumping would refuse every in-flight client during a rolling deploy in exchange for
+  nothing. An *incompatible* frame change still bumps, and every kind still needs a fixture.
+- **A value is replaced, never mutated, and a write merges columns rather than replacing the row.**
+  A mutated row is a render that never happens — the projections hand rows to a signal, which
+  compares by reference. And two queries may project different columns of one row, so a snapshot
+  from the narrower one must not blank what the wider one is rendering. Only a `delete` removes.
+- **A row lives exactly as long as something holds it.** Every projection retains its ids and
+  releases them when it lets go (`RowWindows` on a re-snapshot, a patch, a close; a table on delete
+  and rollback). The last release drops the value — without it an infinite scroll retains every row
+  it ever saw. It is what lets a rollback of an optimistic insert leave a row a live window still
+  holds: the table's membership goes, the row does not.
 - `local(tx, input)` is pure: no I/O, no `Date.now()`, no `Math.random()`. Rebase replays it.
 - One registered `LiveClient` per app (`setLiveClient`), and every hook reads it through that seam —
   no hook takes a client argument, and an unregistered one is `X_LIVE_CLIENT_MISSING`, never a
@@ -240,12 +266,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `nats-jetstream.ts` / `nats-kv.ts` / `nats-transport.ts` | the JetStream KV bucket, presence over it, and the production `Transport` — all three written against the port |
 | `nats-fake.ts` | an in-memory bus implementing the port — server semantics, not wire bytes; the only way to prove multi-node fanout under a sealed network |
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area |
+| `identity-map.ts` | the client's single source of truth: one row value per `(scope, id)`, its holds and its batched change notification |
+| `live-rows.ts` | one subscription's window over that map — its scope, its order, its retain/release, and `Registration` itself |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
 | `client.ts` / `sync-node.ts` | the two halves — connection lifecycle, subscriptions, mutations |
 | `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-node.ts`'s handler |
 | `client-harness-fixture.ts` | the injected socket + scheduler + harness both client suites drive. Excluded from the tarball |
+| `hooks-fixture.ts` | the same, for the two hook suites (`hooks.test.ts`, `hooks-identity.test.ts`). Excluded from the tarball |
 | `subscription-book.ts` | who holds which subscription, keyed by `(socket, sid)`, and the per-socket/per-tenant caps answered from it |
-| `apply-patches.ts` | folding a patch list onto a row list — the client's one stateless piece |
+| `apply-patches.ts` | folding a patch list onto a row list (`applyPatches`) or onto ids alone (`orderAfterPatches`, what a window uses) — the client's one stateless piece, and one fold, not two |
 | `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
 | `query-hook.ts` | the typed projection: one declared query bound to one named hook |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |
@@ -262,5 +291,9 @@ bun test                                  # from packages/realtime
 bun run typecheck
 ```
 
-Changing a frame shape means bumping `PROTOCOL_VERSION` and adding a fixture to
-`sync-protocol.test.ts` — the round-trip test fails if a kind has no fixture.
+Changing a frame shape means adding a fixture to `sync-protocol.test.ts` — the round-trip test
+fails if a kind has no fixture — and bumping `PROTOCOL_VERSION` **when the change makes an old
+frame unreadable in either direction**. An *additive optional* field (`snapshot.entity`, 2026-08)
+is not that: `decode` builds a whitelist, so an old client drops it and a new client reads its
+absence as a defined answer. Bumping for one refuses every in-flight client on a rolling deploy
+and buys nothing — the version guards incompatibility, not novelty.

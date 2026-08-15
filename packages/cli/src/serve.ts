@@ -36,6 +36,8 @@ import { resolveServices } from './dev-services';
 import { storageRoutes } from './dev-storage';
 import { PortInvalidError, RoleUnknownError } from './errors';
 import { holdUntilShutdown } from './hold';
+import { buildIslands } from './island-bundle';
+import { islandRoutes } from './island-routes';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 
@@ -210,11 +212,16 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
   configureReporting(options.env, buildId);
+  // Built at boot rather than shipped prebuilt, so the container serves the same chunks `x dev`
+  // does from the same source — the alternative is a second bundler invocation in the image build
+  // whose output nothing compares against the one the dev loop proved.
+  const islands = await buildIslands(options.root);
   const routes: readonly Route[] = [
     ...apiRoutes(),
     ...assetRoutes({ root: options.root, storage: runtime.storage }),
     ...storageRoutes({ storage: runtime.storage }),
-    ...appRoutes({ buildId }),
+    ...islandRoutes(() => islands),
+    ...appRoutes({ buildId, resolveIsland: (file) => islands.resolverFor(file) }),
   ];
   const port = options.port ?? portFromEnv(options.env);
   // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the

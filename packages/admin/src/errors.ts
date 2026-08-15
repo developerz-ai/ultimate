@@ -16,6 +16,11 @@ export const ADMIN_OWNED_ERROR_CODES = [
   'X_ADMIN_DENIED',
   'X_ADMIN_TOOL_FORBIDDEN',
   'X_ADMIN_INVALID',
+  // The two ways a `pages:` entry can be wrong. Both are thrown by `defineAdmin` at declaration,
+  // not on the first request: an admin page that is public, or one that shadows a generated
+  // screen, is a defect the author must never be able to deploy.
+  'X_ADMIN_PAGE_UNGUARDED',
+  'X_ADMIN_PAGE_PATH_INVALID',
 ] as const;
 
 /**
@@ -41,6 +46,8 @@ export const ADMIN_ERROR_TITLES: Readonly<Record<AdminOwnedErrorCode, string>> =
   X_ADMIN_DENIED: 'the actor may not use this admin surface',
   X_ADMIN_TOOL_FORBIDDEN: 'an admin MCP tool was called without permission',
   X_ADMIN_INVALID: "an admin tool's arguments failed the resource schema",
+  X_ADMIN_PAGE_UNGUARDED: 'a custom admin page declared no permissions',
+  X_ADMIN_PAGE_PATH_INVALID: 'a custom admin page has an unusable or already-taken path',
 };
 
 // One unconditional call, so a second package claiming one of admin's codes throws
@@ -91,6 +98,34 @@ export class AdminPolicyMissingError extends UltimateError {
       cause: `${input.kind} "${input.subject}" is exposed in the admin with no policy`,
       fix: `add policy: can('${input.subject}') to the ${input.kind} definition`,
       docs: docsFor('X_ADMIN_POLICY_MISSING'),
+    });
+  }
+}
+
+/**
+ * A `pages:` entry with an empty permission list. Refused where it is written, because the
+ * alternative is an unauthenticated admin screen that `x verify` is perfectly happy with — the
+ * route table would carry `permissions: []` and the emitted `defineRoute` would have no policy.
+ */
+export class AdminPageUnguardedError extends UltimateError {
+  constructor(input: { path: string }) {
+    super({
+      code: 'X_ADMIN_PAGE_UNGUARDED',
+      cause: `the admin page "${input.path}" declares no permissions, so nothing gates it`,
+      fix: `add permissions: ['${input.path.replace(/^\//, '').split('/')[0] ?? 'ops'}:read'] to the pages entry for "${input.path}"`,
+      docs: docsFor('X_ADMIN_PAGE_UNGUARDED'),
+    });
+  }
+}
+
+/** A page path that cannot be mounted: not rooted, malformed, or already served. */
+export class AdminPagePathInvalidError extends UltimateError {
+  constructor(input: { path: string; cause: string; fix: string }) {
+    super({
+      code: 'X_ADMIN_PAGE_PATH_INVALID',
+      cause: `the admin page path "${input.path}" ${input.cause}`,
+      fix: input.fix,
+      docs: docsFor('X_ADMIN_PAGE_PATH_INVALID'),
     });
   }
 }

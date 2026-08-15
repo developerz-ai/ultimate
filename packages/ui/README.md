@@ -176,19 +176,56 @@ anything carrying `;`, `}` or `</style>` is a refusal at the app's entry point r
 than a CSS injection. Every component in the system follows the override — they only
 ever read the roles, never a colour.
 
+## The two render paths
+
+Every component renders on the server. Half of them read the ambient presentation context —
+locale, time zone, currency, direction, translator — and where that context comes from is the
+only thing that differs between a server render and a hydrated one. **An app registers nothing
+to render on the server.**
+
+| | Server render | Client render |
+|---|---|---|
+| The renderer | `@ultimat3/render`'s inert JSX factory — a component is a plain function, called once | Solid, with a reactive graph |
+| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime(await import('solid-js'))` |
+| Where `useUi()` reads | the request — `currentLocale()`, `currentTimeZone()`, `useI18n()` | `<UiProvider>`, through Solid's context |
+| `<UiProvider>` | **throws** `X_UI_RUNTIME_MISSING` | the one injection point |
+
+`<UiProvider>` is client-only on purpose. A Provider in an inert tree reaches no descendant —
+the tree is already built when the renderer walks it, so every consumer is walked outside every
+owner and sees the context default, with a real Solid runtime registered too. Rendering the
+children anyway would drop the locale, zone, currency and translator it was handed while looking
+like it worked, so it refuses instead and names the fix.
+
+The mirror image is just as loud: a **DOM** with no registered runtime is the "my theme toggle
+does nothing" bug, and `solid()` still throws there. No DOM, no reactivity to lose.
+
+Server-side, set the locale and zone the way every other package reads them — through the
+request context (`attachLocale` / `attachTimeZone`, which `@ultimat3/http` already calls per
+request, and `withChildContext({ locale, tz })` for a subtree). There is no second ambient store
+in this package.
+
 ## Example
 
 ```tsx
-import { Button, Field, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
+import { Button, Field, Input } from '@ultimat3/ui';
 import '../../shared/global'; // `shared/global.scss` is the app's one `@use '@ultimat3/ui/global.scss'`
 
-setSolidRuntime(await import('solid-js'));   // once, in the app entry
+// A server render. `useUi()` inside <Field> reads the request's locale, direction and zone —
+// nothing to register, nothing to wrap.
+<Field label={t('signup.email')} hint={t('signup.email.hint')} error={errors.email}>
+  {(control) => <Input {...control} type="email" autocomplete="email" />}
+</Field>
+<Button tone="accent">{t('signup.submit')}</Button>
+```
+
+```tsx
+// A client entry — an island, or a hydrated app shell. Both lines, in this order, once.
+import { setSolidRuntime, UiProvider } from '@ultimat3/ui';
+
+setSolidRuntime(await import('solid-js'));
 
 <UiProvider locale="ar-EG" timeZone="Africa/Cairo" currency="EGP" t={t}>
-  <Field label={t('signup.email')} hint={t('signup.email.hint')} error={errors.email}>
-    {(control) => <Input {...control} type="email" autocomplete="email" />}
-  </Field>
-  <Button tone="accent" loading={pending()}>{t('signup.submit')}</Button>
+  {tree}
 </UiProvider>
 ```
 
@@ -241,7 +278,7 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 |---|---|
 | `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
-| `X_UI_RUNTIME_MISSING` | reactive context or DOM APIs used where they do not exist |
+| `X_UI_RUNTIME_MISSING` | a DOM render with no registered Solid runtime, `<UiProvider>` on the server, or `browserThemeEnv()` off-DOM. A server render with no runtime is **not** one of them — it gets `INERT_SOLID_RUNTIME` |
 | `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, or a negative `debounce` window |
 
 ## Commands

@@ -4,7 +4,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { clearRoutes, defineRoute, registerRoute, routeEntries } from '@ultimat3/render';
+import { clearRoutes, defineRoute, island, registerRoute, routeEntries } from '@ultimat3/render';
+import { appManifest } from './app-manifest';
+import { checkBudgets, readBuildStats } from './budgets';
 import { isPrerenderable, prerenderSite } from './prerender';
 
 const ROOT = join(import.meta.dir, '..', '.prerender-fixture');
@@ -109,5 +111,103 @@ describe('x build --target static', () => {
     const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
     expect(report.pages).toEqual([]);
     expect(report.skipped).toEqual(['/dashboard']);
+  });
+});
+
+// The island half, end to end: the CLI is the only thing that can prove it, because the property
+// under test is what the BUILD emitted — one chunk per island, booted by the document, and charged
+// to the route that boots it. `renderStatic` and the collector are already pinned in
+// `@ultimat3/render`; nothing there can see a file on disk.
+
+/** A real client entry: no JSX, so the assertion is about bundling and not about a JSX runtime. */
+const COUNTER_ISLAND = `
+export function mount(el: HTMLElement, props: { readonly start: number }): void {
+  el.textContent = String(props.start);
+}
+`;
+
+/** Same module, padded past the route's budget — the bytes are the point, so they are literal. */
+const HEAVY_ISLAND = `
+const PAYLOAD = '${'x'.repeat(4096)}';
+export function mount(el: HTMLElement): void {
+  el.textContent = PAYLOAD;
+}
+`;
+
+const Counter = island({ src: './counter.island.tsx', props: ['start'] });
+const Heavy = island({ src: './heavy.island.tsx' });
+
+const CounterPage = (): unknown => Counter({ start: 3, children: '0' });
+const HeavyPage = (): unknown => Heavy({ children: 'loading' });
+
+const islandRoute = defineRoute({
+  render: 'static',
+  hydrate: 'idle',
+  offline: 'precache',
+  budget: { js: '20kb' },
+  meta: () => ({ title: 'Counter', description: 'one island' }),
+});
+
+const tightRoute = defineRoute({
+  render: 'static',
+  hydrate: 'idle',
+  offline: 'precache',
+  budget: { js: '1kb' },
+  meta: () => ({ title: 'Heavy', description: 'one island, over budget' }),
+});
+
+describe('x build --target static, with islands', () => {
+  test('the document boots exactly one chunk, and the page next door still ships no JS', async () => {
+    await Bun.write(join(ROOT, 'apps/web/site/counter/counter.island.tsx'), COUNTER_ISLAND);
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    registerRoute({
+      file: 'apps/web/site/counter/page.tsx',
+      config: islandRoute,
+      component: CounterPage,
+    });
+
+    const out = join(ROOT, 'static');
+    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+
+    const html = await Bun.file(join(out, 'counter/index.html')).text();
+    const entries = [...html.matchAll(/data-x-entry="(?<url>[^"]+)"/g)];
+    // Exactly one: the island is its own entry point, so the page boots its chunk and nothing else.
+    expect(entries).toHaveLength(1);
+    const url = entries[0]?.groups?.['url'] ?? '';
+    expect(url).toMatch(/^\/islands\/counter-[0-9a-f]{8}\.js$/);
+
+    const chunk = Bun.file(join(out, url.slice(1)));
+    expect(await chunk.exists()).toBe(true);
+    expect(await chunk.text()).toContain('textContent');
+
+    // The runtime is emitted, once, and inside the body it hydrates.
+    expect(html).toContain('data-x-hydrate="idle"');
+    expect(html).toContain('requestIdleCallback');
+    expect(html.indexOf('requestIdleCallback')).toBeLessThan(html.indexOf('</body>'));
+
+    // Axiom 6: the static page beside it renders through the same assembler and pays nothing.
+    expect(await Bun.file(join(out, 'index.html')).text()).not.toContain('<script');
+
+    const stats = await readBuildStats(ROOT);
+    const measured = new Map((stats?.routes ?? []).map((route) => [route.path, route]));
+    expect(measured.get('/')?.jsBytes).toBe(0);
+    expect(measured.get('/counter')?.jsBytes).toBeGreaterThanOrEqual(chunk.size);
+  });
+
+  test('an island over the route budget trips X_BUDGET_EXCEEDED naming the island file', async () => {
+    await Bun.write(join(ROOT, 'apps/web/site/heavy/heavy.island.tsx'), HEAVY_ISLAND);
+    registerRoute({
+      file: 'apps/web/site/heavy/page.tsx',
+      config: tightRoute,
+      component: HeavyPage,
+    });
+
+    await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
+    const { manifest } = await appManifest(ROOT);
+    const findings = checkBudgets(manifest, (await readBuildStats(ROOT)) ?? { routes: [] });
+
+    expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_EXCEEDED']);
+    // Naming the island is the whole point: "your bundle got bigger" is not an instruction.
+    expect(findings[0]?.cause).toContain('apps/web/site/heavy/heavy.island.tsx');
   });
 });

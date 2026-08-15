@@ -55,6 +55,13 @@ export interface LiveQueryDefinition<R extends Row = Row> {
   /** Built once per `qid`, since a qid pins both the query and its input. */
   matcher(input: JsonValue): IncrementalMatcher;
   /**
+   * The entity every row of this result set belongs to, resolved per input exactly as `matcher`
+   * is. It is the client's identity scope, and it can only come from here: a browser cannot
+   * compile the shape a `sql` produces. `null` means "not stated", and the client then keeps the
+   * rows private to that one subscription rather than guessing.
+   */
+  rowEntity?(input: JsonValue): string | null;
+  /**
    * Resolve whatever this input needs before an entry is built. `matcher` is synchronous by
    * design — a change event must not await anything — so a definition that has to compile a
    * source or a shape does it here, after `authorize` allowed this subscriber and before the
@@ -85,6 +92,8 @@ interface QueryEntry {
   readonly qid: string;
   readonly definition: LiveQueryDefinition;
   readonly input: JsonValue;
+  /** Told to the client on every snapshot: the identity scope its rows belong under. */
+  readonly rowEntity: string | null;
   readonly shape: SubscriptionShape;
   readonly matcher: IncrementalMatcher;
   readonly subscribers: Map<string, LiveSubscription>;
@@ -207,23 +216,14 @@ export class LiveQueryRegistry {
       const subscription = this.#attach(entry, args.socket, sid, resumed.cursor);
       return {
         subscription,
-        frame: {
-          type: 'snapshot',
-          v: PROTOCOL_VERSION,
-          sid,
-          rows: resumed.rows,
-          cursor: resumed.cursor,
-        },
+        frame: snapshotFrame(entry, sid, resumed.rows, resumed.cursor),
       };
     }
 
     const fresh = await this.#read(entry, { sid, actor: args.socket.actor });
     const cursor = makeCursor(qid, fresh.lsn, fresh.rows, now);
     const subscription = this.#attach(entry, args.socket, sid, cursor);
-    return {
-      subscription,
-      frame: { type: 'snapshot', v: PROTOCOL_VERSION, sid, rows: fresh.rows, cursor },
-    };
+    return { subscription, frame: snapshotFrame(entry, sid, fresh.rows, cursor) };
   }
 
   /** Scoped to the socket that asked: a client may only drop its own subscription. */
@@ -410,6 +410,9 @@ export class LiveQueryRegistry {
       qid,
       definition,
       input,
+      // Resolved with the matcher, from the same build: `prepare` has already run, so a definition
+      // that compiles its shape per input can answer.
+      rowEntity: definition.rowEntity?.(input) ?? null,
       shape: {
         qid,
         // The matcher knows the dependency set this *input* produced; `definition.entities` is
@@ -470,6 +473,17 @@ export class LiveQueryRegistry {
     void reading.then(done, done);
     return reading;
   }
+}
+
+/** The one place a snapshot frame is built, so the identity scope cannot be told to one caller only. */
+function snapshotFrame(
+  entry: QueryEntry,
+  sid: string,
+  rows: readonly Row[],
+  cursor: LiveCursor,
+): Frame {
+  const base = { type: 'snapshot', v: PROTOCOL_VERSION, sid, rows, cursor } as const;
+  return entry.rowEntity === null ? base : { ...base, entity: entry.rowEntity };
 }
 
 function orgIdOf(input: JsonValue): string | null {

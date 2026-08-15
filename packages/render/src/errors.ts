@@ -17,6 +17,9 @@ export const RENDER_ERROR_CODES = [
   'X_SURFACE_BOUNDARY',
   'X_BUDGET_EXCEEDED',
   'X_PRERENDER_FAILED',
+  'X_ISLAND_INVALID',
+  'X_ISLAND_PROPS_INVALID',
+  'X_ISLAND_NOT_HYDRATED',
   // Render's, not the CLI's, for the same reason X_BUDGET_EXCEEDED is: this package owns the
   // stylesheet registry and `stylesFor`, so "the CSS a document on this surface carries" is a fact
   // about render's own output. `x verify` is only the surface that reports it.
@@ -37,6 +40,9 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_SURFACE_BOUNDARY: 'a surface imported across the hard boundary',
   X_BUDGET_EXCEEDED: 'a route blew its JS or LCP budget',
   X_PRERENDER_FAILED: 'a prerendered path threw during build',
+  X_ISLAND_INVALID: 'an island declaration cannot become a client entry',
+  X_ISLAND_PROPS_INVALID: 'an island was passed props it cannot carry to the browser',
+  X_ISLAND_NOT_HYDRATED: 'a page renders an island that nothing would ever boot',
   X_STYLES_GLOBAL_MISSING:
     'a surface renders documents whose CSS defines no :root custom properties',
 };
@@ -185,6 +191,58 @@ export class RouteLoadInvalidError extends UltimateError {
       cause,
       fix,
       docs: docsFor(RouteLoadInvalidError.code),
+    });
+  }
+}
+
+/**
+ * The declaration itself cannot become a client entry: no `src`, a remote URL, a name that is not
+ * `*.island.tsx`, or two islands on one page claiming one id. Thrown where `island()` is written,
+ * so the failure lands in the file the author is editing.
+ */
+export class IslandInvalidError extends UltimateError {
+  static readonly code = 'X_ISLAND_INVALID' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: IslandInvalidError.code,
+      cause,
+      fix,
+      docs: docsFor(IslandInvalidError.code),
+    });
+  }
+}
+
+/**
+ * An island is named by specifier, so it can close over nothing — its props are the only channel
+ * from the server, and this is what keeps that channel to declared, JSON-safe, budgeted values.
+ * The failure it exists for is `<Modal {...row} />`: a spread that ships a column nobody meant to.
+ */
+export class IslandPropsInvalidError extends UltimateError {
+  static readonly code = 'X_ISLAND_PROPS_INVALID' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: IslandPropsInvalidError.code,
+      cause,
+      fix,
+      docs: docsFor(IslandPropsInvalidError.code),
+    });
+  }
+}
+
+/**
+ * The page renders an island nothing would boot: the route says `hydrate: 'never'`, or the render
+ * collected no islands so no runtime is emitted. Both ship inert markup — and `hydrate: 'never'`
+ * is exactly what excuses a `site/` route from declaring `budget.js`, so silence here is how the
+ * budget stops meaning anything.
+ */
+export class IslandNotHydratedError extends UltimateError {
+  static readonly code = 'X_ISLAND_NOT_HYDRATED' as const;
+  constructor(cause: string, fix: string) {
+    super({
+      code: IslandNotHydratedError.code,
+      cause,
+      fix,
+      docs: docsFor(IslandNotHydratedError.code),
     });
   }
 }

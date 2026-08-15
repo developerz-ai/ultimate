@@ -58,8 +58,92 @@ export const admin = defineAdmin({
   audit: memoryAuditLog({ sinks: [auditTable] }),
 });
 
-export const routes = adminRoutes(admin); // every page `spa`, `network-only`, noindex
+export const routes = adminRoutes(admin); // generated views `spa`, custom pages `ssr`, all gated
 ```
+
+### The views are TSX, and the pieces come apart
+
+There is no view DSL here, and there will not be one. Every renderer is an ordinary SolidJS
+component in an ordinary `.tsx` file importing `@ultimat3/ui` — `AdminList`, `AdminForm`,
+`AdminDetail`, `Widget`, `AdminLayout` are each exported on their own, so a table can be lifted
+out of its page and dropped into a screen the generator never wrote:
+
+```tsx
+import { AdminList, AdminForm, Widget } from '@ultimat3/admin';
+
+<AdminList resource={admin.resource('posts')} page={page} ctx={ctx} … />;   // just the table
+<Widget input={widgetProps(field, row.total, ctx)} />;                      // just one cell
+```
+
+An admin route is an ordinary `route` primitive; an admin action is an ordinary `action`. Nothing
+in this package is written in a second language that only the dashboard understands — the escape
+hatch is the same TSX as the main path, which is why there is no cliff to fall off when a screen
+stops being CRUD.
+
+### Custom pages
+
+The bespoke ops screen is the common case, not the corner: a reconciliation fixer, a proxy health
+board, a deploy button. Declare it in `pages:` and it becomes a real admin route.
+
+```tsx
+// admin/ops/page.tsx — a component, nothing framework-shaped about it
+export function OpsPage(props: AdminPageProps) {
+  return <OpsBoard counts={await mediaStateCounts()} />;
+}
+
+// admin/index.ts
+defineAdmin({
+  entities: [posts],
+  pages: [
+    {
+      path: '/ops',                       // rooted at basePath → /admin/ops
+      titleKey: 'admin.ops.title',
+      navGroup: 'admin.group.operations', // omit to keep it out of the nav
+      permissions: ['ops:read'],          // `admin:read` is composed in front of it
+      component: OpsPage,
+    },
+  ],
+  auth,
+});
+```
+
+| What you get | How |
+|---|---|
+| a row in `app.routes`, `adminRoutes()`, `x manifest` | `pageRoutes()` folds it in beside the generated screens |
+| a nav item that disappears for an actor who cannot open it | `NavItem.permissions` → `visibleNav` |
+| a `defineRoute({ policy })` you never wrote and cannot omit | `adminRouteConfig` composes `permissions[0]` into it |
+| a per-request refusal, audited, before your component runs | `guardedPage()` wraps it in `decideAll` |
+
+**The guard is not yours to remember.** `adminRoutes()` hands the router the *wrapped* component,
+never the one you wrote, and `AdminPageProps.ctx` is required by the type — a page component
+cannot be called without the handle the guard decides on. `permissions: []` throws
+`X_ADMIN_PAGE_UNGUARDED` where it is written, not on the first unauthenticated request. A path
+that shadows a generated screen throws `X_ADMIN_PAGE_PATH_INVALID` the same way.
+
+Custom pages are `render: 'ssr'`, `hydrate: 'never'`: the guard runs on the server, so there is no
+shell to ship and nothing to decide twice.
+
+### Splitting the admin across files
+
+`defineAdmin` takes **plain values** — `entities`, `resources`, `actions`, `jobs`, `pages`, `nav`,
+`branding`, `auth`, `audit`. Every one of them can be imported from its own module, so the cut is
+along the input's own keys and there is exactly one layout:
+
+```
+app/admin/
+  index.ts              defineAdmin({ … }) — composition only, no logic
+  auth.ts               actor() + policyAuthz({ policies })
+  nav.ts                groups, order, extras
+  <resource>/
+    resource.ts         the AdminResourceOptions entry (listFields, sensitive, labelField)
+    repo.ts             the AdminRepo binding
+    actions.ts          the AdminAction[] for this entity
+    pages/<name>.tsx    a custom page component for this entity, if any
+  pages/<name>.tsx      an app-wide custom page (ops, reconciliation, deploy)
+```
+
+`index.ts` imports each and composes. Nothing here is a framework rule — it is what the input
+shape already is, written down once so two apps do not invent two layouts. `x g admin` emits it.
 
 ### Derived from the entity, and only from it
 
@@ -112,4 +196,4 @@ Panes are off until enabled, and `runAiPane` refuses (never no-ops) without a ru
 
 ## Errors
 
-`X_ADMIN_ENTITY_UNKNOWN` · `X_ADMIN_FIELD_UNSUPPORTED` · `X_ADMIN_POLICY_MISSING` · `X_DEV_DASHBOARD_IN_PROD` · `X_NOT_IMPLEMENTED` (an unwired `/_x` source, carrying the wiring line).
+`X_ADMIN_ENTITY_UNKNOWN` · `X_ADMIN_FIELD_UNSUPPORTED` · `X_ADMIN_POLICY_MISSING` · `X_ADMIN_PAGE_UNGUARDED` · `X_ADMIN_PAGE_PATH_INVALID` · `X_ADMIN_DENIED` · `X_ADMIN_TOOL_FORBIDDEN` · `X_ADMIN_INVALID` · `X_DEV_DASHBOARD_IN_PROD` · `X_NOT_IMPLEMENTED` (an unwired `/_x` source, carrying the wiring line).
