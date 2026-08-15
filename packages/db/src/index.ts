@@ -65,6 +65,7 @@ export {
   migrationDestructive,
   migrationIrreversible,
   migrationSnapshotMissing,
+  multipleStatements,
   readonlyViolation,
   sqlUnsafe,
 } from './errors';

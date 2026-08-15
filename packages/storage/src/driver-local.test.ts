@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
-import { localDriver } from './driver-local';
+import { DEV_SIGNING_SECRET, localDriver, usesDevStorageSecret } from './driver-local';
 import { isStorageError } from './errors';
 
 let root = '';
@@ -129,5 +129,62 @@ describe('localDriver', () => {
     await driver.put('org/org-1/s.txt', bytesOf('streamed'), { contentType: 'text/plain' });
     const stream = await driver.stream('org/org-1/s.txt');
     expect(await new Response(stream).text()).toBe('streamed');
+  });
+});
+
+describe('the dev signing secret', () => {
+  const KEY = 'STORAGE_SIGNING_SECRET';
+  const ENV = 'ULTIMATE_ENV';
+  let previousSecret: string | undefined;
+  let previousEnv: string | undefined;
+
+  beforeEach(() => {
+    previousSecret = process.env[KEY];
+    previousEnv = process.env[ENV];
+  });
+
+  afterEach(() => {
+    if (previousSecret === undefined) delete process.env[KEY];
+    else process.env[KEY] = previousSecret;
+    if (previousEnv === undefined) delete process.env[ENV];
+    else process.env[ENV] = previousEnv;
+  });
+
+  test('usesDevStorageSecret reports the shipped key, exactly as the cursor one does', () => {
+    delete process.env[KEY];
+    expect(usesDevStorageSecret()).toBe(true);
+    process.env[KEY] = '';
+    expect(usesDevStorageSecret()).toBe(true);
+    process.env[KEY] = DEV_SIGNING_SECRET;
+    expect(usesDevStorageSecret()).toBe(true);
+    process.env[KEY] = 'a-real-secret';
+    expect(usesDevStorageSecret()).toBe(false);
+  });
+
+  test('a production disk refuses to boot on the published key', () => {
+    // The literal is in this repo, so anyone holding it can mint a PUT for any key with any
+    // maxBytes and contentType — and acceptSignedUpload trusts the signed constraints over the
+    // app's own uploadPolicy. Refused at construction, so the boot fails, not the first upload.
+    delete process.env[KEY];
+    for (const environment of ['production', 'staging']) {
+      process.env[ENV] = environment;
+      let code = 'no-throw';
+      try {
+        localDriver({ root });
+      } catch (error) {
+        code = isStorageError(error) ? error.code : `not-a-storage-error: ${String(error)}`;
+      }
+      expect(code).toBe('X_ENV_MISSING');
+    }
+  });
+
+  test('a production disk with a real secret boots, and dev still needs none', () => {
+    process.env[ENV] = 'production';
+    process.env[KEY] = 'a-real-secret';
+    expect(localDriver({ root }).name).toBe('local');
+    delete process.env[KEY];
+    expect(localDriver({ root, signingSecret: 'passed-in' }).name).toBe('local');
+    process.env[ENV] = 'development';
+    expect(localDriver({ root }).name).toBe('local');
   });
 });

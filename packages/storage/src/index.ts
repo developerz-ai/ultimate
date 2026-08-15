@@ -39,7 +39,12 @@ export {
   toBytes,
 } from './driver';
 export type { LocalDriverOptions } from './driver-local';
-export { localDriver } from './driver-local';
+export {
+  DEV_SIGNING_SECRET,
+  localDriver,
+  STORAGE_SIGNING_SECRET_KEY,
+  usesDevStorageSecret,
+} from './driver-local';
 export type {
   S3ClientLike,
   S3DriverOptions,
@@ -64,6 +69,7 @@ export {
   StorageError,
   signedUrlExpired,
   signedUrlRejected,
+  signingSecretMissing,
   storageNotImplemented,
   tooLarge,
   uploadFailed,
@@ -99,6 +105,7 @@ export {
   keyDirname,
   keyExtname,
   MAX_KEY_LENGTH,
+  META_DIR,
   ORG_PREFIX,
   orgPrefix,
   scopedKey,

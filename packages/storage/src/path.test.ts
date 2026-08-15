@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isStorageError } from './errors';
-import { assertSafeKey, isTenantScoped, isWithinOrg, joinKey, scopedKey } from './path';
+import { assertSafeKey, isTenantScoped, isWithinOrg, joinKey, META_DIR, scopedKey } from './path';
 
 /** The code, or a description of why there wasn't one — a failing assert then reads clearly. */
 function codeOf(fn: () => unknown): string {
@@ -97,5 +97,25 @@ describe('isTenantScoped', () => {
 describe('joinKey', () => {
   test('flattens parts that already contain separators', () => {
     expect(joinKey('a', 'b/c', 'd.png')).toBe('a/b/c/d.png');
+  });
+});
+
+describe('the sidecar namespace is reserved', () => {
+  // `.meta/<key>.json` is where the local driver records an object's content type and etag. As a
+  // legal key, `put('.meta/a/b.json', '{"contentType":"text/html","etag":"x"}')` overwrote the
+  // sidecar for `a/b`, so `head('a/b')` reported text/html and a route serving that object
+  // returned attacker HTML from the app's own origin.
+  test('a key whose first segment is .meta is refused, on every driver', () => {
+    expect(codeOf(() => assertSafeKey('.meta/a/b.json'))).toBe(UNSAFE);
+    expect(codeOf(() => assertSafeKey('.meta'))).toBe(UNSAFE);
+    expect(codeOf(() => assertSafeKey(joinKey(META_DIR, 'a', 'b.json')))).toBe(UNSAFE);
+    expect(codeOf(() => assertSafeKey(scopedKey('o1', META_DIR, 'x.json')))).toBe(
+      'no-error-thrown',
+    );
+  });
+
+  test('.meta anywhere but the first segment is an ordinary key', () => {
+    expect(assertSafeKey('org/o1/.meta/a.json')).toBe('org/o1/.meta/a.json');
+    expect(assertSafeKey('.metadata/a.json')).toBe('.metadata/a.json');
   });
 });

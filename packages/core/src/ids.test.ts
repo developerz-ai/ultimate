@@ -74,3 +74,19 @@ describe('nanoid and trace ids', () => {
     expect(spanId()).toMatch(/^[0-9a-f]{16}$/);
   });
 });
+
+describe('the monotonic counter seed', () => {
+  test('spans the full 10 bits COUNTER_SEED_MASK declares', () => {
+    // `randomBytes(2)[0] & 0x3ff` allocated two bytes and read one, so the seed could only reach
+    // 255 while the mask declared 1023 — the constant and the code disagreed and the second byte
+    // was dead weight on every uuid(). rand_a is the `7xxx` group: strip the version nibble.
+    const seeds = new Set<number>();
+    for (let index = 0; index < 4000; index += 1) {
+      resetIdCounter();
+      const randA = Number.parseInt(uuid().split('-')[2]?.slice(1) ?? '0', 16);
+      seeds.add(randA);
+    }
+    expect(Math.max(...seeds)).toBeGreaterThan(0x0ff);
+    expect(Math.max(...seeds)).toBeLessThanOrEqual(0x3ff);
+  });
+});

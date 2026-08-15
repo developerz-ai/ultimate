@@ -28,6 +28,16 @@ function randomBytes(length: number): Uint8Array {
   return bytes;
 }
 
+/**
+ * A full 10 bits, from both bytes. Reading `bytes[0]` alone masked an 8-bit value with a 10-bit
+ * mask, so the seed only ever reached 255 while `COUNTER_SEED_MASK` declared 1023 — the constant
+ * and the code disagreed, and the second byte was allocated on every `uuid()` for nothing.
+ */
+function seedCounter(): number {
+  const bytes = randomBytes(2);
+  return (((bytes[0] ?? 0) << 8) | (bytes[1] ?? 0)) & COUNTER_SEED_MASK;
+}
+
 export function randomHex(byteLength: number): string {
   const bytes = randomBytes(byteLength);
   let out = '';
@@ -51,10 +61,10 @@ export function uuid(clock: Clock = systemClock): string {
     counter += 1;
     if (counter > COUNTER_MAX) {
       epochMs += 1;
-      counter = randomBytes(2)[0]! & COUNTER_SEED_MASK;
+      counter = seedCounter();
     }
   } else {
-    counter = randomBytes(2)[0]! & COUNTER_SEED_MASK;
+    counter = seedCounter();
   }
   lastEpochMs = epochMs;
 
@@ -62,7 +72,9 @@ export function uuid(clock: Clock = systemClock): string {
   const randA = counter.toString(16).padStart(3, '0');
   const tail = randomHex(8);
   // Force the RFC variant bits (0b10) into the first nibble of `rand_b`.
-  const variantNibble = HEX[(Number.parseInt(tail[0]!, 16) & 0x3) | 0x8]!;
+  // charAt, not [], because the index is provably 0x8–0xb: a non-null assertion here would be
+  // unenforceable style debt in the one file that made `noNonNullAssertion` unraisable.
+  const variantNibble = HEX.charAt((Number.parseInt(tail.charAt(0), 16) & 0x3) | 0x8);
 
   return [
     timeHex.slice(0, 8),

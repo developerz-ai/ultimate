@@ -4,8 +4,9 @@
  */
 
 import { allocationInvalid, currencyMismatch, currencyRequired } from './errors';
+import { factorFraction } from './factor';
 import { type Money, money } from './money';
-import { DEFAULT_ROUNDING, type RoundingMode, roundToInteger } from './rounding';
+import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
 
 /** Throws `X_CURRENCY_MISMATCH` unless both operands carry the same currency. */
 export function assertSameCurrency(left: Money, right: Money): string {
@@ -33,18 +34,27 @@ export function sum(amounts: readonly Money[], currency?: string): Money {
 /**
  * Scale by a plain number (a tax rate, a quantity, a percentage). The result is rounded
  * to whole minor units with an explicit mode — the default is stated, not implied.
+ *
+ * The scale is taken as the exact fraction `factor`'s decimal spelling names, never as a float
+ * product: `100 * 1.005` is 100.49999999999999, so multiplying first hid the exact 100.5 from
+ * `half-up` and billed a 0.5% fee on €1.00 as nothing.
  */
 export function multiply(
   amount: Money,
   factor: number,
   mode: RoundingMode = DEFAULT_ROUNDING,
 ): Money {
-  return money(roundToInteger(amount.minor * factor, mode), amount.currency);
+  const scale = factorFraction(factor);
+  return money(
+    roundRatio(BigInt(amount.minor) * scale.numerator, scale.denominator, mode),
+    amount.currency,
+  );
 }
 
 /**
  * Divide into a single share. Use `allocate` when the whole must be preserved —
- * `divide` alone loses the remainder by design.
+ * `divide` alone loses the remainder by design. Exact for the same reason `multiply` is:
+ * dividing by `d` is scaling by the reciprocal of the fraction `d` names.
  */
 export function divide(
   amount: Money,
@@ -54,7 +64,11 @@ export function divide(
   if (divisor === 0) {
     throw allocationInvalid('cannot divide money by zero — use allocate() to split a total');
   }
-  return money(roundToInteger(amount.minor / divisor, mode), amount.currency);
+  const scale = factorFraction(divisor);
+  return money(
+    roundRatio(BigInt(amount.minor) * scale.denominator, scale.numerator, mode),
+    amount.currency,
+  );
 }
 
 export function negate(amount: Money): Money {

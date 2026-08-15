@@ -38,16 +38,37 @@ export class CursorInvalidError extends UltimateError {
  */
 const DEV_SECRET = 'ultimate-dev-cursor-secret';
 
-let secret = Bun.env['ULTIMATE_CURSOR_SECRET'] ?? DEV_SECRET;
+/** `configureCursorSigning`'s value, when an app has called it. `undefined` means "read the env". */
+let configured: string | undefined;
+
+/**
+ * Read at CALL time, never at module scope — the same rule `@ultimat3/auth`'s `oauth-cookie.ts`
+ * and `oauth-exchange.ts` follow, and for the same reason: an app that loads secrets through
+ * `openSecrets()` during boot sets `ULTIMATE_CURSOR_SECRET` *after* this module was imported, so a
+ * module-scope read signed every cursor of that process with the shipped dev key. `x doctor`
+ * warned and nothing failed.
+ */
+function currentSecret(): string {
+  return configured ?? Bun.env['ULTIMATE_CURSOR_SECRET'] ?? DEV_SECRET;
+}
 
 /** Set once at boot from the app secret. Rotating it invalidates every open cursor. */
 export function configureCursorSigning(next: string): void {
-  secret = next;
+  configured = next;
+}
+
+/**
+ * Test seam: forget `configureCursorSigning`, so signing falls back to the environment.
+ * The counterpart to `resetIdCounter` — a suite that configured a secret has a way back to
+ * "unconfigured", which restoring a literal cannot express.
+ */
+export function resetCursorSigning(): void {
+  configured = undefined;
 }
 
 /** True while cursors are signed with the shipped dev key — `x doctor` reports it. */
 export function usesDevCursorSecret(): boolean {
-  return secret === DEV_SECRET;
+  return currentSecret() === DEV_SECRET;
 }
 
 /** `base64url(payload).signature`. Opaque by contract: callers must never parse it. */
@@ -82,7 +103,7 @@ export function decodeCursor(cursor: string, scope: string): CursorPayload {
 
 /** Truncated HMAC-SHA256. 128 bits is far past forging a page position. */
 function sign(body: string): string {
-  return new Bun.CryptoHasher('sha256', secret).update(body).digest('hex').slice(0, 32);
+  return new Bun.CryptoHasher('sha256', currentSecret()).update(body).digest('hex').slice(0, 32);
 }
 
 /** Constant time: the comparison must not leak how much of a forged signature was right. */

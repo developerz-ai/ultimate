@@ -3,6 +3,7 @@
 // the response, and purging by surrogate key when a tag changes. Surrogate keys ARE the
 // tags — same strings, so a CDN purge cannot drift from an app-level invalidation.
 
+import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
 import { serializeTags } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
@@ -96,8 +97,18 @@ export function createCdnTier(options: CdnTierOptions = {}): CacheTier {
       if (paths.length > 0) await driver.purge(paths);
     },
 
+    /**
+     * The tags themselves plus every `cdn-path` the graph hangs off them — one purge, one list.
+     *
+     * Those paths were computed by `invalidate.ts` and reported as busted while nothing ever
+     * purged them, so `x cache bust --json` named a path the edge still held for its whole
+     * `s-maxage`: a partial bust reading as a clean one, which is the one failure the report
+     * exists to prevent. They go out **as surrogate keys**, the single currency `PurgeDriver`
+     * has — the same convention `pathsForKey` already documents, so a host registering a
+     * `cdn-path` dependent must tag that response with its own path.
+     */
     async invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation> {
-      const keys = serializeTags(tags);
+      const keys = [...new Set([...serializeTags(tags), ...dependentsOfKind(tags, 'cdn-path')])];
       if (keys.length === 0) return { tier: 'cdn', keys: [] };
       const accepted = await driver.purge(keys);
       return { tier: 'cdn', keys: accepted };

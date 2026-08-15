@@ -27,8 +27,9 @@ import type { InferInput, InferOutput, StandardIssue } from './standard';
  *
  * It lives at tier 0 because that is the only tier every other package may import, and `number`
  * rather than `bigint` because money crosses the wire on every surface this framework projects —
- * `JSON.stringify` refuses a bigint, and this node is also the OpenAPI contract. A stored value
- * past `Number.MAX_SAFE_INTEGER` is refused where it is decoded, loudly; it is never widened here.
+ * `JSON.stringify` refuses a bigint, and this node is also the OpenAPI contract. A value past
+ * `Number.MAX_SAFE_INTEGER` is refused HERE, at the boundary, with the field path — and again
+ * where it is decoded; it is never widened.
  *
  * Never a float, and never an amount without its currency.
  */
@@ -64,6 +65,16 @@ export interface ObjectSchema<S extends Shape> extends Schema<ShapeInput<S>, Sha
 
 type Simplified<S> = { [K in keyof S]: S[K] } & {};
 
+/**
+ * The literal the caller wrote, flags included. An error quoting `/^[a-z]+$/` for a pattern
+ * carrying `i` names something that would have matched the value it just refused.
+ */
+function describePattern(node: SchemaNode): string {
+  return node.patternFlags === undefined || node.patternFlags === ''
+    ? String(node.pattern)
+    : `/${node.pattern}/${node.patternFlags}`;
+}
+
 function stringLike(node: SchemaNode, what: string, test?: (value: string) => boolean) {
   const check: Check<string> = (value, path) => {
     if (typeof value !== 'string') return fail(path, expected(what, value));
@@ -73,8 +84,8 @@ function stringLike(node: SchemaNode, what: string, test?: (value: string) => bo
     if (node.maxLength !== undefined && value.length > node.maxLength) {
       return fail(path, expected(`${what} of at most ${node.maxLength} chars`, value));
     }
-    if (node.pattern !== undefined && !new RegExp(node.pattern).test(value)) {
-      return fail(path, expected(`${what} matching ${node.pattern}`, value));
+    if (node.pattern !== undefined && !new RegExp(node.pattern, node.patternFlags).test(value)) {
+      return fail(path, expected(`${what} matching ${describePattern(node)}`, value));
     }
     if (test !== undefined && !test(value)) return fail(path, expected(what, value));
     return pass(value);
@@ -92,7 +103,18 @@ function makeStringSchema(
     ...base,
     min: (length) => makeStringSchema({ ...node, minLength: length }, what, test),
     max: (length) => makeStringSchema({ ...node, maxLength: length }, what, test),
-    pattern: (regex) => makeStringSchema({ ...node, pattern: regex.source }, what, test),
+    pattern: (regex) =>
+      makeStringSchema(
+        // Flags travel with the source: a node holding only `source` rebuilt a *different*
+        // RegExp, so `/^[a-z]+$/i` refused `ABC` and quoted the pattern that matches it.
+        {
+          ...node,
+          pattern: regex.source,
+          ...(regex.flags === '' ? {} : { patternFlags: regex.flags }),
+        },
+        what,
+        test,
+      ),
   };
 }
 
@@ -226,6 +248,15 @@ export function unionSchema<S extends readonly [AnySchema, ...AnySchema[]]>(
   });
 }
 
+/**
+ * Keys that reach an object's prototype rather than its own properties. A record's keys are the
+ * caller's, so `{"__proto__":{…}}` on a `{}` literal set the OUTPUT's prototype: `Object.keys`
+ * answered `[]` while `settings[k] ?? fallback` handed a handler the attacker's value for a key
+ * that was never sent. Refused by name AND built on a null prototype — the null prototype alone
+ * would keep `__proto__` as a silent own key nobody declared.
+ */
+const PROTOTYPE_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function recordSchema<S extends AnySchema>(
   values: S,
 ): Schema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>> {
@@ -236,8 +267,15 @@ export function recordSchema<S extends AnySchema>(
     (value, path) => {
       if (!isPlainObject(value)) return fail(path, expected('an object', value));
       const issues: StandardIssue[] = [];
-      const out: Record<string, unknown> = {};
+      const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
       for (const [key, entry] of Object.entries(value)) {
+        if (PROTOTYPE_KEYS.has(key)) {
+          issues.push({
+            message: expected(`a record key that is not ${[...PROTOTYPE_KEYS].join(' | ')}`, key),
+            path: [...path, key],
+          });
+          continue;
+        }
         const result = valueCheck(entry, [...path, key]);
         if (result.ok) out[key] = result.value;
         else issues.push(...result.issues);
@@ -300,7 +338,12 @@ const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue, Money
     kind: 'money',
     description: 'integer minor units plus an ISO 4217 currency code',
     properties: {
-      minor: { kind: 'number', integer: true },
+      minor: {
+        kind: 'number',
+        integer: true,
+        minimum: -Number.MAX_SAFE_INTEGER,
+        maximum: Number.MAX_SAFE_INTEGER,
+      },
       currency: { kind: 'string', pattern: CURRENCY_RE.source },
     },
   },
@@ -309,9 +352,12 @@ const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue, Money
     const minor = value['minor'];
     const currency = value['currency'];
     const issues: StandardIssue[] = [];
-    if (typeof minor !== 'number' || !Number.isInteger(minor)) {
+    // Safe, not merely whole: `money()` and `entity`'s `parseMinor` both demand a safe integer, so
+    // `Number.isInteger` here let 2^53 through the boundary as a 200 and failed at the row write
+    // as a 500 — the same value refused twice, once with a field path and once without.
+    if (typeof minor !== 'number' || !Number.isSafeInteger(minor)) {
       issues.push({
-        message: expected('an integer number of minor units', minor),
+        message: expected('a safe integer number of minor units', minor),
         path: [...path, 'minor'],
       });
     }

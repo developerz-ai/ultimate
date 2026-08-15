@@ -9,6 +9,15 @@ import { pathUnsafe } from './errors';
 export const MAX_KEY_LENGTH = 1024;
 export const ORG_PREFIX = 'org';
 
+/**
+ * Reserved first segment: the local driver's sidecar namespace, where an object's recorded
+ * content type and etag live. Without the reservation `<root>/.meta/a/b.json` was a legal object
+ * key, so an uploader could overwrite the sidecar for `a/b` and make a route serving that object
+ * answer `text/html` from the app's own origin. Reserved for EVERY driver, not just the local
+ * one — a key that is valid on S3 and refused on disk is two key rules.
+ */
+export const META_DIR = '.meta';
+
 // `%2e%2e%2f` decodes to `../` in any layer that decodes twice (proxy, then framework).
 const ENCODED_SEPARATOR = /%(?:2e|2f|5c|00)/i;
 
@@ -30,7 +39,9 @@ function unsafeReason(key: string): string | undefined {
   if (key.includes('\\')) return 'contains a backslash';
   if (key.startsWith('/')) return 'is absolute (leading "/")';
   if (ENCODED_SEPARATOR.test(key)) return 'contains a percent-encoded separator (%2e/%2f/%5c)';
-  for (const segment of key.split('/')) {
+  const segments = key.split('/');
+  if (segments[0] === META_DIR) return `starts with the reserved "${META_DIR}" segment`;
+  for (const segment of segments) {
     if (segment.length === 0) return 'contains an empty segment ("//" or a trailing "/")';
     if (segment === '.' || segment === '..') return `contains a "${segment}" segment`;
     if (segment !== segment.trim()) return `has a padded segment ${JSON.stringify(segment)}`;

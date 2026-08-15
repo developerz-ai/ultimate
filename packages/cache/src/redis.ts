@@ -8,6 +8,7 @@ import { CacheDriverUnavailableError } from './errors';
 import type { CacheTag } from './tags';
 import { parseTag, serializeTag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
+import { assertTtl } from './tiers';
 
 /** The slice of Bun's Redis client this tier uses. Narrow on purpose: easy to fake in tests. */
 export interface RedisLike {
@@ -30,21 +31,33 @@ interface StoredEntry {
 }
 
 /**
- * Drop the value keys, then drop the tag sets themselves. `SMEMBERS` + `DEL` in one EVAL is
- * atomic and single-trip; doing it client-side would race a concurrent write.
+ * Read the tag sets out and drop the tag sets themselves — and nothing else.
+ *
+ * A script may only touch keys it was handed in `KEYS`, and the members of a tag set are not
+ * among them: they are value keys hashing to slots this node may not even own. `DEL`ing them from
+ * inside the script therefore raised "attempted to access a non-local key in a cluster node" on
+ * Redis Cluster and in Dragonfly's strict mode — swallowed into `report.errors`, so a bust read
+ * as "partial", the write that triggered it still succeeded, and stale rows served until TTL.
+ *
+ * The value keys come back to the client instead, which drops them one `DEL` at a time: a single
+ * key is always slot-local, whatever the topology. Only the SMEMBERS + tag-set `DEL` stay atomic,
+ * and that is the pair that needed to be — a value key re-added by a concurrent write between the
+ * two halves is at worst a cache miss, never a stale read.
  */
 const INVALIDATE_SCRIPT = `
 local removed = {}
 for i, tagKey in ipairs(KEYS) do
   local members = redis.call('SMEMBERS', tagKey)
   for _, key in ipairs(members) do
-    redis.call('DEL', key)
     table.insert(removed, key)
   end
   redis.call('DEL', tagKey)
 end
 return removed
 `.trim();
+
+/** Concurrent `DEL`s per flush. Bun pipelines them, so this bounds memory, not round trips. */
+const DELETE_BATCH = 128;
 
 function resolveClient(injected: RedisLike | undefined): RedisLike {
   if (injected !== undefined) return injected;
@@ -98,7 +111,7 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
 
     async set<T>(key: string, value: T, setOptions?: CacheSetOptions): Promise<void> {
       const tags = setOptions?.tags ?? [];
-      const ttlMs = setOptions?.ttlMs ?? defaultTtlMs;
+      const ttlMs = assertTtl(key, setOptions?.ttlMs ?? defaultTtlMs, 'redis');
       const payload: StoredEntry = { v: value, t: tags.map(serializeTag) };
       const stored = valueKey(key);
       const ttlSeconds = Math.max(1, Math.ceil(ttlMs / 1000));
@@ -122,7 +135,16 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
         String(buckets.length),
         ...buckets,
       ]);
-      const stripped = toStrings(result).map((key) => key.slice(`${prefix}:c:`.length));
+      // A member may sit in two tag sets; deleting it twice is harmless but reporting it twice
+      // makes the `/_x` panel overstate what cleared.
+      const members = [...new Set(toStrings(result))];
+      for (let start = 0; start < members.length; start += DELETE_BATCH) {
+        // One key per DEL — always slot-local. Issued together so the batch costs one round trip.
+        await Promise.all(
+          members.slice(start, start + DELETE_BATCH).map((member) => conn().send('DEL', [member])),
+        );
+      }
+      const stripped = members.map((key) => key.slice(`${prefix}:c:`.length));
       return { tier: 'redis', keys: stripped };
     },
   };

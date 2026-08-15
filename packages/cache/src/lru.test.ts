@@ -19,7 +19,7 @@ const filler = (bytes: number): string => 'x'.repeat(bytes);
 
 describe('LruCache byte budget', () => {
   test('evicts least-recently-used entries once the byte budget is exceeded', () => {
-    const cache = new LruCache({ maxBytes: 400, defaultTtlMs: 0 });
+    const cache = new LruCache({ maxBytes: 400, defaultTtlMs: 3_600_000 });
     cache.set('a', filler(100));
     cache.set('b', filler(100));
     cache.set('c', filler(100));
@@ -37,7 +37,7 @@ describe('LruCache byte budget', () => {
   });
 
   test('bytes accounting returns to zero when every entry is deleted', () => {
-    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 0 });
+    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     cache.set('a', { hello: 'world' });
     cache.set('b', [1, 2, 3]);
     expect(cache.stats().bytes).toBeGreaterThan(0);
@@ -65,7 +65,7 @@ describe('LruCache byte budget', () => {
   });
 
   test('clear() resets hit/miss/eviction counters along with entries and bytes', () => {
-    const cache = new LruCache({ maxBytes: 400, defaultTtlMs: 0 });
+    const cache = new LruCache({ maxBytes: 400, defaultTtlMs: 3_600_000 });
     cache.set('a', filler(100));
     cache.set('b', filler(100));
     cache.set('c', filler(100));
@@ -92,7 +92,7 @@ describe('LruCache byte budget', () => {
 
 describe('LruCache tag invalidation', () => {
   test('invalidating a tag drops only entries carrying that tag', () => {
-    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 0 });
+    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     cache.set('post:list', ['a'], { tags: [tag('post')] });
     cache.set('post:1', { id: '1' }, { tags: [tag('post', '1')] });
     cache.set('post:2', { id: '2' }, { tags: [tag('post', '2')] });
@@ -108,7 +108,7 @@ describe('LruCache tag invalidation', () => {
   });
 
   test('invalidating a collection tag sweeps every row of that entity', () => {
-    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 0 });
+    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     cache.set('post:1', 1, { tags: [tag('post', '1')] });
     cache.set('post:2', 2, { tags: [tag('post', '2')] });
     cache.set('user:1', 3, { tags: [tag('user', '1')] });
@@ -120,7 +120,7 @@ describe('LruCache tag invalidation', () => {
   });
 
   test('overwriting a key re-indexes its tags so the stale tag no longer matches', () => {
-    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 0 });
+    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     cache.set('k', 1, { tags: [tag('post', '1')] });
     cache.set('k', 2, { tags: [tag('user', '9')] });
 
@@ -137,3 +137,39 @@ describe('estimateBytes', () => {
     expect(estimateBytes(new Uint8Array(16))).toBe(16);
   });
 });
+
+describe('the one TTL rule', () => {
+  // `0` used to be "never expires" here and `EX 1` — one second — in the Redis tier, so a stack
+  // holding both answered differently depending on which one hit. Neither is what a caller
+  // writing `0` means, so no tier resolves it.
+  test('a ttlMs that is not positive and finite is refused, not reinterpreted', () => {
+    const cache = new LruCache({ maxBytes: 10_000 });
+    for (const ttlMs of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(codeOf(() => cache.set('k', 1, { ttlMs }))).toBe('X_CACHE_TTL_INVALID');
+    }
+    expect(cache.get('k')).toBeUndefined();
+  });
+
+  test('a tier default that is not positive is refused on the write that relies on it', () => {
+    const cache = new LruCache({ maxBytes: 10_000, defaultTtlMs: 0 });
+    expect(codeOf(() => cache.set('k', 1))).toBe('X_CACHE_TTL_INVALID');
+  });
+
+  test('every entry therefore carries a finite expiry the stack can read', () => {
+    const clock = fakeClock(1_000);
+    const cache = new LruCache({ maxBytes: 10_000, clock });
+    cache.set('k', 1, { ttlMs: 5_000 });
+    expect(cache.get('k')?.expiresAt).toBe(6_000);
+    clock.advance(5_000);
+    expect(cache.get('k')).toBeUndefined();
+  });
+});
+
+function codeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return (error as { code?: string }).code ?? 'no-code';
+  }
+  return 'no-throw';
+}

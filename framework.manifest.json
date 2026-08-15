@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "909ec1253bd0eb60d74d9efc72f93fb113e4a152054998eee8a7617c2dcc75c1",
+  "buildId": "ccbdbee407e4ce19555992f302f7f4941a14598c4dd2d28beb69b5f04774c59a",
   "tiers": {
     "0": [
       "core",
@@ -442,6 +442,11 @@
     },
     {
       "code": "X_CACHE_TOO_LARGE",
+      "owner": "cache",
+      "at": "packages/cache/src/errors.ts"
+    },
+    {
+      "code": "X_CACHE_TTL_INVALID",
       "owner": "cache",
       "at": "packages/cache/src/errors.ts"
     },

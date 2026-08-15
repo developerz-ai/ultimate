@@ -52,3 +52,36 @@ describe('formatMoneyParts', () => {
     expect(yen.find((part) => part.type === 'fraction')).toBeUndefined();
   });
 });
+
+describe('one place decides the sign', () => {
+  test('the parts and the string agree on an accounting negative', () => {
+    const options = { accounting: true } as const;
+    const joined = formatMoneyParts(money(-1299, 'EUR'), 'en-US', options)
+      .map((part) => part.value)
+      .join('');
+    expect(normalize(joined)).toBe(normalize(formatMoney(money(-1299, 'EUR'), 'en-US', options)));
+    expect(normalize(joined)).toBe('(€12.99)');
+  });
+
+  test('the parts and the string agree on a plain negative', () => {
+    const joined = formatMoneyParts(money(-1299, 'EUR'), 'en-US')
+      .map((part) => part.value)
+      .join('');
+    expect(normalize(joined)).toBe(normalize(formatMoney(money(-1299, 'EUR'), 'en-US')));
+    expect(normalize(joined)).toBe('-€12.99');
+  });
+
+  test('sign placement belongs to the locale, not to a hand-rolled prefix', () => {
+    // nl-NL puts the minus after the symbol; prefixing it here rendered a format Intl never emits.
+    expect(normalize(formatMoney(money(-129900, 'EUR'), 'nl-NL'))).toBe(
+      normalize(
+        new Intl.NumberFormat('nl-NL', {
+          style: 'currency',
+          currency: 'EUR',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        }).format(-1299),
+      ),
+    );
+  });
+});

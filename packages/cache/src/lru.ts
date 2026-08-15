@@ -9,7 +9,7 @@ import { CacheTooLargeError } from './errors';
 import type { CacheTag } from './tags';
 import { serializeTag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
-import { nowMs } from './tiers';
+import { assertTtl, nowMs } from './tiers';
 
 export interface LruOptions {
   /** Byte budget for the whole tier. Default 64 MiB. */
@@ -23,7 +23,7 @@ interface LruNode {
   key: string;
   value: unknown;
   bytes: number;
-  /** Epoch ms, or `Number.POSITIVE_INFINITY` for no expiry. */
+  /** Epoch ms. Always finite: `assertTtl` refuses the `0` that used to mean "never expires". */
   expiresAt: number;
   tags: readonly CacheTag[];
   prev: LruNode | undefined;
@@ -103,11 +103,7 @@ export class LruCache {
     }
     this.touch(node);
     this.hits += 1;
-    return {
-      value: node.value as T,
-      tags: node.tags,
-      ...(node.expiresAt === Number.POSITIVE_INFINITY ? {} : { expiresAt: node.expiresAt }),
-    };
+    return { value: node.value as T, tags: node.tags, expiresAt: node.expiresAt };
   }
 
   set<T>(key: string, value: T, options: CacheSetOptions = {}): void {
@@ -119,12 +115,12 @@ export class LruCache {
     const existing = this.map.get(key);
     if (existing !== undefined) this.unlink(existing);
 
-    const ttl = options.ttlMs ?? this.defaultTtlMs;
+    const ttl = assertTtl(key, options.ttlMs ?? this.defaultTtlMs, 'lru');
     const node: LruNode = {
       key,
       value,
       bytes,
-      expiresAt: ttl <= 0 ? Number.POSITIVE_INFINITY : nowMs(this.clock) + ttl,
+      expiresAt: nowMs(this.clock) + ttl,
       tags: options.tags ?? [],
       prev: undefined,
       next: undefined,

@@ -8,6 +8,7 @@ export const CACHE_OWNED_ERROR_CODES = [
   'X_CACHE_PURGE_FAILED',
   'X_CACHE_TAG_UNKNOWN',
   'X_CACHE_TOO_LARGE',
+  'X_CACHE_TTL_INVALID',
 ] as const;
 
 /** Every code cache can throw. It borrows none: every remote driver here is implemented. */
@@ -21,6 +22,7 @@ export const CACHE_ERROR_TITLES: Readonly<Record<CacheOwnedErrorCode, string>> =
   X_CACHE_PURGE_FAILED: 'the CDN refused a purge',
   X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
   X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
+  X_CACHE_TTL_INVALID: 'a cache TTL that is not a positive number of milliseconds',
 };
 
 // One unconditional call, so a second package claiming one of cache's codes throws
@@ -68,6 +70,29 @@ export class CacheTooLargeError extends UltimateError {
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
       fix: `raise cache.${input.tier}.maxBytes in app.config.ts, or cache a projection instead of the row`,
       docs: docsFor('X_CACHE_TOO_LARGE'),
+    });
+  }
+}
+
+/**
+ * A `ttlMs` that is not a positive, finite number of milliseconds.
+ *
+ * `0` used to mean two things: "never expires" in the LRU tier and `EX 1` — one second — in the
+ * Redis tier, so a stack holding both answered differently depending on which one hit. Neither is
+ * what a caller writing `0` intends, and the third reading ("do not cache") has its own spelling:
+ * do not call the cache. Refused rather than resolved, so the miswiring is a failure and not a
+ * behaviour that varies by deployment.
+ */
+export class CacheTtlInvalidError extends UltimateError {
+  constructor(input: { key: string; ttlMs: number; tier: string }) {
+    super({
+      code: 'X_CACHE_TTL_INVALID',
+      cause: `entry "${input.key}" was written to the ${input.tier} tier with ttlMs=${String(
+        input.ttlMs,
+      )}; a TTL is a positive, finite number of milliseconds`,
+      fix: 'pass a positive ttlMs (e.g. { ttlMs: 60_000 }), omit it for the tier default, or skip the cache entirely for a value you do not want held',
+      docs: docsFor('X_CACHE_TTL_INVALID'),
+      meta: { key: input.key, ttlMs: input.ttlMs, tier: input.tier },
     });
   }
 }

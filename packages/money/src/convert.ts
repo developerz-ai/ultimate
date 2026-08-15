@@ -6,8 +6,9 @@
 
 import { assertCurrency, exponentOf } from './currency';
 import { rateMissing } from './errors';
+import { factorFraction } from './factor';
 import { type Money, money } from './money';
-import { DEFAULT_ROUNDING, type RoundingMode, roundToInteger } from './rounding';
+import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
 
 export interface ExchangeRate {
   from: string;
@@ -53,11 +54,15 @@ export function convert(
     throw rateMissing(amount.currency, target);
   }
 
-  const scale = 10 ** (exponentOf(target) - exponentOf(amount.currency));
-  const converted = roundToInteger(
-    amount.minor * rate.rate * scale,
-    options.rounding ?? DEFAULT_ROUNDING,
-  );
+  // Exact, not a float product: `minor * rate * scale` shows the rounding mode a value IEEE-754
+  // has already moved, and a converted invoice line is off by a minor unit with nothing to trace.
+  const fraction = factorFraction(rate.rate);
+  const exponent = exponentOf(target) - exponentOf(amount.currency);
+  let numerator = BigInt(amount.minor) * fraction.numerator;
+  let denominator = fraction.denominator;
+  if (exponent > 0) numerator *= 10n ** BigInt(exponent);
+  else if (exponent < 0) denominator *= 10n ** BigInt(-exponent);
+  const converted = roundRatio(numerator, denominator, options.rounding ?? DEFAULT_ROUNDING);
 
   return {
     amount: money(converted, target),
@@ -98,6 +103,11 @@ export async function convertWith(
 /**
  * Fixed-table provider for tests, seeds and manual invoice rates.
  * Keys are `FROM/TO`; the inverse is derived so a table needs one direction only.
+ *
+ * A table holds ONE observation, so a `wanted` instant other than its own is a rate this
+ * provider does not have — `undefined`, per `RateProvider`. Answering with today's number
+ * stamped `at: today` repriced a historical invoice against a rate nobody asked for and wrote a
+ * date into the audit trail that contradicted the request.
  */
 export function fixedRateProvider(
   rates: Readonly<Record<string, number>>,
@@ -106,7 +116,8 @@ export function fixedRateProvider(
 ): RateProvider {
   return {
     name,
-    async rateFor(from: string, to: string): Promise<ExchangeRate | undefined> {
+    async rateFor(from: string, to: string, wanted?: Date): Promise<ExchangeRate | undefined> {
+      if (wanted !== undefined && wanted.getTime() !== at.getTime()) return undefined;
       const direct = rates[`${from}/${to}`];
       if (direct !== undefined) return { from, to, rate: direct, at, source: name };
       const inverse = rates[`${to}/${from}`];

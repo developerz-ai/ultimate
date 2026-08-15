@@ -39,15 +39,15 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
         return Promise.resolve(1);
       }
       if (command === 'EVAL') {
-        // Mirrors INVALIDATE_SCRIPT: members of every tag set, then drop the sets.
+        // Mirrors INVALIDATE_SCRIPT exactly, and the mirroring is the point: the script reads
+        // the members and drops the TAG SETS ONLY. It must not delete a value key — a script may
+        // only touch what it was handed in KEYS, and a fake that deleted them anyway would hide
+        // a tier that stopped issuing its own DELs.
         const count = Number(args[1]);
         const buckets = args.slice(2, 2 + count);
         const removed: string[] = [];
         for (const bucket of buckets) {
-          for (const member of sets.get(bucket) ?? []) {
-            values.delete(member);
-            removed.push(member);
-          }
+          for (const member of sets.get(bucket) ?? []) removed.push(member);
           sets.delete(bucket);
         }
         return Promise.resolve(removed);
@@ -164,11 +164,33 @@ describe('createRedisTier', () => {
 
     expect(result.tier).toBe('redis');
     // 'feed' was SADD'd into both the row bucket (x:t:post:1) and the collection bucket
-    // (x:t:post) at set time, and the script walks every bucket independently — so a single
-    // key that belongs to two buckets is reported twice. No unprefixed key is ever prefixed.
-    expect(result.keys).toEqual(['feed', 'feed']);
-    expect(result.keys.every((key) => key === 'feed')).toBe(true);
+    // (x:t:post) at set time and the script walks every bucket, so it comes back twice — deduped
+    // before it is deleted and reported, or the `/_x` panel overstates what cleared.
+    expect(result.keys).toEqual(['feed']);
     expect(await tier.get('feed')).toBeUndefined();
+  });
+
+  test('the script declares every key it touches: value keys are deleted client-side', async () => {
+    // A Lua script may only reach keys handed to it in KEYS. DELing a SMEMBERS result from
+    // inside it is a cross-slot access — "attempted to access a non-local key in a cluster
+    // node" on Redis Cluster and in Dragonfly's strict mode, swallowed into report.errors so a
+    // failed bust read as partial and stale rows served until TTL.
+    const client = fakeRedis();
+    const tier = createRedisTier({ client });
+    await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
+    client.sent.length = 0;
+
+    await tier.invalidateTags([tag('post', '1')]);
+
+    const evals = client.sent.filter((entry) => entry[0] === 'EVAL');
+    expect(evals).toHaveLength(1);
+    const [, script = '', numkeys = '0', ...keys] = evals[0] ?? [];
+    // The script's own body must not delete anything but the tag buckets it was handed.
+    expect(script).not.toContain("redis.call('DEL', key)");
+    expect(keys).toHaveLength(Number(numkeys));
+    // Every value key leaves as its own single-key DEL, which is always slot-local.
+    const deletes = client.sent.filter((entry) => entry[0] === 'DEL');
+    expect(deletes).toEqual([['DEL', 'x:c:feed']]);
   });
 
   test('invalidateTags dedupes overlapping buckets across tags', async () => {

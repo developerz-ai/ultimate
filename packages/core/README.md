@@ -284,9 +284,10 @@ never a silently wrong page.
 | | |
 |---|---|
 | Signature | truncated HMAC-SHA256, compared in constant time |
-| Secret | `ULTIMATE_CURSOR_SECRET`, or `configureCursorSigning()` at boot. Rotating it invalidates every open cursor |
+| Secret | `configureCursorSigning()` at boot, else `ULTIMATE_CURSOR_SECRET`. **Read when a cursor is signed, never at import** — an app whose `openSecrets()` sets the variable during boot would otherwise sign every cursor with the dev key. Rotating it invalidates every open cursor |
 | Signed, not encrypted | the client already has these rows; what it must not do is *invent* a position |
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
+| `resetCursorSigning()` | test seam: forget `configureCursorSigning` and fall back to the environment |
 
 ## One image pipeline, everywhere
 
