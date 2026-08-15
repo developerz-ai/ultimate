@@ -3,14 +3,21 @@
 // reach again. A fake Redis records every command so the wire traffic itself is the assertion.
 
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
+import { createLruTier } from './lru';
 import type { RedisLike } from './redis';
 import { createRedisTier } from './redis';
 import { tag } from './tags';
+import { createCacheStack } from './tiers';
 
 function fakeRedis(): RedisLike & { readonly sent: string[][] } {
   const sets = new Map<string, Set<string>>();
   const values = new Map<string, string>();
+  // The lease `EX` bought, in ms. A fake that answered no `PTTL` could not catch a tier that
+  // stopped asking for one — and a hit read back without its remaining life is promoted on the
+  // caller's ttl, which is how a value one second from expiry gets a fresh five minutes.
+  const expiries = new Map<string, number>();
   const sent: string[][] = [];
   return {
     sent,
@@ -25,7 +32,13 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
       sent.push([command, ...args]);
       if (command === 'SET') {
         values.set(String(args[0]), String(args[1]));
+        if (args[2] === 'EX') expiries.set(String(args[0]), Number(args[3]) * 1_000);
         return Promise.resolve('OK');
+      }
+      if (command === 'PTTL') {
+        const key = String(args[0]);
+        if (!values.has(key)) return Promise.resolve(-2);
+        return Promise.resolve(expiries.get(key) ?? -1);
       }
       if (command === 'SADD') {
         const bucket = String(args[0]);
@@ -36,6 +49,7 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
       }
       if (command === 'DEL') {
         values.delete(String(args[0]));
+        expiries.delete(String(args[0]));
         return Promise.resolve(1);
       }
       if (command === 'EVAL') {
@@ -205,6 +219,42 @@ describe('createRedisTier', () => {
     // buckets for tag('post','1') = [x:t:post:1, x:t:post]; buckets for tag('post') = [x:t:post].
     // Deduped, that's 2 buckets, not 3.
     expect(evalCall?.[2]).toBe('2');
+  });
+
+  test('get reports the remaining lease as expiresAt, read from PTTL', async () => {
+    const client = fakeRedis();
+    const tier = createRedisTier({ client, clock: frozenClock(10_000) });
+    await tier.set('k', 'v', { ttlMs: 5_000 });
+
+    expect((await tier.get('k'))?.expiresAt).toBe(15_000);
+    // Asked alongside the GET, on the value key — never on the tag buckets.
+    expect(client.sent.filter((entry) => entry[0] === 'PTTL')).toEqual([['PTTL', 'x:c:k']]);
+  });
+
+  test('a stored key with no expiry reports no expiresAt', async () => {
+    // PTTL answers -1 for a key that exists without a lease (one written outside this tier);
+    // `-1` is a sentinel, not one millisecond ago, so the entry must report no expiry at all.
+    const client = fakeRedis();
+    await client.set('x:c:leaseless', JSON.stringify({ v: 'v', t: [] }));
+    const tier = createRedisTier({ client, clock: frozenClock(10_000) });
+
+    const entry = await tier.get('leaseless');
+    expect(entry?.value).toBe('v');
+    expect(entry?.expiresAt).toBeUndefined();
+  });
+
+  test('promotion out of redis carries the REMAINING lease into the LRU, not the caller ttl', async () => {
+    // The cross-tier expiry contract, end to end: without `expiresAt` on the redis hit the stack
+    // can only promote on `setOptions.ttlMs`, so a row one second from expiry gets a fresh five
+    // minutes in the LRU on every read and the closer tier outlives the entry it copied.
+    const client = fakeRedis();
+    const clock = frozenClock(10_000);
+    const lru = createLruTier({ clock });
+    const stack = createCacheStack([lru, createRedisTier({ client, clock })], { clock });
+    await createRedisTier({ client, clock }).set('k', 'v', { ttlMs: 5_000 });
+
+    expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
+    expect(lru.cache.get('k')?.expiresAt).toBe(15_000);
   });
 
   test('constructing with no client and no Bun.redis throws CacheDriverUnavailableError lazily', async () => {

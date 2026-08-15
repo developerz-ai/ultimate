@@ -1,3 +1,8 @@
+// Single responsibility: pins decimal-to-fraction conversion, the step every scale in this
+// package takes before it rounds. WHY it needs its own suite: the bug it prevents is invisible
+// downstream — `factorFraction(1.005)` answering 1004999…/10^18 still rounds to *something*, and
+// the missing minor unit only ever shows up on an invoice line nobody can reproduce.
+
 import { describe, expect, test } from 'bun:test';
 import { factorFraction } from './factor';
 

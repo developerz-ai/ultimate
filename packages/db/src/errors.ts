@@ -167,7 +167,7 @@ export const multipleStatements = (statement: string, count: number): DbError =>
   new DbError({
     code: 'X_SQL_UNSAFE',
     cause: `a read-only query must be ONE statement; this text holds ${count}: ${statement}`,
-    fix: 'send one statement per readOnlyQuery() call — split the text on its top-level ";" and run each separately',
+    fix: 'await readOnlyQuery(first); await readOnlyQuery(second)   # one statement per call',
     meta: { count },
   });
 

@@ -57,9 +57,11 @@ A client that edits `?x-max=` invalidates the signature — it cannot widen what
 
 The HMAC key is `signingSecret`, else `STORAGE_SIGNING_SECRET`, else the shipped
 `DEV_SIGNING_SECRET` — and **only in `development` or `test`**. Anywhere else `localDriver` refuses
-to construct (`X_ENV_MISSING`): the dev literal is published in this repo, so signing with it lets
-anyone mint a `PUT` for any key with a `maxBytes` and `contentType` of their choosing, which
-`acceptSignedUpload` then trusts over the app's own `uploadPolicy`. `usesDevStorageSecret()` is the
+to construct (`X_ENV_MISSING`) unless one of those two is set to something that is not the shipped
+literal: the dev literal is published in this repo, so signing with it lets anyone mint a `PUT` for
+any key with a `maxBytes` and `contentType` of their choosing, which `acceptSignedUpload` then
+trusts over the app's own `uploadPolicy`. Setting `STORAGE_SIGNING_SECRET=$DEV_SIGNING_SECRET`, or
+pasting the literal into `signingSecret`, is refused exactly as an unset variable is. `usesDevStorageSecret()` is the
 `x doctor` probe for it, the twin of core's `usesDevCursorSecret()`.
 Verification is constant-time, checks the signature *before* the expiry (a forged URL never
 learns it was merely late), takes a `Clock` so tests freeze time, and returns
@@ -143,7 +145,7 @@ attached key is a job that deletes production data the first time an app forgets
 | `X_STORAGE_ORG_MISMATCH` | the key is well-formed and unforged, and belongs to another org |
 | `X_STORAGE_UPLOAD_FAILED` | client half: the presigned `PUT` answered non-2xx or never landed |
 | `X_NOT_IMPLEMENTED` | S3 user metadata |
-| `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development with no `STORAGE_SIGNING_SECRET` |
+| `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif`/`webp` encode, or a source no built-in decoder reads |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |
 

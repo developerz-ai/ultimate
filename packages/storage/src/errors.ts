@@ -205,7 +205,9 @@ export const uploadFailed = (path: string, status: number, detail: string): Stor
 export const signingSecretMissing = (environment: string): StorageError =>
   new StorageError({
     code: 'X_ENV_MISSING',
-    cause: `the local disk has no STORAGE_SIGNING_SECRET and ULTIMATE_ENV is "${environment}", so it would sign URLs with the shipped development key`,
+    // The environment names what `resolveEnvironment()` resolved, which may have come from
+    // NODE_ENV — naming ULTIMATE_ENV here reported a variable the process never set.
+    cause: `the local disk has no usable signing secret (no signingSecret option, and STORAGE_SIGNING_SECRET is unset, empty or the published development key) and the resolved environment is "${environment}", so it would sign URLs with the shipped development key`,
     fix: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
     meta: { key: 'STORAGE_SIGNING_SECRET', environment },
   });

@@ -6,7 +6,7 @@
 
 import { assertCurrency, exponentOf } from './currency';
 import { rateMissing } from './errors';
-import { factorFraction } from './factor';
+import { type Fraction, factorFraction } from './factor';
 import { type Money, money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
 
@@ -15,6 +15,14 @@ export interface ExchangeRate {
   to: string;
   /** Major units of `to` per one major unit of `from`. */
   rate: number;
+  /**
+   * The exact value `rate` approximates, for a provider that knows one. `rate` is the number the
+   * audit trail records and a human reads; a reciprocal cannot be both. `1 / 0.92` is the double
+   * 1.0869565217391304, whose decimal spelling is NOT 25/23 — so scaling by it loses a minor unit
+   * on a large amount, and the table that named `USD/EUR = 0.92` never wrote that number at all.
+   * Omit it and `convert` expands `rate`'s own decimal spelling, which is exact for a direct rate.
+   */
+  ratio?: Fraction;
   /** When the rate was observed — part of the audit trail, not decoration. */
   at: Date;
   /** Where it came from: `ecb`, `openexchange`, `manual:invoice-4711`. */
@@ -53,10 +61,14 @@ export function convert(
   if (!Number.isFinite(rate.rate) || rate.rate <= 0) {
     throw rateMissing(amount.currency, target);
   }
+  if (rate.ratio !== undefined && (rate.ratio.numerator <= 0n || rate.ratio.denominator <= 0n)) {
+    throw rateMissing(amount.currency, target);
+  }
 
   // Exact, not a float product: `minor * rate * scale` shows the rounding mode a value IEEE-754
   // has already moved, and a converted invoice line is off by a minor unit with nothing to trace.
-  const fraction = factorFraction(rate.rate);
+  // The provider's own fraction wins when it has one — see `ExchangeRate.ratio`.
+  const fraction = rate.ratio ?? factorFraction(rate.rate);
   const exponent = exponentOf(target) - exponentOf(amount.currency);
   let numerator = BigInt(amount.minor) * fraction.numerator;
   let denominator = fraction.denominator;
@@ -101,6 +113,15 @@ export async function convertWith(
 }
 
 /**
+ * The exact fraction a table entry names, or `undefined` for a number that is not a usable rate.
+ * `convert` refuses those on `rate.rate` with `X_RATE_MISSING`; expanding them here first would
+ * answer `X_NOT_ROUNDABLE` for the same mistake.
+ */
+function exactRate(value: number): Fraction | undefined {
+  return Number.isFinite(value) && value > 0 ? factorFraction(value) : undefined;
+}
+
+/**
  * Fixed-table provider for tests, seeds and manual invoice rates.
  * Keys are `FROM/TO`; the inverse is derived so a table needs one direction only.
  *
@@ -119,10 +140,35 @@ export function fixedRateProvider(
     async rateFor(from: string, to: string, wanted?: Date): Promise<ExchangeRate | undefined> {
       if (wanted !== undefined && wanted.getTime() !== at.getTime()) return undefined;
       const direct = rates[`${from}/${to}`];
-      if (direct !== undefined) return { from, to, rate: direct, at, source: name };
+      if (direct !== undefined) {
+        const ratio = exactRate(direct);
+        return {
+          from,
+          to,
+          rate: direct,
+          at,
+          source: name,
+          ...(ratio === undefined ? {} : { ratio }),
+        };
+      }
       const inverse = rates[`${to}/${from}`];
       if (inverse !== undefined && inverse !== 0) {
-        return { from, to, rate: 1 / inverse, at, source: name };
+        // Swapped, never divided. A table holding `USD/EUR: 0.92` names 23/25, so the EUR/USD
+        // direction is exactly 25/23 — where `1 / 0.92` is a double whose own decimal spelling
+        // rounds a large amount one minor unit low. `rate` keeps the readable approximation.
+        const named = exactRate(inverse);
+        const ratio =
+          named === undefined
+            ? undefined
+            : { numerator: named.denominator, denominator: named.numerator };
+        return {
+          from,
+          to,
+          rate: 1 / inverse,
+          at,
+          source: name,
+          ...(ratio === undefined ? {} : { ratio }),
+        };
       }
       return undefined;
     },

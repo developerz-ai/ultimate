@@ -57,6 +57,8 @@ export {
   moneyNotInteger,
   rateMissing,
 } from './errors';
+/** `ExchangeRate.ratio` is one of these; a provider with an exact rate writes the pair itself. */
+export type { Fraction } from './factor';
 export {
   currencySymbol,
   type FormatMoneyOptions,

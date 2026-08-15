@@ -54,7 +54,9 @@ do not want held is a value you do not put in the cache.
 **A promoted hit carries its own remaining life.** When a read hits a far tier and populates the
 closer ones, it writes them with `expiresAt - now`, not with the `ttlMs` the caller passed — a
 fresh full lease on every read is a hot key that never gets stale enough to be refetched. An entry
-already past its expiry is dropped on the way through and the read falls to `load()`.
+already past its expiry is dropped on the way through and the read falls to `load()`. Each tier
+supplies that expiry from its own store, so the number is real: the Redis tier reads `PTTL`
+alongside the value, in the same pipelined round trip.
 
 Every tier call the stack makes is best-effort: a tier that throws on `get`, `set` or `del` is a
 tier that did not answer, so `read`, `write` and `drop` carry on. A feed too big for the LRU

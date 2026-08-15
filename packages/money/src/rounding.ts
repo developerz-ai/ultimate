@@ -59,7 +59,7 @@ export function roundRatio(
     denominator !== 0n,
     'X_INVARIANT',
     'cannot round a ratio whose denominator is zero',
-    'divide(amount, divisor) refuses a zero divisor before it reaches here — check the caller',
+    'roundRatio(numerator, 1n, mode)   # a zero denominator names no value; divide(amount, 0) is refused before it reaches here, so this is a caller building the fraction itself',
   );
   // One sign, carried out front, so each mode sees a magnitude exactly as `roundToInteger` does.
   const negative = numerator < 0n !== denominator < 0n;

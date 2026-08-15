@@ -3,12 +3,13 @@
 // trip via a server-side script, not a KEYS scan. KEYS is O(n) and blocks the server; a
 // framework that ships it as the invalidation path is shipping an outage.
 
-import { logger } from '@ultimat3/core';
+import type { Clock } from '@ultimat3/core';
+import { logger, systemClock } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
 import type { CacheTag } from './tags';
 import { parseTag, serializeTag } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
-import { assertTtl } from './tiers';
+import { assertTtl, nowMs } from './tiers';
 
 /** The slice of Bun's Redis client this tier uses. Narrow on purpose: easy to fake in tests. */
 export interface RedisLike {
@@ -23,6 +24,8 @@ export interface RedisTierOptions {
   readonly defaultTtlMs?: number;
   /** Injected in tests; production reads `Bun.redis`. */
   readonly client?: RedisLike;
+  /** Turns `PTTL`'s remaining life into the absolute `expiresAt` a hit reports. */
+  readonly clock?: Clock;
 }
 
 interface StoredEntry {
@@ -75,9 +78,20 @@ function resolveClient(injected: RedisLike | undefined): RedisLike {
 const toStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item)) : [];
 
+/**
+ * `PTTL`'s answer as milliseconds of remaining life, or `undefined` for the two sentinels it
+ * answers with instead of a duration: `-1` (key exists, no expiry) and `-2` (no such key).
+ * A driver may hand either back as a string, so the parse goes through `Number`.
+ */
+function remainingMs(reply: unknown): number | undefined {
+  const pttl = Number(reply);
+  return Number.isFinite(pttl) && pttl > 0 ? pttl : undefined;
+}
+
 export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
   const prefix = options.prefix ?? 'x';
   const defaultTtlMs = options.defaultTtlMs ?? 300_000;
+  const clock = options.clock ?? systemClock;
   let client: RedisLike | undefined;
 
   const conn = (): RedisLike => {
@@ -96,12 +110,32 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
   return {
     name: 'redis',
 
+    /**
+     * The value AND what is left of its lease. `set` always applies a finite `EX`, so an entry
+     * read back without its remaining life is an entry the stack can only promote on the
+     * CALLER's ttl — re-leasing a row one second from expiry for a fresh five minutes into the
+     * LRU on every read, which is a hot key that never goes stale enough to be refetched.
+     *
+     * `PTTL` rather than an `expiresAt` written into the payload: the server owns the clock, so
+     * this survives skew between the node that wrote and the node that reads, and no stored
+     * shape changes under a running deployment. Issued alongside the `GET` rather than after
+     * it — Bun pipelines the pair, so the expiry costs no extra round trip.
+     */
     async get<T>(key: string): Promise<CacheEntry<T> | undefined> {
-      const raw = await conn().get(valueKey(key));
+      const stored = valueKey(key);
+      const [raw, pttl] = await Promise.all([
+        conn().get(stored),
+        conn().send('PTTL', [stored]) as Promise<unknown>,
+      ]);
       if (raw === null) return undefined;
+      const remaining = remainingMs(pttl);
       try {
         const parsed = JSON.parse(raw) as StoredEntry;
-        return { value: parsed.v as T, tags: parsed.t.map(parseTag) };
+        return {
+          value: parsed.v as T,
+          tags: parsed.t.map(parseTag),
+          ...(remaining === undefined ? {} : { expiresAt: nowMs(clock) + remaining }),
+        };
       } catch {
         // A poisoned value is a miss, never a 500. Redis TTL will reap it.
         logger.warn('cache.redis.corrupt-entry', { key });

@@ -90,7 +90,7 @@ export class CacheTtlInvalidError extends UltimateError {
       cause: `entry "${input.key}" was written to the ${input.tier} tier with ttlMs=${String(
         input.ttlMs,
       )}; a TTL is a positive, finite number of milliseconds`,
-      fix: 'pass a positive ttlMs (e.g. { ttlMs: 60_000 }), omit it for the tier default, or skip the cache entirely for a value you do not want held',
+      fix: `cache.write('${input.key}', value, { ttlMs: 60_000 })   # or drop the option for the tier default; a value you do not want held is one you do not write`,
       docs: docsFor('X_CACHE_TTL_INVALID'),
       meta: { key: input.key, ttlMs: input.ttlMs, tier: input.tier },
     });

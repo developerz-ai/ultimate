@@ -20,7 +20,7 @@ alias is re-declared, if `minor` widens back to a `bigint`, or if either field l
 | `currency.ts` | ISO-4217 table + minor-unit exponent. Every scale derives from here. |
 | `arithmetic.ts` | add/subtract/multiply/compare, refuses mixed currencies |
 | `allocate.ts` | largest-remainder splits that preserve the total |
-| `factor.ts` | the exact fraction a scaling factor's decimal spelling names. Internal — never exported |
+| `factor.ts` | the exact fraction a scaling factor's decimal spelling names. `factorFraction` is internal — never exported; the `Fraction` **type** is public, because `ExchangeRate.ratio` is one |
 | `rounding.ts` | explicit modes, no implicit default, over a float (`roundToInteger`) or a ratio (`roundRatio`) |
 | `format.ts` | `Intl.NumberFormat` only, digits from the exponent |
 | `convert.ts` | explicit rate + `RateProvider`, records provenance |
@@ -35,6 +35,11 @@ alias is re-declared, if `minor` widens back to a `bigint`, or if either field l
   decimal spelling as an exact fraction (`factorFraction`) and hand it to `roundRatio`, so the mode
   judges 100.5 and not the 100.49999999999999 `100 * 1.005` produces. A new scaling entry point
   goes through the same pair — `roundToInteger(a * b, mode)` is the bug, written again.
+- **A derived rate carries its fraction, never its reciprocal.** `fixedRateProvider` answers the
+  inverse direction by swapping `ExchangeRate.ratio`'s numerator and denominator: a table naming
+  `USD/EUR: 0.92` names 23/25, so EUR→USD is exactly 25/23, where `1 / 0.92` is a double whose own
+  decimal spelling rounds a large amount one minor unit low. `rate` stays the readable number the
+  audit trail records; `convert` scales by `ratio` whenever the provider supplied one.
 - **One place decides a sign.** `formatMoney` is `formatMoneyParts` joined, and `accounting`
   reaches `Intl` as `currencySign` — so the locale places the minus and picks the parenthesised
   form, and a UI styling the parts cannot render a different format from the label beside it.

@@ -43,6 +43,39 @@ describe('convertWith', () => {
     expect(back.amount.minor).toBe(1000);
   });
 
+  test('the inverse is the swapped fraction, not the reciprocal double', async () => {
+    // `1 / 0.92` is 1.0869565217391304, and expanding THAT decimal loses a minor unit: the table
+    // named 23/25, so this direction is exactly 25/23 and nothing else was ever observed.
+    const rate = await provider.rateFor('EUR', 'USD');
+    expect(rate?.ratio).toEqual({ numerator: 100n, denominator: 92n });
+
+    const big = await convertWith(provider, money(7_999_999_999_999_980, 'EUR'), 'USD');
+    expect(big.amount.minor).toBe(8_695_652_173_913_022);
+    // The audit trail still records the readable number a human recognises as the rate.
+    expect(big.rate).toBe(1 / 0.92);
+  });
+
+  test('a direct rate carries its own decimal spelling as the fraction', async () => {
+    const rate = await provider.rateFor('USD', 'EUR');
+    expect(rate?.ratio).toEqual({ numerator: 92n, denominator: 100n });
+  });
+
+  test('a ratio that is not positive is a missing rate, never a negative conversion', () => {
+    const poisoned: ExchangeRate = {
+      ...usdToEur,
+      ratio: { numerator: -92n, denominator: 100n },
+    };
+    expect(codeOf(() => convert(money(1000, 'USD'), 'EUR', poisoned))).toBe('X_RATE_MISSING');
+    expect(
+      codeOf(() =>
+        convert(money(1000, 'USD'), 'EUR', {
+          ...usdToEur,
+          ratio: { numerator: 92n, denominator: 0n },
+        }),
+      ),
+    ).toBe('X_RATE_MISSING');
+  });
+
   test('a missing pair throws instead of assuming parity', async () => {
     let code = 'no-throw';
     try {

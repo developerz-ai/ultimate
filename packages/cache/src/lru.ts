@@ -112,10 +112,12 @@ export class LruCache {
       throw new CacheTooLargeError({ key, bytes, maxBytes: this.maxBytes, tier: 'lru' });
     }
 
+    // Validate BEFORE evicting the entry being replaced: a rejected write must leave the cache
+    // exactly as it found it, or `X_CACHE_TTL_INVALID` also silently drops a live, valid value.
+    const ttl = assertTtl(key, options.ttlMs ?? this.defaultTtlMs, 'lru');
     const existing = this.map.get(key);
     if (existing !== undefined) this.unlink(existing);
 
-    const ttl = assertTtl(key, options.ttlMs ?? this.defaultTtlMs, 'lru');
     const node: LruNode = {
       key,
       value,

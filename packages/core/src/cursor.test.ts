@@ -131,6 +131,9 @@ describe('the one cursor codec', () => {
       process.env['ULTIMATE_CURSOR_SECRET'] = 'ignored';
       expect(decodeCursor(encodeCursor(position), 'posts:acme').id).toBe('p_9');
     } finally {
+      // The explicit secret is module state, so it outlives this test unless it is dropped here:
+      // a later test in this process would otherwise sign with 'explicit', not its own secret.
+      resetCursorSigning();
       if (previous === undefined) delete process.env['ULTIMATE_CURSOR_SECRET'];
       else process.env['ULTIMATE_CURSOR_SECRET'] = previous;
     }

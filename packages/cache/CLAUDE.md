@@ -33,6 +33,11 @@ Tier 1. Tagged caching + THE invalidation graph.
   writes the closer tiers with `hit.expiresAt - now`, and drops a hit that fails `isExpired`. A
   fresh full lease per read is a hot key that never goes stale enough to refetch. `isExpired` was
   exported and unit-tested and called by nothing; the stack is its one caller.
+- **Every tier's `get` therefore reports `expiresAt`, or the promotion above has nothing to carry.**
+  `redis.ts` reads it from `PTTL`, issued alongside the `GET` so Bun pipelines the pair — the server
+  owns the clock, so it survives skew between the node that wrote and the node that reads, and no
+  stored payload shape changes under a running deployment. `-1`/`-2` are sentinels, not durations:
+  they mean no expiry, never one millisecond ago.
 - **`redis.ts`'s script deletes only keys it was handed in `KEYS`.** The members of a tag set are
   value keys in slots this node may not own, so `DEL`ing them from Lua is a cross-slot access that
   fails on Redis Cluster and Dragonfly strict mode — into `report.errors`, so the bust reads as

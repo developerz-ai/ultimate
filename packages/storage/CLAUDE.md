@@ -51,13 +51,17 @@ Gotchas:
   `text/html` and have a route serve attacker HTML from the app's origin. Reserved in
   `assertSafeKey`, so it holds for S3 too — a key valid on one driver and refused on another is two
   key rules. The `list()` skip stays as a second line of defence.
-- **`localDriver` refuses to construct outside development without `STORAGE_SIGNING_SECRET`**
-  (`X_ENV_MISSING`, borrowed from core). `DEV_SIGNING_SECRET` is published in this repo, and
-  `acceptSignedUpload` trusts a signed URL's constraints over the app's `uploadPolicy` — so the
-  fallback is a universal grant to mint any `PUT`. Refused at construction, not at the first
-  `signedUrl()`: a process that cannot sign safely must not finish booting. `usesDevStorageSecret()`
-  is the `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a
-  disk handed an explicit `signingSecret` is outside its question.
+- **`localDriver` refuses to construct outside development without a usable signing secret**
+  (`X_ENV_MISSING`, borrowed from core). Usable means neither the `signingSecret` option nor
+  `STORAGE_SIGNING_SECRET` is missing, empty **or** the published `DEV_SIGNING_SECRET` — pasting
+  the literal into `app.config.ts` configures nothing, so it is refused exactly as its absence is.
+  `DEV_SIGNING_SECRET` is published in this repo, and `acceptSignedUpload` trusts a signed URL's
+  constraints over the app's `uploadPolicy` — so the fallback is a universal grant to mint any
+  `PUT`. Refused at construction, not at the first `signedUrl()`: a process that cannot sign safely
+  must not finish booting. The cause names the environment `resolveEnvironment()` resolved, which
+  may be `NODE_ENV`'s, never a variable the process did not set. `usesDevStorageSecret()` is the
+  `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a disk
+  handed an explicit `signingSecret` is outside its question.
 - **The mounted read half is `@ultimat3/cli`'s `dev-storage.ts`, not this package.** `GET
   /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
   2 and unreachable from here — so a "serve this object" helper in this package could only ever be

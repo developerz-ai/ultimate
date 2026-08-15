@@ -155,6 +155,16 @@ describe('the one TTL rule', () => {
     expect(codeOf(() => cache.set('k', 1))).toBe('X_CACHE_TTL_INVALID');
   });
 
+  test('a refused overwrite leaves the entry it would have replaced', () => {
+    // The reject used to land after the unlink, so `set(k, v, { ttlMs: 0 })` on a live key both
+    // threw AND dropped the good value — a validation error that mutates is a second bug.
+    const cache = new LruCache({ maxBytes: 10_000, clock: fakeClock(1_000) });
+    cache.set('k', 'kept', { ttlMs: 5_000 });
+    expect(codeOf(() => cache.set('k', 'rejected', { ttlMs: 0 }))).toBe('X_CACHE_TTL_INVALID');
+    expect(cache.get<string>('k')?.value).toBe('kept');
+    expect(cache.stats().entries).toBe(1);
+  });
+
   test('every entry therefore carries a finite expiry the stack can read', () => {
     const clock = fakeClock(1_000);
     const cache = new LruCache({ maxBytes: 10_000, clock });

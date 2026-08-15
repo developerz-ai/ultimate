@@ -97,11 +97,15 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   // a PUT for any key with any size and type limit — which `acceptSignedUpload` then trusts over
   // the app's own `uploadPolicy`. Refused HERE, at construction, so the boot fails rather than
   // the first upload.
-  const configured = options.signingSecret ?? process.env[STORAGE_SIGNING_SECRET_KEY];
-  if (configured === undefined || configured === '') {
-    if (!isLocal()) throw signingSecretMissing(resolveEnvironment());
-  }
-  const secret = configured === undefined || configured === '' ? DEV_SIGNING_SECRET : configured;
+  // The published literal counts as no secret at all, whichever way it arrives: an env var or an
+  // `app.config.ts` that pasted it in signs exactly as weakly as the fallback does.
+  const supplied = options.signingSecret ?? process.env[STORAGE_SIGNING_SECRET_KEY];
+  const configured =
+    supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
+      ? undefined
+      : supplied;
+  if (configured === undefined && !isLocal()) throw signingSecretMissing(resolveEnvironment());
+  const secret = configured ?? DEV_SIGNING_SECRET;
 
   const filePath = (key: string): string => `${root}/${key}`;
   const metaPath = (key: string): string => `${root}/${META_DIR}/${key}.json`;
