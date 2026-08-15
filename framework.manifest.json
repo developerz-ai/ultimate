@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1129b32fb009f2c391955cce64786c15436dc0334f0485359bb3c7adb6986d18",
+  "buildId": "e1278ef15787f3bfaa77805ef39f34773d3c3a435df2332401022b0cf9865646",
   "tiers": {
     "0": [
       "core",
@@ -277,6 +277,16 @@
     },
     {
       "code": "X_ADMIN_INVALID",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_PAGE_PATH_INVALID",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_PAGE_UNGUARDED",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
     },
@@ -844,6 +854,21 @@
       "code": "X_INVARIANT_VIOLATED",
       "owner": "entity",
       "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_ISLAND_INVALID",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ISLAND_NOT_HYDRATED",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_ISLAND_PROPS_INVALID",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
     },
     {
       "code": "X_JOB_DUPLICATE",

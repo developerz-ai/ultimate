@@ -178,6 +178,7 @@ export {
   invalidGlyphError,
   invalidThemeError,
   invalidValueError,
+  providerNeedsRuntimeError,
   runtimeMissingError,
   UI_ERROR_CODES,
   UiError,
@@ -189,6 +190,7 @@ export type { Brand, BrandInput, FontSlot } from './theme/brand';
 export { brandStyleCspSource, brandStyleTag, defineTheme, FONT_SLOTS } from './theme/brand';
 export type { Direction, UiContextValue } from './theme/context';
 export {
+  ambientUiContext,
   defaultUiContext,
   fallbackTranslator,
   UI_DEFAULT_CURRENCY,
@@ -197,6 +199,7 @@ export {
   uiContext,
   useUi,
 } from './theme/context';
+export { INERT_SOLID_RUNTIME } from './theme/inert-runtime';
 export {
   THEME_INLINE_SCRIPT,
   themeInlineScriptCspSource,

@@ -3,6 +3,8 @@
 // type-level claim written in one can never fail. This module emits nothing and exports nothing
 // anybody imports — a regression here is a build error, the only enforcement that counts.
 
+import type { IslandComponent } from './island';
+import type { JsonValue } from './island-props';
 import type { LoadRequirement, RouteContext, RouteData, RouteDefinition } from './route';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -35,3 +37,33 @@ export type _DefaultDataNeedsNoLoad = Assert<
 export type _RicherDataRequiresALoad = Assert<
   undefined extends LoadRequirement<BlogPost>['load'] ? false : true
 >;
+
+type ContactModal = IslandComponent<readonly ['subject']>;
+type ContactModalProps = Parameters<ContactModal>[0];
+
+/**
+ * The declared prop is required and typed, so the call site that forgets it does not compile.
+ * `props: ['subject']` is the whole declaration — there is no second place to state the shape.
+ */
+export type _DeclaredPropIsRequired = Assert<
+  ContactModalProps extends { readonly subject: JsonValue } ? true : false
+>;
+
+/**
+ * An island's props are exactly what it declared. Anything else has no type here, which is what
+ * makes `<Modal {…row} />` a compile error before it is the runtime error that names the column.
+ */
+export type _UndeclaredPropHasNoType = Assert<
+  'passwordHash' extends keyof ContactModalProps ? false : true
+>;
+
+/**
+ * The children are the server-rendered shell and never JSON: they stay `unknown`, so nothing in
+ * the type system suggests a component or a handler could travel to the browser inside them.
+ */
+export type _ChildrenAreNotJson = Assert<
+  ContactModalProps['children'] extends JsonValue | undefined ? false : true
+>;
+
+/** A value the browser could never receive is not a `JsonValue`, so the prop never type-checks. */
+export type _AHandleIsNotJson = Assert<(() => void) extends JsonValue ? false : true>;

@@ -111,6 +111,35 @@ Solid signal patch — fine-grained, no re-render of the list
 
 The matcher is why this is affordable: membership is decided from the changed row plus the query's predicate, order, and limit — never by re-running the query. Which is exactly why `live: true` requires a deterministic, bounded `sql` ([Queries and live queries](Queries-And-Live-Queries)).
 
+## One row per `(entity, id)`
+
+`As of 2026-08` the client holds an **identity map**: a row is one object, keyed by its entity and
+its id, however many live queries returned it. A subscription is an ordered list of ids; the values
+come from the map.
+
+| Consequence | Why it matters |
+|---|---|
+| A patch on one live query is observed by every other holding that row | two components rendering post #7 cannot disagree about it |
+| A mutator's optimistic twin lands in every window holding that row | before this, `local(tx, input)` wrote the local store and **no live query read it** — the twin was invisible until the server round-tripped |
+| A `server-wins` rebase rolls the optimistic write back everywhere | one row, one rollback |
+| A write **merges** columns rather than replacing the row | two queries may project different columns; a narrower snapshot must not blank what a wider one renders |
+| A row lives exactly as long as a window or a table holds it | the last release drops it, so an infinite scroll is not a leak |
+
+The scope is `(entity, id)`, not `id` — `posts/7` and `users/7` are two rows, and a slug primary key
+makes that collision plausible rather than theoretical. The entity name rides on the snapshot frame,
+sourced from the query's compiled shape; it is the same string `ChangeEvent.entity` and `tx.<table>`
+already use. **A subscription the server names no entity for keeps its rows private**, colliding with
+nothing — wrong sharing would merge two entities into one row, while no sharing only costs a stale
+view.
+
+Membership and identity are deliberately separate, which is Ember's own split between records and
+record arrays. Sharing one `Map<table, Map<id, Row>>` instead would mean rolling back an optimistic
+insert deletes a row the server had since sent to another window.
+
+Nothing changes for an app author. The one convention that now *pays off* rather than merely being
+tidy: a mutator's `tx.<table>` key and a query's `from('<table>', …)` must name the same entity —
+they already had to, and disagreeing now costs the sharing instead of costing nothing.
+
 ## LSN cursors
 
 Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a **delta** instead of a refetch.

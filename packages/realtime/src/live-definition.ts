@@ -44,6 +44,8 @@ export interface LiveDefinitionOptions {
  */
 interface SharedWindow {
   readonly matcher: IncrementalMatcher;
+  /** The compiled shape's root entity — the client's identity scope for every row of this read. */
+  readonly rowEntity: string;
   read(): Promise<readonly Row[]>;
 }
 
@@ -88,6 +90,9 @@ export function liveQueryDefinition(
     // twice per query id and left two descriptions of one read that agreed only by luck.
     const built: SharedWindow = {
       matcher: matcherFor(live),
+      // `assertMatchable` already refused a shape without one, so this is the entity the matcher
+      // patches rows of — the same name `ChangeEvent.entity` and `tx.<table>` use.
+      rowEntity: live.shape.entity,
       read: async () => rowsOf(name, await live.execute()),
     };
     windows.set(qid, built);
@@ -109,6 +114,9 @@ export function liveQueryDefinition(
       return { rows: await window.read(), lsn: options.lsn?.() ?? '' };
     },
     matcher: (input) => windows.get(qidOf(name, input))?.matcher ?? UNRESOLVED,
+    // Read off the same resolved window as the matcher, so the scope the client keys rows under and
+    // the entity the matcher patches them from can never be two different names.
+    rowEntity: (input) => windows.get(qidOf(name, input))?.rowEntity ?? null,
     // The two per-subscriber gates, both through the package's one authz seam. Neither result is
     // memoised anywhere: `authorize` runs on every subscribe, `visible` on every row of every
     // delivery, and there is no key here an actor could share with another actor.

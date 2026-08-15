@@ -13,7 +13,11 @@ Tier 5. Imports `@ultimat3/core`, `schema`, `i18n`, `money`, `time`. Never `http
 - **SCSS modules only.** `Foo.tsx` + `Foo.module.scss`, always paired. No Tailwind, no CSS-in-JS, no inline `style` except CSS custom properties.
 - **No raw colours.** Only `t.role('<role>')` / `var(--color-*)`. Canonical roles live in `src/tokens/_colors.scss`; `tokens.ts` mirrors them and `tokens.test.ts` fails on drift.
 - **Logical properties only.** `margin-inline`, `inset-inline-start`, `text-align: start`. A `left`/`right` in a stylesheet is a bug.
-- **solid-js is a type-only import.** All reactive access goes through `src/theme/solid-adapter.ts`, registered once via `setSolidRuntime()`. Never `import { createSignal } from 'solid-js'`.
+- **solid-js is a type-only import.** All reactive access goes through `src/theme/solid-adapter.ts`. Never `import { createSignal } from 'solid-js'`.
+- **`solid()` always answers off-DOM.** No registered runtime and no DOM is a *server render*, and it gets `INERT_SOLID_RUNTIME` (`src/theme/inert-runtime.ts`) — signals hold, memos recompute on read, effects never run, `useContext` returns the default. No DOM means no reactivity to lose; a **DOM** with no runtime is still `X_UI_RUNTIME_MISSING`, because that one is the theme toggle that does nothing. Never widen this to "no runtime, never throw": that is the silent degradation the split exists to prevent.
+- **`useUi()` reads the request on the server**, via `ambientUiContext()` — `currentLocale()`, `currentTimeZone()`, `useI18n()`. Never add a second ambient store here; `@ultimat3/i18n` and `@ultimat3/time` already hold those answers on the ALS context, and `theme`/`currency` deliberately have none.
+- **`UiProvider` is client-only and throws on the server** (`providerNeedsRuntimeError`, the same `X_UI_RUNTIME_MISSING`). A Provider in an inert tree reaches no descendant — the tree is built before the renderer walks it, so consumers are walked outside every owner and read the context default even with a real Solid runtime registered. Rendering the children anyway would drop its locale, zone, currency and translator silently. Making it work needs the *renderer* to scope a context around the walk; until then it refuses.
+- **A component may call `solid()` freely.** Its effects must stay DOM-only work — they simply never run on the server.
 - **No `{...rest}` prop spreading.** Splitting props reactively needs solid's `splitProps` (a value import), so components declare explicit props and read `props.x` inside JSX.
 - **No hardcoded strings.** Label props, or `useUi().t(UI_KEYS.x)`. New built-in strings go in `src/i18n-keys.ts`.
 - **Page layout is four composites**: `AppShell` (frame + skip link + landmarks), `PageHeader`, `Section`, `Toolbar`. A screen that hand-rolls a header grid is the bug they exist to prevent. `AppShell` holds no state — off-canvas is `Drawer`.
@@ -31,6 +35,8 @@ Tier 5. Imports `@ultimat3/core`, `schema`, `i18n`, `money`, `time`. Never `http
 |---|---|
 | `src/tokens/*.scss` | canonical token maps + `_mixins.scss` authoring helpers |
 | `src/tokens/theme.scss` | the only stylesheet that emits global custom properties |
+| `src/theme/solid-adapter.ts` | the runtime slot and the one rule that decides which runtime a render gets |
+| `src/theme/inert-runtime.ts` | `INERT_SOLID_RUNTIME` — what a server render IS, not a stub of what it lacks |
 | `src/theme/theme.ts` | resolution: stored choice → OS; all side effects via injected `ThemeEnv` |
 | `src/theme/inline-script.ts` | anti-flash `<head>` snippet + its CSP sha256 |
 | `src/components/` | 50 components, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |

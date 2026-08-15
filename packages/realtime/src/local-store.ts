@@ -3,9 +3,13 @@
 // `local` must be replayable — no I/O, no Date.now(), no Math.random() — because rebase replays it.
 // That is why every write goes through a journal keyed by the mutation's idempotency key: rollback
 // is "undo this key's journal in reverse", not "re-fetch and hope".
+//
+// A table owns MEMBERSHIP (which ids it holds); the shared `IdentityMap` owns the VALUES, so an
+// optimistic write and the live query rendering that row are one row, not two copies.
 
 import { NotImplementedError } from './errors';
-import type { JsonObject, Row } from './json';
+import { IdentityMap } from './identity-map';
+import type { Row } from './json';
 
 export interface LocalTable<R extends Row = Row> {
   get(id: string): R | undefined;
@@ -28,11 +32,17 @@ export type LocalTx<T extends TableMap = TableMap> = { readonly [K in keyof T]: 
 interface JournalEntry {
   readonly table: string;
   readonly id: string;
-  /** Row state before the write; `undefined` means "did not exist" (so undo = delete). */
+  /** Row state before the write; `undefined` means "did not exist" (so undo = drop membership). */
   readonly before: Row | undefined;
 }
 
 export interface LocalStore<T extends TableMap = TableMap> {
+  /**
+   * The one map every row value lives in, shared with the live-query windows on the same client.
+   * A `LiveClient` reads it off the store rather than building its own — two identity maps in one
+   * client is the bug an identity map exists to prevent, one level up.
+   */
+  readonly identity: IdentityMap;
   readonly tx: LocalTx<T>;
   table(name: string): LocalTable;
   /** Runs `fn` while journalling every write under `key`, so it can be rolled back verbatim. */
@@ -51,13 +61,16 @@ export interface LocalStore<T extends TableMap = TableMap> {
  * scoping) is implemented here; OPFS SQLite swaps the storage, not the semantics.
  */
 export class MemoryLocalStore<T extends TableMap = TableMap> implements LocalStore<T> {
-  readonly #tables = new Map<string, Map<string, Row>>();
+  /** Membership and nothing else: `#members.get('posts')` is which ids this table holds. */
+  readonly #members = new Map<string, Set<string>>();
   readonly #journals = new Map<string, JournalEntry[]>();
   #recordingKey: string | null = null;
 
+  readonly identity: IdentityMap;
   readonly tx: LocalTx<T>;
 
-  constructor(tables: Readonly<Record<string, readonly Row[]>> = {}) {
+  constructor(tables: Readonly<Record<string, readonly Row[]>> = {}, identity = new IdentityMap()) {
+    this.identity = identity;
     this.reset(tables);
     const handler: ProxyHandler<Record<string, LocalTable>> = {
       // Symbols (`Symbol.iterator`, `then`) must not resolve to a table, or awaiting a tx would
@@ -68,30 +81,40 @@ export class MemoryLocalStore<T extends TableMap = TableMap> implements LocalSto
   }
 
   table(name: string): LocalTable {
-    const rows = this.#rows(name);
+    const ids = this.#ids(name);
+    const read = (id: string): Row | undefined =>
+      ids.has(id) ? this.identity.peek(name, id) : undefined;
     return {
-      get: (id) => rows.get(id),
-      all: () => [...rows.values()],
+      get: read,
+      all: () => {
+        const rows: Row[] = [];
+        for (const id of ids) {
+          const row = this.identity.peek(name, id);
+          if (row !== undefined) rows.push(row);
+        }
+        return rows;
+      },
       insert: (row) => {
-        this.#journal(name, row.id, rows.get(row.id));
-        rows.set(row.id, row);
+        this.#journal(name, row.id, read(row.id));
+        this.#join(name, row.id, ids);
+        this.identity.set(name, row);
       },
       upsert: (row) => {
-        const current = rows.get(row.id);
-        this.#journal(name, row.id, current);
-        rows.set(row.id, { ...(current ?? {}), ...row });
+        this.#journal(name, row.id, read(row.id));
+        this.#join(name, row.id, ids);
+        this.identity.merge(name, row.id, row);
       },
       update: (id, patch) => {
-        const current = rows.get(id);
+        const current = read(id);
         if (!current) return;
         this.#journal(name, id, current);
-        rows.set(id, merge(current, patch(current)));
+        this.identity.merge(name, id, patch(current));
       },
       delete: (id) => {
-        const current = rows.get(id);
+        const current = read(id);
         if (!current) return;
         this.#journal(name, id, current);
-        rows.delete(id);
+        this.#leave(name, id, ids);
       },
     };
   }
@@ -101,7 +124,8 @@ export class MemoryLocalStore<T extends TableMap = TableMap> implements LocalSto
     this.#recordingKey = key;
     if (!this.#journals.has(key)) this.#journals.set(key, []);
     try {
-      fn(this.tx);
+      // One notification for the whole twin: a mutator touching twenty rows is one render.
+      this.identity.batch(() => fn(this.tx));
     } finally {
       this.#recordingKey = previous;
     }
@@ -110,13 +134,19 @@ export class MemoryLocalStore<T extends TableMap = TableMap> implements LocalSto
   rollback(key: string): void {
     const journal = this.#journals.get(key);
     if (!journal) return;
-    for (let i = journal.length - 1; i >= 0; i -= 1) {
-      const entry = journal[i];
-      if (!entry) continue;
-      const rows = this.#rows(entry.table);
-      if (entry.before === undefined) rows.delete(entry.id);
-      else rows.set(entry.id, entry.before);
-    }
+    this.identity.batch(() => {
+      for (let i = journal.length - 1; i >= 0; i -= 1) {
+        const entry = journal[i];
+        if (!entry) continue;
+        const ids = this.#ids(entry.table);
+        if (entry.before === undefined) {
+          this.#leave(entry.table, entry.id, ids);
+          continue;
+        }
+        this.#join(entry.table, entry.id, ids);
+        this.identity.set(entry.table, entry.before);
+      }
+    });
     this.#journals.delete(key);
   }
 
@@ -129,23 +159,45 @@ export class MemoryLocalStore<T extends TableMap = TableMap> implements LocalSto
   }
 
   snapshot(name: string): readonly Row[] {
-    return [...this.#rows(name).values()];
+    return this.table(name).all();
   }
 
   reset(tables: Readonly<Record<string, readonly Row[]>>): void {
-    this.#tables.clear();
-    this.#journals.clear();
-    for (const [name, rows] of Object.entries(tables)) {
-      this.#tables.set(name, new Map(rows.map((row) => [row.id, row])));
-    }
+    this.identity.batch(() => {
+      for (const [name, ids] of this.#members) {
+        for (const id of ids) this.identity.release(name, id);
+      }
+      this.#members.clear();
+      this.#journals.clear();
+      for (const [name, rows] of Object.entries(tables)) {
+        const ids = this.#ids(name);
+        for (const row of rows) {
+          this.#join(name, row.id, ids);
+          this.identity.set(name, row);
+        }
+      }
+    });
   }
 
-  #rows(name: string): Map<string, Row> {
-    const existing = this.#tables.get(name);
+  #ids(name: string): Set<string> {
+    const existing = this.#members.get(name);
     if (existing) return existing;
-    const created = new Map<string, Row>();
-    this.#tables.set(name, created);
+    const created = new Set<string>();
+    this.#members.set(name, created);
     return created;
+  }
+
+  /** Membership is what holds a value in the map, so joining and retaining are one step. */
+  #join(name: string, id: string, ids: Set<string>): void {
+    if (ids.has(id)) return;
+    ids.add(id);
+    this.identity.retain(name, id);
+  }
+
+  /** Leaving releases: the value survives only while a live window still holds the same row. */
+  #leave(name: string, id: string, ids: Set<string>): void {
+    if (!ids.delete(id)) return;
+    this.identity.release(name, id);
   }
 
   /** Only the *first* write to a row within one key is journalled — undo must reach the base state. */
@@ -157,15 +209,6 @@ export class MemoryLocalStore<T extends TableMap = TableMap> implements LocalSto
     if (journal.some((entry) => entry.table === table && entry.id === id)) return;
     journal.push(before === undefined ? { table, id, before: undefined } : { table, id, before });
   }
-}
-
-/** `undefined` in a patch means "leave it alone" — a row column is never set to undefined. */
-function merge(row: Row, patch: Partial<Row>): Row {
-  const next: JsonObject = { ...row };
-  for (const [key, value] of Object.entries(patch)) {
-    if (value !== undefined) next[key] = value;
-  }
-  return { ...next, id: row.id };
 }
 
 export interface OpfsLocalStoreOptions {

@@ -10,11 +10,19 @@
 import type { Ctx } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
 import { asCtx, html, stream } from '@ultimat3/http';
-import type { IsrController, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
+import type {
+  IslandCollector,
+  IsrController,
+  RenderResult,
+  RouteData,
+  RouteEntry,
+} from '@ultimat3/render';
 import {
   contentHash,
+  createIslandCollector,
   createIsrController,
   headFromMeta,
+  hydrateRuntime,
   metaContextFor,
   renderComponent,
   renderHead,
@@ -29,7 +37,19 @@ import {
   stylesFor,
 } from '@ultimat3/render';
 
-export interface DevRenderOptions {
+/**
+ * Specifier → built chunk URL, bound to the route file the specifier is written relative to.
+ * Supplied by whoever built the islands (`x dev`, the container, the static build); absent means
+ * no island was built, and a page that renders one then fails by name rather than emitting a
+ * `data-x-entry` nothing can import.
+ */
+export type IslandResolver = (routeFile: string) => (src: string) => string;
+
+export interface DocumentOptions {
+  readonly resolveIsland?: IslandResolver;
+}
+
+export interface DevRenderOptions extends DocumentOptions {
   readonly buildId: string;
   /** Injected so a test can drive the ISR store without a timer. */
   readonly isr?: IsrController;
@@ -66,6 +86,7 @@ export async function routeBody(
   entry: RouteEntry,
   ctx: DevRouteData,
   data: RouteData,
+  islands: IslandCollector,
 ): Promise<string> {
   if (entry.component === undefined) return `<div id="${SPA_ROOT_ID}"></div>`;
   const url = new URL(ctx.url);
@@ -81,32 +102,59 @@ export async function routeBody(
       query: Object.fromEntries(url.searchParams) as Readonly<Record<string, string>>,
     },
     entry.file,
+    { islands },
   );
   return `<div id="${SPA_ROOT_ID}">${html}</div>`;
 }
 
 /**
+ * One collector per RENDER, never module-global: two requests render different params, and a
+ * shared collector would bill one page for the other's islands. `hydrate` comes off the route, so
+ * an island never declares its own timing, and `resolve` is the build's — identity when nothing
+ * built any, which fails at the first island by name rather than emitting an unusable entry.
+ */
+const collectorFor = (entry: RouteEntry, options: DocumentOptions): IslandCollector =>
+  createIslandCollector({
+    file: entry.file,
+    hydrate: entry.config.hydrate,
+    ...(options.resolveIsland === undefined ? {} : { resolve: options.resolveIsland(entry.file) }),
+  });
+
+/**
  * Head + body for one route render. Exported because the build's prerenderer must emit the same
  * document `x dev` serves — two document builders is how a page that works in dev ships broken.
  */
-export async function routeDocument(entry: RouteEntry, ctx: DevRouteData): Promise<string> {
-  return documentFrom(entry, ctx, await routeDataFor(entry.config, ctx));
+export async function routeDocument(
+  entry: RouteEntry,
+  ctx: DevRouteData,
+  options: DocumentOptions = {},
+): Promise<string> {
+  return documentFrom(entry, ctx, await routeDataFor(entry.config, ctx), options);
 }
 
 /**
  * The document from data ALREADY resolved. Split from `routeDocument` so one request resolves
  * `load` exactly once: `stream` renders head and body separately, and resolving in each would let
  * a `<title>` describe content the body does not contain.
+ *
+ * The hydration runtime is appended after the body and only after it: what strategies a page needs
+ * is a fact about the islands the walk just recorded, so emitting it earlier would either guess or
+ * ship the whole runtime to a page with no island — the 0kb baseline, spent on nothing.
  */
 async function documentFrom(
   entry: RouteEntry,
   ctx: DevRouteData,
   data: RouteData,
+  options: DocumentOptions,
 ): Promise<string> {
-  const [head, body] = await Promise.all([headFor(entry, ctx, data), routeBody(entry, ctx, data)]);
+  const islands = collectorFor(entry, options);
+  const [head, body] = await Promise.all([
+    headFor(entry, ctx, data),
+    routeBody(entry, ctx, data, islands),
+  ]);
   return (
     `<!doctype html><html lang="${LANG}"><head>${head}${styleTag(entry)}</head>` +
-    `<body>${body}</body></html>`
+    `<body>${body}${hydrateRuntime(islands.directives)}</body></html>`
   );
 }
 
@@ -125,11 +173,13 @@ async function resultFor(
     case 'static': {
       // Not `renderStatic`: that enumerates every prerendered path for the build. A request
       // names exactly one, and it earns the same content-hashed headers.
-      const body = await documentFrom(entry, request, data);
+      const body = await documentFrom(entry, request, data, options);
       return { status: 200, headers: staticHeaders(contentHash(body), options.buildId), body };
     }
     case 'isr': {
-      const served = await isr.serve(url.pathname, () => documentFrom(entry, request, data));
+      const served = await isr.serve(url.pathname, () =>
+        documentFrom(entry, request, data, options),
+      );
       return served.result;
     }
     case 'spa':
@@ -148,14 +198,18 @@ async function resultFor(
       // outside a Solid renderer, and this package's JSX factory is inert by design. A hole marker
       // has to be the framework's own. Until it exists the first flush carries the whole body —
       // correct output, no streaming benefit.
+      const islands = collectorFor(entry, options);
       const [head, shell] = await Promise.all([
         headFor(entry, request, data),
-        routeBody(entry, request, data),
+        routeBody(entry, request, data, islands),
       ]);
       return streamResult(
         {
           head: `<!doctype html><html lang="${LANG}"><head>${head}${styleTag(entry)}</head><body>`,
-          shell,
+          // The runtime rides the first flush, with the shell it boots. A later chunk would leave
+          // the window between flush one and the close with inert islands and no listeners on
+          // them — which is exactly the first-click-lost failure `interaction` replay exists for.
+          shell: `${shell}${hydrateRuntime(islands.directives)}`,
           holes: [],
         },
         { buildId: options.buildId },
@@ -164,7 +218,7 @@ async function resultFor(
     default:
       return renderSsr(
         { entry, params: request.params, url, ctx },
-        () => documentFrom(entry, request, data),
+        () => documentFrom(entry, request, data, options),
         { buildId: options.buildId },
       );
   }

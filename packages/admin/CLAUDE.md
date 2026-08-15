@@ -6,7 +6,8 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 
 ## Rules
 
-- **One authz.** `AdminAuthz` (`authz.ts`) is the only decision path. `action-gate.ts` and `crud.ts` call `decideAll`; views render what the gate returned. Never add a second check in a view or an MCP handler.
+- **One authz.** `AdminAuthz` (`authz.ts`) is the only decision path. `action-gate.ts`, `crud.ts` and `page-guard.tsx` call `decideAll`; views render what the gate returned. Never add a second check in a view or an MCP handler.
+- **A custom page's guard is composed, never written.** `pages.ts` turns a `pages:` entry into an `AdminRoute` carrying `[admin:read, …declared]`; `routes.ts` is the only thing that may hand a page component to a router and it hands the `guardedPage()` wrapper, with `permissions[0]` already in `defineRoute({ policy })`. `AdminPageProps.ctx` is required by the type so the wrapper cannot be bypassed by calling the component directly. An empty permission list is `X_ADMIN_PAGE_UNGUARDED` at `defineAdmin` time — the one place an unauthenticated admin screen could have been born.
 - **One bridge per foreign package.** `policy-bridge.ts` is the only file calling `evaluate`/`definePermissions`; `routes.ts` the only one calling `defineRoute`; `mcp.ts` the only one calling `defineAppMcp`; `dev/data.ts` the only one importing introspection (dynamically — `/_x` must stay out of the production graph).
 - **One entity surface** (`registry.ts`) — the admin reads what `entity()` actually exposes: `$name`, `$primaryKey`, `$columns[c].$meta`, `$schema`, `$describe()`. It is a structural subset so a new column kind still derives, and `RegisteredEntity` is the `tsc`-checked proof that a real `entity()` result satisfies it — never a comment claiming it does.
 - **One flattener.** `entity-columns.ts` is the only file that reads `$meta` or calls `$describe()`; everything downstream takes `AdminColumnFacts`. Money stays one property (the admin renders rows, not tables), a FK target comes back resolved from `$describe()`, and only a **generated** default (`uuid`, `now`) is read-only — `.default('free')` is a starting value.
@@ -32,6 +33,8 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 | File | Owns |
 |---|---|
 | `admin.ts` | `defineAdmin` → resources, nav, route table, audit, authz |
+| `pages.ts` / `page-guard.tsx` | a `pages:` entry → route + nav item (pure) / the wrapper that decides before it renders |
+| `routes.ts` | the only `defineRoute` caller: mode per view, `policy` composed from the route's permissions |
 | `registry.ts` / `entity-columns.ts` | the entity surface the admin reads / one entity → column facts |
 | `resource.ts` / `fields.ts` / `widget-value.ts` | derivation, widget table, value guards |
 | `crud.ts` / `action-gate.ts` | policy → confirmation → validation → repo → audit |

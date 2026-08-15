@@ -31,6 +31,14 @@ const APP_GLOBS = [
  */
 const ENTRY_POINT = /^apps\/[^/]+\/(?:server|prerender)\.tsx?$/;
 
+/**
+ * A `*.island.tsx` is a CLIENT entry point and is deliberately not imported here. It registers no
+ * primitive — a page names it by specifier, never by import — and importing it would put the one
+ * module the framework guarantees is outside the server's graph inside this process's, where a
+ * top-level `document` reference takes the whole scan down (axiom 6).
+ */
+const CLIENT_ENTRY_POINT = /\.island\.tsx$/;
+
 export interface LoadedApp {
   readonly root: string;
   /** App-root-relative POSIX paths of every module that imported, sorted. */
@@ -73,7 +81,7 @@ export async function loadApp(root: string): Promise<LoadedApp> {
     for await (const absolute of new Bun.Glob(pattern).scan({ cwd: root, absolute: true })) {
       if (absolute.includes('node_modules') || absolute.includes('.test.')) continue;
       const file = relative(root, absolute).split(sep).join('/');
-      if (ENTRY_POINT.test(file)) continue;
+      if (ENTRY_POINT.test(file) || CLIENT_ENTRY_POINT.test(file)) continue;
       let module: Record<string, unknown>;
       try {
         module = (await import(absolute)) as Record<string, unknown>;

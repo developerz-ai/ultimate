@@ -11,13 +11,21 @@ import { appManifest, writeAppManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import {
-  BadFlagError,
   CliNotImplementedError,
   GenerateJsonInvalidError,
-  MissingPositionalError,
   ScaffoldPathEscapeError,
-  UnknownCommandError,
 } from './errors';
+// Re-exported below: `GENERATORS` and `Generator` are imported from this module by the tests, the
+// scaffold fixture and `src/index.ts`, and moving where they are declared must not move where they
+// are read from.
+import type { Generator } from './generate-kinds';
+import {
+  assertSurfaceSupported,
+  GENERATORS,
+  readKind,
+  readName,
+  readSurface,
+} from './generate-kinds';
 import { mergeJsonDeep } from './json-merge';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -25,11 +33,14 @@ import { flagBool, flagList, flagString } from './parse';
 import type { GeneratedFile, Surface } from './templates';
 import {
   actionFiles,
+  adminPageFiles,
   backfillFiles,
   CATALOG_ROOT,
   entityFiles,
   i18nIndex,
+  islandFiles,
   jobFiles,
+  kebab,
   policyFiles,
   queryFiles,
   resolveLocales,
@@ -38,20 +49,8 @@ import {
   taskFiles,
 } from './templates';
 
-export const GENERATORS = [
-  'resource',
-  'action',
-  'mutator',
-  'backfill',
-  'job',
-  'route',
-  'policy',
-  'entity',
-  'query',
-  'task',
-] as const;
-
-export type Generator = (typeof GENERATORS)[number];
+export type { Generator } from './generate-kinds';
+export { GENERATORS } from './generate-kinds';
 
 export interface GenerateOptions {
   readonly kind: Generator;
@@ -63,6 +62,14 @@ export interface GenerateOptions {
   readonly admin?: boolean;
   /** Every locale a generated i18n catalog entry ships for. Defaults to `['en']`. */
   readonly locales?: readonly string[];
+  /**
+   * `island` only: the directory the client entry lands in. Named rather than derived, because
+   * `X_ISLAND_INVALID`'s cause already holds the path a page's `src` resolved to — its `fix:`
+   * hands that path straight back.
+   */
+  readonly at?: string;
+  /** `admin:page` only: the permission the page's own work needs, on top of `admin:read`. */
+  readonly permission?: string;
 }
 
 const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
@@ -131,25 +138,6 @@ export function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[
 }
 
 /**
- * A resource slice is app-surface by construction: it ships a live query, a form with a signal,
- * two actions and a policy, and `site/` is the 0kb, never-hydrated surface that may not import
- * `app/`. The documented shape is the slice in `app/` plus a separate public route
- * (`docs/architecture/15-adding-a-feature.md`), so the flag is refused before anything is written
- * rather than emitting a slice that fails the app's own budget and boundary gates.
- */
-function assertSurfaceSupported(kind: Generator, surface: Surface, name: string): void {
-  if (kind !== 'resource' || surface !== 'site') return;
-  throw new BadFlagError({
-    flag: 'surface',
-    command: 'g resource',
-    reason: 'a resource slice is app-surface — site/ ships 0kb JS and may not import app/',
-    // The caller's own name, not `<name>`: a `fix:` is copied and run verbatim, and `x g resource
-    // <name>` is a shell redirect (`bash: name: No such file or directory`), not a command.
-    fix: `x g resource ${name} && x g route ${name} --surface site`,
-  });
-}
-
-/**
  * Pure: returns the files a generator would write. `x g` writes them, the generator test asserts
  * on them, and nothing has to run a filesystem to review what a generator produces.
  */
@@ -184,6 +172,16 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       return dedupe(jobFiles(options.name, target));
     case 'task':
       return dedupe(taskFiles(options.name, target));
+    case 'island':
+      return dedupe(islandFiles(options.name, { dir: options.at ?? `${surfaceDir}/${feature}` }));
+    case 'admin:page':
+      // A default permission, never none: an empty list is `X_ADMIN_PAGE_UNGUARDED` on sight.
+      return dedupe(
+        adminPageFiles(options.name, {
+          permission: options.permission ?? `${kebab(options.name)}:read`,
+          ...(options.locales === undefined ? {} : { locales: options.locales }),
+        }),
+      );
     case 'route':
       // `--locales` reaches the route generator too: its catalog entry is the route's title and
       // description, and a locale asked for on the command line is a locale that gets a file.
@@ -331,57 +329,6 @@ async function syncI18nIndex(root: string): Promise<void> {
   await Bun.write(indexAbsolute, i18nIndex(locales));
 }
 
-function readKind(raw: string | undefined): Generator {
-  const kinds: readonly string[] = GENERATORS;
-  if (raw !== undefined && kinds.includes(raw)) return raw as Generator;
-  throw new UnknownCommandError({
-    path: `g ${raw ?? ''}`.trim(),
-    known: GENERATORS,
-    suggestion: 'g resource',
-  });
-}
-
-/** Two surfaces, spelled exactly. A typo that fell through to `app` would scaffold the wrong one. */
-function readSurface(raw: string | undefined, kind: Generator, name: string): Surface {
-  if (raw === undefined || raw === 'app') return 'app';
-  if (raw === 'site') return 'site';
-  throw new BadFlagError({
-    flag: 'surface',
-    command: 'g',
-    reason: `"${raw}" is not a surface (site, app)`,
-    fix: `x g ${kind} ${name} --surface app`,
-  });
-}
-
-/**
- * The missing `<name>` positional. It used to throw `X_CLI_UNKNOWN_COMMAND` — for a command form
- * that IS known — with `fix: "x g route <name>"`, which pasted into a shell is a redirect
- * (`bash: name: No such file or directory`). The code now says what is actually wrong, and the fix
- * is a command that runs.
- */
-function readName(raw: string | undefined, kind: Generator): string {
-  if (raw !== undefined) return raw;
-  throw new MissingPositionalError({
-    command: `g ${kind}`,
-    positional: 'name',
-    example: `x g ${kind} ${EXAMPLE_NAME[kind]}`,
-  });
-}
-
-/** One runnable example per generator, so the `fix:` is a command and not a shape. */
-const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
-  resource: 'invoice',
-  action: 'publish-post',
-  mutator: 'rename-post',
-  backfill: 'backfill-slugs',
-  job: 'send-digest',
-  route: 'posts',
-  policy: 'post',
-  entity: 'post',
-  query: 'recent-posts',
-  task: 'nightly-digest',
-};
-
 export const generateCommand: CliCommand = {
   spec: {
     name: 'g',
@@ -398,6 +345,8 @@ export const generateCommand: CliCommand = {
       { name: 'live', type: 'boolean', summary: 'subscribable query' },
       { name: 'admin', type: 'boolean', summary: 'resource: also emit the admin override' },
       { name: 'locales', type: 'string', summary: 'comma-separated locales, default en' },
+      { name: 'at', type: 'string', summary: 'island: directory for the client entry' },
+      { name: 'permission', type: 'string', summary: 'admin:page: the permission it needs' },
       { name: 'force', type: 'boolean', summary: 'overwrite existing files' },
       { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },
     ],
@@ -411,10 +360,14 @@ export const generateCommand: CliCommand = {
     // really a path fails here, with nothing written and nothing to undo.
     const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
     const locales = resolveLocales(flagList(ctx.args, 'locales'));
+    const at = flagString(ctx.args, 'at');
+    const permission = flagString(ctx.args, 'permission');
     const files = generate({
       kind,
       name,
       ...(featureFlag === undefined ? {} : { feature: featureFlag }),
+      ...(at === undefined ? {} : { at }),
+      ...(permission === undefined ? {} : { permission }),
       surface,
       live: flagBool(ctx.args, 'live'),
       admin: flagBool(ctx.args, 'admin'),

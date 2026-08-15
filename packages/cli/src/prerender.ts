@@ -9,8 +9,10 @@ import { renderStatic, routeEntries } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
 import type { RouteStats } from './budgets';
-import { measureJsBytes, writeBuildStats } from './budgets';
+import { measureDocumentJs, writeBuildStats } from './budgets';
 import { routeDocument } from './dev-render';
+import type { IslandBundle } from './island-bundle';
+import { buildIslands, writeIslands } from './island-bundle';
 
 /**
  * `static` only. `isr` revalidates and `ssr`/`stream`/`spa` need a process, so writing any of them
@@ -42,6 +44,26 @@ export interface PrerenderReport {
   readonly skipped: readonly string[];
   /** Where the measured stats landed, for the `budgets` gate step to read. */
   readonly stats: string;
+  /** Client entries emitted, one chunk each. Reported so "which JS shipped?" needs no unzip. */
+  readonly islands: readonly string[];
+}
+
+/**
+ * The heaviest thing the document actually boots, named by the source file an author can open.
+ * An island chunk is content-addressed, so its URL says nothing on its own — mapping it back
+ * through the bundle is what turns `X_BUDGET_EXCEEDED` from a number into an instruction.
+ */
+function heaviestSource(
+  bundle: IslandBundle,
+  entries: readonly { readonly url: string; readonly bytes: number }[],
+): readonly string[] | undefined {
+  const heaviest = entries.reduce<{ url: string; bytes: number } | undefined>(
+    (max, entry) => (max === undefined || entry.bytes > max.bytes ? entry : max),
+    undefined,
+  );
+  if (heaviest === undefined) return undefined;
+  const chunk = bundle.chunkAt(heaviest.url);
+  return chunk === undefined ? [heaviest.url] : [chunk.file];
 }
 
 export const DEFAULT_ORIGIN = 'https://localhost';
@@ -56,6 +78,12 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const skipped: string[] = [];
   const routes: RouteStats[] = [];
 
+  // Before the first document: a page's `data-x-entry` is a built chunk's URL, so the chunks have
+  // to exist to be named. Written into `out` too — a static export is served with no process
+  // behind it, so the artifact carries every byte the browser will ask for.
+  const islands = await buildIslands(options.root);
+  await writeIslands(islands, options.out);
+
   for (const entry of routeEntries()) {
     if (!isPrerenderable(entry)) {
       skipped.push(entry.path);
@@ -63,7 +91,12 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     }
     const artifacts = await renderStatic(
       entry,
-      ({ path, params }) => routeDocument(entry, { url: new URL(path, origin).href, params }),
+      ({ path, params }) =>
+        routeDocument(
+          entry,
+          { url: new URL(path, origin).href, params },
+          { resolveIsland: (file: string) => islands.resolverFor(file) },
+        ),
       { buildId },
     );
     for (const artifact of artifacts) {
@@ -72,12 +105,22 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       pages.push({ path: artifact.path, file: artifact.outputPath, hash: artifact.hash, bytes });
       // Measured from the document that was just written, so the `budgets` step compares a
       // declared budget against bytes that exist on disk rather than against a graph's estimate.
+      const measured = await measureDocumentJs(artifact.html, options.out);
+      const chain = heaviestSource(islands, measured.entries);
       routes.push({
         path: artifact.path,
-        jsBytes: await measureJsBytes(artifact.html, options.out),
+        jsBytes: measured.jsBytes,
+        ...(chain === undefined ? {} : { heaviestChain: chain }),
       });
     }
   }
   const stats = await writeBuildStats(options.root, { routes });
-  return { out: options.out, buildId, pages, skipped, stats };
+  return {
+    out: options.out,
+    buildId,
+    pages,
+    skipped,
+    stats,
+    islands: islands.chunks.map((chunk) => chunk.file),
+  };
 }

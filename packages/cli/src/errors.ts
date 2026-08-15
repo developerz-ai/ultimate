@@ -272,6 +272,22 @@ export class BuildEntryMissingError extends UltimateError {
 }
 
 /**
+ * A client entry would not compile. `X_BUILD_FAILED`, not a code of its own: an island is a bundle
+ * entry point like any other, and the target's own logs are what says which line. The fix builds
+ * exactly that one file, so the next message an author reads is the compiler's and not the CLI's.
+ */
+export class IslandBuildFailedError extends UltimateError {
+  constructor(input: { file: string; logs: string }) {
+    super({
+      code: 'X_BUILD_FAILED',
+      cause: `${input.file} is an island entry point and would not bundle: ${input.logs}`,
+      fix: `bun build --target browser ${input.file}`,
+      docs: docsFor('X_BUILD_FAILED'),
+    });
+  }
+}
+
+/**
  * `ROLE` selects what a container is. One image runs every role, so a typo is a process that would
  * otherwise start, serve nothing and report healthy — the one failure a rolling deploy cannot see.
  */

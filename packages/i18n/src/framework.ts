@@ -8,7 +8,13 @@ import en from './catalogs/en.json';
 import { registerCatalog } from './context';
 import { DEFAULT_LOCALE, type Locale } from './locales';
 
-/** `errors.*`, `auth.*`, `pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.*`. */
+/**
+ * `errors.*`, `auth.*`, `pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.*`, `ui.*`.
+ *
+ * `ui.*` is `@ultimat3/ui`'s `UI_KEYS` — the strings the design system needs and cannot receive as
+ * a prop. They live here rather than in that package because a catalog is one flat file per locale
+ * and a second one would be a second place a translator has to find.
+ */
 export const FRAMEWORK_CATALOG: Catalog = loadCatalog(en);
 
 export const FRAMEWORK_CATALOG_LOCALE: Locale = DEFAULT_LOCALE;

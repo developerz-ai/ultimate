@@ -208,11 +208,17 @@ database) and otherwise boots `startQueue` and releases it in a `finally`, or a 
 holding the PGlite lock breaks the next command run against this app. A second copy of that boot
 would be two answers to "which queue is this command talking to".
 
-`x db backfill` requires `--list` and refuses without it, in `X_CLI_BAD_FLAG` naming the exact
-invocation. `x db backfill <name>` will one day RUN a pass; a bare command that quietly printed the
-ledger would be a second spelling of one thing today and a silent no-op the day the runner lands.
-`X_NOT_IMPLEMENTED` would be wrong for the opposite reason — that code is for a subcommand shipping
-nothing, and this one ships the ledger.
+`x db backfill` has four shapes and a **dry run is the default**: `--list` reports the ledger,
+`--pending` reports declared-minus-completed and exits non-zero when there is drift, `<name>` plans
+one sweep, and `--all` plans every pending one. `--write` is never implied — the inspection forms
+and the acting form are the same command, and the flag is the only thing that separates them.
+`--all --write` isolates per name and continues past a failure, exiting non-zero naming each, so one
+wedged cleanup cannot block every later one forever.
+
+Until 1.2.0 a bare `x db backfill <name>` threw `X_NOT_IMPLEMENTED`, and the ledger was the only
+half that existed: `x_backfills` recorded what had run, and **nothing recorded what was pending**, so
+a scaffolded backfill could be merged and deployed and silently never run. `--pending` is the alarm
+that closes it; `registeredBackfills()` is what makes a declaration visible before its first pass.
 
 `x db migrate` and `ROLE=migrate` are the same function call. That is the whole design: until
 1.2.0 the CLI shelled out to `bunx drizzle-kit` — a second engine, a second journal, declared in no
@@ -302,6 +308,55 @@ The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list h
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.
 
+### `island-bundle.ts` is the bundler half of `hydrate`
+
+`@ultimat3/render` shipped `island()`, the collector, `emitIslandAttributes`, `hydrateRuntime`,
+`RouteEntry.islands` and `routeJsBytes` — and **nothing constructed or populated any of them**.
+`hydrate` was a documented capability with no implementation, to the point that `render-static.ts`
+told authors to "move the request-dependent part into an island", naming a mechanism the framework
+could not express. This package is the half that can see a file on disk, so it is the half that was
+missing.
+
+| File | Job |
+|---|---|
+| `island-bundle.ts` | discover `*.island.tsx`, build each as its own entry point, hash it, resolve a page's specifier to its URL |
+| `island-routes.ts` | serve those chunks, at `ISLAND_BASE_PATH`, immutable |
+| `dev-render.ts` | one collector **per render**, and `hydrateRuntime` after the body |
+| `prerender.ts` | build first, write the chunks into the export, then measure |
+| `budgets.ts` | `measureDocumentJs` weighs `data-x-entry` as well as `<script src>` |
+
+**One `Bun.build` per island, never one call with N entry points**, and `splitting: false`. The
+island's `src` is a string, so no import edge reaches it and the page's graph stays the page's
+(axiom 6) — a shared chunk would put that number back behind a graph walk, and the budget compares
+against bytes. Two islands that both import the same helper each carry a copy; that is the honest
+number for what booting either one costs.
+
+**The chunk URL is content-addressed with render's own `contentHash`** — the function that already
+stamps an ETag and a precache revision. One identity for a byte string, not a third.
+
+**`x dev`, the container and the static export all mount the same table.** `serve.ts` builds the
+islands at boot for the same reason it mounts `apiRoutes()`: a seam that works in dev and not in the
+image is the same failure one release later. `x dev` rebuilds them on the watcher tick, and that is
+the one reload that actually takes effect — an island is the single module this process never
+imports, so there is no Bun module cache to invalidate.
+
+**`app-load.ts` skips `*.island.tsx` deliberately.** It registers no primitive, and importing it
+would put the one module guaranteed to be outside the server's graph inside this process's, where a
+top-level `document` reference takes the whole scan down.
+
+**The budget is charged from the emitted document, and it names the island.** An island's chunk is
+reached by `import()` from inside the hydration runtime, so it is never a `<script src>` — weighing
+script tags alone charged a page for the runtime and never for the code that runtime boots.
+`measureDocumentJs` reads `data-x-entry` as what it is, dedupes it (two instances of one island are
+one module), and `prerenderSite` maps the heaviest URL back through the bundle so
+`X_BUDGET_EXCEEDED` names `apps/web/site/pricing/calculator.island.tsx` and not a hash.
+
+`X_ISLAND_INVALID` is **borrowed** from `@ultimat3/render`, not twinned: "this src cannot become a
+client entry" is what that code already means, and the bundler is simply the half that can see
+whether the file exists. A failed compile is `X_BUILD_FAILED` — an island is a bundle entry point
+like any other, and `Bun.build` *rejects* rather than answering `success: false`, so the catch is
+the real path.
+
 ### `dev-assets.ts` is where the image pipeline meets HTTP
 
 Three packages declare what an image is and none of them serves one: `@ultimat3/seo` says what a
@@ -352,6 +407,24 @@ halves: every row is reachable through the parser, and no `fix` points at anothe
 A subcommand stays in its command's `subcommands` list — the parser reaches it, `x help db` lists
 it — and the owning `run` does `throw plannedSubcommand('db', 'studio')`. Dropping it from the list
 instead would answer `X_CLI_UNKNOWN_SUBCOMMAND`, which is the same lie the table above closes.
+
+## Two generators that scaffold something other than a primitive
+
+`x g island <name> [--at <dir>]` writes a **client entry point**, not a component: the filename is
+how the bundler discovers it and `mount` is how the hydration runtime calls it, so those two are
+what `templates/island.test.ts` pins and everything else in the file is example code. `--at` takes
+the directory directly rather than deriving one, because the caller that cannot guess is
+`X_ISLAND_INVALID` — its cause already holds the exact path a page's `src` resolved to, so its
+`fix:` hands that path straight back.
+
+`x g admin:page <name> --permission <perm>` writes an ordinary TSX component and **no `defineRoute`
+call**, deliberately. `@ultimat3/admin`'s `pages:` is the one thing that puts a page in the route
+table and `guardedPage()` is the one thing that decides it; a generator that emitted a route
+declaration would hand back the unguarded second way in that seam exists to close. The emitted test
+asserts the absence. `--permission` defaults to `<name>:read` rather than to nothing, because an
+empty permission list is `X_ADMIN_PAGE_UNGUARDED` at declaration time.
+
+Both are in `FIXTURE_GENERATORS`, so both are compiled by the scaffold gate.
 
 Implementing one means deleting its row and adding a real `cmd-<name>.ts` — the summary's
 `(planned)` suffix disappears with it, and `x help` follows automatically.

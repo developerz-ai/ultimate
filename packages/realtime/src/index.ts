@@ -2,7 +2,7 @@
 // the server/client halves that carry all three.
 
 // ---- the client's one stateless piece, reusable against an app's own store ----------------------
-export { applyPatches } from './apply-patches';
+export { applyPatches, orderAfterPatches } from './apply-patches';
 export { type ChangeBufferOptions, RingChangeBuffer } from './change-buffer';
 // ---- tier 2: live queries ----------------------------------------------------------------------
 export {
@@ -118,6 +118,15 @@ export {
   useMutation,
   useMutationQueue,
 } from './hooks';
+// ---- the client's single source of truth: one row per (entity, id) ------------------------------
+export {
+  type IdentityListener,
+  IdentityMap,
+  privateScope,
+  type RowKey,
+  type RowScope,
+  rowKey,
+} from './identity-map';
 // ---- shared value domain ---------------------------------------------------------------------
 export {
   canonicalJson,
@@ -140,6 +149,7 @@ export {
   qidOf,
   type SnapshotResult,
 } from './live-query';
+export { type Registration, RowWindows } from './live-rows';
 // ---- tier 3: local-first ------------------------------------------------------------------------
 export {
   createOpfsLocalStore,

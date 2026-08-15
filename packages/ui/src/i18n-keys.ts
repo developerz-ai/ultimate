@@ -9,7 +9,10 @@ export const UI_KEYS = {
   dismiss: 'ui.dismiss',
   loading: 'ui.loading',
   empty: 'ui.empty',
-  error: 'ui.error',
+  // `ui.error` cannot be a leaf: `ui.error.code|cause|fix` are branches under it, and a catalog is
+  // authored nested — `parseNestedCatalog` refuses a dot inside a key, so a name is a leaf or a
+  // branch, never both. Same reason `theme` is `ui.theme.label`.
+  error: 'ui.error.title',
   retry: 'ui.retry',
   next: 'ui.next',
   previous: 'ui.previous',
@@ -25,7 +28,7 @@ export const UI_KEYS = {
   more: 'ui.more',
   required: 'ui.required',
   optional: 'ui.optional',
-  theme: 'ui.theme',
+  theme: 'ui.theme.label',
   themeLight: 'ui.theme.light',
   themeDark: 'ui.theme.dark',
   themeSystem: 'ui.theme.system',

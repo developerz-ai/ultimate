@@ -3,9 +3,11 @@
 // runtime installed — the state the package is actually published in.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { directionOf, isMiss } from '@ultimat3/i18n';
+import { configureLocales, directionOf, isMiss, type Locale, localeConfig } from '@ultimat3/i18n';
+import { configureTime, type TimeZone, timeConfig } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
 import {
+  ambientUiContext,
   defaultUiContext,
   fallbackTranslator,
   UI_DEFAULT_CURRENCY,
@@ -21,6 +23,17 @@ import {
   type SolidRuntime,
   setSolidRuntime,
 } from './solid-adapter';
+
+/** Bun's test process has no DOM, so a browser is what has to be faked, never a server. */
+function withDom<T>(fn: () => T): T {
+  Object.assign(globalThis, { document: {}, window: {} });
+  try {
+    return fn();
+  } finally {
+    Reflect.deleteProperty(globalThis, 'document');
+    Reflect.deleteProperty(globalThis, 'window');
+  }
+}
 
 function fakeRuntime(overrides: Partial<SolidRuntime> = {}): SolidRuntime {
   return {
@@ -85,6 +98,37 @@ describe('defaultUiContext', () => {
   });
 });
 
+describe('ambientUiContext', () => {
+  const locales = localeConfig();
+  const time = timeConfig();
+
+  afterEach(() => {
+    configureLocales(locales);
+    configureTime(time);
+  });
+
+  // The failure this exists to prevent: a server render that silently formats every date in UTC
+  // and every string in English because it read a constant instead of the request.
+  test('takes locale, direction and zone from the framework ambient answers', () => {
+    configureLocales({ fallback: 'ar' as Locale });
+    configureTime({ defaultZone: 'Asia/Tokyo' as TimeZone });
+
+    const ctx = ambientUiContext();
+    expect(ctx.locale).toBe('ar' as Locale);
+    expect(ctx.dir).toBe('rtl');
+    expect(ctx.timeZone).toBe('Asia/Tokyo' as TimeZone);
+    expect(ctx.t.locale).toBe('ar' as Locale);
+  });
+
+  test('falls back to the package defaults with nothing configured and no request', () => {
+    const ctx = ambientUiContext();
+    expect(ctx.locale).toBe(UI_DEFAULT_LOCALE);
+    expect(ctx.timeZone).toBe(UI_DEFAULT_TIME_ZONE);
+    expect(ctx.currency).toBe(UI_DEFAULT_CURRENCY);
+    expect(ctx.theme).toBe('light');
+  });
+});
+
 describe('uiContext', () => {
   beforeEach(() => {
     clearSolidRuntime();
@@ -94,13 +138,21 @@ describe('uiContext', () => {
     clearSolidRuntime();
   });
 
-  test('throws a runtime-missing error when no Solid runtime is registered', () => {
+  test('builds against the inert runtime when none is registered, rather than throwing', () => {
+    const context = uiContext();
+    expect(context.defaultValue.locale).toBe(UI_DEFAULT_LOCALE);
+    expect(uiContext()).toBe(context);
+  });
+
+  test('throws a runtime-missing error in a DOM with no runtime registered', () => {
     let caught: unknown;
-    try {
-      uiContext();
-    } catch (error) {
-      caught = error;
-    }
+    withDom(() => {
+      try {
+        uiContext();
+      } catch (error) {
+        caught = error;
+      }
+    });
     expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
   });
 
@@ -137,17 +189,11 @@ describe('uiContext', () => {
     expect(uiContext()).not.toBe(first);
   });
 
-  test('clearing the runtime makes the next call throw, whatever ran before it', () => {
+  test('clearing the runtime rebuilds against the inert one, whatever ran before it', () => {
     setSolidRuntime(fakeRuntime());
-    uiContext();
+    const first = uiContext();
     clearSolidRuntime();
-    let caught: unknown;
-    try {
-      uiContext();
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
+    expect(uiContext()).not.toBe(first);
   });
 });
 

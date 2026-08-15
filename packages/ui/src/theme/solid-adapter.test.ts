@@ -1,9 +1,11 @@
 // The runtime slot is process-global and every component reaches through it, so a wrong answer
 // while unset surfaces as a blank render deep in a tree rather than at the registration site.
-// These cases pin the slot's answer in each state, and pin the error that names the fix.
+// These cases pin the slot's answer in each state — including the two unregistered states, which
+// are not the same one: no DOM is a server render, a DOM is a bug — and the error that names the fix.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
+import { INERT_SOLID_RUNTIME } from './inert-runtime';
 import {
   clearSolidRuntime,
   hasSolidRuntime,
@@ -12,6 +14,17 @@ import {
   setSolidRuntime,
   solid,
 } from './solid-adapter';
+
+/** Bun's test process has no DOM, so a browser is what has to be faked, never a server. */
+function withDom<T>(fn: () => T): T {
+  Object.assign(globalThis, { document: {}, window: {} });
+  try {
+    return fn();
+  } finally {
+    Reflect.deleteProperty(globalThis, 'document');
+    Reflect.deleteProperty(globalThis, 'window');
+  }
+}
 
 function fakeRuntime(): SolidRuntime {
   return {
@@ -49,13 +62,19 @@ describe('solid runtime registration', () => {
     expect(hasSolidRuntime()).toBe(false);
   });
 
-  test('solid() throws a runtime-missing error when nothing is registered', () => {
+  test('solid() hands back the inert runtime off-DOM, so a server render still works', () => {
+    expect(solid()).toBe(INERT_SOLID_RUNTIME);
+  });
+
+  test('solid() throws a runtime-missing error in a DOM with nothing registered', () => {
     let caught: unknown;
-    try {
-      solid();
-    } catch (error) {
-      caught = error;
-    }
+    withDom(() => {
+      try {
+        solid();
+      } catch (error) {
+        caught = error;
+      }
+    });
     expect(caught).toMatchObject({ code: UI_ERROR_CODES.runtimeMissing });
     expect((caught as { fix?: string }).fix).toContain('setSolidRuntime');
   });
@@ -71,7 +90,10 @@ describe('solid runtime registration', () => {
     setSolidRuntime(fakeRuntime());
     clearSolidRuntime();
     expect(hasSolidRuntime()).toBe(false);
-    expect(() => solid()).toThrow();
+    expect(solid()).toBe(INERT_SOLID_RUNTIME);
+    withDom(() => {
+      expect(() => solid()).toThrow();
+    });
   });
 
   test('registering twice replaces the previous runtime, last write wins', () => {

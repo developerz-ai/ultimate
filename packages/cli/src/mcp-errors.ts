@@ -94,6 +94,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // an agent copying this line gets a working command instead of a shell it has to keep.
   X_SECRETS_EDITOR_MISSING: 'EDITOR=nano x secrets edit',
   X_SECRETS_EDIT_FAILED: 'x secrets show --json   # then re-open the buffer: x secrets edit',
+  // Render's code, thrown here by the bundler half: the cause names the specifier and the file it
+  // resolved to, and `x g island` is what puts that file where the page already says it is.
+  X_ISLAND_INVALID: 'x routes --json   # the cause names the src; then: x g island <name>',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

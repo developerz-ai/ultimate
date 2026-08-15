@@ -32,6 +32,12 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   { kind: 'task', name: 'nightly-sweep', feature: 'invoice' },
   { kind: 'route', name: 'pricing', surface: 'site' },
   { kind: 'route', name: 'billing', surface: 'app' },
+  // `--at`, pointed at the `site/` route above: an island's whole reason to exist is a 0kb page
+  // that needs one interactive control, so the fixture places it where that is true.
+  { kind: 'island', name: 'currency-picker', at: 'apps/web/site/pricing' },
+  // The one screen the admin derives from nothing — and the one generator that must NOT emit a
+  // `defineRoute`, so compiling it is how that stays true.
+  { kind: 'admin:page', name: 'reconcile', permission: 'ledger:reconcile' },
 ];
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */

@@ -82,12 +82,17 @@ export const CLI_OWNED_ERROR_CODES = [
  * `.env.example` projection all live in `@ultimat3/core`, and `x env` is the surface that reports
  * them. A fourth code meaning "the example is stale" would be this package inventing a second name
  * for a condition core already named.
+ *
+ * `X_ISLAND_INVALID` is `@ultimat3/render`'s and is borrowed for the same reason: "this src cannot
+ * become a client entry" is what that code already means, and the bundler is simply the half that
+ * can see whether the file exists. A CLI-owned twin would be one condition with two names.
  */
 export const CLI_BORROWED_ERROR_CODES = [
   'X_NOT_IMPLEMENTED',
   'X_CONFIG_INVALID',
   'X_ENV_MISSING',
   'X_ENV_EXAMPLE_DRIFT',
+  'X_ISLAND_INVALID',
 ] as const;
 
 /** Every code the CLI can throw: the ones it owns plus the one it borrows. */

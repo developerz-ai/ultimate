@@ -8,7 +8,13 @@
 import type { HydrateStrategy } from './route';
 
 export interface IslandDirective {
+  /** Unique per INSTANCE: two of the same island on a page need two prop bags to find. */
   readonly islandId: string;
+  /**
+   * The client entry this instance came from — the unit a bundle is measured in and a budget
+   * counts. Optional only because it arrived after `islandId`; `island()` always sets it.
+   */
+  readonly moduleId?: string;
   readonly strategy: HydrateStrategy;
   /** Build-id-immutable module URL for this island's chunk. */
   readonly entry: string;

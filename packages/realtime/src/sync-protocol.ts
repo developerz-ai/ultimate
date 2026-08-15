@@ -70,6 +70,14 @@ export interface SnapshotFrame {
   readonly sid: string;
   readonly rows: readonly Row[];
   readonly cursor: LiveCursor;
+  /**
+   * The entity every row of this result set belongs to — the client's identity scope, so two
+   * queries returning post #7 hold one row rather than two copies. Optional and **additive**: it
+   * is the one thing a browser cannot derive (the shape is compiled server-side from `sql`), and
+   * a client that does not receive it keeps its rows in a scope private to that subscription. Both
+   * skews are safe in both directions, which is why it carries no `PROTOCOL_VERSION` bump.
+   */
+  readonly entity?: string;
 }
 
 export interface PatchFrame {
@@ -195,14 +203,17 @@ export function decode(raw: string | Uint8Array): Frame {
         sid: str(parsed, 'sid'),
         target: target(parsed['target']),
       };
-    case 'snapshot':
-      return {
+    case 'snapshot': {
+      const base = {
         type: 'snapshot',
         v: PROTOCOL_VERSION,
         sid: str(parsed, 'sid'),
         rows: list(parsed, 'rows').map(row),
         cursor: cursor(parsed['cursor']),
-      };
+      } as const;
+      const entity = nullableStr(parsed, 'entity');
+      return entity === null ? base : { ...base, entity };
+    }
     case 'patch':
       return {
         type: 'patch',

@@ -2,6 +2,7 @@
 // `<entity>:read` pair that gates the page itself. A nav item an actor cannot open is not a
 // nav item — the alternative is a sidebar full of 403s.
 
+import { isAllowed } from './authz';
 import type { CrudCtx } from './crud';
 import { canOperate } from './crud';
 import type { AdminResource } from './resource';
@@ -12,6 +13,12 @@ export interface NavItem {
   readonly href: string;
   /** The entity this item lists, or `null` for a built-in page. */
   readonly entity: string | null;
+  /**
+   * What opening it needs. Set for a custom page (`pages.ts`), absent for a resource item —
+   * whose gate is its own `list` operation. Without it, an item with no entity was visible to
+   * everyone, which put a link to an ops screen in the sidebar of an actor the page refuses.
+   */
+  readonly permissions?: readonly string[];
 }
 
 export interface NavGroup {
@@ -86,6 +93,9 @@ export function visibleNav(
   ctx: CrudCtx,
 ): readonly NavGroup[] {
   const visible = (item: NavItem): boolean => {
+    if (item.permissions !== undefined && !isAllowed(ctx.authz, item.permissions, ctx.actor)) {
+      return false;
+    }
     if (item.entity === null) return true;
     const resource = resources.find((candidate) => candidate.name === item.entity);
     return resource !== undefined && canOperate(resource, 'list', ctx);

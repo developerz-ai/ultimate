@@ -4,9 +4,13 @@
 export type { ActionOptions } from './action';
 export { actionFiles } from './action';
 export { adminFiles } from './admin';
+export type { AdminPageOptions } from './admin-page';
+export { adminPageFiles } from './admin-page';
 export { backfillFiles } from './backfill';
 export type { FeatureTarget } from './entity';
 export { entityFiles } from './entity';
+export type { IslandOptions } from './island';
+export { islandFiles } from './island';
 export { jobFiles, taskFiles } from './job';
 export { CATALOG_ROOT, catalogPath, DEFAULT_LOCALES, resolveLocales } from './locales';
 export type { GeneratedFile, NameSet } from './naming';
