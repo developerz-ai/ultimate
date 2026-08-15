@@ -7,7 +7,7 @@ import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliCommand, CommandContext } from './command';
 import type { ErrorCatalog } from './error-catalog';
 import { loadErrorCatalog } from './error-catalog';
-import { BadFlagError, ErrorCodeUnknownError } from './errors';
+import { ErrorCodeUnknownError, MissingPositionalError } from './errors';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
@@ -87,11 +87,13 @@ export const errorsCommand: CliCommand = {
     if (ctx.args.subcommand === 'list') return listAll(catalog);
     const code = ctx.args.positionals[0];
     if (code === undefined) {
-      throw new BadFlagError({
-        flag: 'code',
-        command: 'errors',
-        reason: 'x errors explain <CODE> needs a code',
-        fix: 'x errors list --json',
+      // Not a `BadFlagError`: naming `--code` invented a flag that does not exist, so an agent
+      // reading the cause literally tried `x errors --code X_DB_DRIFT` and got a SECOND
+      // X_CLI_BAD_FLAG for an unknown flag.
+      throw new MissingPositionalError({
+        command: 'errors explain',
+        positional: 'CODE',
+        example: 'x errors list --json',
       });
     }
     return explainOne(code);

@@ -12,7 +12,7 @@ import { frameworkVersion } from '@ultimat3/core';
 import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { allowedTiersFor, tierOf } from './lib/tiers';
+import { allowedTiersFor, TIERS, tierOf } from './lib/tiers';
 
 /**
  * The grant, copied rather than referenced. npm packs a `files` entry per package directory and
@@ -95,7 +95,7 @@ ${description}
 
 ## Boundary
 
-Tier ${tier}. May import tiers ${allowedTiersFor(name)} only — enforced by
+Tier ${tier}. May import tiers ${allowedTiersFor(tier)} only — enforced by
 \`bun run scripts/boundaries.ts\`.
 
 ## Errors
@@ -107,7 +107,7 @@ Tier ${tier}. May import tiers ${allowedTiersFor(name)} only — enforced by
       path: 'CLAUDE.md',
       contents: `# @ultimat3/${name} — boundary
 
-Tier ${tier}. May import tiers ${allowedTiersFor(name)}. Never sideways, never upward.
+Tier ${tier}. May import tiers ${allowedTiersFor(tier)}. Never sideways, never upward.
 
 | Rule | Detail |
 |---|---|
@@ -170,6 +170,46 @@ describe('unit · @ultimat3/${name} errors', () => {
   ];
 }
 
+export const TIER_NUMBERS: readonly number[] = Object.keys(TIERS)
+  .map(Number)
+  .sort((a, b) => a - b);
+
+/**
+ * `--tier` as a real tier, or a refusal. It used to be `Number.parseInt` with no guard, so
+ * `--tier abc` scaffolded a package whose own CLAUDE.md said "Tier NaN. May import tiers 0-5" —
+ * and `--tier 1` scaffolded "May import tiers 0-5" too, because the allowed range was derived from
+ * the package NAME and a package being created is in no tier table yet.
+ */
+export function tierProblem(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!/^\d+$/.test(raw) || !TIER_NUMBERS.includes(Number.parseInt(raw, 10))) {
+    return `--tier ${raw} is not one of ${TIER_NUMBERS.join(', ')}`;
+  }
+  return undefined;
+}
+
+function readTier(raw: string | undefined, name: string, json: boolean): number {
+  const problem = tierProblem(raw);
+  if (problem !== undefined) {
+    report(
+      {
+        ok: false,
+        script: 'new-package',
+        summary: 'a package needs a real tier before it needs a file',
+        findings: [
+          {
+            code: 'X_CLI_BAD_FLAG',
+            cause: problem,
+            fix: `bun run scripts/new-package.ts ${name} --tier 1`,
+          },
+        ],
+      },
+      json,
+    );
+  }
+  return raw === undefined ? tierOf(name) : Number.parseInt(raw, 10);
+}
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
@@ -192,8 +232,7 @@ if (import.meta.main) {
     );
   }
   const dir = join(root, 'packages', name);
-  const tierFlag = flagString(args, 'tier');
-  const tier = tierFlag === undefined ? tierOf(name) : Number.parseInt(tierFlag, 10);
+  const tier = readTier(flagString(args, 'tier'), name, args.json);
   const description = flagString(args, 'description') ?? 'One line about what this package owns';
 
   // `--only <path>` fills in one missing contract file in a package that already exists, which is

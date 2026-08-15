@@ -32,6 +32,25 @@ export class BadFlagError extends UltimateError {
   }
 }
 
+/**
+ * A required POSITIONAL argument that was not given. Its own class rather than a `BadFlagError`,
+ * because the cause then names a flag that does not exist — `x errors --json` reported
+ * `--code on "x errors"` and sent an agent straight into a second `X_CLI_BAD_FLAG` for the
+ * `--code` flag it had just been told about — and rather than `X_CLI_UNKNOWN_COMMAND`, which said
+ * "x g route is not a command" about a command form that is. `example` is a REAL invocation:
+ * `x g route <name>` pasted into a shell is a redirect, not a command.
+ */
+export class MissingPositionalError extends UltimateError {
+  constructor(input: { command: string; positional: string; example: string }) {
+    super({
+      code: 'X_CLI_BAD_FLAG',
+      cause: `"x ${input.command}" needs a <${input.positional}> positional and got none`,
+      fix: input.example,
+      docs: docsFor('X_CLI_BAD_FLAG'),
+    });
+  }
+}
+
 /** At least one `x verify` step failed. The step findings carry the per-step fixes. */
 export class VerifyFailedError extends UltimateError {
   constructor(input: { failed: readonly string[] }) {
@@ -83,7 +102,7 @@ export class NoTestFilesError extends UltimateError {
     super({
       code: 'X_TEST_NO_FILES',
       cause: `no *.test.ts files${where} under ${input.root}`,
-      fix: parts.length === 0 ? 'x test --cwd <repo root>' : 'x test',
+      fix: parts.length === 0 ? 'x test --json   # run it from the repo root' : 'x test',
       docs: docsFor('X_TEST_NO_FILES'),
     });
   }
@@ -154,7 +173,7 @@ export class AppPackageInvalidError extends UltimateError {
     super({
       code: 'X_APP_PACKAGE_INVALID',
       cause: `${input.path} ${input.problem}, so the manifest has no app name or version to gate on`,
-      fix: 'bun pm pkg set name=<app> version=0.1.0',
+      fix: 'bun pm pkg set name=my-app version=0.1.0',
       docs: docsFor('X_APP_PACKAGE_INVALID'),
     });
   }
@@ -246,7 +265,7 @@ export class BuildEntryMissingError extends UltimateError {
     super({
       code: 'X_BUILD_ENTRY_MISSING',
       cause: `x build --target ${input.target} builds from ${input.entry}, and the app does not have it`,
-      fix: `x new <name> writes ${input.entry} — copy it from a fresh scaffold into this app`,
+      fix: `x new scratch-app --dry-run --json   # its file list carries ${input.entry}; copy that file into this app`,
       docs: docsFor('X_BUILD_ENTRY_MISSING'),
     });
   }
@@ -261,7 +280,7 @@ export class RoleUnknownError extends UltimateError {
     super({
       code: 'X_ROLE_UNKNOWN',
       cause: `ROLE="${input.role}" is not a role (known: ${input.known.join(', ')})`,
-      fix: `docker run -e ROLE=web <image>   # one of: ${input.known.join(', ')}`,
+      fix: `docker run -e ROLE=web my-app:latest   # one of: ${input.known.join(', ')}`,
       docs: docsFor('X_ROLE_UNKNOWN'),
     });
   }
@@ -279,7 +298,7 @@ export class PortInvalidError extends UltimateError {
     super({
       code: 'X_PORT_INVALID',
       cause: `${name}="${input.value}" is not a TCP port number between 0 and 65535`,
-      fix: `docker run -e ${name}=${name === 'PORT' ? 3000 : 9090} <image>`,
+      fix: `docker run -e ${name}=${name === 'PORT' ? 3000 : 9090} my-app:latest`,
       docs: docsFor('X_PORT_INVALID'),
     });
   }
@@ -329,6 +348,32 @@ export class CliNotImplementedError extends UltimateError {
 export class StorageUnwritableError extends UltimateError {
   constructor(cause: string, fix: string) {
     super({ code: 'X_STORAGE_UNWRITABLE', cause, fix, docs: docsFor('X_STORAGE_UNWRITABLE') });
+  }
+}
+
+/**
+ * A non-local boot that fell through to the embedded disk with no `STORAGE_SIGNING_SECRET`. The
+ * key it would sign with is a string published in this repo, and `acceptSignedUpload` trusts a
+ * signed `maxBytes`/`contentType` over the app's own `uploadPolicy` — so anyone holding it mints
+ * an unlimited upload of any type, for any key, including another org's.
+ *
+ * `X_ENV_MISSING`, the code `@ultimat3/storage` already refuses this with, rather than a CLI twin:
+ * two codes for one condition is what `cmd-doctor.ts` says out loud about the PWA pair. What this
+ * adds is the sentence storage cannot write — that the disk itself was a fallback nobody chose.
+ * The fix names object storage first, because that is the answer for most deployments; the volume
+ * rung is behind the `#`, so the line still runs verbatim.
+ */
+export class LocalDiskUnsafeError extends UltimateError {
+  constructor(input: { environment: string; root: string }) {
+    super({
+      code: 'X_ENV_MISSING',
+      cause:
+        `no S3_ENDPOINT/S3_BUCKET, so this ${input.environment} process fell back to the embedded ` +
+        `disk at ${input.root} — and with no STORAGE_SIGNING_SECRET it would sign upload grants ` +
+        'with the development key published in @ultimat3/storage',
+      fix: 'export S3_ENDPOINT=https://s3.example.com S3_BUCKET=my-app-uploads   # or keep the disk on a mounted volume: export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
+      docs: docsFor('X_ENV_MISSING'),
+    });
   }
 }
 

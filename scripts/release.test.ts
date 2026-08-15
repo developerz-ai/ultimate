@@ -4,9 +4,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  BUMPS,
   changelogEntry,
   insertRelease,
   nextVersion,
+  readReleaseVersion,
   repinFrameworkDeps,
   setOwnVersion,
 } from './release';
@@ -121,5 +123,42 @@ describe('changelogEntry', () => {
 
   test('an unconventional subject still lands somewhere, verbatim', () => {
     expect(changelogEntry('1.0.0', ['tidy up'])).toContain('### Changed\n\n- tidy up');
+  });
+});
+
+describe('unit · the version to publish is decided, never guessed', () => {
+  // `--bump` was cast to the union with no check: `majr` fell through both branches of
+  // `nextVersion` and shipped a breaking change as 1.2.1 across 29 manifests, exit code 0.
+  test('a typo in --bump is refused instead of silently producing a patch', () => {
+    const result = readReleaseVersion({ explicit: undefined, bump: 'majr', current: '1.2.0' });
+    expect(nextVersion('1.2.0', 'majr' as never)).toBe('1.2.1');
+    expect('findings' in result && result.findings[0]?.code).toBe('X_CLI_BAD_FLAG');
+    expect('findings' in result && result.findings[0]?.cause).toContain('patch, minor, major');
+  });
+
+  test('--version is checked against semver, so "1.2" never reaches a package.json', () => {
+    const result = readReleaseVersion({ explicit: '1.2', bump: undefined, current: '1.2.0' });
+    expect('findings' in result && result.findings[0]?.cause).toContain('semver');
+    expect(readReleaseVersion({ explicit: '1.3.0', bump: undefined, current: '1.2.0' })).toEqual({
+      version: '1.3.0',
+    });
+  });
+
+  test('every declared bump resolves, and the default is patch', () => {
+    for (const bump of BUMPS) {
+      expect(readReleaseVersion({ explicit: undefined, bump, current: '1.2.0' })).toEqual({
+        version: nextVersion('1.2.0', bump),
+      });
+    }
+    expect(readReleaseVersion({ explicit: undefined, bump: undefined, current: '1.2.0' })).toEqual({
+      version: '1.2.1',
+    });
+  });
+
+  test('the fix line is a command a shell can run verbatim', () => {
+    const result = readReleaseVersion({ explicit: undefined, bump: 'majr', current: '1.2.0' });
+    const fix = 'findings' in result ? (result.findings[0]?.fix ?? '') : '';
+    expect(fix).toStartWith('bun run scripts/release.ts');
+    expect(fix).not.toContain('<');
   });
 });

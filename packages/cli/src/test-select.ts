@@ -16,7 +16,13 @@ export interface TestFile {
   readonly bytes: number;
 }
 
-const TEST_GLOB = '**/*.test.ts';
+/**
+ * `.tsx` too. A JSX test was silently outside the gate's parallel steps — `discoverTests` never
+ * yielded it, so `runParallel` spawned `bun test` over an explicit file list that did not include
+ * it and the step reported green over a file that never executed, while `bun run test` at the root
+ * ran it and failed. `testStepCommand`'s own ignore patterns already say `.test.*`.
+ */
+const TEST_GLOB = '**/*.test.{ts,tsx}';
 
 /**
  * The root `test` script's ignore list, kept identical so `x test` and `bun run test` see one

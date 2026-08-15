@@ -12,7 +12,7 @@ import { exec } from './exec';
 import type { CommandResult } from './output';
 import { exitCodeFor, findingFrom, render } from './output';
 import type { ParsedArgs } from './parse';
-import { parseArgs } from './parse';
+import { parseArgs, wantsJson } from './parse';
 import { commandFor, SPECS } from './registry';
 
 export interface DispatchOptions {
@@ -47,8 +47,10 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     requireBunVersion(options.bunVersion);
     args = parseArgs(options.argv, SPECS);
   } catch (error) {
+    // `wantsJson`, not `includes('--json')`: a typo'd flag or a typo'd command is exactly the case
+    // an agent hits while always passing `-j`, and the short form rendered prose it then parsed.
     const result = errorResult('x', error);
-    options.write(render(result, options.argv.includes('--json')));
+    options.write(render(result, wantsJson(options.argv)));
     return 1;
   }
 

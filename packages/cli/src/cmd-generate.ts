@@ -14,6 +14,7 @@ import {
   BadFlagError,
   CliNotImplementedError,
   GenerateJsonInvalidError,
+  MissingPositionalError,
   ScaffoldPathEscapeError,
   UnknownCommandError,
 } from './errors';
@@ -136,13 +137,15 @@ export function dedupe(files: readonly GeneratedFile[]): readonly GeneratedFile[
  * (`docs/architecture/15-adding-a-feature.md`), so the flag is refused before anything is written
  * rather than emitting a slice that fails the app's own budget and boundary gates.
  */
-function assertSurfaceSupported(kind: Generator, surface: Surface): void {
+function assertSurfaceSupported(kind: Generator, surface: Surface, name: string): void {
   if (kind !== 'resource' || surface !== 'site') return;
   throw new BadFlagError({
     flag: 'surface',
     command: 'g resource',
     reason: 'a resource slice is app-surface — site/ ships 0kb JS and may not import app/',
-    fix: 'x g resource <name> && x g route <name> --surface site',
+    // The caller's own name, not `<name>`: a `fix:` is copied and run verbatim, and `x g resource
+    // <name>` is a shell redirect (`bash: name: No such file or directory`), not a command.
+    fix: `x g resource ${name} && x g route ${name} --surface site`,
   });
 }
 
@@ -152,7 +155,7 @@ function assertSurfaceSupported(kind: Generator, surface: Surface): void {
  */
 export function generate(options: GenerateOptions): readonly GeneratedFile[] {
   const surface: Surface = options.surface ?? 'app';
-  assertSurfaceSupported(options.kind, surface);
+  assertSurfaceSupported(options.kind, surface, options.name);
   const surfaceDir = DEFAULT_SURFACE_DIR[surface];
   const feature = options.feature ?? options.name;
   const target = { surfaceDir, feature };
@@ -217,7 +220,9 @@ export function containedPath(root: string, path: string): string {
     throw new ScaffoldPathEscapeError({
       path,
       dir: base,
-      fix: `name the file relative to the app root with no ".." segment, then re-run: x g ${GENERATORS.join('|')} <name> --dry-run`,
+      // Command first, the caveat behind a `#`: the line runs verbatim and the shell drops the
+      // rest. `x g <kind> <name>` pasted into bash is a redirect, not a command.
+      fix: `x g resource posts --dry-run   # name every file relative to the app root, no ".." segment`,
     });
   return target;
 }
@@ -337,16 +342,45 @@ function readKind(raw: string | undefined): Generator {
 }
 
 /** Two surfaces, spelled exactly. A typo that fell through to `app` would scaffold the wrong one. */
-function readSurface(raw: string | undefined, kind: Generator): Surface {
+function readSurface(raw: string | undefined, kind: Generator, name: string): Surface {
   if (raw === undefined || raw === 'app') return 'app';
   if (raw === 'site') return 'site';
   throw new BadFlagError({
     flag: 'surface',
     command: 'g',
     reason: `"${raw}" is not a surface (site, app)`,
-    fix: `x g ${kind} <name> --surface app`,
+    fix: `x g ${kind} ${name} --surface app`,
   });
 }
+
+/**
+ * The missing `<name>` positional. It used to throw `X_CLI_UNKNOWN_COMMAND` — for a command form
+ * that IS known — with `fix: "x g route <name>"`, which pasted into a shell is a redirect
+ * (`bash: name: No such file or directory`). The code now says what is actually wrong, and the fix
+ * is a command that runs.
+ */
+function readName(raw: string | undefined, kind: Generator): string {
+  if (raw !== undefined) return raw;
+  throw new MissingPositionalError({
+    command: `g ${kind}`,
+    positional: 'name',
+    example: `x g ${kind} ${EXAMPLE_NAME[kind]}`,
+  });
+}
+
+/** One runnable example per generator, so the `fix:` is a command and not a shape. */
+const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
+  resource: 'invoice',
+  action: 'publish-post',
+  mutator: 'rename-post',
+  backfill: 'backfill-slugs',
+  job: 'send-digest',
+  route: 'posts',
+  policy: 'post',
+  entity: 'post',
+  query: 'recent-posts',
+  task: 'nightly-digest',
+};
 
 export const generateCommand: CliCommand = {
   spec: {
@@ -371,18 +405,11 @@ export const generateCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('g', ctx.cwd).dir;
     const kind = readKind(ctx.args.positionals[0]);
-    const name = ctx.args.positionals[1];
-    if (name === undefined) {
-      throw new UnknownCommandError({
-        path: `g ${kind}`,
-        known: GENERATORS,
-        suggestion: `g ${kind} <name>`,
-      });
-    }
+    const name = readName(ctx.args.positionals[1], kind);
     const featureFlag = flagString(ctx.args, 'feature');
     // Both flags are resolved before a single file is planned: a bad surface or a locale that is
     // really a path fails here, with nothing written and nothing to undo.
-    const surface = readSurface(flagString(ctx.args, 'surface'), kind);
+    const surface = readSurface(flagString(ctx.args, 'surface'), kind, name);
     const locales = resolveLocales(flagList(ctx.args, 'locales'));
     const files = generate({
       kind,
@@ -397,7 +424,7 @@ export const generateCommand: CliCommand = {
       return {
         ok: true,
         command: 'g',
-        summary: msg('cli.generate.wrote', { count: files.length, kind, name }),
+        summary: msg('cli.generate.planned', { count: files.length, kind, name }),
         data: { files: files.map((file) => file.path), dryRun: true },
         lines: files.map((file) => `  + ${file.path}`),
       };

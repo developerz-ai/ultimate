@@ -53,6 +53,12 @@ export const GATED_APPS: readonly GatedApp[] = [
       job: 'the digest job writes through the same unscoped repo — data substrate',
       e2e: 'the built output serves pages backed by the same repo — data substrate',
       drift: 'migrations predate the current entity set; regenerated with the schema',
+      budgets:
+        'X_BUDGET_UNMEASURED on all 8 routes that declare a `budget:`. The step used to skip its ' +
+        'per-route half whenever `.x/build-stats.json` was absent — and `.x/` is gitignored, so ' +
+        'that half has never run here or in CI while the step reported green. It now reports ' +
+        'every declared budget the build never weighed. Closing it means running `x build` ' +
+        'before the app gate so the stats file exists, which is milestone 11 work',
     } satisfies Partial<Record<VerifyStepName, string>>,
   },
   {
@@ -72,6 +78,10 @@ export const GATED_APPS: readonly GatedApp[] = [
       drift:
         'migrations predate the current entity set: the schema hashes to 0141d780fa37711d and ' +
         'the newest migration recorded 164f6d3add24dcd0. Regenerate with `x db gen`',
+      budgets:
+        'X_BUDGET_UNMEASURED on every route that declares a `budget:` — the same never-run half ' +
+        'of the step pinned on examples/dummy above, for the same reason: no `.x/build-stats.json` ' +
+        'has ever existed here. Closed by running `x build` ahead of this gate',
     } satisfies Partial<Record<VerifyStepName, string>>,
   },
 ];

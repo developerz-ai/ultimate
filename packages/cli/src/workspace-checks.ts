@@ -125,19 +125,27 @@ export const pinSkewFinding = (
  * Private packages are exempt on both counts: a generated app's `packages/*` are private, carry
  * their own version line and depend on the framework by caret range.
  */
-export function checkLockstep(manifests: readonly ManifestFacts[]): readonly Finding[] {
+export function checkLockstep(
+  manifests: readonly ManifestFacts[],
+  release?: string,
+): readonly Finding[] {
   const published = manifests.filter((manifest) => !manifest.private);
   // `core` is tier 0 and everything depends on it, so it is the version the rest must match.
-  const anchor = published.find((manifest) => manifest.dir === 'core') ?? published[0];
-  if (anchor === undefined) return [];
+  const internal = published.find((manifest) => manifest.dir === 'core') ?? published[0];
+  // With a release version the anchor is EXTERNAL, and that is the whole point: comparing packages
+  // only to each other is green in a repo where all 29 sit at 1.2.0 and nine tags (v1.3.0 …
+  // v1.10.1) have been cut with no bump — a publish that dies `EPUBLISHCONFLICT` on all 29 while
+  // the gate says shippable. There is no anchor to the version being released unless one is given.
+  const version = release ?? internal?.version;
+  if (version === undefined) return [];
   const findings: Finding[] = [];
   for (const manifest of published) {
-    if (manifest.version !== anchor.version) {
-      findings.push(versionSkewFinding(manifest.dir, manifest.version, anchor.version));
+    if (manifest.version !== version) {
+      findings.push(versionSkewFinding(manifest.dir, manifest.version, version));
     }
     for (const [dep, range] of manifest.frameworkDeps) {
-      if (range !== anchor.version) {
-        findings.push(pinSkewFinding(manifest.dir, dep, range, anchor.version));
+      if (range !== version) {
+        findings.push(pinSkewFinding(manifest.dir, dep, range, version));
       }
     }
   }
@@ -276,8 +284,20 @@ export async function workspacePackages(root: string): Promise<readonly string[]
 export const hasWorkspacePackages = async (root: string): Promise<boolean> =>
   (await workspacePackages(root)).length > 0;
 
+export interface PackageShapeOptions {
+  /**
+   * The version being released. Anchors the lockstep rule to it instead of to whatever the
+   * packages happen to agree on, which is what lets `scripts/release.ts --check <version>` and the
+   * release workflow ask "is this repo actually at the version this tag claims?" before publishing.
+   */
+  readonly release?: string;
+}
+
 /** Every package ships the same contract files; a missing one is a build error, not a chore. */
-export async function checkPackageShape(root: string): Promise<readonly Finding[]> {
+export async function checkPackageShape(
+  root: string,
+  options: PackageShapeOptions = {},
+): Promise<readonly Finding[]> {
   const scaffolder = existsSync(join(root, 'scripts', 'new-package.ts'));
   const findings: Finding[] = [];
   const facts: ManifestFacts[] = [];
@@ -318,5 +338,5 @@ export async function checkPackageShape(root: string): Promise<readonly Finding[
       files: filesOf(manifest),
     });
   }
-  return [...findings, ...checkLockstep(facts), ...checkPublishShape(root, facts)];
+  return [...findings, ...checkLockstep(facts, options.release), ...checkPublishShape(root, facts)];
 }

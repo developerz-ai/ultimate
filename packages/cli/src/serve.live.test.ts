@@ -10,10 +10,11 @@ import { describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { METRICS_PATH } from '@ultimat3/core';
-// Relative, not '@ultimat3/testing': cli is tier 5 and so is testing, so the package specifier is
-// a sideways import the boundary check refuses. Same precedent as scripts/test-setup.ts. This is
-// test-only — nothing in cli's shipped surface reaches the harness.
-import { allowHost } from '../../testing/src/sealed-network';
+// The package specifier, because `cli -> testing` is now a DECLARED sideways edge
+// (scripts/lib/tiers.ts). It used to be `../../testing/src/sealed-network` with a comment saying
+// the checker refused the real one — but a relative path is the same import wearing a costume, and
+// package.json has listed `@ultimat3/testing` as a dependency of the CLI all along.
+import { allowHost } from '@ultimat3/testing';
 import { planNewApp } from './cmd-new';
 
 /** Embedded Postgres, the queue, the transport and an HTTP role is seconds of real work. */

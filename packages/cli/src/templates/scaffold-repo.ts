@@ -1,14 +1,18 @@
-// The config half of what `x new` writes: the one config file, the tooling configs and the
-// workspace packages. Committed defaults only — a fresh clone boots with `x dev` and no env
-// scavenger hunt. The docs and shims live in scaffold-docs.ts, the container files in
-// scaffold-container.ts.
+// The REPO ROOT half of what `x new` writes: `app.config.ts`, the tooling configs, the committed
+// env files — and the one list that names every other scaffold module in write order. Committed
+// defaults only, so a fresh clone boots with `x dev` and no env scavenger hunt. Each workspace
+// package owns its own files (`scaffold-<name>-package.ts`); docs and shims are scaffold-docs.ts,
+// container files scaffold-container.ts.
 
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
 import type { GeneratedFile, NameSet } from './naming';
+import { dbPackageFiles } from './scaffold-db-package';
 import { docsFiles } from './scaffold-docs';
+import { domainPackageFiles } from './scaffold-domain-package';
 import { envExampleSource, envSchemaSource } from './scaffold-env';
 import { i18nFiles } from './scaffold-i18n';
-import { packageShapeFiles } from './scaffold-package-shape';
+import { mcpPackageFiles } from './scaffold-mcp-package';
+import { uiPackageFiles } from './scaffold-ui-package';
 
 // `version` is not decoration: the manifest's app version IS the contract's compatibility gate,
 // and the manifest never fabricates one — so an app scaffolded without it failed `x manifest`,
@@ -54,6 +58,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/pwa": "^${version}",
     "@ultimat3/query": "^${version}",
     "@ultimat3/render": "^${version}",
+    "@ultimat3/schema": "^${version}",
     "@ultimat3/ui": "^${version}",
     "solid-js": "1.9.14"
   },
@@ -201,217 +206,6 @@ SESSION_SECRET=dev-only-not-a-real-secret
 ROLE=web
 `;
 
-const domainPackage = (app: NameSet, name: string, description: string): string => `{
-  "name": "@${app.kebab}/${name}",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "description": "${description}",
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
-  }
-}
-`;
-
-const domainIndex =
-  (): string => `// Pure types and constants. No I/O of any kind: no fs, no network, no database, no env reads.
-export const ROLES = ['owner', 'member', 'viewer'] as const;
-
-export type Role = (typeof ROLES)[number];
-
-export interface Money {
-  readonly minor: number;
-  readonly currency: string;
-}
-
-export const zero = (currency: string): Money => ({ minor: 0, currency });
-
-export const add = (a: Money, b: Money): Money => {
-  if (a.currency !== b.currency) throw new RangeError(\`cannot add \${a.currency} to \${b.currency}\`);
-  return { minor: a.minor + b.minor, currency: a.currency };
-};
-`;
-
-const domainTest = (): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
-import { add, zero } from './index';
-
-unitTest('money adds in minor units', () => {
-  expect(add({ minor: 1050, currency: 'USD' }, { minor: 250, currency: 'USD' })).toEqual({
-    minor: 1300,
-    currency: 'USD',
-  });
-});
-
-unitTest('money refuses to add across currencies', () => {
-  expect(() => add(zero('USD'), zero('EUR'))).toThrow();
-});
-`;
-
-const dbIndex =
-  (): string => `// Schema and migrations only — no business logic lives in this package. The client itself is
-// @ultimat3/db's: one connection pool, sized by ROLE, shared by every package in the app.
-export type { DbClient, SqlFragment } from '@ultimat3/db';
-export { db, sql, withTransaction } from '@ultimat3/db';
-export * as schema from './schema';
-`;
-
-// The four pieces below describe the example slice's table. Under `--no-example` that slice is
-// never written, so each one ships its empty counterpart instead of a reference to a file that is
-// not there — `export { post } from …` alone made `x new --no-example` an app that cannot compile.
-
-const SCHEMA_HEADER = `// Every entity the app declares, re-exported here. This list is what the migration generator
-// reads, so an entity that is not exported here does not exist as far as the database is concerned.`;
-
-/**
- * `bun run db:seed`'s entry point. Identical either way — only the rows differ. Interpolated, not
- * nested, so it carries exactly the escaping a single template literal needs.
- */
-const SEED_MAIN = `
-
-if (import.meta.main) {
-  const count = await seed();
-  // Bun's stdout, not process.stdout: one runtime, one API. Awaited because the write resolves
-  // asynchronously, and this JSON line is the whole output of \`bun run db:seed\`.
-  await Bun.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
-}
-`;
-
-const dbSchema = (app: NameSet, example: boolean): string =>
-  example
-    ? `${SCHEMA_HEADER}
-export { post } from '@${app.kebab}/web/app/post/entity';
-`
-    : `${SCHEMA_HEADER}
-// \`x g entity <name>\` writes the entity; add its export here so the database learns about it.
-export {};
-`;
-
-const dbSeed = (app: NameSet, example: boolean): string =>
-  example
-    ? `// Deterministic seed: same rows every time, so a test and a demo see the same database.
-import { db, sql } from '@ultimat3/db';
-
-const ORG = '00000000-0000-0000-0000-000000000002';
-
-export async function seed(): Promise<number> {
-  const rows = [
-    { id: '00000000-0000-0000-0000-000000000101', title: 'Hello ${app.pascal}', minor: 0 },
-    { id: '00000000-0000-0000-0000-000000000102', title: 'Second post', minor: 1900 },
-  ];
-  for (const row of rows) {
-    // Idempotent by primary key, so re-seeding a branch database is a no-op rather than a crash.
-    await db().execute(sql\`
-      insert into posts (id, org_id, title, price_minor, price_currency)
-      values (\${row.id}, \${ORG}, \${row.title}, \${row.minor}, 'USD')
-      on conflict (id) do nothing\`);
-  }
-  return rows.length;
-}${SEED_MAIN}`
-    : `// Deterministic seed: same rows every time, so a test and a demo see the same database.
-// No entity is declared yet, so there is nothing to insert — the shape stays, so the first
-// \`x g entity\` has one obvious place to seed from.
-
-export async function seed(): Promise<number> {
-  return 0;
-}${SEED_MAIN}`;
-
-const migration = (example: boolean): string =>
-  example
-    ? `-- 0000_initial: the example feature slice. Reversible: the down section is required.
-CREATE TABLE IF NOT EXISTS posts (
-  id uuid PRIMARY KEY,
-  org_id uuid NOT NULL,
-  title varchar(200) NOT NULL,
-  price_minor integer NOT NULL DEFAULT 0,
-  price_currency char(3) NOT NULL DEFAULT 'USD',
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS posts_org_created_idx ON posts (org_id, created_at);
-
--- down
--- DROP INDEX IF EXISTS posts_org_created_idx;
--- DROP TABLE IF EXISTS posts;
-`
-    : `-- 0000_initial: no entity is declared yet, so this migration creates nothing. It exists so the
--- schema hash beside it has a migration to belong to, and \`x verify\` sees no drift on run one.
--- Reversible: the down section is required.
-
--- down
-`;
-
-const uiIndex =
-  (): string => `// App components on top of @ultimat3/ui. Same byte budgets as shared/: this package is imported
-// by site/, so a chart library in here costs the landing page.
-export { Card } from './card';
-`;
-
-const uiCard = (): string => `import type { JSX } from 'solid-js';
-import styles from './card.module.scss';
-
-export interface CardProps {
-  readonly title: string;
-  readonly children?: JSX.Element;
-}
-
-export function Card(props: CardProps) {
-  return (
-    <section class={styles.card}>
-      <h2 class={styles.title}>{props.title}</h2>
-      {props.children}
-    </section>
-  );
-}
-`;
-
-const uiCardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
-
-.card {
-  padding: tokens.space(4);
-  border-radius: tokens.radius('md');
-  background: tokens.role('surface-raised');
-  color: tokens.role('fg');
-}
-
-.title {
-  font-size: tokens.text('lg');
-  font-weight: tokens.weight('semibold');
-}
-`;
-
-const mcpIndex = (
-  app: NameSet,
-): string => `// The app's own MCP tools. Every action with mcp.expose is already a tool; add app-specific
-// read-only helpers here. Authorization is the action's policy, unchanged.
-import * as api from '@${app.kebab}/web/api/health';
-import { registerActions } from '@ultimat3/action';
-import { defineAppMcp } from '@ultimat3/mcp';
-
-// Names come from export names, so the registry agrees with the module the app already wrote.
-registerActions(api);
-
-// \`include: 'exposed'\` projects straight from the registry. Re-listing the actions here would
-// copy \`mcp: { expose: true }\` into a second place, and the copy goes stale in silence.
-export const mcp = defineAppMcp({
-  name: '${app.kebab}',
-  include: 'exposed',
-});
-`;
-
-const mcpTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
-import { mcp } from './index';
-
-unitTest('the app exposes its actions as MCP tools', () => {
-  expect(mcp.tools.length).toBeGreaterThan(0);
-  // Every projected tool must describe itself: an agent picks a tool by its description. Assert
-  // on the value, not its length — a failure then prints the empty description, not "0 > 0".
-  for (const tool of mcp.tools) expect(tool.description).not.toBe('');
-});
-`;
-
 /**
  * `example` reaches only the four files that describe the slice's table — schema, seed, initial
  * migration, and nothing in the catalog. Everything else is the same app either way, which is what
@@ -436,37 +230,13 @@ export function repoFiles(
     // gate's `manifest` step fails with X_ENV_EXAMPLE_DRIFT when the two stop agreeing. A
     // scaffold that shipped a hand-written one would fail its own first `x verify`.
     { path: ENV_EXAMPLE_PATH, contents: envExampleSource() },
-    {
-      path: 'packages/domain/package.json',
-      contents: domainPackage(app, 'domain', 'Pure types and constants, no I/O'),
-    },
-    ...packageShapeFiles(app, 'domain', 'Pure types and constants, no I/O'),
-    { path: 'packages/domain/src/index.ts', contents: domainIndex() },
-    { path: 'packages/domain/src/index.test.ts', contents: domainTest() },
-    {
-      path: 'packages/db/package.json',
-      contents: domainPackage(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
-    },
-    ...packageShapeFiles(app, 'db', 'Entity re-exports and SQL migrations, no business logic'),
-    { path: 'packages/db/src/index.ts', contents: dbIndex() },
-    { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
-    { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
-    { path: 'packages/db/migrations/0000_initial.sql', contents: migration(example) },
+    // One call per workspace package, in write order. Each owns its own files (`scaffold-i18n.ts`
+    // already did), so this list stays a table of contents rather than a second copy of every
+    // package's contents.
+    ...domainPackageFiles(app),
+    ...dbPackageFiles(app, example),
     ...i18nFiles(app, version),
-    {
-      path: 'packages/ui/package.json',
-      contents: domainPackage(app, 'ui', 'App components on @ultimat3/ui'),
-    },
-    ...packageShapeFiles(app, 'ui', 'App components on @ultimat3/ui'),
-    { path: 'packages/ui/src/index.ts', contents: uiIndex() },
-    { path: 'packages/ui/src/card.tsx', contents: uiCard() },
-    { path: 'packages/ui/src/card.module.scss', contents: uiCardStyle() },
-    {
-      path: 'packages/mcp/package.json',
-      contents: domainPackage(app, 'mcp', "The app's own MCP tools"),
-    },
-    ...packageShapeFiles(app, 'mcp', "The app's own MCP tools"),
-    { path: 'packages/mcp/src/index.ts', contents: mcpIndex(app) },
-    { path: 'packages/mcp/src/index.test.ts', contents: mcpTest() },
+    ...uiPackageFiles(app),
+    ...mcpPackageFiles(app),
   ];
 }

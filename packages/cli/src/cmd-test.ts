@@ -5,6 +5,7 @@
 
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, NoTestFilesError } from './errors';
+import { readIntFlag } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
@@ -14,19 +15,18 @@ import { defaultWorkers } from './test-workers';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
 
-function readIndex(args: ParsedArgs, name: string, min: number): number | undefined {
-  const raw = flagString(args, name);
-  if (raw === undefined) return undefined;
-  const value = Number.parseInt(raw, 10);
-  if (!Number.isInteger(value) || value < min) {
-    throw new BadFlagError({
-      flag: name,
-      command: 'test',
-      reason: `expects an integer >= ${min}, got "${raw}"`,
-    });
-  }
-  return value;
-}
+/**
+ * `--workers` and `--shard`. `Number.parseInt` alone accepted `4abc` and `4.9` as four, while
+ * `cmd-verify.ts`'s own comment claimed `x test --workers` refused the same values `x verify`
+ * does — so the two commands disagreed about the same flag. One reader now answers for both.
+ */
+const readIndex = (args: ParsedArgs, name: string, min: number): number | undefined =>
+  readIntFlag(args, {
+    name,
+    command: 'test',
+    min,
+    example: `x test --${name} ${Math.max(min, 1)}`,
+  });
 
 /**
  * One positional, and it is the type. `x test contract live` used to run `contract` and drop

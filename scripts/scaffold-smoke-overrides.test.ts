@@ -47,3 +47,27 @@ describe('applyOverrides', () => {
     }
   });
 });
+
+describe('unit · the empty case is a hard error, not a quiet no-op', () => {
+  // `computeOverrides` returning `{}` used to be written straight through, so `bun install`
+  // resolved every `@ultimat3/*` range from the NPM REGISTRY — the smoke job proving that the last
+  // PUBLISHED release scaffolds and verifies, which is a claim about a different tree.
+  test('a root with no packages/ answers empty rather than throwing ENOENT', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-overrides-'));
+    try {
+      expect(await computeOverrides(dir)).toEqual({});
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a packages/ dir with nothing @ultimat3-scoped in it answers empty too', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-overrides-'));
+    try {
+      await Bun.write(join(dir, 'packages/widget/package.json'), '{"name":"widget"}');
+      expect(await computeOverrides(dir)).toEqual({});
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -11,7 +11,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
-| `x verify` | **the gate** | 16 named steps, each with pass/fail + duration |
+| `x verify` | **the gate** | 17 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|studio\|branch` | everything DB | `branch` = copy-on-write clone + preview URL |
 | `x mcp serve` | `@ultimat3/mcp`'s 13 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
@@ -59,8 +59,10 @@ There is no `--only` and no `--skip`; the exit code is non-zero if any step fail
 | File | Responsibility |
 |---|---|
 | `bin.ts` | argv, stdout, exit code — nothing else |
+| `write-line.ts` | the synchronous fd-1 write both published entry points use (`create-ultimate`'s too) |
 | `dispatch.ts` | parse → run → render → exit; the only I/O boundary |
 | `parse.ts` | flags, subcommands, `--json`, `--help`, suggestions |
+| `flag-number.ts` | the one integer-flag reader — `--port`, `--workers`, `--shard` |
 | `output.ts` | one data shape, two renderers, the 3-line error format |
 | `registry.ts` | the one command list |
 | `cmd-*.ts` | one command group each |

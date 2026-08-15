@@ -140,6 +140,7 @@ export {
   contractTest,
   e2eTest,
   evalTest,
+  hasE2eDriver,
   jobTest,
   liveTest,
   SEPARATOR,

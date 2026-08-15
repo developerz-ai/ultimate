@@ -10,6 +10,7 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   // The ordinary developer: the shipped cursor key, off production. Every case below that does
   // not say otherwise is this one.
   devCursorSecret: true,
+  devStorageSecret: true,
   production: false,
   exists: () => true,
   portFree: async () => true,
@@ -85,8 +86,28 @@ describe('unit · x doctor', () => {
     expect(cursor?.fix).toBe('export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"');
   });
 
-  test('a production deploy with its own cursor secret reports nothing', async () => {
-    expect(await codes(probe({ devCursorSecret: false, production: true }))).toEqual([]);
+  test('a production deploy with its own secrets reports nothing', async () => {
+    expect(
+      await codes(probe({ devCursorSecret: false, devStorageSecret: false, production: true })),
+    ).toEqual([]);
+  });
+
+  // The storage twin, and the more expensive one: the published key mints a signed PUT for any
+  // key with any maxBytes and contentType, and `acceptSignedUpload` trusts a signed constraint
+  // over the app's own uploadPolicy.
+  test('the shipped storage key is silent in development, where it is the design', async () => {
+    expect(await codes(probe({ devStorageSecret: true }))).toEqual([]);
+  });
+
+  test('the shipped storage key in production is reported with the command that mints one', async () => {
+    const findings = await runDoctor(
+      probe({ devCursorSecret: false, devStorageSecret: true, production: true }),
+    );
+    const storage = findings.find((finding) => finding.code === 'X_STORAGE_SECRET_DEV');
+    expect(storage?.cause).toContain('STORAGE_SIGNING_SECRET');
+    expect(storage?.cause).toContain('uploadPolicy');
+    // Pinned verbatim: this string is copied into a shell, so a paraphrase of it is a broken fix.
+    expect(storage?.fix).toBe('export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"');
   });
 
   test('every finding carries a fix command — a diagnostic without one is not shippable', async () => {

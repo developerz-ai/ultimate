@@ -77,9 +77,16 @@ export const ${name.camel} = mutator({
 });
 `;
 
-const errorsSource = (
-  feature: NameSet,
-): string => `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
+/** The feature's own code, derived once. The `docs:` URL used to be the literal
+ * `.../X_NOT_FOUND` beside a `code:` of `X_INVOICE_NOT_FOUND`, so following the link from a real
+ * failure landed on a different code's page — the same interpolation `error-codes.ts`'s `docsFor`
+ * already does for every framework code. */
+const notFoundCode = (feature: NameSet): string =>
+  `X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND`;
+
+const errorsSource = (feature: NameSet): string => {
+  const errorCode = notFoundCode(feature);
+  return `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
 // needs the code, the cause and the exact command that fixes it.
 
 import { UltimateError } from '@ultimat3/core';
@@ -87,14 +94,15 @@ import { UltimateError } from '@ultimat3/core';
 export class ${feature.pascal}NotFoundError extends UltimateError {
   constructor(input: { id: string }) {
     super({
-      code: 'X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND',
+      code: '${errorCode}',
       cause: \`no ${feature.kebab} with id \${input.id}\`,
       fix: 'x db studio to confirm the row exists, or pass an id from the list query',
-      docs: 'https://ultimate.dev/errors/X_NOT_FOUND',
+      docs: 'https://ultimate.dev/errors/${errorCode}',
     });
   }
 }
 `;
+};
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const ORG = '00000000-0000-4000-8000-000000000002';

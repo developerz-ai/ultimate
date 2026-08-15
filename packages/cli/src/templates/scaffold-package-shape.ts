@@ -1,7 +1,7 @@
-// The three contract files `x verify`'s `package-shape` step requires of every `packages/*` dir —
-// enforced on a generated app exactly like it is on this repo, so `x new` has to ship them itself
-// rather than leave the app's very first gate run red. Split out of scaffold-repo.ts to stay under
-// the file-size ceiling; every `packages/*` entry there calls `packageShapeFiles` once.
+// The manifest, plus the three contract files `x verify`'s `package-shape` step requires of every
+// `packages/*` dir — enforced on a generated app exactly like it is on this repo, so `x new` has
+// to ship them itself rather than leave the app's very first gate run red. Every scaffolded
+// workspace package calls both exports here exactly once.
 
 import type { GeneratedFile, NameSet } from './naming';
 
@@ -47,3 +47,24 @@ export const packageShapeFiles = (
   { path: `packages/${name}/CLAUDE.md`, contents: packageClaude(app, name, description) },
   { path: `packages/${name}/tsconfig.json`, contents: packageTsconfig(includes) },
 ];
+
+/**
+ * The manifest every scaffolded `packages/*` carries. Private, versionless-by-convention and
+ * dependency-free: these packages only re-export a framework package's types, so the one that does
+ * name a dependency writes its own (`scaffold-i18n.ts`, and it says why). Lives beside
+ * `packageShapeFiles` because every caller of one calls the other.
+ */
+export const workspacePackageJson = (app: NameSet, name: string, description: string): string => `{
+  "name": "@${app.kebab}/${name}",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "${description}",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  }
+}
+`;

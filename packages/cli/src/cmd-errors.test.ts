@@ -135,3 +135,20 @@ describe('unit · the spec', () => {
     expect(errorsCommand.spec.requiresApp).toBeUndefined();
   });
 });
+
+describe('unit · a missing CODE names the positional, never an invented flag', () => {
+  // `x errors --json` reported `--code on "x errors"`. There is no `--code` flag, so an agent
+  // reading the cause literally ran `x errors --code X_DB_DRIFT` and got a SECOND X_CLI_BAD_FLAG.
+  test('the cause says positional and names no flag that does not exist', async () => {
+    const failure = (await rejection(['errors', '--json'])) as unknown as {
+      code: string;
+      cause: string;
+      fix: string;
+    };
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.cause).toContain('positional');
+    expect(failure.cause).not.toContain('--code');
+    // Runnable verbatim, and it is the command that lists the codes to pick from.
+    expect(failure.fix).toBe('x errors list --json');
+  });
+});

@@ -79,6 +79,30 @@ export const MILESTONE_NUMBERS: readonly number[] = Object.keys(REQUIRED_ARTIFAC
   .map(Number)
   .sort((a, b) => a - b);
 
+/** The milestone table's own header, so the row scan is bounded by the table it belongs to and a
+ * numeric first cell in the benchmark table further down is never read as a milestone. */
+const MILESTONE_TABLE_HEADER = /^\|\s*#\s*\|/;
+
+/**
+ * Every `| n |` row the table actually holds. `MILESTONE_NUMBERS` is derived from the hardcoded
+ * artifact map, so rule (2) only ever asked about 0-11 — appending `| 12 | | **Multi-region** |`
+ * with no status marker was a row `checkRoadmap` never looked at, and the step reported green over
+ * exactly the regression its own header says it catches.
+ */
+export function milestoneNumbersIn(markdown: string): readonly number[] {
+  const lines = markdown.split('\n');
+  const start = lines.findIndex((line) => MILESTONE_TABLE_HEADER.test(line.trim()));
+  if (start === -1) return [];
+  const found: number[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const row = line.trim();
+    if (!row.startsWith('|')) break;
+    const match = /^\|\s*(\d+)\s*\|/.exec(row);
+    if (match?.[1] !== undefined) found.push(Number.parseInt(match[1], 10));
+  }
+  return [...new Set(found)].sort((a, b) => a - b);
+}
+
 export interface MilestoneRow {
   readonly n: number;
   readonly status: MilestoneStatus;
@@ -128,16 +152,33 @@ const unverifiedFinding = (row: MilestoneRow, missing: readonly string[]): Findi
   at: ROADMAP_FILE,
 });
 
+const untrackedFinding = (row: MilestoneRow): Finding => ({
+  code: 'X_ROADMAP_MILESTONE_UNTRACKED',
+  cause: `milestone ${row.n} ("${row.title}") has a row in ${ROADMAP_FILE} but scripts/roadmap.ts declares no artifacts for it, so its status marker verifies nothing`,
+  fix: `add a "${row.n}: [...]" entry to REQUIRED_ARTIFACTS in scripts/roadmap.ts naming the paths that row's "Ships" column promises — an empty list is the deliberate answer for a milestone that ships nothing yet — then: bun run scripts/roadmap.ts --json`,
+  docs: docs('X_ROADMAP_MILESTONE_UNTRACKED'),
+  at: ROADMAP_FILE,
+});
+
 /** Each milestone's "Done when" as a build error rather than a sentence nobody re-reads. */
 export const checkRoadmap: HostCheck = async (root) => {
   const path = join(root, ROADMAP_FILE);
   if (!existsSync(path)) return [missingFileFinding()];
   const markdown = await Bun.file(path).text();
   const findings: Finding[] = [];
-  for (const n of MILESTONE_NUMBERS) {
+  // The union, not the artifact map's keys: a milestone this script has never heard of is exactly
+  // the row rules (2) and (3) are blind to, and a milestone the table dropped is still required.
+  const numbers = [...new Set([...MILESTONE_NUMBERS, ...milestoneNumbersIn(markdown)])].sort(
+    (a, b) => a - b,
+  );
+  for (const n of numbers) {
     const row = milestoneRow(markdown, n);
     if (row === undefined) {
       findings.push(missingStatusFinding(n));
+      continue;
+    }
+    if (REQUIRED_ARTIFACTS[n] === undefined) {
+      findings.push(untrackedFinding(row));
       continue;
     }
     if (row.status !== 'shipped') continue;

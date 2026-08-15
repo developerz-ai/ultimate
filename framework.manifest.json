@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f9c3583fd8cdc1bf7ccd795fa38ae4cde5e2509d3ca5c09c123f702f6c5a0275",
+  "buildId": "27802f515afaf2c6010e9695512bb4798b0156aac6e194f3ae2f1b239acacea9",
   "tiers": {
     "0": [
       "core",
@@ -1266,6 +1266,11 @@
       "at": "scripts/roadmap.ts"
     },
     {
+      "code": "X_ROADMAP_MILESTONE_UNTRACKED",
+      "owner": "scripts",
+      "at": "scripts/roadmap.ts"
+    },
+    {
       "code": "X_ROADMAP_MILESTONE_UNVERIFIED",
       "owner": "scripts",
       "at": "scripts/roadmap.ts"
@@ -1339,6 +1344,11 @@
       "code": "X_RPC_FAILED",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_OVERRIDES_EMPTY",
+      "owner": "scripts",
+      "at": "scripts/scaffold-smoke-overrides.ts"
     },
     {
       "code": "X_SCAFFOLD_PATH_ESCAPE",
@@ -1494,6 +1504,11 @@
       "code": "X_STORAGE_PATH_UNSAFE",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_SECRET_DEV",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_STORAGE_TOO_LARGE",

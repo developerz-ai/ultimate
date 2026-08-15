@@ -6,12 +6,51 @@
 //   bun run scripts/release.ts --bump minor [--dry-run] [--json]
 
 import { join } from 'node:path';
+import { checkPackageShape, SEMVER } from '@ultimat3/cli';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
+import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 import { listWorkspaces, publishOrder, workspaceManifests } from './lib/workspaces';
 
-export type Bump = 'patch' | 'minor' | 'major';
+export const BUMPS = ['patch', 'minor', 'major'] as const;
+
+export type Bump = (typeof BUMPS)[number];
+
+/**
+ * `--bump` was cast to the union with no check, so `--bump majr` fell through both branches of
+ * `nextVersion` and produced a PATCH — a breaking change shipped as 1.2.1 across all 29 manifests,
+ * with an exit code of 0. `--version` was equally unvalidated: `--version 1.2` wrote `"1.2"` into
+ * every package.json.
+ */
+export const isBump = (value: string): value is Bump =>
+  (BUMPS as readonly string[]).includes(value);
+
+const badFlagFinding = (flag: string, value: string, expected: string): Finding => ({
+  code: 'X_CLI_BAD_FLAG',
+  cause: `--${flag} ${value} is not ${expected}`,
+  fix: `bun run scripts/release.ts --bump minor --dry-run --json`,
+  at: 'scripts/release.ts',
+});
+
+/** Both flags, refused before a single manifest is rewritten. */
+export function readReleaseVersion(input: {
+  readonly explicit: string | undefined;
+  readonly bump: string | undefined;
+  readonly current: string;
+}): { version: string } | { findings: readonly Finding[] } {
+  const findings: Finding[] = [];
+  if (input.bump !== undefined && !isBump(input.bump)) {
+    findings.push(badFlagFinding('bump', input.bump, `one of ${BUMPS.join(', ')}`));
+  }
+  if (input.explicit !== undefined && !SEMVER.test(input.explicit)) {
+    findings.push(badFlagFinding('version', input.explicit, 'a semver version (e.g. 1.3.0)'));
+  }
+  if (findings.length > 0) return { findings };
+  return {
+    version: input.explicit ?? nextVersion(input.current, (input.bump ?? 'patch') as Bump),
+  };
+}
 
 /** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
 const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
@@ -94,12 +133,58 @@ if (import.meta.main) {
   const workspaces = await listWorkspaces(root);
   const publishable = publishOrder(workspaces);
   const current = publishable[0]?.version ?? '0.0.1';
-  const explicit = flagString(args, 'version');
-  const bump = (flagString(args, 'bump') ?? 'patch') as Bump;
-  const version = explicit ?? nextVersion(current, bump);
+
+  // `--check <version>` writes nothing and answers one question: is this repo actually stamped at
+  // the version about to be published? The lockstep rule on its own compares packages only to each
+  // other, so 29 packages all at 1.2.0 pass while the tag says v1.10.1 — and the publish then dies
+  // `EPUBLISHCONFLICT` on all 29. The release workflow runs this before `npm publish`.
+  const check = flagString(args, 'check');
+  if (check !== undefined) {
+    const findings = SEMVER.test(check)
+      ? await checkPackageShape(root, { release: check })
+      : [badFlagFinding('check', check, 'a semver version (e.g. 1.3.0)')];
+    report(
+      {
+        ok: findings.length === 0,
+        script: 'release',
+        summary:
+          findings.length === 0
+            ? `${publishable.length} packages are stamped at ${check}`
+            : `${findings.length} finding(s): this repo is not at ${check}`,
+        findings,
+        data: { check, packages: publishable.length },
+      },
+      args.json,
+    );
+  }
+
+  const resolved = readReleaseVersion({
+    explicit: flagString(args, 'version'),
+    bump: flagString(args, 'bump'),
+    current,
+  });
+  if ('findings' in resolved) {
+    report(
+      {
+        ok: false,
+        script: 'release',
+        summary: 'refusing to release: the version to publish is not decidable',
+        findings: resolved.findings,
+        data: { current },
+      },
+      args.json,
+    );
+  }
+  const version = resolved.version;
   const dryRun = flagBool(args, 'dry-run');
 
   const mismatched = publishable.filter((workspace) => workspace.version !== current);
+  const skew: readonly Finding[] = mismatched.map((workspace) => ({
+    code: 'X_RELEASE_VERSION_SKEW',
+    cause: `${workspace.name} was at ${workspace.version}, not ${current}`,
+    fix: `git diff packages/${workspace.dir}/package.json — this release realigns it to ${version}`,
+    at: `packages/${workspace.dir}/package.json`,
+  }));
   const log = await run(['git', 'log', '--pretty=format:%s', `v${current}..HEAD`], { cwd: root });
   const subjects = log.ok ? log.output.split('\n').filter((line) => line.trim().length > 0) : [];
 
@@ -123,17 +208,15 @@ if (import.meta.main) {
 
   report(
     {
-      ok: true,
+      // Findings, not decoration: `ok: true` unconditionally meant a run that reported real
+      // X_RELEASE_VERSION_SKEW still exited 0, so the one signal a release pipeline reads said the
+      // repo was in a releasable state while the report below said it was not.
+      ok: skew.length === 0,
       script: 'release',
       summary: dryRun
         ? `would release ${publishable.length} packages at ${version}`
         : `${publishable.length} packages set to ${version}`,
-      findings: mismatched.map((workspace) => ({
-        code: 'X_RELEASE_VERSION_SKEW',
-        cause: `${workspace.name} was at ${workspace.version}, not ${current}`,
-        fix: `git diff packages/${workspace.dir}/package.json — this release realigns it to ${version}`,
-        at: `packages/${workspace.dir}/package.json`,
-      })),
+      findings: skew,
       lines: [
         `  version   ${current} -> ${version}`,
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,

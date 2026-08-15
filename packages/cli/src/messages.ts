@@ -56,6 +56,10 @@ const CATALOG = {
   'cli.fix.clean': 'no boundary violation involves {file}',
   'cli.fix.plan': '{count} boundary violation(s) involve {file} — {edits} edit(s) to make',
   'cli.generate.wrote': 'wrote {count} file(s) for {kind} {name}',
+  // A distinct key, not the same sentence with a flag beside it: `--dry-run` reported "wrote 4
+  // file(s)" while `data.dryRun` said nothing had landed, so an agent branching on `summary`
+  // believed the files were on disk.
+  'cli.generate.planned': 'would write {count} file(s) for {kind} {name} — nothing written',
   'cli.i18n.added': 'added {locale} — {keys} key(s) seeded from {from}',
   'cli.i18n.dynamic': '{count} dynamic t() call(s) the extractor cannot verify:',
   'cli.i18n.gaps': '{missing} missing key(s) across {locales} locale(s)',

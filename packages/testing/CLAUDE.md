@@ -23,6 +23,7 @@ one condition.
 | Test names | the filename picks the step; `testName(type, name)` on the outer `describe` puts that type on every failure line under it. Never on the inner `test` too — the prefix would print twice |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers the whole framework bag — an app registers only what the framework cannot know (`seed`, `actorFor`) |
+| e2e without a driver | `e2eTest` becomes `test.skip`, and the gate reports the step GREEN over it — `bun test` exits 0 on a skip and the exit code is the only channel between the step and the child that registers the driver. `hasE2eDriver()` is what a harness asks instead of reading an all-skipped run as a pass. Zero drivers are registered `As of 2026-08` |
 | Built vs declared | `clock` `mail` `network` `runJobs` `statements` are built in-process; `page` `budget` `signIn` `deploy` `subscribe` are declared and wait for a driver (`X_TEST_FIXTURE_UNAVAILABLE`) |
 | Strict is opt-in by destructuring | `statements` installs the N+1 detector in throw mode for one test. A fixture nobody names is a fixture nobody built, so there is no `strict: true` and no suite-wide switch — and no way to leave it on for the next file |
 | One threshold, one error | `N_PLUS_ONE_THRESHOLD` and `nPlusOne()` are `@ultimat3/entity`'s. A number or a message written here would make a loop that fails a test a different loop from the one `x dev` warns about |

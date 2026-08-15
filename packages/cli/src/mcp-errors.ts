@@ -18,7 +18,9 @@ import { CLI_ERROR_CODES, docsFor } from './error-codes';
  */
 const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CLI_UNKNOWN_COMMAND: 'x help --json',
-  X_CLI_BAD_FLAG: 'x help <command> --json',
+  // Runnable first, the narrowing behind a `#`: `x help <command> --json` pasted into a shell
+  // is a redirect, not a command, and this table is copied verbatim by whoever reads it.
+  X_CLI_BAD_FLAG: 'x help --json   # then narrow to the command the cause names',
   X_VERIFY_FAILED: 'x verify --json',
   X_NOT_IN_APP: 'x new myapp --json && cd myapp',
   X_BUN_VERSION: 'bun upgrade',
@@ -29,12 +31,12 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CONFIG_INVALID: 'x doctor --json',
   X_ENV_MISSING: 'x env check --json',
   X_ENV_EXAMPLE_DRIFT: 'x env example --json',
-  X_TEST_NO_FILES: 'x test --cwd <repo root> --json',
+  X_TEST_NO_FILES: 'x test --json   # from the repo root, or pass --cwd to it',
   X_TEST_SHARD_FAILED: 'x test --workers 1 --json',
-  X_SCAFFOLD_PATH_ESCAPE: 'x g route <name> --json   # a path with no ".." segment',
+  X_SCAFFOLD_PATH_ESCAPE: 'x g route posts --json   # a path with no ".." segment',
   X_GENERATE_JSON_INVALID:
     'bun test packages/cli/src/cmd-generate.test.ts   # the error names the template to fix',
-  X_APP_PACKAGE_INVALID: 'bun pm pkg set name=<app> version=0.1.0',
+  X_APP_PACKAGE_INVALID: 'bun pm pkg set name=my-app version=0.1.0',
   X_ERROR_CODE_UNKNOWN: 'x errors list --json',
   X_DECLARATION_UNKNOWN: 'x actions list --json',
   X_JOB_UNKNOWN: 'x jobs ls --json',
@@ -53,22 +55,23 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_VERIFY_SUITE_VANISHED:
     'x verify --json   # restore the suite, or drop its name from x.verify.json in the commit that says why',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
-  X_PACKAGE_SHAPE: 'bun run scripts/new-package.ts <pkg> --only <file>',
+  X_PACKAGE_SHAPE: 'bun run verify --json   # every finding carries its own new-package.ts command',
   X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',
   // Two real remedies and the command cannot know which one this deployment wants, so it names
   // the one that inspects the binding rather than guessing between a volume and a bucket.
   X_STORAGE_UNWRITABLE: 'x doctor --json',
+  X_STORAGE_SECRET_DEV: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
   X_MANIFEST_STALE: 'x manifest --json',
   X_BUDGET_UNMEASURED: 'x build --json && x verify --json',
   X_BUILD_FAILED: 'x build --json   # the finding names the failing step',
   X_BUILD_ENTRY_MISSING:
-    'x new <name> --dry-run --json   # the file list names every entry a build needs',
+    'x new scratch-app --dry-run --json   # the file list names every entry a build needs',
   X_DEPLOY_FAILED: 'x deploy --json   # the finding carries the command to re-run directly',
   // The container's own environment, so the answer is the run that sets it — never an `x` command,
   // which is not what is running when a `ROLE=wroker` pod refuses to boot.
-  X_ROLE_UNKNOWN: 'docker run -e ROLE=web <image>',
-  X_PORT_INVALID: 'docker run -e PORT=3000 <image>',
-  X_GENERATE_CONFLICT: 'x g <kind> <name> --force --json',
+  X_ROLE_UNKNOWN: 'docker run -e ROLE=web my-app:latest',
+  X_PORT_INVALID: 'docker run -e PORT=3000 my-app:latest',
+  X_GENERATE_CONFLICT: 'x g route posts --force --json',
   X_PORT_IN_USE: 'x dev --port 3001 --json',
   // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),
   // so the fix answered a failed step with X_CLI_UNKNOWN_COMMAND. `x doctor` is what reports
@@ -77,11 +80,16 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_DB_MIGRATE_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
   X_DB_BRANCH_FAILED: 'x db branch ls --json',
   X_DB_STUDIO_FAILED: 'x doctor --json',
-  X_BOUNDARY_SITE_TO_APP: 'x fix boundary <file> --json',
-  X_BOUNDARY_SHARED_LEAF: 'x fix boundary <file> --json',
-  X_BOUNDARY_APP_TO_API: 'x fix boundary <file> --json',
-  X_BOUNDARY_ROUTE_TO_DB: 'x fix boundary <file> --json',
-  X_BOUNDARY_SERVICE_TO_HTTP: 'x fix boundary <file> --json',
+  X_BOUNDARY_SITE_TO_APP:
+    'x verify --json   # then: x fix boundary <the file the finding names> --json',
+  X_BOUNDARY_SHARED_LEAF:
+    'x verify --json   # then: x fix boundary <the file the finding names> --json',
+  X_BOUNDARY_APP_TO_API:
+    'x verify --json   # then: x fix boundary <the file the finding names> --json',
+  X_BOUNDARY_ROUTE_TO_DB:
+    'x verify --json   # then: x fix boundary <the file the finding names> --json',
+  X_BOUNDARY_SERVICE_TO_HTTP:
+    'x verify --json   # then: x fix boundary <the file the finding names> --json',
   // `EDITOR=` inline rather than `export`: the variable is only needed for the one invocation, and
   // an agent copying this line gets a working command instead of a shell it has to keep.
   X_SECRETS_EDITOR_MISSING: 'EDITOR=nano x secrets edit',

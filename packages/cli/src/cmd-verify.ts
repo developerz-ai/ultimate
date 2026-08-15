@@ -24,12 +24,11 @@ import { checkDestructiveMigrations } from './db-destructive';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkSourceDrift } from './drift';
 import { checkErrorFixes } from './error-contract';
-import { BadFlagError } from './errors';
+import { readIntFlag } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
-import { flagString } from './parse';
 import {
   floorProblemFindings,
   floorRequires,
@@ -59,7 +58,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'lint',
-    summary: 'biome: no any, no default exports, no raw colours',
+    // Only what biome actually enforces. It claimed "no default exports" while the rule was off
+    // (it is not in `recommended`) and "no raw colours" over a file type biome ignores entirely —
+    // two thirds of the line were enforced by nothing. `noDefaultExport` is now on in `biome.json`;
+    // the colour rule is `packages/ui/src/tokens/tokens.test.ts`, and rides on the `unit` step.
+    summary: 'biome: format, no any, no default exports, no unused imports',
     async run(ctx) {
       const result = await ctx.runner(['bunx', 'biome', 'check', '.'], { cwd: ctx.root });
       return fromExec(result, {
@@ -144,11 +147,15 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // no stylesheet registry to read; there is nothing for either half to weigh.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
     async run(ctx) {
-      const stats = await readBuildStats(ctx.root);
+      // No stats file is NOT "nothing to weigh" — it is every declared budget unmeasured, which is
+      // the case `checkBudgets` already names per route (`X_BUDGET_UNMEASURED`). Skipping the half
+      // entirely is how a step that has never run once reported green: `.x/` is gitignored, so no
+      // CI run and neither gated app has ever had a `build-stats.json` for it to read.
+      const stats = (await readBuildStats(ctx.root)) ?? { routes: [] };
       const { manifest } = await appManifest(ctx.root);
       return fromFindings([
         ...checkDocumentStyles(documentSurfaces()),
-        ...(stats === undefined ? [] : checkBudgets(manifest, stats)),
+        ...checkBudgets(manifest, stats),
       ]);
     },
   },
@@ -361,21 +368,15 @@ export const verifyCommand: CliCommand = {
   },
 };
 
-/** `x test --workers` refuses the same values for the same reason; the message names this one. */
-function readWorkers(args: ParsedArgs): number | undefined {
-  const raw = flagString(args, 'workers');
-  if (raw === undefined) return undefined;
-  const value = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
-  if (!Number.isInteger(value) || value < 1) {
-    throw new BadFlagError({
-      flag: 'workers',
-      command: 'verify',
-      reason: `expects an integer >= 1, got "${raw}"`,
-      fix: 'x verify --workers 4',
-    });
-  }
-  return value;
-}
+/** `x test --workers` refuses the same values for the same reason — and now through the same
+ * reader, so the claim is enforced rather than asserted in a comment. */
+const readWorkers = (args: ParsedArgs): number | undefined =>
+  readIntFlag(args, {
+    name: 'workers',
+    command: 'verify',
+    min: 1,
+    example: 'x verify --workers 4',
+  });
 
 export const verifyStepNames = (): readonly VerifyStepName[] =>
   VERIFY_STEPS.map((step) => step.name);

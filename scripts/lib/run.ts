@@ -1,6 +1,8 @@
 // The single subprocess boundary for the root scripts. One implementation, so every script times,
 // captures and reports a command the same way.
 
+import { ScriptError } from './script-error';
+
 export interface RunResult {
   readonly command: readonly string[];
   readonly code: number;
@@ -15,7 +17,16 @@ export async function run(
 ): Promise<RunResult> {
   const started = performance.now();
   const [head, ...rest] = command;
-  if (head === undefined) throw new RangeError('run() needs a command');
+  // A caller bug, never a user's — `packages/cli/src/exec.ts` makes the identical guard at the
+  // identical seam, and for the identical reason: a bare `Error` from the one boundary every
+  // script goes through surfaces as an unexplained crash with no code and no `fix:`.
+  if (head === undefined) {
+    throw new ScriptError({
+      code: 'X_CLI_UNEXPECTED',
+      cause: 'run() was called with an empty command, so there is no program to spawn',
+      fix: 'pass the program as the first element: run(["bun", "test"], { cwd })',
+    });
+  }
   const proc = Bun.spawn([head, ...rest], {
     cwd: options.cwd,
     stdout: 'pipe',

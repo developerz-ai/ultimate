@@ -127,3 +127,33 @@ describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', 
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
   });
 });
+
+describe('unit · an ABSENT stats file is every budget unmeasured, not nothing to weigh', () => {
+  // The whole per-route half of the `budgets` step was skipped when `.x/build-stats.json` was
+  // missing — and `.x/` is gitignored, so it had never run in CI or on either gated app while the
+  // step printed a green line. The step now reads `(await readBuildStats(root)) ?? { routes: [] }`,
+  // which is exactly the substitution asserted here.
+  test('no stats file reports one finding per route that declares a budget', async () => {
+    const root = join(
+      tmpdir(),
+      `x-budget-absent-${Bun.hash(`${import.meta.path}none`).toString(16)}`,
+    );
+    expect(await readBuildStats(root)).toBeUndefined();
+    const manifest = manifestOf(
+      route('/', { js: '0kb', lcp: 1200 }),
+      route('/dash', { js: '60kb', lcp: 2500 }),
+      // A route declaring nothing is still skipped — the rule is "declared but unweighed".
+      route('/about'),
+    );
+    const findings = checkBudgets(manifest, (await readBuildStats(root)) ?? { routes: [] });
+    expect(findings.map((finding) => finding.at)).toEqual(['/', '/dash']);
+    expect(new Set(findings.map((finding) => finding.code))).toEqual(
+      new Set(['X_BUDGET_UNMEASURED']),
+    );
+    for (const finding of findings) expect(finding.fix).toBe('x build && x verify');
+  });
+
+  test('an app that declares no budgets anywhere still passes with no stats file', () => {
+    expect(checkBudgets(manifestOf(route('/'), route('/about')), { routes: [] })).toEqual([]);
+  });
+});

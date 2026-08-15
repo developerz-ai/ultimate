@@ -98,7 +98,9 @@ export function invalidGlyphError(found: string, expected: string): UiError {
   return new UiError({
     code: UI_ERROR_CODES.invalidValue,
     cause: `<Icon> glyph carries ${found}, which is not renderable; expected ${expected}`,
-    fix: 'import the glyph from @ultimat3/ui/icons/<name>, or regenerate the set: bun run --filter @ultimat3/ui icons',
+    // Command first, the alternative behind a `#`: the line runs verbatim and the shell drops the
+    // rest. A `fix:` that opens with `@ultimat3/ui/icons/<name>` is a redirect, not an instruction.
+    fix: 'bun run --filter @ultimat3/ui icons   # or import the glyph from @ultimat3/ui/icons/<name>',
   });
 }
 

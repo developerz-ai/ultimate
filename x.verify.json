@@ -9,7 +9,9 @@
     "unit",
     "contract",
     "live",
+    "job",
     "e2e",
+    "eval",
     "manifest",
     "roadmap"
   ]

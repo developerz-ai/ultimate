@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { verifyStepNames } from '@ultimat3/cli';
+import { exec, readVerifyFloor, VERIFY_STEPS, verifyStepNames } from '@ultimat3/cli';
 import { repoRoot } from './lib/run';
 // Only the integration assertion below lives here — `checkRoadmap`'s own cases are in
 // `scripts/roadmap.test.ts`, next to their source.
@@ -104,6 +104,31 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(field(options, 'jsx')).toBe('preserve');
     expect(field(options, 'jsxImportSource')).toBe('solid-js');
   });
+
+  /**
+   * The floor is the ratchet on the ratchet: `applies` returning false records a step as SKIPPED
+   * and green, so deleting a suite turns its step into a silent skip — unless `x.verify.json`
+   * already claims this repo ran it. It listed 12 of the 14 applicable steps, and `job` and `eval`
+   * were the two missing: deleting `packages/jobs/src/*.job.test.ts` would have left the gate at
+   * "17/17 (1 skipped)" and exit 0.
+   *
+   * Asserted as a ratchet rather than as a fixed list, so a step that starts applying here has to
+   * join the floor in the same commit.
+   */
+  test('the committed floor names every step that applies in this repo', async () => {
+    const root = repoRoot();
+    const floor = await readVerifyFloor(root);
+    expect(floor?.problems).toEqual([]);
+    const ctx = { root, runner: exec, hostChecks: HOST_CHECKS };
+    const missing: string[] = [];
+    for (const step of VERIFY_STEPS) {
+      // No `applies` means the step always runs, so it can never vanish and needs no floor line.
+      if (step.applies === undefined) continue;
+      if (!(await step.applies(ctx))) continue;
+      if (floor?.steps.includes(step.name) !== true) missing.push(step.name);
+    }
+    expect(missing).toEqual([]);
+  }, 30_000);
 
   // Four full-repo scans, one of them a complete manifest regeneration over 29 packages. Bun's
   // 5s default was always marginal for that and became a failure the moment `x test` started
