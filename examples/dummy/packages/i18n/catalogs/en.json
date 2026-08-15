@@ -47,7 +47,18 @@
       "seats_other": "{count} seats",
       "cta": "Choose {plan}",
       "included": "Included on every plan",
-      "includedList": "Live feeds, offline likes, nightly digest, two languages, MCP access"
+      "includedList": "Live feeds, offline likes, nightly digest, two languages, MCP access",
+      "contact": {
+        "open": "Talk to sales",
+        "intro": "Tell us how many seats you need and which plan you were reading. We answer in one working day.",
+        "email": "Your email",
+        "plan": "Plan you are asking about",
+        "message": "What do you need?",
+        "send": "Send enquiry",
+        "sending": "Sending your enquiry…",
+        "sent": "Thanks — a copy is on its way to your inbox.",
+        "failed": "That did not send. Try again, or write to sales@postly.example."
+      }
     },
     "blog": {
       "metaTitle": "The Postly blog",
@@ -186,6 +197,11 @@
       "subject": "{inviter} invited you to {org} on Postly",
       "body": "You have been added as {role}. Accept the invitation to start writing.",
       "cta": "Accept the invitation"
+    },
+    "contactSales": {
+      "subject": "We got your Postly enquiry",
+      "body": "Thanks for asking about the {plan} plan, priced in {currency}. Someone from sales replies within one working day.",
+      "quote": "You wrote: {message}"
     }
   },
   "digest": {

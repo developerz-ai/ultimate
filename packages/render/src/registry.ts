@@ -11,7 +11,7 @@ import {
   RouteUnnormalizedError,
   SurfaceBoundaryError,
 } from './errors';
-import { assertModeInvariants } from './modes';
+import { assertModeInvariants, defaultIslandBudget } from './modes';
 import type {
   HydrateStrategy,
   OfflineStrategy,
@@ -203,7 +203,10 @@ export interface RegisterRouteInput<TData = RouteData> {
   readonly config: RouteConfig<TData>;
   /** Counted from the module's JSX by the build; `stream` requires >= 1. */
   readonly suspenseBoundaries?: number;
-  readonly islands?: readonly string[];
+  // No `islands` key: an island is declared by `island()` and reaches the entry through
+  // `config.islands`. It was here, undocumented, passed by nothing, and read as
+  // `input.islands ?? []` — so the only thing a caller could do with it was un-weigh a
+  // declaration. One question, one answer.
   /** Override the convention (locale roots, rewrites). Rarely needed. */
   readonly path?: string;
   /** The page component, resolved from the module by `pageComponentOf`. */
@@ -228,8 +231,11 @@ export function registerRoute<TData = RouteData>(
   const derived = routePathFromFile(input.file);
   const path = input.path ?? derived.path;
   const suspenseBoundaries = input.suspenseBoundaries ?? 0;
+  // Explicit `<TData>`: `isRouteConfig` is a guard over the default `RouteData`, so inference off
+  // the narrowed argument would resolve the route's own data generic away here.
+  const config = withIslandBudget<TData>(input.config, derived.surface);
 
-  assertModeInvariants(input.config, {
+  assertModeInvariants(config, {
     file: input.file,
     path,
     surface: derived.surface,
@@ -248,9 +254,13 @@ export function registerRoute<TData = RouteData>(
     file: input.file,
     path,
     surface: derived.surface,
-    config: input.config,
+    config,
     suspenseBoundaries,
-    islands: input.islands ?? [],
+    // The declaration is the ONLY source. It was `input.islands ?? []`, which nothing ever passed,
+    // so `routeJsBytes`'s "what registration declared" half read `[]` on every route in the
+    // framework's history — and keeping the input as a fallback would be a second answer to one
+    // question that can only ever weaken it: a caller passing `[]` un-weighs a declared island.
+    islands: config.islands.map((spec) => spec.moduleId),
     pattern: compilePattern(path),
     // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a
     // different answer from an absent key, and every reader tests presence.
@@ -258,6 +268,27 @@ export function registerRoute<TData = RouteData>(
   };
   routes.set(path, entry as RouteEntry);
   return entry;
+}
+
+/**
+ * The half of the derivation `defineRoute` cannot make: a budget is only meaningful against a
+ * surface baseline, and the surface is a fact of the file path, which the route table is already
+ * the one reader of. `defineRoute` stays the normalizer of everything the declaration alone
+ * decides; this fills in the one value that needs the URL.
+ *
+ * Returns the descriptor untouched unless there is something to derive, so identity is preserved
+ * for every route that declared a budget or has no island.
+ */
+function withIslandBudget<TData>(config: RouteConfig<TData>, surface: Surface): RouteConfig<TData> {
+  // `'never'` is left bare on purpose: a route that ships no JavaScript has nothing to budget, and
+  // a derived ceiling there would paper over the one contradiction `X_ISLAND_NOT_HYDRATED` names.
+  if (config.hydrate === 'never') return config;
+  if (config.islands.length === 0 || config.budget.js !== undefined) return config;
+  const derived: RouteConfig<TData> = {
+    ...config,
+    budget: { ...config.budget, js: defaultIslandBudget(surface) },
+  };
+  return Object.freeze(derived);
 }
 
 export function clearRoutes(): void {

@@ -17,6 +17,8 @@ by the CLI, not imported.
 | `verify.ts` | `verifyContract` — the major-bump gate |
 | `emit.ts` | canonical serialisation, write, `--json`, drift check |
 | `agents-md.ts` | read-only AGENTS.md existence + size check |
+| `docs-scan.ts` | read-only: an installed package tree → `DocEntry[]`. Never writes |
+| `docs-search.ts` | pure ranking of `DocEntry[]` against a question. No I/O, no clock |
 
 ## Invariants
 
@@ -28,6 +30,14 @@ by the CLI, not imported.
 - `permissions` is derived, never a second declared list.
 - `agents-md.ts` **never writes**. Generated prose lowers agent task success; facts go in
   `x.manifest.json` and conventions stay human-authored.
+- `docs-scan.ts` emits **no artifact**. The published tarball is the source, so the docs are
+  already installed; a generated `docs.json` would be a second copy of them, and the second copy
+  is what drifts. There is no drift check for local docs because there is nothing that can drift.
+- `docs-scan.ts` indexes the **file header comment**, not JSDoc: `As of 2026-08`, 99.8% of source
+  files carry a header, 42.3% of public exports carry JSDoc, and `job()` is in the missing 57.7%.
+- A guide topic is unique within its package — repeated headings take a document-order suffix.
+- Neither docs module may import a registry or a clock. `docs-search.ts` is pure; `docs-scan.ts`
+  reads files and nothing else.
 - A new manifest field ⇒ bump `MANIFEST_VERSION` and add a `diff.ts` rule for it.
 - `diff.ts` reads `mcp.expose` through `isMcpExposed` from `@ultimat3/core`, on **both** sides.
   `before` is a file parsed off disk, so an older or hand-trimmed manifest can carry an absent or

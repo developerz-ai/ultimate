@@ -2,6 +2,11 @@
  * Pricing. ISR because the plan catalog changes rarely and always through a write we can tag.
  * Every price on this page is an integer in minor units until `<PlanBadge>` renders it — the page
  * itself never does arithmetic and never sees a formatted string.
+ *
+ * It is also the one page on `site/` that ships JavaScript, and exactly one module of it: the
+ * contact form below is an `island`, so `hydrate` is no longer `never` and `budget.js` is no
+ * longer `0kb`. Every other `site/` route is untouched by that — an island is its own bundle
+ * entry point, reached by specifier, so nothing here can leak into `/` or `/blog`.
  */
 
 import {
@@ -13,20 +18,51 @@ import {
 } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import { PlanBadge } from '@postly/ui';
-import { defineRoute } from '@ultimat3/render';
+import { derivePath } from '@ultimat3/action';
+import { defineRoute, island } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
 import type { JSX } from 'solid-js';
 import { For } from 'solid-js';
+import type { Api } from '../../api';
 import { currencyFromUrl, currencyOf } from '../../shared/currency';
 import { tag } from '../../shared/tags';
 import styles from './page.module.scss';
+
+/**
+ * The action the form posts to, named once and checked by the compiler. `satisfies` is what makes
+ * the string safe: a renamed action is a build error here, while `import type` keeps the value
+ * edge absent — a `site/` page that imported `app/contact/actions.ts` would drag the whole feature
+ * across the boundary and fail `x verify` with `X_BOUNDARY_VIOLATION`.
+ */
+const CONTACT_ACTION = 'contactSales' satisfies keyof Api['actions'];
+
+/** `contactSales` → `POST /api/sales/contact`. Derived, never spelled out — one naming rule. */
+const CONTACT_ENDPOINT = derivePath(CONTACT_ACTION).path;
+
+/**
+ * The page's one island. `props` are the exact keys the browser gets: JSON, already translated,
+ * and nothing else — a callback cannot cross this seam, which is why the island calls the action
+ * itself rather than being handed an `onSubmit`. Timing is the route's `hydrate`, never declared
+ * here; `interaction` means the chunk is fetched on the first click and that click is replayed.
+ */
+const ContactSales = island({
+  src: './contact-sales.island.tsx',
+  props: ['sendingLabel', 'sentLabel', 'failedLabel'],
+  events: ['click'],
+});
 
 export const config = defineRoute({
   render: 'isr',
   revalidate: { tags: [tag.plan] },
   offline: 'runtime',
-  hydrate: 'never',
-  budget: { js: '0kb', lcp: 1500 },
+  /**
+   * No `hydrate` and no `budget.js` here on purpose: the island below is the whole declaration.
+   * A route carrying one hydrates on `interaction` and gets `site/`'s 4kb ceiling derived for it,
+   * so the two facts the framework can work out are not two more lines to forget. The measured
+   * cost is 1894 bytes — an 875-byte chunk plus the interaction runtime. `lcp` stays because
+   * nothing derives it.
+   */
+  budget: { lcp: 1500 },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every
@@ -98,6 +134,58 @@ export function Page(props: { readonly query: { currency?: string } }): JSX.Elem
         <h2>{t('site.pricing.included')}</h2>
         <p>{t('site.pricing.includedList')}</p>
       </section>
+
+      {/* The island. Everything inside it is server-rendered — the disclosure, the form, every
+          label and the plan list — so the enquiry sends with scripting off, straight to the same
+          action. What the client module adds is the answer in place, which a full page load
+          cannot give. */}
+      <ContactSales
+        sendingLabel={t('site.pricing.contact.sending')}
+        sentLabel={t('site.pricing.contact.sent')}
+        failedLabel={t('site.pricing.contact.failed')}
+      >
+        <details class={styles.contact}>
+          <summary class={styles.contactTrigger}>{t('site.pricing.contact.open')}</summary>
+          <form class={styles.contactForm} method="post" action={CONTACT_ENDPOINT}>
+            <p class={styles.contactIntro}>{t('site.pricing.contact.intro')}</p>
+
+            <label class={styles.contactField}>
+              {t('site.pricing.contact.email')}
+              <input type="email" name="email" autocomplete="email" required />
+            </label>
+
+            <label class={styles.contactField}>
+              {t('site.pricing.contact.plan')}
+              {/* Off the catalog, like the cards above: an enquiry cannot name a plan Postly
+                  does not sell, and the action's own input is the same enumeration. */}
+              <select name="plan">
+                <For each={PLAN_CODES}>
+                  {(code) => <option value={code}>{t(`plans.${code}.name`)}</option>}
+                </For>
+              </select>
+            </label>
+
+            <label class={styles.contactField}>
+              {t('site.pricing.contact.message')}
+              {/* No `maxlength` here on purpose: `contactSales` owns the length rule, and a
+                  second copy in this file is the one that goes stale. */}
+              <textarea name="message" rows="4" required />
+            </label>
+
+            {/* The currency the URL named, and the locale this render used — both facts the
+                server already decided, travelling as fields rather than as guesses made in the
+                browser. */}
+            <input type="hidden" name="currency" value={currency()} />
+            <input type="hidden" name="locale" value={t.locale} />
+
+            <p class={styles.contactStatus} data-role="status" role="status" aria-live="polite" />
+
+            <button class={styles.contactSubmit} type="submit">
+              {t('site.pricing.contact.send')}
+            </button>
+          </form>
+        </details>
+      </ContactSales>
     </main>
   );
 }

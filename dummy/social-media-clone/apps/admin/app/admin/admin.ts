@@ -12,6 +12,7 @@ import {
   policyAuthz,
 } from '@ultimat3/admin';
 import { currentAdminActor } from './actor';
+import { opsPage } from './pages/ops';
 import { adminPolicies } from './policy';
 import { mediaAdminRepo, postsAdminRepo, usersAdminRepo } from './repo';
 
@@ -65,6 +66,15 @@ export const admin: AdminApp = defineAdmin({
       },
     },
   ],
+  /**
+   * The escape hatch, used once. `/admin/ops` is not a resource and no generator would have
+   * written it, so it arrives here as data: `pageRoutes()` gives it the same route table entry a
+   * generated screen gets, `pagePermissions()` puts `admin:read` in front of its own `job:read`,
+   * and `guardedPage()` decides it. Declaring it anywhere else — a route file with its own
+   * `defineRoute` and its own permission check, which is what this app had — is a page whose authz
+   * nothing enforces.
+   */
+  pages: [opsPage],
   branding: { nameKey: 'admin.brand.name', mode: 'system', density: 'comfortable' },
   auth: {
     actor: () => currentAdminActor().actor,

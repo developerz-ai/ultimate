@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "75e5b6d88e04aa77",
+  "buildId": "5c0f3d1926783395",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -98,13 +98,13 @@
       "url": "/pricing",
       "render": "isr",
       "offline": "runtime",
-      "hydrate": "never",
+      "hydrate": "interaction",
       "revalidateTags": [
         "plan"
       ],
       "surface": "site",
       "budget": {
-        "js": "0kb",
+        "js": "4kb",
         "lcp": 1500
       }
     },
@@ -468,6 +468,72 @@
     }
   ],
   "actions": [
+    {
+      "name": "contactSales",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "team",
+              "business"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "USD",
+              "EUR"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "es"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "plan",
+          "currency",
+          "message",
+          "locale"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "received"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "contact:submit",
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
     {
       "name": "createComment",
       "input": {
@@ -1950,6 +2016,49 @@
         "backoff": "exponential"
       },
       "steps": []
+    },
+    {
+      "name": "sendSalesReceipt",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "plan": {
+            "type": "string",
+            "minLength": 1
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          }
+        },
+        "required": [
+          "email",
+          "plan",
+          "currency",
+          "message",
+          "locale"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "mail",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
     }
   ],
   "tasks": [
@@ -1963,6 +2072,12 @@
     }
   ],
   "policies": [
+    {
+      "permission": "contact:submit",
+      "enforcedIn": [
+        "action:contactSales"
+      ]
+    },
     {
       "permission": "feed:read",
       "enforcedIn": [
@@ -2029,6 +2144,7 @@
     }
   ],
   "permissions": [
+    "contact:submit",
     "feed:read",
     "member:self",
     "org:administer",

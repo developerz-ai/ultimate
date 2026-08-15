@@ -54,12 +54,16 @@ already carries a better code and a better fix than any wrapper could. Membershi
 brand, not a `code` property: an `ENOENT` is an `Error` with a string `code` too, and it gets
 wrapped like any other loader failure.
 
-## `offline`, `hydrate` and `meta` are required by the type
+## `offline` and `meta` are required by the type
 
 Not by a lint rule, not by a doc — by `RouteDefinition`. Axiom 3 lives in the type system:
 a route that forgets its offline strategy or its `<head>` does not compile. `defineRoute`
-re-checks the same three at runtime (`X_ROUTE_OFFLINE_MISSING`, `X_ROUTE_META_MISSING`) for
-JS callers and generators.
+re-checks both at runtime (`X_ROUTE_OFFLINE_MISSING`, `X_ROUTE_META_MISSING`) for JS callers
+and generators.
+
+`hydrate` was the third, and is not, `As of 2026-08`. It is the one key the framework can work
+out from the page's own declarations — see the island section — and requiring a value it already
+knows is not enforcement, it is a second place to get one thing wrong.
 
 ## `defineRoute` returns a descriptor, not the object you passed
 
@@ -69,6 +73,8 @@ Two fields come back narrower than they went in, so nothing downstream branches 
 |---|---|---|
 | `meta` | `(data) => RouteMeta \| Promise<RouteMeta>` | `(data) => Promise<RouteMeta>` |
 | `budget` | omitted, or a `RouteBudget` | a `RouteBudget` — `{}` when undeclared |
+| `hydrate` | omitted, or a `HydrateStrategy` | a `HydrateStrategy` — derived from the islands |
+| `islands` | never written | the `IslandSpec`s this module declared, in order |
 
 ```ts
 const meta = await config.meta({ post });   // always. sync or async declaration, one call
@@ -152,8 +158,6 @@ const ContactModal = island({ src: './contact-modal.island.tsx', props: ['subjec
 
 export const config = defineRoute({
   render: 'static', offline: 'precache',
-  hydrate: 'interaction',            // WHEN every island on this route wakes
-  budget: { js: '10kb' },            // already required: site/ + hydrate ≠ never
   meta: ({ t }) => ({ title: t('pricing.title'), description: t('pricing.description') }),
 });
 
@@ -164,17 +168,47 @@ export function Page() {
 }
 ```
 
-`hydrate` is not new. It has always accepted `idle | visible | interaction | never` and always
-forced a `budget.js` on `site/` — but nothing in the framework ever *had* a strategy applied to it:
-`IslandDirective` was constructed nowhere outside its own test, and `RouteEntry.islands` was a list
-no caller populated. `hydrate` was a promise with no referent. The island is the referent.
+### Declaring the island is the whole declaration
+
+That route says `render` and `meta` and nothing else, and it is the same route that used to spell
+out three things. `hydrate` and `budget.js` are **derived from `island()`**, `As of 2026-08`:
+
+| Omitted | Derived | Overridden by |
+|---|---|---|
+| `hydrate` | `'interaction'` when the module declared an island, `'never'` when it did not | stating `hydrate` — the only way to say `idle` or `visible` |
+| `budget.js` | the surface baseline + 4kb (`site/` → `4kb`, `app/` → `18kb`) | stating `budget: { js }` |
+
+Both were required and both were punished: an island on a route still at `'never'` is
+`X_ISLAND_NOT_HYDRATED`, and a `site/` route off `'never'` with no `budget.js` is refused at
+registration. Two failures for one omission the `island()` call above had already answered.
+
+4kb because the reference app's real island is 875 B of chunk plus a 1,019 B runtime — room for a
+second small island, not enough to hide a library. It is a ceiling, not a pass: exceeding it is
+`X_BUDGET_EXCEEDED`, naming the island.
+
+`island()` goes **above** `defineRoute`, where JavaScript already puts a `const` the page uses:
+`defineRoute` drains the declarations made before it. Below it, the route resolves to `'never'` and
+the render fails loudly with `X_ISLAND_NOT_HYDRATED`, whose fix names both repairs.
+
+An island still declares no strategy of its own. One spelling for "this route hydrates" — the
+route's — because two islands wanting different timings would leave `RouteDescriptor.hydrate`, which
+`sw.js`, the web manifest and `x routes` all read, with no single true answer.
 
 | The route says | The island says |
 |---|---|
-| `hydrate` — WHEN it wakes, once, for the whole route | `src` — WHICH module, and `props` — what it may receive |
-| `budget.js` — how many bytes that is allowed to cost | `tag`, `events`, `rootMargin` — how the wrapper behaves |
+| `hydrate` — WHEN it wakes, once, for the whole route, and only when the default is wrong | `src` — WHICH module, and `props` — what it may receive |
+| `budget.js` — how many bytes that is allowed to cost, when 4kb is not the number | `tag`, `events`, `rootMargin` — how the wrapper behaves |
 
-One spelling for "this route hydrates", and it is the one that already shipped.
+### An island node is a JSX child
+
+`island()` returns a component, and `<ContactModal />` is an ordinary element call. That took work:
+an app types its JSX with `jsxImportSource: solid-js`, whose `JSX.Element` is a type **alias** —
+unaugmentable — and whose only object-shaped member is `ArrayElement`. `IslandNode` is therefore a
+branded (empty) array, which is what makes it assignable. Until `As of 2026-08` it was a plain
+object and every `<ContactModal />` in an app was **TS2786**, so the feature was reachable only
+through `h(ContactModal, …)` — which is exactly what the framework's own tests used, and why
+nobody saw it. `type-pins.tsx` holds the claim now: it writes the JSX an author writes, and `tsc`
+reads it.
 
 ### Declared by specifier, never by import
 
@@ -198,7 +232,7 @@ else is `X_ISLAND_INVALID`, and the fix is the `git mv`.
 | serialized props ≤ `ISLAND_PROPS_MAX_BYTES` (4096) | `X_ISLAND_PROPS_INVALID`, naming the measured size |
 
 `<ContactModal {...post} />` fails and names `email`, `passwordHash` — every column the spread
-would have shipped. The type refuses it first (`type-pins.ts` pins that); the render refuses it
+would have shipped. The type refuses it first (`type-pins.tsx` pins that); the render refuses it
 second, which for `static` and `isr` is build time. `children` are the server-rendered shell and
 are never serialized.
 
@@ -215,9 +249,15 @@ assertBudget(entry, measuredIslands, collector.directives);
 render actually pulled in. Reading only the first is how a page could be charged for the hydration
 runtime and not for the chunk it boots: a budget that counts the wrapper and not the code.
 
-An island on a route that declares `hydrate: 'never'`, or rendered with no collector, is
-`X_ISLAND_NOT_HYDRATED` — inert markup either way, and `hydrate: 'never'` is exactly what excuses
-a `site/` route from declaring `budget.js` at all.
+`entry.islands` is filled from `config.islands` at registration, so a declared island is weighed
+even on a route no render has touched. It was `[]` on every route ever registered — nothing passed
+`islands` — which left that half of the union reading nothing at all.
+
+An island on a route that resolves to `hydrate: 'never'`, or rendered with no collector, is
+`X_ISLAND_NOT_HYDRATED` — inert markup either way. With `hydrate` derived it means one of exactly
+two things, and the fix names both: the route stated `'never'` next to an island, or the `island()`
+call sits below the `defineRoute` that would have drained it. A `'never'` route is also left with
+no derived budget, deliberately — a ceiling there would paper over the contradiction.
 
 ## Public API
 

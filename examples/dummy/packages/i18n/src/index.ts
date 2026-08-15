@@ -1,7 +1,6 @@
-/**
- * The app's catalogs, registered once and typed against English. Every surface — site, app,
- * admin, and the digest email in the worker — resolves strings through this module.
- */
+// The app's catalog, registered once and typed against English. Every surface resolves strings
+// through this module, and an unknown key is a compile error via useT() — never a runtime miss
+// nobody notices until production.
 
 import {
   defineCatalogs,
@@ -12,15 +11,15 @@ import {
 import en from '../catalogs/en.json';
 import es from '../catalogs/es.json';
 
-export const catalogs = defineCatalogs({
-  default: 'en',
-  locales: { en, es },
-});
+export const catalogs = defineCatalogs({ default: 'en', locales: { en, es } });
 
-/** English is the source of truth for the key space; `es` must match it or `x verify` fails. */
+/**
+ * English is the source of truth for the key space — a second locale must match it exactly, or
+ * `x verify` fails.
+ */
 export type AppCatalog = typeof en;
 
-/** Every key this app's catalogs define — dot-paths, plus the stem of each plural family. */
+/** Every key this app's catalog defines — dot-paths, plus the stem of each plural family. */
 export type TranslationKey = KeyOf<AppCatalog>;
 
 /**

@@ -41,12 +41,14 @@ export function mount(el: HTMLElement, props: ${Name}Props): void {
 `;
 };
 
-const islandTest = (name: string): string => `import { expect, unitTest } from '@ultimat3/testing';
-import * as entry from './${name}.island';
-
-// The runtime boots an island by calling \`mount\` on whatever the module exports. A renamed or
+const islandTest = (
+  name: string,
+): string => `// The runtime boots an island by calling \`mount\` on whatever the module exports. A renamed or
 // deleted export is a page that renders, serves, passes every other gate and does nothing when
 // clicked — which is exactly the failure nothing else in the build can see.
+
+import { expect, unitTest } from '@ultimat3/testing';
+import * as entry from './${name}.island';
 unitTest('${name}.island exports the mount the hydration runtime calls', () => {
   expect(typeof entry.mount).toBe('function');
 });

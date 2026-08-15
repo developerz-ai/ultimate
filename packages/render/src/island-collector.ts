@@ -8,7 +8,7 @@ import { IslandInvalidError, IslandNotHydratedError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { DEFAULT_REPLAY_EVENTS } from './hydrate';
 import type { IslandSpec } from './island';
-import { isEmittableSpecifier } from './island';
+import { isEmittableSpecifier, islandNeverDrained } from './island';
 import type { IslandProps } from './island-props';
 import { checkIslandProps } from './island-props';
 import type { JsxProps } from './jsx';
@@ -103,14 +103,28 @@ function buildDirective(
  * An island on a route that ships no JS is a button that does nothing — and it is also how the
  * budget stops meaning anything, because `hydrate: 'never'` is what excuses a `site/` route from
  * declaring `budget.js` at all.
+ *
+ * Still reachable with `hydrate` derived, and for exactly two reasons — so the `fix:` names ONE.
+ * `islandNeverDrained` is what tells them apart: a spec still pending at render time was declared
+ * where no `defineRoute` could see it, and a spec already drained means an author wrote `'never'`.
+ * Offering both edits would make half the instruction wrong for every reader, and leave working
+ * out which half is theirs as the reader's job — which is the opposite of axiom 4.
  */
 function assertHydrates(strategy: HydrateStrategy, spec: IslandSpec, file: string): void {
   if (strategy !== 'never') return;
+  // Only on the failure path: the happy path returned above and never touches the list.
+  const undrained = islandNeverDrained(spec);
+  const cause = undrained
+    ? `no defineRoute in that module ever drained the ${spec.moduleId} declaration, so the route ` +
+      "derived hydrate: 'never'"
+    : `the route declares hydrate: 'never'`;
   throw new IslandNotHydratedError(
-    `${file} renders the ${spec.moduleId} island but declares hydrate: 'never', so the browser ` +
-      'would receive its markup and never the JavaScript that makes it do anything',
-    `set hydrate: 'interaction' (or 'idle' | 'visible') and budget: { js: '10kb' } in ${file}, ` +
-      `or remove <${spec.moduleId}> from the page`,
+    `${file} renders the ${spec.moduleId} island but ${cause}, so the browser would receive its ` +
+      'markup and never the JavaScript that makes it do anything',
+    undrained
+      ? `move the island() call for ${spec.moduleId} above defineRoute in ${file} — a page that ` +
+          'declares an island hydrates on its own'
+      : `remove hydrate: 'never' from ${file} — a page that declares an island hydrates on its own`,
   );
 }
 

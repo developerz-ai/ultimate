@@ -20,6 +20,7 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*-fixture.ts",
+    "CLAUDE.md",
     "README.md",
     "LICENSE"
   ],

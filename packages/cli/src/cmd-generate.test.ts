@@ -235,6 +235,47 @@ describe('unit · the command surface an agent reads', () => {
     }
   });
 
+  // `--at` reached `island` and stopped there: `admin:page` wrote to a hardcoded
+  // `apps/admin/src/pages`, so every app whose admin is somewhere else — the demo's is
+  // `apps/admin/app/admin` — moved both files by hand after every run. Asserted through the
+  // command, not the template: the passthrough is the half a user touches.
+  test('--at reaches admin:page, not only island', async () => {
+    const filesFor = async (argv: readonly string[]): Promise<readonly string[]> => {
+      const result = await generateCommand.run(ctxFor(argv));
+      return (result.data as { files: readonly string[] }).files;
+    };
+
+    const adminPage = await filesFor([
+      'g',
+      'admin:page',
+      'ops',
+      '--at',
+      'apps/admin/app/admin',
+      '--dry-run',
+    ]);
+    expect(adminPage).toContain('apps/admin/app/admin/ops.tsx');
+    expect(adminPage).toContain('apps/admin/app/admin/ops.test.ts');
+    expect(adminPage.some((file) => file.startsWith('apps/admin/src/pages'))).toBe(false);
+
+    // The affordance it is modelled on still behaves the same way.
+    const clientEntry = await filesFor([
+      'g',
+      'island',
+      'currency-picker',
+      '--at',
+      'apps/web/site/pricing',
+      '--dry-run',
+    ]);
+    expect(clientEntry).toContain('apps/web/site/pricing/currency-picker.island.tsx');
+  });
+
+  test('no --at keeps the layout x new scaffolds', async () => {
+    const result = await generateCommand.run(ctxFor(['g', 'admin:page', 'ops', '--dry-run']));
+    expect((result.data as { files: readonly string[] }).files).toContain(
+      'apps/admin/src/pages/ops.tsx',
+    );
+  });
+
   // `--dry-run` reported "wrote 4 file(s)" beside `data.dryRun: true`, so an agent that logs or
   // branches on `summary` believed the files had landed.
   test('--dry-run says it wrote nothing', async () => {

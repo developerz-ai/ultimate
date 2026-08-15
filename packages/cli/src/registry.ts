@@ -5,6 +5,7 @@ import { buildCommand } from './cmd-build';
 import { dbCommand } from './cmd-db';
 import { deployCommand } from './cmd-deploy';
 import { devCommand } from './cmd-dev';
+import { docsCommand } from './cmd-docs';
 import { doctorCommand } from './cmd-doctor';
 import { envCommand } from './cmd-env';
 import { errorsCommand } from './cmd-errors';
@@ -66,6 +67,7 @@ const CORE: readonly CliCommand[] = [
   policyCommand,
   i18nCommand,
   errorsCommand,
+  docsCommand,
   fixCommand,
 ];
 

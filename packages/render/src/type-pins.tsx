@@ -1,9 +1,15 @@
-// Compile-time pins for the route's data seam. Source, not a `.test.ts`, on purpose:
-// `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a
+// Compile-time pins for the route's data seam and for island JSX. Source, not a `.test.ts`, on
+// purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a
 // type-level claim written in one can never fail. This module emits nothing and exports nothing
 // anybody imports — a regression here is a build error, the only enforcement that counts.
+//
+// `.tsx`, not `.ts`, since 1.2.0: half of what is pinned here is only decidable by writing the JSX
+// an author writes. `jsxImportSource` is `solid-js` in `tsconfig.base.json` and in both tracked
+// apps, so the `<ContactSales />` below is checked against the SAME `JSX.Element` a page is —
+// which is the only way a regression to `IslandNode` fails a build rather than a reader's review.
 
 import type { IslandComponent } from './island';
+import { island } from './island';
 import type { JsonValue } from './island-props';
 import type { LoadRequirement, RouteContext, RouteData, RouteDefinition } from './route';
 
@@ -67,3 +73,29 @@ export type _ChildrenAreNotJson = Assert<
 
 /** A value the browser could never receive is not a `JsonValue`, so the prop never type-checks. */
 export type _AHandleIsNotJson = Assert<(() => void) extends JsonValue ? false : true>;
+
+const ContactSales: ContactModal = island({
+  src: './contact-sales.island.tsx',
+  props: ['subject'],
+});
+
+/**
+ * The pin that a `.ts` file cannot carry: an island used the way every author reaches for it.
+ *
+ * `island()` returned a plain object node until 1.2.0, and every `<ContactSales />` in an app was
+ * TS2786 — "its return type 'IslandNode' is not a valid JSX element" — while `h(ContactSales, …)`
+ * compiled, which is why the framework's own island tests never saw it. The configured
+ * `JSX.Element` is `solid-js`'s, a type ALIAS and therefore unaugmentable, whose only
+ * object-shaped member is `ArrayElement`. `IslandNode` is that array, and this function is what
+ * says so in a form `tsc` reads.
+ *
+ * Not `: JSX.Element` — render must not import `solid-js`. `unknown` is enough: the error lands on
+ * the element, never on the return.
+ */
+export function _IslandIsAJsxComponent(): unknown {
+  return (
+    <ContactSales subject="pricing">
+      <p>the server-rendered shell</p>
+    </ContactSales>
+  );
+}

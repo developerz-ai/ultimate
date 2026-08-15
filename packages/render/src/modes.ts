@@ -211,3 +211,23 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
 export function defaultHydrate(surface: Surface): HydrateStrategy {
   return surface === 'site' ? 'never' : 'idle';
 }
+
+/**
+ * What an island route may spend ABOVE its surface's baseline when it declares no `budget.js`.
+ *
+ * A number, not "unlimited", because the guard means nothing otherwise — and 4kb because that is
+ * roughly twice what the reference app's real island costs (875 B of chunk plus a 1,019 B runtime),
+ * which is enough for a second small island and not enough to hide a library. A declared
+ * `budget.js` still wins, and exceeding this one still fails with the island named.
+ */
+export const DEFAULT_ISLAND_JS_BYTES = 4096;
+
+/**
+ * The derived ceiling for a route whose hydration came from an island. Relative to the surface
+ * baseline, never absolute: `site/` starts at 0kb and `app/` at 14kb, so one number would be
+ * either a ceiling `app/` fails on arrival or one `site/` can never reach.
+ */
+export function defaultIslandBudget(surface: Surface): string {
+  const bytes = SURFACE_SPECS[surface].jsBaselineBytes + DEFAULT_ISLAND_JS_BYTES;
+  return `${bytes / 1024}kb`;
+}
