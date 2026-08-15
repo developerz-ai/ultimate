@@ -216,6 +216,64 @@ describe('unit · arbitrary record subjects', () => {
     );
   });
 
+  /**
+   * The raise must not depend on WHO is calling either. If an allow-list hit answers before the
+   * declared record is resolved, a call site that forgot to pass the record ships green — it only
+   * blows up for the users who are not allow-listed, which is the delayed version of the silent
+   * wrong answer this axis exists to remove.
+   */
+  test('an allow-listed actor does not skip resolving a declared record kind', () => {
+    const targeting: FlagTargeting = {
+      default: false,
+      actors: ['user-1'],
+      subjects: { bank: ['bank_integration:bbva'] },
+    };
+    expect(
+      caught(() => evaluateTargeting('a.flag', targeting, actor, undefined)),
+    ).toBeUltimateError('X_FLAG_SUBJECT_REQUIRED');
+  });
+
+  test('an allow-listed role does not skip resolving a declared record kind', () => {
+    const staff = userActor({ id: 'user-9', orgId: 'org-a', roles: ['staff'] });
+    const targeting: FlagTargeting = {
+      default: false,
+      roles: ['staff'],
+      subjects: { bank: ['bank_integration:bbva'] },
+    };
+    expect(
+      caught(() => evaluateTargeting('a.flag', targeting, staff, undefined)),
+    ).toBeUltimateError('X_FLAG_SUBJECT_REQUIRED');
+  });
+
+  test('an allow-listed actor does not skip resolving the bucketBy kind', () => {
+    const targeting: FlagTargeting = {
+      default: false,
+      actors: ['user-1'],
+      rollout: 10,
+      bucketBy: 'bank',
+    };
+    expect(
+      caught(() => evaluateTargeting('a.flag', targeting, actor, undefined)),
+    ).toBeUltimateError('X_FLAG_SUBJECT_REQUIRED');
+  });
+
+  test('an allow-listed actor does not skip resolving the org axis', () => {
+    const orgless = userActor({ id: 'user-1' });
+    const targeting: FlagTargeting = { default: false, actors: ['user-1'], orgs: ['org-a'] };
+    expect(
+      caught(() => evaluateTargeting('a.flag', targeting, orgless, undefined)),
+    ).toBeUltimateError('X_FLAG_SUBJECT_REQUIRED');
+  });
+
+  test('an allow-list hit still answers true once every declared kind resolved', () => {
+    const targeting: FlagTargeting = {
+      default: false,
+      actors: ['user-1'],
+      subjects: { bank: ['bank_integration:zzz'] },
+    };
+    expect(evaluateTargeting('a.flag', targeting, actor, santander)).toBe(true);
+  });
+
   test('bucketBy a record kind puts a whole record on one side of a rollout', () => {
     // `bank_integration:bbva` buckets at 39 and `:santander` at 86 for this key — pinned below.
     const targeting: FlagTargeting = { default: false, rollout: 50, bucketBy: 'bank' };

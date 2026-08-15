@@ -65,10 +65,18 @@ export function notRoundable(value: number): MoneyError {
 }
 
 export function decimalTooPrecise(value: string, currency: string, exponent: number): MoneyError {
+  const digits = countFractionDigits(value);
+  // Past MAX_MONEY_SCALE no scale keeps every digit, so the offer is withdrawn rather than
+  // clamped: `{ scale: 19 }` was a fix line that answered X_MONEY_SCALE_INVALID, and an
+  // instruction that throws is not one.
+  const keepThemAll =
+    digits <= MAX_MONEY_SCALE
+      ? `fromDecimal('${value}', '${currency}', { scale: ${digits} }) to keep every digit, or `
+      : '';
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
     cause: `"${value}" has more than ${exponent} fraction digit(s), which is all ${currency} is being counted in`,
-    fix: `fromDecimal('${value}', '${currency}', { scale: ${countFractionDigits(value)} }) to keep every digit, or { rounding: 'half-up' } to lose them on purpose`,
+    fix: `${keepThemAll}pass { rounding: 'half-up' } to fromDecimal to lose the extra digits on purpose`,
   });
 }
 
@@ -82,6 +90,28 @@ export function scaleInvalid(scale: number): MoneyError {
     code: 'X_MONEY_SCALE_INVALID',
     cause: `a money scale must be a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, got ${String(scale)}`,
     fix: `use a scale in range — money(minor, currency, 6) for micros, or omit it for the currency's own minor unit`,
+  });
+}
+
+/**
+ * A widened value that no longer fits a safe integer. Reported under `X_MONEY_SCALE_INVALID`
+ * rather than `X_MONEY_NOT_INTEGER` because the caller never wrote a fractional minor — the scale
+ * the operation had to meet at is what does not fit, and that code's fix line
+ * (`fromDecimal('90071992547409900000', …)`) throws again. Same code as the other scale faults, so
+ * the reader lands on the page about scales, which is where the answer is.
+ */
+export function scaleOverflow(
+  scale: number,
+  currency: string,
+  fits: number | undefined,
+): MoneyError {
+  return new MoneyError({
+    code: 'X_MONEY_SCALE_INVALID',
+    cause: `this ${currency} amount needs more digits at scale ${scale} than a safe integer holds`,
+    fix:
+      fits === undefined
+        ? `the amount is too large for any scale — split it, or carry it as two ${currency} values`
+        : `rescale(theFinerOperand, ${fits}, 'half-up') before combining — scale ${fits} is the finest that fits`,
   });
 }
 

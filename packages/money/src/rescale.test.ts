@@ -1,5 +1,10 @@
+// Single responsibility: pins the one asymmetry in rescaling — widening is exact and free,
+// narrowing destroys digits and so must name a rounding mode. A silent narrowing is the sub-cent
+// bug this whole file exists to make impossible, so the refusal is the contract under test.
+
 import { describe, expect, test } from 'bun:test';
-import { money } from './money';
+import { multiply } from './arithmetic';
+import { money, toDecimalString } from './money';
 import { rescale } from './rescale';
 
 describe('rescale', () => {
@@ -41,11 +46,19 @@ describe('rescale', () => {
   });
 
   test('the sub-cent value the AI cost path could not hold: $0.80/Mtok over 200 tokens', () => {
-    // Truly $0.00016. Whole cents rounded it up to 1¢ — ~50x — and the budget ledger built on
-    // that number was fiction.
-    const perMillion = rescale(money(80, 'USD'), 8);
-    expect(perMillion.minor).toBe(80_000_000);
-    expect(rescale(perMillion, 2, 'half-up')).toEqual({ minor: 80, currency: 'USD' });
+    // $0.80 per million tokens is $0.0000008 per token — 80 units at scale 8, a rate cents
+    // cannot express at all.
+    const perToken = money(80, 'USD', 8);
+    expect(toDecimalString(perToken)).toBe('0.00000080');
+
+    const cost = multiply(perToken, 200);
+    expect(cost).toEqual({ minor: 16_000, currency: 'USD', scale: 8 });
+    expect(toDecimalString(cost)).toBe('0.00016000');
+
+    // The bug, reproduced: rounding that up to whole cents bills 1¢ for $0.00016 — 62x. The
+    // point of the scale is that the exact figure above survives to the ledger instead.
+    expect(rescale(cost, 2, 'up')).toEqual({ minor: 1, currency: 'USD' });
+    expect(rescale(cost, 2, 'half-up')).toEqual({ minor: 0, currency: 'USD' });
   });
 });
 

@@ -94,10 +94,14 @@ export const flagSubjectRequired = (init: {
   new FlagsError({
     code: 'X_FLAG_SUBJECT_REQUIRED',
     cause: `${init.key} decides by the "${init.kind}" subject (targeting.${init.via}) but the evaluation context carries no ${init.kind} id for actor "${init.actorId}", so there is nothing to decide about`,
+    // Every app-supplied string goes through JSON.stringify, and the kind becomes a COMPUTED key:
+    // a `bank-integration` kind — the realistic shape, next to treasury's `bank_integration:` ids
+    // — is not a valid identifier, so `{ bank-integration: … }` would hand the reader a fix that
+    // does not parse. Axiom 4: an instruction that cannot be run is not one.
     fix:
       init.kind === 'org'
-        ? `mint the actor with its tenant — userActor({ id: '${init.actorId}', orgId: '<org>' }) — before the isEnabled('${init.key}') call, or drop ${init.via} from defineFlag({ key: '${init.key}' })`
-        : `pass the record at the call site — isEnabled('${init.key}', actor, { ${init.kind}: '<id>' }) — or drop the "${init.kind}" ${init.via} entry from defineFlag({ key: '${init.key}' })`,
+        ? `mint the actor with its tenant — userActor({ id: ${JSON.stringify(init.actorId)}, orgId: '<org>' }) — before the isEnabled(${JSON.stringify(init.key)}) call, or drop ${init.via} from defineFlag({ key: ${JSON.stringify(init.key)} })`
+        : `pass the record at the call site — isEnabled(${JSON.stringify(init.key)}, actor, { [${JSON.stringify(init.kind)}]: '<id>' }) — or drop the ${JSON.stringify(init.kind)} ${init.via} entry from defineFlag({ key: ${JSON.stringify(init.key)} })`,
     meta: { key: init.key, kind: init.kind, actorId: init.actorId, via: init.via },
   });
 

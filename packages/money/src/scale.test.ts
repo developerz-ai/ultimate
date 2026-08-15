@@ -1,3 +1,8 @@
+// Single responsibility: pins what a money value's scale MEANS — that an absent one is the
+// currency's own, and that widening to a finer scale is exact. Both are load-bearing: the first
+// is why every amount that predates scale still reads correctly, the second is why a comparison
+// can answer where storing the widened value would rightly be refused.
+
 import { describe, expect, test } from 'bun:test';
 import { money } from './money';
 import { assertScale, MAX_MONEY_SCALE, minorAt, moneyScale } from './scale';

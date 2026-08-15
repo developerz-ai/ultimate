@@ -96,11 +96,17 @@ function formatterFor(
   const digits =
     options.fractionDigits ?? (options.trimZeroFraction === true ? undefined : exponent);
   const sign = options.accounting === true ? 'accounting' : 'standard';
+  // `exponent` is in the key because it stopped being derivable from `currency` the moment it
+  // started coming from the amount's own scale. On the `trimZeroFraction` path `digits` is
+  // `undefined`, so without it every scale of one currency shared a formatter: format 12.99 EUR
+  // first and 12.990001 EUR then rendered as `12,99 €` — the sub-cent bug back, silently, in the
+  // one place a human reads the number.
   const key = [
     locale,
     currency,
     options.display ?? 'symbol',
     digits ?? 'auto',
+    exponent,
     options.grouping ?? 'auto',
     sign,
   ].join('|');

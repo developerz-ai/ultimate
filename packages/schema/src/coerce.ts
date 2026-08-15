@@ -69,8 +69,12 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
     case 'money': {
       if (typeof raw !== 'object') return raw;
       const source = raw as Record<string, unknown>;
-      const minor = typeof source['minor'] === 'string' ? Number(source['minor']) : source['minor'];
-      if (!Number.isFinite(minor)) return raw;
+      // Through `numeric` for the same reason `scale` is: `Number('')` is 0, so a blank amount
+      // field converted here would reach the validator as a legitimate zero and book an empty
+      // price input as free. A blank stays a blank and fails validation, which is the real error.
+      const rawMinor = source['minor'];
+      const minor = typeof rawMinor === 'string' ? numeric(rawMinor) : rawMinor;
+      if (typeof minor !== 'number' || !Number.isFinite(minor)) return raw;
       // `scale` arrives as text from a query string exactly as `minor` does. Left a string it
       // would fail validation on a value whose `minor` the same request just had converted.
       const scale = numeric(source['scale']);

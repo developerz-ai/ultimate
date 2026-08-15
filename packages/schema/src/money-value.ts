@@ -31,8 +31,8 @@ export interface MoneyValue {
    * for USD, 0 for JPY, 3 for KWD. `{ minor: 2, currency: 'USD', scale: 6 }` is $0.000002.
    *
    * It exists because a cents-only value could not name a sub-cent amount at all, so the one
-   * place that needed one (a model call costing $0.0002) rounded it up to a whole cent and
-   * reported ~50x the real spend. The alternative was a second money type, which is the axiom-1
+   * place that needed one — a model call costing $0.00016 — rounded it up to a whole cent and
+   * reported 62x the real spend. The alternative was a second money type, which is the axiom-1
    * violation this declaration exists to prevent.
    */
   readonly scale?: number;

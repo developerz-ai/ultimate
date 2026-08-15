@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { add, compare, divide, isZero, max, multiply, negate, subtract, sum } from './arithmetic';
 import { money } from './money';
+import { rescale } from './rescale';
 
 describe('cross-currency safety', () => {
   test('add refuses two currencies with X_CURRENCY_MISMATCH', () => {
@@ -121,6 +122,23 @@ describe('mixed scales', () => {
     });
   });
 
+  test('a common scale that will not fit reports a scale error, with a fix that runs', () => {
+    const huge = money(Number.MAX_SAFE_INTEGER, 'USD');
+    const fine = money(1, 'USD', 6);
+    // Not X_MONEY_NOT_INTEGER: nobody wrote a fractional minor. The widening is what does not
+    // fit, and `fromDecimal('90071992547409900000', 'USD')` — the old fix — throws again.
+    expect(codeOf(() => add(huge, fine))).toBe('X_MONEY_SCALE_INVALID');
+    expect(causeOf(() => add(huge, fine))).toContain('scale 6');
+    const fix = fixOf(() => add(huge, fine));
+    expect(fix).toContain('rescale');
+    expect(fix).toContain('2');
+    // Following it works, which is the whole point of an executable fix line.
+    expect(add(huge, rescale(fine, 2, 'half-up'))).toEqual({
+      minor: Number.MAX_SAFE_INTEGER,
+      currency: 'USD',
+    });
+  });
+
   test('two currencies still refuse each other, whatever their scales', () => {
     expect(codeOf(() => add(money(2, 'USD', 6), money(1, 'EUR')))).toBe('X_CURRENCY_MISMATCH');
   });
@@ -145,3 +163,12 @@ describe('mixed scales', () => {
     expect(isZero(money(0, 'USD', 6))).toBe(true);
   });
 });
+
+function fixOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { fix?: unknown }).fix);
+  }
+  return 'no-throw';
+}

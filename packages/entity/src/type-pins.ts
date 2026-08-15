@@ -282,7 +282,7 @@ type _MoneyCurrencyIsAReadonlyString = Assert<
 /**
  * `scale` is the decimal exponent `minor` counts in — `{ minor: 2, currency: 'USD', scale: 6 }` is
  * $0.000002. Optional, and pinned optional, because a cents-only `Money` could not name a
- * sub-cent amount at all: the AI cost path rounded a $0.0002 call up to a whole cent, ~50x, and
+ * sub-cent amount at all: the AI cost path rounded a $0.00016 call up to a whole cent, 62x, and
  * the alternative to this field was a second money type.
  */
 type _MoneyScaleIsAReadonlyOptionalNumber = Assert<

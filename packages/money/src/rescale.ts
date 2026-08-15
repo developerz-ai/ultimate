@@ -7,7 +7,7 @@
 import { rescaleNotExact } from './errors';
 import { type Money, money } from './money';
 import { type RoundingMode, roundRatio } from './rounding';
-import { assertScale, minorAt, moneyScale } from './scale';
+import { assertScale, minorAt, moneyScale, toMinor } from './scale';
 
 /**
  * `rescale(money(80, 'USD'), 8)` → 80,000,000 hundred-millionths, the granularity a per-token
@@ -17,7 +17,9 @@ import { assertScale, minorAt, moneyScale } from './scale';
 export function rescale(amount: Money, scale: number, mode?: RoundingMode): Money {
   assertScale(scale);
   const from = moneyScale(amount);
-  if (scale >= from) return money(Number(minorAt(amount, scale)), amount.currency, scale);
+  if (scale >= from) {
+    return money(toMinor(minorAt(amount, scale), scale, amount.currency), amount.currency, scale);
+  }
 
   const divisor = 10n ** BigInt(from - scale);
   const numerator = BigInt(amount.minor);

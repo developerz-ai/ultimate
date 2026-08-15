@@ -7,7 +7,7 @@ import { isMoneyScale, type MoneyValue } from '@ultimat3/schema';
 import { assertCurrency, type CurrencyCode, exponentOf } from './currency';
 import { decimalNotNumeric, decimalTooPrecise, moneyNotInteger } from './errors';
 import { type RoundingMode, roundToInteger } from './rounding';
-import { assertScale, minorAt, moneyScale } from './scale';
+import { assertScale, commonScale, minorAt, moneyScale } from './scale';
 
 /**
  * `{ minor: 129900, currency: 'EUR' }` is €1,299.00. Instances are immutable, and now enforced
@@ -122,7 +122,7 @@ export function isMoney(value: unknown): value is Money {
  */
 export function equals(left: Money, right: Money): boolean {
   if (left.currency !== right.currency) return false;
-  const scale = Math.max(moneyScale(left), moneyScale(right));
+  const scale = commonScale(left, right);
   return minorAt(left, scale) === minorAt(right, scale);
 }
 

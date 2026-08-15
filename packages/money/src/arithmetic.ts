@@ -7,7 +7,7 @@ import { allocationInvalid, currencyMismatch, currencyRequired } from './errors'
 import { factorFraction } from './factor';
 import { type Money, money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
-import { commonScale, minorAt } from './scale';
+import { commonScale, minorAt, toMinor } from './scale';
 
 /** Throws `X_CURRENCY_MISMATCH` unless both operands carry the same currency. */
 export function assertSameCurrency(left: Money, right: Money): string {
@@ -22,13 +22,21 @@ export function assertSameCurrency(left: Money, right: Money): string {
 export function add(left: Money, right: Money): Money {
   const currency = assertSameCurrency(left, right);
   const scale = commonScale(left, right);
-  return money(Number(minorAt(left, scale) + minorAt(right, scale)), currency, scale);
+  return money(
+    toMinor(minorAt(left, scale) + minorAt(right, scale), scale, currency),
+    currency,
+    scale,
+  );
 }
 
 export function subtract(left: Money, right: Money): Money {
   const currency = assertSameCurrency(left, right);
   const scale = commonScale(left, right);
-  return money(Number(minorAt(left, scale) - minorAt(right, scale)), currency, scale);
+  return money(
+    toMinor(minorAt(left, scale) - minorAt(right, scale), scale, currency),
+    currency,
+    scale,
+  );
 }
 
 /** Every addend must share one currency; an empty list needs an explicit currency. */

@@ -46,6 +46,12 @@ describe('coerceQuery', () => {
       minor: 1999,
       currency: 'EUR',
     });
+    // A blank field is an amount nobody typed. `Number('')` is 0, so converting it would hand
+    // validation a legitimate-looking zero and book an empty price input as free.
+    expect(coerceNode(t.money.node, { minor: '', currency: 'USD' })).toEqual({
+      minor: '',
+      currency: 'USD',
+    });
     // A query string carries every field as text, scale included — leaving it a string would
     // fail validation on a value the same request's `minor` was accepted for.
     expect(coerceNode(t.money.node, { minor: '2', currency: 'USD', scale: '6' })).toEqual({

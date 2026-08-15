@@ -57,6 +57,14 @@ export function subjectIdOf(init: {
   return id;
 }
 
+/**
+ * Own properties only. `subjects['toString']` would otherwise walk the prototype chain and hand
+ * back a function where an id belongs — a weird downstream failure instead of the clean
+ * `X_FLAG_SUBJECT_REQUIRED` this package designed for exactly that case.
+ *
+ * The `typeof` re-check is for JS callers and store-shaped data: an id is a string or it is
+ * nothing, and a number reaching `bucketOf` would hash to a real bucket rather than raise.
+ */
 function resolve(
   kind: string,
   actor: Actor,
@@ -64,5 +72,7 @@ function resolve(
 ): string | undefined {
   if (kind === 'actor') return actor.id;
   if (kind === 'org') return actor.orgId;
-  return subjects?.[kind];
+  if (subjects === undefined || !Object.hasOwn(subjects, kind)) return undefined;
+  const id = subjects[kind];
+  return typeof id === 'string' ? id : undefined;
 }

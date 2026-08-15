@@ -46,6 +46,19 @@ describe('fromDecimal', () => {
     expect(fromDecimal('1200.4', 'JPY', { rounding: 'half-up' }).minor).toBe(1200);
   });
 
+  test('the excess-precision fix line is a command that runs', () => {
+    // Axiom 4: an error whose `fix:` throws a second error is not an instruction.
+    const suggested = /\{ scale: (\d+) \}/.exec(fixOf(() => fromDecimal('12.99999', 'EUR')));
+    expect(suggested?.[1]).toBe('5');
+    expect(fromDecimal('12.99999', 'EUR', { scale: Number(suggested?.[1]) }).minor).toBe(1_299_999);
+
+    // Past MAX_MONEY_SCALE there is no scale that keeps every digit, so the fix must stop
+    // offering one — `{ scale: 19 }` answered X_MONEY_SCALE_INVALID.
+    const tooDeep = fixOf(() => fromDecimal('1.0000000000000000001', 'USD'));
+    expect(tooDeep).not.toContain('scale:');
+    expect(tooDeep).toContain('rounding');
+  });
+
   test('rejects formatted input instead of guessing', () => {
     expect(codeOf(() => fromDecimal('1,299.00', 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
     expect(codeOf(() => fromDecimal('€12.99', 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
@@ -130,6 +143,15 @@ function codeOf(run: () => unknown): string {
     run();
   } catch (error) {
     return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}
+
+function fixOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { fix?: unknown }).fix);
   }
   return 'no-throw';
 }

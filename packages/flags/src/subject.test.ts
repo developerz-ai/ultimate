@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
+import type { FlagSubjects } from './subject';
 import { BUILT_IN_SUBJECT_KINDS, subjectIdOf } from './subject';
 
 const caught = (run: () => unknown): unknown => {
@@ -95,8 +96,38 @@ describe('unit · subjectIdOf', () => {
     const bankFix = caught(() =>
       subjectIdOf({ key: 'a.flag', kind: 'bank', actor, subjects: {}, via: 'subjects' }),
     ) as { fix: string };
-    expect(bankFix.fix).toContain("isEnabled('a.flag'");
+    expect(bankFix.fix).toContain('isEnabled("a.flag"');
+    // A computed key, so a kind that is not an identifier still parses — see errors.test.ts.
+    expect(bankFix.fix).toContain('{ ["bank"]:');
     expect(bankFix.fix).toContain('bank');
+  });
+
+  test('a kind named after an Object.prototype member is absent, not inherited', () => {
+    // `subjects.toString` walks the prototype chain and finds a function. Without an own-property
+    // check the resolver returns it instead of raising, and the failure downstream is a weird one
+    // — a function where an id belongs — rather than the clean error this package designed.
+    for (const inherited of ['toString', 'constructor', 'valueOf', 'hasOwnProperty']) {
+      expect(
+        caught(() =>
+          subjectIdOf({ key: 'a.flag', kind: inherited, actor, subjects: {}, via: 'subjects' }),
+        ),
+      ).toBeUltimateError('X_FLAG_SUBJECT_REQUIRED');
+    }
+  });
+
+  test('an own value that is not a string is absent — an id is a string or it is nothing', () => {
+    const notAString: unknown = { bank: 42 };
+    expect(
+      caught(() =>
+        subjectIdOf({
+          key: 'a.flag',
+          kind: 'bank',
+          actor,
+          subjects: notAString as FlagSubjects,
+          via: 'subjects',
+        }),
+      ),
+    ).toBeUltimateError('X_FLAG_SUBJECT_REQUIRED');
   });
 
   test('actor and org are the built-ins, and nothing else is', () => {

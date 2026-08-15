@@ -1,11 +1,13 @@
 # @ultimat3/money — agent notes
 
 **Tier 1.** May import `@ultimat3/core`, `@ultimat3/schema`. No external deps, ever.
-`Money = { readonly minor: number; readonly currency: string; readonly scale?: number }` is the
-shape the whole framework passes around. `scale` is the decimal exponent `minor` counts in when it
-is not the currency's own — absent on every value that predates it, and absent again whenever it
-would only restate the currency, so there is exactly one encoding of an amount at the natural
-scale and existing JSON is untouched.
+`Money` is the shape the whole framework passes around, and the shape itself is declared once, in
+`packages/schema/src/money-value.ts` — read it there rather than trusting a copy here, which is
+the same reason `type-pins.ts` pins invariants instead of a snapshot. What this package adds is
+the *meaning* of the optional `scale`: the decimal exponent `minor` counts in when it is not the
+currency's own. Absent on every value that predates it, and absent again whenever it would only
+restate the currency, so an amount at the natural scale has exactly one encoding and existing
+JSON is untouched.
 
 **`Money` is an alias, not a declaration.** It is `@ultimat3/schema`'s `MoneyValue` — tier 0, the
 only tier every package may import — and `@ultimat3/entity`'s `MoneyValue` is the same alias. Never
@@ -24,7 +26,7 @@ shape is still additive and this is still a minor version.
 | `money.ts` | the value type + constructors (`money`, `fromDecimal`, `toDecimalString`) |
 | `currency.ts` | ISO-4217 table + minor-unit exponent. Every natural scale derives from here. |
 | `scale.ts` | what decimal place a value's `minor` counts (`moneyScale`), which scales are legal (`assertScale`), and the exact bigint widening every comparison starts with (`minorAt`) |
-| `rescale.ts` | moving between scales: widening exact, narrowing only with a named mode |
+| `rescale.ts` | moving between scales: widening exact, lossy narrowing only with a named mode |
 | `arithmetic.ts` | add/subtract/multiply/compare, refuses mixed currencies |
 | `allocate.ts` | largest-remainder splits that preserve the total |
 | `factor.ts` | the exact fraction a scaling factor's decimal spelling names. `factorFraction` is internal — never exported; the `Fraction` **type** is public, because `ExchangeRate.ratio` is one |
@@ -42,11 +44,17 @@ shape is still additive and this is still a minor version.
   widen through `minorAt` (bigint, exact) before they do anything else, so a sub-cent fee added to
   a cent survives and a comparison answers where storing the widened value would rightly be
   refused. Rounding down to the coarser scale would silently delete the smaller operand.
-- **Narrowing a scale names its mode at the call.** `rescale(m, 2)` throws rather than drop a
-  digit; `rescale(m, 2, 'half-up')` is the same rule `fromDecimal` applies to excess precision.
+- **Lossy narrowing names its mode at the call.** `rescale(m, 2)` throws rather than drop a
+  non-zero digit; `rescale(m, 2, 'half-up')` is the same rule `fromDecimal` applies to excess
+  precision. A narrowing that loses nothing needs no mode — nothing is being decided.
 - **`money()` is the only place the canonical form is decided.** It drops a `scale` equal to the
-  currency's exponent, so every constructor, every arithmetic result and every allocation part
-  agree on one encoding without any of them repeating the rule.
+  currency's exponent — only equal, so a deliberately *coarser* scale (`money(5, 'USD', 0)`, whole
+  dollars) is kept exactly as a finer one is. Every constructor, every arithmetic result and every
+  allocation part therefore agree on one encoding without any of them repeating the rule.
+- **A widened value that will not fit is a scale error, not a fractional-minor one.** `add`,
+  `subtract` and `rescale` convert through `toMinor`, which throws `X_MONEY_SCALE_INVALID` naming
+  the finest scale that fits. Letting `money()` refuse the raw number reported a fractional minor
+  nobody wrote, with a `fromDecimal` fix line that threw the same error again.
 - Never combine currencies without `convert()` first.
 - Never round without naming a `RoundingMode` in the call or accepting the stated default.
 - **Never scale in floats and round after.** `multiply`, `divide` and `convert` take the factor's

@@ -125,8 +125,9 @@ function assertSubjects(key: string, subjects: Readonly<Record<string, readonly 
  * every such call gets the same answer, so no single subject is split — which is the failure being
  * designed out. A context that exists but lacks the kind is the ambiguous case, and that throws.
  *
- * `subjectIdOf` is called only on the branches that need a subject, so a plain
- * `{ default, rollout }` flag still allocates nothing.
+ * Every kind the targeting declares resolves before any branch answers, so whether a call raises
+ * `X_FLAG_SUBJECT_REQUIRED` depends only on the flag and the context — never on which allow list
+ * happened to match first, nor on the order the keys sit in.
  */
 export function evaluateTargeting(
   key: string,
@@ -135,29 +136,28 @@ export function evaluateTargeting(
   subjects?: FlagSubjects | undefined,
 ): boolean {
   if (actor === null) return targeting.default;
-  if (targeting.actors?.includes(actor.id) === true) return true;
-  if (targeting.roles?.some((role) => hasRole(actor, role)) === true) return true;
-  if (
-    targeting.orgs?.includes(subjectIdOf({ key, kind: 'org', actor, subjects, via: 'orgs' })) ===
-    true
-  ) {
-    return true;
+  // Nothing answers until every declared kind has resolved. Returning early on an allow-list hit
+  // would hide a missing record from exactly the callers who are on the list: the call site ships
+  // green, and raises later only for everybody else. `allowed` accumulates instead of returning.
+  let allowed = targeting.actors?.includes(actor.id) === true;
+  if (targeting.roles?.some((role) => hasRole(actor, role)) === true) allowed = true;
+  if (targeting.orgs !== undefined) {
+    const orgId = subjectIdOf({ key, kind: 'org', actor, subjects, via: 'orgs' });
+    if (targeting.orgs.includes(orgId)) allowed = true;
   }
   if (targeting.subjects !== undefined) {
-    // Every declared kind is resolved before any of them can answer, so a call site missing one
-    // raises whatever order the keys sit in. Short-circuiting on the first match would make the
-    // same inputs sometimes answer and sometimes throw, decided by declaration order.
-    let matched = false;
-    for (const [kind, ids] of Object.entries(targeting.subjects)) {
+    // `for…in` + `Object.hasOwn` rather than `Object.entries`: own keys only, and no array pair
+    // allocated per declared kind on a path that runs inside policy predicates.
+    for (const kind in targeting.subjects) {
+      if (!Object.hasOwn(targeting.subjects, kind)) continue;
       const id = subjectIdOf({ key, kind, actor, subjects, via: 'subjects' });
-      if (ids.includes(id)) matched = true;
+      if (targeting.subjects[kind]?.includes(id) === true) allowed = true;
     }
-    if (matched) return true;
   }
-  if (targeting.rollout === undefined) return targeting.default;
+  if (targeting.rollout === undefined) return allowed || targeting.default;
   const subjectId =
     targeting.bucketBy === undefined
       ? actor.id
       : subjectIdOf({ key, kind: targeting.bucketBy, actor, subjects, via: 'bucketBy' });
-  return bucketOf(key, subjectId) < targeting.rollout;
+  return allowed || bucketOf(key, subjectId) < targeting.rollout;
 }

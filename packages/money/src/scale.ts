@@ -6,7 +6,7 @@
 
 import { isMoneyScale, MAX_MONEY_SCALE } from '@ultimat3/schema';
 import { exponentOf } from './currency';
-import { scaleInvalid, scaleNotWidening } from './errors';
+import { scaleInvalid, scaleNotWidening, scaleOverflow } from './errors';
 import type { Money } from './money';
 
 export { MAX_MONEY_SCALE };
@@ -47,4 +47,27 @@ export function minorAt(amount: Money, scale: number): bigint {
 /** The finer of two scales: where two values have to meet before they can be one number. */
 export function commonScale(left: Money, right: Money): number {
   return Math.max(moneyScale(left), moneyScale(right));
+}
+
+/**
+ * A widened bigint back to a storable `minor`, or a scale error naming the finest scale that
+ * would fit. The one place that conversion happens, because `Number(widened)` alone reached
+ * `money()` as a plain out-of-range amount — reported as a fractional minor nobody wrote, with a
+ * `fromDecimal` fix line that throws the same error again.
+ */
+export function toMinor(widened: bigint, scale: number, currency: string): number {
+  const minor = Number(widened);
+  if (Number.isSafeInteger(minor)) return minor;
+  throw scaleOverflow(scale, currency, finestFitting(widened, scale));
+}
+
+/** How coarse the scale has to get before the magnitude fits; `undefined` if it never does. */
+function finestFitting(widened: bigint, scale: number): number | undefined {
+  const limit = BigInt(Number.MAX_SAFE_INTEGER);
+  let magnitude = widened < 0n ? -widened : widened;
+  for (let fitted = scale; fitted >= 0; fitted -= 1) {
+    if (magnitude <= limit) return fitted;
+    magnitude /= 10n;
+  }
+  return undefined;
 }
