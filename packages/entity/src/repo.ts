@@ -26,7 +26,12 @@ export interface Tx {
 
 export interface RepoOptions {
   readonly tx?: Tx;
-  /** Required for tenant-scoped entities; the guard throws without it. */
+  /**
+   * The tenant, and never the authority for it: inside a request the plan is scoped to the acting
+   * actor's org whether this is passed or not, and a value that disagrees with the actor is
+   * `X_TENANCY_ACTOR_MISMATCH` rather than the tenant the query runs under. It is still required
+   * outside every request context — a script has no actor to derive from.
+   */
   readonly orgId?: string;
 }
 

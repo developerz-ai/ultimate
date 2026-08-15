@@ -115,9 +115,10 @@ const unevenBatch = (entityName: string, position: number, missing: string): Ent
 
 /**
  * A cross-tenant upsert is not a batching mistake, it is a write into another tenant's row, so it
- * gets tenancy's own code. `X_TENANCY_UNSCOPED`'s own factory sends the reader to `{ orgId }`,
- * which is not what repairs this: the scope has to be part of the constraint the collision is
- * judged against, or the row that comes back was never in scope to begin with.
+ * gets tenancy's own code. `X_TENANCY_UNSCOPED`'s own factory sends the reader to the request
+ * context the tenant is derived from, which is not what repairs this: an upsert builds no read
+ * plan, so nothing derives anything onto it — the scope has to be part of the constraint the
+ * collision is judged against, or the row that comes back was never in scope to begin with.
  */
 const crossTenantUpsert = (
   entityName: string,

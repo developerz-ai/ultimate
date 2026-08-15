@@ -4,7 +4,7 @@
 // preloaded row is served to a lookup the preload statement WAS, and to no other.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { createContext, runWithContext, serviceActor, userActor } from '@ultimat3/core';
 import {
   createRecordingClient,
   type DbClient,
@@ -13,6 +13,7 @@ import {
 } from '@ultimat3/db';
 import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { text, timestamp, uuid } from './columns';
+import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
@@ -77,7 +78,17 @@ afterAll(() => {
 
 const postRepo = () => postgresRepo(posts);
 const userRepo = () => postgresRepo(users);
-const inRequest = <T>(work: () => Promise<T>): Promise<T> => runWithContext(createContext(), work);
+const inRequest = <T>(work: () => Promise<T>): Promise<T> =>
+  runWithContext(createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
+
+/** A support-tool request: the one shape that may read two tenants, and it says so out loud. */
+const acrossTenants = <T>(work: () => Promise<T>): Promise<T> =>
+  runWithContext(
+    createContext({
+      actor: serviceActor({ id: idAt(91), orgId: ORG, scopes: [CROSS_TENANT_SCOPE] }),
+    }),
+    () => crossTenant('a support tool reads two tenants in one request', work),
+  );
 
 /** A page of three posts by three authors, and the three authors it will be asked for. */
 const aPageOfThree = (): void => {
@@ -215,7 +226,9 @@ describe('the scope a preloaded row may be served to', () => {
 
   test('another tenant is never served from this one, and never shares its statement', async () => {
     aPageOfThree();
-    await inRequest(async () => {
+    // Two tenants in one request is exactly what `crossTenant` is for, and it is the only way to
+    // ask this question at all: the guard would otherwise refuse the second tenant outright.
+    await acrossTenants(async () => {
       await postRepo().findMany({ orgId: ORG });
       await userRepo().findById(idAt(20), { orgId: ORG });
       await userRepo().findById(idAt(20), { orgId: OTHER_ORG });

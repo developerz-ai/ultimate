@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -402,7 +402,7 @@ describe('postgresRepo() jitPreload config', () => {
         { id: OTHER_ORG, slug: 'theirs' },
       ],
     });
-    await runWithContext(createContext(), async () => {
+    await runWithContext(createContext({ actor: userActor({ id: ID, orgId: ORG }) }), async () => {
       const page = await postgresRepo(invoices, { jitPreload }).findMany({ orgId: ORG, limit: 2 });
       // A `for … of` awaits between iterations, so no two of these share a microtask: only the
       // page they came from can batch them.

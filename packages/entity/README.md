@@ -203,7 +203,7 @@ and never unwritten.
 | Returns | the **number of rows affected**, so "nothing matched" is distinguishable from "it worked" |
 | Empty filter | `X_WRITE_UNFILTERED`. An `undefined` value is dropped before the count, so a forgotten variable is the error and not the whole table |
 | Empty patch | `X_PATCH_EMPTY`. Counting rows for a statement that set nothing is the same silent no-op, one argument along |
-| Tenancy | the plan a read builds, through `assertScoped` — the org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row |
+| Tenancy | the plan a read builds, through `scopedPlan` — the actor's org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row |
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
 
@@ -432,9 +432,39 @@ it triggers, so a loop that fails a test and a loop that warns in dev are the sa
 `.tenant()` column, else one named `orgId` — so an entity never becomes unscoped by forgetting the
 key; name a column that does not exist and the declaration fails with `X_INVARIANT_VIOLATED`.
 
-Either way, every read then needs an org predicate. Without one: `X_TENANCY_UNSCOPED`, at the
-seam, every time. Writes are reads: `update(id, patch)` and `delete(id)` build the same plan, so
-an id alone never addresses a row, and another tenant's id is `X_NOT_FOUND` rather than theirs.
+**The tenant is the acting actor's, and never an argument.** Inside a request every plan for a
+scoped entity is scoped to `ctx.actor.orgId`, whether the call named a tenant or not — so
+`db.posts.where({ status })` reads one org's posts and a handler no longer threads a tenant
+through its own signatures. Writes are reads: `update(id, patch)` and `delete(id)` build the same
+plan, so an id alone never addresses a row, and another tenant's id is `X_NOT_FOUND` rather than
+theirs.
+
+An `orgId` argument is still legal and now means "I assert this is the tenant": equal to the
+actor's it is a restatement, different from it — an `orgId` that arrived as action input, a query
+string or a path parameter — it is `X_TENANCY_ACTOR_MISMATCH`, refused rather than silently
+overridden, with both values in the cause. `in` on the tenant column is judged the same way: a set
+containing the actor's org is still a set that is not it.
+
+| Situation | Answer |
+|---|---|
+| actor carries an `orgId` | the plan is scoped to it, derived |
+| a call names the same one | a restatement; one predicate, not two |
+| a call names another one | `X_TENANCY_ACTOR_MISMATCH` |
+| actor carries no `orgId` (anonymous, or a service actor minted without one) | `X_TENANCY_ACTOR_ORG_REQUIRED` — inside no org, every tenant-scoped row is somebody else's |
+| no request context at all (a script, a seed, a test harness) | there is no actor to derive from, so the caller names the tenant and `X_TENANCY_UNSCOPED` refuses a plan that names none |
+| a read that must span tenants | `crossTenant(reason, fn)` |
+
+```ts
+// admin surfaces, background reconciliation, support tooling — greppable, and never a boolean
+await crossTenant('nightly invite expiry runs for every org', async () => { … });
+```
+
+The scope needs the `tenancy:cross` capability on the actor (`scopes: ['tenancy:cross']`), proven
+at the call and again at every plan built inside it, so an impersonated child context cannot
+inherit it: `X_TENANCY_CROSS_DENIED` otherwise. A blank reason is refused — an escape with no
+argument is a pragma. There is no build-time tenancy check in `x verify`, and there cannot
+usefully be one: the tenant is a request-time value, so the seam every plan is built through is
+the enforcement.
 
 ## Seeds
 
@@ -444,9 +474,10 @@ the invariants, which makes a seed a test of the schema as well.
 
 ## Errors
 
-`X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` · `X_DB_DRIFT` ·
-`X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` · `X_PRELOAD_UNKNOWN_RELATION` ·
-`X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE`
+`X_ENTITY_DUPLICATE` · `X_INVARIANT_VIOLATED` · `X_TENANCY_UNSCOPED` ·
+`X_TENANCY_ACTOR_MISMATCH` · `X_TENANCY_ACTOR_ORG_REQUIRED` · `X_TENANCY_CROSS_DENIED` ·
+`X_DB_DRIFT` · `X_NOT_FOUND` · `X_WRITE_UNFILTERED` · `X_PATCH_EMPTY` ·
+`X_PRELOAD_UNKNOWN_RELATION` · `X_N_PLUS_ONE_QUERY` · `X_N_PLUS_ONE_WRITE`
 
 ## Boundaries
 

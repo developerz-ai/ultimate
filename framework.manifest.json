@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "079a1d2632bb005306c965d1d331c38e09e62ac2024bc63aeb10826d82cf33aa",
+  "buildId": "cd77ad0e94388c9c06744d1ce7a6792a16a48ae62b1a3744eab07645bd716304",
   "tiers": {
     "0": [
       "core",
@@ -1574,6 +1574,21 @@
       "code": "X_SW_SCOPE_INVALID",
       "owner": "pwa",
       "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_TENANCY_ACTOR_MISMATCH",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_TENANCY_ACTOR_ORG_REQUIRED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_TENANCY_CROSS_DENIED",
+      "owner": "entity",
+      "at": "packages/entity/src/errors.ts"
     },
     {
       "code": "X_TENANCY_UNSCOPED",

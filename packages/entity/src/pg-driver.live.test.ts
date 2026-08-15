@@ -10,7 +10,7 @@
 // `db-integration.test.ts`; CI's `postgres` service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, runWithContext } from '@ultimat3/core';
+import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import {
   createPostgresClient,
   generateMigration,
@@ -116,6 +116,17 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       total: { minor: 1000, currency: 'USD' },
       ...patch,
     });
+
+  /**
+   * A request, as the coalescer needs one and as production hands it over: a context whose actor
+   * carries the tenant. Coalescing is keyed on the ctx, so these tests have always needed one —
+   * what they never needed to say before is who was asking, and the tenant is now derived from
+   * that. The `{ orgId }` arguments below stay exactly as they were: they name the actor's own
+   * org, so they are a restatement, and the statement asserted here is the proof — a second
+   * tenant predicate would show up as an extra bind.
+   */
+  const inRequestFor = <T>(orgId: string, work: () => Promise<T>): Promise<T> =>
+    runWithContext(createContext({ actor: userActor({ id: 'live-reader', orgId }) }), work);
 
   /** A page walk asserts over a whole tenant, so each one needs a tenant nobody else wrote to. */
   const newOrg = async (slug: string): Promise<string> =>
@@ -250,7 +261,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       },
     });
     try {
-      const rows = await runWithContext(createContext(), () =>
+      const rows = await inRequestFor(acme, () =>
         Promise.all([
           repo().findById(first.id, { orgId: acme }),
           repo().findById(second.id, { orgId: acme }),
@@ -302,7 +313,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       },
     });
     try {
-      const references = await runWithContext(createContext(), async () => {
+      const references = await inRequestFor(org, async () => {
         const page = await tags().findMany({ orgId: org });
         const seen: string[] = [];
         for (const tagRow of page.rows) {

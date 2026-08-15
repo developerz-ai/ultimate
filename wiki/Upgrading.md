@@ -26,7 +26,7 @@
 |---|---|
 | Pinned exact versions | no `^`, no `~`, in the framework or in a generated app. A range is a silent upgrade |
 | Lockstep releases | one release bumps all 28 packages — 27 `@ultimat3/*` plus `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
-| Published with provenance | npm via OIDC trusted publishing, no `NPM_TOKEN` |
+| Published with provenance | npm via OIDC trusted publishing |
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
 | Dependency upgrades are framework work | SolidJS 2 is pre-1.0-stable in places. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |

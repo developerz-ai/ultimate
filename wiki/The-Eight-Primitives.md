@@ -24,6 +24,8 @@ task      — a scheduled trigger (cron) that enqueues jobs
 | `route` | a route folder's `config` export | `x g route <path>` | [Routes and render modes](Routes-And-Render-Modes) |
 | `task` | `<feature>/jobs.ts` | `x g task <name>` | [Scheduled tasks](Scheduled-Tasks) |
 
+Every one is a **function returning a value**, so an app encodes a house rule by wrapping one and exporting its own factory — `tenantEntity`, `auditedMutator` — with the registry, the manifest, the projections, admin and MCP treating the result identically. That is how the framework extends itself too (`llm()` returns an `action`, `backfill()` returns a `job`), and it is why there is no plugin API → [Building your own base](Building-Your-Own-Base).
+
 ## Every primitive projects itself
 
 A primitive's surfaces are methods **on the primitive**, never free functions taking it. `publishPost.tool()`, not `toMcpTool(publishPost)`. Every declared field is lifted onto it, and the declaration object — the `handle`, the `sql`, the `server` — is not reachable from app code at all.

@@ -3,7 +3,13 @@
 // lookup the statement WAS, so a batch can never answer with rows its caller's own could not.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import {
+  createContext,
+  runWithContext,
+  serviceActor,
+  userActor,
+  withChildContext,
+} from '@ultimat3/core';
 import {
   createRecordingClient,
   type DbClient,
@@ -12,6 +18,7 @@ import {
 } from '@ultimat3/db';
 import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { money, text, timestamp, uuid } from './columns';
+import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
@@ -64,7 +71,52 @@ afterAll(() => {
 });
 
 const repo = () => postgresRepo(invoices);
-const inRequest = <T>(work: () => Promise<T>): Promise<T> => runWithContext(createContext(), work);
+// The tenant is the actor's, so a request that reads a tenant-scoped table is a request with an
+// actor that carries one — `{ orgId: ORG }` on the call below is now a restatement of it.
+const inRequest = <T>(work: () => Promise<T>): Promise<T> =>
+  runWithContext(createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
+
+/** A support-tool request: the one shape that may read two tenants, and it says so out loud. */
+const acrossTenants = <T>(work: () => Promise<T>): Promise<T> =>
+  runWithContext(
+    createContext({
+      actor: serviceActor({ id: idAt(91), orgId: ORG, scopes: [CROSS_TENANT_SCOPE] }),
+    }),
+    () => crossTenant('a support tool reads two tenants in one request', work),
+  );
+
+describe('the tenant a batch carries', () => {
+  test('is derived before the batch is joined, though no caller named one', async () => {
+    // The ordering claim: the driver builds the plan through `scopedPlan` and hands THAT to the
+    // coalescer, so a batch cannot exist before the actor's tenant is on it. Nothing here passes
+    // an org, and the statement still binds one.
+    client.on('select', { rows: [physical(idAt(10)), physical(idAt(11))] });
+    await inRequest(() => Promise.all([repo().findById(idAt(10)), repo().findById(idAt(11))]));
+
+    expect(client.statements).toHaveLength(1);
+    expect(client.texts[0]).toContain('"org_id" = $3');
+    expect(client.statements[0]?.values).toEqual([idAt(10), idAt(11), ORG, 2]);
+  });
+
+  test('an impersonated actor never joins the batch it did not open', async () => {
+    client.on('select', { rows: [physical(idAt(10))] });
+    await inRequest(() =>
+      Promise.all([
+        repo().findById(idAt(10)),
+        // Same request, same microtask, a different actor: the batch map is keyed by context
+        // identity and `withChildContext` mints a new one, so the parent's open statement is not
+        // there to join even before the scope key is compared.
+        withChildContext({ actor: userActor({ id: idAt(92), orgId: OTHER_ORG }) }, () =>
+          repo().findById(idAt(11)),
+        ),
+      ]),
+    );
+
+    expect(client.statements).toHaveLength(2);
+    expect(client.statements[0]?.values).toEqual([idAt(10), ORG, 1]);
+    expect(client.statements[1]?.values).toEqual([idAt(11), OTHER_ORG, 1]);
+  });
+});
 
 describe('findById coalescing', () => {
   test('point lookups issued in one microtask become one statement', async () => {
@@ -208,7 +260,9 @@ describe('what never shares a statement', () => {
   });
 
   test('two tenants never coalesce into one statement', async () => {
-    await inRequest(() =>
+    // The one request that may read two tenants at all, so it is the one that can prove the scope
+    // key keeps them apart: `crossTenant` lifts the guard, never the coalescer's scope.
+    await acrossTenants(() =>
       Promise.all([
         repo().findById(idAt(10), { orgId: ORG }),
         repo().findById(idAt(11), { orgId: OTHER_ORG }),
@@ -262,9 +316,13 @@ describe('what never shares a statement', () => {
 });
 
 describe('the guards a point lookup already had', () => {
-  test('a tenant-scoped lookup without an org predicate never reaches a statement', async () => {
-    await inRequest(async () => {
-      await expect(repo().findById(idAt(10))).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
+  test('a tenant-scoped lookup by an actor with no tenant never reaches a statement', async () => {
+    // Inside a request there is no unscoped lookup left to catch — the actor's tenant is applied
+    // whether or not the caller named one — so what is refused here is an actor carrying none.
+    await runWithContext(createContext(), async () => {
+      await expect(repo().findById(idAt(10))).rejects.toBeUltimateError(
+        'X_TENANCY_ACTOR_ORG_REQUIRED',
+      );
     });
     expect(client.statements).toHaveLength(0);
   });

@@ -4,7 +4,7 @@ Every framework package publishes to npm under the **`@ultimat3`** scope. `creat
 unscoped, because `bunx create-ultimate myapp` is the first command a user ever runs.
 
 Releases use **OIDC trusted publishing** from GitHub Actions
-([`.github/workflows/release.yml`](.github/workflows/release.yml)) — no `NPM_TOKEN` secret. npm
+([`.github/workflows/release.yml`](.github/workflows/release.yml)). npm
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 

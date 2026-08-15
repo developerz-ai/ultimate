@@ -13,7 +13,7 @@
 
 </div>
 
-> **Status: 1.1.0**, `As of 2026-08`. 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — on npm in lockstep: one version, one commit, one tag. 1.1.0 is the **first release published by the workflow**, over OIDC trusted publishing with no `NPM_TOKEN` and provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
+> **Status: 1.2.0**, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep: one version, one commit, one tag. **`@ultimat3/flags` has never reached npm** and the rest sit at 1.2.0, so the registry is not yet in lockstep with the repo ([#84](https://github.com/developerz-ai/ultimate/issues/84)); it needs the one-time manual bootstrap every package gets before a trusted publisher can attach. 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
 
 **Measured, and only this much:**
 
