@@ -12,7 +12,7 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | Exports | explicit in `src/index.ts`; no `export *`; a namespace member and its free function ship together (`t.nullable`/`nullableSchema`) |
 | Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
 
-Module order (no cycles): `node → builder → validators → provider → t`.
+Module order (no cycles): `node → builder → money-value → validators → provider → t`.
 `standard.ts` and `errors.ts` depend on nothing but each other.
 
 `SCHEMA_ERROR_CODES` in `errors.ts` is data, not a `registerErrorCodes()` call — this package is
@@ -21,12 +21,22 @@ carries a duplicate of these titles and registers them unconditionally, so every
 real titles just by importing core. Add a code here **and** update that duplicate in the same
 change — `schema-error-codes-pin.test.ts` in `@ultimat3/cli` fails the build if they disagree.
 
-`MoneyValue` in `validators.ts` is the framework's **one** declaration of a money value — tier 0 is
+`MoneyValue` in `money-value.ts` — its own file, because it is the only builtin whose *shape* other
+packages alias — is the framework's **one** declaration of a money value. Tier 0 is
 the only tier every package may import, and `@ultimat3/money`'s `Money` and `@ultimat3/entity`'s
 `MoneyValue` are aliases of it. Never let either restate the shape: it was three structural copies,
 entity's had a `bigint` `minor`, and a row that layer decoded then failed both `t.money` and
 `JSON.stringify`. `minor` stays a `number` for the same reason it is a `number` here — this node is
 the OpenAPI contract, and money crosses every wire the framework projects.
+
+`MoneyValue.scale` is the **optional** decimal exponent `minor` counts in, `0…MAX_MONEY_SCALE`
+(15, the last power of ten that is itself a safe integer). Absent means the currency's own minor
+unit, which is every value that predates it — so `{ minor, currency }` parses to exactly
+`{ minor, currency }`, key for key, and the validator adds nothing. What a legal scale is lives in
+`isMoneyScale` here and nowhere else; `@ultimat3/money` imports it rather than restating the
+bound. Adding it to the type means adding it in three more places in the same change — the node's
+`properties`, `json-schema.ts` (optional, never `required`, or a generated client refuses a value
+this validator accepts) and `coerce.ts` (a query string carries it as text like everything else).
 
 `t` delegates through `schemaProvider()` on every property access — that is what makes
 `configureSchemaProvider()` work for modules that already imported `t`. Do not cache members.

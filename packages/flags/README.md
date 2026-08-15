@@ -54,6 +54,11 @@ import { isEnabled } from '@ultimat3/flags';
 if (isEnabled('checkout.new-tax-engine', actor)) {
   // …
 }
+
+// with the app's own records in play
+if (isEnabled('scraper.persist-profile', actor, { bank: bank.id })) {
+  // …
+}
 ```
 
 Synchronous, for the same reason `can()` is: this runs inside policy predicates and render passes,
@@ -68,11 +73,64 @@ silently never runs in production.
 | `default` | the answer when no allow list and no rollout claims this actor |
 | `actors` | actor ids that are always on, ahead of any rollout |
 | `roles` | actor roles that are always on, ahead of any rollout |
-| `rollout` | whole percentage 0-100, stable per actor |
+| `orgs` | org ids that are always on — shorthand for the `org` subject kind, read from `actor.orgId` |
+| `subjects` | allow lists for the app's own record kinds: `{ bank: ['bank_integration:bbva'] }` |
+| `rollout` | whole percentage 0-100, stable per bucketing subject |
+| `bucketBy` | which subject kind the rollout divides: `'actor'` (default), `'org'`, or any kind the call site carries |
 
-Order is allow lists → rollout → default. An operator who names an actor is not overruled by a
-hash. A rollout buckets `fnv1a(key + ':' + actor.id) % 100`, never `Math.random()`: one actor gets
-one answer on every call, in every process, without the nodes talking to each other.
+Order is allow lists → rollout → default. `actors`, `roles`, `orgs` and `subjects` are one rank —
+any hit is `true`. An operator who names a subject is not overruled by a hash. A rollout buckets
+`fnv1a(key + ':' + subjectId) % 100`, never `Math.random()`: one subject gets one answer on every
+call, in every process, without the nodes talking to each other.
+
+## Subjects — what a flag decides about
+
+A flag decides about an **identified record**: a user, a tenant, a bank integration, a device. The
+actor is one subject kind among several, not a privileged one.
+
+| Kind | Where its id comes from |
+|---|---|
+| `actor` | `actor.id` — spelled `actors` in targeting |
+| `org` | `actor.orgId` — spelled `orgs` in targeting |
+| anything else | the `subjects` argument at the call site |
+
+```ts
+// whole tenants, named — the 90% case, which is why it has a shorthand
+targeting: { default: false, orgs: ['org_acme'] }
+
+// 10% of tenants, each one whole
+targeting: { default: false, rollout: 10, bucketBy: 'org' }
+
+// the app's own record kind
+targeting: { default: false, subjects: { bank: ['bank_integration:bbva'] } }
+isEnabled('scraper.persist-profile', actor, { bank: 'bank_integration:bbva' });
+
+// 10% of banks, each bank whole
+targeting: { default: false, rollout: 10, bucketBy: 'bank' }
+```
+
+`actor` and `org` are resolved from the `Actor` and **never** from the call-site map — one source
+per kind, so there is no precedence rule to remember and no second place a tenant can come from.
+Every other kind is the app's vocabulary; the kind space is open, exactly like the flag key space.
+
+Bucketing by a record is what keeps it **whole**. An actor-bucketed rollout cuts through a tenant:
+3 of an org's 30 members on the new export path and 27 on the old, sharing documents, filing a bug
+nobody can reproduce. `bucketBy` puts the whole subject on one side. `'actor'` stays the default,
+so every flag declared before this axis answers exactly as it did.
+
+`roles` is deliberately **not** a subject kind: a role is a predicate over the actor, not an
+identified record, so it has no id to hash and cannot bucket a rollout.
+
+### A missing subject is an error, not a fallback
+
+If targeting decides by a kind the evaluation context does not carry, `isEnabled()` throws
+`X_FLAG_SUBJECT_REQUIRED`. It never falls back to the actor axis or to `default`: an answer about a
+record computed from whoever happened to be calling is the exact failure this axis removes, and it
+looks like it worked. Every declared kind is resolved before any of them can answer, so the raise
+does not depend on the order the keys sit in.
+
+A `null` actor is the one exception and still gets `default` — it says there is no evaluation
+context at all, every such call answers alike, and no single subject is split.
 
 ## Overrides, out of band
 
@@ -113,7 +171,8 @@ and the manifest should all read, so none of them recomputes "expired".
 |---|---|
 | `src/flag.ts` | the two kinds, the compile-time expiry rule, normalisation |
 | `src/targeting.ts` | who a flag is on for; declaration-time validation |
-| `src/bucket.ts` | the stable `(flag, actor)` bucket — FNV-1a, never `Math.random()` |
+| `src/subject.ts` | what a flag decides about — subject kinds and how each resolves to an id |
+| `src/bucket.ts` | the stable `(flag, subject)` bucket — FNV-1a, never `Math.random()` |
 | `src/registry.ts` | `defineFlag`, key → flag, `applyFlagSnapshot` |
 | `src/runtime.ts` | the clock and the per-flag report rate limit over core's `reportError` |
 | `src/evaluate.ts` | `isEnabled()` — the one way to ask |
@@ -126,5 +185,5 @@ Tier 1. May import tiers 0-0 only — enforced by `bun run scripts/boundaries.ts
 
 ## Errors
 
-`X_FLAG_DUPLICATE` · `X_FLAG_EXPIRED` · `X_FLAG_EXPIRY_INVALID` · `X_FLAG_TARGETING_INVALID` ·
-`X_FLAG_UNKNOWN`
+`X_FLAG_DUPLICATE` · `X_FLAG_EXPIRED` · `X_FLAG_EXPIRY_INVALID` · `X_FLAG_SUBJECT_REQUIRED` ·
+`X_FLAG_TARGETING_INVALID` · `X_FLAG_UNKNOWN`

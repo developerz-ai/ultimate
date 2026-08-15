@@ -46,6 +46,13 @@ describe('coerceQuery', () => {
       minor: 1999,
       currency: 'EUR',
     });
+    // A query string carries every field as text, scale included — leaving it a string would
+    // fail validation on a value the same request's `minor` was accepted for.
+    expect(coerceNode(t.money.node, { minor: '2', currency: 'USD', scale: '6' })).toEqual({
+      minor: 2,
+      currency: 'USD',
+      scale: 6,
+    });
     const nested = t.object({ page: t.number, inner: t.object({ live: t.boolean }) });
     expect(coerceInput(nested, { page: '2', inner: { live: 'true' } })).toEqual({
       page: 2,

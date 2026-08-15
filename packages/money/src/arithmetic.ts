@@ -7,6 +7,7 @@ import { allocationInvalid, currencyMismatch, currencyRequired } from './errors'
 import { factorFraction } from './factor';
 import { type Money, money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
+import { commonScale, minorAt } from './scale';
 
 /** Throws `X_CURRENCY_MISMATCH` unless both operands carry the same currency. */
 export function assertSameCurrency(left: Money, right: Money): string {
@@ -14,14 +15,20 @@ export function assertSameCurrency(left: Money, right: Money): string {
   return left.currency;
 }
 
+/**
+ * Two operands meet at the finer of their scales, which is exact for both — the coarser one is
+ * widened, never the finer one rounded, so adding a sub-cent fee to a cent cannot lose the fee.
+ */
 export function add(left: Money, right: Money): Money {
   const currency = assertSameCurrency(left, right);
-  return money(left.minor + right.minor, currency);
+  const scale = commonScale(left, right);
+  return money(Number(minorAt(left, scale) + minorAt(right, scale)), currency, scale);
 }
 
 export function subtract(left: Money, right: Money): Money {
   const currency = assertSameCurrency(left, right);
-  return money(left.minor - right.minor, currency);
+  const scale = commonScale(left, right);
+  return money(Number(minorAt(left, scale) - minorAt(right, scale)), currency, scale);
 }
 
 /** Every addend must share one currency; an empty list needs an explicit currency. */
@@ -44,10 +51,12 @@ export function multiply(
   factor: number,
   mode: RoundingMode = DEFAULT_ROUNDING,
 ): Money {
-  const scale = factorFraction(factor);
+  const ratio = factorFraction(factor);
+  // Scale-preserving: a fee on a micro-priced amount stays a micro-priced amount.
   return money(
-    roundRatio(BigInt(amount.minor) * scale.numerator, scale.denominator, mode),
+    roundRatio(BigInt(amount.minor) * ratio.numerator, ratio.denominator, mode),
     amount.currency,
+    amount.scale,
   );
 }
 
@@ -64,26 +73,34 @@ export function divide(
   if (divisor === 0) {
     throw allocationInvalid('cannot divide money by zero — use allocate() to split a total');
   }
-  const scale = factorFraction(divisor);
+  const ratio = factorFraction(divisor);
   return money(
-    roundRatio(BigInt(amount.minor) * scale.denominator, scale.numerator, mode),
+    roundRatio(BigInt(amount.minor) * ratio.denominator, ratio.numerator, mode),
     amount.currency,
+    amount.scale,
   );
 }
 
 export function negate(amount: Money): Money {
-  return money(-amount.minor, amount.currency);
+  return money(-amount.minor, amount.currency, amount.scale);
 }
 
 export function absolute(amount: Money): Money {
-  return money(Math.abs(amount.minor), amount.currency);
+  return money(Math.abs(amount.minor), amount.currency, amount.scale);
 }
 
-/** `-1 | 0 | 1`, comparable currencies only. */
+/**
+ * `-1 | 0 | 1`, comparable currencies only — and comparing the value, not the encoding, so a
+ * finer scale is not automatically the larger number. Widened as bigints on purpose: a comparison
+ * must answer where storing the widened value would rightly be refused.
+ */
 export function compare(left: Money, right: Money): -1 | 0 | 1 {
   assertSameCurrency(left, right);
-  if (left.minor < right.minor) return -1;
-  return left.minor > right.minor ? 1 : 0;
+  const scale = commonScale(left, right);
+  const leftMinor = minorAt(left, scale);
+  const rightMinor = minorAt(right, scale);
+  if (leftMinor < rightMinor) return -1;
+  return leftMinor > rightMinor ? 1 : 0;
 }
 
 export function isZero(amount: Money): boolean {

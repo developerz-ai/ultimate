@@ -43,6 +43,11 @@ export function failWith(issues: readonly StandardIssue[]): CheckErr {
 }
 
 /** `expected uuid, received "abc"` — the message an agent can act on without guessing. */
+/** An object with own keys — not null, not an array. The gate every object-ish check opens with. */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export function expected(what: string, value: unknown): string {
   return `expected ${what}, received ${describeValue(value)}`;
 }

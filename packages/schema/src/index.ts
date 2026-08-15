@@ -46,6 +46,8 @@ export type {
   ToJsonSchemaOptions,
 } from './json-schema';
 export { nodeToJsonSchema, toJsonSchema, toMcpInputSchema } from './json-schema';
+export type { MoneyValue } from './money-value';
+export { isMoneyScale, MAX_MONEY_SCALE } from './money-value';
 export type { SchemaFormat, SchemaKind, SchemaNode } from './node';
 export { isSchemaNode, nodeOf, requiredKeys } from './node';
 export type { SchemaProvider } from './provider';
@@ -83,7 +85,6 @@ export {
 export type { Infer } from './t';
 export { t } from './t';
 export type {
-  MoneyValue,
   NumberSchema,
   ObjectSchema,
   StringSchema,

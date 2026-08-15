@@ -252,9 +252,51 @@ type _MoneyValueIsSchemasDeclaration = Assert<Identical<MoneyValue, SchemaMoneyV
 /** The value type is a `number`. A `bigint` here is the regression, not a widening. */
 type _MoneyMinorIsANumber = Assert<[MoneyValue['minor']] extends [number] ? true : false>;
 
-/** Immutable, enforced: a mutable `minor` is a rounding bug with a place to hide. */
-type _MoneyIsReadonly = Assert<
-  Identical<MoneyValue, { readonly minor: number; readonly currency: string }>
+// The shape is pinned as independent properties rather than as one literal snapshot of the whole
+// interface. The snapshot said the same thing, but every additive change had to be hand-edited
+// past it — and a pin the next reader learns to hand-edit reflexively has stopped being a check.
+// Only the key set moves when a field is added, which is the one place that decision belongs.
+
+/** No field but these three, ever: a fourth is a shape nobody declared. */
+type _MoneyHasNoOtherField = Assert<
+  [keyof MoneyValue] extends ['minor' | 'currency' | 'scale'] ? true : false
+>;
+
+/** …and none of the three may go — the pin must not pass by the type shrinking instead. */
+type _MoneyHasEveryField = Assert<
+  ['minor' | 'currency' | 'scale'] extends [keyof MoneyValue] ? true : false
+>;
+
+// Immutable, enforced, field by field: a mutable `minor` is a rounding bug with a place to hide.
+// `Pick` carries `readonly` and optionality through, so each of these is exact about one field
+// and says nothing about the others.
+
+type _MoneyMinorIsAReadonlyNumber = Assert<
+  Identical<Pick<MoneyValue, 'minor'>, { readonly minor: number }>
+>;
+
+type _MoneyCurrencyIsAReadonlyString = Assert<
+  Identical<Pick<MoneyValue, 'currency'>, { readonly currency: string }>
+>;
+
+/**
+ * `scale` is the decimal exponent `minor` counts in — `{ minor: 2, currency: 'USD', scale: 6 }` is
+ * $0.000002. Optional, and pinned optional, because a cents-only `Money` could not name a
+ * sub-cent amount at all: the AI cost path rounded a $0.0002 call up to a whole cent, ~50x, and
+ * the alternative to this field was a second money type.
+ */
+type _MoneyScaleIsAReadonlyOptionalNumber = Assert<
+  Identical<Pick<MoneyValue, 'scale'>, { readonly scale?: number }>
+>;
+
+/**
+ * The additive half, and the pin that decides the semver: a value carrying no scale is still a
+ * `MoneyValue`, meaning the currency's own minor unit. Every amount already stored, serialized
+ * and asserted against in every app is that shape — so the day this fails, the change that made
+ * it fail is a breaking one and needs a major, not a fix here.
+ */
+type _MoneyWithoutAScaleIsStillMoney = Assert<
+  { readonly minor: number; readonly currency: string } extends MoneyValue ? true : false
 >;
 
 /**

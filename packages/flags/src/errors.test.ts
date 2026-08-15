@@ -6,6 +6,7 @@ import {
   flagDuplicate,
   flagExpired,
   flagExpiryInvalid,
+  flagSubjectRequired,
   flagTargetingInvalid,
   flagUnknown,
 } from './errors';
@@ -29,6 +30,7 @@ describe('unit · @ultimat3/flags errors', () => {
       flagDuplicate('search.rerank'),
       flagUnknown('search.rerank', ['search.rerank']),
       flagTargetingInvalid('search.rerank', 'rollout is 0.5'),
+      flagSubjectRequired({ key: 'search.rerank', kind: 'org', actorId: 'user-7', via: 'orgs' }),
       flagExpiryInvalid('search.rerank', undefined),
       flagExpired({
         key: 'search.rerank',

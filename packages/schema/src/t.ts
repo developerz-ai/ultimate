@@ -3,15 +3,10 @@
 // even for modules that captured `t` at import time.
 
 import type { AnySchema, Schema, Shape } from './builder';
+import type { MoneyValue } from './money-value';
 import { schemaProvider } from './provider';
 import type { InferInput, InferOutput, StandardSchemaV1 } from './standard';
-import type {
-  MoneyValue,
-  NumberSchema,
-  ObjectSchema,
-  StringSchema,
-  TNamespace,
-} from './validators';
+import type { NumberSchema, ObjectSchema, StringSchema, TNamespace } from './validators';
 
 function provider(): TNamespace {
   return schemaProvider().t;

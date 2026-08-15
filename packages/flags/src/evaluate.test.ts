@@ -160,3 +160,32 @@ describe('unit · an undeclared key', () => {
     expect((thrown as UltimateError).fix).toContain('defineFlag(');
   });
 });
+
+describe('unit · isEnabled with record subjects', () => {
+  test('passes the call-site subjects through to targeting', () => {
+    defineFlag({
+      kind: 'permanent',
+      key: 'scraper.persist-profile',
+      description: 'per-bank scraper switch',
+      targeting: { default: false, subjects: { bank: ['bank_integration:bbva'] } },
+    });
+    expect(isEnabled('scraper.persist-profile', actor, { bank: 'bank_integration:bbva' })).toBe(
+      true,
+    );
+    expect(
+      isEnabled('scraper.persist-profile', actor, { bank: 'bank_integration:santander' }),
+    ).toBe(false);
+  });
+
+  test('a flag deciding by a record raises when the call site forgot to pass it', () => {
+    defineFlag({
+      kind: 'permanent',
+      key: 'scraper.persist-profile',
+      description: 'per-bank scraper switch',
+      targeting: { default: false, subjects: { bank: ['bank_integration:bbva'] } },
+    });
+    expect(caught(() => isEnabled('scraper.persist-profile', actor))).toBeUltimateError(
+      'X_FLAG_SUBJECT_REQUIRED',
+    );
+  });
+});

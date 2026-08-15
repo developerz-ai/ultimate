@@ -71,6 +71,35 @@ describe('allocateByPercentages', () => {
   });
 });
 
+describe('allocation at a scale of its own', () => {
+  test('the 100.01-across-3 property holds at scale 2 and at scale 6 alike', () => {
+    const cents = allocate(money(10_001, 'USD'), 3);
+    expect(minors(cents)).toEqual([3334, 3334, 3333]);
+    expect(sum(cents)).toEqual({ minor: 10_001, currency: 'USD' });
+
+    const micros = allocate(money(100_010_000, 'USD', 6), 3);
+    expect(minors(micros)).toEqual([33_336_667, 33_336_667, 33_336_666]);
+    expect(sum(micros)).toEqual({ minor: 100_010_000, currency: 'USD', scale: 6 });
+  });
+
+  test('every part carries the total’s scale', () => {
+    for (const part of allocateByRatios(money(100, 'USD', 6), [70, 20, 10])) {
+      expect(part.scale).toBe(6);
+    }
+  });
+
+  test('the split stays exact past 2^53, where the float product silently was not', () => {
+    // `magnitude * ratio` overflowed the exact-integer range and floored to the wrong part —
+    // a scale of 6 makes an amount that large 10,000x easier to reach.
+    const total = money(9_007_199_254_740_991, 'USD', 6);
+    const parts = allocateByRatios(total, [1, 1, 1]);
+    expect(sum(parts)).toEqual(total);
+    expect(minors(parts)).toEqual([
+      3_002_399_751_580_331, 3_002_399_751_580_330, 3_002_399_751_580_330,
+    ]);
+  });
+});
+
 function codeOf(run: () => unknown): string {
   try {
     run();

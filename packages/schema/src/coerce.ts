@@ -8,6 +8,13 @@ import { tryIntrospect } from './provider';
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'off', '']);
 
+/** A numeric string as a number, or `undefined` for anything that is not confidently one. */
+function numeric(raw: unknown): number | undefined {
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 export type QuerySource =
   | URLSearchParams
   | Readonly<Record<string, string | readonly string[] | undefined>>;
@@ -63,7 +70,11 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       if (typeof raw !== 'object') return raw;
       const source = raw as Record<string, unknown>;
       const minor = typeof source['minor'] === 'string' ? Number(source['minor']) : source['minor'];
-      return Number.isFinite(minor) ? { ...source, minor } : raw;
+      if (!Number.isFinite(minor)) return raw;
+      // `scale` arrives as text from a query string exactly as `minor` does. Left a string it
+      // would fail validation on a value whose `minor` the same request just had converted.
+      const scale = numeric(source['scale']);
+      return { ...source, minor, ...(scale === undefined ? {} : { scale }) };
     }
     case 'union': {
       // Only unambiguous single-kind unions (e.g. `number | undefined`) are safe to coerce.

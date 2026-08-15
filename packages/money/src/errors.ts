@@ -4,6 +4,7 @@
  */
 
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { MAX_MONEY_SCALE } from '@ultimat3/schema';
 
 export const MONEY_ERROR_CODES = [
   'X_MONEY_NOT_INTEGER',
@@ -11,6 +12,7 @@ export const MONEY_ERROR_CODES = [
   'X_CURRENCY_MISMATCH',
   'X_ALLOCATION_INVALID',
   'X_RATE_MISSING',
+  'X_MONEY_SCALE_INVALID',
 ] as const;
 
 export type MoneyErrorCode = (typeof MONEY_ERROR_CODES)[number];
@@ -21,6 +23,7 @@ export const MONEY_ERROR_TITLES: Readonly<Record<MoneyErrorCode, string>> = {
   X_CURRENCY_MISMATCH: 'two Money values in different currencies',
   X_ALLOCATION_INVALID: 'split ratios or part count are unusable',
   X_RATE_MISSING: 'no FX rate for the pair',
+  X_MONEY_SCALE_INVALID: 'a Money.scale that is not a usable decimal exponent',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -64,8 +67,47 @@ export function notRoundable(value: number): MoneyError {
 export function decimalTooPrecise(value: string, currency: string, exponent: number): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
-    cause: `"${value}" has more fraction digits than ${currency} has minor units (${exponent})`,
-    fix: `pass { rounding: 'half-up' } to fromDecimal to accept the loss of precision on purpose`,
+    cause: `"${value}" has more than ${exponent} fraction digit(s), which is all ${currency} is being counted in`,
+    fix: `fromDecimal('${value}', '${currency}', { scale: ${countFractionDigits(value)} }) to keep every digit, or { rounding: 'half-up' } to lose them on purpose`,
+  });
+}
+
+function countFractionDigits(value: string): number {
+  return value.trim().split('.')[1]?.length ?? 0;
+}
+
+/** A scale outside 0…MAX_MONEY_SCALE names no decimal place a `minor` could count in. */
+export function scaleInvalid(scale: number): MoneyError {
+  return new MoneyError({
+    code: 'X_MONEY_SCALE_INVALID',
+    cause: `a money scale must be a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, got ${String(scale)}`,
+    fix: `use a scale in range — money(minor, currency, 6) for micros, or omit it for the currency's own minor unit`,
+  });
+}
+
+/** Widening is exact; narrowing is a rounding decision, and `minorAt` does not make those. */
+export function scaleNotWidening(from: number, to: number): MoneyError {
+  return new MoneyError({
+    code: 'X_MONEY_SCALE_INVALID',
+    cause: `cannot restate a value at scale ${from} as scale ${to} without dropping digits`,
+    fix: `rescale(amount, ${to}, 'half-up') — narrowing needs the mode named at the call`,
+  });
+}
+
+/**
+ * A narrowing that would drop a non-zero digit. Reported as `X_MONEY_NOT_INTEGER` because that is
+ * literally what it would produce — a fractional count of minor units — and the same situation
+ * `fromDecimal` already answers with that code.
+ */
+export function rescaleNotExact(
+  amount: { readonly minor: number; readonly currency: string },
+  from: number,
+  to: number,
+): MoneyError {
+  return new MoneyError({
+    code: 'X_MONEY_NOT_INTEGER',
+    cause: `${amount.currency} ${amount.minor} at scale ${from} is not a whole number of minor units at scale ${to}`,
+    fix: `rescale(amount, ${to}, 'half-up') — name the mode, or keep the value at scale ${from}`,
   });
 }
 

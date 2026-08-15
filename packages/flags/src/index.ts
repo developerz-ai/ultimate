@@ -1,7 +1,7 @@
 // Public API of @ultimat3/flags. Explicit re-exports only.
 
 export { BUCKETS, bucketOf, fnv1a } from './bucket';
-export type { FlagsErrorCode } from './errors';
+export type { FlagSubjectVia, FlagsErrorCode } from './errors';
 export {
   FLAGS_ERROR_CODES,
   FLAGS_ERROR_TITLES,
@@ -9,6 +9,7 @@ export {
   flagDuplicate,
   flagExpired,
   flagExpiryInvalid,
+  flagSubjectRequired,
   flagTargetingInvalid,
   flagUnknown,
 } from './errors';
@@ -30,4 +31,6 @@ export type { FlagsRuntimeOptions } from './runtime';
 // The reporter seam is `@ultimat3/core`'s `ErrorReporter`, wired once with
 // `configureErrorReporting()`. This package deliberately re-exports none of it.
 export { configureFlags, DEFAULT_REPORT_INTERVAL_MS, resetFlagReporting } from './runtime';
+export type { BuiltInSubjectKind, FlagSubjects } from './subject';
+export { BUILT_IN_SUBJECT_KINDS } from './subject';
 export type { FlagTargeting } from './targeting';

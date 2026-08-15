@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "27802f515afaf2c6010e9695512bb4798b0156aac6e194f3ae2f1b239acacea9",
+  "buildId": "079a1d2632bb005306c965d1d331c38e09e62ac2024bc63aeb10826d82cf33aa",
   "tiers": {
     "0": [
       "core",
@@ -701,6 +701,11 @@
       "at": "packages/flags/src/errors.ts"
     },
     {
+      "code": "X_FLAG_SUBJECT_REQUIRED",
+      "owner": "flags",
+      "at": "packages/flags/src/errors.ts"
+    },
+    {
       "code": "X_FLAG_TARGETING_INVALID",
       "owner": "flags",
       "at": "packages/flags/src/errors.ts"
@@ -1007,6 +1012,11 @@
     },
     {
       "code": "X_MONEY_NOT_INTEGER",
+      "owner": "money",
+      "at": "packages/money/src/errors.ts"
+    },
+    {
+      "code": "X_MONEY_SCALE_INVALID",
       "owner": "money",
       "at": "packages/money/src/errors.ts"
     },
