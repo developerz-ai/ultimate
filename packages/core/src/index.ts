@@ -69,6 +69,7 @@ export {
   configureCursorSigning,
   decodeCursor,
   encodeCursor,
+  resetCursorSigning,
   usesDevCursorSecret,
 } from './cursor';
 export type {

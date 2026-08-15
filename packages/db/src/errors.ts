@@ -155,6 +155,22 @@ export const identifierUnsafe = (name: string): DbError =>
     meta: { name },
   });
 
+/**
+ * More than one command in a text that gets **spliced** — into `DECLARE … CURSOR FOR`, or sent
+ * whole on a driver that degrades to the simple protocol. `X_SQL_UNSAFE` rather than a validation
+ * code for the same reason `branchNameInvalid` uses it: a second command riding an interpolated
+ * statement is an injection, not a typo. Only the first is bounded by the guards `readOnlyQuery`
+ * just installed, so `SET LOCAL statement_timeout` was undone by the second while `guards` still
+ * reported `timeout:5000ms` — a defeated layer reported as an engaged one.
+ */
+export const multipleStatements = (statement: string, count: number): DbError =>
+  new DbError({
+    code: 'X_SQL_UNSAFE',
+    cause: `a read-only query must be ONE statement; this text holds ${count}: ${statement}`,
+    fix: 'await readOnlyQuery(first); await readOnlyQuery(second)   # one statement per call',
+    meta: { count },
+  });
+
 export const branchExists = (branch: string): DbError =>
   new DbError({
     code: 'X_BRANCH_EXISTS',

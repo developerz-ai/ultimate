@@ -4,6 +4,8 @@
 // sites. Order is data, not control flow.
 
 import type { Clock } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core';
+import { CacheTtlInvalidError } from './errors';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
 
@@ -20,8 +22,24 @@ export interface CacheEntry<T> {
 }
 
 export interface CacheSetOptions {
+  /**
+   * Lifetime in milliseconds. **Positive and finite, always** — omit it for the tier's default.
+   * There is no "never expires" and no "do not cache": both used to be spellings of `0` that the
+   * LRU and Redis tiers read differently, so every tier now refuses it (`X_CACHE_TTL_INVALID`).
+   */
   readonly ttlMs?: number;
   readonly tags?: readonly CacheTag[];
+}
+
+/**
+ * The one TTL rule, applied by every tier before it writes. Lives here rather than in each tier
+ * because two tiers disagreeing about what `0` means is exactly the bug this replaced.
+ */
+export function assertTtl(key: string, ttlMs: number, tier: TierName): number {
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
+    throw new CacheTtlInvalidError({ key, ttlMs, tier });
+  }
+  return ttlMs;
 }
 
 /** Per-tier result of an invalidation, surfaced verbatim in the `/_x` cache panel. */
@@ -71,32 +89,51 @@ export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
  * answer, never a failed business read. `load()` is the one call left unguarded — it *is* the
  * business read, and swallowing it would return `undefined` as if it were the value.
  */
-export function createCacheStack(tiers: readonly CacheTier[]): CacheStack {
+export interface CacheStackOptions {
+  /** Read through `nowMs()`; the same clock a tier takes. Defaults to `systemClock`. */
+  readonly clock?: Clock;
+}
+
+export function createCacheStack(
+  tiers: readonly CacheTier[],
+  options: CacheStackOptions = {},
+): CacheStack {
   const ordered = sortTiers(tiers);
+  const clock = options.clock ?? systemClock;
 
   return {
     tiers: ordered,
 
-    async read<T>(key: string, load: () => Promise<T>, options?: CacheSetOptions): Promise<T> {
+    async read<T>(key: string, load: () => Promise<T>, setOptions?: CacheSetOptions): Promise<T> {
       for (let i = 0; i < ordered.length; i += 1) {
         const tier = ordered[i];
         if (tier === undefined) continue;
         const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
         if (hit === undefined) continue;
-        // Populate every tier we walked past, closest-first on the next read.
+        const now = nowMs(clock);
+        // A tier may answer with an entry it has not reaped yet; expiry is decided here, once,
+        // by the predicate this module already exported and nothing had ever called.
+        if (isExpired(hit, now)) continue;
+        // Populate every tier we walked past, closest-first on the next read — carrying the
+        // entry's REMAINING life, never the caller's original ttlMs. Re-leasing a value one
+        // second from expiry for a fresh five minutes on every read is a hot key that never
+        // goes stale enough to be refetched.
+        const promoted: CacheSetOptions = {
+          ...setOptions,
+          tags: hit.tags,
+          ...(hit.expiresAt === undefined ? {} : { ttlMs: hit.expiresAt - now }),
+        };
         for (let up = 0; up < i; up += 1) {
           const closer = ordered[up];
           if (closer === undefined) continue;
-          await bestEffort(closer.name, 'set', key, () =>
-            closer.set(key, hit.value, { ...options, tags: hit.tags }),
-          );
+          await bestEffort(closer.name, 'set', key, () => closer.set(key, hit.value, promoted));
         }
         return hit.value;
       }
 
       const value = await load();
       for (const tier of ordered) {
-        await bestEffort(tier.name, 'set', key, () => tier.set(key, value, options));
+        await bestEffort(tier.name, 'set', key, () => tier.set(key, value, setOptions));
       }
       return value;
     },

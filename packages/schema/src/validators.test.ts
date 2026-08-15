@@ -197,6 +197,31 @@ describe('recordSchema', () => {
     expect(result.issues?.[0]?.path).toEqual(['b']);
     expect(result.issues?.[1]?.path).toEqual(['d']);
   });
+
+  test('a `__proto__` key cannot reach the prototype of the output object', () => {
+    // Before: `out.a` read "pwned" while `Object.keys(out)` was empty, so every
+    // `input.settings[k] ?? fallback` in a handler answered with the attacker's value.
+    const schema = recordSchema(objectSchema({ a: builtinT.string }));
+    const result = validate(schema, JSON.parse('{"__proto__":{"a":"pwned"}}'));
+    expect(result.issues?.length).toBe(1);
+    expect(result.issues?.[0]?.path).toEqual(['__proto__']);
+  });
+
+  test('`constructor` and `prototype` are refused for the same reason', () => {
+    const schema = recordSchema(builtinT.number);
+    expect(validate(schema, { constructor: 1 }).issues?.[0]?.path).toEqual(['constructor']);
+    expect(validate(schema, { prototype: 1 }).issues?.[0]?.path).toEqual(['prototype']);
+  });
+
+  test('the accepted record carries no prototype at all', () => {
+    const schema = recordSchema(builtinT.number);
+    const result = validate(schema, { a: 1 });
+    expect(result.issues).toBeUndefined();
+    if (result.issues === undefined) {
+      expect(Object.getPrototypeOf(result.value)).toBe(null);
+      expect(result.value).toEqual({ a: 1 });
+    }
+  });
 });
 
 describe('nullableSchema', () => {
@@ -232,6 +257,21 @@ describe('builtinT.string', () => {
 
   test('rejects non-strings', () => {
     expect(validate(builtinT.string, 123).issues).toBeDefined();
+  });
+
+  test('a pattern keeps its flags, in the check and in the message', () => {
+    // The node held `regex.source` alone, so `new RegExp(node.pattern)` was a DIFFERENT regex:
+    // `/^[a-z]+$/i` refused `ABC` and the error quoted the pattern that would have matched it.
+    const insensitive = builtinT.string.pattern(/^[a-z]+$/i);
+    expect(insensitive.node.patternFlags).toBe('i');
+    expect(validate(insensitive, 'ABC').issues).toBeUndefined();
+    expect(validate(insensitive, 'abc').issues).toBeUndefined();
+    expect(validate(insensitive, 'A1').issues).toBeDefined();
+    expect(validate(insensitive, 'A1').issues?.[0]?.message).toContain('/^[a-z]+$/i');
+    // An unflagged pattern carries no flags field and its message is unchanged.
+    const plain = builtinT.string.pattern(/^[a-z]+$/);
+    expect(plain.node.patternFlags).toBeUndefined();
+    expect(validate(plain, 'ABC').issues).toBeDefined();
   });
 
   test('min/max/pattern chain onto a new schema without mutating the original', () => {
@@ -383,6 +423,21 @@ describe('builtinT.money', () => {
 
   test('rejects a non-object', () => {
     expect(validate(builtinT.money, 'money').issues).toBeDefined();
+  });
+
+  test('rejects a minor amount past the safe-integer range', () => {
+    // `Number.isInteger(2**53)` is true and `money()`/`parseMinor` both refuse it, so accepting
+    // it here turned a 422 with a field path into a 500 at the row write.
+    const result = validate(builtinT.money, { minor: 9_007_199_254_740_992, currency: 'EUR' });
+    expect(result.issues?.length).toBe(1);
+    expect(result.issues?.[0]?.path).toEqual(['minor']);
+    expect(
+      validate(builtinT.money, { minor: -9_007_199_254_740_992, currency: 'EUR' }).issues,
+    ).toBeDefined();
+    // The largest amount that IS representable still passes.
+    expect(
+      validate(builtinT.money, { minor: Number.MAX_SAFE_INTEGER, currency: 'EUR' }).issues,
+    ).toBeUndefined();
   });
 });
 

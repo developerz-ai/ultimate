@@ -27,7 +27,7 @@ Reads walk down until a hit, then populate every tier they walked past. Writes p
 |---|---|---|---|---|
 | 0 | `request-memo` | ALS context (`WeakMap`) | dies with the request | never |
 | 1 | `lru` | in-process, byte-budgeted | tag index | never |
-| 2 | `redis` | `Bun.redis` | tag→keys set, one `EVAL` | single node |
+| 2 | `redis` | `Bun.redis` | tag→keys set, one `EVAL` + slot-local `DEL`s | single node |
 | 3 | `cdn` | headers + purge driver | surrogate keys | no CDN |
 
 A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`). Swap or omit any of them
@@ -44,6 +44,19 @@ const feed = await stack.read('feed:org-1', () => db.posts.recent(), {
   tags: [tag('post')],
 });
 ```
+
+**`ttlMs` is positive and finite, in every tier.** Omit it for the tier's default; anything else
+is `X_CACHE_TTL_INVALID`. There is no "never expires" and no "do not cache" — `0` used to mean the
+first in the LRU tier and one second in the Redis tier, so a stack holding both answered
+differently depending on which one hit, and neither reading was what the caller meant. A value you
+do not want held is a value you do not put in the cache.
+
+**A promoted hit carries its own remaining life.** When a read hits a far tier and populates the
+closer ones, it writes them with `expiresAt - now`, not with the `ttlMs` the caller passed — a
+fresh full lease on every read is a hot key that never gets stale enough to be refetched. An entry
+already past its expiry is dropped on the way through and the read falls to `load()`. Each tier
+supplies that expiry from its own store, so the number is real: the Redis tier reads `PTTL`
+alongside the value, in the same pipelined round trip.
 
 Every tier call the stack makes is best-effort: a tier that throws on `get`, `set` or `del` is a
 tier that did not answer, so `read`, `write` and `drop` carry on. A feed too big for the LRU
@@ -89,7 +102,7 @@ One function. Returns the report the `/_x` cache panel and `x cache bust --json`
   "tags": ["post:1"],
   "tiers": [{ "tier": "lru", "keys": ["feed"] }, { "tier": "redis", "keys": ["feed"] }],
   "isr": ["/blog", "/blog/hello"],
-  "cdn": ["post:1"],
+  "cdn": ["/feed.xml"],
   "liveQueries": [],
   "durationMs": 1.4,
   "errors": []
@@ -98,6 +111,12 @@ One function. Returns the report the `/_x` cache panel and `x cache bust --json`
 
 A dead tier lands in `errors` and never throws — a Redis outage must not fail the write
 that triggered the bust. Entries there expire by TTL instead.
+
+`cdn` is what the dependency graph hangs off these tags, not what cleared: the `cdn` tier purges
+those paths (as surrogate keys, alongside the tags), so what actually cleared is that tier's row
+in `tiers`. With no `cdn` tier registered the list purges nowhere, which is why
+`recentInvalidations()` reports `busted` from `tiers` and never from `cdn` — a partial bust that
+reads as a clean one is the failure that log exists to catch.
 
 Every report is also kept: `recentInvalidations()` hands back the last 100, newest first, each
 one naming the span that triggered it. That is the log the `/_x` cache panel renders — "did it
@@ -113,7 +132,9 @@ cacheHeaders({ sMaxAge: 300, staleWhileRevalidate: 86_400, tags: [tag('post', id
 ```
 
 The surrogate keys **are** the tags, byte for byte, so an edge purge and an app-level
-invalidation can never mean different things. Three `PurgeDriver`s ship:
+invalidation can never mean different things. A `cdn-path` dependent registered against a tag goes
+out in the same purge — as a surrogate key, the one currency `PurgeDriver` has — so a host
+registering one must tag that response with its own path. Three `PurgeDriver`s ship:
 
 | Driver | Purge | Purge all | Batch |
 |---|---|---|---|
@@ -155,6 +176,7 @@ cache).
 | `X_CACHE_PURGE_FAILED` | the CDN refused a purge, or a key it would split on whitespace |
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |
+| `X_CACHE_TTL_INVALID` | a `ttlMs` that is not a positive, finite number of milliseconds |
 
 ## Boundary
 

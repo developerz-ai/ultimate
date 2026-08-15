@@ -22,8 +22,10 @@ export const STORAGE_OWNED_ERROR_CODES = [
  * `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. `storageNotImplemented()` throws it and this package
  * keeps no title for it — one code, one owner, one title, or the two copies drift apart in silence.
  * `X_IMAGE_UNSUPPORTED` / `X_IMAGE_DECODE_FAILED` are core's too and surface unwrapped (`image.ts`).
+ * `X_ENV_MISSING` is core's for the same reason: an unset `STORAGE_SIGNING_SECRET` outside
+ * development is a missing environment variable, not a storage concept needing its own code.
  */
-export const STORAGE_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+export const STORAGE_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ENV_MISSING'] as const;
 
 /** Every code storage can throw through `StorageError`: the owned ones plus the borrowed one. */
 export const STORAGE_ERROR_CODES = [
@@ -189,6 +191,25 @@ export const uploadFailed = (path: string, status: number, detail: string): Stor
     cause: `PUT ${path} answered ${status}: ${detail === '' ? 'no body' : detail}`,
     fix: 'call uploadFile({ file, grant }) again for a fresh grant; a 4xx here is the constraint named in the body, not a transport fault',
     meta: { path, status, detail },
+  });
+
+/**
+ * The local disk fell back to the shipped dev signing key outside development.
+ *
+ * That literal is published in this repo, so anyone holding it can mint a signed `PUT` for any
+ * key — including another org's — with `maxBytes` and `contentType` of their choosing, and
+ * `acceptSignedUpload` trusts the signed constraints over the app's `uploadPolicy`. A 200KB
+ * avatar grant becomes an unlimited upload of any type. Refused at construction, not at the
+ * first `signedUrl()`: a process that cannot sign safely must not finish booting.
+ */
+export const signingSecretMissing = (environment: string): StorageError =>
+  new StorageError({
+    code: 'X_ENV_MISSING',
+    // The environment names what `resolveEnvironment()` resolved, which may have come from
+    // NODE_ENV — naming ULTIMATE_ENV here reported a variable the process never set.
+    cause: `the local disk has no usable signing secret (no signingSecret option, and STORAGE_SIGNING_SECRET is unset, empty or the published development key) and the resolved environment is "${environment}", so it would sign URLs with the shipped development key`,
+    fix: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
+    meta: { key: 'STORAGE_SIGNING_SECRET', environment },
   });
 
 /** An interface-complete driver whose remote half is not bound yet. Always carries a fix. */

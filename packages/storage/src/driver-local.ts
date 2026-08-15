@@ -3,7 +3,7 @@
 // Content type, etag and user metadata live in a sidecar under `.meta/`: a POSIX file has
 // nowhere to keep them, and `get` must round-trip exactly what `put` was handed.
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, isLocal, resolveEnvironment, systemClock } from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
   DEFAULT_LIST_LIMIT,
@@ -19,12 +19,34 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
-import { checksumMismatch, objectNotFound } from './errors';
-import { assertSafeKey } from './path';
+import { checksumMismatch, objectNotFound, signingSecretMissing } from './errors';
+import { assertSafeKey, META_DIR } from './path';
 import { buildSignedUrl } from './signed-url';
 
-const META_DIR = '.meta';
 const DRIVER_NAME = 'local';
+
+/**
+ * The dev-only fallback signing key. A literal, not a per-process random one, so a restart does
+ * not invalidate every URL `x dev` handed out — and published in this repo, which is exactly why
+ * `localDriver` refuses to use it outside a development or test environment.
+ */
+export const DEV_SIGNING_SECRET = 'ultimate-dev-signing-secret';
+
+/** The env key production must set. Named once, read by the driver and by the predicate below. */
+export const STORAGE_SIGNING_SECRET_KEY = 'STORAGE_SIGNING_SECRET';
+
+/**
+ * True while a local disk built without an explicit `signingSecret` would sign with the shipped
+ * development key — `x doctor` reports it, exactly as it reports `usesDevCursorSecret()`.
+ *
+ * Reads the environment, not a driver instance: this is the same question `x doctor` asks about
+ * the cursor secret, and a disk handed an explicit `signingSecret` in `app.config.ts` never
+ * consults the variable at all.
+ */
+export function usesDevStorageSecret(): boolean {
+  const configured = process.env[STORAGE_SIGNING_SECRET_KEY];
+  return configured === undefined || configured === '' || configured === DEV_SIGNING_SECRET;
+}
 
 export interface LocalDriverOptions {
   /** Directory the disk owns outright. Created on first write. */
@@ -70,10 +92,20 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
   const clock = options.clock ?? systemClock;
   const baseUrl = options.baseUrl ?? `/_storage/${DRIVER_NAME}`;
-  // A dev disk must work with zero config; a production disk that forgets the secret still
-  // gets a *shared* secret, never a per-process random one that breaks on restart.
-  const secret =
-    options.signingSecret ?? process.env['STORAGE_SIGNING_SECRET'] ?? 'ultimate-dev-signing-secret';
+  // A dev disk must work with zero config. Outside development the fallback is refused rather
+  // than used: the literal is published, so signing with it hands every reader the power to mint
+  // a PUT for any key with any size and type limit — which `acceptSignedUpload` then trusts over
+  // the app's own `uploadPolicy`. Refused HERE, at construction, so the boot fails rather than
+  // the first upload.
+  // The published literal counts as no secret at all, whichever way it arrives: an env var or an
+  // `app.config.ts` that pasted it in signs exactly as weakly as the fallback does.
+  const supplied = options.signingSecret ?? process.env[STORAGE_SIGNING_SECRET_KEY];
+  const configured =
+    supplied === undefined || supplied === '' || supplied === DEV_SIGNING_SECRET
+      ? undefined
+      : supplied;
+  if (configured === undefined && !isLocal()) throw signingSecretMissing(resolveEnvironment());
+  const secret = configured ?? DEV_SIGNING_SECRET;
 
   const filePath = (key: string): string => `${root}/${key}`;
   const metaPath = (key: string): string => `${root}/${META_DIR}/${key}.json`;

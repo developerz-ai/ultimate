@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { add, compare, isZero, max, multiply, negate, subtract, sum } from './arithmetic';
+import { add, compare, divide, isZero, max, multiply, negate, subtract, sum } from './arithmetic';
 import { money } from './money';
 
 describe('cross-currency safety', () => {
@@ -64,3 +64,39 @@ function causeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('scaling is exact, not an IEEE-754 product', () => {
+  // `100 * 1.005` is 100.49999999999999, so multiplying first hid the exact 100.5 from `half-up`
+  // and a 0.5% fee on €1.00 was billed as nothing.
+  test('multiply rounds the value written, not the value the double holds', () => {
+    expect(multiply(money(100, 'EUR'), 1.005)).toEqual({ minor: 101, currency: 'EUR' });
+    expect(multiply(money(100, 'EUR'), 1.005, 'down')).toEqual({ minor: 100, currency: 'EUR' });
+    expect(multiply(money(100, 'EUR'), 1.005, 'half-even')).toEqual({
+      minor: 100,
+      currency: 'EUR',
+    });
+  });
+
+  test('multiply stays symmetric around zero at the exact half', () => {
+    expect(multiply(money(-100, 'EUR'), 1.005)).toEqual({ minor: -101, currency: 'EUR' });
+    expect(multiply(money(-100, 'EUR'), 1.005, 'down')).toEqual({ minor: -100, currency: 'EUR' });
+  });
+
+  test('a factor in exponent notation carries its own decimal expansion', () => {
+    expect(multiply(money(1_000_000, 'EUR'), 1e-4)).toEqual({ minor: 100, currency: 'EUR' });
+    expect(multiply(money(2, 'EUR'), 2.5e2)).toEqual({ minor: 500, currency: 'EUR' });
+  });
+
+  test('divide rounds the exact quotient', () => {
+    expect(divide(money(1000, 'EUR'), 3)).toEqual({ minor: 333, currency: 'EUR' });
+    expect(divide(money(1, 'EUR'), 2)).toEqual({ minor: 1, currency: 'EUR' });
+    expect(divide(money(1, 'EUR'), 2, 'half-even')).toEqual({ minor: 0, currency: 'EUR' });
+    expect(divide(money(-1, 'EUR'), 2)).toEqual({ minor: -1, currency: 'EUR' });
+    // Scaling by 0.1 and dividing by 10 are the same question and must not answer differently.
+    expect(divide(money(105, 'EUR'), 10)).toEqual(multiply(money(105, 'EUR'), 0.1));
+  });
+
+  test('an amount scaled past the safe-integer range is refused, never approximated', () => {
+    expect(codeOf(() => multiply(money(1_000_000_000, 'EUR'), 1e9))).toBe('X_MONEY_NOT_INTEGER');
+  });
+});

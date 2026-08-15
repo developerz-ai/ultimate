@@ -244,6 +244,7 @@ synthesizes `https://ultimate.dev/errors/<code>` for a code no page here documen
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared | typo in `invalidates: [tag.pots]` | `x manifest` to regenerate the tag graph, then fix the tag |
 | `X_CACHE_TOO_LARGE` | one entry exceeds the tier's byte budget | caching a whole row set | raise `cache.<tier>.maxBytes`, or cache a projection |
 | `X_CACHE_DRIVER_UNAVAILABLE` | a tier's backing store is missing | no Redis binding, or a purge driver built without `FASTLY_API_TOKEN` / `CLOUDFLARE_API_TOKEN` | provision the tier, or drop it from `app.config.ts` |
+| `X_CACHE_TTL_INVALID` | a cache TTL that is not a positive number of milliseconds | `ttlMs: 0`, a negative value, `NaN` or `Infinity`. `0` used to mean "never expires" in the memory tier and "one second" in the Redis tier, so a stack holding both answered differently depending on which tier hit | pass a positive `ttlMs`, or omit it and inherit the tier's default — "do not cache" is expressed by not declaring a `cache` block |
 | `X_CACHE_PURGE_FAILED` | the CDN refused a purge | a wrong or unscoped API token, a zone without tag purge, a throttle, a key carrying whitespace or a comma | `meta.retryable === true` → the identical purge can land again; `false` → set the env key the `fix` names, then `x dev` |
 
 ## Storage
@@ -438,7 +439,7 @@ synthesizes `https://ultimate.dev/errors/<code>` for a code no page here documen
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_CLI_UNKNOWN_COMMAND` | not a command | a typo | `x help` — the suggestion is in `fix` |
-| `X_CLI_BAD_FLAG` | flag rejected | unknown flag, or a bad value | `x <command> --help` |
+| `X_CLI_BAD_FLAG` | flag or positional rejected | unknown flag, a bad value (`--port abc`, `--workers 4.9` — refused, never coerced), or a required positional left out. A missing positional says so and names it, rather than inventing a flag that does not exist | `x <command> --help` |
 | `X_CLI_UNEXPECTED` | the CLI itself failed | a bug, or a broken environment | `x doctor --json` and attach it to an issue |
 | `X_VERIFY_FAILED` | one or more verify steps failed | the gate is red | `x verify --json` — every step's findings arrive in one run |
 | `X_TYPECHECK_FAILED` | `tsc` failed | a type error anywhere in the workspace | `bunx tsc -b --pretty false` |

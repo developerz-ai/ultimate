@@ -18,7 +18,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 |---|---|
 | Errors | `StorageError` + one factory per code in `errors.ts`; never `throw new Error` |
 | New code | add to `STORAGE_ERROR_CODES` **and** `STORAGE_ERROR_TITLES` |
-| Keys | every driver method starts with `assertSafeKey()`. No exceptions, no sanitising |
+| Keys | every driver method starts with `assertSafeKey()`. No exceptions, no sanitising. `META_DIR` (`.meta`) is a reserved first segment on every driver — see below |
 | Time | take a `Clock`; never `Date.now()` |
 | Bytes | `Uint8Array \| ReadableStream \| Blob`. Never a base64 string |
 | Exports | explicit in `src/index.ts`; no `export *` |
@@ -28,7 +28,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `driver.ts` | `StorageDriver` contract + `toBytes`/`sha256Base64`/`etagOf` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-s3.ts` | `Bun.S3Client`, built lazily (import must never open a socket) |
-| `path.ts` | key validation + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
+| `path.ts` | key validation + `META_DIR` + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
 | `signed-url.ts` | HMAC over the constraint tuple, constant-time verify |
 | `upload.ts` | magic-byte sniff + size/allowlist/checksum policy |
 | `image.ts` | deterministic variant keys; byte path over core's pipeline (png/jpeg encode only) |
@@ -45,6 +45,23 @@ bun run typecheck
 ```
 
 Gotchas:
+- **`META_DIR` lives in `path.ts`, not in `driver-local.ts`.** The sidecar namespace overlapped the
+  object namespace: `put('a/b', png)` writes `<root>/.meta/a/b.json`, and `.meta/a/b.json` was
+  itself a legal key, so an uploader could rewrite another object's recorded `contentType` to
+  `text/html` and have a route serve attacker HTML from the app's origin. Reserved in
+  `assertSafeKey`, so it holds for S3 too — a key valid on one driver and refused on another is two
+  key rules. The `list()` skip stays as a second line of defence.
+- **`localDriver` refuses to construct outside development without a usable signing secret**
+  (`X_ENV_MISSING`, borrowed from core). Usable means neither the `signingSecret` option nor
+  `STORAGE_SIGNING_SECRET` is missing, empty **or** the published `DEV_SIGNING_SECRET` — pasting
+  the literal into `app.config.ts` configures nothing, so it is refused exactly as its absence is.
+  `DEV_SIGNING_SECRET` is published in this repo, and `acceptSignedUpload` trusts a signed URL's
+  constraints over the app's `uploadPolicy` — so the fallback is a universal grant to mint any
+  `PUT`. Refused at construction, not at the first `signedUrl()`: a process that cannot sign safely
+  must not finish booting. The cause names the environment `resolveEnvironment()` resolved, which
+  may be `NODE_ENV`'s, never a variable the process did not set. `usesDevStorageSecret()` is the
+  `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a disk
+  handed an explicit `signingSecret` is outside its question.
 - **The mounted read half is `@ultimat3/cli`'s `dev-storage.ts`, not this package.** `GET
   /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
   2 and unreachable from here — so a "serve this object" helper in this package could only ever be

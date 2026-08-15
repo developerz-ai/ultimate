@@ -3,6 +3,7 @@
  * whichever one `Math.round` happens to implement is not an answer.
  */
 
+import { invariant } from '@ultimat3/core';
 import { notRoundable } from './errors';
 
 export type RoundingMode =
@@ -40,6 +41,54 @@ export function roundToInteger(value: number, mode: RoundingMode = DEFAULT_ROUND
       return sign * (floor % 2 === 0 ? floor : floor + 1);
     }
   }
+}
+
+/**
+ * Round the exact rational `numerator / denominator` with the same four modes.
+ *
+ * The float path above can only judge a value IEEE-754 has already moved: `100 * 1.005` is
+ * 100.49999999999999, so `half-up` answers 100 where the exact 100.5 owes 101 — a 0.5% fee on
+ * €1.00 charged as nothing. A scale therefore reaches a mode as a fraction, never as a product.
+ */
+export function roundRatio(
+  numerator: bigint,
+  denominator: bigint,
+  mode: RoundingMode = DEFAULT_ROUNDING,
+): number {
+  invariant(
+    denominator !== 0n,
+    'X_INVARIANT',
+    'cannot round a ratio whose denominator is zero',
+    'roundRatio(numerator, 1n, mode)   # a zero denominator names no value; divide(amount, 0) is refused before it reaches here, so this is a caller building the fraction itself',
+  );
+  // One sign, carried out front, so each mode sees a magnitude exactly as `roundToInteger` does.
+  const negative = numerator < 0n !== denominator < 0n;
+  const top = numerator < 0n ? -numerator : numerator;
+  const bottom = denominator < 0n ? -denominator : denominator;
+  const whole = top / bottom;
+  const remainder = top % bottom;
+  // `remainder / bottom` vs `1/2` without leaving the integers: compare `2 * remainder` to `bottom`.
+  const twice = remainder * 2n;
+
+  let rounded: bigint;
+  switch (mode) {
+    case 'down':
+      rounded = whole;
+      break;
+    case 'up':
+      rounded = remainder > 0n ? whole + 1n : whole;
+      break;
+    case 'half-up':
+      rounded = twice >= bottom ? whole + 1n : whole;
+      break;
+    case 'half-even':
+      if (twice > bottom) rounded = whole + 1n;
+      else if (twice < bottom) rounded = whole;
+      else rounded = whole % 2n === 0n ? whole : whole + 1n;
+      break;
+  }
+  // Past 2^53 the `Number` is already approximate, which `money()` refuses as X_MONEY_NOT_INTEGER.
+  return Number(negative ? -rounded : rounded);
 }
 
 /**

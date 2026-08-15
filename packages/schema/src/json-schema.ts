@@ -64,10 +64,28 @@ function stringNode(node: SchemaNode): JsonSchema {
   };
 }
 
+/**
+ * JSON Schema's `pattern` is an ECMA-262 source with no flag syntax, so a flagged pattern is
+ * stated in prose instead of silently narrowed: a consumer applying `pattern` alone would refuse
+ * values this schema accepts, and there is nowhere honest to hide that.
+ */
+function patternNote(node: SchemaNode): string | undefined {
+  if (node.pattern === undefined) return undefined;
+  const flags = node.patternFlags;
+  return flags === undefined || flags === ''
+    ? undefined
+    : `pattern is applied with RegExp flags "${flags}"`;
+}
+
 function convert(node: SchemaNode): JsonSchema {
+  const notes = [node.description, patternNote(node)].filter(
+    (part): part is string => part !== undefined,
+  );
+  const described = notes.length === 0 ? undefined : notes.join(' — ');
+
   const annotate = (schema: JsonSchema): JsonSchema => ({
     ...schema,
-    ...(node.description === undefined ? {} : { description: node.description }),
+    ...(described === undefined ? {} : { description: described }),
     ...(node.hasDefault === true ? { default: node.default } : {}),
   });
 
@@ -104,7 +122,14 @@ function convert(node: SchemaNode): JsonSchema {
       return annotate({
         type: 'object',
         properties: {
-          minor: { type: 'integer', description: 'amount in minor units, never a float' },
+          minor: {
+            type: 'integer',
+            description: 'amount in minor units, never a float',
+            // The safe-integer range the validator enforces, so a generated client refuses the
+            // same value the boundary does instead of learning about it from a 500.
+            minimum: -Number.MAX_SAFE_INTEGER,
+            maximum: Number.MAX_SAFE_INTEGER,
+          },
           currency: { type: 'string', pattern: '^[A-Z]{3}$' },
         },
         required: ['minor', 'currency'],

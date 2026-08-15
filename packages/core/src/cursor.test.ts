@@ -4,6 +4,7 @@ import {
   configureCursorSigning,
   decodeCursor,
   encodeCursor,
+  resetCursorSigning,
   usesDevCursorSecret,
 } from './cursor';
 
@@ -101,6 +102,41 @@ describe('the one cursor codec', () => {
   test('the shipped dev key is detectable by the literal an unconfigured app inherits', () => {
     configureCursorSigning('ultimate-dev-cursor-secret');
     expect(usesDevCursorSecret()).toBe(true);
+  });
+
+  // The secret used to be read at MODULE scope, so an app that loads secrets through
+  // `openSecrets()` during boot — setting ULTIMATE_CURSOR_SECRET after this module was imported
+  // — signed every cursor of that process with the shipped dev key. `x doctor` warned and
+  // nothing failed. Same call-time rule `@ultimat3/auth`'s oauth secrets follow.
+  test('ULTIMATE_CURSOR_SECRET is read when a cursor is signed, not when the module loads', () => {
+    const previous = process.env['ULTIMATE_CURSOR_SECRET'];
+    // Undo any earlier `configureCursorSigning` in this file so the env is what answers.
+    resetCursorSigning();
+    try {
+      delete process.env['ULTIMATE_CURSOR_SECRET'];
+      expect(usesDevCursorSecret()).toBe(true);
+
+      // Set AFTER import, exactly as a boot-time secret load does.
+      process.env['ULTIMATE_CURSOR_SECRET'] = 'loaded-at-boot';
+      expect(usesDevCursorSecret()).toBe(false);
+      const cursor = encodeCursor(position);
+      expect(decodeCursor(cursor, 'posts:acme').id).toBe('p_9');
+
+      // And a cursor signed under it does not verify once it rotates.
+      process.env['ULTIMATE_CURSOR_SECRET'] = 'rotated-at-boot';
+      expect(codeOf(() => decodeCursor(cursor, 'posts:acme'))).toBe('X_CURSOR_INVALID');
+
+      // An explicit configure still wins over the environment.
+      configureCursorSigning('explicit');
+      process.env['ULTIMATE_CURSOR_SECRET'] = 'ignored';
+      expect(decodeCursor(encodeCursor(position), 'posts:acme').id).toBe('p_9');
+    } finally {
+      // The explicit secret is module state, so it outlives this test unless it is dropped here:
+      // a later test in this process would otherwise sign with 'explicit', not its own secret.
+      resetCursorSigning();
+      if (previous === undefined) delete process.env['ULTIMATE_CURSOR_SECRET'];
+      else process.env['ULTIMATE_CURSOR_SECRET'] = previous;
+    }
   });
 
   test('the failure names the fix, in three lines', () => {

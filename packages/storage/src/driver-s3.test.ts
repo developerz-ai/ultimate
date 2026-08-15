@@ -15,6 +15,7 @@ import {
   s3Driver,
 } from './driver-s3';
 import { isStorageError, objectNotFound } from './errors';
+import { META_DIR, scopedKey } from './path';
 
 /** The driver's private `DRIVER_NAME`; the fake reports failures against the same disk. */
 const FAKE_DISK = 's3';
@@ -272,6 +273,31 @@ describe('s3Driver', () => {
       }
       // The guard fires before any of these methods ever call `client.file()`.
       expect(fake.fileCalls).toEqual([]);
+    });
+
+    test('the reserved .meta first segment is refused here too, though S3 keeps no sidecar', async () => {
+      // The reservation belongs to `assertSafeKey`, not to the local driver: a key valid on S3
+      // and refused on disk is two key rules, and an app that migrates disks would discover the
+      // difference through objects it can no longer write.
+      const fake = new FakeS3Client();
+      const driver = s3Driver({ bucket: 'b', client: fake });
+      const reserved = `${META_DIR}/org/org-1/a.png.json`;
+
+      for (const caught of [
+        await catchError(() => driver.put(reserved, bytesOf('x'))),
+        await catchError(() => driver.get(reserved)),
+        await catchError(() => driver.delete(reserved)),
+        await catchError(() => driver.exists(reserved)),
+        await catchError(() => driver.stream(reserved)),
+        await catchError(() => driver.signedUrl(reserved)),
+      ]) {
+        expect(codeOf(caught)).toBe('X_STORAGE_PATH_UNSAFE');
+      }
+      expect(fake.fileCalls).toEqual([]);
+
+      // Only the first segment is reserved — `.meta` deeper in a key is an ordinary name.
+      await driver.put(scopedKey('org-1', META_DIR, 'a.json'), bytesOf('ordinary'));
+      expect([...new Set(fake.fileCalls)]).toEqual(['org/org-1/.meta/a.json']);
     });
   });
 

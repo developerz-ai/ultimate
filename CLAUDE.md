@@ -31,14 +31,17 @@ Open: roadmap milestone 11's two-platform deploy proof — 1.1.0 gave a scaffold
 deployable artifact (`packages/cli/src/serve.ts`; `x new` writes `apps/web/server.ts`,
 `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`; `ROLE=migrate` runs release-phase
 migrations), but the demo app on Compose **and** K8s from one image with an invisible rolling
-restart is still not demonstrated. Four known gaps ship with 1.1.0 and are named in
-[`CHANGELOG.md`](CHANGELOG.md): `x build --target binary` compiled and crashed at import — **fixed**, the
-version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`, though the target
-is still unproven end to end;
-`docker-compose.prod.yml` pairs a published host port with `replicas: 3`; the shared cache tier's
-Lua invalidation `DEL`s keys it never declares in `KEYS`, so it fails on Dragonfly and Redis
-Cluster; `resolveEnvironment` exists in both `core` and `seo` with different return types. Milestone
-detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
+restart is still not demonstrated. Of the four known gaps named in
+[`CHANGELOG.md`](CHANGELOG.md), **two are now closed and two remain**, `As of 2026-08`:
+
+| Gap | State |
+|---|---|
+| `x build --target binary` compiled and crashed at import | **fixed** — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`. The target is still unproven end to end, and `docker/Dockerfile` compiles the binary *without* that define |
+| the shared cache tier's Lua invalidation `DEL`s keys it never declares in `KEYS` | **fixed** — the script returns the member list and the tier deletes value keys client-side, one key per `DEL`, so it is slot-local on Redis Cluster and Dragonfly |
+| `docker-compose.prod.yml` pairs a published host port with `replicas` above 1 | **open** — and it is `web` *and* `sync`, in the framework's compose file, the demo's, and the one `x new` scaffolds |
+| `resolveEnvironment` exists in both `core` and `seo` with different return types | **open** — a real axiom-1 violation, deliberately deferred: both are shipped public APIs with different return unions, so unifying them is a breaking change that needs a major |
+
+Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 
 ## Design axioms (override any instinct that conflicts)
 

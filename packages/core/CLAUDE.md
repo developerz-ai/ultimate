@@ -130,7 +130,12 @@ Gotchas:
   `afterAll` — a reset that is not handed back strips the titles of every package imported before
   that file, and their errors render the humanised fallback (`X_DB_DRIFT: db drift`) for the rest
   of the run. That is a load-order flake: green locally, red on whichever CI ordering hits it.
-- Tests that call `configureCursorSigning()` must restore the previous secret.
+- Tests that call `configureCursorSigning()` must restore the previous secret, or call
+  `resetCursorSigning()` — the only way back to "unconfigured", which restoring a literal cannot
+  express. The secret itself is read inside `sign()`, never at module scope: `openSecrets()` runs
+  during boot, so a module-scope read signed a whole process's cursors with the dev key while
+  `ULTIMATE_CURSOR_SECRET` was set and `x doctor` merely warned. Same call-time rule as
+  `@ultimat3/auth`'s `oauth-cookie.ts` / `oauth-exchange.ts`; new secrets follow it.
 - `PRIMITIVE_KINDS` is the executable copy of the eight-primitive rule — `PrimitiveKind` derives
   from it, so the list and the type cannot drift. A ninth entry fails `registrar.test.ts`, which
   is the point: a new capability arrives as a factory over an existing primitive (`llm()` returns

@@ -57,6 +57,12 @@ returns the source amount, the rate, and its timestamp alongside the result — 
 audit has to be able to reproduce the number. Implement `RateProvider` for a live feed;
 `fixedRateProvider()` covers tests, seeds and manually agreed invoice rates.
 
+A rate may also carry `ratio` — the exact `Fraction` its `rate` approximates — and `convert`
+scales by that when it is there. It is how a derived direction stays exact: a table naming
+`USD/EUR: 0.92` names 23/25, so `fixedRateProvider` answers EUR→USD with 25/23 rather than the
+double `1 / 0.92`, whose own decimal spelling rounds a large amount one minor unit low. `rate`
+stays the readable number the audit trail records.
+
 ## Errors
 
 | Code | When |

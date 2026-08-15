@@ -49,7 +49,13 @@ export interface LocaleConfig {
   order: readonly LocaleSourceName[];
 }
 
-const DEFAULT_ORDER: readonly LocaleSourceName[] = ['header', 'cookie', 'user', 'query'];
+/**
+ * Explicit before inferred, always. `Accept-Language` is what the browser was installed as; the
+ * query, the cookie and the user row are what a person *chose*. Ranking the header first meant a
+ * language switcher wrote a cookie that never won again — and `@ultimat3/http`'s negotiator, which
+ * takes the explicit value ahead of the header, disagreed with this one about the same request.
+ */
+const DEFAULT_ORDER: readonly LocaleSourceName[] = ['query', 'cookie', 'user', 'header'];
 
 let config: LocaleConfig = {
   supported: SUPPORTED_LOCALES,
@@ -68,7 +74,7 @@ export function localeConfig(): LocaleConfig {
 }
 
 /**
- * Header → cookie → user record → query → default, per `config.order`.
+ * Query → cookie → user record → header → default, per `config.order`.
  * An unsupported tag is skipped rather than thrown: a stale cookie must not 500 a page.
  */
 export function resolveLocale(
@@ -95,7 +101,15 @@ export function localeCookieOf(cookieHeader?: string | null): string | undefined
     const index = pair.indexOf('=');
     if (index === -1) continue;
     if (pair.slice(0, index).trim() !== LOCALE_COOKIE) continue;
-    return decodeURIComponent(pair.slice(index + 1).trim());
+    const raw = pair.slice(index + 1).trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      // A cookie is client-authored: `x_locale=%` is a `URIError` out of a per-request path, and
+      // a 500 for a malformed locale is worse than the raw value, which `resolveLocale` then
+      // fails to normalise and skips. Same guard as `@ultimat3/auth`'s `decodeCookieValue`.
+      return raw;
+    }
   }
   return undefined;
 }

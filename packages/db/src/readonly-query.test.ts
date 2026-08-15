@@ -173,3 +173,39 @@ describe('readOnlyQuery', () => {
     expect(pins).toEqual({ reserves: 1, releases: 1 });
   });
 });
+
+describe('one statement, or none at all', () => {
+  test('an embedded ";" is refused before the transaction opens', async () => {
+    // Only the FIRST command is bounded by the guards this function installs, so a second one
+    // undid `SET LOCAL statement_timeout` while `guards` still reported `timeout:5000ms` — the
+    // BEGIN READ ONLY backstop held, but the reported guard list was a lie.
+    const client = createRecordingClient();
+    let code = 'no-throw';
+    try {
+      await readOnlyQuery('select 1; set statement_timeout = 0', { client, maxRows: 10 });
+    } catch (error) {
+      code = (error as { code?: string }).code ?? 'no-code';
+    }
+    expect(code).toBe('X_SQL_UNSAFE');
+    // Nothing was opened: no BEGIN, no DECLARE, no ROLLBACK to clean up.
+    expect(client.texts).toEqual([]);
+  });
+
+  test('the refusal does not depend on maxRows — the direct path splices too', async () => {
+    const client = createRecordingClient();
+    await expect(readOnlyQuery('select 1; delete from posts', { client })).rejects.toThrow(
+      /X_SQL_UNSAFE/,
+    );
+    expect(client.texts).toEqual([]);
+  });
+
+  test('a ";" inside a literal or a comment is data, not a second statement', async () => {
+    const client = createRecordingClient();
+    await expect(readOnlyQuery("select ';'", { client })).resolves.toBeDefined();
+    await expect(readOnlyQuery('select 1 -- ; nope', { client })).resolves.toBeDefined();
+    // A trailing ";" is still one statement and still stripped before the DECLARE.
+    const trailing = createRecordingClient();
+    await readOnlyQuery('select 1;', { client: trailing, maxRows: 5 });
+    expect(trailing.texts).toContain('DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select 1');
+  });
+});

@@ -11,14 +11,26 @@ export type ActorKind = 'user' | 'service' | 'agent' | 'anonymous';
 export const ACTOR_KINDS = ['user', 'service', 'agent', 'anonymous'] as const;
 
 /**
- * Augment to carry app-owned authz facts on the actor — the friend set, the block set, the org
- * row — resolved ONCE per request, because a policy predicate is synchronous and may not query:
+ * **The channel for every app-specific fact about who is calling.** `Actor` itself carries only
+ * what every app has — `kind`, `id`, `orgId`, `roles`, `scopes` — and it never grows a field for
+ * one app's vocabulary. A `memberId`, a `tz`, a plan tier, the friend set, the block set, the org
+ * row: each is declared here, by module augmentation, and resolved ONCE per request, because a
+ * policy predicate is synchronous and may not query.
  *
  * ```ts
  * declare module '@ultimat3/core' {
- *   interface ActorFacts { readonly viewer: Viewer }
+ *   interface ActorFacts {
+ *     readonly memberId: string;
+ *     readonly tz: string;
+ *     readonly viewer: Viewer;
+ *   }
  * }
  * ```
+ *
+ * Then `withFacts(actor, { memberId, tz })` at the request boundary and `actorFact(actor,
+ * 'memberId')` everywhere else. Do not thread a second identity object beside the actor and do
+ * not ask for a field on `Actor`/`ActorInit`: a fact declared here rides the SAME actor every
+ * surface already hands the policy layer, so a relational rule never needs a second authz path.
  *
  * Same shape as `CtxServices` and `PermissionRegistry`, for the same reason: the app declares
  * once and every reader — predicate, action handler, component — is typed from that declaration

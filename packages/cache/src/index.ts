@@ -10,6 +10,7 @@ export {
   CachePurgeFailedError,
   CacheTagUnknownError,
   CacheTooLargeError,
+  CacheTtlInvalidError,
 } from './errors';
 export type { CacheDependent, DependentKind } from './graph';
 export {
@@ -77,8 +78,9 @@ export type {
   CacheEntry,
   CacheSetOptions,
   CacheStack,
+  CacheStackOptions,
   CacheTier,
   TierInvalidation,
   TierName,
 } from './tiers';
-export { createCacheStack, isExpired, nowMs, sortTiers, TIER_ORDER } from './tiers';
+export { assertTtl, createCacheStack, isExpired, nowMs, sortTiers, TIER_ORDER } from './tiers';

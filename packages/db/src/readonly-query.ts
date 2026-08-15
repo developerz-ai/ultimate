@@ -4,8 +4,10 @@
 // meant to ask for.
 
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
+import { multipleStatements } from './errors';
 import { identifier, raw, sql } from './sql';
 import { stripSqlNoise } from './sql-noise';
+import { statementsOf } from './statement-split';
 
 /** Default per-statement ceiling for an agent-authored read. */
 export const READONLY_TIMEOUT_MS = 5_000;
@@ -78,6 +80,14 @@ export async function readOnlyQuery<T>(
   statement: string,
   options: ReadOnlyQueryOptions = {},
 ): Promise<ReadOnlyQueryResult<T>> {
+  // ONE statement, decided before anything is opened. Not a second mutating-keyword scan — a
+  // different question, and the one the guards below depend on: only the first command of a text
+  // is bounded by them, so `select 1; set statement_timeout = 0` undid the timeout this function
+  // had just installed while `guards` went on reporting `timeout:5000ms`. `statementsOf` is the
+  // package's one splitter, so a `;` inside a literal, a comment or a dollar-quoted body is data.
+  const statements = statementsOf(statement);
+  if (statements.length > 1) throw multipleStatements(statement, statements.length);
+
   const client = options.client ?? baseClient();
   // A pooled BEGIN that lands on a different physical connection than the query that follows is
   // not a transaction at all, so a reservable client must pin one connection for the sequence.
@@ -146,7 +156,8 @@ async function readRows<T>(
 ): Promise<readonly T[]> {
   if (fetch === undefined || !cursorable(statement)) return connection.query<T>(raw(statement));
 
-  // A trailing `;` would close `DECLARE` before its query and turn one statement into two.
+  // A trailing `;` would close `DECLARE` before its query and turn one statement into two. An
+  // EMBEDDED one is refused up in `readOnlyQuery`, before the transaction opens.
   const query = statement.trim().replace(/;\s*$/, '');
   await connection.execute(raw(`DECLARE ${CURSOR_NAME} NO SCROLL CURSOR FOR ${query}`));
   const rows = await connection.query<T>(raw(`FETCH FORWARD ${fetch} FROM ${CURSOR_NAME}`));

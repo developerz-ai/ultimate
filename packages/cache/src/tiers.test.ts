@@ -344,3 +344,90 @@ describe('createCacheStack tiers', () => {
     expect(stack.tiers.map((t) => t.name)).toEqual(['lru', 'redis', 'cdn']);
   });
 });
+
+describe('read-through promotion carries the entry, not the caller options', () => {
+  /** A tier seeded with an entry that already has an absolute expiry. */
+  function expiringTier(
+    name: CacheTier['name'],
+    key: string,
+    entry: CacheEntry<unknown>,
+  ): CacheTier {
+    return {
+      name,
+      get<T>(k: string) {
+        return Promise.resolve(k === key ? (entry as CacheEntry<T>) : undefined);
+      },
+      set() {
+        return Promise.resolve();
+      },
+      del() {
+        return Promise.resolve();
+      },
+      invalidateTags() {
+        return Promise.resolve({ tier: name, keys: [] });
+      },
+    };
+  }
+
+  /** Records exactly what options a promotion wrote with. */
+  function recordingTier(name: CacheTier['name'], writes: CacheSetOptions[]): CacheTier {
+    return {
+      name,
+      get() {
+        return Promise.resolve(undefined);
+      },
+      set(_key: string, _value: unknown, options?: CacheSetOptions) {
+        writes.push(options ?? {});
+        return Promise.resolve();
+      },
+      del() {
+        return Promise.resolve();
+      },
+      invalidateTags() {
+        return Promise.resolve({ tier: name, keys: [] });
+      },
+    };
+  }
+
+  test('a promoted hit gets its REMAINING life, never a fresh full lease', async () => {
+    // Re-leasing a value one second from expiry for a fresh five minutes on every read is a hot
+    // key that serves stale data forever: the closer tier's copy outlives the entry it copied.
+    const writes: CacheSetOptions[] = [];
+    const stack = createCacheStack(
+      [
+        recordingTier('lru', writes),
+        expiringTier('redis', 'k', { value: 'v', tags: [], expiresAt: 11_000 }),
+      ],
+      { clock: fakeClock(10_000) },
+    );
+
+    expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
+    expect(writes).toEqual([{ ttlMs: 1_000, tags: [] }]);
+  });
+
+  test('an entry a tier has not reaped yet is a miss, so `load` runs', async () => {
+    const writes: CacheSetOptions[] = [];
+    const stack = createCacheStack(
+      [
+        recordingTier('lru', writes),
+        expiringTier('redis', 'k', { value: 'stale', tags: [], expiresAt: 9_000 }),
+      ],
+      { clock: fakeClock(10_000) },
+    );
+
+    expect(await stack.read('k', () => Promise.resolve('fresh'), { ttlMs: 300_000 })).toBe('fresh');
+    // Written as a load, with the caller's ttl — not promoted with a negative one.
+    expect(writes).toEqual([{ ttlMs: 300_000 }]);
+  });
+
+  test('a hit with no recorded expiry still promotes on the caller ttl', async () => {
+    const writes: CacheSetOptions[] = [];
+    const stack = createCacheStack(
+      [recordingTier('lru', writes), expiringTier('redis', 'k', { value: 'v', tags: [] })],
+      { clock: fakeClock(10_000) },
+    );
+
+    expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
+    expect(writes).toEqual([{ ttlMs: 300_000, tags: [] }]);
+  });
+});

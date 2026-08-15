@@ -399,6 +399,16 @@ and `X_DB_DRIFT` is also declared by entity — registering twice throws at impo
 `readOnly()` is the regex-gated client for any caller that cannot open its own transaction. The
 MCP `db.query` tool does not use it — it goes through `readOnlyQuery()`, which is stronger.
 
+**`readOnlyQuery` takes ONE statement**, refused through `statementsOf` before the transaction
+opens (`X_SQL_UNSAFE`, `multipleStatements`). This is not a second mutating-keyword scan — it is a
+different question, and the one the layer's own guards depend on: the statement is *spliced* into
+`DECLARE … CURSOR FOR`, and only the first command of that text is bounded by the `SET LOCAL
+statement_timeout` set moments earlier, so `select 1; set statement_timeout = 0` undid the guard
+while `guards` went on reporting `timeout:5000ms`. `BEGIN READ ONLY` still held, so this was a
+defeated layer reported as an engaged one rather than a write — and a guard list that lies is worse
+than a guard list that is short. `statementsOf` is the package's one splitter, so a `;` inside a
+literal, a comment or a dollar-quoted body stays data.
+
 `readonly-role.ts` and `readonly-query.ts` are layers 1–2 of that tool's defence-in-depth: a
 `NOLOGIN` Postgres role (`ensureReadOnlyRole`) and a per-statement `BEGIN READ ONLY` + statement
 timeout (`readOnlyQuery`). Only layer 1 degrades: `ensureReadOnlyRole` returns `null` on a missing

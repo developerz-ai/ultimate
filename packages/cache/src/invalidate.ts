@@ -20,6 +20,11 @@ export interface InvalidationReport {
   readonly tiers: readonly TierInvalidation[];
   /** ISR route paths queued for regeneration. */
   readonly isr: readonly string[];
+  /**
+   * CDN paths the graph hangs off these tags — what *depends* on them, not what cleared. The
+   * `cdn` tier is what purges them (as surrogate keys, with the tags), so what actually cleared
+   * is that tier's row in `tiers`. With no `cdn` tier registered this list purges nowhere.
+   */
   readonly cdn: readonly string[];
   readonly liveQueries: readonly string[];
   readonly durationMs: number;
@@ -33,8 +38,13 @@ export interface InvalidationEvent {
   /** Wire-form tags, exactly `report.tags`. */
   readonly tags: readonly string[];
   /**
-   * Everything the fan-out actually cleared: every tier key, plus the ISR paths, CDN paths
-   * and live queries.
+   * Everything the fan-out actually cleared: every tier key — the `cdn` tier's accepted purge
+   * keys included — plus the ISR paths and the live queries.
+   *
+   * Deliberately NOT `report.cdn`: that is the dependency graph's answer to "what depends on
+   * these tags", and folding it in here reported a path as busted when no `cdn` tier was
+   * registered to purge it. A partial bust that reads as a clean one is the failure this log
+   * exists to catch.
    */
   readonly busted: readonly string[];
   /**
@@ -151,7 +161,6 @@ export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationR
       busted: dedupe([
         ...report.tiers.flatMap((entry) => entry.keys),
         ...report.isr,
-        ...report.cdn,
         ...report.liveQueries,
       ]),
       source,

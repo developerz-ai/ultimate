@@ -40,6 +40,12 @@ export interface SchemaNode {
   readonly maxLength?: number | undefined;
   /** Source string of the RegExp, so the node stays JSON-serialisable. */
   readonly pattern?: string | undefined;
+  /**
+   * The RegExp's flags, carried beside the source for the same reason. Dropping them made
+   * `t.string.pattern(/^[a-z]+$/i)` reject `ABC` while quoting the pattern that matches it.
+   * JSON Schema's `pattern` has no flags, so `json-schema.ts` states them in `description`.
+   */
+  readonly patternFlags?: string | undefined;
   readonly minimum?: number | undefined;
   readonly maximum?: number | undefined;
   readonly integer?: boolean | undefined;
