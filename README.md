@@ -8,11 +8,6 @@
 
 <p align="center"><em>Rails' opinions. Bun's speed. One command that means shippable.</em></p>
 
-<p align="center">
-  <img src="assets/never-send-a-human.webp" alt="Agent Smith: &quot;Never send a human to do a machine's job.&quot;" width="480" />
-</p>
-
-<p align="center"><sub><em>The Matrix</em> (1999). Built by agents, for agents, maintained by agents.</sub></p>
 
 <div align="center">
 
@@ -24,6 +19,27 @@
 </div>
 
 > **Status: 1.2.0**, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep: one version, one commit, one tag. **`@ultimat3/flags` has never reached npm** and the rest sit at 1.2.0, so the registry is not yet in lockstep with the repo ([#84](https://github.com/developerz-ai/ultimate/issues/84)); it needs the one-time manual bootstrap every package gets before a trusted publisher can attach. 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
+
+## Built by agents, for agents, maintained by agents
+
+Nobody writes this code by hand any more, and the framework is designed for that rather than
+retrofitted to it. A coding agent works 24/7/365, and — the part that actually matters — it writes
+the tenth feature the way it wrote the first. No Friday-afternoon shortcut, no "I'll clean this up
+later", no second way of doing a thing because someone new joined. Consistency at volume is the
+thing humans are worst at and agents are best at.
+
+That only pays off if the framework agrees. One way to do each thing, so there is nothing to choose
+between. Conventions that are build errors, so the compiler corrects the agent instead of a
+reviewer. Errors carrying a stable code, a cause and a command that fixes it, so a failure costs one
+round-trip. Docs local in `node_modules`, so nothing reaches for a wiki. `--json` on every command,
+so output is parsed rather than re-read. Each of those is worth a little on its own; together they
+are the difference between an agent that ships and one that thrashes.
+
+<p align="center">
+  <img src="assets/never-send-a-human.webp" alt="Agent Smith: &quot;Never send a human to do a machine's job.&quot;" width="460" />
+</p>
+
+<p align="center"><sub><em>The Matrix</em> (1999)</sub></p>
 
 **Measured, and only this much:**
 
