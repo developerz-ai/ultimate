@@ -134,8 +134,16 @@ $ARGUMENTS
 
 1. **Read the code before planning against it.** If a claim in the ask is already false in the tree,
    say so under *Risks* with the \`file:line\` that disproves it, and plan what is actually true.
-2. **Resolve the path.** \`date +%F\` → \`docs/plans/<YYYY-MM-DD>-<slug>.md\`. Slug is kebab-case, five
-   words maximum. One file — a plan split across a directory is a plan nobody reads to the end.
+2. **Resolve the path.** The date comes from Bun in a named zone, never from the host's ambient one —
+   \`date +%F\` gives a different answer on two machines at the same instant, and this app formats no
+   date without an explicit IANA time zone.
+
+   \`\`\`sh
+   bun -e "console.log(new Intl.DateTimeFormat('en-CA', { timeZone: 'Etc/UTC' }).format(new Date()))"
+   \`\`\`
+
+   Then \`docs/plans/<YYYY-MM-DD>-<slug>.md\`. Slug is kebab-case, five words maximum. One file — a
+   plan split across a directory is a plan nobody reads to the end.
 3. **Write it.** Sections, in this order:
 
 \`\`\`markdown

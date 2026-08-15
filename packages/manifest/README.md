@@ -105,10 +105,10 @@ disagree with the installed version, because it *is* the installed version.
 | `module` | the file header comment on a module `src/index.ts` re-exports, plus its public symbols | `jobs.retry` |
 | `guide` | a `##` section of `README.md` or `CLAUDE.md`, quoted verbatim | `money.README#why-no-floats` |
 
-The **file header** is the doc unit, not JSDoc: measured across this repo, 99.8% of source files
-carry a 1–4 line header (2,510 of 2,514) while only 42% of public exports have JSDoc directly
-above the declaration — `job()` itself has none. Ranking a question against 42% coverage would
-have missed the framework's most-used export.
+The **file header** is the doc unit, not JSDoc. Measured across this repo, `As of 2026-08`: 99.8%
+of source files carry a 1–4 line header (2,510 of 2,514), while only 42.3% of public exports have
+JSDoc directly above the declaration (1,868 of 4,414) — `job()` itself has none. Ranking a question
+against 42% coverage would have missed the framework's most-used export.
 
 Same split as `AGENTS.md` above: this module **derives** facts and **quotes** human prose. It
 never writes, and it never synthesises a sentence.

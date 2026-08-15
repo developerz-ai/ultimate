@@ -10,6 +10,10 @@
 // the installed version. Same split `agents-md.ts` states: facts are derived, prose is
 // human-authored — this module derives, and quotes human prose verbatim. It never writes.
 
+// `node:` by necessity, not habit. Bun exposes no native directory listing: `Bun.Glob` walks a
+// pattern and yields matches, while this needs the immediate children of the scope directory —
+// including the ones that turn out not to be packages. And Bun ships no path module at all, so
+// `basename`/`join` are the only way to build a path without hand-rolling separator handling.
 import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
@@ -150,13 +154,22 @@ async function guideEntries(
   version: string,
 ): Promise<readonly DocEntry[]> {
   const entries: DocEntry[] = [];
+  // Two `##` sections can carry the same text, and their slugs would then collide into one topic
+  // id — silently, which is the failure mode the search's own coverage floor exists to prevent,
+  // and a direct contradiction of `DocEntry.topic`'s promise to be unique within a package. No
+  // shipped guide collides today; an app's own package is one heading away from it. The suffix
+  // follows document order, so the id is still derived and still reproducible.
+  const used = new Map<string, number>();
   for (const file of GUIDE_FILES) {
     const markdown = await read(join(dir, file));
     if (markdown === undefined) continue;
     const stem = basename(file, '.md');
     for (const section of parseGuideSections(markdown)) {
+      const base = `${shortName(name)}.${stem}#${slug(section.heading)}`;
+      const seen = (used.get(base) ?? 0) + 1;
+      used.set(base, seen);
       entries.push({
-        topic: `${shortName(name)}.${stem}#${slug(section.heading)}`,
+        topic: seen === 1 ? base : `${base}-${seen}`,
         package: name,
         version,
         kind: 'guide',

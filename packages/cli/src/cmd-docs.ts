@@ -4,6 +4,8 @@
 // should not have to guess which of 29 packages holds the answer, and it must never be handed a
 // URL: `node_modules` already contains every doc, because the published artifact IS the source.
 
+// `node:path` because Bun ships no path module: `dirname` walks up from a resolved package.json
+// to its scope directory, which is string surgery `Bun.resolveSync` does not offer.
 import { dirname } from 'node:path';
 import type { DocEntry, DocHit } from '@ultimat3/manifest';
 import { nearestTopics, scanInstalledDocs, searchDocs } from '@ultimat3/manifest';
@@ -60,13 +62,27 @@ function humanLines(hits: readonly DocHit[]): readonly string[] {
   const lines: string[] = [];
   for (const hit of hits) {
     lines.push(`  ${hit.entry.topic}  ${locate(hit.entry)}`);
+    // The title is the package's own header comment, quoted verbatim — source text, not this
+    // command's prose, so it never goes through the catalog.
     if (hit.entry.title !== '') lines.push(`    ${hit.entry.title}`);
     if (hit.entry.symbols.length > 0) {
-      lines.push(`    exports: ${hit.entry.symbols.slice(0, 12).join(', ')}`);
+      lines.push(
+        `    ${msg('cli.docs.exports', { list: hit.entry.symbols.slice(0, 12).join(', ') })}`,
+      );
     }
   }
   return lines;
 }
+
+/**
+ * The two commands that answer what `x docs` does not. The invocation stays inline and only its
+ * explanation is translated: a `fix:`-style command is copied and run verbatim, and a translated
+ * `x errors list --json` is a broken command (the same reason `Finding.fix` is exempt).
+ */
+const alsoTry = (): readonly string[] => [
+  `  x errors list --json          # ${msg('cli.docs.tryErrors')}`,
+  `  x actions list --json         # ${msg('cli.docs.tryActions')}`,
+];
 
 /**
  * An `X_*` code is not a documentation question — `x errors explain` already answers it offline,
@@ -74,6 +90,23 @@ function humanLines(hits: readonly DocHit[]): readonly string[] {
  * step and beats ranking a code against prose that merely mentions it (axiom 1: one way).
  */
 const CODE_QUERY = /\bX_[A-Z0-9_]{3,}\b/;
+
+/**
+ * Answered before anything is scanned, because the contract above is only true if nothing else
+ * runs. Ranking a code against prose returned five files for `X_DB_DRIFT` that merely contain
+ * "db" and "drift", with the redirect buried under them — and a code that matched nothing at all
+ * fell into `missResult`, which never carried the redirect. Returning here closes both, and skips
+ * a scan of every installed package for a question that was never about documentation.
+ */
+function codeResult(code: string, query: string): CommandResult {
+  return {
+    ok: true,
+    command: 'docs',
+    summary: msg('cli.docs.code', { code }),
+    lines: [`  x errors explain ${code} --json`],
+    data: { matches: [], suggestions: [], redirect: code, query },
+  };
+}
 
 /**
  * A miss is still an instruction (axiom 4). Topics that half-matched come first; when nothing
@@ -86,16 +119,12 @@ function missResult(query: string, entries: readonly DocEntry[]): CommandResult 
   const next =
     suggestions.length > 0
       ? suggestions.map((topic) => `  x docs ${topic} --json`)
-      : [`  installed: ${packages.join(' ')}`];
+      : [`  ${msg('cli.docs.installed', { list: packages.join(' ') })}`];
   return {
     ok: false,
     command: 'docs',
     summary: msg('cli.docs.none', { query }),
-    lines: [
-      ...next,
-      '  x errors list --json          # every X_* code, with its fix',
-      "  x actions list --json         # this app's own primitives, not the framework's",
-    ],
+    lines: [...next, ...alsoTry()],
     data: { matches: [], suggestions: [...suggestions], packages, query },
   };
 }
@@ -123,6 +152,9 @@ export const docsCommand: CliCommand = {
       });
     }
 
+    const code = CODE_QUERY.exec(query)?.[0];
+    if (code !== undefined) return codeResult(code, query);
+
     const scope = frameworkScopeDir();
     if (scope === undefined) {
       const finding = unresolvedFinding();
@@ -142,13 +174,11 @@ export const docsCommand: CliCommand = {
     const hits = searchDocs(entries, query, limit);
     if (hits.length === 0) return missResult(query, entries);
 
-    const code = CODE_QUERY.exec(query)?.[0];
-    const codeLine = code === undefined ? [] : [`  x errors explain ${code} --json`];
     return {
       ok: true,
       command: 'docs',
       summary: msg('cli.docs.found', { count: hits.length, query }),
-      lines: [...humanLines(hits), ...codeLine],
+      lines: [...humanLines(hits)],
       data: { matches: hits.map(asJson), suggestions: [], query },
     };
   },

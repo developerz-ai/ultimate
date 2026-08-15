@@ -44,6 +44,16 @@ const codeOf = (run: () => unknown): string => {
   return 'did-not-throw';
 };
 
+/** The `fix:` line, so a test can pin WHICH remediation a caller is handed, not just the code. */
+const fixOf = async (run: () => Promise<unknown>): Promise<string> => {
+  try {
+    await run();
+  } catch (error) {
+    return error instanceof UltimateError ? error.fix : `not-an-UltimateError: ${String(error)}`;
+  }
+  return 'did-not-throw';
+};
+
 const asyncCodeOf = async (run: () => Promise<unknown>): Promise<string> => {
   try {
     await run();
@@ -97,7 +107,7 @@ describe('island · an island that can never boot', () => {
     );
   });
 
-  test('the fix names the route file and both ways the route ended up on never', async () => {
+  test('the fix names the route file, and one edit — not a menu to choose from', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
     const collector = createIslandCollector({ file: PAGE, hydrate: 'never' });
     try {
@@ -106,10 +116,9 @@ describe('island · an island that can never boot', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(UltimateError);
       expect((error as UltimateError).fix).toContain(PAGE);
-      // Since `hydrate` is derived, `'never'` beside an island is either stated or a drain that
-      // never saw the declaration. A fix naming only the first sends half of them hunting.
-      expect((error as UltimateError).fix).toContain("hydrate: 'never'");
-      expect((error as UltimateError).fix).toContain('above defineRoute');
+      // Which edit depends on the cause, and the throw site knows it — see the two-cause test
+      // below. What must never happen is both, leaving the reader to work out which half is theirs.
+      expect((error as UltimateError).fix).toContain('island');
     }
   });
 });
@@ -358,8 +367,8 @@ describe('island · declaring one is the whole declaration', () => {
     expect(defineRoute({ render: 'static', offline: 'precache', meta }).islands).toHaveLength(0);
   });
 
-  test("hydrate: 'never' beside an island is still refused — the author stated it on purpose", () => {
-    island({ src: `./contact-modal${ISLAND_EXTENSION}` });
+  test("hydrate: 'never' beside an island is still refused — the author stated it on purpose", async () => {
+    const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
     const config = defineRoute({
       render: 'static',
       offline: 'precache',
@@ -367,7 +376,42 @@ describe('island · declaring one is the whole declaration', () => {
       meta,
     });
     expect(config.hydrate).toBe('never');
-    // The route registers; the failure is at render, where the island is actually reached.
-    expect(registerRoute({ file: PAGE, config }).config.budget.js).toBeUndefined();
+    // No derived ceiling: a route that ships nothing has nothing to budget, and one here would
+    // paper over the contradiction the render is about to name.
+    const entry = registerRoute({ file: PAGE, config });
+    expect(entry.config.budget.js).toBeUndefined();
+
+    // The registration is not the refusal. This is: the island is reached, and rejected.
+    const collector = createIslandCollector({ file: PAGE, hydrate: entry.config.hydrate });
+    expect(await asyncCodeOf(() => renderToHtml(h(Modal, null, 'x'), { islands: collector }))).toBe(
+      'X_ISLAND_NOT_HYDRATED',
+    );
+  });
+
+  test('the two causes get one instruction each, and it is the reader’s own', async () => {
+    // Declared and drained: the route reached `'never'` because someone wrote it.
+    const Stated = island({ src: `./contact-modal${ISLAND_EXTENSION}` });
+    const stated = defineRoute({ render: 'static', offline: 'precache', hydrate: 'never', meta });
+    expect(stated.islands).toHaveLength(1);
+    const statedFix = await fixOf(() =>
+      renderToHtml(h(Stated, null, 'x'), {
+        islands: createIslandCollector({ file: PAGE, hydrate: stated.hydrate }),
+      }),
+    );
+    expect(statedFix).toContain("remove hydrate: 'never'");
+    expect(statedFix).not.toContain('above defineRoute');
+
+    // Declared below the route, so nothing drained it: the route never saw the island at all.
+    const orphan = defineRoute({ render: 'static', offline: 'precache', meta });
+    const Orphan = island({ src: `./search${ISLAND_EXTENSION}` });
+    expect(orphan.islands).toHaveLength(0);
+    expect(orphan.hydrate).toBe('never');
+    const orphanFix = await fixOf(() =>
+      renderToHtml(h(Orphan, null, 'x'), {
+        islands: createIslandCollector({ file: PAGE, hydrate: orphan.hydrate }),
+      }),
+    );
+    expect(orphanFix).toContain('above defineRoute');
+    expect(orphanFix).not.toContain("remove hydrate: 'never'");
   });
 });

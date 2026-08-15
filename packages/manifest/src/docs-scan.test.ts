@@ -98,6 +98,33 @@ describe('unit · scanPackageDocs', () => {
     expect(guides[0]?.text).not.toContain('Always a zone.');
   });
 
+  test('two sections with the same heading get distinct topics, so neither is shadowed', async () => {
+    const dir = fixture({
+      'package.json': '{"name":"@ultimat3/x"}',
+      'src/index.ts': '',
+      'README.md': '# x\n\n## Errors\n\nFirst.\n\n## Errors\n\nSecond.\n\n## Errors\n\nThird.\n',
+    });
+    const entries = await scanPackageDocs(dir);
+    expect(entries.map((entry) => entry.topic)).toEqual([
+      'x.README#errors',
+      'x.README#errors-2',
+      'x.README#errors-3',
+    ]);
+    // The suffix follows document order, so the ids stay derived rather than arbitrary.
+    expect(entries.map((entry) => entry.text)).toEqual(['First.', 'Second.', 'Third.']);
+  });
+
+  test('a heading repeated across README and CLAUDE keeps its own file in the topic', async () => {
+    const dir = fixture({
+      'package.json': '{"name":"@ultimat3/x"}',
+      'src/index.ts': '',
+      'README.md': '# x\n\n## Owns\n\nA.\n',
+      'CLAUDE.md': '# x\n\n## Owns\n\nB.\n',
+    });
+    const entries = await scanPackageDocs(dir);
+    expect(entries.map((entry) => entry.topic)).toEqual(['x.README#owns', 'x.CLAUDE#owns']);
+  });
+
   test('entries are stably ordered, so two scans of one tree agree', async () => {
     const dir = fixture({
       'package.json': '{"name":"@ultimat3/x"}',

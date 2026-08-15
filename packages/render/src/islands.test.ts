@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { BudgetExceededError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { hydrateRuntime } from './hydrate';
+import { clearDeclaredIslands, ISLAND_EXTENSION, island } from './island';
 import type { Island } from './islands';
 import { assertBudget, checkBudget, graphFor, parseByteBudget } from './islands';
 import { clearRoutes, registerRoute } from './registry';
@@ -34,6 +35,7 @@ const islands: readonly Island[] = [
 
 beforeEach(() => {
   clearRoutes();
+  clearDeclaredIslands();
 });
 
 describe('parseByteBudget', () => {
@@ -57,6 +59,9 @@ describe('two bundle graphs', () => {
 
 describe('checkBudget', () => {
   test('fails past budget.js and names the import chain that added the bytes', () => {
+    // Declared, not injected: `registerRoute` takes no `islands` any more, and the route reaching
+    // the budget with one on it is exactly what `island()` above `defineRoute` does in an app.
+    island({ src: `./pricing-toggle${ISLAND_EXTENSION}` });
     const entry = registerRoute({
       file: 'apps/web/site/pricing/page.tsx',
       config: defineRoute({
@@ -66,8 +71,8 @@ describe('checkBudget', () => {
         budget: { js: '40kb' },
         meta,
       }),
-      islands: ['pricing-toggle'],
     });
+    expect(entry.islands).toEqual(['pricing-toggle']);
 
     const report = checkBudget(entry, islands);
     expect(report.ok).toBe(false);

@@ -1,3 +1,7 @@
+// The island's one decision, tested where a DOM is not needed: what a submitted form becomes on
+// the wire, and when it becomes nothing at all. The `null` branch is the whole reason this rule is
+// a function — it is what hands the submit back to the browser instead of posting a bad body.
+
 import { expect, unitTest } from '@ultimat3/testing';
 import { enquiryFrom } from './enquiry';
 

@@ -1,3 +1,6 @@
+// The hydration entry point, pinned by name: the browser boots this island by calling `mount` on
+// whatever the module exports, and nothing else in the build looks at that name.
+
 import { expect, unitTest } from '@ultimat3/testing';
 import * as entry from './contact-sales.island';
 

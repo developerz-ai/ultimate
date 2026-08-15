@@ -203,7 +203,10 @@ export interface RegisterRouteInput<TData = RouteData> {
   readonly config: RouteConfig<TData>;
   /** Counted from the module's JSX by the build; `stream` requires >= 1. */
   readonly suspenseBoundaries?: number;
-  readonly islands?: readonly string[];
+  // No `islands` key: an island is declared by `island()` and reaches the entry through
+  // `config.islands`. It was here, undocumented, passed by nothing, and read as
+  // `input.islands ?? []` — so the only thing a caller could do with it was un-weigh a
+  // declaration. One question, one answer.
   /** Override the convention (locale roots, rewrites). Rarely needed. */
   readonly path?: string;
   /** The page component, resolved from the module by `pageComponentOf`. */
@@ -253,10 +256,11 @@ export function registerRoute<TData = RouteData>(
     surface: derived.surface,
     config,
     suspenseBoundaries,
-    // The declaration is the fallback, not the empty list it used to be: nothing has ever passed
-    // `islands`, so `routeJsBytes`'s "what registration declared" half read `[]` on every route and
-    // a static page's island was weighed only if some render happened to produce a directive.
-    islands: input.islands ?? config.islands.map((spec) => spec.moduleId),
+    // The declaration is the ONLY source. It was `input.islands ?? []`, which nothing ever passed,
+    // so `routeJsBytes`'s "what registration declared" half read `[]` on every route in the
+    // framework's history — and keeping the input as a fallback would be a second answer to one
+    // question that can only ever weaken it: a caller passing `[]` un-weighs a declared island.
+    islands: config.islands.map((spec) => spec.moduleId),
     pattern: compilePattern(path),
     // Spread, never assigned: `exactOptionalPropertyTypes` makes an explicit `undefined` a
     // different answer from an absent key, and every reader tests presence.

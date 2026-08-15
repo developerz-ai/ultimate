@@ -21,12 +21,17 @@ export const sendSalesReceipt = job({
     locale: t.locale,
   }),
   /**
-   * One receipt per address per message, so a double-clicked submit is one mail. The message is
-   * hashed rather than embedded: a key is an index value, and a 2,000-character body in it is a
-   * row nobody can read and an index nobody can use.
+   * One receipt per DISTINCT enquiry, so a double-clicked submit is one mail. Every field the
+   * receipt's content depends on is in the key — `plan` and `currency` are quoted in the body and
+   * `locale` chooses the language it renders in, so a key of address + message alone deduped a
+   * visitor who asked about `team` in USD against the same question about `business` in EUR, and
+   * the second one silently got nothing.
+   *
+   * The address stays legible and the rest is hashed: a key is an index value, and a
+   * 2,000-character body in it is a queue row nobody can read and an index nobody can use.
    */
-  idempotencyKey: ({ email, message }) =>
-    `sales-receipt:${email}:${Bun.hash(message).toString(36)}`,
+  idempotencyKey: ({ email, plan, currency, message, locale }) =>
+    `sales-receipt:${email}:${Bun.hash(`${plan}|${currency}|${locale}|${message}`).toString(36)}`,
   retry: { attempts: 3, backoff: 'exponential' },
   queue: 'mail',
   async run({ input, step }) {

@@ -4,12 +4,39 @@
 // and the docs beside it alike, must resolve to a shipped command and a real subcommand.
 
 import { describe, expect, test } from 'bun:test';
+import type { ValidationIssue } from '@ultimat3/schema';
+import { parse, t, ValidationFailedError } from '@ultimat3/schema';
 import { SPECS } from '../registry';
 import { names } from './naming';
 import { claudeFiles } from './scaffold-claude';
 import { docsFiles } from './scaffold-docs';
 
 const app = names('ledger-demo');
+
+const fileAt = (path: string): string =>
+  String(claudeFiles(app).find((file) => file.path === path)?.contents ?? '');
+
+/**
+ * The shape the harness itself reads. Parsed rather than asserted, so a settings file that loses
+ * `permissions.allow` fails naming that path — an `as` cast turns the same regression into a
+ * `TypeError` on a property access, which is a failure diagnosable only by reading three files.
+ */
+const Settings = t.object({
+  permissions: t.object({ allow: t.array(t.string) }),
+  hooks: t.object({
+    PostToolUse: t.array(
+      t.object({
+        matcher: t.string,
+        hooks: t.array(t.object({ type: t.string, command: t.string })),
+      }),
+    ),
+  }),
+});
+
+function parseSettings() {
+  const source: unknown = JSON.parse(fileAt('.claude/settings.json'));
+  return parse(Settings, source, '.claude/settings.json');
+}
 
 /** A planned command exits X_NOT_IMPLEMENTED, so citing one is the same dead end as a typo. */
 const SHIPPED = new Map(
@@ -88,10 +115,20 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
     }
   });
 
+  test('the settings parse is what fails when the shape moves, and it names the path', () => {
+    // Without this the schema above is decoration: the assertions below would still read a plain
+    // cast, and a settings file that dropped `permissions.allow` would surface as a TypeError.
+    let issues: readonly ValidationIssue[] = [];
+    try {
+      parse(Settings, { permissions: {}, hooks: { PostToolUse: [] } }, '.claude/settings.json');
+    } catch (error) {
+      issues = error instanceof ValidationFailedError ? error.issues : [];
+    }
+    expect(issues.map((issue) => issue.path)).toContain('permissions.allow');
+  });
+
   test('settings.json parses, and allows nothing destructive', () => {
-    const settings = claudeFiles(app).find((file) => file.path === '.claude/settings.json');
-    const parsed: unknown = JSON.parse(String(settings?.contents ?? ''));
-    const allow = (parsed as { permissions: { allow: readonly string[] } }).permissions.allow;
+    const allow = parseSettings().permissions.allow;
     expect(allow.length).toBeGreaterThan(0);
     // Each of these either drops data, writes production or decrypts secrets. An allowlist that
     // pre-approves one turns the permission prompt into the thing nobody reads.
@@ -100,15 +137,21 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
   });
 
   test('exactly one PostToolUse hook, and it names a binary the scaffold installs', () => {
-    const settings = claudeFiles(app).find((file) => file.path === '.claude/settings.json');
-    const parsed = JSON.parse(String(settings?.contents ?? '')) as {
-      hooks: { PostToolUse: readonly { hooks: readonly { command: string }[] }[] };
-    };
-    const hooks = parsed.hooks.PostToolUse.flatMap((entry) => entry.hooks);
+    const hooks = parseSettings().hooks.PostToolUse.flatMap((entry) => entry.hooks);
     expect(hooks).toHaveLength(1);
     // biome is a devDependency `x new` writes into the root package.json; `x verify --only` is not
     // a flag and never will be, so a per-step gate hook is not an option here.
     expect(hooks[0]?.command).toContain('biome');
+  });
+
+  test('the hook rewrites files, and the README is where that is disclosed', () => {
+    // JSON carries no comment, so the only place a reader can learn that `check` writes is the
+    // README next to it. Pinned, because an undisclosed hook is the one thing in this bundle that
+    // acts on the user's tree without saying so.
+    const readme = fileAt('.claude/README.md');
+    expect(readme).toContain('--write');
+    expect(readme).toContain('in place');
+    expect(parseSettings().hooks.PostToolUse[0]?.hooks[0]?.command).toContain('--write');
   });
 
   test('every subagent declares a name and a description, or it is never dispatched', () => {

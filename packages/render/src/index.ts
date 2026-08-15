@@ -57,8 +57,6 @@ export {
 } from './hydrate';
 export type { IslandComponent, IslandDeclaration, IslandNode, IslandSpec } from './island';
 export {
-  clearDeclaredIslands,
-  drainDeclaredIslands,
   ISLAND_EXTENSION,
   ISLAND_NODE,
   isEmittableSpecifier,

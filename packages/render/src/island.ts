@@ -112,12 +112,33 @@ export function islandModuleId(src: string): string {
  */
 const declaredIslands: IslandSpec[] = [];
 
-/** Called by `defineRoute` alone. Returns what this module declared and resets the list. */
+/**
+ * Called by `defineRoute` alone. Returns what this module declared and resets the list.
+ *
+ * Package-internal on purpose — reachable from `./island`, absent from `src/index.ts`. An app that
+ * could call this between its `island()` and its `defineRoute` would silently drain the
+ * declarations the route derives `hydrate`, `budget.js` and `entry.islands` from, and get a page
+ * that renders an island nothing boots. Machinery is not API, and a public export is semver-locked
+ * the moment it ships.
+ */
 export function drainDeclaredIslands(): readonly IslandSpec[] {
   if (declaredIslands.length === 0) return [];
   const drained = [...declaredIslands];
   declaredIslands.length = 0;
   return drained;
+}
+
+/**
+ * Whether this exact spec is still waiting to be drained — which is decidable, and is the whole
+ * difference between the two causes of `X_ISLAND_NOT_HYDRATED`. A spec still pending at RENDER
+ * time was declared where no `defineRoute` could see it (below the route, or outside a route
+ * module); a spec already drained means the route reached `'never'` because an author wrote it.
+ *
+ * Identity, not equality: `island()` pushes the object it closes over, so the spec reaching the
+ * collector is the same one, and two islands with identical fields never collide.
+ */
+export function islandNeverDrained(spec: IslandSpec): boolean {
+  return declaredIslands.includes(spec);
 }
 
 /** Test seam: the list is process-global because the module cache it mirrors is too. */

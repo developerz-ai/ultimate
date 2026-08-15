@@ -91,9 +91,19 @@ describe('live · x docs against the installed framework', () => {
     expect(sources.some((source) => source.endsWith('.md'))).toBe(true);
   });
 
-  test('an X_* code is redirected to the command that already answers for codes', async () => {
+  test('an X_* code is redirected instead of ranked against prose', async () => {
     const result = await run(['docs', 'X_DB_DRIFT']);
     expect(result.lines?.join('\n')).toContain('x errors explain X_DB_DRIFT');
+    // The redirect used to sit under five prose matches for "db" and "drift", which an agent
+    // reads first. The code owns the answer, so the search never runs.
+    expect(matchesOf(result)).toEqual([]);
+    expect(record(result.data)['redirect']).toBe('X_DB_DRIFT');
+  });
+
+  test('a code that no doc mentions still gets the redirect, not the generic miss', async () => {
+    const result = await run(['docs', 'X_ZZQQ_WWVV']);
+    expect(result.lines?.join('\n')).toContain('x errors explain X_ZZQQ_WWVV');
+    expect(record(result.data)['redirect']).toBe('X_ZZQQ_WWVV');
   });
 
   test('--limit caps the answer', async () => {

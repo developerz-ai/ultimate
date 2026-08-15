@@ -1832,7 +1832,10 @@
           "idempotent": false,
           "invalidates": [],
           "mcpTool": null,
-          "rateLimit": null
+          "rateLimit": {
+            "limit": 5,
+            "windowMs": 600000
+          }
         }
       }
     },

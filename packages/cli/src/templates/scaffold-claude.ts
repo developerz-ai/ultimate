@@ -11,6 +11,10 @@ import { claudeCommandFiles } from './scaffold-claude-commands';
  * Read-only commands and the two write commands whose blast radius is a file the gate checks.
  * Deliberately absent: `x db reset`, `x db backfill --write`, `x secrets`, `x deploy` — each is
  * destructive or reaches production, and an allowlist that covers them is a prompt nobody reads.
+ *
+ * The hook is the one part of the bundle that ACTS: `--write` rewrites the file just edited, in
+ * place. JSON takes no comment (the lesson `scaffold-repo.ts`'s `biome.json` already paid for), so
+ * the disclosure lives in `.claude/README.md` under "The hook" — and a test pins it there.
  */
 const settings = (): string => `{
   "permissions": {
@@ -64,7 +68,11 @@ const readme = (app: NameSet): string => `# .claude/
 
 What Claude Code reads when it works on ${app.kebab}. Written by \`x new\`, owned by you from the
 moment it lands: edit any file, or delete any file, and nothing in the app breaks. Nothing here is
-enforced by \`x verify\`, and none of it reaches outside this directory.
+enforced by \`x verify\`, and nothing here reaches outside this repository.
+
+One thing in it does *write*: the \`PostToolUse\` hook in \`settings.json\` reformats each file an agent
+edits, in place, the moment it is saved. That is the only thing here that touches your code on its
+own — see [The hook](#the-hook), and delete the \`hooks\` block if you would rather format by hand.
 
 | Path | What it costs | When you pay it |
 |---|---|---|
@@ -100,8 +108,10 @@ framework's.
 
 ## The hook
 
-One \`PostToolUse\` hook: \`bunx biome check --write\` on the file that was just edited. Scoped to that
-file, so it costs milliseconds, and it settles formatting arguments before they reach a diff.
+One \`PostToolUse\` hook: \`bunx biome check --write\` on the file that was just edited. **\`--write\`
+means it rewrites that file in place** — the same safe fixes \`biome check --write .\` would make
+repo-wide, but your working tree does change after every agent edit. Scoped to one file, so it costs
+milliseconds, and it settles formatting arguments before they reach a diff.
 
 It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and \`x verify\`
 takes no \`--only\` and no \`--skip\` by design — narrowing the gate would make "green" mean whatever

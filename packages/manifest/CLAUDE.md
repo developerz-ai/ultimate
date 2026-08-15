@@ -33,8 +33,9 @@ by the CLI, not imported.
 - `docs-scan.ts` emits **no artifact**. The published tarball is the source, so the docs are
   already installed; a generated `docs.json` would be a second copy of them, and the second copy
   is what drifts. There is no drift check for local docs because there is nothing that can drift.
-- `docs-scan.ts` indexes the **file header comment**, not JSDoc: 99.8% of source files carry a
-  header, 42% of public exports carry JSDoc, and `job()` is in the missing 58%.
+- `docs-scan.ts` indexes the **file header comment**, not JSDoc: `As of 2026-08`, 99.8% of source
+  files carry a header, 42.3% of public exports carry JSDoc, and `job()` is in the missing 57.7%.
+- A guide topic is unique within its package — repeated headings take a document-order suffix.
 - Neither docs module may import a registry or a clock. `docs-search.ts` is pure; `docs-scan.ts`
   reads files and nothing else.
 - A new manifest field ⇒ bump `MANIFEST_VERSION` and add a `diff.ts` rule for it.
