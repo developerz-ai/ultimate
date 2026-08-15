@@ -3,8 +3,7 @@
 // built from a validated bucket name, because a stream name goes straight into a request subject.
 
 import { TransportProtocolError, TransportUnavailableError } from './errors';
-import type { NatsConnection } from './nats-connection';
-import type { NatsHeaders, NatsMessage } from './nats-protocol';
+import type { NatsClient, NatsHeaders, NatsMessage } from './nats-client';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -91,22 +90,22 @@ const errorOf = (body: Record<string, unknown>): JsError | undefined => {
 
 /** One JetStream API call. The API always answers with json, and reports failure inside it. */
 export async function jsRequest(
-  connection: NatsConnection,
+  client: NatsClient,
   subject: string,
   body: unknown,
 ): Promise<{ readonly data: Record<string, unknown>; readonly error: JsError | undefined }> {
-  const reply = await connection.request(subject, encoder.encode(JSON.stringify(body ?? {})));
+  const reply = await client.request(subject, encoder.encode(JSON.stringify(body ?? {})));
   const data = asObject(reply, subject);
   return { data, error: errorOf(data) };
 }
 
 /** `jsRequest`, but a JetStream error is thrown rather than returned. */
 export async function jsCall(
-  connection: NatsConnection,
+  client: NatsClient,
   subject: string,
   body: unknown,
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await jsRequest(connection, subject, body);
+  const { data, error } = await jsRequest(client, subject, body);
   if (error === undefined) return data;
   throw new TransportUnavailableError({
     transport: 'nats',
@@ -122,14 +121,14 @@ export const kvSubject = (bucket: string, key: string): string => `$KV.${bucket}
  * rather than in an ops runbook is what lets `x dev` and a fresh cluster boot the same way.
  */
 export async function ensureKvBucket(
-  connection: NatsConnection,
+  client: NatsClient,
   bucket: string,
   ttlMs: number,
 ): Promise<void> {
   assertBucket(bucket);
-  assertServerVersion(connection.info.version);
+  assertServerVersion(client.version);
   const stream = kvStream(bucket);
-  const info = await jsRequest(connection, `$JS.API.STREAM.INFO.${stream}`, {});
+  const info = await jsRequest(client, `$JS.API.STREAM.INFO.${stream}`, {});
   if (info.error === undefined) return;
   if (info.error.code !== STATUS_NOT_FOUND) {
     throw new TransportUnavailableError({
@@ -137,7 +136,7 @@ export async function ensureKvBucket(
       reason: `could not read stream ${stream}: ${info.error.description}`,
     });
   }
-  await jsCall(connection, `$JS.API.STREAM.CREATE.${stream}`, {
+  await jsCall(client, `$JS.API.STREAM.CREATE.${stream}`, {
     name: stream,
     subjects: [`$KV.${bucket}.>`],
     // History of one: presence is a current value, never a log. `discard: new` keeps a full
@@ -157,26 +156,26 @@ export async function ensureKvBucket(
 }
 
 const recordOf = (message: NatsMessage, bucket: string): KvRecord | undefined => {
-  const subject = message.headers.get('nats-subject');
+  const subject = message.header('Nats-Subject');
   if (subject === undefined) return undefined;
-  const stamp = message.headers.get('nats-time-stamp');
+  const stamp = message.header('Nats-Time-Stamp');
   const writtenAt = stamp === undefined ? undefined : Date.parse(stamp);
   return {
     key: subject.slice(`$KV.${bucket}.`.length),
     value: decoder.decode(message.payload),
     writtenAt: writtenAt === undefined || Number.isNaN(writtenAt) ? undefined : writtenAt,
-    operation: message.headers.get('kv-operation'),
+    operation: message.header('KV-Operation'),
   };
 };
 
 /** The current value for one key, or `undefined` when the server has none. */
 export async function kvGet(
-  connection: NatsConnection,
+  client: NatsClient,
   bucket: string,
   key: string,
 ): Promise<KvRecord | undefined> {
   const subject = `$JS.API.DIRECT.GET.${kvStream(bucket)}.${kvSubject(bucket, key)}`;
-  const reply = await connection.request(subject, new Uint8Array(0));
+  const reply = await client.request(subject, new Uint8Array(0));
   if (reply.status === STATUS_NOT_FOUND) return undefined;
   return recordOf(reply, bucket);
 }
@@ -186,19 +185,21 @@ export async function kvGet(
  * messages and then an empty `204 EOB`; a prefix nobody has written answers `404` and nothing else.
  */
 export async function kvLast(
-  connection: NatsConnection,
+  client: NatsClient,
   bucket: string,
   filter: string,
   batch = 1_000,
 ): Promise<readonly KvRecord[]> {
   const subject = `$JS.API.DIRECT.GET.${kvStream(bucket)}`;
   const body = { multi_last: [kvSubject(bucket, filter)], batch };
-  const replies = await connection.requestMany(subject, encoder.encode(JSON.stringify(body)), {
+  const replies = await client.requestMany(subject, encoder.encode(JSON.stringify(body)), {
     until: (message) => message.status === STATUS_EOB || message.status === STATUS_NOT_FOUND,
   });
   const records: KvRecord[] = [];
   for (const reply of replies) {
-    if (reply.status !== undefined) continue;
+    // A status on a batch reply is a marker, never a value — the terminator is filtered by `until`,
+    // and anything else the server slips in (a `408` heartbeat) carries no message to read.
+    if (reply.status !== 0) continue;
     const record = recordOf(reply, bucket);
     if (record) records.push(record);
   }
@@ -207,14 +208,14 @@ export async function kvLast(
 
 /** A KV write is a publish that waits for JetStream's ack — a lost put must not read as stored. */
 export async function kvWrite(
-  connection: NatsConnection,
+  client: NatsClient,
   bucket: string,
   key: string,
   value: string,
   headers: NatsHeaders,
 ): Promise<void> {
   const subject = kvSubject(bucket, key);
-  const reply = await connection.request(subject, encoder.encode(value), { headers });
+  const reply = await client.request(subject, encoder.encode(value), { headers });
   const body = asObject(reply, subject);
   const error = errorOf(body);
   if (error !== undefined) {

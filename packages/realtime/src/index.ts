@@ -163,15 +163,23 @@ export {
   type SubscriptionShape,
   toBridgeResult,
 } from './matcher-bridge';
-export type { NatsConnectOptions } from './nats-commands';
 // ---- the production bus -------------------------------------------------------------------------
 export {
-  NatsConnection,
-  type NatsConnectionOptions,
+  DEFAULT_NATS_PORT,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  type NatsClient,
+  type NatsClientOptions,
+  type NatsConnect,
+  type NatsHeaders,
+  type NatsMessage,
   type NatsMessageHandler,
+  type NatsRequestManyOptions,
+  type NatsRequestOptions,
   type NatsSubscription,
-} from './nats-connection';
-export { type FakeNatsOptions, FakeNatsServer, fakeNatsStream } from './nats-fake';
+  type NatsTarget,
+  parseNatsUrl,
+} from './nats-client';
+export { FakeNatsBroker, type FakeNatsOptions, fakeNatsConnect } from './nats-fake';
 export {
   assertBucket,
   assertServerVersion,
@@ -180,24 +188,12 @@ export {
   type KvRecord,
   kvGet,
   kvLast,
+  kvStream,
   kvSubject,
   kvWrite,
 } from './nats-jetstream';
 export { decodeToken, encodeToken, NatsKvSet, type NatsKvSetOptions } from './nats-kv';
-export {
-  type NatsHeaders,
-  type NatsMessage,
-  type NatsOperation,
-  NatsProtocolParser,
-  type NatsServerInfo,
-} from './nats-protocol';
-export {
-  bunNatsStream,
-  type NatsStream,
-  type NatsTarget,
-  natsStreamOver,
-  parseNatsUrl,
-} from './nats-socket';
+export { openNatsClient } from './nats-lib-client';
 export { NatsTransport, type NatsTransportOptions } from './nats-transport';
 export {
   type DrainReport,

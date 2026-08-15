@@ -7,8 +7,8 @@
 import type { Clock } from '@ultimat3/core';
 import type { Transport } from './fanout';
 import { InProcessTransport } from './fanout';
+import type { NatsConnect } from './nats-client';
 import { assertBucket } from './nats-jetstream';
-import type { NatsStream, NatsTarget } from './nats-socket';
 import { NatsTransport } from './nats-transport';
 
 /** The keys read here, and nothing else. Named once so docs and tests cannot drift from the code. */
@@ -51,7 +51,7 @@ export interface SelectTransportOptions {
   readonly presenceTtlMs?: number | undefined;
   readonly clock?: Clock | undefined;
   /** Injected so a boot — reconnect included — can be proven with no network. */
-  readonly open?: ((target: NatsTarget) => Promise<NatsStream>) | undefined;
+  readonly connect?: NatsConnect | undefined;
 }
 
 const nonEmpty = (value: string | undefined): string | undefined =>
@@ -91,7 +91,7 @@ export function selectTransport(
     bucket,
     presenceTtlMs,
     ...(options.clock === undefined ? {} : { clock: options.clock }),
-    ...(options.open === undefined ? {} : { open: options.open }),
+    ...(options.connect === undefined ? {} : { connect: options.connect }),
   });
   return {
     transport,

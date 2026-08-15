@@ -1,5 +1,5 @@
 // The only proof that the bus client is right: a real nats-server, a real JetStream KV bucket, a
-// real TCP socket. Everything else in this package drives an in-memory server — which cannot catch
+// real TCP socket. Everything else in this package drives an in-memory bus — which cannot catch
 // a header the server spells differently, a JetStream reply shape that moved, or a TTL nobody honours.
 //
 // Skips unless a JetStream-enabled server is configured. Locally:
@@ -8,10 +8,9 @@
 //   TEST_NATS_URL=nats://localhost:4222 bun test packages/realtime/src/nats-transport.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { NatsConnection } from './nats-connection';
 import { kvGet } from './nats-jetstream';
 import { encodeToken } from './nats-kv';
-import { bunNatsStream, parseNatsUrl } from './nats-socket';
+import { openNatsClient } from './nats-lib-client';
 import { NatsTransport } from './nats-transport';
 
 const url = Bun.env['TEST_NATS_URL'];
@@ -101,15 +100,16 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
     const bus = transport();
     const key = 'presence.live.ttl';
     await bus.shared.put(key, 'brief', 'x', 1_000);
-    const target = parseNatsUrl(url ?? '');
-    const connection = await NatsConnection.open({ stream: await bunNatsStream(target), target });
+    // Read straight off the bucket rather than through `shared`: the claim is that the *server*
+    // expired the member, which a client-side filter over a live entry would answer identically.
+    const client = await openNatsClient({ url: url ?? '' });
     const kvKey = `${encodeToken(key)}.${encodeToken('brief')}`;
 
-    expect(await kvGet(connection, BUCKET, kvKey)).toBeDefined();
+    expect(await kvGet(client, BUCKET, kvKey)).toBeDefined();
     // Real seconds, deliberately: per-message TTL is the server's own clock, and that is the point.
     await Bun.sleep(3_500);
 
-    expect(await kvGet(connection, BUCKET, kvKey)).toBeUndefined();
-    await connection.close();
+    expect(await kvGet(client, BUCKET, kvKey)).toBeUndefined();
+    await client.close();
   }, 20_000);
 });
