@@ -8,6 +8,7 @@ export const FLAGS_ERROR_CODES = [
   'X_FLAG_DUPLICATE',
   'X_FLAG_EXPIRED',
   'X_FLAG_EXPIRY_INVALID',
+  'X_FLAG_SUBJECT_REQUIRED',
   'X_FLAG_TARGETING_INVALID',
   'X_FLAG_UNKNOWN',
 ] as const;
@@ -18,6 +19,7 @@ export const FLAGS_ERROR_TITLES: Readonly<Record<FlagsErrorCode, string>> = {
   X_FLAG_DUPLICATE: 'two flags were declared with the same key',
   X_FLAG_EXPIRED: 'a temporary flag is past its expiry and is still being evaluated',
   X_FLAG_EXPIRY_INVALID: 'a temporary flag has no usable expiry date',
+  X_FLAG_SUBJECT_REQUIRED: 'a flag decides by a subject the evaluation context does not carry',
   X_FLAG_TARGETING_INVALID: 'flag targeting is out of range or malformed',
   X_FLAG_UNKNOWN: 'no flag is declared under this key',
 };
@@ -63,12 +65,44 @@ export const flagUnknown = (key: string, known: readonly string[]): FlagsError =
     meta: { key },
   });
 
-export const flagTargetingInvalid = (key: string, problem: string): FlagsError =>
+/** `fix` is a parameter because a bad `bucketBy` is not repaired by editing `rollout` — axiom 4. */
+export const flagTargetingInvalid = (key: string, problem: string, fix?: string): FlagsError =>
   new FlagsError({
     code: 'X_FLAG_TARGETING_INVALID',
     cause: `${key}: ${problem}`,
-    fix: `set rollout to an integer 0-100 in defineFlag({ key: '${key}' })`,
+    fix: fix ?? `set rollout to an integer 0-100 in defineFlag({ key: '${key}' })`,
     meta: { key },
+  });
+
+/** Which targeting field asked for the subject, so the fix names an edit rather than a mechanism. */
+export type FlagSubjectVia = 'orgs' | 'subjects' | 'bucketBy';
+
+/**
+ * Thrown, never softened into a fallback. Answering a subject-scoped flag from the actor axis — or
+ * from the declared default — is the exact failure the subject axis exists to remove: it looks
+ * like it worked, and the record finds out when half of it is on a different code path.
+ *
+ * The fix differs by kind because the edit does: a missing org is repaired where the actor is
+ * minted, a missing record is repaired at the call site that already holds it.
+ */
+export const flagSubjectRequired = (init: {
+  key: string;
+  kind: string;
+  actorId: string;
+  via: FlagSubjectVia;
+}): FlagsError =>
+  new FlagsError({
+    code: 'X_FLAG_SUBJECT_REQUIRED',
+    cause: `${init.key} decides by the "${init.kind}" subject (targeting.${init.via}) but the evaluation context carries no ${init.kind} id for actor "${init.actorId}", so there is nothing to decide about`,
+    // Every app-supplied string goes through JSON.stringify, and the kind becomes a COMPUTED key:
+    // a `bank-integration` kind — the realistic shape, next to treasury's `bank_integration:` ids
+    // — is not a valid identifier, so `{ bank-integration: … }` would hand the reader a fix that
+    // does not parse. Axiom 4: an instruction that cannot be run is not one.
+    fix:
+      init.kind === 'org'
+        ? `mint the actor with its tenant — userActor({ id: ${JSON.stringify(init.actorId)}, orgId: '<org>' }) — before the isEnabled(${JSON.stringify(init.key)}) call, or drop ${init.via} from defineFlag({ key: ${JSON.stringify(init.key)} })`
+        : `pass the record at the call site — isEnabled(${JSON.stringify(init.key)}, actor, { [${JSON.stringify(init.kind)}]: '<id>' }) — or drop the ${JSON.stringify(init.kind)} ${init.via} entry from defineFlag({ key: ${JSON.stringify(init.key)} })`,
+    meta: { key: init.key, kind: init.kind, actorId: init.actorId, via: init.via },
   });
 
 export const flagExpiryInvalid = (key: string, given: unknown): FlagsError =>

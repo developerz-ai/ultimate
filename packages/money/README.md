@@ -1,8 +1,8 @@
 # 💶 @ultimat3/money
 
 **Golden rule: integer minor units, currency always attached, `Intl` at the edge.**
-`0.1 + 0.2 !== 0.3`, so no amount is ever a float. `Money` is `{ readonly minor, readonly currency }`
-— the two travel together, and arithmetic across two currencies throws instead of guessing.
+`0.1 + 0.2 !== 0.3`, so no amount is ever a float. `Money` carries `minor` and `currency` together
+— plus an optional `scale` — and arithmetic across two currencies throws instead of guessing.
 
 `Money` **is** `@ultimat3/schema`'s `MoneyValue`, and so is `@ultimat3/entity`'s: one declaration
 at tier 0, aliased twice, never restated. A row a `money()` column decodes is therefore a `Money`
@@ -15,7 +15,7 @@ read rather than rounding it. → [Money](https://github.com/developerz-ai/ultim
 |---|---|---|
 | Amount | integer minor units (`1299`) | `Intl.NumberFormat`, `style: 'currency'` |
 | Currency | ISO-4217 code (`'EUR'`) | fraction digits derived from its exponent |
-| Scale | never | `10 ** exponentOf(currency)` — never a literal `/ 100` |
+| Scale | whenever it differs from the currency's, finer or coarser (`scale: 6`) | `10 ** moneyScale(amount)` — never a literal `/ 100` |
 | FX rate | explicit argument + timestamp | recorded on the converted value |
 
 ## Use
@@ -36,6 +36,35 @@ add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 `exponentOf()` is the single source of truth: USD/EUR 2, JPY/KRW/VND/ISK 0, KWD/BHD/OMR 3.
 `fromDecimal` scales by it (`'1.234'` KWD → 1234), `toDecimalString` reverses it, and
 `formatMoney` sets the fraction digits from it. Hardcoding `/ 100` is a JPY bug and a KWD bug.
+
+## Sub-cent amounts carry a scale
+
+`money(2, 'USD', 6)` is $0.000002 — `minor` counting 10⁻⁶ instead of the currency's own 10⁻².
+A value that names no scale means the currency's, which is every amount that already exists, so
+nothing about `{ minor, currency }` changes: same shape, same JSON, same columns. Only a scale
+*equal* to the currency's is dropped, so a deliberately coarser one is kept too: `money(5, 'USD', 0)`
+is $5 counted in whole dollars, and `rescale()` produces such values legitimately.
+
+```ts
+moneyScale(money(1299, 'EUR'));              // 2 — the currency's own
+moneyScale(money(2, 'USD', 6));              // 6
+rescale(money(80, 'USD'), 8);                // $0.80 as 80,000,000 hundred-millionths
+rescale(money(1_234_567, 'USD', 6), 2);      // throws X_MONEY_NOT_INTEGER — digits would go
+rescale(money(1_234_567, 'USD', 6), 2, 'half-up');  // 123¢, the loss named at the call
+fromDecimal('0.000002', 'USD', { scale: 6 });
+add(money(1, 'USD'), money(2, 'USD', 6));    // meets at scale 6: 10002, nothing lost
+```
+
+Arithmetic normalises to the *finer* of two scales, never the coarser — adding a sub-cent fee to
+a cent cannot round the fee away. `compare` and `equals` read the value rather than the encoding,
+so 1299 EUR and 12,990,000 EUR at scale 6 are one amount. `multiply`, `divide`, `negate` and
+`allocate` keep the scale they were handed. Widening is exact and free; a *lossy* narrowing needs
+a `RoundingMode` at the call site, exactly as excess precision does in `fromDecimal` — a narrowing
+that drops only zeros is exact and needs no mode.
+
+It exists because whole cents could not name the cost of a model call: 200 tokens at $0.80 per
+million is $0.00016, and rounding that up to 1¢ bills 62x — a budget built on that number is
+fiction. The alternative was a second money type.
 
 ## Allocation
 
@@ -67,7 +96,8 @@ stays the readable number the audit trail records.
 
 | Code | When |
 |---|---|
-| `X_MONEY_NOT_INTEGER` | fractional minor units, or a decimal string more precise than the currency |
+| `X_MONEY_NOT_INTEGER` | fractional minor units, a decimal string more precise than the scale, or a `rescale` that would drop a digit with no mode named |
+| `X_MONEY_SCALE_INVALID` | a scale that is not a whole number of decimal places in 0…15, or a widening whose result no longer fits a safe integer |
 | `X_CURRENCY_UNKNOWN` | code not in the ISO-4217 table |
 | `X_CURRENCY_MISMATCH` | arithmetic across two currencies |
 | `X_ALLOCATION_INVALID` | bad part count, empty/negative/all-zero ratios, percentages ≠ 100 |

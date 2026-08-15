@@ -396,51 +396,6 @@ describe('builtinT.date', () => {
   });
 });
 
-describe('builtinT.money', () => {
-  test('accepts a valid Money value', () => {
-    const result = validate(builtinT.money, { minor: 1999, currency: 'EUR' });
-    expect(result.issues).toBeUndefined();
-    if (result.issues === undefined) expect(result.value).toEqual({ minor: 1999, currency: 'EUR' });
-  });
-
-  test('rejects a non-integer minor amount', () => {
-    const result = validate(builtinT.money, { minor: 19.99, currency: 'EUR' });
-    expect(result.issues?.length).toBe(1);
-    expect(result.issues?.[0]?.path).toEqual(['minor']);
-  });
-
-  test('rejects a malformed currency code', () => {
-    const result = validate(builtinT.money, { minor: 1999, currency: 'eur' });
-    expect(result.issues?.length).toBe(1);
-    expect(result.issues?.[0]?.path).toEqual(['currency']);
-  });
-
-  test('reports both issues together when minor and currency are both invalid', () => {
-    const result = validate(builtinT.money, { minor: 19.99, currency: 'eur' });
-    expect(result.issues?.length).toBe(2);
-    expect(result.issues?.map((issue) => issue.path)).toEqual([['minor'], ['currency']]);
-  });
-
-  test('rejects a non-object', () => {
-    expect(validate(builtinT.money, 'money').issues).toBeDefined();
-  });
-
-  test('rejects a minor amount past the safe-integer range', () => {
-    // `Number.isInteger(2**53)` is true and `money()`/`parseMinor` both refuse it, so accepting
-    // it here turned a 422 with a field path into a 500 at the row write.
-    const result = validate(builtinT.money, { minor: 9_007_199_254_740_992, currency: 'EUR' });
-    expect(result.issues?.length).toBe(1);
-    expect(result.issues?.[0]?.path).toEqual(['minor']);
-    expect(
-      validate(builtinT.money, { minor: -9_007_199_254_740_992, currency: 'EUR' }).issues,
-    ).toBeDefined();
-    // The largest amount that IS representable still passes.
-    expect(
-      validate(builtinT.money, { minor: Number.MAX_SAFE_INTEGER, currency: 'EUR' }).issues,
-    ).toBeUndefined();
-  });
-});
-
 describe('builtinT.timezone', () => {
   test('accepts a valid IANA time zone', () => {
     expect(validate(builtinT.timezone, 'America/New_York').issues).toBeUndefined();

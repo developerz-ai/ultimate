@@ -10,7 +10,9 @@
 
 import { assertSameCurrency } from './arithmetic';
 import { allocationInvalid } from './errors';
-import { type Money, money } from './money';
+import { factorFraction } from './factor';
+import { formatMoneyDebug, type Money, money } from './money';
+import { minorAt, moneyScale } from './scale';
 
 /** Split into `parts` equal shares. `allocate(money(100,'USD'), 3)` → 34, 33, 33. */
 export function allocate(amount: Money, parts: number): Money[] {
@@ -26,26 +28,22 @@ export function allocate(amount: Money, parts: number): Money[] {
  */
 export function allocateByRatios(amount: Money, ratios: readonly number[]): Money[] {
   if (ratios.length === 0) throw allocationInvalid('ratios must not be empty');
-  let total = 0;
-  for (const ratio of ratios) {
-    if (!Number.isFinite(ratio) || ratio < 0) {
-      throw allocationInvalid(`ratios must be finite and non-negative, got ${String(ratio)}`);
-    }
-    total += ratio;
-  }
-  if (total <= 0) throw allocationInvalid('ratios must not all be zero');
+  const weights = weigh(ratios);
+  let total = 0n;
+  for (const weight of weights) total += weight;
+  if (total <= 0n) throw allocationInvalid('ratios must not all be zero');
 
   const sign = amount.minor < 0 ? -1 : 1;
-  const magnitude = Math.abs(amount.minor);
+  const magnitude = BigInt(Math.abs(amount.minor));
 
-  const floors: number[] = [];
-  const remainders: number[] = [];
-  let assigned = 0;
-  for (const ratio of ratios) {
-    const exact = (magnitude * ratio) / total;
-    const floor = Math.floor(exact);
+  const floors: bigint[] = [];
+  const remainders: bigint[] = [];
+  let assigned = 0n;
+  for (const weight of weights) {
+    const exact = magnitude * weight;
+    const floor = exact / total;
     floors.push(floor);
-    remainders.push(exact - floor);
+    remainders.push(exact % total);
     assigned += floor;
   }
 
@@ -54,14 +52,38 @@ export function allocateByRatios(amount: Money, ratios: readonly number[]): Mone
   let leftover = magnitude - assigned;
   const order = remainders
     .map((remainder, index) => ({ remainder, index }))
-    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+    .sort((a, b) =>
+      a.remainder === b.remainder ? a.index - b.index : a.remainder < b.remainder ? 1 : -1,
+    );
   for (const { index } of order) {
-    if (leftover <= 0) break;
-    floors[index] = (floors[index] ?? 0) + 1;
-    leftover -= 1;
+    if (leftover <= 0n) break;
+    floors[index] = (floors[index] ?? 0n) + 1n;
+    leftover -= 1n;
   }
 
-  return floors.map((minor) => money(sign * minor, amount.currency));
+  return floors.map((minor) => money(sign * Number(minor), amount.currency, amount.scale));
+}
+
+/**
+ * The ratios as exact integer weights over one common denominator.
+ *
+ * `(magnitude * ratio) / total` in floats was only exact while the product stayed under 2^53 —
+ * true of most cent amounts and false of the same invoice held in micros, where the floor came
+ * out one unit low and largest-remainder handed the difference to the wrong part. Every
+ * denominator `factorFraction` produces is a power of ten, so the common one is just the largest.
+ */
+function weigh(ratios: readonly number[]): bigint[] {
+  const fractions = ratios.map((ratio) => {
+    if (!Number.isFinite(ratio) || ratio < 0) {
+      throw allocationInvalid(`ratios must be finite and non-negative, got ${String(ratio)}`);
+    }
+    return factorFraction(ratio);
+  });
+  let common = 1n;
+  for (const fraction of fractions) {
+    if (fraction.denominator > common) common = fraction.denominator;
+  }
+  return fractions.map((fraction) => fraction.numerator * (common / fraction.denominator));
 }
 
 /**
@@ -78,14 +100,19 @@ export function allocateByPercentages(amount: Money, percentages: readonly numbe
 
 /** Guard for callers building their own splits: parts must reconstruct the whole. */
 export function assertAllocationSums(amount: Money, parts: readonly Money[]): void {
-  let total = 0;
+  let scale = moneyScale(amount);
   for (const part of parts) {
     assertSameCurrency(amount, part);
-    total += part.minor;
+    scale = Math.max(scale, moneyScale(part));
   }
-  if (total !== amount.minor) {
+  // Summed at the finest scale present, so parts split finer than the whole still reconcile
+  // against it rather than reading as a total that lost everything below a cent.
+  let total = 0n;
+  for (const part of parts) total += minorAt(part, scale);
+  const whole = minorAt(amount, scale);
+  if (total !== whole) {
     throw allocationInvalid(
-      `allocation of ${amount.currency} ${amount.minor} sums to ${total} — ${amount.minor - total} minor unit(s) lost`,
+      `allocation of ${formatMoneyDebug(amount)} sums to ${total} at scale ${scale} — ${whole - total} minor unit(s) lost`,
     );
   }
 }

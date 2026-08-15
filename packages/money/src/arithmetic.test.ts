@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { add, compare, divide, isZero, max, multiply, negate, subtract, sum } from './arithmetic';
 import { money } from './money';
+import { rescale } from './rescale';
 
 describe('cross-currency safety', () => {
   test('add refuses two currencies with X_CURRENCY_MISMATCH', () => {
@@ -100,3 +101,74 @@ describe('scaling is exact, not an IEEE-754 product', () => {
     expect(codeOf(() => multiply(money(1_000_000_000, 'EUR'), 1e9))).toBe('X_MONEY_NOT_INTEGER');
   });
 });
+
+describe('mixed scales', () => {
+  test('add and subtract normalise to the finer scale, losing nothing', () => {
+    // 1¢ + $0.000002 is not 1¢, and it is not two decisions either.
+    expect(add(money(1, 'USD'), money(2, 'USD', 6))).toEqual({
+      minor: 10_002,
+      currency: 'USD',
+      scale: 6,
+    });
+    expect(subtract(money(1, 'USD'), money(2, 'USD', 6))).toEqual({
+      minor: 9998,
+      currency: 'USD',
+      scale: 6,
+    });
+    expect(sum([money(2, 'USD', 6), money(1, 'USD')])).toEqual({
+      minor: 10_002,
+      currency: 'USD',
+      scale: 6,
+    });
+  });
+
+  test('a common scale that will not fit reports a scale error, with a fix that runs', () => {
+    const huge = money(Number.MAX_SAFE_INTEGER, 'USD');
+    const fine = money(1, 'USD', 6);
+    // Not X_MONEY_NOT_INTEGER: nobody wrote a fractional minor. The widening is what does not
+    // fit, and `fromDecimal('90071992547409900000', 'USD')` — the old fix — throws again.
+    expect(codeOf(() => add(huge, fine))).toBe('X_MONEY_SCALE_INVALID');
+    expect(causeOf(() => add(huge, fine))).toContain('scale 6');
+    const fix = fixOf(() => add(huge, fine));
+    expect(fix).toContain('rescale');
+    expect(fix).toContain('2');
+    // Following it works, which is the whole point of an executable fix line.
+    expect(add(huge, rescale(fine, 2, 'half-up'))).toEqual({
+      minor: Number.MAX_SAFE_INTEGER,
+      currency: 'USD',
+    });
+  });
+
+  test('two currencies still refuse each other, whatever their scales', () => {
+    expect(codeOf(() => add(money(2, 'USD', 6), money(1, 'EUR')))).toBe('X_CURRENCY_MISMATCH');
+  });
+
+  test('compare reads the value, so a finer encoding is not automatically larger', () => {
+    expect(compare(money(1, 'USD'), money(10_000, 'USD', 6))).toBe(0);
+    expect(compare(money(1, 'USD'), money(10_001, 'USD', 6))).toBe(-1);
+    expect(compare(money(1, 'USD'), money(9999, 'USD', 6))).toBe(1);
+    // A comparison must not throw where the widened value would leave the safe-integer range.
+    expect(compare(money(Number.MAX_SAFE_INTEGER, 'USD'), money(1, 'USD', 6))).toBe(1);
+    expect(max(money(1, 'USD'), money(10_001, 'USD', 6))).toEqual({
+      minor: 10_001,
+      currency: 'USD',
+      scale: 6,
+    });
+  });
+
+  test('multiply, divide, negate and absolute keep the scale they were handed', () => {
+    expect(multiply(money(2, 'USD', 6), 3)).toEqual({ minor: 6, currency: 'USD', scale: 6 });
+    expect(divide(money(10, 'USD', 6), 4)).toEqual({ minor: 3, currency: 'USD', scale: 6 });
+    expect(negate(money(2, 'USD', 6))).toEqual({ minor: -2, currency: 'USD', scale: 6 });
+    expect(isZero(money(0, 'USD', 6))).toBe(true);
+  });
+});
+
+function fixOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { fix?: unknown }).fix);
+  }
+  return 'no-throw';
+}

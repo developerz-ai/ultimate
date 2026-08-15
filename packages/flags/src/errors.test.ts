@@ -6,6 +6,7 @@ import {
   flagDuplicate,
   flagExpired,
   flagExpiryInvalid,
+  flagSubjectRequired,
   flagTargetingInvalid,
   flagUnknown,
 } from './errors';
@@ -29,6 +30,7 @@ describe('unit · @ultimat3/flags errors', () => {
       flagDuplicate('search.rerank'),
       flagUnknown('search.rerank', ['search.rerank']),
       flagTargetingInvalid('search.rerank', 'rollout is 0.5'),
+      flagSubjectRequired({ key: 'search.rerank', kind: 'org', actorId: 'user-7', via: 'orgs' }),
       flagExpiryInvalid('search.rerank', undefined),
       flagExpired({
         key: 'search.rerank',
@@ -57,5 +59,57 @@ describe('unit · @ultimat3/flags errors', () => {
     expect(error.cause).toContain('63');
     expect(error.cause).toContain('search');
     expect(error.fix).toContain("kind: 'permanent'");
+  });
+});
+
+/**
+ * Axiom 4: a `fix:` is an instruction, and an instruction that does not parse is not one. The
+ * subject kind and the actor id are app-supplied, so neither can be pasted into a JS literal
+ * unquoted — treasury's own ids are `bank_integration:<name>`, and a `bank-integration` kind is
+ * one hyphen away from an invalid object key.
+ */
+describe('unit · the subject fix is executable JavaScript', () => {
+  /** `new Function` parses without running, which is exactly the question being asked. */
+  const parses = (snippet: string): boolean => {
+    try {
+      new Function('actor', 'isEnabled', 'userActor', snippet);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const snippetOf = (fix: string, call: string): string => {
+    const found = fix.match(new RegExp(`${call}\\([^—]*\\}\\)`))?.[0];
+    expect(found).toBeDefined();
+    return found ?? '';
+  };
+
+  test('a kind that is not a valid identifier still yields a parseable call', () => {
+    const error = flagSubjectRequired({
+      key: 'scraper.persist-profile',
+      kind: 'bank-integration',
+      actorId: 'user-7',
+      via: 'subjects',
+    });
+    expect(parses(snippetOf(error.fix, 'isEnabled'))).toBe(true);
+  });
+
+  test('a key or actor id carrying a quote does not break the fix', () => {
+    const record = flagSubjectRequired({
+      key: 'flag\'with"quotes',
+      kind: 'bank-integration',
+      actorId: 'actor\'with"quotes',
+      via: 'subjects',
+    });
+    expect(parses(snippetOf(record.fix, 'isEnabled'))).toBe(true);
+
+    const org = flagSubjectRequired({
+      key: 'flag\'with"quotes',
+      kind: 'org',
+      actorId: 'actor\'with"quotes',
+      via: 'orgs',
+    });
+    expect(parses(snippetOf(org.fix, 'userActor'))).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ import {
   expected,
   fail,
   failWith,
+  isPlainObject,
   makeSchema,
   pass,
   type Schema,
@@ -16,33 +17,14 @@ import {
   type ShapeInput,
   type ShapeOutput,
 } from './builder';
+import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
-
-/**
- * The framework's ONE declaration of a money value. `@ultimat3/money`'s `Money` and
- * `@ultimat3/entity`'s `MoneyValue` are aliases of this type, not copies of its shape — three
- * structural restatements are how `minor` became a `number` here and a `bigint` there, which made
- * a row the entity layer produced fail `t.money` and throw inside `JSON.stringify`.
- *
- * It lives at tier 0 because that is the only tier every other package may import, and `number`
- * rather than `bigint` because money crosses the wire on every surface this framework projects —
- * `JSON.stringify` refuses a bigint, and this node is also the OpenAPI contract. A value past
- * `Number.MAX_SAFE_INTEGER` is refused HERE, at the boundary, with the field path — and again
- * where it is decoded; it is never widened.
- *
- * Never a float, and never an amount without its currency.
- */
-export interface MoneyValue {
-  readonly minor: number;
-  readonly currency: string;
-}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CURSOR_RE = /^[A-Za-z0-9_-]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const CURRENCY_RE = /^[A-Z]{3}$/;
 
 export interface StringSchema extends Schema<string, string> {
   min(length: number): StringSchema;
@@ -141,10 +123,6 @@ function makeNumberSchema(node: SchemaNode): NumberSchema {
     max: (value) => makeNumberSchema({ ...node, maximum: value }),
     int: () => makeNumberSchema({ ...node, integer: true }),
   };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
@@ -330,45 +308,6 @@ const dateSchema: Schema<Date | string | number, Date> = makeSchema<Date | strin
         : pass(parsed);
     }
     return fail(path, expected('an ISO-8601 date-time', value));
-  },
-);
-
-const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue, MoneyValue>(
-  {
-    kind: 'money',
-    description: 'integer minor units plus an ISO 4217 currency code',
-    properties: {
-      minor: {
-        kind: 'number',
-        integer: true,
-        minimum: -Number.MAX_SAFE_INTEGER,
-        maximum: Number.MAX_SAFE_INTEGER,
-      },
-      currency: { kind: 'string', pattern: CURRENCY_RE.source },
-    },
-  },
-  (value, path) => {
-    if (!isPlainObject(value)) return fail(path, expected('a Money object', value));
-    const minor = value['minor'];
-    const currency = value['currency'];
-    const issues: StandardIssue[] = [];
-    // Safe, not merely whole: `money()` and `entity`'s `parseMinor` both demand a safe integer, so
-    // `Number.isInteger` here let 2^53 through the boundary as a 200 and failed at the row write
-    // as a 500 — the same value refused twice, once with a field path and once without.
-    if (typeof minor !== 'number' || !Number.isSafeInteger(minor)) {
-      issues.push({
-        message: expected('a safe integer number of minor units', minor),
-        path: [...path, 'minor'],
-      });
-    }
-    if (typeof currency !== 'string' || !CURRENCY_RE.test(currency)) {
-      issues.push({
-        message: expected('a 3-letter ISO 4217 code', currency),
-        path: [...path, 'currency'],
-      });
-    }
-    if (issues.length > 0) return failWith(issues);
-    return pass({ minor: minor as number, currency: currency as string });
   },
 );
 

@@ -2,6 +2,7 @@
 // bodies and MCP tool `inputSchema` are both this function's output, so an agent's view of an
 // action and an HTTP client's view can never drift.
 
+import { MAX_MONEY_SCALE } from './money-value';
 import { requiredKeys, type SchemaNode } from './node';
 import { introspect } from './provider';
 
@@ -131,6 +132,14 @@ function convert(node: SchemaNode): JsonSchema {
             maximum: Number.MAX_SAFE_INTEGER,
           },
           currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+          // Optional, never required: `additionalProperties: false` alone would make a generated
+          // client refuse a scaled amount the framework's own validator accepts.
+          scale: {
+            type: 'integer',
+            description: 'decimal places `minor` counts; absent means the currency’s own',
+            minimum: 0,
+            maximum: MAX_MONEY_SCALE,
+          },
         },
         required: ['minor', 'currency'],
         additionalProperties: false,

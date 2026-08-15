@@ -26,6 +26,7 @@ export const publishPost = t.object({
   title:    t.string.min(3).max(80),
   tags:     t.array(t.slug),
   price:    t.money,                 // { minor: 1999, currency: 'EUR' } — never a float
+                                     // { minor: 2, currency: 'USD', scale: 6 } is $0.000002
   timeZone: t.timezone,              // real IANA validation, not an annotation
   cursor:   t.optional(t.cursor),
 });

@@ -56,6 +56,9 @@ export {
   type MoneyErrorCode,
   moneyNotInteger,
   rateMissing,
+  rescaleNotExact,
+  scaleInvalid,
+  scaleNotWidening,
 } from './errors';
 /** `ExchangeRate.ratio` is one of these; a provider with an exact rate writes the pair itself. */
 export type { Fraction } from './factor';
@@ -79,6 +82,7 @@ export {
   toDecimalString,
   zero,
 } from './money';
+export { rescale } from './rescale';
 export {
   DEFAULT_ROUNDING,
   ROUNDING_MODES,
@@ -86,3 +90,4 @@ export {
   roundToDigits,
   roundToInteger,
 } from './rounding';
+export { assertScale, commonScale, MAX_MONEY_SCALE, minorAt, moneyScale } from './scale';

@@ -5,6 +5,7 @@
 
 import { exponentOf } from './currency';
 import { type Money, toDecimalNumber } from './money';
+import { moneyScale } from './scale';
 
 export interface FormatMoneyOptions {
   /** How the currency appears: `€1,299.00` / `EUR 1,299.00` / `1,299.00 euros`. */
@@ -16,7 +17,8 @@ export interface FormatMoneyOptions {
   accounting?: boolean;
   /** Drop `.00` on whole amounts — price lists, never invoices. */
   trimZeroFraction?: boolean;
-  /** Force a digit count; defaults to the currency's minor-unit exponent. */
+  /** Force a digit count; defaults to the value's own scale, which is the currency's unless
+   * the amount names a finer one. */
   fractionDigits?: number;
   /** `never` disables grouping separators. */
   grouping?: 'auto' | 'never';
@@ -52,18 +54,25 @@ export function formatMoneyParts(
   locale: string,
   options: FormatMoneyOptions = {},
 ): Intl.NumberFormatPart[] {
-  return formatterFor(amount.currency, locale, options).formatToParts(toDecimalNumber(amount));
+  return formatterFor(amount.currency, locale, options, moneyScale(amount)).formatToParts(
+    toDecimalNumber(amount),
+  );
 }
 
 /** The symbol alone, e.g. for an input prefix: `€`, `¥`, `KD`. */
 export function currencySymbol(currency: string, locale: string): string {
-  const parts = formatterFor(currency, locale, { display: 'narrowSymbol' }).formatToParts(0);
+  const parts = formatterFor(
+    currency,
+    locale,
+    { display: 'narrowSymbol' },
+    exponentOf(currency),
+  ).formatToParts(0);
   return parts.find((part) => part.type === 'currency')?.value ?? currency;
 }
 
 /** Digits only, no symbol — for editable inputs and CSV exports. */
 export function formatMoneyDecimal(amount: Money, locale: string): string {
-  const digits = exponentOf(amount.currency);
+  const digits = moneyScale(amount);
   return new Intl.NumberFormat(locale, {
     style: 'decimal',
     minimumFractionDigits: digits,
@@ -74,20 +83,30 @@ export function formatMoneyDecimal(amount: Money, locale: string): string {
 
 const cache = new Map<string, Intl.NumberFormat>();
 
+/**
+ * `scale` is the amount's own, not the currency's: rendering $0.000002 with two digits shows
+ * `$0.00`, which is the sub-cent bug back again, in the one place a human would read it.
+ */
 function formatterFor(
   currency: string,
   locale: string,
   options: FormatMoneyOptions,
+  exponent: number,
 ): Intl.NumberFormat {
-  const exponent = exponentOf(currency);
   const digits =
     options.fractionDigits ?? (options.trimZeroFraction === true ? undefined : exponent);
   const sign = options.accounting === true ? 'accounting' : 'standard';
+  // `exponent` is in the key because it stopped being derivable from `currency` the moment it
+  // started coming from the amount's own scale. On the `trimZeroFraction` path `digits` is
+  // `undefined`, so without it every scale of one currency shared a formatter: format 12.99 EUR
+  // first and 12.990001 EUR then rendered as `12,99 €` — the sub-cent bug back, silently, in the
+  // one place a human reads the number.
   const key = [
     locale,
     currency,
     options.display ?? 'symbol',
     digits ?? 'auto',
+    exponent,
     options.grouping ?? 'auto',
     sign,
   ].join('|');

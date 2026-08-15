@@ -33,6 +33,19 @@ describe('formatMoney', () => {
     );
   });
 
+  test('a finer scale is never served the coarser scale’s cached formatter', () => {
+    // Order-dependent by construction: the formatter is memoised per currency, so the coarse
+    // value has to be formatted FIRST for the collision to exist at all. A single-value
+    // assertion passes against the broken cache and proves nothing.
+    const trimmed = { trimZeroFraction: true } as const;
+    expect(normalize(formatMoney(money(1299, 'EUR'), 'de-DE', trimmed))).toBe('12,99 €');
+    expect(normalize(formatMoney(money(12_990_001, 'EUR', 6), 'de-DE', trimmed))).toBe(
+      '12,990001 €',
+    );
+    // …and back again, so the finer entry cannot capture the coarser one either.
+    expect(normalize(formatMoney(money(1299, 'EUR'), 'de-DE', trimmed))).toBe('12,99 €');
+  });
+
   test('display modes and digit-only output', () => {
     expect(normalize(formatMoney(money(1299, 'USD'), 'en-US', { display: 'code' }))).toBe(
       'USD 12.99',

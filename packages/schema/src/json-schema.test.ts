@@ -51,6 +51,14 @@ describe('toJsonSchema', () => {
     });
   });
 
+  test('money admits an optional scale without requiring one', () => {
+    const money = toJsonSchema(t.money, { includeDialect: false });
+    // `additionalProperties: false` is what made a scaled value fail a generated client's own
+    // check while the framework's validator accepted it.
+    expect(money.properties?.['scale']).toMatchObject({ type: 'integer', minimum: 0 });
+    expect(money.required).toEqual(['minor', 'currency']);
+  });
+
   test('dialects: 2020-12 by default, draft-07 for MCP tools', () => {
     expect(toJsonSchema(t.object({ id: t.uuid })).$schema).toBe(
       'https://json-schema.org/draft/2020-12/schema',

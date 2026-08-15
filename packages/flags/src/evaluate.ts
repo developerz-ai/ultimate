@@ -7,6 +7,7 @@ import { flagExpired } from './errors';
 import type { Flag } from './flag';
 import { flagFor } from './registry';
 import { flagsClock, reportOnce } from './runtime';
+import type { FlagSubjects } from './subject';
 import { evaluateTargeting } from './targeting';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -37,9 +38,18 @@ function reportIfOverdue(flag: Flag): void {
  * `actor` is passed rather than read from the ambient context on purpose: a policy predicate,
  * a job and a render pass each already hold the actor they are deciding about, and reading an
  * ambient one would let a job evaluate a flag for whoever enqueued it.
+ *
+ * `subjects` carries the app's own records in play — `{ bank: 'bank_integration:bbva' }` — for a
+ * flag targeted at something other than the caller. Same reasoning as `actor`: the call site
+ * already holds the record it is deciding about. A flag that needs a kind the call site did not
+ * pass raises `X_FLAG_SUBJECT_REQUIRED` rather than quietly deciding about somebody else.
  */
-export function isEnabled(key: string, actor: Actor | null): boolean {
+export function isEnabled(
+  key: string,
+  actor: Actor | null,
+  subjects?: FlagSubjects | undefined,
+): boolean {
   const flag = flagFor(key);
   reportIfOverdue(flag);
-  return evaluateTargeting(flag.key, flag.targeting, actor);
+  return evaluateTargeting(flag.key, flag.targeting, actor, subjects);
 }

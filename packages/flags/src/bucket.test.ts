@@ -57,6 +57,32 @@ describe('unit · bucketOf', () => {
   });
 });
 
+describe('unit · pinned assignments', () => {
+  test('a known (flag, subject) pair keeps its bucket, so a hash change cannot re-roll everyone', () => {
+    // These literals are the contract. A rollout already in production is a promise to the orgs
+    // and actors inside it: changing the hash silently moves the boundary under a live rollout,
+    // switching a feature off for tenants who had it. Breaking this test is the intended alarm —
+    // never re-pin it to whatever the new hash says.
+    expect(bucketOf('billing.export', 'org-42')).toBe(13);
+    expect(bucketOf('billing.export', 'org-12')).toBe(0);
+    expect(bucketOf('billing.export', 'org-1')).toBe(78);
+    expect(bucketOf('billing.export', 'user-1')).toBe(51);
+    expect(bucketOf('search.rerank', 'org-42')).toBe(87);
+    // A record subject is the same hash — `flipper_id`-shaped ids included.
+    expect(bucketOf('scraper.persist-profile', 'bank_integration:bbva')).toBe(39);
+    expect(bucketOf('scraper.persist-profile', 'bank_integration:santander')).toBe(86);
+  });
+
+  test('one org gets one bucket for one flag, in this process and any other', () => {
+    // Determinism is what makes "whole org in or whole org out" true across nodes and restarts:
+    // the hash is pure, so a second process computing it agrees without being asked.
+    const first = bucketOf('billing.export', 'org-42');
+    for (let call = 0; call < 1_000; call += 1) {
+      expect(bucketOf('billing.export', 'org-42')).toBe(first);
+    }
+  });
+});
+
 describe('unit · fnv1a', () => {
   test('is the published 32-bit FNV-1a, so two nodes agree without talking', () => {
     // Reference vectors from the FNV specification.
