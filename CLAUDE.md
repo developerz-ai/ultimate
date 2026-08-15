@@ -122,7 +122,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 ## Non-negotiables
 
 - **Bun only.** No Node-specific APIs unless via `node:` and unavoidable, and then with a comment saying why.
-- **No new dependencies** without a strong reason stated in the PR. Bun's natives replace most of them.
+- **No new dependencies** without a strong reason stated in the PR. Bun's natives replace most of them. The strong-reason bar and where a dependency may live (driver/transport seam only, never the primitive vocabulary) is [`docs/idea/18-build-vs-wrap.md`](docs/idea/18-build-vs-wrap.md)'s build-vs-wrap criterion.
 - **No `any`.** Biome fails the build. Use `unknown` + a schema parse.
 - **Never throw a bare `Error`.** Subclass `UltimateError` with a code, a cause, and an executable `fix:`. Codes are `X_SCREAMING_SNAKE` and stable forever once shipped.
 - **SRP.** One file, one job. Target < 200 LOC, hard ceiling ~500. Split before you exceed it.
