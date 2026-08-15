@@ -22,6 +22,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`15-risks.md`](./15-risks.md) | Six risks, honestly sized. The sync engine is ~70% of the effort. |
 | [`16-app-targets.md`](./16-app-targets.md) | Web, mobile, desktop from one definition. A screen is a `route`, not a ninth primitive. **Design only.** |
 | [`17-scale-ladder.md`](./17-scale-ladder.md) | PaaS to distributed in five rungs, where climbing is config and drivers — never a rewrite. **Design only.** |
+| [`18-build-vs-wrap.md`](./18-build-vs-wrap.md) | Own the integration layer, wrap the protocol layer. Verdicts: jobs BUILD, SMTP BUILD, NATS WRAP (pending). |
 
 ## Reading paths
 

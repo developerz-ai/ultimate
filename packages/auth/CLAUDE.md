@@ -4,7 +4,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 | Rule | |
 |---|---|
-| Deps | `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db`, `@ultimat3/time`. No external deps. |
+| Deps | `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db`. No external deps. |
 | Never import | `@ultimat3/policy`, `@ultimat3/http` (tier 2 consumers), `@ultimat3/mail` (sideways) |
 | Policy seam | `PolicyActorFields` in `policy-bridge.ts` mirrors policy's shape structurally |
 | Http seam | `RequestLike` / `CookieJar` in `session.ts`; http binds to them, not the reverse |

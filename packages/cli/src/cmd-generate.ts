@@ -353,7 +353,10 @@ export const generateCommand: CliCommand = {
     name: 'g',
     aliases: ['generate'],
     summary: 'scaffold a primitive with its passing test',
-    usage: 'x g resource|action|mutator|job|route|policy|entity|query|task <name> [--feature f]',
+    // Projected from `GENERATORS`, never restated: the literal that used to live here had already
+    // drifted — it omitted `backfill` — and a usage line that can disagree with the list it
+    // describes is exactly the second source of truth axiom 2 forbids.
+    usage: `x g ${GENERATORS.join('|')} <name> [--feature f]`,
     requiresApp: true,
     flags: [
       { name: 'feature', type: 'string', summary: 'feature slice to write into' },

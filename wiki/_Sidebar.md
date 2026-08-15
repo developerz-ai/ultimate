@@ -30,6 +30,8 @@
 
 - [Realtime](Realtime)
 - [Caching and invalidation](Caching-And-Invalidation)
+- [Batching and preloading](Batching-And-Preloading)
+- [N+1 detection](N-Plus-One-Detection)
 - [PWA and offline](PWA-And-Offline)
 - [MCP and AI](MCP-And-AI)
 - [Admin dashboard](Admin-Dashboard)
@@ -41,6 +43,8 @@
 - [UI components](UI-Components)
 - [Timezones and dates](Timezones-And-Dates)
 - [Money](Money)
+- [Resource management](Resource-Management)
+- [Migrations and backfills](Migrations-And-Backfills)
 - [Testing](Testing)
 
 **Reference**
