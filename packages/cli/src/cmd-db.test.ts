@@ -10,7 +10,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { entity, memoryRepo, tableFor, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import { backfill, createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import {
+  backfill,
+  createMemoryDriver,
+  resetJobDriver,
+  resetJobs,
+  setJobDriver,
+} from '@ultimat3/jobs';
 import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { BadFlagError } from './errors';
@@ -225,6 +231,11 @@ async function seedPass(driver: JobDriver, runId: string, name: string): Promise
 }
 
 afterEach(() => {
+  // `resetJobDriver()` alone leaves the DECLARATIONS behind: `backfill()` registers into a
+  // process-wide registry that every suite in this run shares, so a sweep declared here would
+  // still be pending for whichever file goes next — and a rerun of one of these tests would hit
+  // X_JOB_DUPLICATE on its own name.
+  resetJobs();
   resetJobDriver();
 });
 

@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="assets/logo.svg" alt="" width="88" height="88" />
-</p>
-
-<h1 align="center">Ultimate</h1>
+<h1 align="center">
+  <img src="assets/logo.svg" alt="" width="88" height="88" /><br />
+  Ultimate
+</h1>
 
 <p align="center"><strong>The full-stack framework where the primary user is an AI agent.</strong></p>
 

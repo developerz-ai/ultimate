@@ -26,12 +26,16 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   lockout outranks its own deadline** in the comparator: without that rank a spray recorded a
   second later sorts ahead of the account it just locked, and filling the table becomes a way to
   buy attempts back. Never reduce that sort to recency.
-- **`AuthLimiter` is async on every member, and its `scope` is declared, never inferred.** A
+- **`AuthLimiter` is async on every member, and it declares the policy it enforces.** A
   synchronous signature is one no shared implementation can satisfy — a lockout that holds across
   replicas is a network round trip — so the interface the comment always promised was unreachable
-  by construction. `policy.scope` says what the deployment requires, the limiter says what it
-  provides, and `assertAuthLimiterScope` compares them inside `defineAuth`:
-  `X_AUTH_LIMITER_NOT_SHARED` at boot, never at the first spray. Nothing here reads the
+  by construction. `defineAuth` resolves the app's declaration and compares it against
+  `limiter.policy`, once, in `assertAuthLimiterPolicy`: a per-process limiter under
+  `scope: 'shared'` is `X_AUTH_LIMITER_NOT_SHARED`, and different `maxAttempts`/`windowMs`/
+  `lockoutMs` is `X_AUTH_LIMITER_POLICY_MISMATCH` — both at boot, never at the first spray.
+  `maxKeys` is **not** compared: it bounds one process' table, so a shared limiter has no opinion
+  on it. The point is that `Auth.rateLimit` is what an operator reads as "what this deployment
+  enforces", so an injected limiter may not quietly enforce something else. Nothing here reads the
   environment to guess a replica count. `defineAuth({ limiter })` is the one install point.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent. `usesPkce: false` is not a valid provider config.

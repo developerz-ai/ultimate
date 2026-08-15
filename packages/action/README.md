@@ -206,7 +206,9 @@ them your business has to keep.
 ```ts
 import { setAuditSink } from '@ultimat3/action';
 
-setAuditSink({ async write(record) { await db.auditRows.insert(myRow(record)); } });
+setAuditSink({
+  async write(record) { await record.ctx.db.auditRows.insert(myRow(record)); },
+});
 ```
 
 What the framework supplies is what it genuinely knows:
@@ -235,8 +237,18 @@ raised before the input parse — the one audit failure with no committed write 
 that refuses a **successful** record is `X_AUDIT_SINK_FAILED`: the deliberate opposite of the
 cache tier's `bestEffort`, because a dropped cache entry expires by TTL and the stack heals
 itself while nothing ever re-derives an audit row that was never written. It is post-commit all
-the same, and the error says so — retry under the same `Idempotency-Key` re-attempts the record
-without re-running the handler. A sink that refuses a **denied or failed** record is logged as
+the same, and the error says so.
+
+**Its `fix:` branches, because only one of the two is ever true.** Retrying is safe exactly when
+*this invocation* went through the idempotency store — then the settled record replays and the
+audit row is re-attempted without re-running the handler. It did not when the action is not
+`idempotent`, **and it did not when the action is `idempotent` but the caller sent no
+`Idempotency-Key`**: `invoke` reads `def.idempotent === true ? (options.idempotencyKey ?? null)
+: null`, so both collapse to the same `null`. In that case the error says *do not retry* and
+names the edit — telling a caller to re-run a committed mutator is worse than saying nothing.
+`meta.replayable` carries the same fact to `--json`.
+
+A sink that refuses a **denied or failed** record is logged as
 `audit.sink.failed` and the original error still reaches the caller: answering
 `X_AUDIT_SINK_FAILED` there would hide the `X_FORBIDDEN` from whoever has to act on it.
 
@@ -263,11 +275,12 @@ which fields, whose tenant, chained or not, kept how long:
 ```ts
 setAuditSink({
   async write(record) {
-    const prev = await chainHead(record.ctx);           // hash-chained: the app's choice
+    const { ctx } = record;                             // the services a sink needs to write a row
+    const prev = await chainHead(ctx);                  // hash-chained: the app's choice
     await ctx.db.auditRows.insert({
-      orgId: orgOf(record.ctx.actor),                   // tenancy: derived from the actor
+      orgId: orgOf(ctx.actor),                          // tenancy: derived from the actor
       subjectId: subjectOf(record.action, record.input),// queryable by subject: the app's index
-      actorId: impersonatorOf(record.ctx.actor) ?? record.ctx.actor.id,
+      actorId: impersonatorOf(ctx.actor) ?? ctx.actor.id,
       at: record.at, outcome: record.outcome, code: record.failure?.code ?? null,
       prevHash: prev, hash: await sha256(prev, record),
     });
@@ -315,7 +328,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
 | `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `setAuditSink(yourSink)` at boot |
-| `X_AUDIT_SINK_FAILED` | the sink refused the record for an attempt that **succeeded** | fix the sink, retry with the same `Idempotency-Key` |
+| `X_AUDIT_SINK_FAILED` | the sink refused the record for an attempt that **succeeded** | fix the sink — then retry the same `Idempotency-Key` if this call carried one, else reconcile by hand |
 
 Denials re-throw the policy layer's own codes (`X_FORBIDDEN`, `X_UNAUTHENTICATED`) —
 this package never invents an authz code.

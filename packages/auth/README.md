@@ -30,7 +30,8 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
   unauthenticated wrong guess destroy the victim's live reset link.
 - Guards assert on the actor. They never evaluate a policy.
 - The lockout counts attempts against one identity, so it has to be **one** count. `AuthLimiter`
-  is async on every member and declares its `scope`; the app declares the scope it needs.
+  is async on every member and declares the policy it enforces; `defineAuth` refuses a limiter
+  that disagrees with the app's declaration.
 
 ## The lockout across replicas
 
@@ -41,15 +42,25 @@ more than one process says so and brings a limiter that says the same:
 ```ts
 defineAuth({
   adapter,
-  rateLimit: { scope: 'shared' },  // maxAttempts is the whole fleet's allowance
-  limiter: myLimiter,              // whose own scope is 'shared'
+  rateLimit: { maxAttempts: 5, scope: 'shared' },  // the whole fleet's allowance
+  limiter: myLimiter,                              // whose policy says exactly the same
 });
 ```
 
-`'shared'` with a per-process limiter is `X_AUTH_LIMITER_NOT_SHARED` at `defineAuth`, not at the
-first spray. The default stays `'process'`: correct for dev, tests and a single node, and the only
-thing this package can promise without being told. **No shared limiter ships yet** —
-`createAuthLimiter` is the only implementation in the framework.
+`Auth.rateLimit` is what an operator reads as "what this deployment enforces", so `defineAuth`
+refuses any pairing that would make it a lie:
+
+| Declared | Limiter's own `policy` | Result |
+|---|---|---|
+| `scope: 'process'` (default) | anything, same numbers | boots; the lockout is per replica |
+| `scope: 'shared'` | `scope: 'shared'`, same numbers | boots; one count for the fleet |
+| `scope: 'shared'` | `scope: 'process'` | `X_AUTH_LIMITER_NOT_SHARED` |
+| `maxAttempts`/`windowMs`/`lockoutMs` | any of the three different | `X_AUTH_LIMITER_POLICY_MISMATCH` |
+
+`maxKeys` is not compared — it bounds one process' table, not a limit. A custom limiter therefore
+does **not** own its own configuration: the policy stays the app's single statement of the limits,
+and the boot check is what keeps it true. **No shared limiter ships yet** — `createAuthLimiter` is
+the only implementation in the framework.
 
 ## Adapter seam
 

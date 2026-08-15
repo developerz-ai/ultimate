@@ -18,7 +18,7 @@ import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
-import type { BackfillPlanRow } from './db-backfill';
+import type { BackfillAction, BackfillPlanRow } from './db-backfill';
 import {
   listBackfills,
   pendingReport,
@@ -406,15 +406,20 @@ async function runBackfillPass(
  */
 function backfillPassResult(rows: readonly BackfillPlanRow[], write: boolean): CommandResult {
   const findings = rows.flatMap((row) => (row.finding === null ? [] : [row.finding]));
-  const enqueued = rows.filter((row) => row.action === 'enqueued').length;
+  // Counted per action, never derived from the total: a deduped pass is neither enqueued nor
+  // blocked, and `rows.length - enqueued` reported it as blocked while `--json` reported it as
+  // deduped. `planToJson` is the same list, so the two renders now add up to the same run.
+  const tally = (action: BackfillAction): number =>
+    rows.filter((row) => row.action === action).length;
   return {
     ok: findings.length === 0,
     command: 'db',
     summary: write
       ? msg('cli.db.backfill.planned', {
           count: rows.length,
-          enqueued,
-          blocked: rows.length - enqueued,
+          enqueued: tally('enqueued'),
+          deduped: tally('deduped'),
+          blocked: tally('blocked'),
         })
       : msg('cli.db.backfill.dryRun', { count: rows.length }),
     findings,

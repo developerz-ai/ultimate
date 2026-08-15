@@ -193,12 +193,14 @@ Non-zero exit when anything is unswept, so a cron or a deploy check reads the ex
 | Field | Rail | Enforced where |
 |---|---|---|
 | `requires: '<migration id>'` | `X_BACKFILL_MIGRATION_PENDING` | `x db backfill`, which is where `x_migrations` is readable — `@ultimat3/jobs` holds no `@ultimat3/db` dependency and does not grow one to read a ledger |
-| `environments: [...]` | `X_BACKFILL_ENVIRONMENT` | **the pass itself**, ahead of the ledger open, so a `.enqueue()` from app code is covered too — and `x db backfill` up front |
+| `environments: [...]` | `X_BACKFILL_ENVIRONMENT` | **the pass itself**, ahead of the ledger open, so a `.enqueue()` from app code is covered too — and again in `x db backfill` as a pre-check, which refuses before queueing work that would only dead-letter |
 | `count()` | `X_BACKFILL_STALLED` | the pass, once, after the last batch |
 
 `environments` ships as declared **data** and never as a hardcoded "cleanups are production": a staging rehearsal is correct practice, so which deploys a sweep belongs to is the app's own convention and this field is only the mechanism carrying it. There is deliberately **no** `dependsOn` graph over other backfills — the real dependency is almost always "after code that tolerates both shapes is serving", which the framework cannot observe and would therefore encode wrongly.
 
 `count()` is the same predicate `source` selects on, counted rather than read. It is what makes a dry run honest and turns "did it converge" into arithmetic: a pass that exhausts its source while `count()` still answers above zero has two predicates that disagree, so it **fails** rather than writing a completed row that stops the next deploy re-running it. Left out, the pass converges by definition — the framework will not guess a number on the author's behalf.
+
+The **result** is parsed, not trusted: a non-negative safe integer, or `X_INVARIANT` where the count was returned. `NaN > 0` and `-1 > 0` are both false, so an unchecked bad number reads as "nothing left" and writes exactly the completed ledger row this detector exists to prevent.
 
 ### Running one — `x db backfill`
 
@@ -215,6 +217,8 @@ A bare `x db backfill` is refused rather than defaulted: the four shapes answer 
 
 `--write` **enqueues** — it never runs the pass inside the CLI process, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero and naming each, so one wedged cleanup cannot block every later one forever.
 
+`requires` is checked against `x_migrations` here, and the three answers are distinct on purpose: the ids that are applied, `[]` when the table does not exist (nothing has ever been applied, so every `requires` is unsatisfied and the sweep is refused), and a **propagated error** when the read itself failed. A permission error or a timeout read as "nothing to check" would let a sweep run against exactly the shape it was declared to wait for.
+
 ### `ROLE=backfill` triggers; it never gates
 
 `DEPLOY_ROLES` is `migrate → web → sync → worker → scheduler → backfill`, and the position is the design:
@@ -225,6 +229,8 @@ A bare `x db backfill` is refused rather than defaulted: the four shapes answer 
 | `backfill` | `run --rm`, **last** | a slow `UPDATE` inside a release gate holds the deploy open against a database still serving the *previous* release — so the sweeps are enqueued after the new pods serve, and the workers already draining the queue perform them |
 
 Backfills are therefore **never** wired into `runMigrations()`. The `backfill` container runs `x db backfill --all --write --json` and exits.
+
+Position in the plan is **necessary and not sufficient**: `docker compose up -d` returns when a container has started, not when the app inside it serves. The barrier that makes "after" true is declarative — the `backfill` service carries `depends_on: { web: { condition: service_healthy } }`, which `docker compose run` honours. `As of 2026-08` that service is not yet in either committed compose file.
 
 ### `x g backfill` — the generator
 

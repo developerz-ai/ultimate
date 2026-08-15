@@ -120,6 +120,15 @@ async function assertConverged<Row>(
 ): Promise<void> {
   if (definition.count === undefined) return;
   const remaining = await definition.count({ ctx });
+  // Parsed, not trusted: `count()` is app code feeding a framework decision, and both `NaN > 0`
+  // and `-1 > 0` are FALSE — an unchecked bad number reads as "converged" and writes the completed
+  // ledger row that stops the next deploy ever re-running this sweep. The one failure mode this
+  // detector exists to close, arriving through the detector itself.
+  assert(
+    Number.isSafeInteger(remaining) && remaining >= 0,
+    `backfill "${definition.name}" count() returned ${String(remaining)} — a count is a whole number of rows, zero or more`,
+    `return the chain's own count from count() on backfill("${definition.name}"), e.g. count: ({ ctx }) => source({ ctx }).count() — a NaN or a negative reads as "nothing left" and completes the sweep`,
+  );
   if (remaining > 0) {
     throw new BackfillStalledError({ backfill: definition.name, remaining, swept });
   }

@@ -132,8 +132,18 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   is the inverse of `cache-gate.ts`'s absorb-and-log: a dropped cache entry expires by TTL and
   the stack heals itself, while nothing ever re-derives an audit row that was never written. It
   is post-commit all the same, so the cause says the handler already committed rather than
-  implying a rollback, and a retry under the same `Idempotency-Key` re-attempts the record
-  without re-running the handler. A sink that refuses a **denied or failed** record is logged as
+  implying a rollback. **Its `fix:` branches on `record.idempotencyKey !== null` — the
+  INVOCATION's fact, never the declaration's `idempotent`.** A retry replays instead of re-running
+  only when this call reserved a record, and `invoke` reads
+  `def.idempotent === true ? (options.idempotencyKey ?? null) : null`, so a non-idempotent action
+  and an idempotent one whose caller sent no header collapse to the same `null`. The unqualified
+  "retry with the same Idempotency-Key" told a caller to apply a committed write twice — an
+  axiom-4 violation dressed as a fix line. Requiring `idempotent: true` at declaration was the
+  other candidate and was rejected: it would not have made the message true (the header is still
+  the caller's), and it would force the idempotency store on every app that wants only an audit
+  trail — "which writes must be retry-safe" is the app's call, not this package's.
+  `meta.replayable` carries the same fact to `--json`, and `audit.test.ts` pins both branches so
+  the text cannot drift back. A sink that refuses a **denied or failed** record is logged as
   `audit.sink.failed` and the original error still reaches the caller — `X_AUDIT_SINK_FAILED`
   there would hide the `X_FORBIDDEN` and would answer a probing client differently depending on
   whether the audit backend was up, which is an oracle.

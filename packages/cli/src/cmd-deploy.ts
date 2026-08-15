@@ -22,6 +22,14 @@ import { flagBool, flagString } from './parse';
  * `backfill` is a one-shot like `migrate`, so it takes the same `run --rm` shape; the compose
  * service behind it runs `x db backfill --all --write --json` rather than a `ROLE`, because
  * `@ultimat3/core`'s `ROLES` is a closed list of process shapes and a sweep trigger is a command.
+ *
+ * ORDER HERE IS NECESSARY AND NOT SUFFICIENT. `docker compose up -d` returns when a container has
+ * STARTED, not when the application inside it is serving, so this list alone puts the trigger after
+ * the serving roles were asked to start and not after they are ready. The barrier that makes
+ * "after" true is declarative and belongs to the compose file, not to this plan: the `backfill`
+ * service needs `depends_on: { web: { condition: service_healthy } }`, which `docker compose run`
+ * honours. Both compose definitions — `docker/docker-compose.prod.yml` and the one
+ * `templates/scaffold-container.ts` scaffolds — still owe that service and that condition.
  */
 export const DEPLOY_ROLES = ['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill'] as const;
 

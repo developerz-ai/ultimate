@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { BackfillProgress } from './backfill-inspect';
 import type { BackfillStatus } from './backfill-ledger';
-import { pendingBackfills } from './backfill-pending';
+import { BACKFILL_STATES, isPendingBackfillState, pendingBackfills } from './backfill-pending';
 import type { BackfillDeclaration } from './backfill-registry';
 
 const declaration = (
@@ -118,6 +118,21 @@ describe('unit · declared minus completed', () => {
       environment: 'production',
     });
     expect(report.orphaned).toEqual(['aaa-deleted', 'zzz-deleted']);
+  });
+
+  test('"pending" is declared once, and every state is decided by that one predicate', () => {
+    // `x db backfill --all` picks its targets by this same predicate. A second literal there would
+    // be a second definition of pending, one of which would eventually be wrong.
+    const decided = Object.fromEntries(
+      BACKFILL_STATES.map((state) => [state, isPendingBackfillState(state)]),
+    );
+    expect(decided).toEqual({
+      pending: true,
+      failed: true,
+      running: false,
+      completed: false,
+      excluded: false,
+    });
   });
 
   test('the report carries the environment it judged in, so --json is self-describing', () => {

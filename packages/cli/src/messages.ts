@@ -30,7 +30,11 @@ const CATALOG = {
   'cli.db.backfill.none': '-',
   'cli.db.backfill.pending': '{count} of {declared} declared backfill(s) never completed',
   'cli.db.backfill.swept': 'every one of {declared} declared backfill(s) has completed',
-  'cli.db.backfill.planned': '{count} backfill(s): {enqueued} enqueued, {blocked} blocked',
+  // Every action counted, never derived: `count - enqueued` folded a deduped pass into "blocked",
+  // so the summary said blocked while `--json` said deduped for the same row — two renderers
+  // stating different facts about one run, which is the thing `--json` exists to make impossible.
+  'cli.db.backfill.planned':
+    '{count} backfill(s): {enqueued} enqueued, {deduped} already live, {blocked} blocked',
   'cli.db.backfill.dryRun': '{count} backfill(s) would run — nothing written without --write',
   'cli.db.branch.ready': 'branch {name} ready',
   'cli.db.gen.failed': 'migration not generated',

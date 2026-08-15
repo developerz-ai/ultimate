@@ -59,6 +59,7 @@ export {
   accountLocked,
   apiKeyInvalid,
   authLimiterNotShared,
+  authLimiterPolicyMismatch,
   authNotImplemented,
   authWriteFailed,
   emailVerifiedNotStored,
@@ -182,7 +183,7 @@ export type {
 } from './rate-limit';
 export {
   accountKey,
-  assertAuthLimiterScope,
+  assertAuthLimiterPolicy,
   createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   DEFAULT_MAX_AUTH_LIMIT_KEYS,

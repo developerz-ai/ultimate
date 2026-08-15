@@ -4,7 +4,12 @@
 // bypassable. `loginFailed()` lives here so the throttle and the message can never drift apart.
 
 import type { Clock } from '@ultimat3/core';
-import { AuthError, accountLocked, authLimiterNotShared } from './errors';
+import {
+  AuthError,
+  accountLocked,
+  authLimiterNotShared,
+  authLimiterPolicyMismatch,
+} from './errors';
 
 /**
  * Where a limiter's counters live. A limiter says which it provides; `AuthRateLimitPolicy` says
@@ -50,8 +55,13 @@ export const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimitPolicy = Object.freeze({
  * on a path that is about to run a KDF.
  */
 export interface AuthLimiter {
-  /** The counters this limiter keeps: per-process, or shared with every other replica. */
-  readonly scope: AuthLimiterScope;
+  /**
+   * The limits this limiter actually enforces, including where it keeps its counters. Stated
+   * rather than assumed, because `defineAuth` compares it against the app's declaration: a
+   * limiter counting to 50 under a policy that says 5 makes `Auth.rateLimit` a number the
+   * operator reads and nothing enforces.
+   */
+  readonly policy: AuthRateLimitPolicy;
   /** Rejects with `X_ACCOUNT_LOCKED` if the key is inside a lockout. Call before any KDF work. */
   assertAllowed(key: string): Promise<void>;
   recordFailure(key: string): Promise<void>;
@@ -133,7 +143,9 @@ export function createAuthLimiter(
   };
 
   return {
-    scope: 'process',
+    // The resolved policy, not the argument: `maxKeys` is normalized above, and a limiter that
+    // reported an unresolved bound would be reporting something it does not enforce.
+    policy: { ...policy, maxKeys, scope: 'process' },
     get size() {
       return buckets.size;
     },
@@ -172,15 +184,32 @@ export function createAuthLimiter(
 }
 
 /**
- * At `defineAuth`, never at the first login. A per-node limiter under a `'shared'` declaration is
- * an account lockout worth `maxAttempts × replicas`, which is a number nobody configured and
- * nothing reports. The declaration is the app's: this package cannot see how many processes the
- * image is running, and one that inferred it from the environment would be wrong the first time
- * the app scaled.
+ * The numbers a limiter is compared on. `maxKeys` is absent deliberately: it bounds one process'
+ * table, so a shared limiter has no opinion on it and comparing it would refuse a correct pairing.
  */
-export function assertAuthLimiterScope(policy: AuthRateLimitPolicy, limiter: AuthLimiter): void {
-  if (policy.scope !== 'shared' || limiter.scope === 'shared') return;
-  throw authLimiterNotShared(limiter.scope);
+const ENFORCED_LIMITS = ['maxAttempts', 'windowMs', 'lockoutMs'] as const;
+
+/**
+ * At `defineAuth`, never at the first login. Two ways the declared policy and the limiter in use
+ * can disagree, and both end the same way — an operator reading `Auth.rateLimit` and believing a
+ * number nothing enforces:
+ *
+ * - a per-node limiter under a `'shared'` declaration is a lockout worth `maxAttempts × replicas`;
+ * - a limiter counting to its own numbers makes every other field of the policy decorative.
+ *
+ * The declaration stays the app's — this package cannot see how many processes the image runs,
+ * and inferring it would be wrong the first time the app scaled — so the framework's job is to
+ * refuse the pairing, not to guess either half of it.
+ */
+export function assertAuthLimiterPolicy(declared: AuthRateLimitPolicy, limiter: AuthLimiter): void {
+  if (declared.scope === 'shared' && limiter.policy.scope !== 'shared') {
+    throw authLimiterNotShared(limiter.policy.scope);
+  }
+  for (const field of ENFORCED_LIMITS) {
+    if (declared[field] !== limiter.policy[field]) {
+      throw authLimiterPolicyMismatch(field, declared[field], limiter.policy[field]);
+    }
+  }
 }
 
 /**

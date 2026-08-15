@@ -192,6 +192,8 @@ report a different number:
 
 ### What was DECLARED — the other half of the ledger
 
+`As of 2026-08`.
+
 The ledger says which passes have run. `registeredBackfills()` says which ones **exist**, and the
 diff between them is the alarm: a sweep merged, deployed and never enqueued had no row and showed
 up on no surface at all.
@@ -235,7 +237,7 @@ export const dropLegacy = backfill({
 | Field | Rail | Enforced where |
 |---|---|---|
 | `requires` | `X_BACKFILL_MIGRATION_PENDING` — the migration is not applied | `x db backfill`, which is where `x_migrations` is readable; this package holds no `@ultimat3/db` dependency and will not grow one to read a ledger |
-| `environments` | `X_BACKFILL_ENVIRONMENT` | **the pass**, so `.enqueue()` from app code is covered too, and `x db backfill` up front |
+| `environments` | `X_BACKFILL_ENVIRONMENT` | **the pass** (`backfillPass`) — the rail, because `.enqueue()` from app code reaches no command — and again in `gateBackfill()` as the CLI's pre-check, so `x db backfill` refuses before it queues work that would only dead-letter |
 | `count` | `X_BACKFILL_STALLED` — the source ran out and this still matches rows | the pass, once, after the last batch |
 
 `environments` ships as declared data and never as a hardcoded "cleanups are production": a staging
@@ -247,6 +249,8 @@ which the framework cannot observe.
 `count` is the same predicate `source` selects on, counted. It is what makes a dry run honest and
 "did it converge" arithmetic: a pass that exhausts its source while `count()` still answers above
 zero has two predicates that disagree, which is an authoring bug and not something a retry fixes.
+Its result is parsed rather than trusted — a non-negative safe integer or `X_INVARIANT`, because
+`NaN > 0` and `-1 > 0` are both false and would complete the sweep the detector exists to fail.
 
 ### Running one
 

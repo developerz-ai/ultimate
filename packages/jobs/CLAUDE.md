@@ -173,7 +173,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   exported, so it asserts the rate itself rather than trusting `backfill()` to have done it: `0`
   makes the interval `Infinity`, which the timer clamps to about a millisecond — an unvalidated
   zero is "no throttle at all", the one setting this module exists to make unreachable.
-- **A backfill STAMPS its own handle; an app registers nothing.** `backfill-registry.ts` is the
+- **A backfill STAMPS its own handle; an app registers nothing** (`As of 2026-08`). `backfill-registry.ts` is the
   `origin` WeakMap `task.ts` already uses, not a second mechanism — `stampBackfill` is called by
   `backfill()` and is deliberately **not** in `src/index.ts`, for the reason `registerJob` is not:
   a second way to claim backfill-hood would let a plain `job()` inherit the pending diff, the gate
@@ -182,25 +182,36 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   disagreeing about one name would be two answers to "does this pass exist". Requiring an app to
   call `registerBackfill()` was rejected outright: that coupling is what axiom 8's extension model
   refuses, and a declaration an app has to declare twice is one half the apps will forget.
-- **The ledger says what RAN; the registry says what EXISTS; `backfill-pending.ts` is the diff.**
+- **The ledger says what RAN; the registry says what EXISTS; `backfill-pending.ts` is the diff**
+  (`As of 2026-08`).
   That diff is the whole defect this subsystem had: `inspectBackfills` and `x db backfill --list`
   both read `x_backfills`, so a sweep merged and never enqueued had no row and was invisible on
   every surface. `pendingBackfills()` takes `BackfillProgress` rows — the one projection, never the
   driver's own `BackfillRun` — and `pending` deliberately excludes `running` (a pass in flight is
   progress, and a check red for the duration of every sweep gets muted within a week) and
-  `excluded` (a declaration this environment may not run is not drift).
-- **`requires` / `environments` / `count` are DATA on the declaration, and each is enforced exactly
-  once.** `environments` in the PASS (`backfill-pass.ts`, ahead of the ledger open, so a
-  wrong-environment enqueue leaves no row claiming a sweep started) — app code that calls
-  `.enqueue()` never passes through a command, so a rail only the CLI holds is a convention rather
-  than a build error. `requires` in `x db backfill`, because that is where `x_migrations` is
-  readable and this package holds no `@ultimat3/db` dependency; growing one so a tier-3 queue could
-  read a migration ledger is the import this file refuses. `count` in the pass, ONCE, after the last
-  batch: it is the same predicate `source` selects on, so a source that ran out while the count
-  still matches rows means the two disagree — `X_BACKFILL_STALLED`, thrown inside the `try` so the
-  ledger records `failed` and no completed row stops the next deploy re-running it. Never a
-  hardcoded "cleanups are production" and never a per-cleanup `dependsOn` graph: the real dependency
-  is "after code tolerating both shapes is serving", which the framework cannot observe.
+  `excluded` (a declaration this environment may not run is not drift). Which states count is
+  `isPendingBackfillState`, exported and read by `x db backfill --all` too: that selection used to
+  be `report.pending.includes(row)`, an object-identity test that held only because the diff
+  filters the array it returns — one `map` away from `--all` finding zero targets and exiting 0.
+- **`requires` / `environments` / `count` are DATA on the declaration, and each is enforced where
+  the fact it needs is readable** (`As of 2026-08`). Three fields, three boundaries, and only
+  `environments` is checked twice — deliberately:
+
+  | Field | Checked in | Checked again in | Why there |
+  |---|---|---|---|
+  | `environments` | `backfillPass()`, ahead of the ledger open | `gateBackfill()`, for the CLI | the pass is the RAIL — app code calling `.enqueue()` never passes through a command, and a check only the CLI holds is a convention, not a build error (axiom 3). The gate's copy is a PRE-CHECK, so `x db backfill` refuses before it queues work that would only dead-letter |
+  | `requires` | `gateBackfill()`, CLI only | — | `x_migrations` is `@ultimat3/db`'s, and this package holds no dependency on it; growing one so a tier-3 queue could read a migration ledger is the import this file refuses |
+  | `count` | `backfillPass()`, once, after the last batch | — | it needs the pass's own `ctx` and only means anything once the source is exhausted |
+
+  Refusing in the pass leaves NO ledger row — the check is ahead of `ledger.start` — so a
+  wrong-environment enqueue never claims a sweep started. `count` is the same predicate `source`
+  selects on, so a source that ran out while the count still matches rows means the two disagree:
+  `X_BACKFILL_STALLED`, thrown inside the `try` so the ledger records `failed` and no completed row
+  stops the next deploy re-running it. Its RESULT is parsed, never trusted — `NaN > 0` and `-1 > 0`
+  are both false, so an unchecked bad number reads as "converged" and writes exactly the completed
+  row the detector exists to prevent. Never a hardcoded "cleanups are production" and never a
+  per-cleanup `dependsOn` graph: the real dependency is "after code tolerating both shapes is
+  serving", which the framework cannot observe.
 - **`gateBackfill()` RETURNS its refusal, it does not throw one.** `x db backfill --all` isolates
   per name and continues past a failure — a thrown verdict would let one wedged cleanup block every
   later one forever. Order is the order an operator can act in: environment, then the migration it

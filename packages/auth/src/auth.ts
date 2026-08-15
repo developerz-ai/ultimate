@@ -21,7 +21,7 @@ import {
   type AuthLimiter,
   type AuthRateLimitPolicy,
   accountKey,
-  assertAuthLimiterScope,
+  assertAuthLimiterPolicy,
   createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   ipKey,
@@ -119,7 +119,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const password: PasswordPolicy = { ...DEFAULT_PASSWORD_POLICY, ...config.password };
   const rateLimit: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, ...config.rateLimit };
   const limiter = config.limiter ?? createAuthLimiter(clock, rateLimit);
-  assertAuthLimiterScope(rateLimit, limiter);
+  assertAuthLimiterPolicy(rateLimit, limiter);
   return Object.freeze({
     adapter: config.adapter,
     clock,

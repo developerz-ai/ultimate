@@ -50,15 +50,38 @@ export interface BackfillPendingReport {
   readonly orphaned: readonly string[];
 }
 
-/** Newest first is `BackfillLedger.list`'s contract, so the first match under a name is the one. */
-const newestUnder = (
+/**
+ * The states the alarm is about, declared ONCE. `x db backfill --all` picks its targets by this
+ * same predicate, and a second literal there would be a second definition of "pending" — one of
+ * which would eventually be wrong while the other stayed right.
+ */
+export const PENDING_BACKFILL_STATES: readonly BackfillState[] = ['pending', 'failed'];
+
+export const isPendingBackfillState = (state: BackfillState): boolean =>
+  PENDING_BACKFILL_STATES.includes(state);
+
+/**
+ * Newest first is `BackfillLedger.list`'s contract, so within a name the first row is the newest.
+ * Grouped ONCE rather than filtered per declaration: `x db backfill --pending` reads the ledger
+ * with no limit, so a per-declaration scan is three passes over an unbounded list for every sweep
+ * the app declares.
+ */
+function groupByName(
   runs: readonly BackfillProgress[],
-  name: string,
-): BackfillProgress | undefined => runs.find((run) => run.name === name);
+): ReadonlyMap<string, readonly BackfillProgress[]> {
+  const byName = new Map<string, BackfillProgress[]>();
+  for (const run of runs) {
+    const under = byName.get(run.name);
+    if (under === undefined) byName.set(run.name, [run]);
+    else under.push(run);
+  }
+  return byName;
+}
 
 function stateOf(
   declaration: BackfillDeclaration,
-  runs: readonly BackfillProgress[],
+  under: readonly BackfillProgress[],
+  completed: BackfillProgress | undefined,
   environment: Environment,
 ): BackfillState {
   if (
@@ -66,10 +89,9 @@ function stateOf(
   ) {
     return 'excluded';
   }
-  const under = runs.filter((run) => run.name === declaration.name);
   // A completed row anywhere in this name's history is what blocks a re-run, so it decides the
   // state even when a later forced pass failed — `decideBackfill` reads the same fact.
-  if (under.some((run) => run.status === 'completed')) return 'completed';
+  if (completed !== undefined) return 'completed';
   const newest = under[0];
   if (newest === undefined) return 'pending';
   return newest.status === 'running' ? 'running' : 'failed';
@@ -81,14 +103,14 @@ export function pendingBackfills(input: {
   readonly runs: readonly BackfillProgress[];
   readonly environment: Environment;
 }): BackfillPendingReport {
+  const byName = groupByName(input.runs);
   const rows = input.declarations.map((declaration): BackfillStateRow => {
-    const newest = newestUnder(input.runs, declaration.name);
-    const completed = input.runs.find(
-      (run) => run.name === declaration.name && run.status === 'completed',
-    );
+    const under = byName.get(declaration.name) ?? [];
+    const newest = under[0];
+    const completed = under.find((run) => run.status === 'completed');
     return {
       name: declaration.name,
-      state: stateOf(declaration, input.runs, input.environment),
+      state: stateOf(declaration, under, completed, input.environment),
       checksum: declaration.checksum,
       ledgerChecksum: newest?.checksum ?? null,
       changed: completed !== undefined && completed.checksum !== declaration.checksum,
@@ -99,13 +121,11 @@ export function pendingBackfills(input: {
     };
   });
   const declared = new Set(input.declarations.map((declaration) => declaration.name));
-  const orphaned = [...new Set(input.runs.map((run) => run.name))]
-    .filter((name) => !declared.has(name))
-    .sort();
+  const orphaned = [...byName.keys()].filter((name) => !declared.has(name)).sort();
   return {
     environment: input.environment,
     rows,
-    pending: rows.filter((row) => row.state === 'pending' || row.state === 'failed'),
+    pending: rows.filter((row) => isPendingBackfillState(row.state)),
     orphaned,
   };
 }

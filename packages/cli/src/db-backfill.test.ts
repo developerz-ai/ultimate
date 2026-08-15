@@ -3,11 +3,12 @@
 // `cursor` and `durationMs` the way a pg ledger would. No `ParsedArgs`, no app, no queue boot.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { DbClient } from '@ultimat3/db';
+import { setDbClient } from '@ultimat3/db';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
-import type { BackfillStatus, JobDriver } from '@ultimat3/jobs';
+import type { JobDriver } from '@ultimat3/jobs';
 import {
-  BACKFILL_STATUSES,
   backfill,
   createMemoryDriver,
   resetJobDriver,
@@ -15,16 +16,12 @@ import {
   setJobDriver,
 } from '@ultimat3/jobs';
 import {
-  listBackfills,
-  parseBackfillStatusFlag,
   pendingReport,
-  renderBackfillTable,
+  readAppliedMigrations,
   renderPendingTable,
   renderPlanTable,
   runBackfills,
 } from './db-backfill';
-import { BadFlagError } from './errors';
-import { msg } from './messages';
 
 interface Seed {
   readonly runId: string;
@@ -52,115 +49,6 @@ async function seed(driver: JobDriver, input: Seed): Promise<void> {
     await driver.backfills?.finish(input.runId, { status: input.finish, rows: input.rows ?? 0 });
   }
 }
-
-describe('unit · backfill filter parsing', () => {
-  test('every status the ledger can record is accepted, and nothing else is', () => {
-    expect(BACKFILL_STATUSES).toEqual(['running', 'completed', 'failed']);
-    for (const status of BACKFILL_STATUSES) {
-      expect(parseBackfillStatusFlag(status)).toBe(status);
-    }
-    expect(parseBackfillStatusFlag(undefined)).toBeUndefined();
-  });
-
-  test('an unknown --status names the three that exist', () => {
-    const thrown: unknown = (() => {
-      try {
-        return parseBackfillStatusFlag('done');
-      } catch (error: unknown) {
-        return error;
-      }
-    })();
-    expect(thrown).toBeInstanceOf(BadFlagError);
-    expect((thrown as BadFlagError).cause).toContain('running, completed, failed');
-    // `x db`, not `x jobs`: the flag was typed on this command, so the error names this command.
-    expect((thrown as BadFlagError).cause).toContain('"x db"');
-  });
-
-  test('a bad --limit is refused as a db flag, not as a jobs one', async () => {
-    const driver = createMemoryDriver();
-    const thrown: unknown = await listBackfills(driver, { limit: '0' }).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-    expect(thrown).toBeInstanceOf(BadFlagError);
-    expect((thrown as BadFlagError).cause).toContain('--limit on "x db"');
-  });
-});
-
-describe('unit · listBackfills', () => {
-  test('an empty ledger is an answer, not a failure', async () => {
-    expect(await listBackfills(createMemoryDriver())).toEqual([]);
-  });
-
-  test('every pass, newest first, with progress and duration as the ledger recorded them', async () => {
-    const driver = createMemoryDriver();
-    await seed(driver, { runId: 'run_1', name: 'recount-likes', rows: 500, finish: 'completed' });
-    await seed(driver, { runId: 'run_2', name: 'reindex-posts', rows: 120, cursor: 'post_120' });
-
-    const rows = await listBackfills(driver);
-
-    expect(rows.map((row) => row.runId)).toEqual(['run_2', 'run_1']);
-    expect(rows[0]).toMatchObject({
-      name: 'reindex-posts',
-      status: 'running',
-      rows: 120,
-      cursor: 'post_120',
-      completedAt: null,
-      durationMs: null, // a running pass has no span, and nothing here reads a clock
-    });
-    expect(rows[1]).toMatchObject({ status: 'completed', rows: 500, cursor: null });
-    expect(typeof rows[1]?.durationMs).toBe('number');
-  });
-
-  test('--name and --status narrow the ledger, --limit caps it', async () => {
-    const driver = createMemoryDriver();
-    await seed(driver, { runId: 'run_1', name: 'recount-likes', rows: 10, finish: 'completed' });
-    await seed(driver, { runId: 'run_2', name: 'recount-likes', rows: 3 });
-    await seed(driver, { runId: 'run_3', name: 'reindex-posts', rows: 7, finish: 'failed' });
-
-    expect((await listBackfills(driver, { name: 'recount-likes' })).map((r) => r.runId)).toEqual([
-      'run_2',
-      'run_1',
-    ]);
-    const failed: BackfillStatus = 'failed';
-    expect((await listBackfills(driver, { status: failed })).map((r) => r.runId)).toEqual([
-      'run_3',
-    ]);
-    expect(await listBackfills(driver, { limit: '1' })).toHaveLength(1);
-  });
-});
-
-describe('unit · renderBackfillTable', () => {
-  test('the header, one padded row per pass, and the ISO start printed verbatim', async () => {
-    const driver = createMemoryDriver();
-    await seed(driver, { runId: 'run_2', name: 'reindex-posts', rows: 120, cursor: 'post_120' });
-    const rows = await listBackfills(driver);
-
-    const lines = renderBackfillTable(rows);
-
-    expect(lines[0]).toContain('name');
-    expect(lines[0]).toContain('started-at');
-    expect(lines[0]).toContain('run-id');
-    expect(lines[1]).toContain('reindex-posts');
-    expect(lines[1]).toContain('post_120');
-    // Printed as the ledger stored it — formatting a date needs a zone this command has none of.
-    expect(lines[1]).toContain(rows[0]?.startedAt ?? 'missing');
-    expect(lines).toHaveLength(2);
-  });
-
-  test('a cursor that has not moved and a pass that has not finished render the empty cell', async () => {
-    const driver = createMemoryDriver();
-    await seed(driver, { runId: 'run_9', name: 'recount-likes' });
-    const lines = renderBackfillTable(await listBackfills(driver));
-    const cells = (lines[1] ?? '').split(/\s{2,}/);
-
-    expect(cells).toContain(msg('cli.db.backfill.none'));
-    expect(cells.filter((cell) => cell === msg('cli.db.backfill.none'))).toHaveLength(2);
-    expect(lines.join('\n')).not.toContain('⟦');
-  });
-});
-
-// ── the diff and the runner ───────────────────────────────────────────────
 
 interface Post {
   readonly id: string;
@@ -305,6 +193,31 @@ describe('unit · runBackfills', () => {
     expect(renderPlanTable(rows).join('\n')).not.toContain('⟦');
   });
 
+  test('--all picks its targets by STATE, so a failed sweep is swept and a live one is not', async () => {
+    // Pinned because the selection used to be `report.pending.includes(row)` — an object-identity
+    // test that held only because the diff filters the array it returns. One `map` inside
+    // `pendingBackfills` and `--all` would have found nothing, exited 0, and said so.
+    const driver = createMemoryDriver();
+    setJobDriver(driver);
+    declareSweep('failed-once');
+    declareSweep('still-running');
+    await seed(driver, { runId: 'run_f', name: 'failed-once', rows: 3, finish: 'failed' });
+    await seed(driver, { runId: 'run_r', name: 'still-running', rows: 1 });
+
+    const rows = await runBackfills({
+      driver,
+      names: 'all',
+      write: false,
+      force: false,
+      environment: 'production',
+      appliedMigrations: undefined,
+    });
+
+    // `failed` is the alarm; `running` is progress and must not be re-triggered under it.
+    expect(rows.map((row) => row.name)).toEqual(['failed-once']);
+    expect(rows[0]?.state).toBe('failed');
+  });
+
   test('a completed name is refused without --force and runs again with it', async () => {
     const driver = createMemoryDriver();
     setJobDriver(driver);
@@ -352,5 +265,124 @@ describe('unit · runBackfills', () => {
     });
     expect(named[0]?.finding?.code).toBe('X_BACKFILL_ENVIRONMENT');
     expect(await queued(driver)).toBe(0);
+  });
+});
+
+describe('unit · remaining — the one number a dry run reports', () => {
+  const plan = async (driver: JobDriver, names: readonly string[]) =>
+    runBackfills({
+      driver,
+      names,
+      write: false,
+      force: false,
+      environment: 'production',
+      appliedMigrations: undefined,
+    });
+
+  test('a declared count() is what the dry run reports', async () => {
+    const driver = createMemoryDriver();
+    setJobDriver(driver);
+    declareSweep('counted', { count: () => 42 });
+
+    const rows = await plan(driver, ['counted']);
+    expect(rows[0]?.action).toBe('planned');
+    expect(rows[0]?.remaining).toBe(42);
+  });
+
+  test('a count() that throws reports null and still plans — a dry run never invents a number', async () => {
+    // A tenanted sweep counts within one org and the CLI's context carries no actor, so the throw
+    // is expected. Reporting `0` there would be the dry run lying, which is the failure `count()`
+    // exists to close.
+    const driver = createMemoryDriver();
+    setJobDriver(driver);
+    declareSweep('uncountable', {
+      count: () => {
+        throw new RangeError('this sweep is tenanted and the CLI context carries no org');
+      },
+    });
+
+    const rows = await plan(driver, ['uncountable']);
+    expect(rows[0]?.action).toBe('planned');
+    expect(rows[0]?.remaining).toBeNull();
+    expect(rows[0]?.finding).toBeNull();
+  });
+
+  test('a declaration with no count() reports null, and the table renders it as a value', async () => {
+    const driver = createMemoryDriver();
+    setJobDriver(driver);
+    declareSweep('uncounted');
+
+    const rows = await plan(driver, ['uncounted']);
+    expect(rows[0]?.remaining).toBeNull();
+    expect(renderPlanTable(rows).join('\n')).not.toContain('⟦');
+  });
+
+  test('remaining survives the enqueue, so --write reports what the dry run reported', async () => {
+    const driver = createMemoryDriver();
+    setJobDriver(driver);
+    declareSweep('counted-write', { count: () => 7 });
+
+    const rows = await runBackfills({
+      driver,
+      names: ['counted-write'],
+      write: true,
+      force: false,
+      environment: 'production',
+      appliedMigrations: undefined,
+    });
+    expect(rows[0]?.action).toBe('enqueued');
+    expect(rows[0]?.remaining).toBe(7);
+  });
+});
+
+describe('unit · reading x_migrations', () => {
+  /** A client whose only job is to fail the ledger read the way a real one would. */
+  const failingClient = (error: unknown): DbClient =>
+    ({
+      query: () => Promise.reject(error),
+      execute: () => Promise.reject(error),
+      close: () => Promise.resolve(),
+    }) as unknown as DbClient;
+
+  const undefinedTable = (): Error =>
+    Object.assign(new Error('relation does not exist'), {
+      code: '42P01',
+    });
+
+  afterEach(() => {
+    setDbClient(undefined);
+  });
+
+  test('a database is not opened at all when nothing declares requires', async () => {
+    declareSweep('no-requirement');
+    setDbClient(failingClient(new Error('this client must never be asked')));
+    // `undefined` means "there is nothing to check", which the gate reads as no obstacle.
+    expect(await readAppliedMigrations()).toBeUndefined();
+  });
+
+  test('an absent x_migrations is an ANSWER — nothing applied, so every requires is unsatisfied', async () => {
+    declareSweep('needs-migration', { requires: '20260814120000_add_publish_at' });
+    setDbClient(failingClient(undefinedTable()));
+    // `[]` and deliberately not `undefined`: a database this app has never migrated genuinely has
+    // no applied migration, so the gate should block rather than wave the sweep through.
+    expect(await readAppliedMigrations()).toEqual([]);
+  });
+
+  test('a read that FAILED propagates — "I could not ask" is never "it is applied"', async () => {
+    // The silent pass this slice exists to remove: a permission error, a timeout or a dropped
+    // connection treated as an empty answer lets a sweep run against the shape it waits for.
+    declareSweep('needs-migration-2', { requires: '20260814120000_add_publish_at' });
+    for (const error of [
+      Object.assign(new Error('permission denied for table x_migrations'), { code: '42501' }),
+      Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      new Error('statement timeout'),
+    ]) {
+      setDbClient(failingClient(error));
+      const thrown: unknown = await readAppliedMigrations().then(
+        () => undefined,
+        (raised: unknown) => raised,
+      );
+      expect(thrown).toBe(error);
+    }
   });
 });

@@ -197,6 +197,11 @@ export class OutboxNoTxError extends UltimateError {
  * environment, migrate first, wait, fix the predicates, or fix the name. A code that shared a fix
  * line with another one would be code inflation, which is why `X_BACKFILL_WRITE_UNCONFIRMED` was
  * considered and rejected: a dry run that wrote nothing did exactly what it was asked to.
+ *
+ * Every `fix` below is ONE line something can execute — a shell command, or the edit to make.
+ * Never a command with prose appended: a `fix:` is copied and run verbatim, so a trailing clause
+ * turns a working command into a syntax error at the one moment the reader is following it
+ * literally. Explanations belong in `cause`, which is read and never run.
  */
 
 /**
@@ -219,8 +224,8 @@ export class BackfillAppliedError extends UltimateError {
   constructor(input: { backfill: string; runId: string; completedAt: string }) {
     super({
       code: 'X_BACKFILL_APPLIED',
-      cause: `backfill "${input.backfill}" completed as run ${input.runId} at ${input.completedAt}`,
-      fix: `x db backfill ${input.backfill} --write --force --json — a forced rerun writes a NEW ledger row, it never edits the one above`,
+      cause: `backfill "${input.backfill}" completed as run ${input.runId} at ${input.completedAt}; a forced rerun writes a NEW ledger row and never edits that one`,
+      fix: `x db backfill ${input.backfill} --write --force --json`,
       docs: docsFor('X_BACKFILL_APPLIED'),
     });
   }
@@ -234,10 +239,18 @@ export class BackfillAppliedError extends UltimateError {
  */
 export class BackfillEnvironmentError extends UltimateError {
   constructor(input: { backfill: string; environment: string; declared: readonly string[] }) {
+    // The first declared environment, because the fix has to be ONE runnable line and the list is
+    // ordered by the author. The empty case cannot arise from `checkBackfillEnvironment`, which
+    // treats an empty list as "every environment" — but this constructor is public, so it answers
+    // with the command that lists what IS declared rather than an `ULTIMATE_ENV=undefined`.
+    const target = input.declared[0];
     super({
       code: 'X_BACKFILL_ENVIRONMENT',
-      cause: `backfill "${input.backfill}" declares environments: ${input.declared.join(', ')} and this process resolved ${input.environment}`,
-      fix: `run it where ULTIMATE_ENV is one of ${input.declared.join(', ')}, or add "${input.environment}" to environments on backfill("${input.backfill}")`,
+      cause: `backfill "${input.backfill}" declares environments: ${input.declared.join(', ')} and this process resolved ${input.environment} — add "${input.environment}" to that list if this deploy should sweep too`,
+      fix:
+        target === undefined
+          ? 'x db backfill --pending --json'
+          : `ULTIMATE_ENV=${target} x db backfill ${input.backfill} --write --json`,
       docs: docsFor('X_BACKFILL_ENVIRONMENT'),
     });
   }
@@ -268,8 +281,8 @@ export class BackfillRunningError extends UltimateError {
   constructor(input: { backfill: string; jobId: string }) {
     super({
       code: 'X_BACKFILL_RUNNING',
-      cause: `backfill "${input.backfill}" already has a live pass queued as ${input.jobId}, and one name holds one live pass`,
-      fix: `x jobs show ${input.jobId} --json — its step trace names the batch it is on; a pass that is not advancing is a worker that lost its lease, so drain it with: x jobs drain`,
+      cause: `backfill "${input.backfill}" already has a live pass queued as ${input.jobId}, and one name holds one live pass; its step trace names the batch it is on, and a pass that is not advancing is a worker that lost its lease`,
+      fix: `x jobs show ${input.jobId} --json`,
       docs: docsFor('X_BACKFILL_RUNNING'),
     });
   }
@@ -284,8 +297,8 @@ export class BackfillStalledError extends UltimateError {
   constructor(input: { backfill: string; remaining: number; swept: number }) {
     super({
       code: 'X_BACKFILL_STALLED',
-      cause: `backfill "${input.backfill}" swept ${input.swept} rows, exhausted its source, and count() still matches ${input.remaining}`,
-      fix: `make count() select on exactly what source() selects on in backfill("${input.backfill}") — a WHERE the sweep narrows and the count does not is what leaves rows behind`,
+      cause: `backfill "${input.backfill}" swept ${input.swept} rows, exhausted its source, and count() still matches ${input.remaining} — a WHERE the sweep narrows and the count does not is what leaves rows behind`,
+      fix: `make count() select on exactly what source() selects on in backfill("${input.backfill}")`,
       docs: docsFor('X_BACKFILL_STALLED'),
     });
   }
@@ -300,7 +313,7 @@ export class BackfillUnknownError extends UltimateError {
         input.known.length === 0
           ? `no backfill named "${input.backfill}" is declared, and this app declares none at all`
           : `no backfill named "${input.backfill}" is declared (declared: ${input.known.join(', ')})`,
-      fix: 'x db backfill --pending --json lists every declared name and whether it has run',
+      fix: 'x db backfill --pending --json',
       docs: docsFor('X_BACKFILL_UNKNOWN'),
     });
   }

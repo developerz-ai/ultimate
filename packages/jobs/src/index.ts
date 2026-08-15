@@ -40,7 +40,12 @@ export type {
   BackfillState,
   BackfillStateRow,
 } from './backfill-pending';
-export { BACKFILL_STATES, pendingBackfills } from './backfill-pending';
+export {
+  BACKFILL_STATES,
+  isPendingBackfillState,
+  PENDING_BACKFILL_STATES,
+  pendingBackfills,
+} from './backfill-pending';
 export type { Pacer, PacerOptions } from './backfill-rate';
 export { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 export type { BackfillCount, BackfillDeclaration, BackfillOrigin } from './backfill-registry';

@@ -113,3 +113,43 @@ describe('unit · the subject fix is executable JavaScript', () => {
     expect(parses(snippetOf(org.fix, 'userActor'))).toBe(true);
   });
 });
+
+describe('an error constructor never loses its refusal to a hostile value', () => {
+  // JSON.stringify throws on a bigint or a cycle, and RUNS a toJSON the value carries. Before this
+  // guard, three of these replaced X_FLAG_EXPIRY_INVALID with an unrelated throw, so a caller
+  // matching on the code caught nothing. Found by the entity slice hitting the same class.
+  const cyclic: Record<string, unknown> = {};
+  cyclic['self'] = cyclic;
+
+  const hostile: readonly (readonly [string, unknown])[] = [
+    ['bigint', 10n],
+    ['cyclic object', cyclic],
+    ['symbol', Symbol('nope')],
+    [
+      'throwing toJSON',
+      {
+        toJSON: () => {
+          throw new Error('boom');
+        },
+      },
+    ],
+    [
+      'throwing toString',
+      {
+        toString: () => {
+          throw new Error('boom');
+        },
+      },
+    ],
+    ['undefined', undefined],
+  ];
+
+  for (const [label, given] of hostile) {
+    test(`${label} still yields X_FLAG_EXPIRY_INVALID`, () => {
+      const error = flagExpiryInvalid('beta.feature', given);
+      expect(error.code, label).toBe('X_FLAG_EXPIRY_INVALID');
+      expect(error.cause, label).toContain('beta.feature');
+      expect(error.fix, label).toContain("defineFlag({ key: 'beta.feature' })");
+    });
+  }
+});

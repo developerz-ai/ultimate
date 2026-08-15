@@ -55,6 +55,19 @@ describe('unit · x g backfill', () => {
     expect(source).not.toMatch(/^\s*environments:/m);
   });
 
+  test('neither generated file carries a TODO — a generator emits working source', () => {
+    // The rule this package states and nothing checked: a generated `// TODO` is blocking. The
+    // commented-out `count`/`requires`/`environments` above are OFFERS with a stated reason, which
+    // is a different thing from a hole an author is expected to notice and fill.
+    const files = backfillFiles('normalize-titles', target);
+    for (const file of files) {
+      expect(file.contents).not.toMatch(/\bTODO\b/);
+      expect(file.contents).not.toMatch(/\bFIXME\b/);
+      // A stub that throws carries no `X_*` code and reports rows nobody swept.
+      expect(file.contents).not.toContain('throw new Error(');
+    }
+  });
+
   test('the generated test still pins the work, not only the declaration around it', () => {
     const suite = generated().test;
     expect(suite).toContain('actually rewrites the row it is handed');

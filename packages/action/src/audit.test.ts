@@ -1,3 +1,10 @@
+/**
+ * The seam's failure modes are the half that cannot be read off the types: a denial recorded
+ * before `handle` ever runs, a sink refusal that must not be swallowed, and a `fix:` line that
+ * must not tell a caller to re-run a handler that already committed. Each is asserted against a
+ * declaration built to produce it, because a test that cannot fail is not one.
+ */
+
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
@@ -199,6 +206,71 @@ describe('the audit seam', () => {
     expect((failure as { code?: string }).code).toBe('X_AUDIT_SINK_FAILED');
     expect((failure as { cause?: string }).cause).toContain('already committed');
     expect((failure as { sourceError?: unknown }).sourceError).toBeInstanceOf(TypeError);
+  });
+
+  test('a NON-idempotent audited action is never told to retry a committed handler', async () => {
+    setAuditSink(refusingSink());
+
+    const failure = await publishPost()
+      .server(editor, { postId: POST_ID })
+      .catch((e: unknown) => e);
+
+    // `invoke` ignores an Idempotency-Key on a non-idempotent action, so there is no replay path
+    // and "retry with the same key" would instruct a caller to apply a committed write twice.
+    expect((failure as { code?: string }).code).toBe('X_AUDIT_SINK_FAILED');
+    expect((failure as { fix?: string }).fix).toContain('do NOT retry');
+    expect((failure as { fix?: string }).fix).not.toContain('then retry with');
+    expect((failure as { meta?: { replayable?: boolean } }).meta?.replayable).toBe(false);
+  });
+
+  test('an idempotent action invoked WITHOUT a key gets the same refusal to retry', async () => {
+    setAuditSink(refusingSink());
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      audit: true,
+      idempotent: true,
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+    // The declaration alone proves nothing: `invoke` reads
+    // `def.idempotent === true ? (options.idempotencyKey ?? null) : null`, so a caller that sent
+    // no header never reserved a record and a retry re-runs the handler. This is why the branch
+    // is the invocation's fact and not the declaration's — and why requiring `idempotent: true`
+    // at declaration would not have made the message true.
+    const failure = await invoke(target, { postId: POST_ID }, { ctx: editor }).catch(
+      (e: unknown) => e,
+    );
+
+    expect((failure as { meta?: { replayable?: boolean } }).meta?.replayable).toBe(false);
+    expect((failure as { fix?: string }).fix).toContain('do NOT retry');
+  });
+
+  test('an idempotent action invoked WITH a key is told to retry, because the replay is real', async () => {
+    setAuditSink(refusingSink());
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      audit: true,
+      idempotent: true,
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+    const failure = await invoke(
+      target,
+      { postId: POST_ID },
+      {
+        ctx: editor,
+        idempotencyKey: 'k1',
+        store: new MemoryIdempotencyStore(),
+      },
+    ).catch((e: unknown) => e);
+
+    expect((failure as { fix?: string }).fix).toContain('retry with the same Idempotency-Key');
+    expect((failure as { fix?: string }).fix).not.toContain('do NOT retry');
+    expect((failure as { meta?: { replayable?: boolean } }).meta?.replayable).toBe(true);
   });
 
   test('a refused `allowed` record is not re-recorded as the action having failed', async () => {

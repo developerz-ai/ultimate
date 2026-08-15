@@ -306,16 +306,32 @@ export class AuditSinkMissingError extends UltimateError {
  * self-heals, while nothing ever re-derives an audit row that was never written. So the caller is
  * told rather than left believing the operation was recorded.
  *
- * The cause says what the fix cannot undo: the handler already committed. An `idempotent` action
- * is what makes the retry safe — the replay re-attempts the record without re-running the handler.
+ * The cause says what the fix cannot undo: the handler already committed.
+ *
+ * **The fix branches, because only one of the two is true.** "Retry with the same
+ * Idempotency-Key" is safe exactly when this invocation went through the idempotency store —
+ * the settled record is then replayed and the record is re-attempted without re-running the
+ * handler. It did not when the action is not `idempotent`, and it did not when the action IS
+ * `idempotent` and the caller sent no key: `invoke` reads
+ * `def.idempotent === true ? (options.idempotencyKey ?? null) : null`, so both collapse to the
+ * same `null`. Telling either one to retry instructs a caller to apply a committed write twice
+ * — the worst possible advice for a mutator, and an axiom-4 violation dressed as a fix line.
+ * `replayable` is therefore the invocation's own fact (`record.idempotencyKey !== null`), never
+ * the declaration's: requiring `idempotent: true` at declaration would not have made the
+ * original message true, since a caller may still omit the header.
  */
 export class AuditSinkFailedError extends UltimateError {
-  constructor(action: string, sourceError: unknown) {
+  constructor(action: string, sourceError: unknown, replayable: boolean) {
     super({
       code: 'X_AUDIT_SINK_FAILED',
       cause: `"${action}" ran and its audit sink refused the record, so the change is unrecorded — the handler had already committed`,
-      fix: `fix the sink installed by setAuditSink, then retry with the same Idempotency-Key: x actions describe ${action} --json`,
+      fix: replayable
+        ? `fix the sink installed by setAuditSink, then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
+        : `fix the sink installed by setAuditSink, then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
       docs: docs('X_AUDIT_SINK_FAILED'),
+      // Read by `--json` and the error reporter: whether a retry is safe is the one decision an
+      // operator makes here, so it is a field and not only a sentence.
+      meta: { action, replayable },
       sourceError,
     });
   }

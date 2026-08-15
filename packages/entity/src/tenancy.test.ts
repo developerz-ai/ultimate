@@ -6,6 +6,7 @@ import type { EntityError } from './errors';
 import { clearRegistry } from './registry';
 import { memoryRepo } from './repo';
 import {
+  assertRowTenant,
   assertScoped,
   describePlan,
   emptyPlan,
@@ -347,5 +348,69 @@ describe('the tenant a row is written under', () => {
       );
     });
     expect((await repo.findMany({ orgId: ORG_A })).rows).toHaveLength(1);
+  });
+});
+
+// A refusal is the last message in the framework that may be lost to its own formatting: whatever
+// an app puts in a row or a predicate, the guard has to answer with the tenancy code and not with
+// whatever building the message raised. `JSON.stringify` throws on a bigint and on a cyclic value,
+// and runs any `toJSON` the value carries — all three reach here unparsed, because the write guard
+// runs BEFORE `$assert` on purpose.
+describe('a hostile tenant value cannot replace the refusal it earned', () => {
+  const ORG_A = '11111111-1111-4111-8111-111111111111';
+  const cyclic: Record<string, unknown> = {};
+  cyclic['self'] = cyclic;
+
+  const HOSTILE: readonly (readonly [string, unknown])[] = [
+    ['a bigint', 10n],
+    ['a cyclic object', cyclic],
+    ['a symbol', Symbol('org')],
+    ['a throwing toJSON', { toJSON: () => JSON.parse('{') }],
+    ['a throwing toString', { toString: () => JSON.parse('{') }],
+    ['a function', () => ORG_A],
+    ['a null', null],
+  ];
+
+  const asOrgA = <T>(fn: () => T): T =>
+    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+
+  test('a row naming one is X_TENANCY_ACTOR_MISMATCH, never the formatter’s own failure', () => {
+    for (const [label, value] of HOSTILE) {
+      const error = caught(() =>
+        asOrgA(() => {
+          assertRowTenant('post', 'orgId', 'insert', { orgId: value });
+        }),
+      );
+      expect(error, label).toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
+      // The cause still describes it — degraded to a type name where a value cannot be rendered —
+      // and the fix still parses, because it names the actor's tenant rather than the row's.
+      expect(String(error?.cause), label).toContain('would write orgId');
+      expect(String(error?.fix), label).toContain(ORG_A);
+    }
+  });
+
+  test('a predicate naming one is refused the same way', () => {
+    for (const [label, value] of HOSTILE) {
+      const plan = { ...emptyPlan('post'), where: [{ column: 'orgId', op: 'eq' as const, value }] };
+      const error = caught(() => asOrgA(() => scopedPlan('post', 'orgId', 'findMany', plan)));
+      expect(error, label).toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
+      expect(String(error?.cause), label).toContain('was scoped to tenant');
+      // Not a value anybody can act as, so the fix falls back to the placeholder rather than
+      // interpolating something that would not parse.
+      expect(String(error?.fix), label).toContain("orgId: '<org>'");
+    }
+  });
+
+  test('an actor carrying one is still told what to do about it', () => {
+    // The other half of every message: `Actor.orgId` is typed `string`, and a JS caller minting an
+    // actor is not bound by that. The refusal survives it too.
+    const error = caught(() =>
+      runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: 10n as never }) }), () =>
+        scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_A)),
+      ),
+    );
+    expect(error).toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
+    expect(String(error?.cause)).toContain('10n');
+    expect(String(error?.fix)).toContain(ORG_A);
   });
 });

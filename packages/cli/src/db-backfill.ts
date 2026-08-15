@@ -11,14 +11,16 @@
 
 import type { Environment } from '@ultimat3/core';
 import { createContext } from '@ultimat3/core';
-import { db, readLedger } from '@ultimat3/db';
+import { db, isLedgerMissing, readLedger } from '@ultimat3/db';
 import type {
   BackfillDeclaration,
+  BackfillInput,
   BackfillPendingReport,
   BackfillProgress,
   BackfillState,
   BackfillStatus,
   JobDriver,
+  JobHandle,
 } from '@ultimat3/jobs';
 import {
   BACKFILL_STATUSES,
@@ -29,6 +31,7 @@ import {
   getBackfill,
   inspectBackfills,
   isBackfillStatus,
+  isPendingBackfillState,
   pendingBackfills,
   registeredBackfills,
 } from '@ultimat3/jobs';
@@ -161,16 +164,31 @@ export function pendingToJson(report: BackfillPendingReport): JsonValue {
 // ── running one ───────────────────────────────────────────────────────────
 
 /**
- * Migration ids `x_migrations` records as applied, or `undefined` when this process could not read
- * the ledger at all — an embedded database that has never been migrated, or a driver with no
- * `db()` installed. `undefined` is deliberately not `[]`: the gate treats "I could not check" as
- * no obstacle, and an empty list would block every `requires:` the app declares.
+ * Migration ids `x_migrations` records as applied. Three outcomes, and they mean different things:
+ *
+ * | Answer | When | Gate reads it as |
+ * |---|---|---|
+ * | the ids | the ledger was read | exactly what is applied |
+ * | `[]` | `x_migrations` does not exist | nothing applied — every `requires` is unsatisfied |
+ * | `undefined` | no declaration waits on a migration | there is nothing to check |
+ *
+ * An absent table is an ANSWER, never a failure: a database this app has never migrated genuinely
+ * has no applied migration, so `[]` blocks and that is the honest verdict. Everything else —
+ * permission denied, a timeout, a dropped connection, a malformed query — means the check DID NOT
+ * HAPPEN, and those propagate. A gate that read "I could not ask" as "it is applied" would let a
+ * sweep run against exactly the shape it exists to wait for, which is the silent pass this whole
+ * slice exists to remove.
+ *
+ * The read is skipped entirely when nothing declares `requires`: it opens the app's database, and
+ * a command with no question to ask must not fail for want of an answer it will not use.
  */
 export async function readAppliedMigrations(): Promise<readonly string[] | undefined> {
+  if (!registeredBackfills().some((declaration) => declaration.requires !== null)) return undefined;
   try {
     return (await readLedger(db())).map((row) => row.id);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isLedgerMissing(error)) return [];
+    throw error;
   }
 }
 
@@ -206,6 +224,26 @@ async function remainingFor(declaration: BackfillDeclaration): Promise<number | 
   }
 }
 
+/**
+ * One shape for `X_BACKFILL_UNKNOWN`, wherever it is raised. Two constructions of one code with
+ * different payloads — one listing the candidate names and one listing none — is a finding an
+ * agent cannot act on half the time, which is the same code meaning two things.
+ */
+const unknownRow = (
+  name: string,
+  state: BackfillState | null,
+  declarations: readonly BackfillDeclaration[],
+): BackfillPlanRow => ({
+  name,
+  action: 'blocked',
+  state,
+  jobId: null,
+  remaining: null,
+  finding: findingFrom(
+    new BackfillUnknownError({ backfill: name, known: declarations.map((row) => row.name) }),
+  ),
+});
+
 export interface BackfillRunInput {
   readonly driver: JobDriver;
   /** The names asked for, or every PENDING one when `--all` was passed. */
@@ -227,10 +265,18 @@ export async function runBackfills(input: BackfillRunInput): Promise<readonly Ba
   const byName = new Map(declarations.map((row) => [row.name, row]));
   // `--all` sweeps what is PENDING, and `--all --force` every name this environment may run: a
   // forced rerun of a completed name is a decision, so it is never what a bare `--all` performs.
+  //
+  // Selected by STATE through `@ultimat3/jobs`' own predicate, never by `report.pending.includes`:
+  // that worked only because `pendingBackfills` filters the same array it returns, and the day it
+  // mapped its rows instead, `--all` would have found zero targets, exited 0 and reported that
+  // nothing needed sweeping — the silent success this slice exists to remove, reintroduced by an
+  // identity check nobody could see from here.
   const targets =
     input.names === 'all'
       ? report.rows
-          .filter((row) => (input.force ? row.state !== 'excluded' : report.pending.includes(row)))
+          .filter((row) =>
+            input.force ? row.state !== 'excluded' : isPendingBackfillState(row.state),
+          )
           .map((row) => row.name)
       : input.names;
 
@@ -239,16 +285,7 @@ export async function runBackfills(input: BackfillRunInput): Promise<readonly Ba
     const declaration = byName.get(name);
     const state = report.rows.find((row) => row.name === name)?.state ?? null;
     if (declaration === undefined) {
-      rows.push({
-        name,
-        action: 'blocked',
-        state,
-        jobId: null,
-        remaining: null,
-        finding: findingFrom(
-          new BackfillUnknownError({ backfill: name, known: declarations.map((row) => row.name) }),
-        ),
-      });
+      rows.push(unknownRow(name, state, declarations));
       continue;
     }
     const verdict = gateBackfill({
@@ -276,7 +313,16 @@ export async function runBackfills(input: BackfillRunInput): Promise<readonly Ba
       rows.push({ name, action: 'planned', state, jobId: null, remaining, finding: null });
       continue;
     }
-    rows.push(await enqueueOne(name, state, remaining, input.force));
+    // `getBackfill` cannot answer undefined here — `declaration` came from `registeredBackfills()`,
+    // which is derived from the same registry — so the handle is resolved once, at the only place
+    // that already proved the name exists. Resolving it again inside `enqueueOne` meant a second
+    // `X_BACKFILL_UNKNOWN` that could not list the candidates the first one lists.
+    const handle = getBackfill(name);
+    if (handle === undefined) {
+      rows.push(unknownRow(name, state, declarations));
+      continue;
+    }
+    rows.push(await enqueueOne(handle, state, remaining, input.force));
   }
   return rows;
 }
@@ -294,22 +340,12 @@ const newestCompleted = async (
  * serving the new release are what drain them.
  */
 async function enqueueOne(
-  name: string,
+  handle: JobHandle<BackfillInput>,
   state: BackfillState | null,
   remaining: number | null,
   force: boolean,
 ): Promise<BackfillPlanRow> {
-  const handle = getBackfill(name);
-  if (handle === undefined) {
-    return {
-      name,
-      action: 'blocked',
-      state,
-      jobId: null,
-      remaining,
-      finding: findingFrom(new BackfillUnknownError({ backfill: name, known: [] })),
-    };
-  }
+  const name = handle.name;
   try {
     const result = await handle.enqueue({ force });
     // One live pass per name, forced or not. A deduped enqueue started nothing, so the operator who

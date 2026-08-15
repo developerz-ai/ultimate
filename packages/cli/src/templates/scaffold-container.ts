@@ -129,6 +129,9 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
+      # The barrier, not the ordering. \`docker compose up -d\` returns when a container STARTS, so
+      # listing this last would only look like "after". The image's HEALTHCHECK is what makes it true.
+      web: { condition: service_healthy }
     restart: 'no'
 
   web:

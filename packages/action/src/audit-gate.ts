@@ -37,14 +37,19 @@ export function auditFailureFor(error: unknown): AuditFailure {
  * on the caller rather than on a log line nobody reads.
  *
  * It is post-commit all the same, and the error says so instead of pretending the write was
- * rolled back. That is the honest half of the choice: what the caller gains is being TOLD, and a
- * retry under the same `Idempotency-Key` re-attempts the record without re-running the handler.
+ * rolled back. That is the honest half of the choice: what the caller gains is being TOLD.
+ *
+ * Whether a retry is SAFE is the record's own `idempotencyKey`, not the declaration's
+ * `idempotent`. The key is non-null exactly when this invocation went through the idempotency
+ * store, which is the one condition under which a retry replays instead of re-running a handler
+ * that has already committed — and it is null both for a non-idempotent action and for an
+ * idempotent one whose caller sent no header.
  */
 export async function auditSettled(sink: AuditSink, record: AuditRecord): Promise<void> {
   try {
     await sink.write(record);
   } catch (error) {
-    throw new AuditSinkFailedError(record.action, error);
+    throw new AuditSinkFailedError(record.action, error, record.idempotencyKey !== null);
   }
 }
 

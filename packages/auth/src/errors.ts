@@ -18,6 +18,7 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_API_KEY_INVALID',
   'X_AUTH_WRITE_FAILED',
   'X_AUTH_LIMITER_NOT_SHARED',
+  'X_AUTH_LIMITER_POLICY_MISMATCH',
 ] as const;
 
 /**
@@ -45,6 +46,7 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_API_KEY_INVALID: 'api key is unknown, revoked, expired or wrong',
   X_AUTH_WRITE_FAILED: 'an adapter write returned no row, so it cannot be confirmed',
   X_AUTH_LIMITER_NOT_SHARED: 'the lockout is declared fleet-wide and the limiter is per-process',
+  X_AUTH_LIMITER_POLICY_MISMATCH: 'the limiter in use enforces other numbers than the app declared',
 };
 
 // Registered unconditionally, in one call: a second package claiming a code auth owns has to fail
@@ -233,6 +235,24 @@ export const authLimiterNotShared = (found: string): AuthError =>
     cause: `rateLimit.scope is 'shared' but the limiter in use is ${found}, so every replica would grant the full maxAttempts on its own`,
     fix: "pass a limiter whose scope is 'shared' — defineAuth({ adapter, limiter }) — or set rateLimit.scope: 'process' in defineAuth to accept per-replica lockouts",
     meta: { scope: found },
+  });
+
+/**
+ * At `defineAuth`, never at a login. `Auth.rateLimit` is what an operator reads as "what this
+ * deployment enforces", and an injected limiter counting to its own numbers makes that field a
+ * claim nothing backs — five attempts declared, fifty granted, and every surface reporting five.
+ * The policy is the app's single statement of the limits; this is what keeps it true.
+ */
+export const authLimiterPolicyMismatch = (
+  field: string,
+  declared: number,
+  enforced: number,
+): AuthError =>
+  new AuthError({
+    code: 'X_AUTH_LIMITER_POLICY_MISMATCH',
+    cause: `defineAuth declares rateLimit.${field} = ${declared} but the limiter passed to it enforces ${enforced}`,
+    fix: `construct the limiter with rateLimit.${field} = ${declared}, or declare rateLimit.${field}: ${enforced} in defineAuth so the config states what is enforced`,
+    meta: { field, declared, enforced },
   });
 
 /** For a custom `AuthAdapter` that implements part of the seam. Nothing shipped throws it. */

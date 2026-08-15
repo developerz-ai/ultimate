@@ -72,6 +72,38 @@ export class EntityError extends UltimateError {
   }
 }
 
+/**
+ * A value from an app, rendered for a `cause` — and it may not throw, whatever the app put there.
+ * `JSON.stringify` raises a `TypeError` on a bigint and on a cyclic structure, and runs any
+ * `toJSON` the value carries, so building the message could raise INSTEAD of the refusal: the
+ * caller then gets `TypeError: cannot serialize BigInt` where a tenancy denial belongs, catching
+ * by code finds nothing to catch, and an HTTP surface answers 500 rather than the mapped status.
+ * A security refusal is the last message in the framework that may be lost to its own formatting.
+ *
+ * A cause DESCRIBES, so degrading to a type name costs nothing a reader needs; the `fix:` lines
+ * that must parse take the stricter route beside each one — a string, or a placeholder.
+ * Interpolation is avoided for the same reason: `${symbol}` throws where `String(symbol)` does not.
+ */
+const renderValue = (value: unknown): string => {
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'bigint') return `${value}n`;
+  if (typeof value === 'symbol') return String(value);
+  try {
+    // `undefined` for a function or a symbol-keyed nothing; the type name is the honest answer.
+    return JSON.stringify(value) ?? `a ${typeof value}`;
+  } catch {
+    return `a ${typeof value} that cannot be rendered`;
+  }
+};
+
+/**
+ * The same value where the text has to PARSE: a string literal, or the placeholder that stands in
+ * for one. The placeholder is a parameter because what is missing differs — an org in one fix line,
+ * an actor id in another — and a fix that names the wrong thing is not one.
+ */
+const asLiteral = (value: unknown, placeholder: string): string =>
+  typeof value === 'string' ? JSON.stringify(value) : placeholder;
+
 export const entityDuplicate = (name: string, existingTable: string): EntityError =>
   new EntityError({
     code: 'X_ENTITY_DUPLICATE',
@@ -111,11 +143,11 @@ export const tenancyUnscoped = (
     cause:
       actorOrg === undefined
         ? `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column, and no request context carried an actor to take the tenant from`
-        : `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${JSON.stringify(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
+        : `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${renderValue(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
     fix:
       actorOrg === undefined
         ? `run it inside runWithContext(createContext({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
-        : `build the plan with scopedPlan('${entityName}', tenantColumn, '${operation}', plan) — it applies the actor's tenant — or add the predicate first: orgScoped(plan, ${JSON.stringify(actorOrg)})`,
+        : `build the plan with scopedPlan('${entityName}', tenantColumn, '${operation}', plan) — it applies the actor's tenant — or add the predicate first: orgScoped(plan, ${asLiteral(actorOrg, "'<org>'")})`,
   });
 
 /**
@@ -134,18 +166,14 @@ export const tenancyActorMismatch = (init: {
   actorOrg: string;
 }): EntityError => {
   // `undefined` is a real case — `where('orgId', 'is-null')` names the column and no value — and
-  // `JSON.stringify` answers it with `undefined` rather than a string, which would render the two
-  // halves of the cause differently.
-  const named = JSON.stringify(init.named) ?? 'undefined';
-  // The cause may describe any value the predicate held; the fix has to PARSE. `where('orgId',
-  // 'in', [a, b])` and `is-null` both reach here, and neither `orgId: ["a","b"]` nor
-  // `orgId: undefined` is an org anybody can act as — so a non-string becomes the placeholder,
-  // and the cause above is where the reader finds what was actually named.
-  const asTenant = typeof init.named === 'string' ? JSON.stringify(init.named) : "'<org>'";
+  // a predicate carries whatever the app put in it, which is why both halves go through
+  // `renderValue`: a bigint or a cyclic value here would otherwise throw in place of the refusal.
+  // The fix takes the strict route — `where('orgId', 'in', [a, b])` and `is-null` both reach here,
+  // and neither `orgId: ["a","b"]` nor `orgId: undefined` is an org anybody can act as.
   return new EntityError({
     code: 'X_TENANCY_ACTOR_MISMATCH',
-    cause: `${init.entityName}.${init.operation}() was scoped to tenant ${named} but the acting actor's tenant is ${JSON.stringify(init.actorOrg)}`,
-    fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${asTenant} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
+    cause: `${init.entityName}.${init.operation}() was scoped to tenant ${renderValue(init.named)} but the acting actor's tenant is ${renderValue(init.actorOrg)}`,
+    fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${asLiteral(init.named, "'<org>'")} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
   });
 };
 
@@ -168,8 +196,10 @@ export const tenancyRowMismatch = (init: {
 }): EntityError =>
   new EntityError({
     code: 'X_TENANCY_ACTOR_MISMATCH',
-    cause: `${init.entityName}.${init.operation}() would write ${init.column} ${JSON.stringify(init.named) ?? 'undefined'} but the acting actor's tenant is ${JSON.stringify(init.actorOrg)}`,
-    fix: `set ${init.column} to ${JSON.stringify(init.actorOrg)} in the row passed to ${init.entityName}.${init.operation}(), or write into another tenant deliberately: crossTenant('<why>', fn)`,
+    // A row literal is the least constrained input in the framework — this guard runs BEFORE
+    // `$assert`, on purpose, so the value has been through no parse at all when it is rendered.
+    cause: `${init.entityName}.${init.operation}() would write ${init.column} ${renderValue(init.named)} but the acting actor's tenant is ${renderValue(init.actorOrg)}`,
+    fix: `set ${init.column} to ${asLiteral(init.actorOrg, "'<org>'")} in the row passed to ${init.entityName}.${init.operation}(), or write into another tenant deliberately: crossTenant('<why>', fn)`,
   });
 
 /**
@@ -188,8 +218,8 @@ export const tenancyActorOrgRequired = (init: {
 }): EntityError =>
   new EntityError({
     code: 'X_TENANCY_ACTOR_ORG_REQUIRED',
-    cause: `${init.entityName}.${init.operation}() reads a tenant-scoped entity, but the ${init.actorKind} actor ${JSON.stringify(init.actorId)} carries no orgId — there is no tenant to scope it to`,
-    fix: `mint the actor with its tenant at the request boundary — userActor({ id: ${JSON.stringify(init.actorId)}, orgId: '<org>' }) — or, for a sweep that legitimately spans tenants, crossTenant('<why>', fn)`,
+    cause: `${init.entityName}.${init.operation}() reads a tenant-scoped entity, but the ${init.actorKind} actor ${renderValue(init.actorId)} carries no orgId — there is no tenant to scope it to`,
+    fix: `mint the actor with its tenant at the request boundary — userActor({ id: ${asLiteral(init.actorId, "'<actor id>'")}, orgId: '<org>' }) — or, for a sweep that legitimately spans tenants, crossTenant('<why>', fn)`,
   });
 
 /**

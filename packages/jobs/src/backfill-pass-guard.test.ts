@@ -99,6 +99,23 @@ describe('unit · the stall detector', () => {
     expect(pass.seen.flat().length).toBe(10);
   });
 
+  test('a count() that is not a whole number of rows fails the pass, never converges it', async () => {
+    // `NaN > 0` and `-1 > 0` are both FALSE, so an unchecked bad number reads as "nothing left"
+    // and writes the completed ledger row that stops the next deploy re-running this sweep — the
+    // one failure the detector exists to close, arriving through the detector itself.
+    for (const bad of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
+      const pass = harness({ name: `bad-count-${String(bad)}`, count: () => bad });
+      let thrown: unknown;
+      try {
+        await pass.run({ runId: `run-bad-${String(bad)}` });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(codeOf(thrown)).toBe('X_INVARIANT');
+      expect(isUltimateError(thrown) ? thrown.cause : '').toContain('a whole number of rows');
+    }
+  });
+
   test('the stall verdict names the sweep and the org-scoped chain it swept', async () => {
     const pass = harness({ name: 'named-stall', count: () => 1 });
     let thrown: unknown;

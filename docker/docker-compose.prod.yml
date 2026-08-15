@@ -28,6 +28,9 @@ services:
     <<: *common
     command: ['db', 'backfill', '--all', '--write', '--json']
     restart: 'no'
+    # The barrier, not the ordering. `docker compose up -d` returns when a container STARTS, so
+    # listing this step last would only look like "after". `service_healthy` is what makes it true.
+    depends_on: { web: { condition: service_healthy } }
 
   # Scales on RPS. Stateless, behind a CDN.
   web:

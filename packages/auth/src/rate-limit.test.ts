@@ -188,10 +188,18 @@ describe('auth rate limiting', () => {
    */
   describe('a lockout that must hold across replicas', () => {
     /** One process standing in for a shared tier: the memory limiter, declared shared. */
-    const shared = (clock: Clock): AuthLimiter => {
-      const backing = createAuthLimiter(clock);
-      return {
+    const shared = (clock: Clock, over: Partial<AuthRateLimitPolicy> = {}): AuthLimiter => {
+      const enforced: AuthRateLimitPolicy = {
+        ...DEFAULT_AUTH_RATE_LIMIT,
+        maxAttempts: 5,
+        windowMs: 900_000,
+        lockoutMs: 900_000,
+        ...over,
         scope: 'shared',
+      };
+      const backing = createAuthLimiter(clock, enforced);
+      return {
+        policy: enforced,
         assertAllowed: backing.assertAllowed,
         recordFailure: backing.recordFailure,
         recordSuccess: backing.recordSuccess,
@@ -240,7 +248,63 @@ describe('auth rate limiting', () => {
     });
 
     test('the default declaration still builds the in-memory limiter', () => {
-      expect(newAuth().limiter.scope).toBe('process');
+      expect(newAuth().limiter.policy.scope).toBe('process');
+    });
+
+    /**
+     * `Auth.rateLimit` is a public field an operator reads as "what this deployment enforces". A
+     * limiter carrying different numbers makes that field a claim nothing backs — the same failure
+     * class as the per-replica multiplication: a number the operator believes and nothing enforces.
+     */
+    test('a limiter enforcing other numbers than the app declared refuses at defineAuth', () => {
+      const clock = frozenClock(0);
+      const generous = shared(clock, { maxAttempts: 50 });
+      expect(() =>
+        defineAuth({
+          adapter: new MemoryAdapter(),
+          clock,
+          limiter: generous,
+          rateLimit: { maxAttempts: 5, scope: 'shared' },
+        }),
+      ).toThrow(/X_AUTH_LIMITER_POLICY_MISMATCH/);
+    });
+
+    test('the same numbers on both sides boot, and every field is compared', () => {
+      const clock = frozenClock(0);
+      const declared = { maxAttempts: 3, windowMs: 60_000, lockoutMs: 120_000 };
+      expect(() =>
+        defineAuth({
+          adapter: new MemoryAdapter(),
+          clock,
+          limiter: shared(clock, declared),
+          rateLimit: { ...declared, scope: 'shared' },
+        }),
+      ).not.toThrow();
+
+      for (const drift of [{ windowMs: 60_001 }, { lockoutMs: 1 }, { maxAttempts: 4 }]) {
+        expect(() =>
+          defineAuth({
+            adapter: new MemoryAdapter(),
+            clock,
+            limiter: shared(clock, { ...declared, ...drift }),
+            rateLimit: { ...declared, scope: 'shared' },
+          }),
+        ).toThrow(/X_AUTH_LIMITER_POLICY_MISMATCH/);
+      }
+    });
+
+    // `maxKeys` bounds one process' table, so a shared limiter has no opinion on it and the
+    // in-memory default carries one. Comparing it would refuse a correct pairing.
+    test('maxKeys is not compared: it bounds a local table, it is not a limit', () => {
+      const clock = frozenClock(0);
+      expect(() =>
+        defineAuth({
+          adapter: new MemoryAdapter(),
+          clock,
+          limiter: shared(clock, { maxKeys: 7 }),
+          rateLimit: { scope: 'shared', maxKeys: 90_000 },
+        }),
+      ).not.toThrow();
     });
   });
 

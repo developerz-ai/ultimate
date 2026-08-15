@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5aa675c053d711e8ba759595323cdb0e03f75b4698b6454316ada177e37f1a6a",
+  "buildId": "1129b32fb009f2c391955cce64786c15436dc0334f0485359bb3c7adb6986d18",
   "tiers": {
     "0": [
       "core",
@@ -362,6 +362,11 @@
     },
     {
       "code": "X_AUTH_LIMITER_NOT_SHARED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_LIMITER_POLICY_MISMATCH",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },

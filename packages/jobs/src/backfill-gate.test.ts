@@ -7,6 +7,7 @@ import type { Environment } from '@ultimat3/core';
 import { checkBackfillEnvironment, gateBackfill } from './backfill-gate';
 import type { BackfillProgress } from './backfill-inspect';
 import type { BackfillDeclaration } from './backfill-registry';
+import { BackfillEnvironmentError } from './errors';
 
 const declaration = (over: Partial<BackfillDeclaration> = {}): BackfillDeclaration => ({
   kind: 'backfill',
@@ -55,9 +56,21 @@ describe('unit · the environment check', () => {
     expect(error?.code).toBe('X_BACKFILL_ENVIRONMENT');
     expect(error?.cause).toContain('production');
     expect(error?.cause).toContain('development');
-    // A staging rehearsal is correct practice, so the fix offers BOTH edits.
-    expect(error?.fix).toContain('ULTIMATE_ENV');
-    expect(error?.fix).toContain('environments');
+    // ONE runnable line. A `fix:` is copied and run verbatim, so the alternative edit — adding this
+    // environment to the declaration — is stated in `cause`, which is read and never executed.
+    expect(error?.fix).toBe('ULTIMATE_ENV=production x db backfill rewrite-titles --write --json');
+    expect(error?.cause).toContain('environments');
+  });
+
+  test('a public constructor handed no environments still answers with a runnable command', () => {
+    // Unreachable through `checkBackfillEnvironment` — an empty list means every environment — but
+    // the class is exported, and `ULTIMATE_ENV=undefined …` is not a command.
+    const error = new BackfillEnvironmentError({
+      backfill: 'rewrite-titles',
+      environment: 'test',
+      declared: [],
+    });
+    expect(error.fix).toBe('x db backfill --pending --json');
   });
 
   test('a staging rehearsal is a declaration, not an exception the framework grants', () => {
@@ -106,11 +119,14 @@ describe('unit · the gate', () => {
     expect(verdict).toEqual({ run: true });
   });
 
-  test('a completed pass refuses without --force, and the fix is the flag', () => {
+  test('a completed pass refuses without --force, and the fix is one runnable line', () => {
     const verdict = gate({ completed: completedRun() });
     expect(verdict.run).toBe(false);
     expect(verdict.run === false ? verdict.error.code : undefined).toBe('X_BACKFILL_APPLIED');
-    expect(verdict.run === false ? verdict.error.fix : '').toContain('--force');
+    // No prose after the command: a trailing clause makes the copied line a syntax error.
+    expect(verdict.run === false ? verdict.error.fix : '').toBe(
+      'x db backfill rewrite-titles --write --force --json',
+    );
     // The ISO the ledger's own projection would print — no zone to get wrong.
     expect(verdict.run === false ? verdict.error.cause : '').toContain(
       new Date(2_000).toISOString(),
