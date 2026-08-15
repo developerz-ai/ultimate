@@ -8,7 +8,7 @@ A full-stack, **Bun-only**, opinionated web framework. Rails' philosophy on a Bu
 
 Rails' actual promise, applied to agents: **reduce the number of problems the author has to worry about**, so the work goes into the app's features instead of the app's infrastructure. Every decision the framework makes is a decision an agent does not have to.
 
-This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x` CLI, the docs, the public site, and one reference app.
+This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x` CLI, the docs, the public site, and two reference apps.
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
@@ -75,6 +75,7 @@ Run everything from the repo root. Prefer `bun run verify` before claiming work 
 ```
 packages/       the framework — one package per responsibility, tiered (see below)
 examples/dummy/ the reference app: every primitive, once, idiomatically
+dummy/social-media-clone/  the deployed demo app: production image built on every push to main
 docs/idea/      what and why — the design spec
 docs/architecture/  how it's built — internals
 docs/ops/       running an app for real — PaaS → Compose → K8s, secrets, observability, runbooks
