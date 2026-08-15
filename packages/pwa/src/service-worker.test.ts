@@ -4,6 +4,7 @@ import { PwaNoOfflineFallbackError, SwScopeInvalidError } from './errors';
 import type { ServiceWorkerConfig } from './service-worker';
 import { generateServiceWorker } from './service-worker';
 import type { PwaRoute } from './strategies';
+import { cacheNamespace } from './version-skew';
 
 const routes: readonly PwaRoute[] = [
   {
@@ -113,5 +114,197 @@ describe('generateServiceWorker', () => {
     expect(() =>
       generateServiceWorker(routes, { ...config, swPath: '/assets/sw.js', scope: '/' }, 'build-1'),
     ).toThrow(SwScopeInvalidError);
+  });
+});
+
+/**
+ * The emitted `sw.js` run for real. Every other test here asserts the *text* of the artifact;
+ * this one executes it against stub `caches`/`fetch` so a precache entry keyed where no
+ * strategy looks for it is a failing test rather than an offline page nobody sees until
+ * production.
+ */
+type SwListener = (event: SwEvent) => void;
+
+interface SwEvent {
+  readonly request?: Request;
+  waitUntil(work: Promise<unknown>): void;
+  respondWith(work: Promise<Response>): void;
+}
+
+const SW_ORIGIN = 'https://app.test';
+
+/** A service worker resolves a relative URL against its scope; Bun's global `Request` cannot. */
+class SwRequest extends Request {
+  constructor(input: Request | string, init?: RequestInit) {
+    super(typeof input === 'string' ? new URL(input, SW_ORIGIN).href : input, init);
+  }
+}
+
+/** Keyed by absolute URL, exactly as `Cache` is with `ignoreSearch` at its default `false`. */
+class StubCache {
+  readonly entries = new Map<string, Response>();
+  #fetch: (request: Request) => Promise<Response>;
+
+  constructor(fetcher: (request: Request) => Promise<Response>) {
+    this.#fetch = fetcher;
+  }
+
+  #key(request: Request | string): string {
+    return typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
+  }
+
+  async match(request: Request | string): Promise<Response | undefined> {
+    return this.entries.get(this.#key(request));
+  }
+
+  async put(request: Request | string, response: Response): Promise<void> {
+    this.entries.set(this.#key(request), response);
+  }
+
+  async delete(request: Request | string): Promise<boolean> {
+    return this.entries.delete(this.#key(request));
+  }
+
+  /** All-or-nothing, like the real one: a non-ok response rejects the whole install. */
+  async addAll(requests: readonly Request[]): Promise<void> {
+    const responses = await Promise.all(requests.map((request) => this.#fetch(request)));
+    responses.forEach((response, i) => {
+      if (!response.ok) throw new TypeError('addAll: request failed');
+      const request = requests[i];
+      if (request !== undefined) this.entries.set(request.url, response);
+    });
+  }
+}
+
+function swHarness() {
+  const fetched: string[] = [];
+  let offline = false;
+  const fetcher = async (request: Request | string): Promise<Response> => {
+    const url = typeof request === 'string' ? request : request.url;
+    fetched.push(url);
+    if (offline) throw new TypeError('network down');
+    return new Response(`bytes for ${new URL(url).pathname}`, { status: 200 });
+  };
+
+  const caches = new Map<string, StubCache>();
+  const cacheStorage = {
+    async open(name: string): Promise<StubCache> {
+      const existing = caches.get(name);
+      if (existing !== undefined) return existing;
+      const created = new StubCache(fetcher);
+      caches.set(name, created);
+      return created;
+    },
+    async keys(): Promise<string[]> {
+      return [...caches.keys()];
+    },
+    async delete(name: string): Promise<boolean> {
+      return caches.delete(name);
+    },
+  };
+
+  const listeners = new Map<string, SwListener>();
+  const self = {
+    location: { origin: SW_ORIGIN },
+    addEventListener(type: string, listener: SwListener): void {
+      listeners.set(type, listener);
+    },
+    clients: { claim: async (): Promise<void> => undefined, matchAll: async () => [] },
+    skipWaiting: (): void => undefined,
+  };
+
+  return {
+    caches,
+    fetched,
+    goOffline: (): void => {
+      offline = true;
+    },
+    load(source: string): void {
+      const factory = new Function('self', 'caches', 'fetch', 'Request', source) as (
+        scope: typeof self,
+        storage: typeof cacheStorage,
+        fetcher: (request: Request | string) => Promise<Response>,
+        request: typeof SwRequest,
+      ) => void;
+      factory(self, cacheStorage, fetcher, SwRequest);
+    },
+    async install(): Promise<void> {
+      let work: Promise<unknown> = Promise.resolve();
+      listeners.get('install')?.({
+        waitUntil: (p) => {
+          work = p;
+        },
+        respondWith: () => undefined,
+      });
+      await work;
+    },
+    async request(path: string): Promise<Response> {
+      let answer: Promise<Response> | undefined;
+      listeners.get('fetch')?.({
+        request: new SwRequest(path),
+        waitUntil: () => undefined,
+        respondWith: (p) => {
+          answer = p;
+        },
+      });
+      if (answer === undefined) throw new Error(`no handler answered ${path}`);
+      return await answer;
+    },
+  };
+}
+
+describe('the emitted install block, executed', () => {
+  const precached: readonly PwaRoute[] = [
+    { path: '/', surface: 'site', mode: 'static', offline: 'precache', revision: 'aaaa1111' },
+    {
+      path: '/pricing',
+      surface: 'site',
+      mode: 'static',
+      offline: 'precache',
+      revision: 'bbbb2222',
+    },
+  ];
+
+  test('keys every precached entry under the bare URL, which is where strategies look', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    await sw.install();
+
+    const cache = sw.caches.get(cacheNamespace('build-1', 'precache'));
+    expect([...(cache?.entries.keys() ?? [])].sort()).toEqual([
+      'https://app.test/',
+      'https://app.test/offline',
+      'https://app.test/pricing',
+    ]);
+  });
+
+  test('fetches each entry revision-addressed, so a deploy re-downloads only what changed', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    await sw.install();
+
+    expect(sw.fetched).toContain('https://app.test/pricing?v=bbbb2222');
+  });
+
+  // The measured failure: offline, `cacheFirst` looked up `/pricing`, the entry was stored as
+  // `/pricing?v=bbbb2222`, and the user got the offline document instead of the precached page.
+  test('serves a precached page offline instead of the offline fallback', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    await sw.install();
+    sw.goOffline();
+
+    expect(await (await sw.request('/pricing')).text()).toBe('bytes for /pricing');
+  });
+
+  // Online, the same miss cost a second download of every precached byte.
+  test('answers online from the precache without a second network request', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker(precached, config, 'build-1').source);
+    await sw.install();
+    const afterInstall = sw.fetched.length;
+
+    await sw.request('/pricing');
+    expect(sw.fetched).toHaveLength(afterInstall);
   });
 });

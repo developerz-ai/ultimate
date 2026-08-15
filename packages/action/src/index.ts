@@ -44,6 +44,7 @@ export {
   ActionDeniedError,
   ActionDuplicateError,
   ActionForeignError,
+  ActionPathDuplicateError,
   ActionPolicyMissingError,
   ActionUnregisteredError,
   ContractDriftError,

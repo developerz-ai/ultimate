@@ -3,7 +3,12 @@ import type { Clock } from '@ultimat3/core';
 import { StepDuplicateError } from './errors';
 import { createMemoryEventBus } from './events';
 import type { StepStore } from './steps';
-import { createMemoryStepStore, createStepRunner, isStepSuspension } from './steps';
+import {
+  createMemoryStepStore,
+  createStepRunner,
+  isStepSuspension,
+  MAX_TRACE_NAMES,
+} from './steps';
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   let current = startMs;
@@ -296,5 +301,48 @@ describe('a step timeout cancels the body it is timing', () => {
     await expect(running).rejects.toThrow(/X_ABORTED/);
 
     expect(observed?.aborted).toBe(true);
+  });
+});
+
+describe('the attempt trace is bounded, and duplicate detection is not', () => {
+  // `Array.includes` per claim made a long run quadratic: 20,000 steps is ~200M string compares
+  // plus a 20,000-entry array carried to the end of the run and read by `x jobs show`.
+  test('keeps the most recent MAX_TRACE_NAMES names, not one per step', async () => {
+    const runner = createStepRunner({ runId: 'run-long', jobName: 'sweep', store });
+
+    for (let i = 0; i < MAX_TRACE_NAMES * 3; i += 1) {
+      await runner.step.run(`batch:${i}`, () => i);
+    }
+
+    const used = runner.usedNames();
+    expect(used).toHaveLength(MAX_TRACE_NAMES);
+    expect(used[used.length - 1]).toBe(`batch:${MAX_TRACE_NAMES * 3 - 1}`);
+  });
+
+  // The trace forgetting a name must never make it re-claimable: the store is keyed by it.
+  test('still refuses a duplicate whose name scrolled out of the trace', async () => {
+    const runner = createStepRunner({ runId: 'run-dup', jobName: 'sweep', store });
+
+    await runner.step.run('batch:0', () => 0);
+    for (let i = 1; i <= MAX_TRACE_NAMES * 2; i += 1) {
+      await runner.step.run(`batch:${i}`, () => i);
+    }
+
+    expect(runner.usedNames()).not.toContain('batch:0');
+    await expect(runner.step.run('batch:0', () => 0)).rejects.toThrow(StepDuplicateError);
+  });
+
+  test('bounds the replay trace the same way', async () => {
+    const first = createStepRunner({ runId: 'run-replay', jobName: 'sweep', store });
+    for (let i = 0; i < MAX_TRACE_NAMES + 10; i += 1) {
+      await first.step.run(`batch:${i}`, () => i);
+    }
+
+    const second = createStepRunner({ runId: 'run-replay', jobName: 'sweep', store });
+    for (let i = 0; i < MAX_TRACE_NAMES + 10; i += 1) {
+      await second.step.run(`batch:${i}`, () => i);
+    }
+
+    expect(second.replayedNames()).toHaveLength(MAX_TRACE_NAMES);
   });
 });

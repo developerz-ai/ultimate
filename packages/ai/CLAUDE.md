@@ -78,13 +78,24 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate.
 - Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
   `output_config`. All 400s otherwise.
+- **`MODEL_IDS` is ordered MOST CAPABLE FIRST, and `moreCapableThan` is the only reader of that
+  order.** A refusal is worth retrying upward and nowhere else: `MODEL_IDS.find((id) => id !==
+  refused)` answered a refusal on the default model with the next entry DOWN, so `X_LLM_REFUSED`'s
+  fix line told an operator to buy the same refusal from a weaker model. The ladder needs no
+  second list — the ordering is the catalogue's own, and `models.test.ts` pins it against the
+  prices. When there is no rung above, `alternative` is `undefined` and the fix line drops the
+  suggestion rather than inventing a downgrade.
 - **The reasoning half of the body is PER MODEL, and `models.ts` owns which model takes what.**
   `output_config.effort` and adaptive thinking arrived with 4.6, so one body sent to the whole
   catalogue is a guaranteed 400 on the oldest entry — which is how `claude-haiku-4-5` shipped
   blessed and uncallable. A control the caller never asked for is omitted; a control they DID
   ask for is refused locally with `X_AI_REQUEST_INVALID`, never dropped, because a declaration
   reading `effort: 'max'` that quietly runs at the default is the failure nobody can see. Adding
-  a model is a row in `MODELS`, never an `if` in the request builder.
+  a model is a row in `MODELS`, never an `if` in the request builder. Omission is literal: an
+  absent `thinking` sends no block at all, where `(thinking ?? 'adaptive')` sent an adaptive one
+  for every adaptive-capable model — harmless on the wire, since adaptive is the server default,
+  but it made a defaulted control indistinguishable from a declared one, which is the whole
+  distinction this rule draws.
 - Model IDs are exact aliases. Never append a date suffix.
 - The introductory price on a model is deliberately not modelled. A price that lapses on a date
   makes a recorded cost depend on when it was read, and under-reporting spend after the lapse is

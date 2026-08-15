@@ -7,6 +7,7 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 export const REALTIME_OWNED_ERROR_CODES = [
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
+  'X_SUBSCRIPTION_ID_TAKEN',
   'X_PROTOCOL_VERSION',
   'X_CURSOR_STALE',
   'X_REBASE_CONFLICT',
@@ -51,6 +52,7 @@ export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
   ...POLICY_DENIAL_CODES,
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
+  'X_SUBSCRIPTION_ID_TAKEN',
   'X_PROTOCOL_VERSION',
   'X_LIVE_QUERY_UNKNOWN',
   'X_CURSOR_STALE',
@@ -90,6 +92,7 @@ export type RealtimeErrorCode = (typeof REALTIME_ERROR_CODES)[number];
 export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, string>> = {
   X_TOPIC_FORBIDDEN: 'the actor may not subscribe to this topic',
   X_SUBSCRIPTION_LIMIT: 'socket or tenant hit its subscription cap',
+  X_SUBSCRIPTION_ID_TAKEN: 'a subscribe frame reused a sid this socket already holds',
   X_PROTOCOL_VERSION: 'client and sync node disagree on the wire protocol',
   X_CURSOR_STALE: 'the resume LSN is outside the change buffer',
   X_REBASE_CONFLICT: 'a local mutation could not be rebased',
@@ -144,6 +147,21 @@ export class SubscriptionLimitError extends RealtimeError {
       code: 'X_SUBSCRIPTION_LIMIT',
       cause: `${args.scope} ${args.id} reached the subscription cap of ${args.limit}`,
       fix: `raise realtime.limits.${args.scope === 'socket' ? 'perSocket' : 'perTenant'} in app.config.ts, or unsubscribe unused live queries`,
+    });
+  }
+}
+
+/**
+ * The client chose a subscription id it is already using on this socket. Refused rather than
+ * replaced: attaching over it would strand the earlier subscription inside its query entry, where
+ * nothing can unsubscribe it and the entry's matcher and shared window are never freed.
+ */
+export class SubscriptionIdTakenError extends RealtimeError {
+  constructor(args: { sid: string; socketId: string }) {
+    super({
+      code: 'X_SUBSCRIPTION_ID_TAKEN',
+      cause: `socket ${args.socketId} already holds a live subscription with sid "${args.sid}"`,
+      fix: 'send a fresh sid with each subscribe frame — crypto.randomUUID() is what the bundled client uses',
     });
   }
 }

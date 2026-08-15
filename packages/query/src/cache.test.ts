@@ -1,21 +1,17 @@
 // Single responsibility: tests for the read path's one guarantee — a key is read once per
-// request. Concurrency is the half that used to be missing: the memo holds the read *in flight*,
+// request. The tier it fills through is `read-cache.test.ts`; what is proved here is how many
+// times the read path reaches for it.
+// Concurrency is the half that used to be missing: the memo holds the read *in flight*,
 // not its value, or two readers arriving in the same tick both miss and both execute. The same
 // shape is what lets a legitimately `undefined` result memoize, and the failure case is here
 // because a promise-keyed memo can hold a rejection forever if nobody evicts it.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { CacheTag } from '@ultimat3/cache';
 import { createContext } from '@ultimat3/core';
-import type { ReadCache, ReadCacheEntry } from './cache';
-import {
-  getReadCache,
-  MemoryReadCache,
-  readFresh,
-  readOnce,
-  readThrough,
-  requestMemo,
-  setReadCache,
-} from './cache';
+import { readFresh, readOnce, readThrough, requestMemo } from './cache';
+import type { ReadCache, ReadCacheEntry } from './read-cache';
+import { getReadCache, MemoryReadCache, setReadCache } from './read-cache';
 
 /** Counts the tier round trips a read costs, so "one round trip" is a number, not a claim. */
 class CountingCache implements ReadCache {
@@ -37,6 +33,10 @@ class CountingCache implements ReadCache {
 
   async delete(key: string): Promise<void> {
     await this.#entries.delete(key);
+  }
+
+  async invalidateTags(tags: readonly CacheTag[]): Promise<readonly string[]> {
+    return await this.#entries.invalidateTags(tags);
   }
 }
 
@@ -289,7 +289,7 @@ describe('readThrough', () => {
     expect(ttl?.value).toBe('rows');
     expect(ttl?.expiresAt).toBeGreaterThanOrEqual(before + 60_000);
     expect(ttl?.expiresAt).toBeLessThanOrEqual(after + 60_000);
-    expect(forever).toEqual({ value: 'rows', expiresAt: null });
+    expect(forever).toEqual({ value: 'rows', expiresAt: null, tags: [] });
     expect(tier.writes).toHaveLength(2);
   });
 
@@ -391,19 +391,5 @@ describe('readFresh', () => {
 
     expect(await failing).toBe('Error: boom');
     expect(await requestMemo(ctx).get('k')).toBe('newer');
-  });
-});
-
-describe('MemoryReadCache', () => {
-  test('drops an entry whose expiry has passed, and keeps one that has not', async () => {
-    const memory = new MemoryReadCache();
-    // One `now` for the write and for the assertion, and a horizon no test machine crosses: a
-    // millisecond ticking between the two would expire the live entry for the clock's reasons.
-    const now = Date.now();
-    await memory.set('stale', { value: 'rows', expiresAt: now - 1 });
-    await memory.set('live', { value: 'rows', expiresAt: now + 60_000 });
-
-    expect(await memory.get('stale')).toBeUndefined();
-    expect(await memory.get('live')).toEqual({ value: 'rows', expiresAt: now + 60_000 });
   });
 });

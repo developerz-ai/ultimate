@@ -225,13 +225,18 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
 
 ## Errors
 
-`X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
+`X_TOPIC_FORBIDDEN` · `X_SUBSCRIPTION_LIMIT` · `X_SUBSCRIPTION_ID_TAKEN` ·
+`X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
 `X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.
+
+A `sid` belongs to the socket that chose it. A subscription is keyed by `(socket, sid)`, a drop
+frame is scoped to the socket that sent it, and reusing a sid the same socket already holds is
+`X_SUBSCRIPTION_ID_TAKEN` — one client can neither take over nor end another's live stream.
 
 A `subscribe` frame naming a query this node never registered is `X_LIVE_QUERY_UNKNOWN`, not
 `X_PROTOCOL_VERSION`: the frame parsed and the version matched, so "rebuild and redeploy the

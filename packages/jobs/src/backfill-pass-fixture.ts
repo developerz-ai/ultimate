@@ -15,6 +15,19 @@ import { createMemoryDriver } from './driver-memory';
 import type { StepRecord, StepStore } from './steps';
 import { createMemoryStepStore, createStepRunner } from './steps';
 
+/**
+ * What a failing `handle` raises. Deliberately NOT an `UltimateError`: a backfill handler is app
+ * code, the pass propagates whatever it threw, and a fixture raising a framework code would
+ * exercise a path no app takes. Named rather than anonymous so a suite can assert on the type.
+ * A `-fixture.ts` file is excluded from the package tarball — this is test material.
+ */
+export class BackfillHandleFailure extends Error {
+  constructor(readonly index: number) {
+    super(`batch ${String(index)} failed`);
+    this.name = 'BackfillHandleFailure';
+  }
+}
+
 export const rows = entity('backfill_test_rows', {
   columns: { id: uuid().primaryKey(), orgId: uuid(), title: text({ max: 40 }) },
 });
@@ -143,7 +156,7 @@ export const harness = (
     ...(options.batch === undefined ? {} : { batch: options.batch }),
     source: () => watchedChain(table.where({ orgId: ORG }), watch),
     handle: ({ rows: page, index }) => {
-      if (state.failOn.has(index)) throw new Error(`batch ${String(index)} failed`);
+      if (state.failOn.has(index)) throw new BackfillHandleFailure(index);
       seen.push(page.map((entry) => entry.title));
     },
   });

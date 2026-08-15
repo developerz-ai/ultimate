@@ -7,7 +7,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { memoryRepo, tableFor } from '@ultimat3/entity';
 import { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
-import { ctx, harness, ORG, type Row, RUN_ID, rows } from './backfill-pass-fixture';
+import {
+  BackfillHandleFailure,
+  ctx,
+  harness,
+  ORG,
+  type Row,
+  RUN_ID,
+  rows,
+} from './backfill-pass-fixture';
 import { resetJobDriver } from './driver';
 import { resetJobs } from './job';
 import type { StepStore } from './steps';
@@ -106,7 +114,9 @@ describe('resume', () => {
     const pass = harness({ batch: 3 });
     pass.failOn = new Set([1]);
 
-    await expect(pass.run()).rejects.toThrow('batch 1 failed');
+    // The app's own failure, propagated verbatim — a named class rather than the bare `Error`
+    // this fixture used to raise from a file that shipped inside `src`.
+    await expect(pass.run()).rejects.toBeInstanceOf(BackfillHandleFailure);
 
     // Two statements: the batch that worked and the one that failed.
     expect(pass.watch.reads).toBe(2);

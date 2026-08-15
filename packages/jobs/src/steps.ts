@@ -152,17 +152,36 @@ export interface StepRunnerOptions {
 
 export interface StepRunner {
   readonly step: StepApi;
-  /** Names used in THIS attempt, in order — the trace shown by `x jobs show`. */
+  /**
+   * Names used in THIS attempt, in order — the trace shown by `x jobs show`. Bounded at
+   * `MAX_TRACE_NAMES`, oldest dropped: duplicate detection reads its own set, so this is a
+   * window on a long run and never the run's record.
+   */
   usedNames(): readonly string[];
-  /** Names that were served from storage instead of executed. */
+  /** Names that were served from storage instead of executed. Bounded the same way. */
   replayedNames(): readonly string[];
 }
 
 /** Stands in for an absent run signal, so the fence has one shape and no `undefined` branch. */
 const NEVER_ABORTED = new AbortController().signal;
 
+/**
+ * What one attempt's trace keeps. The trace is a diagnostic `x jobs show` renders, never the
+ * run's record — `driver.steps.list(runId)` is that — and a `backfill()` over a million rows
+ * claims 20,000 names in a single attempt, all of them carried to the end of the run.
+ */
+export const MAX_TRACE_NAMES = 200;
+
+/** Most recent first out: the tail of a long run is the half an operator is reading. */
+function trace(into: string[], name: string): void {
+  into.push(name);
+  if (into.length > MAX_TRACE_NAMES) into.shift();
+}
+
 export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const { runId, jobName, store } = options;
+  /** Every name this attempt has claimed. Membership only — the trace is `used`. */
+  const claimed = new Set<string>();
   const used: string[] = [];
   const replayed: string[] = [];
   const clock = options.clock;
@@ -170,8 +189,11 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const runSignal = options.signal ?? NEVER_ABORTED;
 
   const claimName = (name: string): void => {
-    if (used.includes(name)) throw new StepDuplicateError({ job: jobName, step: name });
-    used.push(name);
+    // The Set decides, the array only reports. `Array.includes` made a long run quadratic —
+    // `backfill({ batch: 50 })` over a million rows is 20,000 steps and ~200M string compares.
+    if (claimed.has(name)) throw new StepDuplicateError({ job: jobName, step: name });
+    claimed.add(name);
+    trace(used, name);
   };
 
   const cancelled = (): boolean => runSignal.aborted;
@@ -193,7 +215,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     claimName(name);
     const existing = await store.get(runId, name);
     if (existing?.status === 'completed') {
-      replayed.push(name);
+      trace(replayed, name);
       return existing.output as T;
     }
 

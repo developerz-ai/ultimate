@@ -38,6 +38,9 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 | A control the model lacks is **refused**, never dropped | a declaration reading `effort: 'max'` that quietly runs at the default is the failure nobody can see |
 | A control nobody asked for is **omitted**, never defaulted | a default sent as a request is indistinguishable on the wire from one that was declared |
 | A refusal is `X_LLM_REFUSED`, not a schema failure | it is a 200 with no answer in it, and a repair turn buys the same refusal again |
+| The refusal's `alternative` is only ever a **more capable** model | `MODEL_IDS` is ordered most-capable-first and `moreCapableThan` walks it upward; retrying a refusal on a weaker model is the one retry that cannot help, so an unbeatable model gets no suggestion at all |
+| The repair turn replays the tool call's arguments, never an empty `text` | an answer through the `respond` tool leaves `text` empty, and an empty text block is a 400 — the repair came back as `X_AI_PROVIDER_UNAVAILABLE` |
+| `reserve()` **debits** the estimate and takes a turn | three concurrent calls otherwise read the same `spent()`, all pass, and all three record against a ceiling only one of them fitted; `record` reconciles and `release` gives it back |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
 | Retries use **full jitter** | synchronised retries from N workers reproduce the rate limit |
 | A 4xx is never retried | the same body gets the same rejection and burns the budget |

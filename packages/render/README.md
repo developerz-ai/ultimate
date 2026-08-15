@@ -166,9 +166,13 @@ types-only.
   `action({ cache: { invalidates: [tag.post] } })` reaches ISR in the same hop as memo,
   LRU, Redis and the CDN, and regenerates exactly the dependent pages — nobody lists
   pages by hand, so nobody forgets one. `controller.attach()` installs it as the
-  framework's `Revalidator`.
+  framework's `Revalidator`, and the function it returns releases **both** halves — the
+  dependents and the revalidator slot, the latter only while it is still this controller's.
+  The default store (`memoryIsrStore`) is capped at `DEFAULT_ISR_MAX_ENTRIES` (1,000) pages,
+  least recently generated evicted first.
 - **`stream`** flushes the shell first, then reveals holes in completion order with a
-  ~200-byte inline script. Solid's compiled templates and signals mean the shell costs zero
+  ~200-byte inline script. A client that disconnects mid-stream cancels it: `StreamHole.resolve`
+  is handed an `AbortSignal` so the work stops, and nothing more is enqueued. Solid's compiled templates and signals mean the shell costs zero
   hydration work, so streaming buys TTFB *and* TBT here, not just TTFB.
 - **`hydrate: 'interaction'`** replays the event that woke the island; without replay the
   first click on a cold island is silently lost.

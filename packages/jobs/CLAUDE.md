@@ -189,6 +189,29 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   create the same table. A driver that ships none (`driver-redis`, `driver-nats`, a hand-rolled
   one) runs backfills with NO bookkeeping rather than refusing them: nothing blocks a completed
   name there, and that degradation is the price of one install point.
+- **`run-once` fires ONE catch-up, and the watermark is what makes it one.** `dispatch()` marks
+  the occurrence it ran; under `run-once` that is the EARLIEST missed one, so the next round found
+  the rest still due and fired the second, then the third — 24 nightly digests a second apart after
+  a day down. The branch now marks `at` after dispatching, because dropping an occurrence means
+  moving past it, and `at` rather than the last element of `due`, which `maxCatchUp` truncates.
+  `skip` still fires the latest occurrence WITHIN the cap rather than the true latest missed —
+  named in the README, unchanged here.
+- **Every timer body catches before it finalises.** `worker.ts`, `scheduler.ts` and the outbox
+  relay all spell `void work().catch(log).finally(...)`. The relay's missing `.catch` made a
+  rejected `store.claim()` an unhandled rejection, and Bun ends the process on one — with every
+  staged, unpublished row still staged.
+- **The memory outbox store DELETES a published row.** `markPublished` rewriting it in place held
+  every payload ever enqueued for the process's lifetime and made `claim()`/`pendingCount()` walk
+  all of them each tick. `retained()` is the seam that makes the bound assertable; `published_at`
+  stays a pg-only audit column.
+- **`claimName` reads a Set; `usedNames()` is a bounded window.** `Array.includes` per claim made
+  a `backfill()` over a million rows quadratic — 20,000 steps, ~200M string compares — and carried
+  a 20,000-entry array to the end of the run. The trace keeps `MAX_TRACE_NAMES` (200), most recent,
+  and duplicate detection never reads it: a name that scrolled out is still refused.
+- **A `-fixture.ts` file is test material and does not ship** (`!src/**/*-fixture.ts` in `files`).
+  `backfill-pass-fixture.ts` raises `BackfillHandleFailure`, a plain `Error` subclass on purpose:
+  a backfill `handle` is app code and the pass propagates what it threw, so a framework code there
+  would exercise a path no app takes.
 - Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.

@@ -226,6 +226,11 @@ The relay publishes *then* marks published, so a crash re-publishes — collapse
 idempotency key. Set `mode: 'required'` to make an enqueue outside a transaction an
 `X_OUTBOX_NO_TX` error instead of a direct publish.
 
+The memory store (`createMemoryOutboxStore`, `x dev` and tests) **drops** a published row —
+`retained()` is the relay's backlog, not a running total; the pg store keeps `published_at` as
+the audit trail this map is not. A relay pass that throws is logged as `jobs.outbox.tick-failed`
+and the loop re-arms: an unobserved rejection would end the process with rows still staged.
+
 ## Drivers
 
 One interface: `enqueue`, `claim` (visibility timeout), `ack`, `nack` (backoff),
@@ -261,10 +266,15 @@ non-empty string is not a timezone: `tz: 'Bogota'` would resolve every occurrenc
 run five hours off, silently, forever. `0 3 * * *` in a DST zone runs twice or zero times on
 the switch day. Catch-up after downtime is explicit: `skip` (default) fires the latest missed
 occurrence and drops the older ones, `run-once` fires the earliest missed one, `run-all` fires
-every one of them. `maxCatchUp` (default 10) bounds EVERY mode, not just `run-all`: one tick
-walks at most that many occurrences forward from the last fire, and the policy then picks from
-what that walk found — so after a long outage `skip` fires the latest occurrence *within the
-cap*, and `run-once` the earliest one, not the true latest/earliest missed.
+every one of them. `maxCatchUp` (default 10) bounds the WALK for every mode, not just `run-all`:
+one tick walks at most that many occurrences forward from the last fire, and the policy then
+picks from what that walk found — so after a long outage `skip` fires the latest occurrence
+*within the cap*, not the true latest missed.
+
+`run-once` fires **once**, not once per tick. Dropping the rest means the watermark passes them
+too, so a scheduler back up after a day down enqueues one catch-up and then waits for the next
+real occurrence. It used to leave the watermark on the occurrence it had just run, which made an
+hourly task fire 24 catch-ups a second apart.
 
 ## Retries
 

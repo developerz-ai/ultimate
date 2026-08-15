@@ -1,61 +1,15 @@
 /**
- * Read caching, two layers: a per-request memo (`readOnce` — same query twice in one render
- * costs one execution, whether the second read follows the first or races it) and, for a query
- * that declares `cache:`, a tag-keyed tier behind the `ReadCache` interface (`readThrough`).
- * Every read gets the memo; the tier is the half a query opts into. Invalidation is never
- * local — it goes through @ultimat3/cache so an action's `invalidates` and a query's `tags`
- * meet in one graph.
+ * The read path: a per-request memo (`readOnce` — same query twice in one render costs one
+ * execution, whether the second read follows the first or races it) and, for a query that
+ * declares `cache:`, the fill through the tier `read-cache.ts` owns (`readThrough`). Every read
+ * gets the memo; the tier is the half a query opts into.
  */
 
 import type { CacheTag } from '@ultimat3/cache';
-import { invalidateTags } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';
+import { getReadCache } from './read-cache';
 import { fingerprint } from './stable';
 import { tagKeys } from './tags';
-
-export interface ReadCacheEntry {
-  readonly value: unknown;
-  readonly expiresAt: number | null;
-}
-
-export interface ReadCache {
-  get(key: string): Promise<ReadCacheEntry | undefined>;
-  set(key: string, entry: ReadCacheEntry): Promise<void>;
-  delete(key: string): Promise<void>;
-}
-
-/** In-memory default. Production installs the tiered cache from @ultimat3/cache. */
-export class MemoryReadCache implements ReadCache {
-  readonly #entries = new Map<string, ReadCacheEntry>();
-
-  async get(key: string): Promise<ReadCacheEntry | undefined> {
-    const entry = this.#entries.get(key);
-    if (entry === undefined) return undefined;
-    if (entry.expiresAt !== null && entry.expiresAt <= Date.now()) {
-      this.#entries.delete(key);
-      return undefined;
-    }
-    return entry;
-  }
-
-  async set(key: string, entry: ReadCacheEntry): Promise<void> {
-    this.#entries.set(key, entry);
-  }
-
-  async delete(key: string): Promise<void> {
-    this.#entries.delete(key);
-  }
-}
-
-let tier: ReadCache = new MemoryReadCache();
-
-export function setReadCache(cache: ReadCache): void {
-  tier = cache;
-}
-
-export function getReadCache(): ReadCache {
-  return tier;
-}
 
 /**
  * Request-scoped memo. Keyed by ctx identity so it dies with the request.
@@ -129,27 +83,36 @@ async function publish<T>(
   }
 }
 
-/** Memo first, then the tier, then the source — what a query with `cache:` reads through. */
+/**
+ * Memo first, then the tier, then the source — what a query with `cache:` reads through.
+ *
+ * `tags` is what the written entry is dropped by; an entry stored without them is reachable
+ * only by its key and can therefore only expire.
+ */
 export function readThrough<T>(
   ctx: Ctx,
   key: string,
   ttlMs: number | null,
   run: () => Promise<T>,
+  tags: readonly CacheTag[] = [],
 ): Promise<T> {
-  return readOnce(ctx, key, () => fill(key, ttlMs, run));
+  return readOnce(ctx, key, () => fill(key, ttlMs, tags, run));
 }
 
 /** The read itself — tier, then the source. Runs once per key per request; the rest join it. */
-async function fill<T>(key: string, ttlMs: number | null, run: () => Promise<T>): Promise<T> {
+async function fill<T>(
+  key: string,
+  ttlMs: number | null,
+  tags: readonly CacheTag[],
+  run: () => Promise<T>,
+): Promise<T> {
+  // Read per call, never captured: `setReadCache` after the first read has to be honoured, and a
+  // module-level binding here would be a second handle on a tier the seam exists to swap.
+  const tier = getReadCache();
   const cached = await tier.get(key);
   if (cached !== undefined) return cached.value as T;
 
   const value = await run();
-  await tier.set(key, { value, expiresAt: ttlMs === null ? null : Date.now() + ttlMs });
+  await tier.set(key, { value, expiresAt: ttlMs === null ? null : Date.now() + ttlMs, tags });
   return value;
-}
-
-/** The one invalidation path. Actions call the same function via their `cache`. */
-export async function invalidateQueryTags(tags: readonly CacheTag[]): Promise<void> {
-  await invalidateTags(tags);
 }

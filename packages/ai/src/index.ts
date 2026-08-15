@@ -89,7 +89,14 @@ export type {
 } from './llm';
 export { llm } from './llm';
 export type { Effort, ModelId, ModelReasoning, ModelSpec, ThinkingMode } from './models';
-export { DEFAULT_MODEL, EFFORTS, MODEL_IDS, MODELS, reasoningBody } from './models';
+export {
+  DEFAULT_MODEL,
+  EFFORTS,
+  MODEL_IDS,
+  MODELS,
+  moreCapableThan,
+  reasoningBody,
+} from './models';
 export type { PgVectorStoreInput } from './pg-vector';
 export { PgVectorStore } from './pg-vector';
 export type {

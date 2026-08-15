@@ -104,6 +104,20 @@ export const MODELS: Readonly<Record<ModelId, ModelSpec>> = {
 const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
 
 /**
+ * The blessed model one rung ABOVE `model`, or `undefined` when it is already the most capable
+ * one this catalogue holds. `MODEL_IDS` is ordered most-capable-first — "the others are explicit
+ * downgrades" — so the ladder needs no second list to walk.
+ *
+ * A refusal is only worth retrying UPWARD. `MODEL_IDS.find((id) => id !== refused)` answered a
+ * refusal on the default model with the next entry DOWN, which is the one retry that cannot help:
+ * the fix line told an operator to buy the same refusal from a weaker model.
+ */
+export function moreCapableThan(model: ModelId): ModelId | undefined {
+  const at = MODEL_IDS.indexOf(model);
+  return at <= 0 ? undefined : MODEL_IDS[at - 1];
+}
+
+/**
  * The reasoning half of a Messages body, shaped for one model. Everything it refuses, it refuses
  * LOCALLY with a real code — a round trip to learn a rule this file already states costs latency
  * and teaches nothing, and the provider's own message names the field rather than the fix.
@@ -143,12 +157,16 @@ export function reasoningBody(
     return body;
   }
 
-  if ((thinking ?? 'adaptive') === 'disabled') {
+  if (thinking === 'disabled') {
     assertDisableAllowed(model, rules, effort ?? 'high');
     body['thinking'] = { type: 'disabled' };
     return body;
   }
-  body['thinking'] = { type: 'adaptive', display: 'summarized' };
+  // Nothing asked for, nothing sent — the rule this file states, now the rule it follows.
+  // Adaptive is the server's own default on every model that has it, so emitting the block
+  // unrequested bought nothing and made a defaulted control indistinguishable on the wire from
+  // a declared one.
+  if (thinking === 'adaptive') body['thinking'] = { type: 'adaptive', display: 'summarized' };
   return body;
 }
 

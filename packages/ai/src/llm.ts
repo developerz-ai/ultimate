@@ -26,7 +26,7 @@ import { BudgetLedger, currentBudget, withBudget } from './budget';
 import { embedOne, fnv1a } from './embeddings';
 import { LlmOutputInvalidError, LlmRefusedError, LlmTruncatedError } from './errors';
 import type { ModelId } from './models';
-import { DEFAULT_MODEL, MODEL_IDS } from './models';
+import { DEFAULT_MODEL, moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { aiEmbedder, aiGateway, semanticCacheFor } from './runtime';
@@ -187,9 +187,10 @@ async function generate<
           throw new LlmRefusedError({
             prompt: name,
             model: result.model,
-            // The fix names a model the caller can paste. `<another model>` is not one, and a
-            // refusal is exactly the moment nobody wants to go read the catalogue.
-            alternative: MODEL_IDS.find((id) => id !== result.model) ?? DEFAULT_MODEL,
+            // The fix names a model the caller can paste, and only ever a MORE capable one:
+            // "the first id that differs" answered a refusal on the default model with the next
+            // entry down the ladder, which is a retry that cannot succeed.
+            alternative: moreCapableThan(result.model),
             category: result.stopDetails?.category,
             explanation: result.stopDetails?.explanation,
           });
@@ -205,7 +206,11 @@ async function generate<
           throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
         }
         issues = formatIssues(parsed.issues).join('; ');
-        messages = [...messages, { role: 'assistant', content: result.text }, repair(issues)];
+        const echo = assistantEcho(result);
+        messages =
+          echo === undefined
+            ? [...messages, repair(issues)]
+            : [...messages, { role: 'assistant', content: echo }, repair(issues)];
       }
       throw new LlmOutputInvalidError({ prompt: name, attempts: ATTEMPTS, issues });
     });
@@ -249,6 +254,25 @@ function respondToolFor(output: StandardSchemaV1): LlmTool {
     input_schema: toMcpInputSchema(output),
     strict: true,
   };
+}
+
+/**
+ * What the model answered, as text the Messages API will accept — or nothing.
+ *
+ * `result.text` is the EMPTY STRING whenever the answer came through the `respond` tool, which
+ * is the dominant path: an empty text block is a 400 (`text content blocks must be non-empty`),
+ * so the repair turn came back as `X_AI_PROVIDER_UNAVAILABLE` and the caller never saw the
+ * `X_LLM_OUTPUT_INVALID` this loop exists to raise. The tool call's own arguments ARE the answer
+ * in that case, and replaying them is what gives the repair turn its context — `AiMessage`
+ * carries a string, so the `tool_use` block cannot survive the round trip as itself, and
+ * replaying it as text avoids the `tool_result` the API would then demand of the next message.
+ */
+function assistantEcho(result: GenerateResult): string | undefined {
+  if (result.text !== '') return result.text;
+  const call = result.toolCalls.find((c) => c.name === RESPOND) ?? result.toolCalls[0];
+  if (call === undefined) return undefined;
+  const replayed = JSON.stringify(call.input);
+  return replayed === undefined || replayed === '' ? undefined : replayed;
 }
 
 /**

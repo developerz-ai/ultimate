@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { BudgetStore } from './budget';
 import { BudgetLedger, estimateSpend, MemoryBudgetStore } from './budget';
 import type { GenerateRequest } from './provider';
 
@@ -105,10 +106,13 @@ describe('derive tightens, never widens', () => {
     const parent = new BudgetLedger({ limits: { actor: 1_000 }, actorKey: 'actor:u1', store });
     const child = parent.derive({ costPerCall: usd(500) });
 
-    await child.reserve(estimateSpend(request('hi')));
+    // The reservation is handed to `record`, so the estimate it debited is reconciled away and
+    // what remains is the provider's real count.
+    const reservation = await child.reserve(estimateSpend(request('hi')));
     await child.record(
       { inputTokens: 900, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 },
       usd(1),
+      reservation,
     );
     expect(store.spent('actor:u1')).toBe(950);
     await expect(child.reserve(estimateSpend(request('hi')))).rejects.toMatchObject({
@@ -118,8 +122,86 @@ describe('derive tightens, never widens', () => {
 
   test('an unset scope on either side stays unset rather than defaulting to zero', async () => {
     const child = new BudgetLedger({ limits: {} }).derive({});
-    await expect(
-      child.reserve(estimateSpend(request('x'.repeat(100_000)))),
-    ).resolves.toBeUndefined();
+    await expect(child.reserve(estimateSpend(request('x'.repeat(100_000))))).resolves.toMatchObject(
+      { tokens: expect.any(Number) },
+    );
+  });
+});
+
+describe('the ceiling holds under parallelism', () => {
+  /** A store whose `spent` yields to the loop, so three reads can genuinely interleave. */
+  function slowStore(): BudgetStore & { read(key: string): number } {
+    const inner = new MemoryBudgetStore();
+    return {
+      async spent(key: string): Promise<number> {
+        await Promise.resolve();
+        return inner.spent(key);
+      },
+      add: (key, tokens) => inner.add(key, tokens),
+      reset: (key) => inner.reset(key),
+      read: (key) => inner.spent(key),
+    };
+  }
+
+  // Measured: `budget: { actor: 10_000 }` and three concurrent calls estimating ~4k tokens each
+  // all read `spent() === 0`, all passed, and 12k was recorded against a 10k ceiling.
+  test('three concurrent reserves cannot all pass one actor ceiling', async () => {
+    const store = slowStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+    const call = () => ledger.reserve(estimateSpend(request('hi', 4_000)));
+
+    const outcomes = await Promise.allSettled([call(), call(), call()]);
+
+    expect(outcomes.filter((o) => o.status === 'rejected')).toHaveLength(1);
+    expect(store.read('actor:u1')).toBeLessThanOrEqual(10_000);
+  });
+
+  test('the same holds for the org ceiling', async () => {
+    const store = slowStore();
+    const ledger = new BudgetLedger({ limits: { org: 10_000 }, orgKey: 'org:o1', store });
+    const call = () => ledger.reserve(estimateSpend(request('hi', 4_000)));
+
+    const outcomes = await Promise.allSettled([call(), call(), call()]);
+
+    expect(outcomes.filter((o) => o.status === 'rejected')).toHaveLength(1);
+    expect(store.read('org:o1')).toBeLessThanOrEqual(10_000);
+  });
+
+  // A refusal must not reject the reservations queued behind it on the turnstile.
+  test('a refused reservation lets the next one through on its own merits', async () => {
+    const store = slowStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+
+    await expect(ledger.reserve(estimateSpend(request('hi', 20_000)))).rejects.toMatchObject({
+      cause: expect.stringContaining('actor:u1'),
+    });
+    await expect(ledger.reserve(estimateSpend(request('hi', 100)))).resolves.toMatchObject({
+      tokens: expect.any(Number),
+    });
+  });
+
+  test('release gives an unspent reservation back in full', async () => {
+    const store = new MemoryBudgetStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+
+    const reservation = await ledger.reserve(estimateSpend(request('hi', 4_000)));
+    expect(store.spent('actor:u1')).toBeGreaterThan(0);
+
+    await ledger.release(reservation);
+    expect(store.spent('actor:u1')).toBe(0);
+  });
+
+  test('record reconciles down to the real count, never on top of the estimate', async () => {
+    const store = new MemoryBudgetStore();
+    const ledger = new BudgetLedger({ limits: { actor: 10_000 }, actorKey: 'actor:u1', store });
+
+    const reservation = await ledger.reserve(estimateSpend(request('hi', 4_000)));
+    await ledger.record(
+      { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      usd(1),
+      reservation,
+    );
+
+    expect(store.spent('actor:u1')).toBe(15);
   });
 });

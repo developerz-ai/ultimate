@@ -1,294 +1,12 @@
-// The reconnect: the one behaviour of `client.ts` no other suite can reach, because `hooks.test.ts`
-// drives the client but has to call `connect()` a second time by hand. Everything here is the timer
-// — that only the live socket's close arms one, that it dials, that the server's delay survives the
-// close it triggers, that a refused dial is reported rather than thrown out of a timer nobody
-// awaits, and that `close()` cancels it. The scheduler is injected, so nothing sleeps.
+// The socket lifecycle around `client.ts`: which close speaks for which socket, that a replaced
+// socket can neither end the live connection nor apply a frame to it, that a write to a dead
+// socket is a no-op rather than a throw, and that every handle a subscription hands back tears
+// down exactly once. The reconnect timer is `client-reconnect.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
-import type { Topic } from './channel';
-import { type ClientSocket, LiveClient, type SignalFactory } from './client';
+import { decodeSid, feed, harness } from './client-harness-fixture';
 import type { Row } from './json';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
-import type { BackoffPolicy, Scheduler } from './thundering-herd';
-
-/** Synchronous and closure-backed: enough to prove an accessor re-reads, with no reactive runtime. */
-const signal: SignalFactory = <T>(initial: T) => {
-  let value = initial;
-  return [
-    () => value,
-    (next: T) => {
-      value = next;
-    },
-  ];
-};
-
-/** No jitter, so a delay is a number the test can name rather than a range it has to bracket. */
-const backoff: BackoffPolicy = { baseMs: 500, maxMs: 30_000, factor: 2, jitter: 'none' };
-
-class FakeSocket implements ClientSocket {
-  readonly sent: string[] = [];
-  readonly closes: { code: number | undefined; reason: string | undefined }[] = [];
-  #open: (() => void) | null = null;
-  #message: ((data: string) => void) | null = null;
-  #closed: ((code: number) => void) | null = null;
-
-  send(data: string): void {
-    this.sent.push(data);
-  }
-
-  close(code?: number, reason?: string): void {
-    this.closes.push({ code, reason });
-    this.#closed?.(code ?? 1000);
-  }
-
-  onOpen(handler: () => void): void {
-    this.#open = handler;
-  }
-
-  onMessage(handler: (data: string) => void): void {
-    this.#message = handler;
-  }
-
-  onClose(handler: (code: number) => void): void {
-    this.#closed = handler;
-  }
-
-  open(): void {
-    this.#open?.();
-  }
-
-  deliver(frame: Frame): void {
-    this.#message?.(JSON.stringify(frame));
-  }
-
-  frames(): readonly Frame[] {
-    return this.sent.map((data) => decode(data));
-  }
-}
-
-/** The fake timer. `fire()` is all that advances a reconnect — no wall clock, nothing sleeps. */
-class ManualScheduler {
-  #armed: { fn: () => void; ms: number } | null = null;
-  /** Every delay ever armed, in order, so a backoff curve is assertable after the fact. */
-  readonly delays: number[] = [];
-
-  readonly schedule: Scheduler = (fn, ms) => {
-    this.#armed = { fn, ms };
-    this.delays.push(ms);
-    const mine = this.#armed;
-    return () => {
-      if (this.#armed === mine) this.#armed = null;
-    };
-  };
-
-  get pending(): number | null {
-    return this.#armed?.ms ?? null;
-  }
-
-  fire(): void {
-    const armed = this.#armed;
-    if (armed === null) expect.unreachable('nothing armed');
-    this.#armed = null;
-    armed.fn();
-  }
-}
-
-interface Harness {
-  readonly client: LiveClient;
-  readonly timers: ManualScheduler;
-  /** Every socket the client dialled, oldest first. A reconnect is a new entry here. */
-  readonly sockets: FakeSocket[];
-  readonly clock: ReturnType<typeof frozenClock>;
-  /** Everything the client reported through `onError`, in order. The host's `window.onerror`. */
-  readonly errors: unknown[];
-  /** Makes the next `count` dials throw — the socket constructor a browser is allowed to refuse. */
-  failNextDials(count: number): void;
-}
-
-function harness(): Harness {
-  const timers = new ManualScheduler();
-  const sockets: FakeSocket[] = [];
-  const errors: unknown[] = [];
-  const clock = frozenClock(1_000);
-  let failures = 0;
-  const client = new LiveClient({
-    signal,
-    connect: () => {
-      if (failures > 0) {
-        failures -= 1;
-        // What a browser actually throws when it refuses `new WebSocket(...)`, so the fixture is
-        // the real failure rather than a framework error this code path can never produce.
-        throw new TypeError('socket refused');
-      }
-      const socket = new FakeSocket();
-      sockets.push(socket);
-      return socket;
-    },
-    buildId: 'build-1',
-    backoff,
-    clock,
-    scheduler: timers.schedule,
-    onError: (error) => {
-      errors.push(error);
-    },
-  });
-  return {
-    client,
-    timers,
-    sockets,
-    clock,
-    errors,
-    failNextDials: (count) => {
-      failures = count;
-    },
-  };
-}
-
-const feed = { name: 'feed' };
-
-describe('LiveClient reconnect', () => {
-  test('a dropped socket arms a timer that actually dials again', () => {
-    const { client, timers, sockets } = harness();
-    client.connect();
-    sockets[0]?.open();
-    expect(client.connected).toBe(true);
-
-    sockets[0]?.close(1006);
-    expect(client.connected).toBe(false);
-    expect(sockets).toHaveLength(1); // nothing dials synchronously — the delay is the whole point
-    expect(timers.pending).toBe(500);
-
-    timers.fire();
-    expect(sockets).toHaveLength(2); // the timer called connect(), which is the bug this closes
-    sockets[1]?.open();
-    expect(client.connected).toBe(true);
-  });
-
-  test('reconnectAt is the armed delay, and clears once the socket is back', () => {
-    const { client, timers, sockets, clock } = harness();
-    client.connect();
-    sockets[0]?.open();
-    expect(client.reconnectAt()).toBeNull();
-
-    sockets[0]?.close(1006);
-    expect(client.reconnectAt()).toBe(clock.now().getTime() + 500);
-
-    timers.fire();
-    // Still set while dialling: a countdown that blinks to null mid-attempt reads as "connected".
-    expect(client.reconnectAt()).toBe(1_500);
-    sockets[1]?.open();
-    expect(client.reconnectAt()).toBeNull();
-  });
-
-  test('successive failures back off, and a successful open resets the curve', () => {
-    const { client, timers, sockets } = harness();
-    client.connect();
-    sockets[0]?.open();
-
-    sockets[0]?.close(1006);
-    timers.fire();
-    sockets[1]?.close(1006); // dialled, never opened
-    timers.fire();
-    sockets[2]?.close(1006);
-    expect(timers.delays).toEqual([500, 1000, 2000]);
-
-    timers.fire();
-    sockets[3]?.open(); // this one lands
-    sockets[3]?.close(1006);
-    expect(timers.delays.at(-1)).toBe(500); // attempt counter reset on open
-  });
-
-  test('the whole subscription set is re-established on the automatic reconnect', () => {
-    const { client, timers, sockets } = harness();
-    client.connect();
-    sockets[0]?.open();
-    client.useLive<Row>(feed, { orgId: 'o1' });
-
-    sockets[0]?.close(1006);
-    timers.fire();
-    sockets[1]?.open();
-
-    const kinds = sockets[1]?.frames().map((frame) => frame.type) ?? [];
-    expect(kinds).toEqual(['hello', 'subscribe']);
-  });
-
-  test('a server-assigned delay survives the close it triggers', () => {
-    const { client, timers, sockets } = harness();
-    client.connect();
-    sockets[0]?.open();
-
-    sockets[0]?.deliver({
-      type: 'reconnect',
-      v: PROTOCOL_VERSION,
-      afterMs: 7_777,
-      reason: 'drain',
-    });
-
-    // The close the frame triggers must not overwrite the node's spread slot with a local backoff.
-    expect(timers.delays).toEqual([7_777]);
-    expect(timers.pending).toBe(7_777);
-    expect(sockets[0]?.closes).toEqual([{ code: 1001, reason: 'drain' }]);
-  });
-
-  test('a close never stacks a second timer on top of an armed one', () => {
-    const { client, timers, sockets } = harness();
-    client.connect();
-    sockets[0]?.open();
-
-    sockets[0]?.close(1006);
-    sockets[0]?.close(1006); // a socket that reports its close twice
-    expect(timers.delays).toEqual([500]);
-
-    timers.fire();
-    expect(sockets).toHaveLength(2);
-  });
-
-  test('a dial that throws is reported, not rethrown, and the next attempt is armed', () => {
-    const { client, timers, sockets, errors, failNextDials } = harness();
-    client.connect();
-    sockets[0]?.open();
-    sockets[0]?.close(1006);
-
-    failNextDials(1);
-    // Nothing awaits a timer: a throw out of one is `window.onerror` in a tab and an uncaught
-    // exception under Bun — the retry killing the process that was going to run it.
-    expect(() => timers.fire()).not.toThrow();
-    expect(errors).toHaveLength(1); // reported through the seam instead
-    expect(errors[0]).toBeInstanceOf(TypeError);
-    expect(String(errors[0])).toBe('TypeError: socket refused');
-    expect(sockets).toHaveLength(1); // the dial produced nothing…
-    expect(timers.pending).toBe(1000); // …and the chain is still armed, one attempt further on
-
-    timers.fire();
-    sockets[1]?.open();
-    expect(client.connected).toBe(true);
-  });
-
-  test('a connect() the caller made itself arms nothing when it throws', () => {
-    const { client, timers, errors, failNextDials } = harness();
-    failNextDials(1);
-
-    // The timer owns the chain; a direct call is the app's, and swallowing it here would retry
-    // behind the back of a caller who is holding the error — so it is never reported either.
-    expect(() => client.connect()).toThrow('socket refused');
-    expect(timers.pending).toBeNull();
-    expect(errors).toEqual([]);
-  });
-
-  test('an explicit connect() cancels the pending reconnect instead of racing it', () => {
-    const { client, timers, sockets } = harness();
-    client.connect();
-    sockets[0]?.open();
-    sockets[0]?.close(1006);
-    expect(timers.pending).toBe(500);
-
-    client.connect();
-    expect(timers.pending).toBeNull();
-    sockets[1]?.open();
-    expect(sockets).toHaveLength(2); // the cancelled timer never dialled a third
-  });
-});
 
 describe('LiveClient close events', () => {
   test("the live socket's own close goes offline and arms a reconnect", () => {
@@ -310,7 +28,7 @@ describe('LiveClient close events', () => {
     const handle = client.useLive<Row>(feed, { orgId: 'o1' });
 
     const stale = sockets[0];
-    client.connect(); // e.g. a forced redial after an auth refresh — the old socket is still open
+    client.connect(); // e.g. a forced redial after an auth refresh
     sockets[1]?.open();
 
     stale?.close(1006); // the replaced socket's close lands late
@@ -318,6 +36,50 @@ describe('LiveClient close events', () => {
     expect(handle.state()).toBe('loading'); // untouched: only the live socket's close moves it
     expect(timers.pending).toBeNull(); // a backoff here dials a third socket behind a healthy one
     expect(timers.delays).toEqual([]);
+  });
+
+  // A remount calling `connect()` on a live client left the previous socket open: its `onMessage`
+  // kept running, so every patch frame applied twice, and the node held two sockets for one
+  // client — double presence membership and double fanout — until the tab closed.
+  test('closes the socket it is replacing, so nothing keeps two live', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+
+    client.connect();
+
+    expect(sockets[0]?.closes).toEqual([{ code: 1000, reason: 'reconnect' }]);
+    expect(sockets).toHaveLength(2);
+  });
+
+  test('a frame from the replaced socket is not applied a second time', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+    const orphan = sockets[0];
+
+    client.connect();
+    sockets[1]?.open();
+    const sid = decodeSid(sockets[1]);
+    sockets[1]?.deliver({
+      type: 'snapshot',
+      v: PROTOCOL_VERSION,
+      sid,
+      rows: [{ id: 'p1', likes: 1 }],
+      cursor: { qid: 'q', lsn: '1', digest: 'd1', ids: ['p1'], count: 1, at: 0 },
+    });
+    expect(handle.rows()).toEqual([{ id: 'p1', likes: 1 }]);
+
+    // The orphan replaying the same subscription's frame used to overwrite the live one's state.
+    orphan?.deliver({
+      type: 'snapshot',
+      v: PROTOCOL_VERSION,
+      sid,
+      rows: [{ id: 'p1', likes: 99 }],
+      cursor: { qid: 'q', lsn: '0', digest: 'd0', ids: ['p1'], count: 1, at: 0 },
+    });
+    expect(handle.rows()).toEqual([{ id: 'p1', likes: 1 }]);
   });
 });
 

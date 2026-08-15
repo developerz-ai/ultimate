@@ -38,6 +38,7 @@ const ADDED_SINCE = [
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_QUERY_NOT_SUBSCRIBABLE',
   'X_LIVE_QUERY_UNKNOWN',
+  'X_SUBSCRIPTION_ID_TAKEN',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

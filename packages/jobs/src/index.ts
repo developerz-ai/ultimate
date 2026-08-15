@@ -131,6 +131,7 @@ export { createLimiter, NO_TENANT, tenantKeyFrom } from './limits';
 export type {
   EnqueueOptions,
   JobsFacade,
+  MemoryOutboxStore,
   OutboxDeps,
   OutboxRecord,
   OutboxRelay,
@@ -176,6 +177,7 @@ export {
   createMemoryStepStore,
   createStepRunner,
   isStepSuspension,
+  MAX_TRACE_NAMES,
   StepSuspension,
 } from './steps';
 export type {

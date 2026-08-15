@@ -62,8 +62,18 @@ export function estimateSpend(request: GenerateRequest): SpendEstimate {
 /** Where cross-request counters live. Swap for Redis in a multi-process deployment. */
 export interface BudgetStore {
   spent(key: string): Promise<number> | number;
+  /** `tokens` may be NEGATIVE: releasing a reservation the call never spent is a credit. */
   add(key: string, tokens: number): Promise<void> | void;
   reset(key?: string): Promise<void> | void;
+}
+
+/**
+ * What `reserve` debited, so `record` can reconcile it against the provider's real counts and
+ * `release` can give it back. Held by the caller rather than the ledger because one ledger serves
+ * every concurrent call in a request, and each one owns its own reservation.
+ */
+export interface BudgetReservation {
+  readonly tokens: number;
 }
 
 export class MemoryBudgetStore implements BudgetStore {
@@ -108,6 +118,13 @@ export class BudgetLedger {
   private requestTokens = 0;
   private costMinor = 0;
   private readonly currency: string;
+  /**
+   * Reservations take turns. Check-then-debit spans an `await store.spent()`, and three callers
+   * interleaving inside it is the bypass this ledger exists to close — one event loop, so a
+   * promise chain IS the lock. A store shared across PROCESSES needs an atomic increment of its
+   * own; this closes the parallelism inside one.
+   */
+  private turnstile: Promise<unknown> = Promise.resolve();
 
   constructor(input: BudgetLedgerInput) {
     this.limits = input.limits;
@@ -118,11 +135,24 @@ export class BudgetLedger {
   }
 
   /**
-   * Check an estimate against every applicable scope BEFORE the call. Throws on the first
-   * scope that cannot cover it, naming that scope, so the fix line points at one knob rather
-   * than four. Nothing is debited here: `record` does that with the provider's real counts.
+   * Check an estimate against every applicable scope BEFORE the call, then DEBIT it. Throws on
+   * the first scope that cannot cover it, naming that scope, so the fix line points at one knob
+   * rather than four.
+   *
+   * The debit is what makes the ceiling hold under parallelism. Checking without debiting meant
+   * three concurrent calls under one ledger all read `spent() === 0`, all passed, and all three
+   * recorded against a ceiling only one of them fitted — an "un-bypassable" org budget bypassed
+   * by `Promise.all`. `record` replaces the estimate with the real counts; `release` gives it
+   * back when the call never happened.
    */
-  async reserve(estimate: SpendEstimate): Promise<void> {
+  async reserve(estimate: SpendEstimate): Promise<BudgetReservation> {
+    const turn = this.turnstile.then(() => this.reserveNow(estimate));
+    // Chained on a settled shadow: one refusal must not reject every reservation queued behind it.
+    this.turnstile = turn.catch(() => undefined);
+    return await turn;
+  }
+
+  private async reserveNow(estimate: SpendEstimate): Promise<BudgetReservation> {
     this.assertScope('request', this.limits.request, this.requestTokens, estimate.tokens);
     // Per call, so nothing is "already spent" against it.
     this.assertScope('tokensIn', this.limits.tokensIn, 0, estimate.inputTokens);
@@ -135,6 +165,14 @@ export class BudgetLedger {
       this.assertScope(`org:${this.orgKey}`, this.limits.org, spent, estimate.tokens);
     }
     this.assertCost(estimate.cost);
+    await this.debit(estimate.tokens);
+    return { tokens: estimate.tokens };
+  }
+
+  /** Give a reservation back: a provider that threw, a stream abandoned before `done`. */
+  async release(reservation: BudgetReservation | undefined): Promise<void> {
+    if (reservation === undefined) return;
+    await this.debit(-reservation.tokens);
   }
 
   /**
@@ -158,11 +196,21 @@ export class BudgetLedger {
     });
   }
 
-  /** Debit ACTUAL usage after the call, replacing the estimate `reserve` worked from. */
-  async record(usage: TokenUsage, cost: Money): Promise<void> {
-    const tokens = totalTokens(usage);
-    this.requestTokens += tokens;
+  /**
+   * Debit ACTUAL usage after the call, replacing the estimate `reserve` worked from — so only
+   * the DIFFERENCE lands here. Called without the reservation it behaves as it always did and
+   * debits the full amount, which double-counts a reserved call: pass the handle `reserve`
+   * returned.
+   */
+  async record(usage: TokenUsage, cost: Money, reservation?: BudgetReservation): Promise<void> {
     this.costMinor += cost.minor;
+    await this.debit(totalTokens(usage) - (reservation?.tokens ?? 0));
+  }
+
+  /** The one write path. Negative credits a release or an over-estimate back. */
+  private async debit(tokens: number): Promise<void> {
+    if (tokens === 0) return;
+    this.requestTokens += tokens;
     if (this.actorKey !== undefined) await this.store.add(this.actorKey, tokens);
     if (this.orgKey !== undefined) await this.store.add(this.orgKey, tokens);
   }

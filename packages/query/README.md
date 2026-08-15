@@ -181,6 +181,19 @@ Request memo (same read twice in one render ⇒ one round trip), then the tier b
 `cache.invalidates` and a query's `cache.tags` meet in the one graph owned by
 `@ultimat3/cache`.
 
+`invalidateQueryTags(tags)` is what an action's `invalidates` runs, and it drops **both**: the
+graph `@ultimat3/cache` owns (every registered tier, ISR route, CDN path and live query) and the
+read tier, which is this package's own seam and therefore not in that registry. An entry is
+written with the read's `cache.tags`, so a row bust (`post:1`) drops the lists that held the row,
+exactly as `tagMatches` defines it.
+
+The default `MemoryReadCache` is **bounded** — `@ultimat3/cache`'s byte-budgeted `LruCache`,
+`DEFAULT_READ_CACHE_MAX_BYTES` (32 MiB), tunable per instance — and a `cache:` block that omits
+`ttlMs` gets `DEFAULT_READ_CACHE_TTL_MS` (60s) rather than immortality. Tags are the primary
+eviction; the TTL is the backstop for the read whose tags never fire. A `null` expiry means the
+caller named none, never "never": `@ultimat3/cache`'s tiers refuse a non-positive `ttlMs` and have
+no immortal entry to offer, so the tier's own default applies.
+
 The memo entry is the read **in flight**, not its value, so "twice" covers reads that race as
 well as reads that follow: five holes rendering concurrently share one execution and one tier
 round trip. A rejection is evicted — a failed read is not the request's answer.

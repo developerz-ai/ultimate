@@ -137,8 +137,13 @@ export class LlmRefusedError extends UltimateError {
   constructor(input: {
     prompt: string;
     model: string;
-    /** A blessed model that is NOT the one that refused — the fix has to be pasteable. */
-    alternative: string;
+    /**
+     * A blessed model MORE capable than the one that refused, or `undefined` when the refusal
+     * came from the most capable one this build knows. Retrying a refusal on a weaker model is
+     * the one retry that cannot help, so the fix line drops the suggestion rather than inventing
+     * a downgrade.
+     */
+    alternative: string | undefined;
     category: string | undefined;
     explanation: string | undefined;
   }) {
@@ -148,7 +153,10 @@ export class LlmRefusedError extends UltimateError {
         `model "${input.model}" declined prompt "${input.prompt}"` +
         `${input.category === undefined ? '' : ` (${input.category})`}` +
         `${input.explanation === undefined ? '' : `: ${input.explanation}`}`,
-      fix: `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
+      fix:
+        input.alternative === undefined
+          ? `edit the template in definePrompt('${input.prompt}') and bump its version — no blessed model is more capable than '${input.model}'`
+          : `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
       docs: docsFor('X_LLM_REFUSED'),
       meta: { model: input.model, category: input.category },
     });

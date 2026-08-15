@@ -167,7 +167,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           return;
         }
         if (frame.op === 'drop') {
-          options.registry.unsubscribe(frame.sid);
+          // Scoped to this socket: a sid is client data, and an unscoped drop let one client
+          // end another's live stream by guessing — or reusing — its id.
+          options.registry.unsubscribe(socket.id, frame.sid);
           return;
         }
         const { frame: reply } = await options.registry.subscribe({

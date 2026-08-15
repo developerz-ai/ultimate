@@ -14,6 +14,7 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Route input | `PwaRoute` is a **structural** view of render's `RouteDescriptor`. Never import render. |
 | Strategy choice | derived from render mode via `MODE_STRATEGY`. Per-route override only. |
 | Precache revision | content hash. Never the build id — that re-downloads everything per deploy. |
+| Precache KEY | the bare URL, always. The revision addresses the FETCH (`?v=<hash>`), never the key: every strategy looks an entry up with `caches.match(req)` and `ignoreSearch` defaults to `false`, so an entry left keyed under `?v=` is a permanent miss — offline serves the fallback document instead of the precached page, and online every precached byte is downloaded twice. `addAll` still does the fetching, because its all-or-nothing failure is what stops a half-populated precache from activating; the install block only re-keys what it stored. `service-worker.test.ts` executes the emitted `sw.js` against stub `caches`/`fetch` rather than asserting its text. |
 | Cache names | always `cacheNamespace(buildId, kind)`. An unkeyed cache name is a rejected change. |
 | Offline fallback | `requireOfflineFallback` runs inside `generateServiceWorker`. Never optional. |
 | Capabilities | gate the manifest member **and** the SW block. Disabled → zero bytes. |

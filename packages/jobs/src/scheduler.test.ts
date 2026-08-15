@@ -45,6 +45,14 @@ const dailyAt3: CronResolver = (cron, options) => {
   return new Date(at3 > from ? at3 : at3 + dayMs);
 };
 
+/** Deterministic stand-in for @ultimat3/time: fires on the hour, UTC. */
+const hourly: CronResolver = (cron, options) => {
+  expect(cron).toBe('0 * * * *');
+  const hourMs = 3_600_000;
+  const from = options.from.getTime();
+  return new Date(Math.floor(from / hourMs) * hourMs + hourMs);
+};
+
 // 2026-07-26T00:00:00Z, a Sunday.
 const T0 = Date.UTC(2026, 6, 26, 0, 0, 0);
 
@@ -178,6 +186,102 @@ describe('scheduler', () => {
       '2026-07-29T03:00:00.000Z',
     );
     expect(byCatching.length).toBe(4);
+  });
+
+  // The measured failure: an hourly task, a scheduler down 24 hours, `run-once` — 24 dispatches
+  // over 24 one-second ticks, occurrences 2..25, because the watermark was left on the occurrence
+  // that just ran instead of past the ones the policy drops.
+  test('catch-up: "run-once" fires exactly one catch-up, however many ticks follow', async () => {
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const once = task({
+      name: 'hourlyOnce',
+      cron: '0 * * * *',
+      tz: 'UTC',
+      catchUp: 'run-once',
+      enqueue: () => [[sendDigest, {}]],
+    });
+    const scheduler = createScheduler({
+      driver,
+      clock,
+      cron: hourly,
+      state: createMemorySchedulerState(),
+      tasks: [once],
+    });
+
+    await scheduler.tick(); // Arms it.
+    clock.advance(24 * 3_600_000); // Down a full day: 24 occurrences missed.
+
+    const first = await scheduler.tick();
+    expect(first.length).toBe(1);
+    expect(first[0]?.catchUp).toBe(true);
+
+    // 24 further ticks at the real interval. Every one of these used to dispatch.
+    let later = 0;
+    for (let i = 0; i < 24; i += 1) {
+      clock.advance(1_000);
+      later += (await scheduler.tick()).length;
+    }
+    expect(later).toBe(0);
+    expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
+  });
+
+  test('catch-up: "run-once" fires the EARLIEST missed occurrence, not the latest', async () => {
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const once = task({
+      name: 'hourlyOnce',
+      cron: '0 * * * *',
+      tz: 'UTC',
+      catchUp: 'run-once',
+      enqueue: () => [[sendDigest, {}]],
+    });
+    const scheduler = createScheduler({
+      driver,
+      clock,
+      cron: hourly,
+      state: createMemorySchedulerState(),
+      tasks: [once],
+    });
+
+    await scheduler.tick();
+    clock.advance(5 * 3_600_000);
+
+    const dispatched = await scheduler.tick();
+    expect(new Date(dispatched[0]?.occurrenceMs ?? 0).toISOString()).toBe(
+      '2026-07-26T01:00:00.000Z',
+    );
+  });
+
+  // The next occurrence after the outage still fires: the watermark moved past what was
+  // dropped, never past what has not happened yet.
+  test('catch-up: "run-once" leaves the next real occurrence due', async () => {
+    const clock = fakeClock(T0);
+    const driver = createMemoryDriver({ clock });
+    const once = task({
+      name: 'hourlyOnce',
+      cron: '0 * * * *',
+      tz: 'UTC',
+      catchUp: 'run-once',
+      enqueue: () => [[sendDigest, {}]],
+    });
+    const scheduler = createScheduler({
+      driver,
+      clock,
+      cron: hourly,
+      state: createMemorySchedulerState(),
+      tasks: [once],
+    });
+
+    await scheduler.tick();
+    clock.advance(5 * 3_600_000);
+    await scheduler.tick();
+
+    clock.advance(3_600_000); // 06:00 arrives.
+    const next = await scheduler.tick();
+    expect(next.length).toBe(1);
+    expect(next[0]?.catchUp).toBe(false);
+    expect(new Date(next[0]?.occurrenceMs ?? 0).toISOString()).toBe('2026-07-26T06:00:00.000Z');
   });
 
   test('a late dispatch builds its payload from the occurrence, not the wall clock', async () => {

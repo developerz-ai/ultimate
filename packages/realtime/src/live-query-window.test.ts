@@ -140,7 +140,7 @@ async function feedWithOneSlowGate(): Promise<{
   });
   bob.ws.frames.length = 0;
   slowNext = true;
-  return { registry, ws: bob.ws, sid: subscription.sid };
+  return { registry, ws: bob.ws, sid: subscription.sid, socketId: bob.socket.id };
 }
 
 describe('a delivery holds the query id it is fanning out', () => {
@@ -160,7 +160,7 @@ describe('a delivery holds the query id it is fanning out', () => {
   });
 
   test('the cursor ends on the newest change, never rewound by a slower one', async () => {
-    const { registry, sid } = await feedWithOneSlowGate();
+    const { registry, sid, socketId } = await feedWithOneSlowGate();
 
     await Promise.all([
       registry.deliver(change(2, { ...bobsRow, likes: 1 }, bobsRow)),
@@ -169,7 +169,7 @@ describe('a delivery holds the query id it is fanning out', () => {
 
     // A rewound cursor is a reconnect that replays patches the client already applied, on top of
     // newer ones it also applied — the row ends up at the older value and stays there.
-    expect(registry.subscription(sid)?.cursor.lsn).toBe(formatLsn(3));
+    expect(registry.subscription(socketId, sid)?.cursor.lsn).toBe(formatLsn(3));
   });
 
   test('a fanout that throws does not wedge every later change for that query id', async () => {

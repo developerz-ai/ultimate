@@ -5,7 +5,7 @@
  * and tag-driven staleness (an action's `invalidates` marks exactly the dependent routes).
  */
 
-import type { CacheTag } from '@ultimat3/cache';
+import type { CacheTag, Revalidator } from '@ultimat3/cache';
 import {
   dependentsOfKind,
   invalidateTags,
@@ -38,12 +38,34 @@ export interface IsrStore {
   paths(): readonly string[];
 }
 
-export function memoryIsrStore(): IsrStore {
+/**
+ * How many rendered pages the default store holds. A route table supports `:params` and `*`, so
+ `/blog/:slug` has as many ISR paths as the blog has slugs — 404-shaped ones that still render
+ * included. Unbounded, a crawler over 100k slugs is 100k HTML strings resident for the life of
+ * the process.
+ */
+export const DEFAULT_ISR_MAX_ENTRIES = 1_000;
+
+export interface MemoryIsrStoreOptions {
+  /** Pages retained. The least recently generated goes first. */
+  readonly maxEntries?: number;
+}
+
+export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
+  const maxEntries = options.maxEntries ?? DEFAULT_ISR_MAX_ENTRIES;
   const map = new Map<string, IsrEntry>();
   return {
     get: (path) => map.get(path),
     set: (entry) => {
+      // Re-inserted rather than overwritten, so the Map's iteration order IS generation order and
+      // the first key is the least recently generated page.
+      map.delete(entry.path);
       map.set(entry.path, entry);
+      while (map.size > maxEntries) {
+        const oldest = map.keys().next();
+        if (oldest.done === true) break;
+        map.delete(oldest.value);
+      }
     },
     delete: (path) => {
       map.delete(path);
@@ -108,6 +130,15 @@ export interface IsrController {
    */
   attach(): () => void;
 }
+
+/**
+ * `@ultimat3/cache` holds ONE revalidator and offers no read back, so detaching has to know
+ * whether the slot is still this controller's — a controller that attached after it owns it now.
+ */
+let installedRevalidator: Revalidator | undefined;
+
+/** What `registerRevalidator` is handed on detach: the framework's "nothing to revalidate". */
+const NO_REVALIDATION: Revalidator = () => undefined;
 
 export function createIsrController(options: IsrControllerOptions = {}): IsrController {
   const store = options.store ?? memoryIsrStore();
@@ -223,12 +254,23 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
 
     attach() {
       // The cache fanout owns the trigger; render owns only "what does stale mean here".
-      registerRevalidator((path) => {
+      const revalidate: Revalidator = (path) => {
         markStale(path);
-      });
+      };
+      registerRevalidator(revalidate);
+      installedRevalidator = revalidate;
       return () => {
         for (const path of registered) unregisterDependent({ kind: 'isr-route', id: path });
         registered.clear();
+        // Left installed, this closure — and the whole store behind it — stayed reachable from
+        // the cache graph and kept receiving revalidations. `x dev`'s hot reload detached A and
+        // created B, and `invalidateTags` still called A's `markStale`: B's pages never went
+        // stale and A's store was never collected. Only if the slot is still OURS: a controller
+        // that attached after us owns it, and clearing that one is this bug pointed backwards.
+        if (installedRevalidator === revalidate) {
+          registerRevalidator(NO_REVALIDATION);
+          installedRevalidator = undefined;
+        }
       };
     },
   };
