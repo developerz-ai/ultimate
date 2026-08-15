@@ -54,6 +54,12 @@ One list, in cost order, defined once in `cmd-verify.ts` — the framework repo'
 passed. Never bails early: an agent fixing three things needs all three findings from one run.
 There is no `--only` and no `--skip`; the exit code is non-zero if any step fails.
 
+An app extends the gate with its own conventions, never with its own step: a file in `guards/`
+exports a `guard` whose `check(root)` returns `Finding[]`, and the `boundaries` step runs every one
+of them. Nothing registers a guard — the directory is the registration — and what a guard returns
+is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUARD_FAILED`,
+`X_GUARD_FINDING_INVALID`). `x g guard <name>` scaffolds one with its test.
+
 ## Layout
 
 | File | Responsibility |
@@ -66,6 +72,7 @@ There is no `--only` and no `--skip`; the exit code is non-zero if any step fail
 | `output.ts` | one data shape, two renderers, the 3-line error format |
 | `registry.ts` | the one command list |
 | `generate-kinds.ts` | which generators exist, and how a command line names one |
+| `guards.ts` | the app's own conventions: `guards/` discovered, run, and held to the error contract |
 | `cmd-*.ts` | one command group each |
 | `templates/` | scaffolding as typed string modules, not copied fixtures |
 | `app-load.ts` | import an app's modules so the framework registries hold it |
@@ -97,6 +104,7 @@ apps/web/app/<feature>/{actions,queries,live,jobs,tasks}/<name>.ts
 apps/web/{site,app}/<path>/page.tsx
 apps/web/{site,app}/<path>/<name>.island.tsx     # x g island <name> --at <dir>
 apps/admin/src/pages/<name>.tsx                  # x g admin:page <name> --permission p
+guards/<name>.ts                                 # x g guard <name>
 ```
 
 Every emitted source has a `<file>.test.ts` beside it that passes on the first run.
@@ -104,4 +112,4 @@ Every emitted source has a `<file>.test.ts` beside it that passes on the first r
 ## Errors
 
 `X_CLI_UNKNOWN_COMMAND` `X_CLI_BAD_FLAG` `X_VERIFY_FAILED` `X_NOT_IN_APP` `X_BUN_VERSION`
-`X_NOT_IMPLEMENTED`
+`X_NOT_IMPLEMENTED` `X_GUARD_INVALID` `X_GUARD_FAILED` `X_GUARD_FINDING_INVALID`

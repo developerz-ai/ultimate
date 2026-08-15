@@ -150,6 +150,7 @@ describe('unit · x g keeps the manifest off a partial load', () => {
   // paths the framework's own sources use; a dot-prefixed name stays out of every workspace glob.
   const ROOT = join(import.meta.dir, '..', '.generate-fixture');
   const BROKEN = 'apps/web/app/broken.ts';
+  const COMMITTED = '{"buildId":"already-committed"}\n';
 
   const contextFor = (): CommandContext => ({
     args: {
@@ -182,6 +183,9 @@ describe('unit · x g keeps the manifest off a partial load', () => {
       JSON.stringify({ name: 'generate-fixture', version: '1.0.0' }),
     );
     await Bun.write(join(ROOT, BROKEN), `export { nope } from './does-not-exist';\n`);
+    // Committed, because that is the only shape in which this question exists: `x g` refreshes a
+    // manifest the repo already has, so "does a partial load overwrite it?" needs one on disk.
+    await Bun.write(join(ROOT, MANIFEST_FILENAME), COMMITTED);
     resetAppLoad();
   });
 
@@ -190,14 +194,71 @@ describe('unit · x g keeps the manifest off a partial load', () => {
     resetAppLoad();
   });
 
-  test('the scaffold lands, the manifest does not, and the load failure is the finding', async () => {
+  test('the scaffold lands, the manifest is untouched, and the load failure is the finding', async () => {
     const result = await generateCommand.run(contextFor());
     expect(result.ok).toBe(false);
     expect(result.findings?.map((finding) => finding.at)).toContain(BROKEN);
     expect((result.data as { files?: readonly string[] }).files?.length).toBeGreaterThan(0);
-    expect(existsSync(join(ROOT, MANIFEST_FILENAME))).toBe(false);
+    expect(await Bun.file(join(ROOT, MANIFEST_FILENAME)).text()).toBe(COMMITTED);
     // No `+ x.manifest.json` line either: the human render may not claim a write that never was.
     expect(result.lines?.some((line) => line.includes(MANIFEST_FILENAME))).toBe(false);
+  });
+});
+
+// `x g` REFRESHES the committed manifest; it does not introduce one. An app that never ran
+// `x manifest` has no committed contract to keep current, and a generator that creates one has
+// invented a file the repo now has to keep in sync forever — and it announced a write the count
+// beside it did not include, so `x g island` said "wrote 2 file(s)" over three printed lines.
+describe('unit · x g refreshes a manifest and never invents one', () => {
+  const ROOT = join(import.meta.dir, '..', '.generate-manifest-fixture');
+
+  const contextFor = (name: string): CommandContext => ({
+    args: {
+      command: 'g',
+      subcommand: undefined,
+      positionals: ['policy', name],
+      flags: new Map(),
+      json: false,
+      help: false,
+      passthrough: [],
+    },
+    cwd: ROOT,
+    runner: exec,
+    env: {},
+    bunVersion: '1.3.0',
+  });
+
+  beforeAll(async () => {
+    await rm(ROOT, { recursive: true, force: true });
+    await Bun.write(join(ROOT, 'app.config.ts'), `export const config = { name: 'gen' };\n`);
+    await Bun.write(
+      join(ROOT, 'package.json'),
+      JSON.stringify({ name: 'manifest-fixture', version: '1.0.0' }),
+    );
+    resetAppLoad();
+  });
+
+  afterAll(async () => {
+    await rm(ROOT, { recursive: true, force: true });
+    resetAppLoad();
+  });
+
+  test('an app with no committed manifest does not get one, and the count matches the lines', async () => {
+    const result = await generateCommand.run(contextFor('uninvited'));
+    expect(existsSync(join(ROOT, MANIFEST_FILENAME))).toBe(false);
+    expect(result.lines?.some((line) => line.includes(MANIFEST_FILENAME))).toBe(false);
+    expect(result.summary).toContain(`wrote ${result.lines?.length} file(s)`);
+  });
+
+  test('an app that has one gets it refreshed, printed, counted and carried in --json', async () => {
+    await Bun.write(join(ROOT, MANIFEST_FILENAME), '{}\n');
+    resetAppLoad();
+    const result = await generateCommand.run(contextFor('invited'));
+    expect(result.lines?.some((line) => line.includes(MANIFEST_FILENAME))).toBe(true);
+    // One list behind all three: the printed lines, the counted total and `data.files`.
+    expect(result.summary).toContain(`wrote ${result.lines?.length} file(s)`);
+    expect((result.data as { files?: readonly string[] }).files).toContain(MANIFEST_FILENAME);
+    expect(await Bun.file(join(ROOT, MANIFEST_FILENAME)).text()).not.toBe('{}\n');
   });
 });
 

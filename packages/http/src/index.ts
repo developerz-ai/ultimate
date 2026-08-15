@@ -43,6 +43,7 @@ export {
   noRequest,
   pathInvalid,
   pipelineNoResponse,
+  rateLimitBucketConflict,
   rateLimited,
   rateLimitNotShared,
   routeConflict,
@@ -66,16 +67,7 @@ export { compose } from './middleware';
 export type { OverlayMeta, OverlayNotice } from './overlay';
 export { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
 export { OVERLAY_STYLE } from './overlay-style';
-export type {
-  HandleInit,
-  Pipeline,
-  PipelineDeps,
-  Stage,
-  StageDoc,
-  StageName,
-  StagePhase,
-  StageRun,
-} from './pipeline';
+export type { HandleInit, Pipeline, PipelineDeps } from './pipeline';
 export { createPipeline, PIPELINE_STAGES } from './pipeline';
 export type {
   Bucket,
@@ -95,6 +87,7 @@ export {
   memoryRateLimitStore,
   rateLimitKey,
 } from './rate-limit';
+export { withRouteBuckets } from './rate-limit-buckets';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';
@@ -134,5 +127,8 @@ export type { SecurityConfig } from './security-headers';
 export { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';
 export type { LifecycleState, ServerHandle, ServerOptions } from './server';
 export { createServer } from './server';
+// The stage vocabulary comes from its declaration site, beside the twelve implementations it
+// names; `PIPELINE_STAGES` — the ORDER — stays `pipeline.ts`'s.
+export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';
 export type { InferOutput, Schema, ValidationOutcome } from './validate';
 export { formatIssue, validate, validateSync } from './validate';

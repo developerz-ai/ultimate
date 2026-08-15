@@ -29,6 +29,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_PATH_DUPLICATE: 'two actions derive one HTTP path',
   X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
   X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
+  X_ACTION_RATE_LIMIT_INVALID: 'an action declares a rate limit that is not a positive allowance',
   X_ACTION_UNREGISTERED: 'an action was projected before it was registered',
   X_CONTRACT_DRIFT: 'client and server disagree about the contract',
   X_IDEMPOTENCY_CONFLICT: 'idempotency key reused with a different payload or still in flight',
@@ -155,6 +156,24 @@ export class ActionPolicyMissingError extends UltimateError {
       cause: `action "${name}" was registered without a policy`,
       fix: `add \`policy: can('${name}')\` to the action definition in the file that exports it`,
       docs: docs('X_ACTION_POLICY_MISSING'),
+    });
+  }
+}
+
+/**
+ * A `rateLimit` the limiter cannot run on, raised where the declaration is converted — so both
+ * projections that read it, the route and the OpenAPI operation, refuse the same numbers.
+ * `windowMs: 0` refills the bucket infinitely fast, which is a declared limit that enforces
+ * nothing; a non-positive `limit` is an endpoint no caller can reach. Neither is worth guessing at.
+ */
+export class ActionRateLimitInvalidError extends UltimateError {
+  constructor(action: string, limit: { readonly limit: number; readonly windowMs: number }) {
+    super({
+      code: 'X_ACTION_RATE_LIMIT_INVALID',
+      cause: `action "${action}" declares rateLimit { limit: ${limit.limit}, windowMs: ${limit.windowMs} }; both must be finite and greater than zero`,
+      fix: `edit the \`rateLimit:\` on ${action} to a positive allowance over a positive window — e.g. { limit: 5, windowMs: 600_000 } — or delete it to keep the default bucket`,
+      docs: docs('X_ACTION_RATE_LIMIT_INVALID'),
+      meta: { action, limit: limit.limit, windowMs: limit.windowMs },
     });
   }
 }

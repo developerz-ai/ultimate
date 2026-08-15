@@ -38,6 +38,9 @@ export const FIXTURE_GENERATORS: readonly GenerateOptions[] = [
   // The one screen the admin derives from nothing — and the one generator that must NOT emit a
   // `defineRoute`, so compiling it is how that stays true.
   { kind: 'admin:page', name: 'reconcile', permission: 'ledger:reconcile' },
+  // The app's own convention. It is the only generated file that imports `@ultimat3/cli` for its
+  // types, so compiling it is what proves a scaffolded app can actually write one.
+  { kind: 'guard', name: 'migration-safety' },
 ];
 
 /** The whole scaffolded surface: a new app, then every generator run inside it. */

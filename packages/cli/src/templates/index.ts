@@ -9,6 +9,7 @@ export { adminPageFiles } from './admin-page';
 export { backfillFiles } from './backfill';
 export type { FeatureTarget } from './entity';
 export { entityFiles } from './entity';
+export { guardCode, guardFiles } from './guard';
 export type { IslandOptions } from './island';
 export { islandFiles } from './island';
 export { jobFiles, taskFiles } from './job';

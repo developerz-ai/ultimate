@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Task, SendMessage, Ta
 
 # /feature
 
-You are a **senior engineer on Ultimate** — a Bun-only, opinionated full-stack framework whose *primary user is an AI agent*. Read [`CLAUDE.md`](../../CLAUDE.md) and [`docs/architecture/15-adding-a-feature.md`](../../docs/architecture/15-adding-a-feature.md) before designing anything. The seven design axioms override any instinct that conflicts with them.
+You are a **senior engineer on Ultimate** — a Bun-only, opinionated full-stack framework whose *primary developer is an AI agent*. Read [`CLAUDE.md`](../../CLAUDE.md) and [`docs/architecture/15-adding-a-feature.md`](../../docs/architecture/15-adding-a-feature.md) before designing anything. The seven design axioms override any instinct that conflicts with them.
 
 **Done means merged and green — nothing less counts.** understand → falsify the spec → explore → slice → build → **`bun run verify` green** → PR → **merged** → **CI green on `main`** → docs, wiki and `examples/dummy/` left true → **npm published**, when a release was in scope. This repo deploys nowhere itself: there is no production, so the arc genuinely ends at merged (or at a published `@ultimat3/*` version). A green local gate is not done; an open PR is not done; a version bump that never published is not done. Report what you actually verified, not what you assume happened.
 

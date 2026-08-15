@@ -44,14 +44,14 @@ export const contactSales = action({
    * `default` is 120 burst / 2 per second per IP (`DEFAULT_RATE_LIMIT`, packages/http), which is a
    * page's read allowance, not a contact form's.
    *
-   * Declared with the numbers a human filling this in cannot exceed. Two honest caveats, reported
-   * rather than papered over: the limiter keys per ACTOR, then org, then IP (`rateLimitKey`), so
-   * "per recipient" is not a scope an app can ask for — the job's idempotency key is what stops a
-   * replayed enquiry mailing twice. And the numbers below reach `openapi.json` but not the
-   * limiter: `toRoute` selects the bucket named `contactSales`, `defineConfig` has no `http` block
-   * to declare one in, and nothing derives a bucket from this declaration — so what is enforced
-   * today is still `default`. Stricter-than-enforced, never the reverse, and the gap is the
-   * framework's to close.
+   * Declared with the numbers a human filling this in cannot exceed, and these are the numbers
+   * that run: `toRoute` registers a bucket named `contactSales` from this declaration, and the
+   * same `toBucket` conversion feeds `openapi.json`, so the published contract and the limiter
+   * cannot disagree.
+   *
+   * One honest caveat: the limiter keys per ACTOR, then org, then IP (`rateLimitKey`), so "per
+   * recipient" is not a scope an app can ask for — the job's idempotency key is what stops a
+   * replayed enquiry mailing twice.
    */
   rateLimit: { limit: 5, windowMs: 600_000 },
   async handle({ input }) {

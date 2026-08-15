@@ -6,9 +6,10 @@
  */
 
 import { isMcpExposed, isUltimateError } from '@ultimat3/core';
-import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
+import type { Bucket, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { json, problem, redirect, takeRedirect } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
+import { ActionRateLimitInvalidError } from './errors';
 import { actionName, defOf, invoke } from './invoke';
 import {
   derivePath,
@@ -82,7 +83,12 @@ export function toRoute(target: AnyAction): Route {
     input: def.input,
     cache: { mode: 'no-store', tags: tagKeys(def.cache?.invalidates ?? []) },
     tags: [resource],
-    ...(def.rateLimit === undefined ? {} : { rateLimit: name }),
+    // Name AND numbers. The name alone selected a bucket the limiter's table never held, so
+    // `bucketFor` fell through to `default` — 120 burst for an action that declared 5. The
+    // numbers ride along and `withRouteBuckets` registers them at construction.
+    ...(def.rateLimit === undefined
+      ? {}
+      : { rateLimit: name, rateLimitBucket: toBucket(name, def.rateLimit) }),
     ...(def.mcp?.description === undefined ? {} : { description: def.mcp.description }),
   };
 
@@ -131,13 +137,36 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       // advertised one for every action, so an agent reading the spec asked for a tool the MCP
       // catalog never listed — `isMcpExposed` is the same answer `toMcpTool` gives.
       mcpTool: isMcpExposed(def.mcp) ? toToolName(name) : null,
-      rateLimit: rateLimitMeta(def.rateLimit),
+      rateLimit: rateLimitMeta(name, def.rateLimit),
     },
   };
 }
 
-function rateLimitMeta(limit: ActionRateLimit | undefined): Record<string, number> | null {
-  return limit === undefined ? null : { limit: limit.limit, windowMs: limit.windowMs };
+/**
+ * `{ limit, windowMs }` as the limiter's own vocabulary: `limit` is the burst a caller may spend
+ * at once, and the window is what refills it — `5 / 600_000ms` is 5 held, one back every two
+ * minutes. The only conversion between the declaration and the enforcement, so the numbers
+ * `toOpenApiOperation` publishes and the numbers `withRouteBuckets` registers cannot drift.
+ *
+ * Refused rather than derived from nonsense: `windowMs: 0` is an infinite refill — a bucket that
+ * never empties, i.e. the declaration read as no limit at all — and a non-positive `limit` is an
+ * endpoint nobody can call. Both are the kind of quiet answer axiom 3 says must be a stop.
+ */
+export function toBucket(name: string, limit: ActionRateLimit): Bucket {
+  const ok = (value: number): boolean => Number.isFinite(value) && value > 0;
+  if (!ok(limit.limit) || !ok(limit.windowMs)) throw new ActionRateLimitInvalidError(name, limit);
+  return { capacity: limit.limit, refillPerSecond: limit.limit / (limit.windowMs / 1000) };
+}
+
+function rateLimitMeta(
+  name: string,
+  limit: ActionRateLimit | undefined,
+): Record<string, number> | null {
+  if (limit === undefined) return null;
+  // Validated through the same call the route makes, so the spec cannot publish a pair the
+  // limiter would have refused to run on.
+  toBucket(name, limit);
+  return { limit: limit.limit, windowMs: limit.windowMs };
 }
 
 const IDEMPOTENCY_PARAMETER: Record<string, unknown> = {

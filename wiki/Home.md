@@ -1,6 +1,6 @@
 # Ultimate wiki
 
-A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
+A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary developer is an AI agent and the secondary developer is a tired senior engineer working through their own AI agent and AI reviewer.
 
 **v1.2.0 `As of 2026-08`.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — publish in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Milestones 0–10 are ✅; milestone 11 is 🚧, still open on the two-platform deploy proof — 1.1.0 gave a scaffolded app a real deployable artifact, which is progress toward it, not the proof.
 

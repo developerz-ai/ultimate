@@ -46,6 +46,16 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   author, and never reach the evaluation that had the row. `meta.policy` stays set — dropping
   it would read as "this action is unguarded" in `x routes` and the manifest. `http.test.ts`
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
+- **`rateLimit:` reaches the limiter, not only the spec.** `toRoute` sets `meta.rateLimit` (the
+  bucket name) **and** `meta.rateLimitBucket` (`toBucket(name, def.rateLimit)`), and
+  `@ultimat3/http`'s `withRouteBuckets` registers the second under the first. Until 2026-08 only
+  the name was set, so `bucketFor` fell through to `default` — 120 burst / 2 per second for an
+  action that declared 5, with the declared numbers published in `x-ultimate.rateLimit` all the
+  same: looser in practice than what the author wrote, which is the dangerous direction. `toBucket`
+  is the **only** conversion between `{ limit, windowMs }` and `{ capacity, refillPerSecond }`, and
+  both projections that read the declaration call it, so the spec cannot publish a pair the limiter
+  refuses: a non-positive or non-finite half is `X_ACTION_RATE_LIMIT_INVALID`, because
+  `windowMs: 0` is an infinite refill — a declared limit that enforces nothing.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
 - **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased

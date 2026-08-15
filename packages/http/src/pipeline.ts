@@ -1,77 +1,27 @@
-// THE request lifecycle. An explicit, ordered array — not a middleware stack — because
-// this order IS the framework's guarantee: context before user code, identity before
-// rate limiting, validation before authz, authz before the handler. Nothing can skip a
-// stage, and the array is exported so `/_x` renders it and pipeline.test.ts asserts it.
-import {
-  anonymousActor,
-  isAnonymous,
-  logger,
-  recordRequest,
-  reportError,
-  runWithContext,
-  withSpan,
-} from '@ultimat3/core';
-import { signInRedirect } from './auth-redirect';
-import { defaultCache } from './cache-policy';
-import { defineHttpConfig, type HttpConfig, stripBasePath } from './config';
-import { actorView, asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
-import { corsHeaders, preflight } from './cors';
-import { factsOf } from './error-map';
-import {
-  bodyInvalid,
-  forbidden,
-  methodNotAllowed,
-  pathInvalid,
-  pipelineNoResponse,
-  rateLimited,
-  routeNotFound,
-  unauthenticated,
-} from './errors';
+// THE request lifecycle: which stages exist, in what ORDER, why — and the one loop that drives a
+// request through them. The order IS the framework's guarantee, an explicit array and not a
+// middleware stack, so nothing can skip a stage and `/_x` and `pipeline.test.ts` can both read it.
+// The other two thirds of the lifecycle are siblings: `stages.ts` owns what each stage does, and
+// `finalize.ts` owns the promise that the tail always answers rather than rejecting.
+import { recordRequest, runWithContext, withSpan } from '@ultimat3/core';
+import { defineHttpConfig, type HttpConfig } from './config';
+import { asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
+import { pipelineNoResponse } from './errors';
 import { recoverWith, runFinalize } from './finalize';
 import type { ServerHooks } from './hooks';
-import { negotiateLocale, readCookie, resolveTimeZone } from './locale';
-import { compose, type Middleware } from './middleware';
-import { overlayResponse, wantsOverlay } from './overlay';
-import {
-  assertRateLimitScope,
-  createRateLimiter,
-  type RateLimiter,
-  rateLimitKey,
-} from './rate-limit';
+import type { Middleware } from './middleware';
+import { assertRateLimitScope, createRateLimiter, type RateLimiter } from './rate-limit';
+import { withRouteBuckets } from './rate-limit-buckets';
 import { UltimateRequest } from './request';
-import { addVary, applyCacheHeaders, problem, redirect } from './response';
-import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
-import { securityHeaders } from './security-headers';
-import { validate } from './validate';
-
-export type StageName =
-  | 'request-id'
-  | 'trace'
-  | 'context'
-  | 'locale'
-  | 'auth'
-  | 'rate-limit'
-  | 'body'
-  | 'authz'
-  | 'handler'
-  | 'cache-headers'
-  | 'error-map'
-  | 'response';
-
-/**
- * `request`  may short-circuit by returning a Response.
- * `terminal` runs the route handler.
- * `recover`  runs only when something above threw.
- * `finalize` always runs, on success and on failure.
- */
-export type StagePhase = 'request' | 'terminal' | 'recover' | 'finalize';
-
-export interface StageDoc {
-  readonly name: StageName;
-  readonly phase: StagePhase;
-  /** Why the stage sits at this index. Rendered verbatim by the dev dashboard. */
-  readonly why: string;
-}
+import { problem } from './response';
+import type { RouteTable } from './router';
+import {
+  type Stage,
+  type StageDoc,
+  type StagePhase,
+  stageRunners,
+  UNMATCHED_ROUTE,
+} from './stages';
 
 export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
@@ -132,254 +82,19 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   },
 ];
 
-export type StageRun = (
-  request: UltimateRequest,
-  ctx: RequestContext,
-) => Response | undefined | Promise<Response | undefined>;
-
-export interface Stage extends StageDoc {
-  readonly run: StageRun;
-}
-
 export interface PipelineDeps {
   readonly table: RouteTable;
   readonly config?: HttpConfig;
   readonly hooks?: ServerHooks;
   readonly middleware?: readonly Middleware[];
+  /**
+   * A limiter built elsewhere — `createServer({ rateLimitStore })` is the one supported way, and
+   * it hands over a limiter built from the SAME merged config this constructor would have built.
+   * Anything else passing one here owns the bucket table it was given: route-declared buckets are
+   * registered into `config` either way, but a foreign limiter resolves names against its own.
+   */
   readonly limiter?: RateLimiter;
 }
-
-const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/;
-const REQUEST_ID = /^[\w.:-]{8,128}$/;
-
-/**
- * The one label a request with no matched route may carry. Every 404 and every scan of `/wp-admin`
- * would otherwise be its own rate-limit bucket and its own metric series — an attacker choosing
- * the server's cardinality is how a Prometheus dies.
- */
-const UNMATCHED_ROUTE = 'unmatched';
-
-const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) => {
-  const hooks = deps.hooks ?? {};
-  const wrapped = new Map<Route, RouteHandler>();
-  const wrap = compose(deps.middleware ?? []);
-  for (const route of deps.table.routes) wrapped.set(route, wrap(route.handler));
-
-  const table: Record<StageName, StageRun> = {
-    'request-id': (request, ctx) => {
-      const inbound = config.trustProxy ? request.header('x-request-id') : null;
-      if (inbound !== null && REQUEST_ID.test(inbound)) ctx.requestId = inbound;
-      ctx.headers.set('x-request-id', ctx.requestId);
-      return undefined;
-    },
-
-    trace: (request, ctx) => {
-      const inbound = request.header('traceparent');
-      const parsed = inbound === null ? null : TRACEPARENT.exec(inbound);
-      if (parsed !== null) {
-        ctx.traceId = parsed[1] ?? ctx.traceId;
-        ctx.parentSpanId = parsed[2] ?? null;
-      }
-      ctx.headers.set('x-trace-id', ctx.traceId);
-      return undefined;
-    },
-
-    context: (request, ctx) => {
-      // A preflight carries no credentials, so answering it after `auth` would 401
-      // every legitimate cross-origin call.
-      const answered = preflight(request.raw, config.cors);
-      if (answered !== undefined) return answered;
-
-      ctx.buildId = request.header(config.buildIdHeader);
-      request.assertBuild();
-
-      const pathname = stripBasePath(ctx.url.pathname, config.basePath);
-      const match = matchRoute(deps.table, ctx.method, pathname);
-      if (!match.ok) {
-        if (match.reason === 'not-found') throw routeNotFound(ctx.method, pathname);
-        if (match.reason === 'path-invalid') throw pathInvalid(pathname, match.segment);
-        ctx.headers.set('allow', match.allow.join(', '));
-        throw methodNotAllowed(ctx.method, pathname, match.allow);
-      }
-      ctx.route = match.route;
-      ctx.params = match.params;
-      return undefined;
-    },
-
-    locale: (request, ctx) => {
-      const cookies = request.header('cookie');
-      ctx.locale = negotiateLocale(
-        request.header('accept-language'),
-        config.locale,
-        readCookie(cookies, config.locale.cookie),
-      );
-      ctx.tz = resolveTimeZone(
-        request.header(config.tz.header) ?? readCookie(cookies, config.tz.cookie),
-        config.tz,
-      );
-      ctx.headers.set('content-language', ctx.locale);
-      return undefined;
-    },
-
-    auth: async (request, ctx) => {
-      if (hooks.authenticate !== undefined) {
-        // The hook says "anonymous" with null; the context says it with core's anonymous actor,
-        // because `asCtx` publishes this object as a `Ctx` and `Ctx.actor` is never null.
-        ctx.actor = (await hooks.authenticate(request, ctx)) ?? anonymousActor();
-      }
-      if (ctx.route?.meta.auth === 'required' && isAnonymous(ctx.actor)) {
-        throw unauthenticated(ctx.url.pathname);
-      }
-      return undefined;
-    },
-
-    'rate-limit': async (_request, ctx) => {
-      if (!config.rateLimit.enabled) return undefined;
-      const actor = actorView(ctx.actor);
-      const key = rateLimitKey({
-        actorId: actor?.id ?? null,
-        orgId: actor?.orgId ?? null,
-        ip: ctx.ip,
-        routeName: ctx.route?.meta.name ?? UNMATCHED_ROUTE,
-      });
-      const decision = await limiter.check(
-        key,
-        ctx.route?.meta.rateLimit ?? config.rateLimit.defaultBucket,
-      );
-      // Recorded before the throw so the 429 can carry Retry-After and the
-      // RateLimit-* headers rather than making the client guess.
-      ctx.rateLimit = decision;
-      for (const [name, value] of Object.entries(limiter.headers(decision))) {
-        ctx.headers.set(name, value);
-      }
-      if (!decision.allowed) throw rateLimited(key, decision.retryAfterSeconds);
-      return undefined;
-    },
-
-    body: async (request, ctx) => {
-      const schema = ctx.route?.meta.input;
-      if (schema === undefined) return undefined;
-      const outcome = await validate(schema, await request.bodyRaw());
-      if (!outcome.ok) throw bodyInvalid(ctx.url.pathname, outcome.issues);
-      ctx.input = outcome.value;
-      return undefined;
-    },
-
-    authz: async (request, ctx) => {
-      const route = ctx.route;
-      if (route === undefined || route.meta.policy === undefined) return undefined;
-      // The handler owns this route's single evaluation (`RouteMeta.enforcedBy`). Deciding
-      // here as well would be a second authz system holding strictly less than the first —
-      // no row — and it is the one that answers first, so it is the one that would win.
-      if (route.meta.enforcedBy === 'handler') return undefined;
-      if (hooks.authorize === undefined) {
-        // A declared policy with no evaluator is a wiring bug, and failing open
-        // here is exactly how a framework ends up with two authz systems.
-        throw forbidden(ctx.url.pathname, `no authorizer wired for policy ${route.meta.policy}`);
-      }
-      const decision = await hooks.authorize(route, request, ctx);
-      ctx.authz = decision;
-      if (!decision.allowed) throw forbidden(ctx.url.pathname, decision.reason);
-      return undefined;
-    },
-
-    handler: async (request, ctx) => {
-      const route = ctx.route;
-      if (route === undefined) throw routeNotFound(ctx.method, ctx.url.pathname);
-      const handler = wrapped.get(route) ?? route.handler;
-      return await handler(request, ctx);
-    },
-
-    'cache-headers': (_request, ctx) => {
-      const response = ctx.response;
-      if (response === undefined) return undefined;
-      if (!response.headers.has('cache-control')) {
-        applyCacheHeaders(
-          response,
-          ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route, ctx.actor),
-        );
-      }
-      return undefined;
-    },
-
-    'error-map': (request, ctx) => {
-      const error = ctx.error;
-      const facts = factsOf(error);
-      // This package's ONE error-reporting call site, and it is the framework's own — `onError`
-      // below stays the APP's sink. 5xx only: a 404 or a 422 is the caller's mistake, the problem
-      // document already told them, and a monitor that also holds those is a log nobody reads.
-      // The `operation` is the route PATTERN for the same reason `recordRequest` uses it.
-      if (facts.status >= 500) {
-        reportError(error, {
-          source: 'http',
-          scope: {
-            requestId: ctx.requestId,
-            traceId: ctx.traceId,
-            role: ctx.role,
-            operation: `${ctx.method} ${ctx.route?.path ?? UNMATCHED_ROUTE}`,
-            actorId: isAnonymous(ctx.actor) ? undefined : ctx.actor.id,
-          },
-        });
-      }
-      hooks.onError?.(error, ctx);
-      logger.error(`${facts.code}: ${facts.cause} [${ctx.requestId}]`);
-      // Before the overlay and before the problem document: a browser with no session has not
-      // hit a defect to debug, it has hit a login wall, and the answer to that is the sign-in
-      // page. `signInPath` is null until an app declares one, so this is off by default.
-      const toSignIn = signInRedirect({
-        code: facts.code,
-        signInPath: config.signInPath,
-        request: request.raw,
-        ctx,
-      });
-      if (toSignIn !== undefined) return redirect(toSignIn.location, toSignIn.status);
-      if (config.dev && wantsOverlay(request.raw)) {
-        // Asked for inside the branch, never above it: the overlay is the only surface a notice
-        // has, so a production process — or an agent that asked for json — must not pay a
-        // diagnostic's per-request cost to produce findings nothing will render.
-        const notices = hooks.devNotices?.(ctx) ?? [];
-        return overlayResponse(error, {
-          requestId: ctx.requestId,
-          method: ctx.method,
-          path: ctx.url.pathname,
-          buildId: config.buildId,
-          ...(notices.length === 0 ? {} : { notices }),
-        });
-      }
-      const retryAfter =
-        facts.code === 'X_RATE_LIMITED' && ctx.rateLimit !== undefined
-          ? { 'retry-after': String(ctx.rateLimit.retryAfterSeconds) }
-          : {};
-      return problem(error, {
-        instance: ctx.url.pathname,
-        requestId: ctx.requestId,
-        headers: retryAfter,
-      });
-    },
-
-    response: (request, ctx) => {
-      const response = ctx.response;
-      if (response === undefined) return undefined;
-      for (const [name, value] of ctx.headers) response.headers.set(name, value);
-      for (const [name, value] of Object.entries(
-        corsHeaders(config.cors, request.header('origin')),
-      )) {
-        // `vary` is the one header two stages both contribute to, so it is added and never set:
-        // `set` here would drop the cache stage's key (`accept-language`, `cookie`) on the floor.
-        if (name === 'vary') addVary(response, [value]);
-        else response.headers.set(name, value);
-      }
-      for (const [name, value] of Object.entries(
-        securityHeaders(config.security, { https: ctx.https }),
-      )) {
-        response.headers.set(name, value);
-      }
-      response.headers.set('server-timing', `total;dur=${elapsedMs(ctx)}`);
-      return undefined;
-    },
-  };
-  return table;
-};
 
 export interface HandleInit {
   readonly role: RequestContext['role'];
@@ -398,12 +113,21 @@ export interface Pipeline {
 }
 
 export const createPipeline = (deps: PipelineDeps): Pipeline => {
-  const config = deps.config ?? defineHttpConfig();
+  // Routes first, config second, and the merge here: `defineHttpConfig` cannot see a route, so a
+  // bucket a route declares only becomes real at the construction that holds both. Idempotent, so
+  // a config `createServer` already merged passes through unchanged.
+  const config = withRouteBuckets(deps.config ?? defineHttpConfig(), deps.table.routes);
   const limiter = deps.limiter ?? createRateLimiter({ config: config.rateLimit });
   // Here rather than in `createServer`: this is the one construction path every server, test and
   // embedder shares, so a limiter that cannot keep the app's declaration is refused exactly once.
   assertRateLimitScope(config.rateLimit, limiter);
-  const run = runners(deps, config, limiter);
+  const run = stageRunners({
+    table: deps.table,
+    config,
+    limiter,
+    hooks: deps.hooks ?? {},
+    middleware: deps.middleware ?? [],
+  });
   const stages: readonly Stage[] = PIPELINE_STAGES.map((doc) => ({ ...doc, run: run[doc.name] }));
 
   const byPhase = (phase: StagePhase): readonly Stage[] =>

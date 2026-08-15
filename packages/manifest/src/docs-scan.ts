@@ -208,9 +208,19 @@ export async function scanPackageDocs(dir: string): Promise<readonly DocEntry[]>
     index === undefined ? new Map<string, readonly string[]>() : parseReExports(index);
   const scanned = await Promise.all(
     [...modules].map(async ([module, symbols]) => {
-      const source = `src/${module}.ts`;
-      const text = await read(join(dir, source));
-      if (text === undefined) return undefined;
+      // `.tsx` before giving up: @ultimat3/ui ships ~40 components as .tsx, and resolving only
+      // `.ts` indexed none of them — a shipped command silently blind to a whole package.
+      const candidates = [`src/${module}.ts`, `src/${module}.tsx`] as const;
+      let source: string | undefined;
+      let text: string | undefined;
+      for (const candidate of candidates) {
+        text = await read(join(dir, candidate));
+        if (text !== undefined) {
+          source = candidate;
+          break;
+        }
+      }
+      if (text === undefined || source === undefined) return undefined;
       const header = headerComment(text);
       return {
         topic: `${shortName(name)}.${module}`,

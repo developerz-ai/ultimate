@@ -46,6 +46,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `?next=` carrying anything but a same-origin path | the fallback — including a value whose TAB/CR/LF a browser strips back into `//evil.test` |
 | HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
 | `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `createServer`, because N replicas each holding their own counters enforce N × every configured number |
+| a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `createServer`, because the loser would be a number someone read and nothing applied |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
@@ -76,6 +77,25 @@ createServer({
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
 maths stays in `createRateLimiter`, so every driver agrees on the numbers. **No shared store ships
 yet, `As of 2026-08`** — `memoryRateLimitStore()` is the only implementation in the framework.
+
+### A route may bring its own bucket
+
+`meta.rateLimit` names a bucket; `meta.rateLimitBucket` is the numbers that bucket must hold.
+`withRouteBuckets` registers them at construction — `createServer` and `createPipeline` both apply
+it, idempotently — because `defineHttpConfig` runs before any route exists and cannot have them.
+Without that half, a name nothing defined fell through `bucketFor` to `default`: an action
+declaring `limit: 5` ran on 120 burst, and the number reached the OpenAPI document all the same.
+
+| Declared | Configured under the same name | Result |
+|---|---|---|
+| nothing | — | `default`, unchanged — most routes |
+| numbers | nothing | the route's numbers, registered |
+| numbers | the same numbers | boots; a restatement is not a disagreement |
+| numbers | different numbers | `X_RATE_LIMIT_BUCKET_CONFLICT` at boot |
+
+Neither source wins a disagreement, because whichever lost would stay a number an author read and
+nothing enforced. `@ultimat3/action`'s `toBucket` is the one conversion from a declaration's
+`{ limit, windowMs }` to a bucket's `{ capacity, refillPerSecond }`.
 
 ## Routing
 

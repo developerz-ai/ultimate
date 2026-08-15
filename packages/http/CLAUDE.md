@@ -60,6 +60,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `authenticate` hook still says it with `null`; the `auth` stage is where that becomes
   `anonymousActor()`. A null here reaches every `ctx.actor` reader in the framework as a contract
   violation that only shows up on the first unauthenticated request.
+- **The lifecycle is three files, and the split is by responsibility, not by length.** `pipeline.ts`
+  owns the ORDER (`PIPELINE_STAGES`, the phases, the run loop, ALS, the span and the one metrics
+  call); `stages.ts` owns what each stage does and declares the vocabulary (`StageName`,
+  `StageRun`, `Stage`) beside the implementations it names; `finalize.ts` owns the promise that the
+  tail answers rather than rejects. Imports go one way — `pipeline.ts` → `stages.ts` — because a
+  stage body reads `StageRunnersInput`, an explicit list of what a stage may depend on, and never
+  `PipelineDeps`. Adding a stage means an entry in **both** `PIPELINE_STAGES` and the
+  `Record<StageName, StageRun>` table; the record type is what makes forgetting one a build error.
 - Never add a stage to `PIPELINE_STAGES` without a `why` and a test.
 - Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
   table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
@@ -114,6 +122,18 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   supported way to install one is `createServer({ rateLimitStore })`, which builds the limiter
   through `createRateLimiter` and hands it to the `PipelineDeps.limiter` seam that already
   existed; never add a second limiter entry point beside it.
+- **A bucket a route names is a bucket something must register.** `meta.rateLimit` selects by
+  name and `meta.rateLimitBucket` carries the numbers; `withRouteBuckets` (`rate-limit-buckets.ts`)
+  merges them into `config.rateLimit.buckets` at construction, in `createServer` and again in
+  `createPipeline` — idempotently, since the store-backed limiter is built from the merged config
+  and `bucketFor` must see the same table the pipeline does. It has to happen there: routes do not
+  exist when `defineHttpConfig` builds the table, so a name declared and never registered fell
+  through to `default` — an action declaring `limit: 5` ran on 120 burst while its OpenAPI
+  operation published 5. **Precedence is refusal, not a winner.** An identical restatement passes;
+  any disagreement, with the config or with another route, is `X_RATE_LIMIT_BUCKET_CONFLICT` before
+  the socket opens — the same shape as `assertRateLimitScope` and as `@ultimat3/auth`'s
+  `AuthLimiter` policy check, and for the same reason: the declaration that lost would go on being
+  read as enforced. Never make one side the default winner.
 - Never throw a bare `Error` — use a factory from `errors.ts`.
 - No `any`. Validation goes through Standard Schema (`validate.ts`), not a vendor API.
 - Health endpoints answer outside the pipeline, on purpose.
@@ -134,7 +154,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 | File | Job |
 |---|---|
-| `pipeline.ts` | the ordered lifecycle; the framework's guarantee |
+| `pipeline.ts` | the ORDER the stages run in — the framework's guarantee — and the one loop that drives a request through them |
+| `stages.ts` | what each stage DOES, one entry per `StageName`, plus the stage vocabulary the other two import |
 | `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
 | `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode |
 | `error-map.ts` | code → status table + `factsOf()` |
@@ -145,6 +166,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor |
+| `rate-limit.ts` | the token-bucket maths, the store interface and the memory driver |
+| `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 
 ## Commands
 

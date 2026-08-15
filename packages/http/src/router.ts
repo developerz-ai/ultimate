@@ -12,6 +12,7 @@
 // (`X_ROUTE_CONFLICT`) rather than a coin flip.
 import type { RequestContext } from './context';
 import { routeConflict } from './errors';
+import type { Bucket } from './rate-limit';
 import type { UltimateRequest } from './request';
 import type { CacheHint } from './response';
 import type { Schema } from './validate';
@@ -60,6 +61,14 @@ export interface RouteMeta {
   readonly cache?: CacheHint;
   /** Named bucket from `rateLimit.buckets`. */
   readonly rateLimit?: string;
+  /**
+   * The numbers that bucket MUST hold, when the route brings its own. Naming a bucket nothing
+   * defines is how a declared limit becomes the `default` one: the name fell through
+   * `bucketFor`, so an endpoint declaring 5 ran on 120. `withRouteBuckets` registers this into
+   * the limiter's table at construction — the one point where routes and config meet — and
+   * refuses a configured bucket of the same name that says something else.
+   */
+  readonly rateLimitBucket?: Bucket;
   readonly tags?: readonly string[];
   readonly description?: string;
 }

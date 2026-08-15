@@ -193,6 +193,7 @@ Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
 x g resource|action|mutator|backfill|job|route|policy|entity|query|task <name> [--feature f]
 x g island <name> [--at <dir>]              # a client component on an otherwise static page
 x g admin:page <name> --permission <perm> [--at <dir>]   # a custom admin screen, guarded by construction
+x g guard <name>                            # a convention this app enforces, as a build error
 ```
 
 Alias: `x generate`.

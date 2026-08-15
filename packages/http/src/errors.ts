@@ -19,6 +19,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_ERROR_STATUS_INVALID',
   'X_CORS_CONFIG_INVALID',
   'X_RATE_LIMIT_NOT_SHARED',
+  'X_RATE_LIMIT_BUCKET_CONFLICT',
 ] as const;
 
 /**
@@ -51,6 +52,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
   X_CORS_CONFIG_INVALID: 'the cors config can never produce a working response',
   X_RATE_LIMIT_NOT_SHARED: 'the rate limit is declared fleet-wide and the store is per-process',
+  X_RATE_LIMIT_BUCKET_CONFLICT: 'a route and the config declare different numbers for one bucket',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -214,6 +216,46 @@ export const rateLimitNotShared = (found: 'process' | 'disabled'): HttpError =>
         ? "http.rateLimit.scope is 'shared' but http.rateLimit.enabled is false, so the fleet-wide limit is enforced nowhere"
         : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
     fix: "pass a store whose scope is 'shared' — createServer({ routes, rateLimitStore }) — or set http.rateLimit.scope: 'process' in app.config.ts to accept per-replica limits",
+  });
+
+/**
+ * The numbers of one bucket, spelled structurally so `errors.ts` stays free of an import from
+ * `rate-limit.ts` — which imports this file.
+ */
+interface BucketNumbers {
+  readonly capacity: number;
+  readonly refillPerSecond: number;
+}
+
+const numbers = (bucket: BucketNumbers): string => `${bucket.capacity} / ${bucket.refillPerSecond}`;
+
+/**
+ * Two declarations of one bucket, at `createServer`/`createPipeline`. Neither wins: an app that
+ * configures `rateLimit.buckets.<name>` and a route that declares its own numbers under that name
+ * disagree about what is enforced, and whichever a merge picked would leave the other a number
+ * someone read and nothing applies — the failure this seam exists to end. The message speaks
+ * capacity and refill rather than the `limit`/`windowMs` an action declares, because that is what
+ * the limiter runs on; `toBucket` in `@ultimat3/action` is the conversion between them.
+ */
+export const rateLimitBucketConflict = (input: {
+  bucket: string;
+  /** `null` when the other declaration is `app.config.ts` rather than a second route. */
+  otherRoute: string | null;
+  route: string;
+  other: BucketNumbers;
+  declared: BucketNumbers;
+}): HttpError =>
+  new HttpError({
+    code: 'X_RATE_LIMIT_BUCKET_CONFLICT',
+    cause: `bucket "${input.bucket}" has two declarations: ${
+      input.otherRoute === null
+        ? 'http.rateLimit.buckets in app.config.ts'
+        : `route "${input.otherRoute}"`
+    } says ${numbers(input.other)}, route "${input.route}" says ${numbers(input.declared)} (capacity / refill per second)`,
+    fix:
+      input.otherRoute === null
+        ? `keep one: delete http.rateLimit.buckets.${input.bucket} from app.config.ts so the route's own numbers stand, or drop the route's rateLimit declaration and keep the configured bucket`
+        : `two routes claim bucket "${input.bucket}" with different numbers — rename one of the two, or declare the same limit on both`,
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>

@@ -4,7 +4,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 
 | Doc | Hook |
 |---|---|
-| [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary user is an AI agent — plus the inspire-explicitly table and the 8 axioms. |
+| [`00-thesis.md`](./00-thesis.md) | Rails' philosophy, but the primary developer is an AI agent — plus the inspire-explicitly table and the 8 axioms. |
 | [`01-stack.md`](./01-stack.md) | One locked choice per layer; Bun natives delete ~40 dependencies before you write a line. |
 | [`02-primitives.md`](./02-primitives.md) | Eight primitives. `action` projects to six artifacts. Two authz systems is how every Meteor-like framework died. |
 | [`03-realtime.md`](./03-realtime.md) | Channels → live queries → local-first: a ladder, not three products. Tier 2 → 3 is a config flag. |

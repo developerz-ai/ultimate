@@ -25,6 +25,7 @@ import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkSourceDrift } from './drift';
 import { checkErrorFixes } from './error-contract';
 import { readIntFlag } from './flag-number';
+import { guardFindings } from './guards';
 import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
@@ -74,10 +75,21 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
   },
   {
     name: 'boundaries',
-    summary: 'surface, layer and package-tier imports',
+    summary: "surface, layer and package-tier imports, and the app's own guards",
+    // An app's `guards/` rides here rather than becoming an eighteenth step, for the reason the
+    // seam already states: a host adds findings to a step, it can never add, remove, reorder or
+    // skip one — so "green" keeps meaning exactly what it meant. This is the step whose host slot
+    // already carries "rules this repo makes about itself that the framework cannot know" (the
+    // monorepo's tier table arrives through it), and it runs third, before any suite, so a
+    // convention failure is reported in seconds rather than after the tests.
+    //
+    // Discovered, not registered: `guardFindings` reads the directory. A guard that had to
+    // announce itself is a guard an app can forget to announce, which is the coupling axiom 8's
+    // extension model rejects.
     run: async (ctx) =>
       fromFindings([
         ...(await checkAppBoundaries(ctx.root)),
+        ...(await guardFindings(ctx.root)),
         ...(await hostFindings(ctx, 'boundaries')),
       ]),
   },

@@ -18,6 +18,7 @@ export const GENERATORS = [
   'task',
   'island',
   'admin:page',
+  'guard',
 ] as const;
 
 export type Generator = (typeof GENERATORS)[number];
@@ -92,4 +93,5 @@ const EXAMPLE_NAME: Readonly<Record<Generator, string>> = {
   task: 'nightly-digest',
   island: 'counter',
   'admin:page': 'ops',
+  guard: 'migration-safety',
 };

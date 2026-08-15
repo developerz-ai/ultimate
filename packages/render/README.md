@@ -249,15 +249,19 @@ assertBudget(entry, measuredIslands, collector.directives);
 render actually pulled in. Reading only the first is how a page could be charged for the hydration
 runtime and not for the chunk it boots: a budget that counts the wrapper and not the code.
 
-`entry.islands` is filled from `config.islands` at registration, so a declared island is weighed
-even on a route no render has touched. It was `[]` on every route ever registered — nothing passed
-`islands` — which left that half of the union reading nothing at all.
+`entry.islands` is filled from `config.islands` at registration and from nothing else, so a declared
+island is weighed even on a route no render has touched. It was `input.islands ?? []` and nothing
+ever passed `islands`, which left that half of the union reading nothing at all; `RegisterRouteInput`
+no longer carries the key, because the only thing a caller could do with it was un-weigh a
+declaration.
 
 An island on a route that resolves to `hydrate: 'never'`, or rendered with no collector, is
 `X_ISLAND_NOT_HYDRATED` — inert markup either way. With `hydrate` derived it means one of exactly
-two things, and the fix names both: the route stated `'never'` next to an island, or the `island()`
-call sits below the `defineRoute` that would have drained it. A `'never'` route is also left with
-no derived budget, deliberately — a ceiling there would paper over the contradiction.
+two things, and the `fix:` names **the one that is yours**: the route stated `'never'` next to an
+island (remove it), or the `island()` call sits below the `defineRoute` that would have drained it
+(move it up). The throw site tells them apart by asking whether that declaration is still waiting to
+be drained. A `'never'` route is also left with no derived budget, deliberately — a ceiling there
+would paper over the contradiction.
 
 ## Public API
 
