@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "cd77ad0e94388c9c06744d1ce7a6792a16a48ae62b1a3744eab07645bd716304",
+  "buildId": "1129b32fb009f2c391955cce64786c15436dc0334f0485359bb3c7adb6986d18",
   "tiers": {
     "0": [
       "core",
@@ -351,9 +351,64 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_AUDIT_SINK_FAILED",
+      "owner": "action",
+      "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_AUDIT_SINK_MISSING",
+      "owner": "action",
+      "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_LIMITER_NOT_SHARED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_AUTH_LIMITER_POLICY_MISMATCH",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
       "code": "X_AUTH_WRITE_FAILED",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_APPLIED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_ENVIRONMENT",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_MIGRATION_PENDING",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_PENDING",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_RUNNING",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_STALLED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_UNKNOWN",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
     },
     {
       "code": "X_BODY_INVALID",
@@ -1204,6 +1259,11 @@
       "code": "X_QUERY_UNREGISTERED",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_NOT_SHARED",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_RATE_LIMITED",

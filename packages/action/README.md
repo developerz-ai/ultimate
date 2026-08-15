@@ -196,6 +196,98 @@ name-sorted, and reads no clock, env or random source — same registry ⇒ same
 (`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new
 payload, is `X_IDEMPOTENCY_CONFLICT`. Store is swappable via `setIdempotencyStore()`.
 
+## Audit — the seam, not the row
+
+`audit: true` on any `action` or `mutator` sends **every attempt** — allowed, denied and failed
+— to the installed `AuditSink`. Opt-in per declaration, never a global switch: a login and a
+price change are not the same event, and the framework is not the thing that knows which of
+them your business has to keep.
+
+```ts
+import { setAuditSink } from '@ultimat3/action';
+
+setAuditSink({
+  async write(record) { await record.ctx.db.auditRows.insert(myRow(record)); },
+});
+```
+
+What the framework supplies is what it genuinely knows:
+
+| Field | |
+|---|---|
+| `at` | when the attempt began, from `ctx.now()` — an instant, never a rendering |
+| `action` / `mutator` | the registered name, and which primitive it was |
+| `surface` | `server` \| `http` \| `mcp` \| `job` — the same price change over MCP is not the same event |
+| `ctx` | the whole context: actor, `requestId`, `traceId`, locale, and the services a sink needs to write a row |
+| `input` | the **parsed** input, or `undefined` when the parse is what failed — never the raw payload |
+| `idempotencyKey` / `replayed` | the namespaced key, and whether this was a call rather than a write |
+| `outcome` | `allowed` \| `denied` \| `failed` |
+| `failure` | the `X_*` code and the thrown value, on every outcome but `allowed` |
+
+What it does **not** supply: an audit entity, a schema, a retention policy, a storage backend, a
+hash chain, a subject index, or an opinion on what "who" means under impersonation. Four apps
+model those four ways; shipping one would make three of them wrong.
+
+A denial is recorded because `invoke` wraps the whole path — `guard` throws **before** `handle`,
+so nothing you could write around your own handler would ever see one. That is the reason this
+lives in the framework and the row does not.
+
+**Failure is loud, both ways.** `audit: true` with no sink installed is `X_AUDIT_SINK_MISSING`,
+raised before the input parse — the one audit failure with no committed write behind it. A sink
+that refuses a **successful** record is `X_AUDIT_SINK_FAILED`: the deliberate opposite of the
+cache tier's `bestEffort`, because a dropped cache entry expires by TTL and the stack heals
+itself while nothing ever re-derives an audit row that was never written. It is post-commit all
+the same, and the error says so.
+
+**Its `fix:` branches, because only one of the two is ever true.** Retrying is safe exactly when
+*this invocation* went through the idempotency store — then the settled record replays and the
+audit row is re-attempted without re-running the handler. It did not when the action is not
+`idempotent`, **and it did not when the action is `idempotent` but the caller sent no
+`Idempotency-Key`**: `invoke` reads `def.idempotent === true ? (options.idempotencyKey ?? null)
+: null`, so both collapse to the same `null`. In that case the error says *do not retry* and
+names the edit — telling a caller to re-run a committed mutator is worse than saying nothing.
+`meta.replayable` carries the same fact to `--json`.
+
+A sink that refuses a **denied or failed** record is logged as
+`audit.sink.failed` and the original error still reaches the caller: answering
+`X_AUDIT_SINK_FAILED` there would hide the `X_FORBIDDEN` from whoever has to act on it.
+
+Your house rule goes in a wrapper, not in a config option — the same shape as `tenantEntity()`:
+
+```ts
+// apps/web/shared/base/audited-mutator.ts — the app's convention, written once
+import { mutator, type MutatorDef } from '@ultimat3/action';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
+
+/** Every write in this app is recorded and retryable — declared once, not at forty call sites. */
+export const auditedMutator = <I extends StandardSchemaV1, O extends StandardSchemaV1>(
+  def: MutatorDef<I, O>,
+) => mutator({ ...def, audit: true, idempotent: true });
+```
+
+Nothing downstream can tell the difference: `isMutator()` is structural and `registerActions`
+names the object in place, so every projection, the manifest and admin CRUD work on it exactly
+as on a hand-written one.
+
+The row it produces is the app's, and so is every question the framework refused to answer —
+which fields, whose tenant, chained or not, kept how long:
+
+```ts
+setAuditSink({
+  async write(record) {
+    const { ctx } = record;                             // the services a sink needs to write a row
+    const prev = await chainHead(ctx);                  // hash-chained: the app's choice
+    await ctx.db.auditRows.insert({
+      orgId: orgOf(ctx.actor),                          // tenancy: derived from the actor
+      subjectId: subjectOf(record.action, record.input),// queryable by subject: the app's index
+      actorId: impersonatorOf(ctx.actor) ?? ctx.actor.id,
+      at: record.at, outcome: record.outcome, code: record.failure?.code ?? null,
+      prevHash: prev, hash: await sha256(prev, record),
+    });
+  },
+});
+```
+
 ## Contract tests
 
 `publishPost.contract()` returns three assertions. Run them; they throw `X_CONTRACT_DRIFT`.
@@ -235,6 +327,8 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
 | `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |
+| `X_AUDIT_SINK_MISSING` | `audit: true` and no sink installed — raised before the input parse | `setAuditSink(yourSink)` at boot |
+| `X_AUDIT_SINK_FAILED` | the sink refused the record for an attempt that **succeeded** | fix the sink — then retry the same `Idempotency-Key` if this call carried one, else reconcile by hand |
 
 Denials re-throw the policy layer's own codes (`X_FORBIDDEN`, `X_UNAUTHENTICATED`) —
 this package never invents an authz code.

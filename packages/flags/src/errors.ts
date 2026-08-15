@@ -105,10 +105,27 @@ export const flagSubjectRequired = (init: {
     meta: { key: init.key, kind: init.kind, actorId: init.actorId, via: init.via },
   });
 
+/**
+ * `JSON.stringify` throws on a bigint or a cycle, and RUNS a `toJSON` the value carries — so an
+ * app object can hijack an error constructor with its own throw, and the caller then catches
+ * something that is not `X_FLAG_EXPIRY_INVALID`. A cause only has to describe, so a value that
+ * defeats rendering degrades to its type rather than destroying the refusal.
+ */
+const renderGiven = (given: unknown): string => {
+  if (given === undefined) return 'undefined';
+  if (typeof given === 'bigint') return `${given}n`;
+  if (typeof given === 'symbol') return String(given);
+  try {
+    return JSON.stringify(given) ?? String(given);
+  } catch {
+    return `a ${typeof given} that cannot be rendered`;
+  }
+};
+
 export const flagExpiryInvalid = (key: string, given: unknown): FlagsError =>
   new FlagsError({
     code: 'X_FLAG_EXPIRY_INVALID',
-    cause: `${key} is a temporary flag whose expiresAt is ${JSON.stringify(given) ?? 'undefined'}, which is not a date`,
+    cause: `${key} is a temporary flag whose expiresAt is ${renderGiven(given)}, which is not a date`,
     fix: `set expiresAt to an ISO-8601 date such as '2026-12-01' in defineFlag({ key: '${key}' })`,
     meta: { key },
   });

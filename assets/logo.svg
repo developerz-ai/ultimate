@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Ultimate">
+  <title>Ultimate</title>
+  <!--
+    The mark is axiom 2 drawn: one declaration at the centre, projecting outward.
+    Four arms — the surfaces a declaration reaches — around a single solid node.
+    It also reads as the CLI's own name, `x`.
+
+    The gap between the node and the arms is load-bearing, not decoration: closed up,
+    the mark turns into a blob at favicon size. Arms stop at 30 so their round caps
+    clear the node's corners at 25.
+
+    Colours are fixed rather than `currentColor` — the white ground carries the mark
+    unchanged on a dark README, a light one, a favicon, or a sticker.
+  -->
+  <rect width="64" height="64" rx="14" fill="#FFFFFF" />
+  <g fill="none" stroke="#15201E" stroke-width="5" stroke-linecap="round">
+    <path d="M18 18 L30 30" />
+    <path d="M46 18 L34 30" />
+    <path d="M18 46 L30 34" />
+    <path d="M46 46 L34 34" />
+  </g>
+  <!-- The declaration itself: stated once, in the middle of everything it feeds. -->
+  <path d="M32 25 L39 32 L32 39 L25 32 Z" fill="#15201E" />
+</svg>

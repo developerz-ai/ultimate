@@ -213,6 +213,8 @@ The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which 
 ```bash
 x db gen "add publish_at" | migrate | reset | studio | branch <name>
      | backfill --list [--name n] [--status s] [--limit n] [--json]
+     | backfill --pending [--json]
+     | backfill <name>|--all [--write] [--force] [--json]
 ```
 
 | Subcommand | Does | Notes |
@@ -222,20 +224,30 @@ x db gen "add publish_at" | migrate | reset | studio | branch <name>
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
 | `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating |
-| `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | `--list` is required, and its absence is `X_CLI_BAD_FLAG` naming the invocation that works: `x db backfill <name>` will one day *run* a pass, and a bare command that quietly listed would become a silent no-op the day it does |
+| `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | what has already been swept |
+| `backfill --pending` | every backfill the app **declared**, minus the ones that completed | the alarm: a sweep merged and never enqueued had no ledger row and was invisible everywhere. **Non-zero exit** when anything is unswept, so a cron reads the code and not the table |
+| `backfill <name>` / `backfill --all` | gate one sweep (or every pending one) and enqueue it | **dry run by default** — `--write` is never implied. `--write` enqueues; the workers perform the pass, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero naming each |
+
+A bare `x db backfill` is `X_CLI_BAD_FLAG` naming a shape that works: the four answer four different questions, and defaulting to one of them is the ambiguity axiom 1 refuses.
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--name` | string | — | migration or branch name, or the backfill to filter the ledger by, when you would rather not pass it positionally |
 | `--allow-destructive` | boolean | `false` | let `gen` emit a DROP whose `down` cannot restore the rows. `X_MIGRATION_IRREVERSIBLE`'s own `fix:` line names it |
-| `--list` | boolean | `false` | `backfill`: print the ledger. The only shape this subcommand ships |
+| `--list` | boolean | `false` | `backfill`: print the ledger |
+| `--pending` | boolean | `false` | `backfill`: declared minus completed, judged in this `ULTIMATE_ENV`. Non-zero exit when anything is unswept |
+| `--all` | boolean | `false` | `backfill`: every pending sweep, isolated per name |
+| `--write` | boolean | `false` | `backfill`: enqueue the pass. Without it the command is a dry run and writes nothing |
+| `--force` | boolean | `false` | `backfill`: sweep a name the ledger records as completed, into a **new** ledger row |
 | `--status` | string | — | `backfill`: `running`, `completed` or `failed`. Anything else is `X_CLI_BAD_FLAG` naming the three |
 | `--limit` | string | `100` | `backfill`: max ledger rows |
 
 **The backfill ledger is what has already been SWEPT.** One row per pass — name, status, rows
 processed, last cursor, the app version that started it, started/completed — keyed by run rather
 than by name, so `enqueue({ force: true })` writes a *new* row instead of editing the one it
-reruns. A completed row is what makes re-enqueueing that name a no-op.
+reruns. A completed row is what makes the next **pass** a no-op — not the next enqueue: the
+one-live-run index covers `ready`/`delayed`/`running`/`suspended`, and a completed job is in none
+of them, so a second `enqueue()` creates a real job row whose pass then reports `skipped: true`.
 
 ```bash
 $ x db backfill --list
@@ -277,7 +289,9 @@ bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never co
 A separate `<id>.down.sql` is not a migration and is never applied — that was a hand-written
 pre-1.2.0 layout, and reading it as one would drop every table the pair exists to reverse.
 
-Errors: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
+Errors, schema: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
+
+Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is not a refusal — the sweep simply has not run), `X_BACKFILL_UNKNOWN`, `X_BACKFILL_ENVIRONMENT`, `X_BACKFILL_MIGRATION_PENDING`, `X_BACKFILL_APPLIED`, `X_BACKFILL_RUNNING`. All six are `@ultimat3/jobs`', carry a one-line runnable `fix:`, and are what a non-zero exit from these shapes means — full wording in [Error codes → Backfills](Error-Codes#backfills). `X_BACKFILL_STALLED` is the seventh and never reaches this command: it is raised by the pass, on a worker, so it surfaces through `x jobs show <id>`.
 
 ## x verify
 
@@ -408,8 +422,12 @@ x deploy --image repo/app:tag [--method compose|helm] [--dry-run] [--critical] [
 | `--dry-run` | boolean | `false` | print the plan, run nothing |
 | `--critical` | boolean | `false` | security deploy: clients are forced to reload after the grace period |
 
-`compose` is five ordered steps against `docker/docker-compose.prod.yml` — `run --rm migrate` to
-completion, then `up -d` for `web`, `sync`, `worker`, `scheduler`. Steps run sequentially and stop
+`compose` is six ordered steps against `docker/docker-compose.prod.yml` — `run --rm migrate` to
+completion, then `up -d` for `web`, `sync`, `worker`, `scheduler`, then `run --rm backfill` last.
+**`migrate` gates and `backfill` triggers**: a slow `UPDATE` inside a release gate holds the deploy
+open against a database still serving the previous release, so data sweeps are enqueued after the
+new pods serve and the workers already draining the queue perform them. The `backfill` service runs
+`x db backfill --all --write --json` and exits. Steps run sequentially and stop
 at the first non-zero exit; the `fix` is that step's command, so you can rerun it directly for full
 output. `helm` is one `helm upgrade --install app docker/helm --set image=<ref>`; the chart is
 **committed** at `docker/helm` in the framework repo, there is no `--helm` flag and nothing

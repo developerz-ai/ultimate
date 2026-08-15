@@ -21,6 +21,7 @@ import {
   type AuthLimiter,
   type AuthRateLimitPolicy,
   accountKey,
+  assertAuthLimiterPolicy,
   createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   ipKey,
@@ -90,6 +91,13 @@ export interface AuthConfigInput {
   readonly session?: Partial<SessionPolicy> | undefined;
   readonly password?: Partial<PasswordPolicy> | undefined;
   readonly rateLimit?: Partial<AuthRateLimitPolicy> | undefined;
+  /**
+   * Where failed attempts are counted. Omitted means `createAuthLimiter`, which is one process'
+   * worth of state — correct for dev and tests, and `maxAttempts × N` for N replicas. An app that
+   * runs more than one declares `rateLimit.scope: 'shared'` and passes a limiter that says the
+   * same, or `defineAuth` refuses here rather than at 3am on the first spray.
+   */
+  readonly limiter?: AuthLimiter | undefined;
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
   readonly providers?: readonly OAuthProviderId[] | undefined;
 }
@@ -110,13 +118,15 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const session: SessionPolicy = { ...DEFAULT_SESSION_POLICY, ...config.session };
   const password: PasswordPolicy = { ...DEFAULT_PASSWORD_POLICY, ...config.password };
   const rateLimit: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, ...config.rateLimit };
+  const limiter = config.limiter ?? createAuthLimiter(clock, rateLimit);
+  assertAuthLimiterPolicy(rateLimit, limiter);
   return Object.freeze({
     adapter: config.adapter,
     clock,
     sessions: { store: config.adapter, policy: session, clock },
     password,
     rateLimit,
-    limiter: createAuthLimiter(clock, rateLimit),
+    limiter,
     mfa: { issuer: config.mfa?.issuer ?? 'Ultimate', required: config.mfa?.required ?? false },
     providers: config.providers ?? OAUTH_PROVIDER_IDS,
   });
@@ -165,8 +175,8 @@ export interface LoginResult {
 export async function login(auth: Auth, input: LoginInput): Promise<LoginResult> {
   const account = accountKey(input.email);
   const ip = input.ip ?? null;
-  auth.limiter.assertAllowed(account);
-  if (ip !== null) auth.limiter.assertAllowed(ipKey(ip));
+  await auth.limiter.assertAllowed(account);
+  if (ip !== null) await auth.limiter.assertAllowed(ipKey(ip));
 
   const user = await auth.adapter.findUserByEmail(input.email.trim().toLowerCase());
   const usable = user !== null && user.disabledAt === null;
@@ -177,13 +187,13 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
   });
 
   if (!verification.ok || user === null) {
-    auth.limiter.recordFailure(account);
-    if (ip !== null) auth.limiter.recordFailure(ipKey(ip));
+    await auth.limiter.recordFailure(account);
+    if (ip !== null) await auth.limiter.recordFailure(ipKey(ip));
     throw loginFailed();
   }
 
-  auth.limiter.recordSuccess(account);
-  if (ip !== null) auth.limiter.recordSuccess(ipKey(ip));
+  await auth.limiter.recordSuccess(account);
+  if (ip !== null) await auth.limiter.recordSuccess(ipKey(ip));
 
   // Parameters were raised since this hash was written: upgrade it now, while we hold the
   // plaintext. This is the only moment it is possible without asking the user for anything.

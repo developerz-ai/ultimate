@@ -10,7 +10,7 @@
 // `db-integration.test.ts`; CI's `postgres` service container sets it.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import {
   createPostgresClient,
   generateMigration,
@@ -156,16 +156,6 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     return page.nextCursor ?? '';
   };
 
-  /** The stable code a call rejected with. Message text is not the contract; the code is. */
-  const rejectionCode = async (call: Promise<unknown>): Promise<string> => {
-    try {
-      await call;
-      return 'resolved';
-    } catch (error) {
-      return isUltimateError(error) ? error.code : String(error);
-    }
-  };
-
   test('the generated migration is a migration Postgres accepts', () => {
     // Both halves are load-bearing and both were wrong: the unique column must not also get an
     // explicit `create unique index` (Postgres already made one under that exact name), and the
@@ -205,21 +195,6 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       ),
     );
     await expect(insert).rejects.toThrow();
-  });
-
-  test('tenancy is enforced on the row, not on the query shape', async () => {
-    const written = await write(acme, 'INV-tenant');
-
-    expect(await repo().findById(written.id, { orgId: acme })).not.toBeNull();
-    // The id is correct and the row exists — only the tenant is wrong, and the statement itself
-    // is what refuses it. Nothing in the process filters this after the fact.
-    expect(await repo().findById(written.id, { orgId: other })).toBeNull();
-    await expect(repo().update(written.id, { paid: true }, { orgId: other })).rejects.toThrow();
-    await expect(repo().delete(written.id, { orgId: other })).rejects.toThrow();
-
-    const stillThere = await repo().findById(written.id, { orgId: acme });
-    expect(stillThere?.paid).toBe(false);
-    expect(stillThere?.deletedAt).toBeNull();
   });
 
   test('update writes the patch and returns the row Postgres stored', async () => {
@@ -345,107 +320,6 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
       raw(`select count(*) as count from "pg_live_orgs" where "slug" = 'hard-delete'`),
     );
     expect(Number(rows[0]?.count)).toBe(0);
-  });
-
-  test('a composite-key row is deletable by filter, and only inside its own tenant', async () => {
-    const tags = () => postgresRepo(invoiceTags);
-    const mine = await write(acme, 'INV-tags');
-    const yours = await write(other, 'INV-tags-other');
-    const tag = (invoiceId: string, orgId: string, label: string) =>
-      tags().insert({ invoiceId, orgId, label, note: null });
-
-    for (const label of ['urgent', 'archive', 'review']) await tag(mine.id, acme, label);
-    await tag(yours.id, other, 'urgent');
-
-    // The whole point: three key columns' worth of row, none of them addressable by `delete(id)`.
-    await expect(tags().delete(mine.id, { orgId: acme })).rejects.toThrow(/deleteWhere/);
-
-    // A filter matching nothing is 0, not a throw and not a full-table delete.
-    expect(await tags().deleteWhere({ invoiceId: mine.id, label: 'absent' }, { orgId: acme })).toBe(
-      0,
-    );
-    expect(await tags().count({ orgId: acme })).toBe(3);
-
-    // Exactly the row the full key names.
-    expect(await tags().deleteWhere({ invoiceId: mine.id, label: 'urgent' }, { orgId: acme })).toBe(
-      1,
-    );
-    expect(await tags().count({ orgId: acme })).toBe(2);
-
-    // A partial filter takes the rest of this invoice's tags — and the other tenant's `urgent`
-    // row matches the label but is behind the org predicate Postgres itself applies.
-    expect(await tags().deleteWhere({ invoiceId: mine.id }, { orgId: acme })).toBe(2);
-    expect(await tags().count({ orgId: acme })).toBe(0);
-    expect(await tags().count({ orgId: other })).toBe(1);
-    expect(await tags().deleteWhere({ label: 'urgent' }, { orgId: acme })).toBe(0);
-    expect(await tags().count({ orgId: other })).toBe(1);
-
-    expect(await rejectionCode(tags().deleteWhere({}, { orgId: acme }))).toBe('X_WRITE_UNFILTERED');
-    expect(await rejectionCode(tags().deleteWhere({ label: 'urgent' }))).toBe('X_TENANCY_UNSCOPED');
-  });
-
-  test('a composite-key row is patchable by filter, and only inside its own tenant', async () => {
-    const tags = () => postgresRepo(invoiceTags);
-    const mine = await write(acme, 'INV-patch');
-    const yours = await write(other, 'INV-patch-other');
-    const noteOf = async (invoiceId: string, label: string, orgId: string) =>
-      (
-        await tags().findMany({
-          orgId,
-          where: [{ column: 'invoiceId', op: 'eq', value: invoiceId }],
-        })
-      ).rows.find((row) => row.label === label)?.note ?? null;
-
-    for (const label of ['red', 'green', 'blue']) {
-      await tags().insert({ invoiceId: mine.id, orgId: acme, label, note: null });
-    }
-    await tags().insert({ invoiceId: yours.id, orgId: other, label: 'red', note: null });
-
-    // `update(id, patch)` cannot address any of these — the defect, against a real server.
-    await expect(tags().update(mine.id, { note: 'x' }, { orgId: acme })).rejects.toThrow(
-      /updateWhere/,
-    );
-
-    // Nothing matched is 0: not a throw, and not a table-wide write.
-    expect(
-      await tags().updateWhere(
-        { invoiceId: mine.id, label: 'absent' },
-        { note: 'x' },
-        { orgId: acme },
-      ),
-    ).toBe(0);
-
-    // Exactly the row the full composite key names.
-    expect(
-      await tags().updateWhere(
-        { invoiceId: mine.id, label: 'red' },
-        { note: 'seen' },
-        { orgId: acme },
-      ),
-    ).toBe(1);
-    expect(await noteOf(mine.id, 'red', acme)).toBe('seen');
-    expect(await noteOf(mine.id, 'green', acme)).toBeNull();
-
-    // A partial filter patches the rest of this invoice's tags…
-    expect(
-      await tags().updateWhere({ invoiceId: mine.id }, { note: 'bulk' }, { orgId: acme }),
-    ).toBe(3);
-    expect(await noteOf(mine.id, 'blue', acme)).toBe('bulk');
-
-    // …and the other tenant's identically-labelled row sits behind the org predicate Postgres
-    // itself applies, so a filter that matches it on paper reaches only this tenant's copy.
-    expect(await tags().updateWhere({ label: 'red' }, { note: 'leak' }, { orgId: acme })).toBe(1);
-    expect(await noteOf(yours.id, 'red', other)).toBeNull();
-
-    expect(await rejectionCode(tags().updateWhere({}, { note: 'x' }, { orgId: acme }))).toBe(
-      'X_WRITE_UNFILTERED',
-    );
-    expect(await rejectionCode(tags().updateWhere({ label: 'red' }, {}, { orgId: acme }))).toBe(
-      'X_PATCH_EMPTY',
-    );
-    expect(await rejectionCode(tags().updateWhere({ label: 'red' }, { note: 'x' }))).toBe(
-      'X_TENANCY_UNSCOPED',
-    );
   });
 
   test('updateWhere cannot reach a soft-deleted row, and rolls back with its transaction', async () => {

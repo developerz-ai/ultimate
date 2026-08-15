@@ -48,6 +48,7 @@ export {
   preloadUnknownRelation,
   tenancyActorMismatch,
   tenancyActorOrgRequired,
+  tenancyRowMismatch,
   tenancyUnscoped,
   writeUnfiltered,
 } from './errors';
@@ -100,6 +101,7 @@ export type { Seed, SeedContext, SeedOptions } from './seed';
 export { defineSeed, seedId } from './seed';
 export type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 export {
+  assertRowTenant,
   assertScoped,
   describePlan,
   emptyPlan,

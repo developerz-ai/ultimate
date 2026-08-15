@@ -11,7 +11,30 @@ import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
 
-export const DEPLOY_ROLES = ['migrate', 'web', 'sync', 'worker', 'scheduler'] as const;
+/**
+ * Ordered, and the order is the design. `migrate` GATES — it runs to completion before anything
+ * serves, and a schema difference after it fails the deploy. `backfill` is last and TRIGGERS: a
+ * data sweep put inside a release gate holds the deploy open while a slow UPDATE runs against a
+ * database still serving the PREVIOUS release, so it runs after the new pods are up and the
+ * workers already draining the queue are what perform it. That is also why it is not wired into
+ * `runMigrations()` and never will be.
+ *
+ * `backfill` is a one-shot like `migrate`, so it takes the same `run --rm` shape; the compose
+ * service behind it runs `x db backfill --all --write --json` rather than a `ROLE`, because
+ * `@ultimat3/core`'s `ROLES` is a closed list of process shapes and a sweep trigger is a command.
+ *
+ * ORDER HERE IS NECESSARY AND NOT SUFFICIENT. `docker compose up -d` returns when a container has
+ * STARTED, not when the application inside it is serving, so this list alone puts the trigger after
+ * the serving roles were asked to start and not after they are ready. The barrier that makes
+ * "after" true is declarative and belongs to the compose file, not to this plan: the `backfill`
+ * service needs `depends_on: { web: { condition: service_healthy } }`, which `docker compose run`
+ * honours. Both compose definitions — `docker/docker-compose.prod.yml` and the one
+ * `templates/scaffold-container.ts` scaffolds — still owe that service and that condition.
+ */
+export const DEPLOY_ROLES = ['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill'] as const;
+
+/** The roles that run to completion and exit, as against the ones that stay up serving. */
+const ONE_SHOT_ROLES: readonly string[] = ['migrate', 'backfill'];
 
 export interface DeployPlan {
   readonly image: string;
@@ -48,8 +71,8 @@ export function planDeploy(image: string, method: 'compose' | 'helm', root: stri
         'compose',
         '-f',
         join(root, 'docker', 'docker-compose.prod.yml'),
-        role === 'migrate' ? 'run' : 'up',
-        role === 'migrate' ? '--rm' : '-d',
+        ONE_SHOT_ROLES.includes(role) ? 'run' : 'up',
+        ONE_SHOT_ROLES.includes(role) ? '--rm' : '-d',
         role,
       ],
     })),

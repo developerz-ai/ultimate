@@ -13,7 +13,7 @@ Agents fail on ambiguity, not on syntax. Every "you could use A or B here" is a 
 
 A framework optimized for agents is *also* the calmest framework for humans. The two audiences want the same thing: fewer decisions with consequences.
 
-## Steal explicitly
+## Inspire explicitly
 
 Nothing here is novel in isolation. The bet is that no one has assembled it in one runtime with one authz system.
 
@@ -28,7 +28,9 @@ Nothing here is novel in isolation. The bet is that no one has assembled it in o
 | **Inngest** | durable step workflows | a step is the retry unit; the job is not |
 | **Elixir/OTP** | supervision trees, graceful drain, role-based processes | one image, N roles, restart semantics you can reason about |
 | **Django** | admin-grade introspection, migrations that don't lie | if the framework can't describe itself, neither can an agent |
-| **Spring** | a large capability surface behind swappable seams | breadth is not the enemy of control — undeclared coupling is. Every capability here arrives as an interface with one shipped implementation |
+| **Spring** | a large capability surface behind swappable seams, and module boundaries verified by the build rather than by review | breadth is not the enemy of control — undeclared coupling is. Every capability here arrives as an interface with one shipped implementation, and `bun run boundaries` fails the build on an edge nobody declared. What we do **not** take: a DI container, runtime reflection, or configuration that surfaces its error three layers from the cause |
+| **Play** | routes verified at compile time, and dev errors that name the line | a route that cannot drift from its handler is a class of bug deleted. We go one further — the directory **is** the URL, so there is no routes file to keep in sync in the first place |
+| **Angular** | the CLI as the primary surface, and upgrades shipped as migrations rather than release notes | if `x g` emits it, nobody hand-writes it and nobody hand-edits it back. The upgrade half we take differently: an agent reads a machine-readable surface diff and edits with judgement, where a schematic guesses from syntax |
 | **Ember Data** | an identity-mapped client store, one record per id | two components holding two copies of one row is a bug the framework should make unrepresentable |
 | **Expo** | the updates protocol as a published spec, not a product | OTA that a vendor cannot revoke, because the client speaks a spec anyone can serve |
 

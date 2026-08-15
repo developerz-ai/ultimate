@@ -1,7 +1,14 @@
-// Token-bucket rate limiting. The store is an interface so the same limiter runs
-// in-memory in dev/tests and against Redis/Postgres in a multi-replica deployment;
-// the bucket maths lives here so every driver agrees on the numbers.
-import { rateLimited } from './errors';
+// Token-bucket rate limiting. The store is an interface so the same limiter runs in-memory in
+// dev/tests and against a shared tier in a multi-replica deployment — installed through
+// `createServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
+// declaration; the bucket maths lives here so every driver agrees on the numbers.
+import { rateLimited, rateLimitNotShared } from './errors';
+
+/**
+ * Where a limiter's counters live. A store says which it provides; `RateLimitConfig` says which
+ * the deployment requires, and the two are checked against each other once, at boot.
+ */
+export type RateLimitScope = 'process' | 'shared';
 
 export interface Bucket {
   /** Burst size. */
@@ -18,6 +25,8 @@ export interface RateLimitDecision {
 }
 
 export interface RateLimitStore {
+  /** Declared, never inferred: a driver knows where its counters live; nothing else does. */
+  readonly scope: RateLimitScope;
   take(key: string, bucket: Bucket, cost: number, nowMs: number): Promise<RateLimitDecision>;
   reset(key: string): Promise<void>;
 }
@@ -27,11 +36,20 @@ export interface RateLimitConfig {
   /** Named buckets; a route selects one via `meta.rateLimit`. `default` is required. */
   readonly buckets: Readonly<Record<string, Bucket>>;
   readonly defaultBucket: string;
+  /**
+   * What this deployment requires of the store. `'shared'` says these numbers are the whole
+   * fleet's allowance, and a per-process store then refuses to boot — because N replicas each
+   * holding their own counters enforce N × every number here, silently and only in production.
+   */
+  readonly scope: RateLimitScope;
 }
 
 export const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   enabled: true,
   defaultBucket: 'default',
+  // One process is the only thing a framework can promise without being told; an app that runs
+  // more than one says so, and brings the store that makes it true.
+  scope: 'process',
   buckets: {
     default: { capacity: 120, refillPerSecond: 2 },
     // Login/signup style endpoints: slow, no burst.
@@ -133,6 +151,7 @@ export const memoryRateLimitStore = (
   };
 
   return {
+    scope: 'process',
     get size() {
       return buckets.size;
     },
@@ -177,6 +196,8 @@ export const rateLimitKey = (parts: RateLimitKeyParts): string => {
 };
 
 export interface RateLimiter {
+  /** The store's scope, carried up so the boot check has one thing to read. */
+  readonly scope: RateLimitScope;
   check(key: string, bucketName: string, cost?: number): Promise<RateLimitDecision>;
   headers(decision: RateLimitDecision): Record<string, string>;
   /** Throws `X_RATE_LIMITED` when the bucket is empty. */
@@ -199,6 +220,7 @@ export const createRateLimiter = (options: {
     store.take(key, bucketFor(bucketName), cost, now());
 
   return {
+    scope: store.scope,
     check,
     headers: (decision) => ({
       'ratelimit-limit': String(decision.limit),
@@ -211,4 +233,17 @@ export const createRateLimiter = (options: {
       return decision;
     },
   };
+};
+
+/**
+ * Boot, never the first request. A per-node store under a `'shared'` declaration is a limit that
+ * is quietly N × what the config says — the kind of wrong answer that only shows up as a flood
+ * nobody was throttling, at the worst hour. A process that cannot enforce what it was configured
+ * to enforce must not start; `enabled: false` is checked too, because a limit declared fleet-wide
+ * and then switched off is the same claim with nothing behind it.
+ */
+export const assertRateLimitScope = (config: RateLimitConfig, limiter: RateLimiter): void => {
+  if (config.scope !== 'shared') return;
+  if (!config.enabled) throw rateLimitNotShared('disabled');
+  if (limiter.scope !== 'shared') throw rateLimitNotShared('process');
 };

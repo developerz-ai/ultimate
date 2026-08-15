@@ -11,7 +11,7 @@ Everything in the framework is one of eight primitives: `entity`, `policy`, `act
 - [AGENTS.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/AGENTS.md): short, human-authored conventions an agent cannot infer. Never generated.
 - [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/CLAUDE.md): boundaries, dependencies and commands for agents working in this repo.
 - [Docs index](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/README.md): map of the idea docs and the architecture docs.
-- [Thesis](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/00-thesis.md): the eight design axioms, the steal-explicitly table, the permanent exclusions.
+- [Thesis](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/00-thesis.md): the eight design axioms, the inspire-explicitly table, the permanent exclusions.
 - [Stack](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/01-stack.md): one locked choice per layer, and what Bun natives delete from the lockfile.
 - [Realtime](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/03-realtime.md): channels → live queries → local-first, and the reconnect risk.
 - [Jobs](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/04-jobs.md): transactional outbox, durable steps, required idempotency keys.

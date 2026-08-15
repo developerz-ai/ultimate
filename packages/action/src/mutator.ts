@@ -70,6 +70,13 @@ export interface MutatorDef<TInput extends StandardSchemaV1, TOutput extends Sta
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly idempotent?: boolean;
+  /**
+   * Record every attempt through the installed `AuditSink`. Same key, same meaning as an
+   * action's — a mutator IS an action, so it inherits the seam rather than getting a second one.
+   * `.local()` is the one half nothing records: it never leaves the client, so there is no
+   * server-authoritative attempt to attest to.
+   */
+  readonly audit?: boolean;
   /** Optimistic twin: runs against the local store, synchronously, no I/O. */
   local(tx: LocalTx, input: InferOutput<TInput>): void;
   /** Authoritative write. Identical to an action `handle`, ctx-first for symmetry. */
@@ -123,6 +130,7 @@ export function mutator<TInput extends StandardSchemaV1, TOutput extends Standar
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     ...(def.idempotent === undefined ? {} : { idempotent: def.idempotent }),
+    ...(def.audit === undefined ? {} : { audit: def.audit }),
     handle: ({ input, ctx }) => def.server(ctx, input),
   };
   return wrap(def, action(actionDef));

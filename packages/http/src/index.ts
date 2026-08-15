@@ -44,6 +44,7 @@ export {
   pathInvalid,
   pipelineNoResponse,
   rateLimited,
+  rateLimitNotShared,
   routeConflict,
   routeNotFound,
   serverNotStarted,
@@ -83,9 +84,11 @@ export type {
   RateLimitDecision,
   RateLimiter,
   RateLimitKeyParts,
+  RateLimitScope,
   RateLimitStore,
 } from './rate-limit';
 export {
+  assertRateLimitScope,
   createRateLimiter,
   DEFAULT_MAX_RATE_LIMIT_KEYS,
   DEFAULT_RATE_LIMIT,

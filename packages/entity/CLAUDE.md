@@ -26,8 +26,9 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `insertAll`/`upsertAll` cross-driver assertions inside `pg-driver-bulk.test.ts`), and a
   `pg-driver-<feature>.live.test.ts` proving the same call against a real server
   (`pg-driver-batch.live.test.ts`, `pg-driver-preload.live.test.ts`, `pg-driver-count.live.test.ts`,
-  `pg-driver-bulk.live.test.ts`). A method with only the first is unproven against Postgres itself;
-  a method with only the second is unproven against memory. Both are the bar, not either one.
+  `pg-driver-bulk.live.test.ts`, `pg-driver-tenancy.live.test.ts`). A method with only the first is
+  unproven against Postgres itself; a method with only the second is unproven against memory. Both
+  are the bar, not either one.
 - **The Postgres driver is proved against a real Postgres, not only against a recording client.**
   `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
   `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
@@ -273,10 +274,30 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 - **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
   that reason alone: `$parse` throws, and a call site should not need two error paths for one
   mistake.
-- **Tenancy applies to writes too.** `update(id, patch)`, `delete(id)`, `deleteWhere(filter)` and
-  `updateWhere(filter, patch)` build the same plan a read does, so an id or a filter alone never
-  addresses a row on a tenant-scoped entity. Another tenant's id reads as `X_NOT_FOUND`, never as
-  their row.
+- **Tenancy applies to writes too, and in two places.** `update(id, patch)`, `delete(id)`,
+  `deleteWhere(filter)` and `updateWhere(filter, patch)` build the same plan a read does, so an id
+  or a filter alone never addresses a row on a tenant-scoped entity — another tenant's id reads as
+  `X_NOT_FOUND`, never as their row. That bounds WHICH rows a write touches; it cannot bound what
+  they become, and `insert`/`insertAll`/`upsertAll` build no plan at all. So the VALUE is judged as
+  well, by `assertRowTenant` (`tenancy.ts`) at the four seams every write passes: `memoryRepo`'s
+  `write()` plus its `insertAll`/`upsertAll` batch loops, and `postgresRepo`'s `writeRows()`,
+  `update` and `updateWhere`. A row or patch naming another tenant is `X_TENANCY_ACTOR_MISMATCH` —
+  the same code the read path throws, because it is the same mistake in a different argument.
+  Rules, none optional. **Refuse, never stamp**: a row that names no tenant is left alone and the
+  column's `NOT NULL` answers it. Filling one in from the actor would change the column list
+  `namedProperties` derives, silence the uneven-batch refusal (`excluded.<col>` is a default, not
+  "leave it alone"), and let ambient state decide which stored row a collision lands on — a write
+  that creates data from the ambient context is a bigger decision than a guard. **All or nothing**:
+  the batch loops run before any row is stored, so memory cannot half-apply what Postgres refuses
+  as one statement. **The incoming rows, not only what lands**: under `onMatch: 'nothing'` a
+  colliding row never reaches `write()`, so a check only on stored rows would pass exactly the rows
+  that collide. **Refused before the statement exists** — `pg-driver` sends nothing and `memoryRepo`
+  stores nothing, which `write-tenancy-parity.test.ts` pins for both drivers together, and
+  `pg-driver-tenancy.live.test.ts` proves against a real server — that file is where tenancy's live
+  proof lives, reads and writes both, and where a new one goes. **Together with the conflict-target rule
+  a cross-tenant upsert is unrepresentable**: the target must contain the tenant column under
+  `'update'` (`X_TENANCY_UNSCOPED`, which decides which stored row is matched) and every incoming
+  row must carry the actor's tenant, so the key can only hold this actor's value.
 - **`deleteWhere(filter)` and `updateWhere(filter, patch)` are the only filtered writes, and they
   are bounded by construction.** `delete(id)` and `update(id, patch)` need a single-column primary
   key, so on a composite key — `likes`, `blocks`, `participants`, any join table — the filtered
@@ -459,7 +480,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
-| `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `scopedPlan()`, the actor-derived tenant guard |
+| `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `scopedPlan()` for a read and `assertRowTenant()` for a write — one actor-derived tenant guard, both halves |
 | `cross-tenant.ts` | `crossTenant(reason, fn)` — the capability-gated scope that lifts it |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `batch.ts` | `inBatches(size)` — the chain's page in a loop, closed by the loop that reads it |

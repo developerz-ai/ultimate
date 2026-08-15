@@ -1,19 +1,44 @@
-<h1 align="center">Ultimate ⚡</h1>
+<h1 align="center">
+  <img src="assets/logo.svg" alt="" width="88" height="88" /><br />
+  Ultimate
+</h1>
 
 <p align="center"><strong>The full-stack framework where the primary user is an AI agent.</strong></p>
 
 <p align="center"><em>Rails' opinions. Bun's speed. One command that means shippable.</em></p>
+
 
 <div align="center">
 
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](CHANGELOG.md)
 
 </div>
 
 > **Status: 1.2.0**, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep: one version, one commit, one tag. **`@ultimat3/flags` has never reached npm** and the rest sit at 1.2.0, so the registry is not yet in lockstep with the repo ([#84](https://github.com/developerz-ai/ultimate/issues/84)); it needs the one-time manual bootstrap every package gets before a trusted publisher can attach. 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
+
+## Built by agents, for agents, maintained by agents
+
+Nobody writes this code by hand anymore, and the framework is designed for that rather than
+retrofitted to it. A coding agent works 24/7/365, and — the part that actually matters — it writes
+the tenth feature the way it wrote the first. No Friday-afternoon shortcut, no "I'll clean this up
+later", no second way of doing a thing because someone new joined. Consistency at volume is the
+thing humans are worst at and agents are best at.
+
+That only pays off if the framework agrees. One way to do each thing, so there is nothing to choose
+between. Conventions that are build errors, so the compiler corrects the agent instead of a
+reviewer. Errors carrying a stable code, a cause and a command that fixes it, so a failure costs one
+round-trip. Docs local in `node_modules`, so nothing reaches for a wiki. `--json` on every command,
+so output is parsed rather than re-read. Each of those is worth a little on its own; together they
+are the difference between an agent that ships and one that thrashes.
+
+<p align="center">
+  <img src="assets/never-send-a-human.webp" alt="Agent Smith: &quot;Never send a human to do a machine's job.&quot;" width="460" />
+</p>
+
+<p align="center"><sub><em>The Matrix</em> (1999)</sub></p>
 
 **Measured, and only this much:**
 
@@ -34,6 +59,33 @@ Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 50000` — the c
 | **Deferred to v2** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 **Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
+
+---
+
+## Why Bun, why SolidJS
+
+Two picks that are load-bearing rather than fashionable, and both for the same reason: they remove
+a layer an agent would otherwise have to reason about.
+
+**Bun** is one toolchain where there were six. Runtime, bundler, test runner, package manager,
+`node:` compatibility, an HTTP and WebSocket server, hashing and SQLite are the same binary — so
+there is no `tsconfig`-versus-bundler-versus-jest disagreement to debug, and no chain of tools each
+with its own idea of what a module is. It runs TypeScript directly, which is why **the tarball
+published to npm is the source you read**: no `dist/`, no source-map hop when an agent steps into
+`node_modules`. And the natives are why the dependency list is two packages long — HTTP, WS,
+hashing, SQLite, test running and bundling are already there, so most of what a framework would
+reach for is not a decision at all.
+
+**SolidJS** compiles away. Fine-grained reactivity means an update touches the one text node that
+changed rather than re-running a component and diffing a virtual DOM, and there is no re-render
+model to hold in your head — no dependency arrays, no memo hooks, no rules about where state may be
+read. That matters twice here: the runtime is small enough that `render: 'static'` genuinely ships
+**zero** JavaScript, and the mental model is small enough that an agent writing its four-hundredth
+component is not carrying a rulebook about when a closure captures a stale value.
+
+Neither is a bet on popularity. They are the two choices that make the framework's own promises
+cheap to keep — one command that means shippable, and a static path that never pays for the app
+path.
 
 ---
 

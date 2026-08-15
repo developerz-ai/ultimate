@@ -161,7 +161,11 @@ hangs off the queue driver as `driver.backfills`, and carries one row per **pass
 definition checksum, status, app version, rows processed, last cursor, started/completed.
 
 ```ts
-await rewriteSlugs.enqueue({});                  // completed already? no-op with a report
+// The PASS is the no-op, never the enqueue. The one-live-run index covers `ready`/`delayed`/
+// `running`/`suspended`, and a completed job is in none of them — so this creates a real job row,
+// a worker runs it, it reads the ledger and reports what it found.
+const again = await rewriteSlugs.enqueue({});    // → { deduped: false, … }
+// the run's own result:
 // → { name: 'rewrite-slugs', batches: 0, rows: 0, skipped: true, previousRunId: '…' }
 
 await rewriteSlugs.enqueue({ force: true });     // sweeps again, into a NEW row
@@ -185,6 +189,84 @@ report a different number:
 | `x jobs ls` | the passes **in flight** — rows so far and cursor, beside the queue depth |
 | `x jobs show <id>` | the ledger row for that run, under `backfill` (`null` for any other job) |
 | `/_x` → jobs | the whole ledger plus a live count, alongside the queues and the step traces |
+
+### What was DECLARED — the other half of the ledger
+
+`As of 2026-08`.
+
+The ledger says which passes have run. `registeredBackfills()` says which ones **exist**, and the
+diff between them is the alarm: a sweep merged, deployed and never enqueued had no row and showed
+up on no surface at all.
+
+```ts
+import { isBackfill, pendingBackfills, registeredBackfills } from '@ultimat3/jobs';
+
+registeredBackfills();          // [{ kind: 'backfill', name, checksum, requires, environments, counts }]
+isBackfill(rewriteSlugs);       // true — a plain job() is false, and so is a look-alike
+
+pendingBackfills({ declarations, runs, environment });
+// → { environment, rows, pending, orphaned }
+```
+
+`backfill()` stamps its own handle through the `origin` WeakMap `task()` already uses — an app
+registers nothing, because a declaration that has to be registered a second time is a declaration
+half the apps will forget. `x db backfill --pending` is the command, and it exits **non-zero** when
+anything is unswept so a cron or a deploy check can read the exit code alone.
+
+| State | Means | In `pending` |
+|---|---|---|
+| `pending` | declared, no row under this name | yes |
+| `failed` | the newest pass failed — the queue may have dead-lettered it | yes |
+| `running` | a pass is in flight | no — a check red for the whole of every sweep gets muted |
+| `completed` | a completed row exists, so nothing re-runs without `--force` | no |
+| `excluded` | `environments` does not include this one | no |
+
+### Three optional declarations, all of them DATA
+
+```ts
+export const dropLegacy = backfill({
+  name: 'drop-legacy',
+  requires: '20260814120000_add_publish_at',   // a migration id, checked against x_migrations
+  environments: ['staging', 'production'],     // omitted = every environment
+  count: ({ ctx }) => db.posts.where({ publishedAt: null }).count(),
+  source: ({ ctx }) => db.posts.where({ publishedAt: null }),
+  handle: async ({ rows }) => { /* … */ },
+});
+```
+
+| Field | Rail | Enforced where |
+|---|---|---|
+| `requires` | `X_BACKFILL_MIGRATION_PENDING` — the migration is not applied | `x db backfill`, which is where `x_migrations` is readable; this package holds no `@ultimat3/db` dependency and will not grow one to read a ledger |
+| `environments` | `X_BACKFILL_ENVIRONMENT` | **the pass** (`backfillPass`) — the rail, because `.enqueue()` from app code reaches no command — and again in `gateBackfill()` as the CLI's pre-check, so `x db backfill` refuses before it queues work that would only dead-letter |
+| `count` | `X_BACKFILL_STALLED` — the source ran out and this still matches rows | the pass, once, after the last batch |
+
+`environments` ships as declared data and never as a hardcoded "cleanups are production": a staging
+rehearsal is correct practice, so which deploys a sweep belongs to is the app's convention and this
+is only the mechanism carrying it. There is deliberately **no** `dependsOn` graph over other
+backfills — the real dependency is almost always "after code tolerating both shapes is serving",
+which the framework cannot observe.
+
+`count` is the same predicate `source` selects on, counted. It is what makes a dry run honest and
+"did it converge" arithmetic: a pass that exhausts its source while `count()` still answers above
+zero has two predicates that disagree, which is an authoring bug and not something a retry fixes.
+Its result is parsed rather than trusted — a non-negative safe integer or `X_INVARIANT`, because
+`NaN > 0` and `-1 > 0` are both false and would complete the sweep the detector exists to fail.
+
+### Running one
+
+```
+x db backfill --pending --json          # declared minus completed; non-zero when anything is unswept
+x db backfill drop-legacy               # DRY RUN — --write is never implied
+x db backfill drop-legacy --write       # gate, then enqueue; the workers sweep
+x db backfill --all --write             # every pending one, isolated per name
+x db backfill drop-legacy --write --force   # a completed name, again, into a NEW ledger row
+```
+
+`--write` **enqueues**; it never runs the pass inline, because the queue is a job's execution
+surface. That is what makes the `backfill` deploy role a trigger rather than a gate: it runs after
+the new pods serve, puts the sweeps on the queue and exits, and a slow UPDATE never holds a release
+open against a database still serving the previous build. `--all` isolates per name and continues
+past a failure, so one wedged cleanup cannot block every later one forever.
 
 ## The deadline cancels
 

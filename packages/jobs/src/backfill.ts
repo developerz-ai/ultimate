@@ -9,13 +9,15 @@
 // and `execute.ts` already have, and the reason the iteration, the checkpoints and the
 // `x_backfills` ledger are one file's problem rather than this one's.
 
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, Environment } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import { backfillChecksum } from './backfill-ledger';
 import { backfillPass } from './backfill-pass';
 import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import type { BackfillCount } from './backfill-registry';
+import { stampBackfill } from './backfill-registry';
 import type { DurationInput } from './clock';
 import type { JobHandle } from './job';
 import { job } from './job';
@@ -81,6 +83,32 @@ export interface BackfillDefinition<Row> {
   readonly retry?: RetryPolicy;
   /** Per attempt, not per pass: a resumed attempt picks up at the last checkpoint. */
   readonly timeout?: DurationInput;
+  /**
+   * The migration this sweep needs applied first — the id `x db gen` wrote, e.g.
+   * `20260814120000_add_publish_at`. Declared DATA, and checked by whoever can read `x_migrations`
+   * (`x db backfill`): this package holds no `@ultimat3/db` dependency, and growing one so a queue
+   * could read a migration ledger would put the migration engine on tier 3's import graph.
+   *
+   * Deliberately NOT a `dependsOn` graph over other backfills. The real dependency is almost
+   * always "after code that tolerates both shapes is serving", which the framework cannot observe,
+   * so a graph would encode an ordering it has no way to be right about.
+   */
+  readonly requires?: string;
+  /**
+   * The environments this sweep may run in. Omitted means EVERY one — never an implied
+   * "cleanups are production": a staging rehearsal is correct practice, so which deploys a sweep
+   * belongs to is the app's convention and this field is only the mechanism that carries it
+   * (axiom 8). A mismatch is `X_BACKFILL_ENVIRONMENT`, refused inside the pass as well as by the
+   * CLI, because a backfill enqueued by app code never passes through a command.
+   */
+  readonly environments?: readonly Environment[];
+  /**
+   * How many rows still match — the SAME predicate `source` selects on, counted rather than read.
+   * Optional, and what it buys is that a dry run cannot lie and "did it converge" becomes
+   * arithmetic: a pass whose source is exhausted while this still answers above zero has two
+   * predicates that disagree, which is `X_BACKFILL_STALLED` and an authoring bug in any business.
+   */
+  count?(args: { readonly ctx: Ctx }): Promise<number> | number;
 }
 
 /** What one completed pass reports — bounded, so `x jobs show` can print it. */
@@ -135,7 +163,14 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
   // whichever attempt holds the run, so a retrying pass keeps the pace it was declared with.
   const pace = createPacer({ rate, job: definition.name });
 
-  return job<BackfillInput>({
+  // Bound to the definition rather than passed bare: `count` is declared as a method, so a
+  // reference torn off the object literal would run with `this` undefined the first time an
+  // author writes `count: ({ ctx }) => this.something`.
+  const declaredCount = definition.count;
+  const count: BackfillCount | undefined =
+    declaredCount === undefined ? undefined : (args) => declaredCount.call(definition, args);
+
+  const handle = job<BackfillInput>({
     name: definition.name,
     input: t.object({ force: t.boolean.optional() }),
     // One live run per name, forced or not. A second enqueue while the pass is still going is the
@@ -147,4 +182,14 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),
     run: (args) => backfillPass({ definition, size, checksum, pace }, args),
   });
+  // Stamped, never registered by the app: this is what makes a declared-but-never-enqueued sweep
+  // visible to `x db backfill --pending`, and the `origin` WeakMap is `task.ts`'s mechanism rather
+  // than a second one. `job()` above already refused a duplicate name, so this cannot overwrite.
+  stampBackfill(handle, {
+    checksum,
+    requires: definition.requires,
+    environments: definition.environments,
+    count,
+  });
+  return handle;
 }

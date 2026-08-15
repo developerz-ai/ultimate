@@ -88,6 +88,17 @@ export interface ActionDef<
   /** Marks the action safe to retry with an `Idempotency-Key`. */
   readonly idempotent?: boolean;
   /**
+   * Record every attempt at this action through the installed `AuditSink` — allowed, denied and
+   * failed alike. Opt-in per declaration and never a global switch: a login and a price change
+   * are not the same event, and the framework is not the thing that knows which of them an app
+   * has to keep. `true` with no sink installed is `X_AUDIT_SINK_MISSING`, refused before the
+   * input parse.
+   *
+   * What the sink DOES with the record — which fields survive, how long, hash-chained or not,
+   * indexed by subject or not — is the app's, and this package ships none of it.
+   */
+  readonly audit?: boolean;
+  /**
    * Loads the row a row-level `policy` decides about, once per invocation, after the
    * input parse and before the guard. This is the async half authz is not allowed to
    * have: a predicate stays synchronous — a live query re-evaluates one per subscriber
@@ -142,6 +153,12 @@ export interface ActionDescriptor {
   readonly output: JsonSchemaObject;
   readonly invalidates: readonly string[];
   readonly idempotent: boolean;
+  /**
+   * Whether every attempt reaches the audit sink. Published here for the same reason
+   * `idempotent` is: "which of these writes leave a trail" is a question an agent asks of
+   * `x actions list --json`, and a fact nothing publishes is a fact nobody can check.
+   */
+  readonly audited: boolean;
   readonly mcp: McpDescriptorMeta;
   readonly rateLimit: ActionRateLimit | null;
 }
@@ -159,6 +176,7 @@ export interface AnyActionDef {
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
   readonly idempotent?: boolean;
+  readonly audit?: boolean;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
 }
@@ -300,6 +318,7 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     output: jsonSchemaOf(def.output),
     invalidates: tagKeys(def.cache?.invalidates ?? []),
     idempotent: def.idempotent === true,
+    audited: def.audit === true,
     mcp: {
       // `isMcpExposed`, not `?? true`: this fact is what the manifest publishes and what the
       // contract diff classifies, so it has to be the answer the tool projection actually gives.

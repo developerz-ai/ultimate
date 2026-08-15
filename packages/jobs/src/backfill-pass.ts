@@ -13,13 +13,15 @@
 // in step with the work and decides where a resumed pass restarts, while the `x_backfills` row is
 // a report an operator reads and the record that a completed name has already been swept.
 
-import { appVersion, assert, logger } from '@ultimat3/core';
+import { appVersion, assert, logger, resolveEnvironment } from '@ultimat3/core';
 import type { BatchIterator } from '@ultimat3/entity';
 import type { BackfillDefinition, BackfillInput, BackfillReport } from './backfill';
+import { checkBackfillEnvironment } from './backfill-gate';
 import type { BackfillLedger, BackfillRun } from './backfill-ledger';
 import { decideBackfill } from './backfill-ledger';
 import type { Pacer } from './backfill-rate';
 import { jobDriver } from './driver';
+import { BackfillStalledError } from './errors';
 import type { JobRunArgs } from './job';
 import { isStepSuspension } from './steps';
 
@@ -104,6 +106,35 @@ async function markFailed(
 }
 
 /**
+ * The stall detector. `count()` is the same predicate `source` selects on, so a source that ran
+ * out while the count still matches rows means the two disagree — the sweep reported success over
+ * rows nobody visited, which is an authoring bug in any business and not a condition the queue can
+ * retry its way out of. Silent without a declared `count()`: the framework will not guess a number
+ * on the author's behalf, because a dry run that lied about convergence is the failure this exists
+ * to close.
+ */
+async function assertConverged<Row>(
+  definition: BackfillDefinition<Row>,
+  ctx: JobRunArgs<BackfillInput>['ctx'],
+  swept: number,
+): Promise<void> {
+  if (definition.count === undefined) return;
+  const remaining = await definition.count({ ctx });
+  // Parsed, not trusted: `count()` is app code feeding a framework decision, and both `NaN > 0`
+  // and `-1 > 0` are FALSE — an unchecked bad number reads as "converged" and writes the completed
+  // ledger row that stops the next deploy ever re-running this sweep. The one failure mode this
+  // detector exists to close, arriving through the detector itself.
+  assert(
+    Number.isSafeInteger(remaining) && remaining >= 0,
+    `backfill "${definition.name}" count() returned ${String(remaining)} — a count is a whole number of rows, zero or more`,
+    `return the chain's own count from count() on backfill("${definition.name}"), e.g. count: ({ ctx }) => source({ ctx }).count() — a NaN or a negative reads as "nothing left" and completes the sweep`,
+  );
+  if (remaining > 0) {
+    throw new BackfillStalledError({ backfill: definition.name, remaining, swept });
+  }
+}
+
+/**
  * The pass itself: one `step.run` per batch, named by position so a replay finds it. Completed
  * steps are served from storage without touching the database, so a resumed attempt walks its own
  * history to the last checkpoint and opens the source there.
@@ -115,6 +146,19 @@ export async function backfillPass<Row>(
   const { definition, size, checksum, pace } = plan;
   const { ctx, step, runId } = args;
   const name = definition.name;
+  // Before the ledger is even opened: a sweep this deploy may not run must leave no row saying it
+  // started. Enforced here and not only in `x db backfill`, because app code that calls
+  // `.enqueue()` directly never passes through a command — a rail only the CLI holds is a
+  // convention (axiom 3). No ledger row, so the queue's own retry/dead-letter path is what an
+  // operator reads, exactly as it is for any other permanently-failing job.
+  // `resolveEnvironment()` is asked ONLY when a declaration named environments: it throws on a
+  // typo'd `ULTIMATE_ENV`, which is core's contract for its own key — but a sweep that declared
+  // nothing must not start failing over a variable it never reads.
+  const declaredEnvironments = definition.environments;
+  if (declaredEnvironments !== undefined && declaredEnvironments.length > 0) {
+    const mismatch = checkBackfillEnvironment(name, declaredEnvironments, resolveEnvironment());
+    if (mismatch !== undefined) throw mismatch;
+  }
   // Absent on a driver that ships no ledger, which runs the pass with no bookkeeping rather than
   // refusing it — the same degradation `introspect` already has.
   const ledger = jobDriver()?.backfills;
@@ -198,6 +242,12 @@ export async function backfillPass<Row>(
       }
       if (cursor === null) break;
     }
+    // The source is exhausted; the declaration's own count is the only thing that can say whether
+    // that means the work is done. One statement per PASS, not per batch — the question is "did
+    // this converge", asked once, where the answer is finally decidable. Inside the `try` so the
+    // ledger records the attempt as `failed`: a pass that left rows behind must not write the
+    // completed row that stops the next deploy re-running it.
+    await assertConverged(definition, ctx, rows);
   } catch (error) {
     // Control flow, not a failure: a suspended run is parked and will be back on this step.
     if (!isStepSuspension(error)) await markFailed(ledger, runId, rows);

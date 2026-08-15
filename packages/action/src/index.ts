@@ -25,6 +25,19 @@ export type {
   McpDescriptorMeta,
 } from './action';
 export { action, describeAction, isAction } from './action';
+/**
+ * The audit seam. `AuditSink` is the whole extension point: the framework supplies the record
+ * and never the row. `audit-gate.ts` stays unexported — the sink has one caller, and that
+ * absence is what keeps it one.
+ */
+export type {
+  AuditFailure,
+  AuditOutcome,
+  AuditRecord,
+  AuditSink,
+  MemoryAuditSink,
+} from './audit';
+export { getAuditSink, memoryAuditSink, resetAuditSink, setAuditSink } from './audit';
 export type {
   ActionLike,
   ActionMap,
@@ -47,6 +60,8 @@ export {
   ActionPathDuplicateError,
   ActionPolicyMissingError,
   ActionUnregisteredError,
+  AuditSinkFailedError,
+  AuditSinkMissingError,
   ContractDriftError,
   IdempotencyConflictError,
   InputInvalidError,

@@ -203,7 +203,7 @@ and never unwritten.
 | Returns | the **number of rows affected**, so "nothing matched" is distinguishable from "it worked" |
 | Empty filter | `X_WRITE_UNFILTERED`. An `undefined` value is dropped before the count, so a forgotten variable is the error and not the whole table |
 | Empty patch | `X_PATCH_EMPTY`. Counting rows for a statement that set nothing is the same silent no-op, one argument along |
-| Tenancy | the plan a read builds, through `scopedPlan` — the actor's org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row |
+| Tenancy | the plan a read builds, through `scopedPlan` — the actor's org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row. The patch is judged too, through `assertRowTenant`: a filter bounds which rows are written, never what they become |
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
 
@@ -453,6 +453,24 @@ containing the actor's org is still a set that is not it.
 | actor carries no `orgId` (anonymous, or a service actor minted without one) | `X_TENANCY_ACTOR_ORG_REQUIRED` — inside no org, every tenant-scoped row is somebody else's |
 | no request context at all (a script, a seed, a test harness) | there is no actor to derive from, so the caller names the tenant and `X_TENANCY_UNSCOPED` refuses a plan that names none |
 | a read that must span tenants | `crossTenant(reason, fn)` |
+
+**A row is judged the same way as a predicate.** `insert`, `insertAll` and `upsertAll` build no
+read plan at all, and a patch decides what a row *becomes*, so the tenant a write names is checked
+against the actor too: `insert({ orgId: theirs, … })` and `update(id, { orgId: theirs })` are both
+`X_TENANCY_ACTOR_MISMATCH`, refused before the statement is sent and before anything is stored. A
+batch is all or nothing — one bad row refuses the rows beside it, in both drivers.
+
+**Refused, never stamped.** A row that names no tenant is left exactly as it was written: the
+column's own `NOT NULL` answers a missing one. Filling it in from the actor is the ergonomic half
+and it is deliberately absent, because the column list an `upsertAll` writes is decided by which
+properties a row names — a stamped column would change the statement, silence the uneven-batch
+refusal, and let ambient state decide which stored row a collision lands on.
+
+**A cross-tenant upsert is unrepresentable rather than documented.** Two halves, and both are now
+enforced: the conflict target must contain the tenant column under `onMatch: 'update'`
+(`X_TENANCY_UNSCOPED` — the target is what decides which stored row a collision lands on), and
+every incoming row must name the acting actor's tenant. Together, the key a collision is judged by
+can only hold a value that is this actor's.
 
 ```ts
 // admin surfaces, background reconciliation, support tooling — greppable, and never a boolean

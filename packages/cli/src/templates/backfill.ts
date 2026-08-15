@@ -19,6 +19,7 @@ const backfillSource = (
 // primitive, so it inherits .enqueue(), retry, cancellation and the manifest row.
 // \`BackfillBatch\` comes from @ultimat3/jobs, not @ultimat3/schema: a backfill file imports one package.
 
+import type { Ctx } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { postgresRepo, tableFor } from '@ultimat3/entity';
@@ -29,6 +30,21 @@ import { ${feature.camel} } from '../entity';
 
 /** The table as a chain — the seam \`database()\` hands an app, so this sweep reads what a query reads. */
 const ${feature.camel}Table = () => tableFor(${feature.camel}, postgresRepo(${feature.camel}));
+
+/**
+ * The rows this pass visits. \`where({ orgId })\` is what satisfies the tenancy guard, and a sweep
+ * with no org would visit every tenant at once — so the actor this run carries has to name one.
+ */
+const ${name.camel}Scope = (ctx: Ctx): ReadBuilder<${feature.pascal}> => {
+  const { orgId } = ctx.actor;
+  assert(
+    orgId !== undefined,
+    '${name.kebab}: the actor running this pass carries no orgId, and a sweep is tenanted',
+    // A generated \`fix:\` is copied and run verbatim, so it names a command this build SHIPS.
+    'x db backfill ${name.kebab} --write --json',
+  );
+  return ${feature.camel}Table().where({ orgId });
+};
 
 /**
  * What the sweep writes for one row. Replace the projection with the change this pass exists to
@@ -42,17 +58,7 @@ export const ${name.camel}Row = (row: ${feature.pascal}): ${feature.pascal} => (
 
 export const ${name.camel} = backfill({
   name: '${name.kebab}',
-  source: ({ ctx }): ReadBuilder<${feature.pascal}> => {
-    // \`where({ orgId })\` is what satisfies the tenancy guard, and a sweep with no org would visit
-    // every tenant at once — so the actor this run carries has to name one.
-    const { orgId } = ctx.actor;
-    assert(
-      orgId !== undefined,
-      '${name.kebab}: the actor running this pass carries no orgId, and a sweep is tenanted',
-      'x jobs enqueue ${name.kebab} --actor <a member of the org to sweep>',
-    );
-    return ${feature.camel}Table().where({ orgId });
-  },
+  source: ({ ctx }): ReadBuilder<${feature.pascal}> => ${name.camel}Scope(ctx),
   handle: async ({ rows, signal }: BackfillBatch<${feature.pascal}>) => {
     // One page, in its own durable step, at least once. Write through upsertAll, updateWhere or an
     // idempotent statement; never count + 1. The signal is the run cancellation composed with this
@@ -60,9 +66,18 @@ export const ${name.camel} = backfill({
     signal.throwIfAborted();
     await ${feature.camel}Table().upsertAll(rows.map(${name.camel}Row), { onConflict: ['id'] });
   },
+  // How many rows still NEED the change — never how many the sweep visits. Declare it once
+  // \`source\` narrows to the rows that are actually behind (\`.andWhere('publishedAt', 'is', null)\`
+  // and the like): then a dry run cannot lie, and a pass that exhausts its source while this still
+  // answers above zero fails as X_BACKFILL_STALLED instead of writing a completed row nobody can
+  // trust. Left out here because this scaffold re-normalises every row in the org, so a count of
+  // the same chain would never reach zero.
+  // count: ({ ctx }) => ${name.camel}Scope(ctx).andWhere('publishedAt', 'is', null).count(),
   // batch: 1_000, // rows per step, default. Adjust to balance statement size and retry scope.
   // rate: 5, // batches per second, default. Raise to sweep faster; there is no unthrottled mode.
   // retry: { attempts: 5, backoff: 'exponential' },
+  // requires: '20260814120000_add_publish_at', // the migration x db backfill checks first
+  // environments: ['staging', 'production'], // omit for every environment — never implied
 });
 `;
 

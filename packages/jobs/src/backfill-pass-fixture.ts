@@ -3,7 +3,7 @@
 // than copied because `backfill-pass.test.ts` (the iteration and its checkpoints) and
 // `backfill-pass-ledger.test.ts` (the `x_backfills` row it writes) must drive the SAME pass — two
 // harnesses that drifted would be two passes agreeing only by construction.
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, Environment } from '@ultimat3/core';
 import { assert, createContext } from '@ultimat3/core';
 import type { BatchIterator, ReadBuilder, Repo } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
@@ -123,7 +123,15 @@ export const ctx: Ctx = createContext();
  * what a retry is.
  */
 export const harness = (
-  options: { batch?: number; name?: string; store?: StepStore } = {},
+  options: {
+    batch?: number;
+    name?: string;
+    store?: StepStore;
+    /** Declared as data; the pass refuses outright when this process is not one of them. */
+    environments?: readonly Environment[];
+    /** Rows the sweep's own predicate still matches. The stall detector's input. */
+    count?: () => number;
+  } = {},
 ): Harness => {
   const watch = newWatch();
   const store = options.store ?? createMemoryStepStore();
@@ -154,6 +162,8 @@ export const harness = (
     // rate no timer can resolve and the pacer skips each wait. `the rate throttle` owns pacing.
     rate: NO_WAIT_RATE,
     ...(options.batch === undefined ? {} : { batch: options.batch }),
+    ...(options.environments === undefined ? {} : { environments: options.environments }),
+    ...(options.count === undefined ? {} : { count: options.count }),
     source: () => watchedChain(table.where({ orgId: ORG }), watch),
     handle: ({ rows: page, index }) => {
       if (state.failOn.has(index)) throw new BackfillHandleFailure(index);

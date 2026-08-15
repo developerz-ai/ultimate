@@ -46,6 +46,7 @@ import {
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, Transactor, UpsertArgs } from './repo';
 import type { QueryPlan } from './tenancy';
+import { assertRowTenant } from './tenancy';
 
 export interface PostgresDriverOptions {
   /**
@@ -140,7 +141,14 @@ export const postgresRepo = <Row>(
     conflict: ConflictTarget | undefined,
   ): Promise<readonly Row[]> => {
     if (batch.length === 0) return [];
-    for (const row of batch) entity.$assert(row);
+    // The whole batch is judged before any statement exists, tenant and invariants together, in
+    // the same loop and for the same reason: Postgres refuses one statement as one, so a row this
+    // actor may not write must stop the rows beside it too. `memoryRepo`'s `write` runs the same
+    // pair — an insert builds no read plan, so this is the only place the tenant is checked.
+    for (const row of batch) {
+      assertRowTenant(entity.$name, entity.$tenantColumn, op, row);
+      entity.$assert(row);
+    }
     const columns = insertColumns(entity, namedProperties(entity, batch));
     const bound = batch.map((row) => bindValues(entity, row));
     const shape = { columns, ...(conflict === undefined ? {} : { conflict }) };
@@ -229,6 +237,10 @@ export const postgresRepo = <Row>(
     async update(id, patch, options) {
       const op = 'update';
       const plan = idPlan(entity, id, options, op);
+      // The plan bounds WHICH row is written; the patch decides what it becomes, and a patch
+      // naming another tenant would hand this row away — a leak out of the actor's tenant that no
+      // predicate can refuse.
+      assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       const values = bindValues(entity, patch);
       // The read an empty patch degrades to is still this call: attributed to `update`, because
       // that is the line an author would go and change.
@@ -277,6 +289,8 @@ export const postgresRepo = <Row>(
     async updateWhere(filter, patch, options) {
       const op = 'updateWhere';
       const plan = updatePlan(entity, filter, patch, options, op);
+      // The same move, filtered: one statement can hand away every row it matches.
+      assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
       // `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)` already carries,
       // so a soft-deleted row is not silently patched back into shape.
       const statement = updateStatement(entity, plan, bindValues(entity, patch), shapeOf({}));

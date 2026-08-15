@@ -24,6 +24,8 @@ const docs = errorDocsUrl;
  */
 const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_DUPLICATE: 'two actions are registered under one name',
+  X_AUDIT_SINK_FAILED: 'an audited action ran and the audit sink refused its record',
+  X_AUDIT_SINK_MISSING: 'an action declares audit: true and no audit sink is installed',
   X_ACTION_PATH_DUPLICATE: 'two actions derive one HTTP path',
   X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
   X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
@@ -276,6 +278,61 @@ export class RpcFailedError extends UltimateError {
       cause: `${name} returned HTTP ${status} without a problem+json body`,
       fix: `check the gateway in front of the app, then: x actions describe ${name} --json`,
       docs: docs('X_RPC_FAILED'),
+    });
+  }
+}
+
+/**
+ * `audit: true` with no sink installed. Raised before the input parse, so an action nobody can
+ * record has made no write to be inconsistent about — the one audit failure that costs nothing.
+ * There is deliberately no logger-backed default sink to fall back on: a line nobody stores
+ * satisfies the declaration while recording nothing, which is the silent pass this code exists
+ * to turn into a stop.
+ */
+export class AuditSinkMissingError extends UltimateError {
+  constructor(action: string) {
+    super({
+      code: 'X_AUDIT_SINK_MISSING',
+      cause: `action "${action}" declares \`audit: true\` and no audit sink is installed`,
+      fix: "call setAuditSink(yourSink) from '@ultimat3/action' at boot, before registerActions()",
+      docs: docs('X_AUDIT_SINK_MISSING'),
+    });
+  }
+}
+
+/**
+ * The sink refused a record for an attempt that SUCCEEDED. The opposite call to the cache tier's
+ * `bestEffort`, and for the opposite reason: a dropped cache entry expires by TTL and the stack
+ * self-heals, while nothing ever re-derives an audit row that was never written. So the caller is
+ * told rather than left believing the operation was recorded.
+ *
+ * The cause says what the fix cannot undo: the handler already committed.
+ *
+ * **The fix branches, because only one of the two is true.** "Retry with the same
+ * Idempotency-Key" is safe exactly when this invocation went through the idempotency store —
+ * the settled record is then replayed and the record is re-attempted without re-running the
+ * handler. It did not when the action is not `idempotent`, and it did not when the action IS
+ * `idempotent` and the caller sent no key: `invoke` reads
+ * `def.idempotent === true ? (options.idempotencyKey ?? null) : null`, so both collapse to the
+ * same `null`. Telling either one to retry instructs a caller to apply a committed write twice
+ * — the worst possible advice for a mutator, and an axiom-4 violation dressed as a fix line.
+ * `replayable` is therefore the invocation's own fact (`record.idempotencyKey !== null`), never
+ * the declaration's: requiring `idempotent: true` at declaration would not have made the
+ * original message true, since a caller may still omit the header.
+ */
+export class AuditSinkFailedError extends UltimateError {
+  constructor(action: string, sourceError: unknown, replayable: boolean) {
+    super({
+      code: 'X_AUDIT_SINK_FAILED',
+      cause: `"${action}" ran and its audit sink refused the record, so the change is unrecorded — the handler had already committed`,
+      fix: replayable
+        ? `fix the sink installed by setAuditSink, then retry with the same Idempotency-Key — the replay re-records without re-running the handler`
+        : `fix the sink installed by setAuditSink, then reconcile this one change by hand — do NOT retry: ${action} ran with no Idempotency-Key, so a second call runs the committed handler again. Add \`idempotent: true\` and send the header to make retries safe`,
+      docs: docs('X_AUDIT_SINK_FAILED'),
+      // Read by `--json` and the error reporter: whether a retry is safe is the one decision an
+      // operator makes here, so it is a field and not only a sentence.
+      meta: { action, replayable },
+      sourceError,
     });
   }
 }

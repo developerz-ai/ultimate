@@ -28,6 +28,8 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `idempotency.ts` | store interface + memory default |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
+| `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
+| `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
 | `naming.ts`, `infer.ts`, `validate.ts`, `json-schema.ts`, `stable.ts`, `tags.ts` | pure helpers |
 
@@ -98,6 +100,57 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   escape this assertion exists to catch. A non-`UltimateError` (a `row:` loader's own
   `TypeError`) is rethrown untouched too: its stack is the thing worth reading.
   `contract-test.contract.test.ts` drives all three assertions against actions built to fail them.
+  **`X_AUDIT_SINK_MISSING` is the one code assertion 1 passes through as well**, for the same
+  reason: `auditSinkFor` runs *before* `validateInput`, so "the schema accepted garbage" is a
+  false statement about it and `tighten input:` is a fix that changes nothing. It is the only
+  refusal that precedes the parse — a second one is a design mistake, not a second entry here.
+- **The audit seam ships the mechanism and none of the row.** `audit: true` on a declaration
+  wraps `execute` — it never forks it — so a **denied** attempt is recorded, which is the whole
+  reason this lives in the framework: `guard` throws before `handle`, so nothing an app writes
+  around its own handler could ever see one. What reaches the sink is what `invoke` already holds
+  (`at` from `ctx.now()`, the name, the mutator brand, the surface, the whole `ctx`, the parsed
+  input, the namespaced idempotency key, `replayed`, the outcome, the failure code). What does
+  **not** ship, ever: an audit entity, a schema, a retention policy, a storage backend, a hash
+  chain, a subject index, or an opinion on what "who" means under impersonation — four apps model
+  those four ways, so by axiom 8's own test they are business convention and shipping one makes
+  three of them wrong. `result` is absent for the same reason and one more: a handler's return is
+  reachable from the handler itself, so shipping it would be this package deciding a row carries
+  an after-image, which is `@ultimat3/admin`'s `diff` convention arriving one tier down.
+- **The audit vocabulary is `@ultimat3/admin`'s, shared by name and not by import.** `AuditOutcome`
+  is the same three words (`allowed | denied | failed`) and `AuditSink` the same noun; `admin` is
+  tier 5 and this is tier 3, so there is no edge to share them over. **Known duplicate**: admin's
+  `AuditSink` writes a fixed `AuditEntry` requiring an `AdminActor` and a `permission`, and it is
+  called only from `admin/crud.ts`, so an action outside `/admin` still produces nothing there.
+  Unifying them means lifting the vocabulary into `@ultimat3/core` — the only tier both reach —
+  and rebuilding `admin/audit.ts` on this seam. Not done here: `admin` is a shipped public API
+  and its `AuditEntry` is a different shape.
+- **A sink may not silently swallow, and the two failure policies are deliberate opposites.**
+  `X_AUDIT_SINK_MISSING` is raised *before* the input parse, so an audited action nothing can
+  record refuses with no committed write behind it — there is deliberately no logger-backed
+  default sink, because a line nobody stores satisfies the declaration while recording nothing.
+  A sink that refuses an **allowed** record fails the invocation (`X_AUDIT_SINK_FAILED`), which
+  is the inverse of `cache-gate.ts`'s absorb-and-log: a dropped cache entry expires by TTL and
+  the stack heals itself, while nothing ever re-derives an audit row that was never written. It
+  is post-commit all the same, so the cause says the handler already committed rather than
+  implying a rollback. **Its `fix:` branches on `record.idempotencyKey !== null` — the
+  INVOCATION's fact, never the declaration's `idempotent`.** A retry replays instead of re-running
+  only when this call reserved a record, and `invoke` reads
+  `def.idempotent === true ? (options.idempotencyKey ?? null) : null`, so a non-idempotent action
+  and an idempotent one whose caller sent no header collapse to the same `null`. The unqualified
+  "retry with the same Idempotency-Key" told a caller to apply a committed write twice — an
+  axiom-4 violation dressed as a fix line. Requiring `idempotent: true` at declaration was the
+  other candidate and was rejected: it would not have made the message true (the header is still
+  the caller's), and it would force the idempotency store on every app that wants only an audit
+  trail — "which writes must be retry-safe" is the app's call, not this package's.
+  `meta.replayable` carries the same fact to `--json`, and `audit.test.ts` pins both branches so
+  the text cannot drift back. A sink that refuses a **denied or failed** record is logged as
+  `audit.sink.failed` and the original error still reaches the caller — `X_AUDIT_SINK_FAILED`
+  there would hide the `X_FORBIDDEN` and would answer a probing client differently depending on
+  whether the audit backend was up, which is an oracle.
+- **`auditSettled` sits outside the `catch`, not inside it.** Inside, its own
+  `X_AUDIT_SINK_FAILED` fell into the failure branch and wrote a *second* record saying the
+  action `failed` — for a handler that had committed. An audit trail lying about a write is
+  worse than no audit trail; `audit.test.ts` counts the records a refusing sink was offered.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.

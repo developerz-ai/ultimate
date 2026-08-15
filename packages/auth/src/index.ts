@@ -58,6 +58,8 @@ export {
   AuthError,
   accountLocked,
   apiKeyInvalid,
+  authLimiterNotShared,
+  authLimiterPolicyMismatch,
   authNotImplemented,
   authWriteFailed,
   emailVerifiedNotStored,
@@ -173,9 +175,15 @@ export {
   actorFromUser,
   resolveActor,
 } from './policy-bridge';
-export type { AuthLimiter, AuthRateLimitPolicy, MemoryAuthLimiter } from './rate-limit';
+export type {
+  AuthLimiter,
+  AuthLimiterScope,
+  AuthRateLimitPolicy,
+  MemoryAuthLimiter,
+} from './rate-limit';
 export {
   accountKey,
+  assertAuthLimiterPolicy,
   createAuthLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   DEFAULT_MAX_AUTH_LIMIT_KEYS,

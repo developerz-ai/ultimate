@@ -113,3 +113,45 @@ describe('unit · the subject fix is executable JavaScript', () => {
     expect(parses(snippetOf(org.fix, 'userActor'))).toBe(true);
   });
 });
+
+describe('an error constructor never loses its refusal to a hostile value', () => {
+  // JSON.stringify throws on a bigint and on a cycle, and it RUNS a toJSON the value carries — so
+  // an app object could replace X_FLAG_EXPIRY_INVALID with its own throw, and a caller matching on
+  // the code caught nothing. Found by the entity slice hitting the same class on its tenancy guard.
+  const cyclic: Record<string, unknown> = {};
+  cyclic['self'] = cyclic;
+
+  /** An app's own failure, standing in for whatever a hostile value throws. Never a bare Error. */
+  const appThrow = (): never => {
+    throw flagUnknown('boom', []);
+  };
+
+  // A plain object with a throwing `toString` is NOT hostile: JSON.stringify answers '{}' without
+  // ever calling it. A FUNCTION is — stringify returns undefined, so rendering falls through to
+  // String(given), which is where the throw lands. Verified rather than assumed.
+  const throwingToString = Object.assign(() => undefined, { toString: appThrow });
+
+  const hostile: readonly (readonly [string, unknown])[] = [
+    ['bigint', 10n],
+    ['cyclic object', cyclic],
+    ['symbol', Symbol('nope')],
+    ['throwing toJSON', { toJSON: appThrow }],
+    ['throwing toString', throwingToString],
+    ['undefined', undefined],
+  ];
+
+  for (const [label, given] of hostile) {
+    test(`${label} still yields X_FLAG_EXPIRY_INVALID`, () => {
+      const error = flagExpiryInvalid('beta.feature', given);
+      expect(error.code, label).toBe('X_FLAG_EXPIRY_INVALID');
+      expect(error.cause, label).toContain('beta.feature');
+      expect(error.fix, label).toContain("defineFlag({ key: 'beta.feature' })");
+    });
+  }
+
+  test('the throwing-toString case really does reach String(given)', () => {
+    // Pins the trap above: if this ever answers a string, the case has gone vacuous.
+    expect(JSON.stringify(throwingToString)).toBeUndefined();
+    expect(() => String(throwingToString)).toThrow();
+  });
+});

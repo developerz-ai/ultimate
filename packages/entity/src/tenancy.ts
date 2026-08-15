@@ -1,6 +1,6 @@
-// Multi-tenancy is a guard, not a convention. An entity with a tenant column is read under the
-// ACTING ACTOR's tenant — derived from the ambient context, never taken from an argument — and a
-// plan that names a different one is refused rather than answered.
+// Multi-tenancy is a guard, not a convention. An entity with a tenant column is read AND written
+// under the acting actor's tenant — derived from the ambient context, never taken from an argument
+// — and a plan or a row that names a different one is refused rather than carried out.
 
 import { tryUseContext } from '@ultimat3/core';
 import { assertCrossTenant, crossTenantReason } from './cross-tenant';
@@ -8,6 +8,7 @@ import {
   EntityError,
   tenancyActorMismatch,
   tenancyActorOrgRequired,
+  tenancyRowMismatch,
   tenancyUnscoped,
 } from './errors';
 import type { ColumnMap } from './types';
@@ -228,6 +229,58 @@ export const assertScoped = (
     return;
   }
   verifyScope(entityName, tenantColumn, operation, plan, actorTenant(entityName, operation));
+};
+
+/**
+ * The tenant a row or a patch names, or `undefined` for one that names none. `undefined` is read
+ * as "not named" rather than as a value: it is what `namedColumns` already drops from a filter,
+ * and a row whose tenant column is genuinely missing is refused one step later by the column's own
+ * `NOT NULL` — by the declaration, which is where that rule belongs.
+ */
+const tenantValueOf = (values: unknown, column: string): unknown => {
+  if (typeof values !== 'object' || values === null || !Object.hasOwn(values, column)) {
+    return undefined;
+  }
+  return (values as Record<string, unknown>)[column];
+};
+
+/**
+ * The write half of the guard: a row or a patch may name the acting actor's tenant, or none, and
+ * nothing else. Called wherever a driver is about to write values — `insert`, `insertAll`,
+ * `upsertAll`, `update`, `updateWhere` — because those build no read plan, so `scopedPlan` never
+ * sees them and an `orgId` in a row literal would otherwise be a tenant the caller chose.
+ *
+ * **Refuse, never stamp.** A row that names no tenant is left alone rather than filled in from the
+ * actor. Stamping is the ergonomic half and it is deliberately not here: `namedProperties` decides
+ * an `upsertAll`'s column list by `Object.hasOwn`, so a stamped column would change which columns
+ * the statement writes, silence the uneven-batch refusal that exists because `excluded.<col>` is a
+ * default and not "leave it alone", and — where the conflict target includes the tenant column —
+ * let ambient state decide which stored row a collision lands on. A write that creates data from
+ * the ambient context is a bigger decision than this guard, and it is not needed for the security
+ * property: a wrong tenant is refused either way.
+ */
+export const assertRowTenant = (
+  entityName: string,
+  tenantColumn: string | null,
+  operation: string,
+  values: unknown,
+): void => {
+  if (tenantColumn === null) return;
+  // Before the "names no tenant" shortcut, exactly as `scopedPlan` proves it before deriving: an
+  // insert builds no plan, so this is the only place a write inside somebody else's sweep re-proves
+  // the capability, and a row that names nothing is still a row written under that scope.
+  const crossing = crossTenantReason();
+  if (crossing !== undefined) {
+    assertCrossTenant(crossing);
+    return;
+  }
+  const named = tenantValueOf(values, tenantColumn);
+  if (named === undefined) return;
+  const actorOrg = actorTenant(entityName, operation);
+  // No request context: no actor to check the value against, and the same fallback the read path
+  // takes — a script, a seed or a migration writes the tenant it names.
+  if (actorOrg === undefined || named === actorOrg) return;
+  throw tenancyRowMismatch({ entityName, operation, column: tenantColumn, named, actorOrg });
 };
 
 /** Debug and `x db explain` rendering. Values stay out: a plan is safe to log. */

@@ -45,10 +45,37 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `cors.origins: ['*']` with `credentials: true` | `X_CORS_CONFIG_INVALID` at `defineHttpConfig`, because a browser accepts that pair from nobody |
 | `?next=` carrying anything but a same-origin path | the fallback — including a value whose TAB/CR/LF a browser strips back into `//evil.test` |
 | HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
+| `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `createServer`, because N replicas each holding their own counters enforce N × every configured number |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
 `cause`) and the chain finishes that document instead. `finalize.ts` owns that promise.
+
+## Rate limiting holds where the app says it holds
+
+The counters live in a `RateLimitStore`. `memoryRateLimitStore()` is the default and is **one
+process' worth of state**, so a deployment at `replicas: 3` enforces every bucket three times over.
+The app declares which it needs and passes the store that provides it — the store is the only
+thing that knows where its counters live, and a framework that inferred the answer from the
+environment would get it wrong on the first deployment that scaled differently.
+
+```ts
+createServer({
+  routes,
+  config: defineHttpConfig({ rateLimit: { scope: 'shared' } }), // this limit is the fleet's
+  rateLimitStore: myStore,                                      // whose own scope is 'shared'
+});
+```
+
+| Declared | Store | Result |
+|---|---|---|
+| `'process'` (default) | any | boots; the limit is per replica, which is what was asked for |
+| `'shared'` | `scope: 'shared'` | boots; one bucket for the fleet |
+| `'shared'` | `scope: 'process'`, or `enabled: false` | `X_RATE_LIMIT_NOT_SHARED` at boot |
+
+`rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
+maths stays in `createRateLimiter`, so every driver agrees on the numbers. **No shared store ships
+yet, `As of 2026-08`** — `memoryRateLimitStore()` is the only implementation in the framework.
 
 ## Routing
 
@@ -73,7 +100,7 @@ through to `fetch`. Method resolution stays ours so a 405 still carries problem+
 
 `X_ROUTE_NOT_FOUND` · `X_METHOD_NOT_ALLOWED` · `X_BODY_INVALID` · `X_UNAUTHENTICATED`
 · `X_FORBIDDEN` · `X_RATE_LIMITED` · `X_BUILD_SKEW` · `X_ROUTE_CONFLICT`
-· `X_CORS_CONFIG_INVALID`
+· `X_CORS_CONFIG_INVALID` · `X_RATE_LIMIT_NOT_SHARED`
 
 One `factsOf()` feeds three renderings — terminal, `application/problem+json`, dev
 overlay — so the `code`/`cause`/`fix` strings can never diverge.

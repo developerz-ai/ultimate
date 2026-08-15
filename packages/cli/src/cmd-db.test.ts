@@ -8,8 +8,15 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { entity, memoryRepo, tableFor, uuid } from '@ultimat3/entity';
 import type { JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+import {
+  backfill,
+  createMemoryDriver,
+  resetJobDriver,
+  resetJobs,
+  setJobDriver,
+} from '@ultimat3/jobs';
 import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { BadFlagError } from './errors';
@@ -187,37 +194,110 @@ async function runBackfill(driver: JobDriver, argv: readonly string[]): Promise<
   }
 }
 
+interface SweepRow {
+  readonly id: string;
+  readonly orgId: string;
+}
+
+/**
+ * `entity()` registers globally, so it is built inside `source` — a body no test here calls.
+ * Registered at module scope it would make `x db gen`'s "an unchanged schema generates nothing"
+ * emit a migration for a table only this file knows about.
+ */
+const declareSweep = (name: string) =>
+  backfill<SweepRow>({
+    name,
+    source: () => {
+      const rows = entity(`cmd_db_${name.replaceAll('-', '_')}`, {
+        columns: { id: uuid().primaryKey(), orgId: uuid() },
+      });
+      return tableFor(rows, memoryRepo(rows, []));
+    },
+    handle: () => undefined,
+  });
+
+/** One name's row out of `x db backfill`'s `--json`, whatever else the process declared. */
+const planFor = (result: CommandResult, name: string): { readonly action: string } | undefined =>
+  (result.data as readonly { readonly name: string; readonly action: string }[]).find(
+    (row) => row.name === name,
+  );
+
+const queuedCount = async (driver: JobDriver): Promise<number> =>
+  (await driver.stats()).reduce((total, stats) => total + stats.ready + stats.delayed, 0);
+
 async function seedPass(driver: JobDriver, runId: string, name: string): Promise<void> {
   await driver.backfills?.start({ runId, name, checksum: 'abc123', appVersion: '1.2.0' });
   await driver.backfills?.progress(runId, { rows: 250, cursor: 'post_250' });
 }
 
 afterEach(() => {
+  // `resetJobDriver()` alone leaves the DECLARATIONS behind: `backfill()` registers into a
+  // process-wide registry that every suite in this run shares, so a sweep declared here would
+  // still be pending for whichever file goes next — and a rerun of one of these tests would hit
+  // X_JOB_DUPLICATE on its own name.
+  resetJobs();
   resetJobDriver();
 });
 
 describe('unit · x db backfill', () => {
-  test('the subcommand and its three filter flags are declared, so the parser reaches them', () => {
+  test('every flag the four shapes need is declared, so the parser reaches them', () => {
     expect(DB_SUBCOMMANDS).toContain('backfill');
     const flags = dbCommand.spec.flags?.map((flag) => flag.name) ?? [];
-    expect(flags).toContain('list');
-    expect(flags).toContain('status');
-    expect(flags).toContain('limit');
+    for (const flag of ['list', 'status', 'limit', 'pending', 'all', 'write', 'force']) {
+      expect(flags).toContain(flag);
+    }
     // `--name` already meant "migration or branch"; one declaration, widened, never a second.
     expect(flags.filter((flag) => flag === 'name')).toHaveLength(1);
   });
 
-  test('without --list it refuses and names the invocation that works', async () => {
+  test('a bare x db backfill refuses and names a shape that works', async () => {
     const driver = createMemoryDriver();
     const thrown: unknown = await runBackfill(driver, ['db', 'backfill']).then(
       () => undefined,
       (error: unknown) => error,
     );
-    // Not X_NOT_IMPLEMENTED: this subcommand ships the ledger. Not a silent default-to-list
-    // either — running a pass is the shape `x db backfill <name>` is reserved for.
+    // Not X_NOT_IMPLEMENTED: this subcommand ships four shapes. Not a silent default to one of
+    // them either — they answer four different questions, and picking one is the ambiguity axiom
+    // 1 refuses.
     expect(thrown).toBeInstanceOf(BadFlagError);
-    expect((thrown as BadFlagError).fix).toBe('x db backfill --list');
-    expect((thrown as BadFlagError).cause).toContain('x db backfill --list');
+    expect((thrown as BadFlagError).fix).toBe('x db backfill --pending --json');
+    expect((thrown as BadFlagError).cause).toContain('--pending');
+  });
+
+  test('--pending names a declared sweep the ledger has never recorded, and exits non-zero', async () => {
+    // Declared in the test body, never at module scope: the jobs registry is process-wide and
+    // this file shares it with every other suite in the run.
+    declareSweep('cmd-db-never-run');
+    const result = await runBackfill(createMemoryDriver(), ['db', 'backfill', '--pending']);
+
+    // The exit code is the whole point: a cron reads it without parsing the table.
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => finding.code)).toContain('X_BACKFILL_PENDING');
+    expect(result.data).toMatchObject({ environment: 'development' });
+    expect((result.data as { pending: readonly string[] }).pending).toContain('cmd-db-never-run');
+    expect(result.summary).not.toContain('⟦');
+  });
+
+  test('a name no declaration carries is X_BACKFILL_UNKNOWN, and writes nothing', async () => {
+    const result = await runBackfill(createMemoryDriver(), ['db', 'backfill', 'never-declared']);
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.code).toBe('X_BACKFILL_UNKNOWN');
+    expect(result.findings?.[0]?.fix).toContain('x db backfill --pending');
+    expect(result.data).toMatchObject([{ name: 'never-declared', action: 'blocked', jobId: null }]);
+  });
+
+  test('a dry run plans and writes nothing; --all --write enqueues the pending sweep', async () => {
+    declareSweep('cmd-db-all-sweep');
+    const driver = createMemoryDriver();
+
+    const dry = await runBackfill(driver, ['db', 'backfill', '--all']);
+    expect(planFor(dry, 'cmd-db-all-sweep')?.action).toBe('planned');
+    expect(dry.summary).not.toContain('⟦');
+    expect(await queuedCount(driver)).toBe(0);
+
+    const written = await runBackfill(driver, ['db', 'backfill', '--all', '--write']);
+    expect(planFor(written, 'cmd-db-all-sweep')?.action).toBe('enqueued');
+    expect(await queuedCount(driver)).toBeGreaterThan(0);
   });
 
   test('--list prints the ledger as a table and carries the same rows in data', async () => {
