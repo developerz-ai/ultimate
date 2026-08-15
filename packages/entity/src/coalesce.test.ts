@@ -3,7 +3,13 @@
 // lookup the statement WAS, so a batch can never answer with rows its caller's own could not.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, serviceActor, userActor } from '@ultimat3/core';
+import {
+  createContext,
+  runWithContext,
+  serviceActor,
+  userActor,
+  withChildContext,
+} from '@ultimat3/core';
 import {
   createRecordingClient,
   type DbClient,
@@ -78,6 +84,39 @@ const acrossTenants = <T>(work: () => Promise<T>): Promise<T> =>
     }),
     () => crossTenant('a support tool reads two tenants in one request', work),
   );
+
+describe('the tenant a batch carries', () => {
+  test('is derived before the batch is joined, though no caller named one', async () => {
+    // The ordering claim: the driver builds the plan through `scopedPlan` and hands THAT to the
+    // coalescer, so a batch cannot exist before the actor's tenant is on it. Nothing here passes
+    // an org, and the statement still binds one.
+    client.on('select', { rows: [physical(idAt(10)), physical(idAt(11))] });
+    await inRequest(() => Promise.all([repo().findById(idAt(10)), repo().findById(idAt(11))]));
+
+    expect(client.statements).toHaveLength(1);
+    expect(client.texts[0]).toContain('"org_id" = $3');
+    expect(client.statements[0]?.values).toEqual([idAt(10), idAt(11), ORG, 2]);
+  });
+
+  test('an impersonated actor never joins the batch it did not open', async () => {
+    client.on('select', { rows: [physical(idAt(10))] });
+    await inRequest(() =>
+      Promise.all([
+        repo().findById(idAt(10)),
+        // Same request, same microtask, a different actor: the batch map is keyed by context
+        // identity and `withChildContext` mints a new one, so the parent's open statement is not
+        // there to join even before the scope key is compared.
+        withChildContext({ actor: userActor({ id: idAt(92), orgId: OTHER_ORG }) }, () =>
+          repo().findById(idAt(11)),
+        ),
+      ]),
+    );
+
+    expect(client.statements).toHaveLength(2);
+    expect(client.statements[0]?.values).toEqual([idAt(10), ORG, 1]);
+    expect(client.statements[1]?.values).toEqual([idAt(11), OTHER_ORG, 1]);
+  });
+});
 
 describe('findById coalescing', () => {
   test('point lookups issued in one microtask become one statement', async () => {
