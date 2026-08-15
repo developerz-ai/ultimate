@@ -84,8 +84,19 @@ Every dependency admitted at a driver/transport seam under this criterion, in on
 
 | Library | Seam | Why | Pinned since |
 |---|---|---|---|
-| `nats` (nats.js) | `packages/realtime/src/nats-transport.ts` | Official client for the NATS wire protocol; replaces 1,402 LOC of hand-rolled framing/connection/JetStream/KV protocol code behind the existing `Transport` seam — pending PR 21, not yet landed | pending |
+| _(none yet)_ | | | |
 
 A row is added only when the dependency lands, with the actual pinned version and PR. This table
 is the single source for "what did we decide to depend on and why" — it is not restated in
-package `CLAUDE.md` files or the changelog beyond a link back here.
+package `CLAUDE.md` files or the changelog beyond a link back here. `As of 2026-08`, no dependency
+has been admitted under this criterion: `@ultimat3/*` has zero runtime dependencies outside Bun's
+natives.
+
+### Approved, not yet landed
+
+A verdict is not a dependency. These have a WRAP verdict above and no row in the ledger — the row
+is written when the code lands, not when the argument is won.
+
+| Library | Verdict | Gate | Tracked by |
+|---|---|---|---|
+| `nats` (nats.js) | WRAP, decided 2026-08-12 | `nats-transport.live.test.ts` + `presence.live.test.ts` pass unmodified against a real broker | PR 21 |

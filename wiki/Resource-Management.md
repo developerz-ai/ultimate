@@ -27,9 +27,10 @@ await connection.execute(sql`...`);
 // released automatically here, however the block exits
 ```
 
-`await using` is the same shape for a resource whose teardown is itself async — nothing in this
-package needs it today, since `release()` on both drivers is synchronous, but the language feature
-is there for a `Disposable` whose cleanup does need to await.
+`await using` is the same shape for a resource whose teardown is itself async. `As of 2026-08`
+nothing in `@ultimat3/db` needs it — `release()` on both drivers is synchronous — but the language
+feature is there for a `Disposable` whose cleanup does need to await, and this line is what to
+update when the first async call site lands.
 
 Inside the framework, three call sites hold a pin this way, all in `@ultimat3/db`:
 

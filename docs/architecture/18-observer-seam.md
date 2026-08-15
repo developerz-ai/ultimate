@@ -3,7 +3,10 @@
 One diagnostic seam (`packages/db/src/observe.ts`) that every statement passes through, whether or
 not anything is listening. Uninstalled, it costs one property read and one branch — no clock read,
 no span, no allocation (axiom 6, [`../idea/18-build-vs-wrap.md`](../idea/18-build-vs-wrap.md)'s
-sibling axiom for internal design). `x dev` installs it; `serve.ts` never does.
+sibling axiom for internal design). `x dev` installs it; `serve.ts` never does. `As of 2026-08`.
+
+Source anchors below are file + symbol, never a line number: a line range in prose is a second copy
+of a fact that drifts the next time the file is edited, and nothing gates it.
 
 ## The two funnels
 
@@ -13,18 +16,18 @@ operations:
 
 | Driver | Funnel | Feeds it |
 |---|---|---|
-| `Bun.SQL` | `runOn()`, `packages/db/src/client.ts:132-141` | pool path (`:143-158`), reserved-connection path (`:176-179`) — `withTransaction`, `readOnlyQuery`, ad hoc `client.reserve()` all end up here |
-| PGlite | `statement()`, `packages/db/src/pglite.ts:125-131` | queued, in-transaction, and pinned statements — fed by `run()` (`:133-142`) |
+| `Bun.SQL` | `runOn()` in `packages/db/src/client.ts` | the pool path and the reserved-connection path — `withTransaction`, `readOnlyQuery` and ad hoc `client.reserve()` all end up here |
+| PGlite | `statement()` in `packages/db/src/pglite.ts` | queued, in-transaction and pinned statements — fed by `run()` in the same file |
 
 Neither funnel is reachable by import from outside `db`; a caller gets to a funnel only by sending
 a statement. That is what makes "every statement" a true claim rather than a convention someone can
 forget to apply at a new call site — there is no second way to reach Postgres or PGlite.
 
-Not everything that touches the pool is a statement. `pool.reserve()` (`client.ts:167`) and
-`driver.close()` (`:189`) pin and release a connection; they carry no SQL and are not observed.
-`packages/jobs/src/driver-pg.ts:38-41` is a deliberate non-funnel: the job driver runs its own
-`PgExecutor` and does not depend on `@ultimat3/db` at all
-(`packages/jobs/CLAUDE.md`), so job traffic is invisible to this seam by design, not by omission.
+Not everything that touches the pool is a statement. `pool.reserve()` and `driver.close()` in
+`client.ts` pin and release a connection; they carry no SQL and are not observed. `PgExecutor` in
+`packages/jobs/src/driver-pg.ts` is a deliberate non-funnel: the job driver runs its own executor
+and does not depend on `@ultimat3/db` at all (`packages/jobs/CLAUDE.md`), so job traffic is
+invisible to this seam by design, not by omission.
 
 ```ts
 async function runOn(driver, fragment): Promise<unknown> {
@@ -37,8 +40,9 @@ async function runOn(driver, fragment): Promise<unknown> {
 }
 ```
 
-Both funnels read the same three things at the same moment — right before the send, right after it
-settles — because a diagnostic that judges a whole request runs long after any of these scopes
+Both funnels read the same three things at the same moment, and that moment is **before the send** —
+never after. The event is only *reported* after the statement settles, carrying values captured on
+the way in, because a diagnostic that judges a whole request runs long after any of these scopes
 closed:
 
 - `statementObserver()` — is anything installed at all. `undefined` in production.
@@ -47,6 +51,9 @@ closed:
 - `statementAttribution()` — the innermost `{entity, op}` pair `postgresRepo` declared around this
   repository call, or `undefined` for hand-written SQL, a migration, a health probe, or queue
   traffic.
+
+Only `durationMs` and `rows` are measured after settlement; `error` is the throw the caller is about
+to receive. Everything else on the event was read before `sendOn`/`send` was called.
 
 ## The event
 
@@ -94,8 +101,8 @@ that context down across the `await`s a module-scope variable could not survive:
   (axiom 1: both would put the argument somewhere other than the loop it defends). `reason` is
   required and non-blank — an exemption with no argument is a pragma by another name. What it
   suppresses is a *verdict*, not the statements: they are still sent, still spanned, still visible
-  to anything that only measures. Applied at `packages/admin/src/search.ts:54-56` (one indexed
-  lookup per search field, argued optimal in the call) and `packages/db/src/migrate.ts:169`.
+  to anything that only measures. Applied in `packages/admin/src/search.ts` (one indexed lookup per
+  search field, argued optimal in the call) and twice in `packages/db/src/migrate.ts`.
 
 Both scopes cost nothing when no observer is installed — `withStatementAttribution` checks
 `statementObserver() === undefined` and calls `fn()` directly, entering no `AsyncLocalStorage` scope
@@ -107,17 +114,25 @@ production statement in the process for a diagnostic that is off.
 
 `withStatementSpan` (`packages/db/src/statement-span.ts`) wraps the send — nothing else — with an
 OTel span named `db.<verb>` (`db.select`, `db.insert`, `db.begin`; low cardinality on purpose) and
-one attribute, `STATEMENT_ATTRIBUTE = 'db.statement'`, carrying the full text. It is opened
-unconditionally, independent of whether a `StatementObserver` is installed — tracing is always on
-in this framework and free until an exporter is configured (`x dev` is what configures one).
+one attribute, `STATEMENT_ATTRIBUTE = 'db.statement'`, carrying the full text. It is opened **on the
+observed path only**: both funnels call it inside the `observer !== undefined` branch, so a process
+with no diagnostic installed traces exactly what it traced before the seam existed.
 
-Kind `sql` in the timeline panel comes from the span-name prefix, read by
-`packages/cli/src/dev-traces.ts:94` off `STATEMENT_ATTRIBUTE` — a rename that only landed in
-`statement-span.ts` would leave the timeline grouping span names again with every test still green,
-which is why the constant is exported and imported by name rather than restated as a string
-literal in the second package. `packages/admin/src/dev/panel-timeline.ts:60-79`'s `repeatedSql`
-groups spans with `kind === 'sql'` by `detail` — this is what unblocked it; before the span existed
-there was nothing at `kind === 'sql'` to group.
+A span reaches the timeline through two separate contracts, and reading them as one is the mistake
+this section exists to prevent:
+
+| | Span **name** | `STATEMENT_ATTRIBUTE` |
+|---|---|---|
+| Set by | `statementSpanName(text)` → `db.<verb>` | `withStatementSpan`, the full statement text |
+| Read by | `kindOf()` in `packages/cli/src/dev-traces.ts`, prefix-matched to `kind: 'sql'` | the same file, as the span's `detail` (falling back to the span name when absent) |
+| Consumed as | `TimelineSpan.kind` | `TimelineSpan.detail` |
+
+`repeatedSql` in `packages/admin/src/dev/panel-timeline.ts` then counts `detail` among the spans
+where `kind === 'sql'` — so it depends on *both* contracts, but neither derives from the other. A
+verb rename changes what is classified as SQL; an attribute rename changes what is counted as
+repeated. `STATEMENT_ATTRIBUTE` is exported and imported by name rather than restated as a string
+literal, so the second half at least fails loudly across the package boundary. Before the span
+existed there was nothing at `kind === 'sql'` to group at all.
 
 ## Two things that read the same statement differently
 
@@ -149,9 +164,9 @@ Nothing above this seam changes shape when it is off:
   behavior is byte-identical to the pre-seam funnel.
 
 `packages/cli/src/serve.ts` never calls `setStatementObserver` — production installs nothing.
-`startDev()` (`packages/cli/src/cmd-dev.ts:90-130`) installs the trace recorder and the statement
-ledger's observer in the same breath, before the app loads, so the timeline's SQL rows and the
-repeat counts arrive together through one switch rather than two:
+`startDev()` in `packages/cli/src/cmd-dev.ts` installs the trace recorder and the statement ledger's
+observer in the same breath, before the app loads, so the timeline's SQL rows and the repeat counts
+arrive together through one switch rather than two:
 
 ```ts
 const traces = createTraceRecorder();
@@ -173,5 +188,6 @@ in `cli` (tier 5); `db` (tier 1) knows nothing above `StatementObserver`.
   rather than documented.
 - [`../idea/18-build-vs-wrap.md`](../idea/18-build-vs-wrap.md) — the axiom-6 shape ("uninstalled
   costs one branch") applied at the dependency-decision level.
-- `wiki/N-Plus-One-Detection.md` — the user-facing surface: thresholds, `expectedQueryLoop`
-  examples, and the exact `fix:` lines `X_N_PLUS_ONE_QUERY`/`X_N_PLUS_ONE_WRITE` carry.
+- [`N-Plus-One-Detection`](../../wiki/N-Plus-One-Detection.md) — the user-facing surface:
+  thresholds, `expectedQueryLoop` examples, and the exact `fix:` lines
+  `X_N_PLUS_ONE_QUERY`/`X_N_PLUS_ONE_WRITE` carry.

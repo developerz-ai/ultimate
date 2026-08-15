@@ -14,7 +14,9 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 
 ## Migrations: one engine, one ledger
 
-`x db gen` and the `ROLE=migrate` release-phase container run the **same** engine — `packages/db`'s `migrate()`/`generateMigration()` — not two. Until 1.2.0, `x db gen`'s subcommands shelled out to `bunx drizzle-kit`, a second schema engine with its own journal, declared in no `package.json` and fetched unpinned at run time; that shelling-out is gone from current source (`cmd-db.ts` calls `generateAppMigration` and `runMigrations` from `@ultimat3/db`/`@ultimat3/cli` directly), and the only remaining mention of `drizzle-kit` in the codebase is the file header comment recording that history — nothing in the current command path shells out to it.
+**This page documents `main`, not the published 1.1.0 packages** — see [Known gaps → `x db gen` / `x db migrate`](Known-Gaps), which carries the 1.1.0 workaround.
+
+`x db gen` and the `ROLE=migrate` release-phase container run the **same** engine — `packages/db`'s `migrate()`/`generateMigration()` — not two. **In 1.1.0** they did not: `x db gen`'s subcommands shelled out to `bunx drizzle-kit`, a second schema engine with its own journal, declared in no `package.json` and fetched unpinned at run time, which is why a 1.1.0 scaffold's own `bin/setup` fails. That shelling-out is gone from current source — `cmd-db.ts` calls `generateAppMigration` and `runMigrations` from `@ultimat3/db`/`@ultimat3/cli` directly, and the only remaining mention of `drizzle-kit` anywhere is a file header comment recording the history.
 
 ```
 x db gen "add publish_at"     # diffs entities against migrations, writes a named migration + its down
@@ -50,7 +52,11 @@ alter table "posts" drop column "legacy";
 alter table "posts" add column "legacy" text; -- data is not restored
 ```
 
-`destructive.ts` owns the classification — a closed list of four kinds (`drop-table`, `drop-column`, `retype-column`, `truncate`), decided against noise-stripped SQL so a comment or a string literal mentioning "drop table" is never mistaken for the operation. `drop constraint`, `drop default`, `drop not null` and `drop index` are excluded by name: the database rebuilds all four, so none of them destroys data. Only `up` is ever judged — reversing a `create table` is a `drop table`, so a rail reading `down` would mark every migration ever generated, and a marker on all of them marks none.
+`destructive.ts` owns the classification — a closed list of four kinds (`drop-table`, `drop-column`, `retype-column`, `truncate`), decided against noise-stripped SQL so a comment or a string literal mentioning "drop table" is never mistaken for the operation.
+
+The criterion is **persisted row data**, not table rewrites: an operation is destructive when applying it removes rows or the values in them. That is why `alter table … drop` names a column and is destructive, while the sub-clauses that name what they drop are excluded — `drop constraint` removes constraint metadata, `drop default`, `drop not null`, `drop identity`, `drop expression` and `drop generated` change column metadata, and a standalone `drop index` removes an auxiliary structure. Every row survives all of them. `retype-column` is on the list for the opposite reason: rewriting a column's type can lose the values it held, whether or not the type is narrower.
+
+Only `up` is ever judged — reversing a `create table` is a `drop table`, so a rail reading `down` would mark every migration ever generated, and a marker on all of them marks none.
 
 Two separate questions, two codes, asked at two different times:
 
@@ -123,7 +129,7 @@ Keyed by **run**, not by name, because a backfill may legitimately run again whe
 | Column | Meaning |
 |---|---|
 | `runId` | the job run this pass belongs to — also the ledger's primary key |
-| `name`, `checksum` | the declared name, and a hash of `source`'s and `handle`'s source text (` `-separated, never `batch`/`rate` — pacing is a tuning change, not a different sweep) |
+| `name`, `checksum` | the declared name, and a hash of `source`'s and `handle`'s source text (`NUL`-separated, never `batch`/`rate` — pacing is a tuning change, not a different sweep) |
 | `status` | `running` \| `completed` \| `failed` — only `completed` blocks a rerun |
 | `appVersion` | the build that **started** the pass; a redeploy mid-pass does not rewrite it |
 | `rows`, `cursor` | absolute progress — a replayed batch reports the same number, never a delta; `cursor` is `null` before the first batch and once the pass is over |
@@ -152,18 +158,25 @@ All four read `inspectBackfills(driver, filter?)` from `backfill-inspect.ts` —
 
 ### `x g backfill` — the generator
 
-Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/backfills/<name>.ts` — a `backfill()` declaration reading the feature's own table through `tableFor(entity, postgresRepo(entity))`, sweeping with `.where({ orgId })` guarded by an `assert` that the actor carries one, and writing back through `upsertAll` — plus `<name>.test.ts` asserting the declaration (name, retry, idempotency key), the manifest projection, and that the row transform is genuinely idempotent (`row(once) === row(row(once))`) and actually enqueues/dedupes against a memory job driver. A generated no-op handler that checkpoints a page it never wrote would report rows swept that nobody touched, which is why the template ships a real (if trivial) row transform rather than a `throw new Error(…)`.
+Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/backfills/<name>.ts` — a `backfill()` declaration reading the feature's own table through `tableFor(entity, postgresRepo(entity))`, sweeping with `.where({ orgId })` guarded by an `assert` that the actor carries one, and writing back through `upsertAll` — plus `<name>.test.ts` asserting the declaration (name, retry, idempotency key), the manifest projection, and that the row transform is genuinely idempotent — `expect(<name>Row(once)).toEqual(once)`, deep value equality, since a transform that returns a fresh object every pass is still idempotent and `===` would fail it — and actually enqueues/dedupes against a memory job driver. A generated no-op handler that checkpoints a page it never wrote would report rows swept that nobody touched, which is why the template ships a real (if trivial) row transform rather than a `throw new Error(…)`.
 
 ## Errors
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — a foreign app-version row, or an applied migration whose checksum moved | `x db status --json`, then deploy the version `cause` names, or `x db gen "fix <migration>"` — never edit an applied migration |
+| `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — a foreign app-version row, or an applied migration whose checksum moved | deploy the version `cause` names, or `x db gen "fix <migration>"` — never edit an applied migration |
 | `X_MIGRATION_IRREVERSIBLE` | a generated plan drops a column or table and its `down` cannot restore the rows | `x db gen "<name>" --allow-destructive`, or keep the column and deprecate it |
 | `X_MIGRATION_DESTRUCTIVE` | a committed migration's `up` destroys data with no `-- destructive: true` line | add the marker, or regenerate with `--allow-destructive` — before the migration is applied |
 | `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | restore the sidecar from version control, or delete and regenerate that migration |
 | `X_DB_DRIFT` | the live schema, or the source, disagrees with the migrations | `x db gen "<name>"` — see [Entities and migrations → Drift is a `x verify` failure](Entities-And-Migrations#drift-is-a-x-verify-failure) |
 
-Backfills raise no error codes of their own — a bad `batch`/`rate` on the declaration is a build-time `assert` naming the exact fix (`set batch: 1000 on backfill("…")`), and everything past that runs the same retry/dead-letter path as any other `job` ([Jobs and workflows → Errors](Jobs-And-Workflows)).
+Backfills declare no error code of their own. A bad `batch`/`rate` throws `@ultimat3/core`'s `assert`, which is `X_INVARIANT` — borrowed, not declared, and it carries its own cause and fix at the declaration site:
+
+| Code | Cause | Fix |
+|---|---|---|
+| `X_INVARIANT` (bad `batch`) | `backfill "<name>" declares batch: <n> — a batch is a whole number of rows, at least one` | `set batch: 1000 on backfill("<name>") — the rows one statement reads and one durable step handles` |
+| `X_INVARIANT` (bad `rate`) | `backfill "<name>" declares rate: <n> — a rate is batches per second, greater than zero` | `set rate: 0.5 on backfill("<name>"), or leave it out — to sweep faster raise the number, there is no unthrottled mode` |
+
+Both throw at import, not at the first batch, so a bad number is a failed build rather than a dead-lettered job. Everything past that runs the same retry/dead-letter path as any other `job` ([Jobs and workflows → Errors](Jobs-And-Workflows)).
 
 Full list with `--json` shapes: [Error codes](Error-Codes). Migration workflow, drift and the reversible/destructive distinction in full: [Entities and migrations](Entities-And-Migrations). The `job` primitive, steps, retries and the outbox: [Jobs and workflows](Jobs-And-Workflows).

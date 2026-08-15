@@ -33,7 +33,8 @@ const claude = (app: NameSet): string => `# CLAUDE.md
 ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in the same order.
 
 - Gate: \`x verify\` (add \`--json\` for machine output).
-- Scaffold, do not hand-write: \`x g resource|action|job|route|policy|entity|query|task\`.
+- Scaffold, do not hand-write: \`x g <kind> <name>\` — \`x g --help\` lists every kind, and is the
+  only place that list is stated.
 - Destructive DB work goes in a branch: \`x db branch <name>\`, never the shared dev DB.
 - \`x doctor\` explains a broken environment and prints the fix command for every finding.
 `;

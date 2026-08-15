@@ -79,11 +79,19 @@ export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publish
 ## 3–4. Migration
 
 ```bash
-x db gen "create posts"     # diffs schema vs. the migration ledger, writes the .sql + snapshot
-x db migrate                  # applies to the dev database
+x db gen "create posts"     # diffs entity source vs. the latest snapshot, writes the .sql + hash
+x db migrate                  # applies to the dev database, then re-reads the live catalog
 ```
 
-Drift in either direction is `X_DB_DRIFT` with the exact table and column ([`06-data-layer.md`](./06-data-layer.md)) — thrown by `x db gen`/`x db migrate` themselves the moment the entity and the migration ledger disagree, and re-checked against the live catalog by `x verify`'s `drift` step on every gate run. There is no separate "check drift" command; migrating *is* the check.
+Three separate checks, and conflating them is how a "drift" report gets chased in the wrong place.
+
+| Check | Who runs it | Database? | Compares | Code on failure | `fix:` |
+|---|---|---|---|---|---|
+| generation | `x db gen` | no | entity source → latest migration snapshot | `X_DB_GEN_FAILED` | `x doctor --json` |
+| source drift | `x verify`'s `drift` step | no | schema hash → the hashes committed beside each migration | `X_DB_DRIFT` | `x db gen "describe the change"` |
+| live-catalog drift | `x db migrate`, after applying | yes | the live catalog → the migration ledger | `X_DB_DRIFT` | `x verify --json` |
+
+`x db gen` never reports drift — it *resolves* it, by writing the migration and the hash sidecar that make the source and the ledger agree again; a generator that could not produce one is `X_DB_GEN_FAILED`, whose cause carries the Postgres error verbatim. Source drift needs no connection, so a fresh clone and CI answer identically ([`packages/cli/src/drift.ts`](../../packages/cli/src/drift.ts)). Live-catalog drift can only be seen with a connection open, which is why `x db migrate` asks it and `x verify` cannot — same `X_DB_DRIFT`, two conditions, one reporter each ([`06-data-layer.md`](./06-data-layer.md)). There is still no separate "check drift" command.
 
 ## 5. Policy
 
@@ -266,16 +274,20 @@ Green = shippable. There is no `--skip`.
 
 | Error | Meaning | Command |
 |---|---|---|
-| `X_BOUNDARY_SITE_TO_APP` (and the other `X_BOUNDARY_*` codes) | an import crossed a surface or tier; `data.chain` shows the path | `x fix boundary <file>` |
-| `X_DB_DRIFT` | schema ≠ migrations | `x db gen "<name>"` |
-| `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policy explain <path> --json` |
+| `X_BOUNDARY_SITE_TO_APP` (and the other `X_BOUNDARY_*` codes) | an import crossed a surface or tier; `data.chain` shows the path | `x fix boundary <file> --json` |
+| `X_DB_GEN_FAILED` | `x db gen` could not produce a migration; the cause carries the Postgres error verbatim | `x doctor --json` |
+| `X_DB_DRIFT` from `x verify` | source drift: an entity was edited and no migration recorded it | `x db gen "describe the change"` |
+| `X_DB_DRIFT` from `x db migrate` | live-catalog drift: the database that just migrated still disagrees with the ledger | `x verify --json` |
+| `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policy explain <subject> --json` |
 | `X_CATALOG_MISSING_KEYS` | a key used in source is missing from a locale's catalog | `x i18n sync <locale>` |
-| `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x fix boundary <file>` |
-| `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | simplify the `sql`, add `orderBy` + `limit`, or drop `live` |
-| `X_IDEMPOTENCY_REQUIRED` | job declared without a key | add `idempotencyKey` |
-| `X_MANIFEST_STALE` | `x.manifest.json`/`openapi.json` differ from the code | `x manifest` |
-| `X_CACHE_TAG_UNKNOWN` | `cache.invalidates` names a tag no entity declared | fix the typo, or `x manifest` to regenerate the tag graph |
-| anything else | every error carries a `fix:` | `x errors explain <CODE>` |
+| `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x routes --json` to see the chain, then move the heavy import behind `hydrate: 'interaction'` |
+| `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
+| `X_IDEMPOTENCY_REQUIRED` | job declared without a key | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |
+| `X_MANIFEST_STALE` | `openapi.json` is stale (`X_MANIFEST_DRIFT` for a stale `framework.manifest.json`) | `x manifest --json` |
+| `X_CACHE_TAG_UNKNOWN` | `cache.invalidates` names a tag no entity declared | `x manifest` |
+| anything else | every error carries a `fix:` | `x errors explain <CODE> --json` |
+
+Every row's command is the error's own registered `fix:` line, not a paraphrase — `x errors explain <CODE> --json` prints it for any code, and that output is the authority if this table ever falls behind.
 
 ## Rules that keep the loop short
 

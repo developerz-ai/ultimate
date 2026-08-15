@@ -148,13 +148,22 @@ directory per route is what lets `page.tsx`, `page.module.scss` and `page.test.t
 gives a dynamic segment (`blog/[slug]/`) its own directory for its own stylesheet, and makes "is
 this file a route?" mechanically decidable from the filename alone.
 
-`api/` doesn't use this convention at all: nothing under it is a `route` primitive, so nothing is
-named `route.ts`. An action, mutator, query, job or task module keeps whatever name its feature
-gives it (`app/posts/actions.ts`, `app/digest/jobs.ts`, …), and `apps/web/api/index.ts` collects
-them into one `defineApi()` call, which is what actually projects the HTTP routes, `openapi.json`,
-the typed client and the job handles. `route.ts` is reserved for `@ultimat3/render`'s `route`
-primitive (`registerRoute`'s `ROUTE_FILENAME['api']`), which a hand-written raw HTTP route could
-use, but no scaffolded or reference app does — `x g route` only targets `site/`/`app/`.
+`api/` carries two separate rules, and conflating them is the mistake to avoid.
+
+**Rule one — a `route` primitive on `api/` is named `route.ts`.** `ROUTE_FILENAME['api']` is
+`'route.ts'` in [`packages/render/src/registry.ts`](../../packages/render/src/registry.ts), so
+`registerRoute()` accepts `api/**/route.ts` and refuses every other filename under `api/` with the
+same `X_ROUTE_FILE_INVALID` it uses on `site/`/`app/`. This is the hand-written raw HTTP route: you
+own the `Request` → `Response`, and you get no OpenAPI row, no typed client and no job handle.
+
+**Rule two — an action, mutator, query, job or task reaches HTTP through `defineApi()`, not
+through a filename.** Those modules keep whatever name their feature gives them
+(`app/posts/actions.ts`, `app/digest/jobs.ts`, …) and `apps/web/api/index.ts` collects them into
+one `defineApi()` call, which is what projects the HTTP routes, `openapi.json`, the typed client
+and the job handles. No scaffolded or reference app writes a `route.ts`; every generated surface
+arrives on rule two.
+
+`x g route` generates only under `site/` and `app/` — there is no generator for rule one.
 
 ## What `x g resource` generates
 

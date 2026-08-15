@@ -189,7 +189,7 @@ Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
 ## x g
 
 ```bash
-x g resource|action|mutator|job|route|policy|entity|query|task <name> [--feature f]
+x g resource|action|mutator|backfill|job|route|policy|entity|query|task <name> [--feature f]
 ```
 
 Alias: `x generate`.
@@ -204,7 +204,9 @@ Alias: `x generate`.
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `actions`, `live`, `ui`, a migration, and the failing test scaffolds. Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `actions`, `live`, `ui`, a migration, and the failing test scaffolds. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+
+The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which `x g --help` prints verbatim — run it if this list and the CLI ever disagree.
 
 ## x db
 

@@ -71,12 +71,12 @@ A loop of `insert()` calls is the same defect a per-row read loop is, on the oth
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));         // one statement, n rows
 
 await db.likes.upsertAll(rows, {                                         // insert, or leave what's there
-  onConflict: ['orgId', 'postId', 'memberId'],
-  onMatch: 'nothing',
+  onConflict: ['postId', 'memberId'],   // the declared unique index, verbatim — `likes` keys on the pair
+  onMatch: 'nothing',                   // …so the tenant column is not in the target: see below
 });
 
 const n = await db.posts.updateWhere({ orgId, status: 'draft' }, { status: 'archived' });
-const removed = await db.likes.deleteWhere({ postId, userId });
+const removed = await db.likes.deleteWhere({ orgId, postId, memberId });
 ```
 
 | Call | Shape |
@@ -86,6 +86,8 @@ const removed = await db.likes.deleteWhere({ postId, userId });
 | `updateWhere(filter, patch)` | the bulk form of `update(id, patch)` — and the only write path for a composite-key entity (`likes`, `blocks`, any join table) with no single-column id to address |
 | `deleteWhere(filter)` | the bulk form of `delete(id)`, same reason |
 | `countBy(column)` | one grouped count, the aggregate a `count()` per row is the N+1 of — see [Entities and migrations → A count per row is one grouped count](Entities-And-Migrations#a-count-per-row-is-one-grouped-count) |
+
+`onConflict` names the columns of a **declared unique index**, never a convenient superset: `likes` is `primaryKey: ['postId', 'memberId']` with `orgId` as its tenant column, so `['orgId', 'postId', 'memberId']` matches no index and is refused. The tenant column belongs in the conflict target only under `onMatch: 'update'`, where a collision writes — a target without it would match and overwrite another tenant's row, which is `X_TENANCY_UNSCOPED` and not an N+1 code. Under `onMatch: 'nothing'` no write happens to a row you do not own, so the pair alone is right. Every other call still passes its tenant filter: `deleteWhere({ orgId, postId, memberId })`, not `deleteWhere({ postId, memberId })`.
 
 `deleteWhere({})` and `updateWhere({}, patch)` are `X_WRITE_UNFILTERED`, never every row; an empty patch is `X_PATCH_EMPTY`. Both are covered in full, including the tenancy rule on `onMatch: 'update'`, in [Entities and migrations → Writing many rows is one statement](Entities-And-Migrations#writing-many-rows-is-one-statement).
 
@@ -112,13 +114,20 @@ This is also the mechanism `backfill()` runs on — see [Migrations and backfill
 
 ## Errors
 
-| Code | Cause | Fix |
-|---|---|---|
-| `X_PRELOAD_UNKNOWN_RELATION` | `preload('<name>')` named a relation no `references()` produces | pick one of the relation names the error lists, or add the `.references()` call that creates it |
-| `X_TENANCY_UNSCOPED` | a related read (or any query) has no tenant predicate | pass the tenant filter, or check that both entities share a tenant column name |
-| `X_N_PLUS_ONE_QUERY` | a read repeated once per row, outside what the automatic paths could batch | `db.posts.preload('author')`, or the batched `in` form |
-| `X_N_PLUS_ONE_WRITE` | a write repeated once per row | `insertAll`/`upsertAll`/`updateWhere`/`deleteWhere`, or `expectedQueryLoop('<why>', fn)` when deliberate |
-| `X_WRITE_UNFILTERED` | `deleteWhere()`/`updateWhere()` named no filter columns | name the columns that bound it |
-| `X_PATCH_EMPTY` | `updateWhere()` named no columns to write | name at least one column |
+Each code carries its own `fix:` line, computed from the call that raised it — the entity's real name, its real columns, the relations it really has. The table below shows the *shape* that line takes; the authority is the error itself, and `x errors explain <CODE> --json` prints it.
+
+| Code | Owner | Cause | `fix:` shape |
+|---|---|---|---|
+| `X_PRELOAD_UNKNOWN_RELATION` | `entity` | `<entity>` has no relation named `"<name>"` | `relationNamed('<entity>', '<known>')   # or: <the other names>` — and `x entities list --json` when the entity declares none |
+| `X_TENANCY_UNSCOPED` | `entity` | `<entity>.<op>()` was built without an org predicate but the entity has an `orgId` column | `pass { orgId } to <entity>.<op>(), or wrap the plan with orgScoped(entity, orgId, plan)` |
+| `X_TENANCY_UNSCOPED` (upsert) | `entity` | the collision is judged on columns that exclude the tenant column, so another tenant's row would match | `<entity>.upsertAll(rows, { onConflict: ['orgId', …] })   # or onMatch: 'nothing'` |
+| `X_N_PLUS_ONE_QUERY` | `entity` | `<subject>` ran `<n>` times in one request — one read per row | `db.<entity>.preload('<relation>')`, or `db.<entity>.andWhere('id', 'in', ids).all()` |
+| `X_N_PLUS_ONE_WRITE` | `entity` | `<subject>` ran `<n>` times in one request — one write per row | `db.<entity>.insertAll(rows)` (or `upsertAll`/`updateWhere`/`deleteWhere`), or `expectedQueryLoop('<why one per row is optimal>', fn)` |
+| `X_WRITE_UNFILTERED` | `entity` | `<entity>.<op>()` named no filter columns — an empty filter would reach every row | `<entity>.<op>({ <primary key columns> }, …)`; a deliberate whole-table write is `x db gen "<name>"` |
+| `X_PATCH_EMPTY` | `entity` | `<entity>.<op>()` named no columns to write | `<entity>.<op>(filter, { <column>: <value> })   # pick a column from: <the entity's columns>` |
+
+```bash
+x errors explain X_N_PLUS_ONE_QUERY --json    # the canonical cause + fix for any code above
+```
 
 Full list with `--json` shapes: [Error codes](Error-Codes). Resource lifetimes referenced above — the `using pinned` client and the advisory-lock RAII shape — are covered once in [Resource management](Resource-Management).

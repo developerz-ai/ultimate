@@ -11,9 +11,21 @@ detector exists to catch. `As of 2026-08`, dev-only: it costs a production proce
 | `X_N_PLUS_ONE_QUERY` | a read repeated once per row — `members.findById` called fifty times where one `in` statement would do |
 | `X_N_PLUS_ONE_WRITE` | a write repeated once per row — one `insert`, `update` or `delete` per row of a set, where one statement writes all of them |
 
-Both are thrown by `@ultimat3/entity` (`packages/entity/src/errors.ts`); nothing else composes the
-`cause`/`fix` text, so `x dev`'s findings, the timeline, the overlay and a failing test all read the
-identical message. Full row, verbatim: [Error codes → Entity and database](Error-Codes#entity-and-database).
+Both codes are **declared and composed** by `@ultimat3/entity` (`nPlusOne()` in
+`packages/entity/src/errors.ts`); nothing else builds the `code`/`cause`/`fix` text, so `x dev`'s
+findings, the timeline, the overlay and a failing test all read the identical message.
+
+Who *raises* it is a separate question, and the answer differs by surface:
+
+| Surface | What happens at the threshold |
+|---|---|
+| `createTestStatements` (`@ultimat3/testing`) | **throws** `nPlusOne(…)` from inside `onStatement`, so the failing line is the loop's own line |
+| `x dev` (`packages/cli/src/dev-n-plus-one.ts`) | **records a verdict and logs one warning** per request per code — it never throws, because a reporting-only observer that threw would break the app it is watching |
+| `/_x` and the browser overlay | render the recorded verdict; they raise nothing |
+
+`packages/cli/src/statement-loop.ts` is what keeps them identical: it calls `@ultimat3/entity`'s
+`nPlusOne` and reads `code`/`cause`/`fix` off the resulting error rather than restating any of it.
+Full row, verbatim: [Error codes → Entity and database](Error-Codes#entity-and-database).
 
 ## Before / after
 
@@ -59,10 +71,21 @@ log line is intentionally coarser than the findings list: a request that loops t
 *shapes* of read still gets one `X_N_PLUS_ONE_QUERY` warning, because a log is read to learn *that*
 this request looped — the three shapes themselves are what the other three surfaces are for.
 
-The threshold is 5 statements of one shape in one request/test (`N_PLUS_ONE_THRESHOLD`,
-`packages/entity/src/n-plus-one.ts`) — the same constant `x dev`'s ledger and the test fixture both
-read, so a loop that fails a test and a loop that warns in `x dev` are the same loop by
-construction, never two independently-tuned thresholds drifting apart.
+**The threshold** is 5 statements of one shape (`N_PLUS_ONE_THRESHOLD`,
+`packages/entity/src/n-plus-one.ts`), and it is the one thing the two detectors genuinely share:
+`x dev`'s ledger and `createTestStatements` both import that constant, so neither can be tuned
+without the other moving with it.
+
+Everything else about them differs, deliberately:
+
+| | `x dev`'s ledger | `createTestStatements` |
+|---|---|---|
+| Counting window | one `Ctx` — a `WeakMap` keyed on the request, which dies with it | fixture creation → disposal, including statements sent outside any request |
+| At the threshold | records a verdict, logs once per request per code | throws, once per shape |
+| `expectedQueryLoop` statements | not counted at all — this ledger *is* the verdict | counted by `count()` and `shapes()`, excluded only from the `unexpected` tally the throw reads |
+
+So a shape can be visible in a test's `shapes()` and absent from `x dev`'s verdict list for the
+same run, and neither is wrong: one is measuring, the other is judging.
 
 ## The seam it rides on
 
@@ -105,9 +128,21 @@ return expectedQueryLoop('search runs one indexed lookup per field', async () =>
 });
 ```
 
-`reason` is required and must be non-blank — a blank one is `X_INVARIANT`, because an exemption
-with no argument is a pragma with extra steps, and the whole point is that the argument is written
-down next to the loop it defends. The scope rides an `AsyncLocalStorage`, so it survives every
+`reason` is required and must be non-blank, because an exemption with no argument is a pragma with
+extra steps and the whole point is that the argument is written down next to the loop it defends. A
+blank one throws `X_INVARIANT` at the call, carrying its own repair:
+
+| | |
+|---|---|
+| Code | `X_INVARIANT` (borrowed from `@ultimat3/core`'s `assert`, not declared by `db`) |
+| Cause | `expectedQueryLoop() was given a blank reason, so the loop it silences carries no argument` |
+| `fix:` | `pass why the loop is optimal: expectedQueryLoop('one indexed lookup per field', fn)` |
+
+```bash
+x errors explain X_INVARIANT --json
+```
+
+The scope rides an `AsyncLocalStorage`, so it survives every
 `await` inside `fn`, at any depth, and two loops running concurrently never read each other's
 reason; nesting keeps the innermost one.
 
