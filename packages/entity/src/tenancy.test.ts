@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { createContext, runWithContext, userActor, withChildContext } from '@ultimat3/core';
 import { text, uuid } from './columns';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
+import { memoryRepo } from './repo';
 import {
   assertScoped,
   describePlan,
@@ -9,8 +11,19 @@ import {
   hasOrgPredicate,
   isOrgScoped,
   orgScoped,
+  type QueryPlan,
+  scopedPlan,
   tenantColumnOf,
 } from './tenancy';
+
+/** The plan a request would have built, so a derivation can be read rather than inferred. */
+const asPlan = (build: () => QueryPlan): QueryPlan =>
+  runWithContext(
+    createContext({
+      actor: userActor({ id: 'u-1', orgId: '11111111-1111-4111-8111-111111111111' }),
+    }),
+    build,
+  );
 
 const posts = entity('tenancy_test_posts', {
   columns: { id: uuid().primaryKey(), orgId: uuid().tenant(), title: text() },
@@ -117,5 +130,141 @@ describe('orgScoped', () => {
     const rendered = describePlan(orgScoped(emptyPlan('post'), 'secret-org'));
     expect(rendered).toContain('where orgId eq ?');
     expect(rendered).not.toContain('secret-org');
+  });
+});
+
+// The defect, as a specification: the tenant a query runs under is the ACTOR's, and a value the
+// caller supplied is at best a restatement of it — never a way to name a different one.
+describe('the tenant comes from the actor, never from the caller', () => {
+  const ORG_A = '11111111-1111-4111-8111-111111111111';
+  const ORG_B = '22222222-2222-4222-8222-222222222222';
+  const rows = [
+    { id: '33333333-3333-4333-8333-333333333333', orgId: ORG_A, title: 'ours' },
+    { id: '44444444-4444-4444-8444-444444444444', orgId: ORG_B, title: 'theirs' },
+  ];
+  const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
+    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+
+  test('no row of another tenant is ever returned, whatever the caller names', async () => {
+    const repo = memoryRepo(posts, rows);
+    // The blessed idiom: `orgId` is an action input, so the value is the caller's and the handler
+    // passes it straight down. Refusing or answering empty are both fine — a row is not.
+    const read = await asOrgA(() =>
+      repo.findMany({ orgId: ORG_B }).then(
+        (page) => page.rows,
+        () => [],
+      ),
+    );
+    expect(read).toEqual([]);
+  });
+
+  test('a caller-supplied org that is not the actor’s is refused, never silently overridden', async () => {
+    const repo = memoryRepo(posts, rows);
+    await asOrgA(async () => {
+      await expect(repo.findMany({ orgId: ORG_B })).rejects.toBeUltimateError(
+        'X_TENANCY_ACTOR_MISMATCH',
+      );
+    });
+  });
+});
+
+describe('the tenant a plan actually runs under', () => {
+  const ORG_A = '11111111-1111-4111-8111-111111111111';
+  const ORG_B = '22222222-2222-4222-8222-222222222222';
+  const rows = [
+    { id: '55555555-5555-4555-8555-555555555555', orgId: ORG_A, title: 'ours' },
+    { id: '66666666-6666-4666-8666-666666666666', orgId: ORG_B, title: 'theirs' },
+  ];
+  const asOrgA = <T>(fn: () => Promise<T>): Promise<T> =>
+    runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: ORG_A }) }), fn);
+
+  test('is derived, so a call that names no tenant reads the actor’s and only the actor’s', async () => {
+    const repo = memoryRepo(posts, rows);
+    const page = await asOrgA(() => repo.findMany({}));
+    expect(page.rows.map((row) => row.title)).toEqual(['ours']);
+  });
+
+  test('the derived predicate is in the plan, not applied after the rows are in', () => {
+    const plan = asPlan(() => scopedPlan('post', 'orgId', 'findMany', emptyPlan('post')));
+    expect(plan.where).toEqual([{ column: 'orgId', op: 'eq', value: ORG_A }]);
+  });
+
+  test('a caller-supplied org equal to the actor’s is a restatement, not a second predicate', () => {
+    const named = orgScoped(emptyPlan('post'), ORG_A);
+    const plan = asPlan(() => scopedPlan('post', 'orgId', 'findMany', named));
+    expect(plan.where).toHaveLength(1);
+  });
+
+  test('a set that merely contains the actor’s org is refused too', () => {
+    const both = {
+      ...emptyPlan('post'),
+      where: [{ column: 'orgId', op: 'in' as const, value: [ORG_A, ORG_B] }],
+    };
+    expect(() => asPlan(() => scopedPlan('post', 'orgId', 'findMany', both))).toThrow(
+      /X_TENANCY_ACTOR_MISMATCH/,
+    );
+  });
+
+  test('the mismatch names both tenants, so a reader can tell an attack from a typo', () => {
+    try {
+      asPlan(() => scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_B)));
+      throw new Error('expected a throw');
+    } catch (error) {
+      const cause = String((error as { cause?: string }).cause);
+      expect(cause).toContain(ORG_A);
+      expect(cause).toContain(ORG_B);
+    }
+  });
+
+  test('an actor carrying no tenant is refused, never handed the tenant it asked for', async () => {
+    // The decision, pinned: an actor with no org is inside no org, so every tenant-scoped row is
+    // somebody else's. Anonymous and system callers say so explicitly with crossTenant().
+    const repo = memoryRepo(posts, rows);
+    await runWithContext(createContext(), async () => {
+      await expect(repo.findMany({ orgId: ORG_B })).rejects.toBeUltimateError(
+        'X_TENANCY_ACTOR_ORG_REQUIRED',
+      );
+      await expect(repo.findMany({})).rejects.toBeUltimateError('X_TENANCY_ACTOR_ORG_REQUIRED');
+    });
+  });
+
+  test('an entity with no tenant column is untouched by any of it', async () => {
+    const repo = memoryRepo(settings, [{ id: '77777777-7777-4777-8777-777777777777', key: 'k' }]);
+    await runWithContext(createContext(), async () => {
+      expect((await repo.findMany({})).rows).toHaveLength(1);
+    });
+  });
+
+  test('impersonation re-derives: the tenant is whoever is acting now', async () => {
+    const repo = memoryRepo(posts, rows);
+    const titles = await asOrgA(() =>
+      withChildContext({ actor: userActor({ id: 'u-2', orgId: ORG_B }) }, async () =>
+        (await repo.findMany({})).rows.map((row) => row.title),
+      ),
+    );
+    expect(titles).toEqual(['theirs']);
+  });
+
+  test('writes are addressed under the same tenant as reads', async () => {
+    const repo = memoryRepo(posts, rows);
+    await asOrgA(async () => {
+      // Another tenant's id is a row that does not exist, exactly as it is for a read.
+      await expect(repo.update(rows[1]?.id ?? '', { title: 'x' })).rejects.toBeUltimateError(
+        'X_NOT_FOUND',
+      );
+      await expect(repo.deleteWhere({ orgId: ORG_B })).rejects.toBeUltimateError(
+        'X_TENANCY_ACTOR_MISMATCH',
+      );
+    });
+  });
+
+  test('outside every request there is no actor, so the caller still names the tenant', async () => {
+    const repo = memoryRepo(posts, rows);
+    // A script, a boot path or a test harness — no identity to check a value against, and the
+    // refusal for naming nothing is the one this package always had.
+    expect((await repo.findMany({ orgId: ORG_B })).rows.map((row) => row.title)).toEqual([
+      'theirs',
+    ]);
+    await expect(repo.findMany({})).rejects.toBeUltimateError('X_TENANCY_UNSCOPED');
   });
 });

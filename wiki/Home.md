@@ -2,7 +2,7 @@
 
 A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary user is an AI agent and the secondary user is a tired senior engineer working through their own AI agent and AI reviewer.
 
-**v1.1.0 `As of 2026-08`.** 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — publish in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). 1.1.0 is the **first release published by the workflow**, over OIDC trusted publishing with no `NPM_TOKEN` and provenance attached; 1.0.0 was the manual bootstrap. Milestones 0–10 are ✅; milestone 11 is 🚧, still open on the two-platform deploy proof — 1.1.0 gave a scaffolded app a real deployable artifact, which is progress toward it, not the proof.
+**v1.2.0 `As of 2026-08`.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — publish in lockstep to npm; the API is stable and semver applies from here ([Upgrading](Upgrading)). 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Milestones 0–10 are ✅; milestone 11 is 🚧, still open on the two-platform deploy proof — 1.1.0 gave a scaffolded app a real deployable artifact, which is progress toward it, not the proof.
 
 The realtime restart number is now **measured and committed** ([`scripts/bench/results/50k-restart.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/50k-restart.json)): 50,000 real WebSocket clients against a **single** `sync` node over `InProcessTransport`, `SIGKILL`ed with no drain — all 50,000 reconnected, 49,981 received a channel patch inside the window, time-to-consistent p50 **54.0s** / p90 **105.5s** / max **145.7s**, and 156,851 connect attempts shed by the `AcceptBudget` before any query path. It is **per-node recovery**: the run never crossed NATS, so it is not a multi-node result and not a throughput figure → [Realtime](Realtime). This wiki is the only public documentation surface; there is no separate site.
 
@@ -47,6 +47,7 @@ Follow in order. Every command and every output was executed against the publish
 | Page | What it covers |
 |---|---|
 | [The eight primitives](The-Eight-Primitives) | `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — the whole vocabulary |
+| [Building your own base](Building-Your-Own-Base) | wrap a primitive in your own factory: `tenantEntity`, `auditedMutator`, the two caveats, and why nothing downstream notices |
 | [Actions](Actions) | every field, the six generated artifacts, the mutator twin, contract tests |
 | [Entities and migrations](Entities-And-Migrations) | tables, invariants, tenancy, `x db gen`, drift, branch databases |
 | [Policies and authz](Policies-And-Authz) | `can()`, where a policy is evaluated, denials, tenancy scoping |
@@ -106,6 +107,7 @@ Follow in order. Every command and every output was executed against the publish
 | One command means shippable | `x verify` green = deployable |
 | The static path never pays for the app path | `site/` cannot import `app/`; 0kb JS is structural |
 | Deploy anywhere = containers only | zero platform primitives |
+| Ultimate ships mechanism; your app ships convention | mechanisms and structural conventions ship; business conventions never do. Tenancy ships, an org model does not — primitives are functions returning values, so an app wraps one → [Building your own base](Building-Your-Own-Base) |
 
 ## Source docs in the repo
 

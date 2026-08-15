@@ -8,6 +8,9 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_ENTITY_DUPLICATE',
   'X_INVARIANT_VIOLATED',
   'X_TENANCY_UNSCOPED',
+  'X_TENANCY_ACTOR_MISMATCH',
+  'X_TENANCY_ACTOR_ORG_REQUIRED',
+  'X_TENANCY_CROSS_DENIED',
   'X_NOT_FOUND',
   'X_WRITE_UNFILTERED',
   'X_PATCH_EMPTY',
@@ -36,6 +39,9 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_ENTITY_DUPLICATE: 'two entities claim the same name',
   X_INVARIANT_VIOLATED: 'a domain invariant rejected this row',
   X_TENANCY_UNSCOPED: 'a tenant-scoped query has no org predicate',
+  X_TENANCY_ACTOR_MISMATCH: "a query named a tenant other than the actor's",
+  X_TENANCY_ACTOR_ORG_REQUIRED: 'the acting actor carries no tenant',
+  X_TENANCY_CROSS_DENIED: 'a cross-tenant read was entered without the capability',
   X_NOT_FOUND: 'no row for that id',
   X_WRITE_UNFILTERED: 'a filtered write named no filter columns',
   X_PATCH_EMPTY: 'a filtered update named no columns to write',
@@ -82,11 +88,80 @@ export const invariantViolated = (
     fix: `x entity explain ${entityName} --json   # shows the invariant and its SQL CHECK`,
   });
 
+/**
+ * Reached only where there is no actor to derive the tenant from — outside every request context,
+ * which is a script, a boot path or a test harness. Inside one the tenant is the actor's and this
+ * plan would have been scoped without anybody naming it, so the fix leads with the context rather
+ * than with the argument: naming the tenant by hand is the fallback, and it is now checked against
+ * the actor wherever there is one.
+ */
 export const tenancyUnscoped = (entityName: string, operation: string): EntityError =>
   new EntityError({
     code: 'X_TENANCY_UNSCOPED',
-    cause: `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column`,
-    fix: `pass { orgId } to ${entityName}.${operation}(), or wrap the plan with orgScoped(entity, orgId, plan)`,
+    cause: `${entityName}.${operation}() was built without an org predicate but the entity has an orgId column, and no request context carried an actor to take the tenant from`,
+    fix: `run it inside runWithContext(createContext({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`,
+  });
+
+/**
+ * The vulnerability this whole guard exists for: an `orgId` that arrived as action input, a query
+ * argument or a path parameter, passed into a repository call that then read somebody else's rows.
+ * Both values are in the cause because that is the only way a reader can tell an attack from a
+ * handler that threaded the wrong variable — an org id is an opaque identifier, not a secret.
+ *
+ * Refused rather than overridden: silently rewriting the predicate to the actor's org would hand
+ * back a correct answer to a call that asked the wrong question, and the bug would ship.
+ */
+export const tenancyActorMismatch = (init: {
+  entityName: string;
+  operation: string;
+  named: unknown;
+  actorOrg: string;
+}): EntityError => {
+  // `undefined` is a real case — `where('orgId', 'is-null')` names the column and no value — and
+  // `JSON.stringify` answers it with `undefined` rather than a string, which would render the two
+  // halves of the cause differently.
+  const named = JSON.stringify(init.named) ?? 'undefined';
+  return new EntityError({
+    code: 'X_TENANCY_ACTOR_MISMATCH',
+    cause: `${init.entityName}.${init.operation}() was scoped to tenant ${named} but the acting actor's tenant is ${JSON.stringify(init.actorOrg)}`,
+    fix: `drop the orgId argument from ${init.entityName}.${init.operation}() — the actor's tenant scopes it — or act as that tenant: withChildContext({ actor: userActor({ id, orgId: ${named} }) }, fn). A read that must span tenants is crossTenant('<why>', fn)`,
+  });
+};
+
+/**
+ * A tenant-scoped read by an actor that carries no tenant — anonymous, or a service actor minted
+ * without one. Refused, and deliberately not softened into "then the caller's value stands": that
+ * fallback is exactly the hole, because an unauthenticated request would name any tenant it liked.
+ *
+ * Same shape as `@ultimat3/flags`' `X_FLAG_SUBJECT_REQUIRED`: an absent fact is not a satisfied
+ * one, and the repair is at the boundary that mints the actor, so the fix names that call.
+ */
+export const tenancyActorOrgRequired = (init: {
+  entityName: string;
+  operation: string;
+  actorId: string;
+  actorKind: string;
+}): EntityError =>
+  new EntityError({
+    code: 'X_TENANCY_ACTOR_ORG_REQUIRED',
+    cause: `${init.entityName}.${init.operation}() reads a tenant-scoped entity, but the ${init.actorKind} actor ${JSON.stringify(init.actorId)} carries no orgId — there is no tenant to scope it to`,
+    fix: `mint the actor with its tenant at the request boundary — userActor({ id: ${JSON.stringify(init.actorId)}, orgId: '<org>' }) — or, for a sweep that legitimately spans tenants, crossTenant('<why>', fn)`,
+  });
+
+/**
+ * The escape hatch refusing to open. It names the scope string because that is what the operator
+ * has to grant, and it fires at `crossTenant()` itself rather than at the first query inside it —
+ * the call that asked for the capability is the one that has to be repaired.
+ */
+export const crossTenantDenied = (init: {
+  reason: string;
+  actor: string;
+  scope: string;
+}): EntityError =>
+  new EntityError({
+    code: 'X_TENANCY_CROSS_DENIED',
+    cause: `crossTenant(${JSON.stringify(init.reason)}) was entered by ${init.actor}, which does not carry the ${JSON.stringify(init.scope)} scope`,
+    fix: `grant the capability where the actor is minted — serviceActor({ id: 'reconciler', scopes: ['${init.scope}'] }) — and run the sweep inside runWithContext(createContext({ actor }), fn); an ordinary request scopes to its own tenant instead and needs no crossTenant()`,
   });
 
 export const dbDrift = (tableName: string, columnName: string): EntityError =>

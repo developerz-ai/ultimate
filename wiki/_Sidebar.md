@@ -18,6 +18,7 @@
 **Primitives**
 
 - [The eight primitives](The-Eight-Primitives)
+- [Building your own base](Building-Your-Own-Base)
 - [Actions](Actions)
 - [Entities and migrations](Entities-And-Migrations)
 - [Policies and authz](Policies-And-Authz)

@@ -48,6 +48,8 @@ The rule that keeps this from becoming an abstraction tower: **a wrapper must de
 
 Reinventing is reserved for where the wrap would leak the thing being avoided: there is no ORM, because an ORM's abstraction is exactly the thing that has to be understood to debug it.
 
+Which layer owns a given decision is [axiom 8](#design-axioms): Ultimate ships mechanism, your app ships convention. The mechanism / structural-convention / business-convention split, the worked decisions, and why the third row of that table needs no plugin API are in [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md).
+
 ## Pre-MVP to planet-scale, without a rewrite
 
 The same app code runs on one PaaS dyno and on a distributed cluster. Climbing is a driver swap and configuration — never a re-architecture. That is the promise the whole design is arranged around, and the rungs, seams and honest incompatibilities are in [`17-scale-ladder.md`](./17-scale-ladder.md).
@@ -72,8 +74,9 @@ Non-negotiable. Every package, doc, and generated file honours these.
 | 5 | **One command means shippable.** | `x verify` green = deployable. No tribal checklist, no "also run the e2e suite on staging". |
 | 6 | **Static path never pays for the app path.** | Separate bundle graphs; `site/` cannot import `app/`. 0kb JS baseline on marketing is structural, not aspirational. |
 | 7 | **Deploy anywhere = containers only.** | Zero platform primitives. No edge functions, no vendor KV, no proprietary image loader. If it needs a specific host, it isn't in the framework. |
+| 8 | **Ultimate ships mechanism; your app ships convention.** | Mechanisms ship, and so do *structural* conventions — file naming, the four surfaces, the tier order, one catalog per locale — because they are the same for a bank and a blog. *Business* conventions never ship: tenancy is a mechanism, an org model is somebody's business. Primitives are functions returning values, so an app encodes its own by wrapping one — no fork, no monkey-patch, no plugin API. |
 
-See [`02-primitives.md`](./02-primitives.md) for how axiom 2 is implemented and [`10-testing.md`](./10-testing.md) for axiom 5's contents.
+See [`02-primitives.md`](./02-primitives.md) for how axiom 2 is implemented, [`10-testing.md`](./10-testing.md) for axiom 5's contents, and [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md) for axiom 8's test and its worked decisions.
 
 ## Explicit exclusions
 

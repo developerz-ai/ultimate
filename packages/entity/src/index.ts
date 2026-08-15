@@ -18,6 +18,7 @@ export {
   url,
   uuid,
 } from './columns';
+export { CROSS_TENANT_SCOPE, crossTenant, crossTenantReason } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
@@ -99,6 +100,7 @@ export {
   isOrgScoped,
   ORG_COLUMN,
   orgScoped,
+  scopedPlan,
   tenantColumnOf,
 } from './tenancy';
 export type {

@@ -7,7 +7,7 @@ import type { EntityCore } from './entity';
 import { invariantViolated, patchEmpty, writeUnfiltered } from './errors';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
-import { assertScoped } from './tenancy';
+import { scopedPlan } from './tenancy';
 
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
 export const DEFAULT_PAGE_SIZE = 50;
@@ -64,16 +64,17 @@ export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): Query
   };
 };
 
-/** The plan for a read. Throws `X_TENANCY_UNSCOPED` before a single row is considered. */
+/**
+ * The plan for a read, scoped to the acting actor's tenant before a single row is considered. The
+ * caller's own `orgId` is not what scopes it — it is checked against the actor and refused when it
+ * disagrees (`X_TENANCY_ACTOR_MISMATCH`), because an `orgId` that arrived as action input is a
+ * value the caller chose.
+ */
 export const readPlan = <Row>(
   entity: EntityCore<Row>,
   args: FindManyArgs,
   operation: string,
-): QueryPlan => {
-  const plan = planFor(entity, args);
-  assertScoped(entity.$name, entity.$tenantColumn, operation, plan);
-  return plan;
-};
+): QueryPlan => scopedPlan(entity.$name, entity.$tenantColumn, operation, planFor(entity, args));
 
 /**
  * The plan for an id-addressed write. A write is a query too: without the same guard,

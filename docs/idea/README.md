@@ -23,6 +23,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`16-app-targets.md`](./16-app-targets.md) | Web, mobile, desktop from one definition. A screen is a `route`, not a ninth primitive. **Design only.** |
 | [`17-scale-ladder.md`](./17-scale-ladder.md) | PaaS to distributed in five rungs, where climbing is config and drivers — never a rewrite. **Design only.** |
 | [`18-build-vs-wrap.md`](./18-build-vs-wrap.md) | Own the integration layer, wrap the protocol layer. Verdicts: jobs BUILD, SMTP BUILD, NATS WRAP — adopted, `nats@2.29.3` at the transport seam. |
+| [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md) | Axiom 8. Mechanisms and structural conventions ship; business conventions never do. Tenancy ships, an org model does not — the app wraps. |
 
 ## Reading paths
 
@@ -51,12 +52,13 @@ Bun-only, opinionated, full-stack. Postgres with no ORM, SolidJS 2, SCSS modules
 | 5 | One command means shippable. |
 | 6 | Static path never pays for the app path. |
 | 7 | Deploy anywhere = containers only. |
+| 8 | Ultimate ships mechanism; your app ships convention. |
 
-Consequences of each in [`00-thesis.md`](./00-thesis.md).
+Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md).
 
 ## Status
 
-`As of 2026-08`: **1.0.0, shipped.** All 28 packages publish to npm in lockstep, each behind an OIDC trusted publisher. Docs `00`–`15` describe what exists; `16` and `17` are design only and say so in every claim.
+`As of 2026-08`: **1.2.0, shipped.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — publish to npm in lockstep, over OIDC trusted publishing. Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 
 Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
 

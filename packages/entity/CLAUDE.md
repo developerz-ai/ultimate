@@ -385,10 +385,35 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   drift the two-driver split exists to prevent: it would leave the in-memory row the one row in
   the framework `JSON.stringify` refuses.
 - **Timestamps are `timestamptz`.** A naive timestamp must stay inexpressible.
-- **A tenant column means every query needs an org predicate** — runtime guard, not convention.
-  Missing ⇒ `X_TENANCY_UNSCOPED`. `tenant: 'orgId'` declares it; omitted, inference still applies
-  (`.tenant()`, else a column named `orgId`), so silence never means unscoped. Never make the
-  declaration the only switch.
+- **A tenant column means every query runs under the ACTING ACTOR's tenant** — derived from
+  `tryUseContext()?.actor.orgId` in `scopedPlan` (`tenancy.ts`), which every repository operation
+  reaches through `readPlan`, so both drivers and every read, write and count pass one derivation.
+  `tenant: 'orgId'` declares the column; omitted, inference still applies (`.tenant()`, else a
+  column named `orgId`), so silence never means unscoped. Never make the declaration the only
+  switch. Five rules, none optional. **A caller-supplied `orgId` is an assertion, never the
+  authority**: equal to the actor's it is a restatement (one predicate, not two), different from it
+  — which is what an `orgId` taken from action input looks like — it is `X_TENANCY_ACTOR_MISMATCH`
+  with both values in the cause. **Refused, never overridden**: rewriting the predicate to the
+  actor's org would answer the wrong question correctly and ship the bug. **Every predicate on the
+  tenant column is checked and `eq` only**, so `in [mine, theirs]` is a mismatch too. **An actor
+  with no org is refused** (`X_TENANCY_ACTOR_ORG_REQUIRED`): anonymous is inside no org, so every
+  tenant-scoped row is somebody else's, and letting the caller's value stand there would leave the
+  hole open on exactly the unauthenticated path. **Outside every request context there is no actor
+  to derive from** — a script, a seed, a test harness — so the caller names the tenant itself and
+  `X_TENANCY_UNSCOPED` still refuses a plan that names none. There is no build-time tenancy step in
+  `x verify` (its 17 steps check none) and the old comment in `tenancy.ts` claiming one was wrong:
+  the tenant is a request-time value, so the seam is the enforcement.
+- **`crossTenant(reason, fn)` (`cross-tenant.ts`) is the ONE way to read across tenants**, for the
+  three cases that have no single one: an admin surface over every org, background reconciliation,
+  support tooling. An `AsyncLocalStorage` scope with a written reason, the same shape
+  `@ultimat3/db`'s `expectedQueryLoop` has, never a boolean argument on a repository call — which
+  reads exactly like forgetting the tenant — and never a config list of exempt entities (axiom 1).
+  **The capability is proven twice**: `CROSS_TENANT_SCOPE` (`tenancy:cross`) on the actor, at the
+  call and again at every plan built inside it, because `withChildContext({ actor })` swaps the
+  actor without closing the scope and an impersonated caller must not inherit it —
+  `X_TENANCY_CROSS_DENIED`. **Outside a request context it is refused too**: a sweep with nobody to
+  attribute it to is ambient authority, so a script mints its own `serviceActor` and says who it
+  is. A blank reason is `X_INVARIANT` through core's `assert`, exactly as `expectedQueryLoop`'s is.
 - **Every framework member on an entity is `$`-prefixed** — the columns are `Object.assign`ed onto
   the core, so an unprefixed member would make `view`, `name` or `tenant` an illegal column name.
   `$view`, never `view`; no free `view(entity, keys)` either — one way to write a projection.
@@ -434,7 +459,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
-| `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `assertScoped()` |
+| `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `scopedPlan()`, the actor-derived tenant guard |
+| `cross-tenant.ts` | `crossTenant(reason, fn)` — the capability-gated scope that lifts it |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |
 | `batch.ts` | `inBatches(size)` — the chain's page in a loop, closed by the loop that reads it |
 | `pg-driver.ts` | `postgresDriver()`, `postgresRepo()`, `postgresTransactor()` — attributes every statement it sends |

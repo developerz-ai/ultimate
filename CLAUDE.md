@@ -15,7 +15,7 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 **Status:** 1.2.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
 29 in all — on npm in lockstep: one version, one commit, one tag. 1.1.0 was the first
 release published by [`.github/workflows/release.yml`](.github/workflows/release.yml) over OIDC
-trusted publishing, no `NPM_TOKEN`, provenance attached; 1.0.0 was the manual bootstrap. Semver
+trusted publishing, provenance attached; 1.0.0 was the manual bootstrap. Semver
 applies — a breaking change to a documented API needs a major, and the eight primitive shapes, the
 `x` CLI surface and the tier table are as stable as the `X_*` codes already were.
 
@@ -52,6 +52,10 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 5. **One command means shippable.** `x verify` is the contract.
 6. **Static path never pays for the app path.** Separate bundle graphs, hard boundaries.
 7. **Deploy anywhere = containers only.** Zero platform primitives in the framework.
+8. **Ultimate ships mechanism; your app ships convention.** Mechanisms and *structural* conventions
+   ship — the same for a bank and a blog. *Business* conventions never do. Primitives are functions
+   returning values, so an app encodes its own by wrapping one: no fork, no patch, no plugin API.
+   [`docs/idea/19-mechanism-not-convention.md`](docs/idea/19-mechanism-not-convention.md).
 
 ## Commands
 
@@ -167,7 +171,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 ## CI
 
-Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, no `NPM_TOKEN` — see [`PUBLISHING.md`](PUBLISHING.md).
+Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — see [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 

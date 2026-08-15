@@ -1,6 +1,6 @@
 name: release
 
-# Publishes every @ultimat3 package to npm using OIDC trusted publishing — no NPM_TOKEN secret.
+# Publishes every @ultimat3 package to npm using OIDC trusted publishing.
 # npm mints a short-lived token from the GitHub Actions id-token and verifies it against the
 # trusted publisher configured for each package on npmjs.com. Provenance is automatic.
 #
