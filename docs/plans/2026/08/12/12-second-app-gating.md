@@ -23,11 +23,11 @@ Each tracked app has:
 - A separate ratchet discipline: steps pinned today must stay pinned until fixed; steps that go green must be unpinned immediately
 - A shared runner (`scripts/reference-app-gate.ts`) that gates both from one command
 
-The app enters the ratchet at **3 red of 17**, not because it is the reference app (it is not), but because its genuine bugs surface in the gate:
+The app entered the ratchet at 3 red of 17 and sits at **2 red of 17** `As of 2026-08` — `typecheck` came off the pin once `AdminRepo`'s id was rebranded — not because it is the reference app (it is not), but because its genuine bugs surface in the gate:
 - **`boundaries` (×3 violations)** — static feed (`site/feed/page.tsx`) imports app-layer service code (`app/posts/service.ts`), dragging policy and repo with it across the static/app boundary
 - **`drift`** — migrations predate the current entity set; need regeneration (`x db gen`)
 
-All other 14 steps must pass: typecheck ✓, lint ✓, contract ✓, live ✓, job ✓, e2e ✓, and the rest are already clean.
+All other 15 steps must pass: typecheck ✓, lint ✓, contract ✓, live ✓, job ✓, e2e ✓, and the rest are already clean. The live table is `GATED_APPS`, not this paragraph.
 
 ### Migration work completed
 
@@ -37,10 +37,10 @@ All other 14 steps must pass: typecheck ✓, lint ✓, contract ✓, live ✓, j
 
 ## Outcome
 
-The gate now enforces:
-- `examples/dummy` stays green on 13/17 steps (4 pinned data-substrate issues)
-- `dummy/social-media-clone` stays green on 14/17 steps (2 pinned infrastructure issues + 1 implied by the reference app's pins)
-- Each fix lands as a line deletion from the corresponding `expectedRed` table
+The gate now enforces, `As of 2026-08`:
+- `examples/dummy` stays green on 11/17 steps (6 pinned: typecheck, contract, live, job, e2e, drift — all data-substrate)
+- `dummy/social-media-clone` stays green on 15/17 steps (2 pinned: boundaries, drift). No pin is implied by the other app — each table stands alone
+- Each fix lands as a line deletion from the corresponding `expectedRed` table (`bun run scripts/reference-app-gate.ts --unpin <app>:<step>`)
 - No second path: one `x verify` runs both, one ratchet discipline, one manifest
 
 ## "What is `dummy/`?"

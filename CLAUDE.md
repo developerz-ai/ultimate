@@ -8,7 +8,7 @@ A full-stack, **Bun-only**, opinionated web framework. Rails' philosophy on a Bu
 
 Rails' actual promise, applied to agents: **reduce the number of problems the author has to worry about**, so the work goes into the app's features instead of the app's infrastructure. Every decision the framework makes is a decision an agent does not have to.
 
-This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x` CLI, the docs, the public site, and two reference apps.
+This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x` CLI, the docs, the wiki, and two tracked apps — one reference app (`examples/dummy`) and one deployed demo (`dummy/social-media-clone`), each gated on its own `expectedRed` table.
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
@@ -60,6 +60,7 @@ detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
 | **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps' own 17 steps (`examples/dummy`, `dummy/social-media-clone`), blocking on a ratchet: a step passing today must keep passing, a step pinned in that app's `expectedRed` (`scripts/lib/gated-apps.ts`) must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
+| shrink the ratchet | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` — the edit `X_REFERENCE_APP_PIN_STALE` names, performed |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |

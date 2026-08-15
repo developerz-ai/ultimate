@@ -58,9 +58,10 @@ export const GATED_APPS: readonly GatedApp[] = [
   {
     // The deployed demo (.github/workflows/deploy-social-demo.yml publishes its image on every
     // push to main). It was tracked, deployed and gated by nothing until 2026-08 — 237 files whose
-    // only claim to working was that someone had once run them. It enters the ratchet at 3 red of
-    // 17, not because it is the reference app, but because an image this repo ships to a live URL
-    // is a claim, and axiom 3 says a claim that is not a build error does not exist.
+    // only claim to working was that someone had once run them. It entered the ratchet at 3 red of
+    // 17 and sits at 2 since `typecheck` came off the pin, not because it is the reference app, but
+    // because an image this repo ships to a live URL is a claim, and axiom 3 says a claim that is
+    // not a build error does not exist.
     dir: 'dummy/social-media-clone',
     reference: './dummy/social-media-clone',
     expectedRed: {

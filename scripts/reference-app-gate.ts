@@ -6,6 +6,7 @@
 // has to join the root `tsc -b` solution. Red never becomes the resting state.
 //
 //   bun run scripts/reference-app-gate.ts [--json]
+//   bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]   # shrink the ratchet
 //
 // The pins live in scripts/lib/gated-apps.ts; this file owns only what the ratchet does with them.
 
@@ -14,14 +15,19 @@
 import { join } from 'node:path';
 import type { Runner } from '@ultimat3/cli';
 import { exec, VERIFY_STEP_NAMES } from '@ultimat3/cli';
-import { parseScriptArgs } from './lib/args';
+import { flagString, parseScriptArgs } from './lib/args';
 import type { GatedApp } from './lib/gated-apps';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
-import type { Finding } from './lib/log';
+import type { Finding, ScriptResult } from './lib/log';
 import { renderFinding, report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { parseUnpin, pinnedSteps, removePins } from './lib/unpin';
 
 export const ROOT_TSCONFIG = 'tsconfig.json';
+
+/** The command that performs the stale-pin edit, so the finding can hand over a runnable line. */
+export const unpinCommand = (app: GatedApp, steps: readonly string[]): string =>
+  `bun run scripts/reference-app-gate.ts --unpin ${app.dir}:${steps.join(',')}`;
 
 /** Runnable from the repo root, and the same gate this script runs — just rendered for a human. */
 export const reproduce = (app: GatedApp): string => {
@@ -179,7 +185,9 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
     findings.push({
       code: 'X_REFERENCE_APP_PIN_STALE',
       cause: `${stale.join(', ')} now ${stale.length === 1 ? 'passes' : 'pass'} for ${app.dir} but ${stale.length === 1 ? 'is' : 'are'} still pinned as failing`,
-      fix: `delete the ${stale.join(', ')} entr${stale.length === 1 ? 'y' : 'ies'} from ${app.dir}'s expectedRed in ${PINS_FILE}`,
+      // Runnable, not prose: this is the edit every landed fix makes, and `at` still names the
+      // file for a reader who would rather delete the lines themselves.
+      fix: unpinCommand(app, stale),
       at: PINS_FILE,
     });
   }
@@ -230,6 +238,18 @@ export const stepLines = (
   return lines;
 };
 
+/** The red steps this app's table pins. The rest of `red` is a regression, never a held pin. */
+export const pinnedRedSteps = (app: GatedApp, red: readonly string[]): readonly string[] =>
+  red.filter((name) => name in app.expectedRed);
+
+/**
+ * One app's line in the summary. Red and pinned-red are separate numbers because they are separate
+ * facts: reporting every red step as "pinned red" described the failing run — the one this line
+ * exists to explain — as if the ratchet were holding.
+ */
+export const tally = (app: GatedApp, red: readonly string[], total: number): string =>
+  `${app.dir} ${total - red.length}/${total}, ${red.length} red (${pinnedRedSteps(app, red).length} pinned)`;
+
 export const runAppGate = async (
   root: string,
   runner: Runner,
@@ -242,9 +262,80 @@ export const runAppGate = async (
   return parseSteps(result.stdout);
 };
 
+const SCRIPT = 'reference-app-gate';
+
+const badFlag = (cause: string, fix: string): ScriptResult => ({
+  ok: false,
+  script: SCRIPT,
+  summary: cause,
+  findings: [{ code: 'X_CLI_BAD_FLAG', cause, fix, at: PINS_FILE }],
+});
+
+/**
+ * `--unpin <app>:<step>[,<step>]`, performed: the edit `X_REFERENCE_APP_PIN_STALE` names, so an
+ * agent shrinks the ratchet with the line the gate printed instead of hand-editing a table.
+ *
+ * Fails closed at every disagreement. The steps must be pinned for that app, and the entries the
+ * text parser finds must be exactly the keys the gate's own import sees — a pins file this cannot
+ * read is a hand edit, never a guess at which lines to delete.
+ */
+export const unpin = async (root: string, token: string): Promise<ScriptResult> => {
+  const request = parseUnpin(token);
+  const shape = `bun run scripts/reference-app-gate.ts --unpin ${GATED_APPS[0]?.dir ?? '<app>'}:drift`;
+  if (request === undefined)
+    return badFlag(`--unpin "${token}" is not <app>:<step>[,<step>]`, shape);
+  const app = GATED_APPS.find((candidate) => candidate.dir === request.app);
+  if (app === undefined) {
+    return badFlag(
+      `--unpin names ${request.app}, which is not a gated app`,
+      `bun run scripts/reference-app-gate.ts --unpin <${GATED_APPS.map((a) => a.dir).join('|')}>:<step>`,
+    );
+  }
+  const declared = Object.keys(app.expectedRed);
+  const unknown = request.steps.filter((step) => !declared.includes(step));
+  if (unknown.length > 0) {
+    return badFlag(
+      `${unknown.join(', ')} is not pinned for ${app.dir}${declared.length === 0 ? ' — its table is already empty' : `; it pins ${declared.join(', ')}`}`,
+      `bun run scripts/reference-app-gate.ts --json   # the pins each app still carries`,
+    );
+  }
+  const path = join(root, PINS_FILE);
+  const source = await Bun.file(path).text();
+  const onFile = pinnedSteps(source, app.dir);
+  const next = removePins(source, app.dir, request.steps);
+  if (next === undefined || onFile === undefined || onFile.join() !== declared.join()) {
+    const cause = `${PINS_FILE} no longer reads as the table this edit understands, so ${app.dir}'s pins were left alone`;
+    return {
+      ok: false,
+      script: SCRIPT,
+      summary: cause,
+      findings: [
+        {
+          code: 'X_REFERENCE_APP_PIN_STALE',
+          cause,
+          fix: `delete the ${request.steps.join(', ')} entr${request.steps.length === 1 ? 'y' : 'ies'} from ${app.dir}'s expectedRed in ${PINS_FILE}`,
+          at: PINS_FILE,
+        },
+      ],
+    };
+  }
+  await Bun.write(path, next);
+  const left = pinnedSteps(next, app.dir) ?? [];
+  return {
+    ok: true,
+    script: SCRIPT,
+    summary: `${app.dir}: unpinned ${request.steps.join(', ')} — ${left.length === 0 ? 'no pins left, the app is asserting 17 of 17' : `${left.join(', ')} still pinned`}`,
+    lines: [`  ${PINS_FILE} rewritten`, '  now run: bun run scripts/reference-app-gate.ts'],
+    data: { app: app.dir, removed: request.steps, pinned: left },
+  };
+};
+
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
+  const requested = flagString(args, 'unpin');
+  // The edit, not the gate: running both would report the ratchet as it was a moment ago.
+  if (requested !== undefined) report(await unpin(root, requested), args.json);
   const findings: Finding[] = [];
   const lines: string[] = [];
   const data: Record<string, unknown>[] = [];
@@ -261,10 +352,16 @@ if (import.meta.main) {
     findings.push(...gateFindings({ app, steps, referenced, declaredSteps: VERIFY_STEP_NAMES }));
     const red = steps === undefined ? [] : redSteps(steps);
     const total = steps?.length ?? 0;
-    tallies.push(`${app.dir} ${total - red.length}/${total}, ${red.length} pinned red`);
+    tallies.push(tally(app, red, total));
     lines.push(`${app.dir}: ${total - red.length} of ${total} pass, ${red.length} red`);
     lines.push(...(steps === undefined ? [] : stepLines(steps, app.expectedRed)));
-    data.push({ app: app.dir, red, pinned: Object.keys(app.expectedRed), referenced });
+    data.push({
+      app: app.dir,
+      red,
+      pinnedRed: pinnedRedSteps(app, red),
+      pinned: Object.keys(app.expectedRed),
+      referenced,
+    });
   }
 
   report(

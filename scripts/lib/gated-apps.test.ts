@@ -3,6 +3,9 @@
 // this file exists for, no app in the repo that the gate does not run at all.
 
 import { describe, expect, test } from 'bun:test';
+// Both `node:`-only by necessity: Bun exposes no path-join primitive, and its only existence check
+// (`Bun.file().exists()`) is async — these assertions sit in synchronous `test()` bodies, where an
+// unawaited promise is a passing test that checked nothing.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
