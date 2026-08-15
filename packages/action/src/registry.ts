@@ -6,9 +6,18 @@
 
 import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
-import { ActionDuplicateError, ActionPolicyMissingError } from './errors';
+import { ActionDuplicateError, ActionPathDuplicateError, ActionPolicyMissingError } from './errors';
+import { derivePath } from './naming';
 
 const registry = new Map<string, AnyAction>();
+
+/**
+ * Derived route -> the action name that owns it. A second index because the name is not the
+ * path: `pluralize` leaves a trailing `s` alone by design, so `archiveOrder` and `archiveOrders`
+ * are two names and one route. Nothing downstream can refuse that — the router seats whichever
+ * came last and the shadowed action stays in the OpenAPI document and the MCP tool list.
+ */
+const paths = new Map<string, string>();
 
 /**
  * Register one action under an explicit name. The name lands on the action you
@@ -28,8 +37,14 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
   if (target.policy === undefined || target.policy === null) {
     throw new ActionPolicyMissingError(name);
   }
+  const { path } = derivePath(name);
+  const owner = paths.get(path);
+  if (owner !== undefined && owner !== name) {
+    throw new ActionPathDuplicateError({ name, existing: owner, path });
+  }
   const named = nameAction(target, name);
   registry.set(name, named);
+  paths.set(path, name);
   return named;
 }
 
@@ -63,6 +78,7 @@ export function describeActions(): readonly ActionDescriptor[] {
 /** Test-only. Production registers once at boot and never unregisters. */
 export function resetRegistry(): void {
   registry.clear();
+  paths.clear();
 }
 
 function byName(a: readonly [string, AnyAction], b: readonly [string, AnyAction]): number {

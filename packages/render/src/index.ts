@@ -109,9 +109,11 @@ export type {
   IsrServeResult,
   IsrState,
   IsrStore,
+  MemoryIsrStoreOptions,
 } from './render-isr';
 export {
   createIsrController,
+  DEFAULT_ISR_MAX_ENTRIES,
   invalidateAndRevalidate,
   memoryIsrStore,
   parseTtlMs,

@@ -21,6 +21,7 @@ import { cacheKeyFor, readFresh, readOnce, readThrough } from './cache';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
 import { actorOf, guard } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
+import { DEFAULT_READ_CACHE_TTL_MS } from './read-cache';
 import type { SqlSource } from './source';
 
 /**
@@ -117,7 +118,8 @@ async function readRows(
   const read = (): Promise<readonly object[]> => withSpan(`query.${name}`, () => source.execute());
   // The source came from this query's own `sql()`, so its rows are TRow throughout —
   // which is what the typed overload above states, and this body never has to assert.
-  const key = cacheKeyFor(name, raw, def.cache?.tags ?? []);
+  const tags = def.cache?.tags ?? [];
+  const key = cacheKeyFor(name, raw, tags);
   // `fresh` is the caller saying no cache may answer this one — the memo included, a memo being
   // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
   // newest answer the request has, so the next plain read of the key joins it rather than the
@@ -125,9 +127,12 @@ async function readRows(
   if (options.fresh === true) return await readFresh(ctx, key, read);
   // `cache:` buys the tier, never the memo: a read asked twice in one request is one execution
   // whether or not its author opted into caching.
+  // A declared `cache:` with no `ttlMs` gets one anyway. Tags are the primary eviction, but a
+  // read whose tags never fire would otherwise hold one entry per distinct input for the life of
+  // the process — a paginated feed over 10k tenants is 10k immortal entries.
   return def.cache === undefined
     ? await readOnce(ctx, key, read)
-    : await readThrough(ctx, key, def.cache.ttlMs ?? null, read);
+    : await readThrough(ctx, key, def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS, read, tags);
 }
 
 async function buildSource(

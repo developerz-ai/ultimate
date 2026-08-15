@@ -171,7 +171,7 @@ describe('reauthorize', () => {
     const dropped = await registry.reauthorize(alice.socket);
 
     expect(dropped).toEqual([subscription.sid]);
-    expect(registry.subscription(subscription.sid)).toBeUndefined();
+    expect(registry.subscription(alice.socket.id, subscription.sid)).toBeUndefined();
     expect(registry.gateFailures).toBe(0);
   });
 
@@ -200,7 +200,7 @@ describe('reauthorize', () => {
     // Not dropped: a database timeout is not a revoked grant, and a client does not resubscribe
     // to a denial. Desynced instead, so the next flush re-reads under the new actor.
     expect(dropped).toEqual([]);
-    expect(registry.subscription(subscription.sid)).toBeDefined();
+    expect(registry.subscription(alice.socket.id, subscription.sid)).toBeDefined();
     expect(alice.socket.desynced.has(subscription.sid)).toBe(true);
     expect(registry.gateFailures).toBe(1);
     expect(failures[0]?.stage).toBe('authorize');
@@ -222,5 +222,82 @@ describe('reauthorize', () => {
     await expect(registry.reauthorize(alice.socket)).resolves.toEqual([]);
     expect(alice.socket.desynced.has(subscription.sid)).toBe(true);
     expect(registry.gateFailures).toBe(0);
+  });
+});
+
+/**
+ * A `sid` is client-supplied. Keyed by it alone, one socket could take over — or end — another
+ * socket's live subscription, and the subscription it displaced was stranded inside its query
+ * entry where nothing could ever free it.
+ */
+describe('a subscription is owned by the socket that opened it', () => {
+  const registryWithFeed = (): LiveQueryRegistry =>
+    new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(definitionWith({}));
+
+  test('two sockets may hold the same sid, and each keeps its own subscription', async () => {
+    const registry = registryWithFeed();
+    const alice = socketFor('s-alice', actor('alice'));
+    const bob = socketFor('s-bob', actor('bob'));
+
+    await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input, sid: 'S' });
+    await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input, sid: 'S' });
+
+    expect(registry.subscription('s-alice', 'S')?.socket.id).toBe('s-alice');
+    expect(registry.subscription('s-bob', 'S')?.socket.id).toBe('s-bob');
+    expect(registry.subscriberCount(registry.subscription('s-alice', 'S')?.qid ?? '')).toBe(2);
+  });
+
+  test("a drop frame from one socket cannot end another socket's stream", async () => {
+    const registry = registryWithFeed();
+    const alice = socketFor('s-alice', actor('alice'));
+    const bob = socketFor('s-bob', actor('bob'));
+    await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input, sid: 'S' });
+    await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input, sid: 'S' });
+
+    registry.unsubscribe('s-bob', 'S');
+
+    expect(registry.subscription('s-bob', 'S')).toBeUndefined();
+    expect(registry.subscription('s-alice', 'S')).toBeDefined();
+  });
+
+  // The leak the reused sid caused: `unsubscribeSocket` walked the sid index, found nothing for
+  // the displaced subscription, and its query entry — matcher, shared window and all — was
+  // pinned for the life of the process, fanning every change out to a socket that had gone.
+  test('a closed socket frees its subscriptions even when another reused its sid', async () => {
+    const registry = registryWithFeed();
+    const alice = socketFor('s-alice', actor('alice'));
+    const bob = socketFor('s-bob', actor('bob'));
+    const { subscription } = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input,
+      sid: 'S',
+    });
+    await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input, sid: 'S' });
+
+    registry.unsubscribeSocket('s-alice');
+    registry.unsubscribeSocket('s-bob');
+
+    expect(registry.subscription('s-alice', 'S')).toBeUndefined();
+    expect(registry.subscription('s-bob', 'S')).toBeUndefined();
+    expect(registry.subscriberCount(subscription.qid)).toBe(0);
+  });
+
+  test('refuses a sid the same socket already holds, rather than stranding the first', async () => {
+    const registry = registryWithFeed();
+    const alice = socketFor('s-alice', actor('alice'));
+    const { subscription } = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input,
+      sid: 'S',
+    });
+
+    await expect(
+      registry.subscribe({ socket: alice.socket, name: 'liveFeed', input, sid: 'S' }),
+    ).rejects.toThrow('X_SUBSCRIPTION_ID_TAKEN');
+
+    expect(registry.subscription('s-alice', 'S')).toBe(subscription);
+    expect(registry.subscriberCount(subscription.qid)).toBe(1);
   });
 });

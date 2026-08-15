@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { type ActionDef, action } from './action';
+import { derivePath } from './naming';
 import {
   describeActions,
   getAction,
@@ -117,5 +118,55 @@ describe('registry', () => {
     }
     expect(code).toBe('X_ACTION_POLICY_MISSING');
     expect(getAction('publishPost')).toBeUndefined();
+  });
+});
+
+describe('one derived path, one action', () => {
+  beforeEach(() => {
+    resetRegistry();
+  });
+
+  const declare = define;
+
+  // `pluralize` leaves a trailing `s` alone by design, so these are two names and one route.
+  // `X_ACTION_DUPLICATE` only guards names: both registered, both projected, and the router
+  // seated whichever came last — the other unreachable over HTTP while its OpenAPI operation
+  // and MCP tool went on advertising it.
+  test('refuses a second action deriving a path another already owns', () => {
+    registerAction('archiveOrder', declare());
+
+    expect(() => registerAction('archiveOrders', declare())).toThrow('X_ACTION_PATH_DUPLICATE');
+    expect(getAction('archiveOrders')).toBeUndefined();
+    expect(derivePath('archiveOrder').path).toBe(derivePath('archiveOrders').path);
+  });
+
+  test('the refusal names both actions and the path they collide on', () => {
+    registerAction('archiveOrder', declare());
+    const failure = (() => {
+      try {
+        registerAction('archiveOrders', declare());
+        return undefined;
+      } catch (error: unknown) {
+        return error as { cause?: string };
+      }
+    })();
+
+    expect(failure?.cause).toBe(
+      'actions "archiveOrders" and "archiveOrder" both derive /api/orders/archive',
+    );
+  });
+
+  test('two actions with different paths both register', () => {
+    registerAction('archiveOrder', declare());
+    registerAction('publishOrder', declare());
+
+    expect(getAction('archiveOrder')).toBeDefined();
+    expect(getAction('publishOrder')).toBeDefined();
+  });
+
+  test('re-registering the same action under the same name is still one registration', () => {
+    const target = declare();
+    registerAction('archiveOrder', target);
+    expect(() => registerAction('archiveOrder', target)).not.toThrow();
   });
 });

@@ -25,6 +25,9 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 | Registry input | descriptors only. `registerRoute` refuses a raw declaration with `X_ROUTE_UNNORMALIZED` — `defineRoute` is the one normalizer, and every reader downstream assumes it ran. |
 | Descriptors | `describeRoutes()` must stay JSON-safe, sorted by path, deterministic. |
 | Boundary | `surfaces.ts` throws; it never warns. Type-only edges are not violations. |
+| Stream cancellation | the underlying source has a `cancel()`, and `write` is guarded on it. A client that disconnects mid-stream aborts `StreamHole.resolve(signal)` and every later `write`/`close` is a no-op — `settle()` on a cancelled controller threw out of a `void`ed promise, one unhandled rejection per response, while the resolved holes kept doing their database work with nowhere to write. |
+| ISR detach | `attach()`'s returned function clears the revalidator as well as the dependents — and only if the slot is still its own, tracked in `installedRevalidator` because `@ultimat3/cache` holds ONE and offers no read back. Left installed, a detached controller and its whole store stayed reachable and kept receiving revalidations while the live one's pages never went stale. |
+| ISR store bound | `memoryIsrStore()` caps at `DEFAULT_ISR_MAX_ENTRIES` (1,000), least recently generated first — a route table supports `:params` and `*`, so `/blog/:slug` retains one full HTML string per slug ever requested, 404-shaped ones included. |
 | Errors | `errors.ts` subclasses only. Never a bare `Error`, never a bare `TODO`. |
 | Policy | render checks *presence* only. Evaluation belongs to `@ultimat3/policy`. |
 | Responses | return `RenderResult`. `@ultimat3/http` builds the `Response`. |

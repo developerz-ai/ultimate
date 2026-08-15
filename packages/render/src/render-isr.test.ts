@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
-import { resetGraph, tag } from '@ultimat3/cache';
+import { invalidateTags, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, parseTtlMs } from './render-isr';
+import { createIsrController, memoryIsrStore, parseTtlMs } from './render-isr';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
@@ -172,5 +172,81 @@ describe('tag-driven revalidation', () => {
     expect(controller.store().get('/team')?.stale).toBe(false);
     detach();
     expect(controller.revalidateByTags([orgTag])).toEqual([]);
+  });
+});
+
+describe('detach releases the revalidator, not only the dependents', () => {
+  // The `x dev` hot reload: controller A attaches, the reload detaches it and creates B, and
+  // `invalidateTags` still called A's `markStale` — so B's pages never went stale and A's whole
+  // store stayed reachable from the cache graph.
+  test('a detached controller stops receiving revalidations', async () => {
+    isrRoute('apps/web/site/team/page.tsx', [orgTag]);
+    const a = createIsrController({ routes: describeRoutes });
+    const detachA = a.attach();
+    await a.serve('/team', () => '<p>a</p>');
+    detachA();
+
+    // The reload's other half: a new controller renders the same path — which puts it back in
+    // the graph — and never attaches, so the only revalidator installed is the detached one's.
+    const b = createIsrController({ routes: describeRoutes });
+    await b.serve('/team', () => '<p>b</p>');
+
+    await invalidateTags([orgTag]);
+
+    expect(a.store().get('/team')?.stale).toBe(false);
+    expect(b.store().get('/team')?.stale).toBe(false);
+  });
+
+  // Detaching in the wrong order must not silence the controller that owns the slot now.
+  test('a stale detach never clears a revalidator another controller installed', async () => {
+    isrRoute('apps/web/site/team/page.tsx', [orgTag]);
+    const a = createIsrController({ routes: describeRoutes });
+    const detachA = a.attach();
+    const b = createIsrController({ routes: describeRoutes });
+    b.attach();
+    await b.serve('/team', () => '<p>b</p>');
+
+    detachA();
+    await invalidateTags([orgTag]);
+
+    expect(b.store().get('/team')?.stale).toBe(true);
+  });
+});
+
+describe('the default ISR store is bounded', () => {
+  test('evicts the least recently generated page once the cap is spent', () => {
+    const store = memoryIsrStore({ maxEntries: 3 });
+    const entry = (path: string) => ({
+      path,
+      html: `<p>${path}</p>`,
+      hash: path,
+      generatedAt: 0,
+      ttlMs: null,
+      stale: false,
+    });
+
+    for (const path of ['/a', '/b', '/c', '/d']) store.set(entry(path));
+
+    expect(store.paths()).toEqual(['/b', '/c', '/d']);
+    expect(store.get('/a')).toBeUndefined();
+  });
+
+  test('re-generating a page makes it the most recent, not a second entry', () => {
+    const store = memoryIsrStore({ maxEntries: 2 });
+    const entry = (path: string, generatedAt: number) => ({
+      path,
+      html: `<p>${path}</p>`,
+      hash: path,
+      generatedAt,
+      ttlMs: null,
+      stale: false,
+    });
+
+    store.set(entry('/a', 1));
+    store.set(entry('/b', 2));
+    store.set(entry('/a', 3)); // /a regenerates, so /b is now the oldest
+    store.set(entry('/c', 4));
+
+    expect(store.paths()).toEqual(['/a', '/c']);
   });
 });

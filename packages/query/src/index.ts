@@ -9,17 +9,7 @@
 /** Re-exported so a `query` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
-export type { ReadCache, ReadCacheEntry } from './cache';
-export {
-  cacheKeyFor,
-  getReadCache,
-  invalidateQueryTags,
-  MemoryReadCache,
-  readOnce,
-  readThrough,
-  requestMemo,
-  setReadCache,
-} from './cache';
+export { cacheKeyFor, readOnce, readThrough, requestMemo } from './cache';
 export type {
   FetchLike,
   QueryCallOptions,
@@ -76,6 +66,16 @@ export type {
 export { describeQuery, isQuery, nameQuery, query, queryHash } from './query';
 /** The one read path. `defOf` stays unexported — that is the enforcement. */
 export { queryName, runQuery, sourceFor } from './read';
+export type { ReadCache, ReadCacheEntry } from './read-cache';
+export {
+  DEFAULT_READ_CACHE_MAX_BYTES,
+  DEFAULT_READ_CACHE_TTL_MS,
+  getReadCache,
+  invalidateQueryTags,
+  MemoryReadCache,
+  setReadCache,
+} from './read-cache';
+
 export {
   describeQueries,
   getQuery,

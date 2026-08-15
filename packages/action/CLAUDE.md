@@ -129,6 +129,12 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   same-named helpers overwrite each other with no `X_ACTION_DUPLICATE` to raise. The type does the
   same filter, so `rpc<Api['actions']>()` offers only what registered.
 - `rpc` is the only name for the map-wide typed client. There is no `createClient` alias.
+- **`registerAction` guards the derived PATH as well as the name.** `X_ACTION_DUPLICATE` only ever
+  asked about the name, so `archiveOrder` and `archiveOrders` — one route, by `pluralize`'s
+  deliberate "a trailing `s` is already plural" rule — both registered and both projected: the
+  router table seated whichever came last and the other was unreachable over HTTP while its
+  OpenAPI operation and MCP tool still advertised it. `paths` is a second index, cleared by
+  `resetRegistry` with the first, and the refusal is `X_ACTION_PATH_DUPLICATE`.
 - No policy at registration → `X_ACTION_POLICY_MISSING`. No exceptions, no flag.
 - `serializeOpenApi` output must be byte-stable: sorted keys, sorted registry, no clock.
 - `client.ts` stays free of server imports — it is bundled into the browser.

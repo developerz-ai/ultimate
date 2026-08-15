@@ -98,10 +98,20 @@ class GatewayImpl implements Gateway {
     // cheap-in-tokens call on an expensive model is still a cost cap the app declared.
     // `record` below replaces the estimate with the provider's real counts.
     const ledger = currentBudget();
-    await ledger?.reserve(estimateSpend(resolved));
+    // The estimate is DEBITED here, not merely checked: three concurrent calls under one ledger
+    // all read the same `spent()` otherwise, all pass, and all three record against a ceiling
+    // only one of them fitted.
+    const reservation = await ledger?.reserve(estimateSpend(resolved));
 
-    const result = await this.attempt(model, (provider) => provider.generate(resolved));
-    await ledger?.record(result.usage, result.cost);
+    let result: GenerateResult;
+    try {
+      result = await this.attempt(model, (provider) => provider.generate(resolved));
+    } catch (error) {
+      // A call that never landed must not go on holding its reservation.
+      await ledger?.release(reservation);
+      throw error;
+    }
+    await ledger?.record(result.usage, result.cost, reservation);
     // A refusal is not an answer, so it is not cached. Storing one would keep serving a decision
     // the classifier might not make twice, long after the prompt that provoked it was fixed.
     if (result.stopReason !== 'refusal') {
@@ -114,14 +124,24 @@ class GatewayImpl implements Gateway {
     const model = request.model ?? this.config.defaultModel ?? DEFAULT_MODEL;
     const resolved: GenerateRequest = { ...request, model };
     const ledger = currentBudget();
-    await ledger?.reserve(estimateSpend(resolved));
+    const reservation = await ledger?.reserve(estimateSpend(resolved));
 
     // A stream is not retried mid-flight: the consumer has already seen tokens, and
     // replaying from the top would duplicate them. Only the handshake retries.
     const provider = this.providerFor(model);
-    for await (const chunk of provider.stream(resolved)) {
-      if (chunk.type === 'done') await ledger?.record(chunk.result.usage, chunk.result.cost);
-      yield chunk;
+    let settled = false;
+    try {
+      for await (const chunk of provider.stream(resolved)) {
+        if (chunk.type === 'done') {
+          settled = true;
+          await ledger?.record(chunk.result.usage, chunk.result.cost, reservation);
+        }
+        yield chunk;
+      }
+    } finally {
+      // A stream that threw, or that its consumer abandoned, never reached `done` — so nothing
+      // reconciled the reservation and it would hold the ceiling for the rest of the window.
+      if (!settled) await ledger?.release(reservation);
     }
   }
 

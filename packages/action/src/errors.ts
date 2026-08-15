@@ -24,6 +24,7 @@ const docs = errorDocsUrl;
  */
 const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_DUPLICATE: 'two actions are registered under one name',
+  X_ACTION_PATH_DUPLICATE: 'two actions derive one HTTP path',
   X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
   X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
   X_ACTION_UNREGISTERED: 'an action was projected before it was registered',
@@ -124,6 +125,23 @@ export class ActionDuplicateError extends UltimateError {
       cause: `two actions are registered under the name "${name}"`,
       fix: `rename one export — action names are globally unique: x actions list --json`,
       docs: docs('X_ACTION_DUPLICATE'),
+    });
+  }
+}
+
+/**
+ * Two distinct action names, one derived route. `X_ACTION_DUPLICATE` guards the NAME; nothing
+ * guarded the path, so `archiveOrder` and `archiveOrders` both registered, both projected to
+ * `POST /api/orders/archive`, and whichever the router seated last silently shadowed the other —
+ * while the shadowed action's OpenAPI operation and MCP tool went on advertising it.
+ */
+export class ActionPathDuplicateError extends UltimateError {
+  constructor(input: { name: string; existing: string; path: string }) {
+    super({
+      code: 'X_ACTION_PATH_DUPLICATE',
+      cause: `actions "${input.name}" and "${input.existing}" both derive ${input.path}`,
+      fix: `rename one export so the two derive different paths — x actions list --json prints every derived route`,
+      docs: docs('X_ACTION_PATH_DUPLICATE'),
     });
   }
 }

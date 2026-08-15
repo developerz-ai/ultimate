@@ -183,6 +183,7 @@ A denial is `X_FORBIDDEN`, above — `@ultimat3/policy` owns it and every surfac
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_ACTION_DUPLICATE` | two actions registered under one name | duplicate export names across features | rename one; names are global. `x actions list --json` |
+| `X_ACTION_PATH_DUPLICATE` | two actions derive one HTTP path | two distinct names that pluralize onto the same route — `archiveOrder` and `archiveOrders` both derive `POST /api/orders/archive`. Names differ so `X_ACTION_DUPLICATE` does not fire, and the action seated last silently shadows the other while its OpenAPI operation and MCP tool still advertise it | rename one export so the two derive different paths — `x actions list --json` prints every derived route |
 | `X_INPUT_INVALID` | input failed the primitive's schema — an action's, and a query's too | wrong shape from a client or an agent; over HTTP it is a **400**, never a 500 | `x actions describe <name> --json` (`x queries describe <name> --json` for a read) |
 | `X_OUTPUT_INVALID` | the handler returned a value its `output` schema rejects | the handler drifted from the declared output | `x actions describe <name> --json`, then fix the handler or the schema |
 | `X_ACTION_FOREIGN` | a value that is not an action was projected as one | a hand-rolled object with `kind: 'action'`, or an action from a duplicated copy of `@ultimat3/action` | declare it as `export const name = action({ input, output, policy, handle })` |
@@ -225,6 +226,7 @@ synthesizes `https://ultimate.dev/errors/<code>` for a code no page here documen
 |---|---|---|---|
 | `X_TOPIC_FORBIDDEN` | the actor may not subscribe to this topic | no guard, or the guard denied | `hub.guard('<topic>', ({ actor }) => …)` |
 | `X_SUBSCRIPTION_LIMIT` | socket or tenant hit its subscription cap | a component subscribing in a loop | raise `realtime.limits.perSocket` / `perTenant`, or unsubscribe unused live queries |
+| `X_SUBSCRIPTION_ID_TAKEN` | a subscribe frame reused a `sid` this socket already holds | a hand-rolled client incrementing its own subscription ids, or a remount that reuses one. Subscriptions are keyed by `(socket, sid)`, so a reused id would otherwise orphan the earlier subscription — its entry never reaching zero subscribers and never being freed | send a fresh sid with each subscribe frame — `crypto.randomUUID()` is what the bundled client uses |
 | `X_PROTOCOL_VERSION` | client and sync node disagree on the wire protocol | a client from an older build | `x build` and redeploy the client; the node sends `update-available` before draining |
 | `X_CURSOR_STALE` | the resume LSN is outside the change buffer | a long disconnect | pass `snapshot` to `resumeFrom()` so the fallback re-snapshots |
 | `X_REBASE_CONFLICT` | a local mutation could not be rebased | server state moved incompatibly | set `conflict: 'server-wins'`, or return a row from `custom(merge)` |

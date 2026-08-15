@@ -170,3 +170,61 @@ describe('mcpHttpRoute.handle: successful calls', () => {
     expect(payload.error.code).toBe(-32601);
   });
 });
+
+describe('an unauthenticated caller learns nothing about its own request', () => {
+  /** The oracle: two requests differing only in body shape must be indistinguishable. */
+  const malformed = (headers: Record<string, string>): Request =>
+    new Request('http://local/mcp', { method: 'POST', headers, body: '{' });
+
+  // Measured: `Bearer garbage` with `{` answered `400 parse error` and with valid JSON answered
+  // `401` — the body was parsed before the token was resolved.
+  test('a rejected token answers 401 whether or not the JSON parses', async () => {
+    const route = mcpHttpRoute({ server, resolveToken: () => null });
+
+    const bad = await route.handle(malformed({ authorization: 'Bearer garbage' }));
+    const good = await route.handle(
+      request(
+        { jsonrpc: '2.0', id: 1, method: 'initialize' },
+        {
+          authorization: 'Bearer garbage',
+        },
+      ),
+    );
+
+    expect(bad.status).toBe(401);
+    expect(good.status).toBe(401);
+    expect(await bad.text()).toBe(await good.text());
+  });
+
+  test('a non-agent actor answers the same way for either body', async () => {
+    const route = mcpHttpRoute({
+      server,
+      resolveToken: () => ({ actor: userActor({ id: 'u1' }), scopes: [] }),
+    });
+
+    const bad = await route.handle(malformed({ authorization: 'Bearer t' }));
+    const good = await route.handle(
+      request(
+        { jsonrpc: '2.0', id: 1, method: 'initialize' },
+        {
+          authorization: 'Bearer t',
+        },
+      ),
+    );
+
+    expect(bad.status).toBe(good.status);
+    expect(await bad.text()).toBe(await good.text());
+  });
+
+  // The parse error still exists — it is what an authenticated agent gets for a broken payload.
+  test('an authenticated agent still gets the parse error', async () => {
+    const route = mcpHttpRoute({
+      server,
+      resolveToken: () => ({ actor: agentActor({ id: 'a1' }), scopes: [] }),
+    });
+
+    const res = await route.handle(malformed({ authorization: 'Bearer t' }));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('not valid JSON');
+  });
+});

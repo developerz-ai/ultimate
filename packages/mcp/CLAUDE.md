@@ -118,6 +118,11 @@ import. The CLI wires it.
 - The caps run in the **tool**, not the host. A host that forgets them answers a million rows
   into a model's context. `guards` names the layers that engaged; a layer that could not engage
   is absent from the list, never assumed present.
+- **Every authentication answer lands before `request.json()`.** A missing token, a token
+  `resolveToken` rejects and a non-agent actor all return before the body is read: parsing first
+  answered `400 parse error` for a malformed payload and `401` for a well-formed one under the
+  SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
+  error still exists — it is what an authenticated agent gets.
 - `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
 

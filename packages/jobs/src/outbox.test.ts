@@ -198,3 +198,76 @@ describe('handle.enqueue through the installed facade', () => {
     expect(await store.pendingCount()).toBe(0);
   });
 });
+
+describe('the relay loop', () => {
+  /** A store whose `claim` fails N times, then behaves. Models a pool timeout in a failover. */
+  function flakyStore(failures: number): OutboxStore & { claims: number } {
+    const inner = createMemoryOutboxStore();
+    let left = failures;
+    return {
+      claims: 0,
+      stage: (tx, record) => inner.stage(tx, record),
+      commit: (tx) => inner.commit(tx),
+      rollback: (tx) => inner.rollback(tx),
+      claim(limit) {
+        this.claims += 1;
+        if (left > 0) {
+          left -= 1;
+          return Promise.reject(new Error('connection pool timeout'));
+        }
+        return inner.claim(limit);
+      },
+      markPublished: (id, at) => inner.markPublished(id, at),
+      pendingCount: () => inner.pendingCount(),
+    };
+  }
+
+  // `void tick().finally(...)` with no `.catch` makes a rejected `claim()` an unhandled
+  // rejection, and Bun's default for one is to end the process — with the staged rows still
+  // unpublished. Bun's test runner fails this file on an unhandled rejection, which is what
+  // makes this a test rather than a claim.
+  test('survives a claim that rejects and publishes on the next pass', async () => {
+    const driver = createMemoryDriver();
+    const store = flakyStore(1);
+    const tx = fakeTx();
+    setJobsFacade(createJobsFacade({ store, driver }, () => tx));
+    await notify.enqueue({ orgId: 'org-relay' });
+    await store.commit(tx);
+
+    const relay = createOutboxRelay({ store, driver, intervalMs: 5 });
+    relay.start();
+    try {
+      const deadline = Date.now() + 2_000;
+      while (store.claims < 3 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    } finally {
+      relay.stop();
+    }
+
+    expect(store.claims).toBeGreaterThanOrEqual(2);
+    expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
+    expect(await store.pendingCount()).toBe(0);
+  });
+});
+
+describe('createMemoryOutboxStore retention', () => {
+  // Rewriting the record in place kept every payload ever enqueued for the process's lifetime,
+  // and made `claim()` and `pendingCount()` walk all of them every 200ms tick.
+  test('holds nothing once a row is published', async () => {
+    const driver = createMemoryDriver();
+    const store = createMemoryOutboxStore();
+    const relay = createOutboxRelay({ store, driver, batchSize: 500 });
+
+    for (let i = 0; i < 200; i += 1) {
+      const tx = fakeTx();
+      await enqueueInTx({ store, driver }, tx, notify, { orgId: `org-${i}` });
+      await store.commit(tx);
+    }
+    expect(store.retained()).toBe(200);
+
+    expect(await relay.tick()).toBe(200);
+    expect(store.retained()).toBe(0);
+    expect(await store.pendingCount()).toBe(0);
+  });
+});

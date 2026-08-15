@@ -45,12 +45,21 @@ export interface OutboxStore {
   pendingCount(): Promise<number>;
 }
 
+export interface MemoryOutboxStore extends OutboxStore {
+  /**
+   * Committed rows this process is still holding. The relay's backlog and nothing else — a
+   * published row is dropped, so this is a bound, not a total. `x dev` and the tests are the
+   * only readers; a pg deployment reads `x_outbox` instead.
+   */
+  retained(): number;
+}
+
 /**
  * Default store. Staged rows hang off the `Tx` object itself in a WeakMap, so the "same
  * transaction" guarantee needs no cooperation from the DB layer and rollback is a delete.
  * The pg store swaps this for a real `x_outbox` table written by the same connection.
  */
-export function createMemoryOutboxStore(): OutboxStore {
+export function createMemoryOutboxStore(): MemoryOutboxStore {
   const staged = new WeakMap<object, OutboxRecord[]>();
   const committed = new Map<string, OutboxRecord>();
 
@@ -80,9 +89,12 @@ export function createMemoryOutboxStore(): OutboxStore {
         .slice(0, limit);
       return Promise.resolve(ready);
     },
-    markPublished(id, at) {
-      const record = committed.get(id);
-      if (record !== undefined) committed.set(id, { ...record, publishedAt: at });
+    markPublished(id, _at) {
+      // Deleted, not stamped. A published row is out of the relay's reach either way, and the
+      // pg store's `published_at` column is a retained audit trail this map is not: rewriting
+      // it in place held every payload ever enqueued — arbitrary job input — for the life of
+      // the process, and made `claim()` and `pendingCount()` walk all of them every 200ms.
+      committed.delete(id);
       return Promise.resolve();
     },
     pendingCount() {
@@ -92,6 +104,7 @@ export function createMemoryOutboxStore(): OutboxStore {
       }
       return Promise.resolve(count);
     },
+    retained: () => committed.size,
   };
 }
 
@@ -282,9 +295,19 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
       timer = setInterval(() => {
         if (running) return;
         running = true;
-        void tick().finally(() => {
-          running = false;
-        });
+        // `.catch` before `.finally`, the shape every other loop in this package uses. `tick()`
+        // guards each publish but not `store.claim()` — one pool timeout during a failover
+        // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
+        // process, taking every staged, unpublished row with it.
+        void tick()
+          .catch((error: unknown) => {
+            logger.error('jobs.outbox.tick-failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          })
+          .finally(() => {
+            running = false;
+          });
       }, intervalMs);
     },
     stop() {

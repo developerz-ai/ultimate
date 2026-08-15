@@ -91,3 +91,75 @@ describe('out-of-order streaming', () => {
     expect(html).toBe('<body><p>static</p></body></html>');
   });
 });
+
+describe('a client that disconnects mid-stream', () => {
+  /** Three holes, none of which resolves until the test says so. */
+  function threeHoles(): {
+    plan: StreamPlan;
+    signals: AbortSignal[];
+    settle: (id: string, html: string) => void;
+  } {
+    const gates = new Map<string, (value: string) => void>();
+    const signals: AbortSignal[] = [];
+    const hole = (id: string) => ({
+      id,
+      fallback: '<i>…</i>',
+      resolve: (signal: AbortSignal): Promise<string> => {
+        signals.push(signal);
+        return new Promise<string>((res) => gates.set(id, res));
+      },
+    });
+    return {
+      plan: {
+        head: '<!doctype html><html><head></head><body>',
+        shell: `${holeMarker('a', '')}${holeMarker('b', '')}${holeMarker('c', '')}`,
+        holes: [hole('a'), hole('b'), hole('c')],
+      },
+      signals,
+      settle: (id, html) => gates.get(id)?.(html),
+    };
+  }
+
+  // The measured failure: `settle()` ran `write(tail)` and `controller.close()` on a cancelled
+  // controller, throwing out of the final `.then(settle, settle)` whose promise is `void`ed —
+  // one unhandled rejection per response. Bun's test runner fails this file on one.
+  test('a hole resolving after the cancel enqueues nothing and throws nothing', async () => {
+    const { plan, settle } = threeHoles();
+    const stream = renderStreamHtml(plan, { buildId: 'b1' });
+    const reader = stream.getReader();
+    await reader.read(); // the shell
+
+    await reader.cancel('client gone');
+
+    settle('a', '<b>a</b>');
+    settle('b', '<b>b</b>');
+    settle('c', '<b>c</b>');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  // Meanwhile the resolved holes kept doing their database work with nowhere to write it.
+  test('aborts every hole still running', async () => {
+    const { plan, signals } = threeHoles();
+    const stream = renderStreamHtml(plan, { buildId: 'b1' });
+    const reader = stream.getReader();
+    await reader.read();
+
+    expect(signals).toHaveLength(3);
+    expect(signals.every((signal) => signal.aborted)).toBe(false);
+
+    await reader.cancel('client gone');
+
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+
+  test('a live stream leaves the holes un-aborted', async () => {
+    const { plan, signals, settle } = threeHoles();
+    const stream = renderStreamHtml(plan, { buildId: 'b1' });
+    settle('a', '<b>a</b>');
+    settle('b', '<b>b</b>');
+    settle('c', '<b>c</b>');
+
+    expect(await collectStream(stream)).toContain('</body></html>');
+    expect(signals.some((signal) => signal.aborted)).toBe(false);
+  });
+});

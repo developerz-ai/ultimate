@@ -75,7 +75,7 @@ describe('Anthropic request body', () => {
     expect(JSON.stringify(body)).not.toContain('budget_tokens');
   });
 
-  test('effort lives inside output_config and thinking defaults to adaptive', () => {
+  test('effort lives inside output_config, and a control nobody asked for is omitted', () => {
     const body = provider.body({
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 1_000,
@@ -83,6 +83,17 @@ describe('Anthropic request body', () => {
     });
     expect(body['output_config']).toEqual({ effort: 'xhigh' });
     expect(body['effort']).toBeUndefined();
+    // Adaptive is the server's own default, so sending the block unrequested bought nothing and
+    // made a defaulted control indistinguishable on the wire from a declared one.
+    expect(body['thinking']).toBeUndefined();
+  });
+
+  test('a thinking mode the caller DID ask for is sent', () => {
+    const body = provider.body({
+      messages: [{ role: 'user', content: 'hi' }],
+      maxTokens: 1_000,
+      thinking: 'adaptive',
+    });
     expect(body['thinking']).toEqual({ type: 'adaptive', display: 'summarized' });
   });
 
@@ -169,8 +180,17 @@ describe('Anthropic request body', () => {
         ...(reasoning.effort ? { effort: 'high' as const } : {}),
       });
       expect(body['output_config'] !== undefined).toBe(reasoning.effort);
-      expect(body['thinking'] !== undefined).toBe(reasoning.adaptive);
+      // Nothing asked for a thinking mode, so nothing is sent — on every model in the table.
+      expect(body['thinking']).toBeUndefined();
       expect(body['temperature']).toBeUndefined();
+
+      const asked = provider.body({
+        model,
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 1_000,
+        ...(reasoning.adaptive ? { thinking: 'adaptive' as const } : {}),
+      });
+      expect(asked['thinking'] !== undefined).toBe(reasoning.adaptive);
     }
   });
 

@@ -16,7 +16,7 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
-import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
+import { isPolicyDenial, LiveQueryUnknownError, SubscriptionIdTakenError } from './errors';
 import { canonicalJson, fnv1a, type JsonValue, type Row, type RowPatch } from './json';
 import {
   applyToWindow,
@@ -26,6 +26,7 @@ import {
 } from './matcher-bridge';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
+import { SubscriptionBook, subscriptionKey } from './subscription-book';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 import { WindowLock } from './window-lock';
 
@@ -102,7 +103,8 @@ interface QueryEntry {
 export class LiveQueryRegistry {
   readonly #definitions = new Map<string, LiveQueryDefinition>();
   readonly #entries = new Map<string, QueryEntry>();
-  readonly #bySid = new Map<string, LiveSubscription>();
+  /** Keyed by `(socket, sid)`, never by `sid` alone — `subscription-book.ts` owns why. */
+  readonly #book = new SubscriptionBook();
   readonly #options: LiveQueryRegistryOptions;
   readonly #clock: Clock;
   readonly #gate: SubscriberGate;
@@ -136,8 +138,9 @@ export class LiveQueryRegistry {
     return this.#entries.get(qid)?.subscribers.size ?? 0;
   }
 
-  subscription(sid: string): LiveSubscription | undefined {
-    return this.#bySid.get(sid);
+  /** One socket's subscription. A sid alone does not identify one — see `subscription-book.ts`. */
+  subscription(socketId: string, sid: string): LiveSubscription | undefined {
+    return this.#book.get(socketId, sid);
   }
 
   /**
@@ -156,15 +159,21 @@ export class LiveQueryRegistry {
     // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
     // client "x build && redeploy the client" for a typo no rebuild changes.
     if (!definition) throw new LiveQueryUnknownError({ name: args.name });
-    this.#assertLimits(args.socket);
+    this.#book.assertCapacity(args.socket, this.#options);
     await definition.authorize?.({ actor: args.socket.actor, input: args.input });
     // After this subscriber's own decision, never before it: resolving a shape for a caller who
     // may not subscribe is work an unauthorized client gets to schedule.
     await definition.prepare?.(args.input);
 
     const qid = qidOf(args.name, args.input);
-    const entry = this.#entryFor(qid, definition, args.input);
     const sid = args.sid ?? uuid();
+    // Before the entry is built: a sid this socket already holds would overwrite that
+    // subscription's slot and strand it inside its query entry, where nothing could reach it
+    // again. The client picked the id, so the client is the one told to pick another.
+    if (this.#book.has(args.socket.id, sid)) {
+      throw new SubscriptionIdTakenError({ sid, socketId: args.socket.id });
+    }
+    const entry = this.#entryFor(qid, definition, args.input);
     const now = this.#clock.now().getTime();
 
     if (args.cursor) {
@@ -217,22 +226,23 @@ export class LiveQueryRegistry {
     };
   }
 
-  unsubscribe(sid: string): void {
-    const subscription = this.#bySid.get(sid);
+  /** Scoped to the socket that asked: a client may only drop its own subscription. */
+  unsubscribe(socketId: string, sid: string): void {
+    const subscription = this.#book.get(socketId, sid);
     if (!subscription) return;
-    this.#bySid.delete(sid);
+    this.#book.delete(socketId, sid);
     subscription.socket.queries.delete(sid);
     subscription.socket.clearDesynced(sid);
     const entry = this.#entries.get(subscription.qid);
     if (!entry) return;
-    entry.subscribers.delete(sid);
+    entry.subscribers.delete(subscriptionKey(socketId, sid));
     // An entry with no subscribers stops costing a matcher and a change window.
     if (entry.subscribers.size === 0) this.#entries.delete(subscription.qid);
   }
 
   unsubscribeSocket(socketId: string): void {
-    for (const subscription of [...this.#bySid.values()]) {
-      if (subscription.socket.id === socketId) this.unsubscribe(subscription.sid);
+    for (const subscription of this.#book.ofSocket(socketId)) {
+      this.unsubscribe(socketId, subscription.sid);
     }
   }
 
@@ -244,8 +254,7 @@ export class LiveQueryRegistry {
    */
   async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
     const dropped: string[] = [];
-    for (const subscription of [...this.#bySid.values()]) {
-      if (subscription.socket.id !== socket.id) continue;
+    for (const subscription of this.#book.ofSocket(socket.id)) {
       try {
         await subscription.definition.authorize?.({
           actor: socket.actor,
@@ -253,7 +262,7 @@ export class LiveQueryRegistry {
         });
       } catch (error) {
         if (isPolicyDenial(error)) {
-          this.unsubscribe(subscription.sid);
+          this.unsubscribe(socket.id, subscription.sid);
           dropped.push(subscription.sid);
           continue;
         }
@@ -384,8 +393,10 @@ export class LiveQueryRegistry {
       definition: entry.definition,
       cursor,
     };
-    entry.subscribers.set(sid, subscription);
-    this.#bySid.set(sid, subscription);
+    // The entry's own map takes the SAME composite key: a sid alone would collide across sockets
+    // here exactly as it did in the book, and `unsubscribe` deletes from both by one identity.
+    entry.subscribers.set(subscriptionKey(socket.id, sid), subscription);
+    this.#book.add(subscription);
     socket.queries.set(sid, entry.qid);
     socket.clearDesynced(sid);
     return subscription;
@@ -458,23 +469,6 @@ export class LiveQueryRegistry {
     };
     void reading.then(done, done);
     return reading;
-  }
-
-  #assertLimits(socket: SyncSocket): void {
-    const perSocket = this.#options.maxPerSocket ?? 128;
-    if (socket.queries.size >= perSocket) {
-      throw new SubscriptionLimitError({ scope: 'socket', id: socket.id, limit: perSocket });
-    }
-    const perTenant = this.#options.maxPerTenant;
-    const tenant = this.#options.tenantOf?.(socket.actor) ?? null;
-    if (perTenant === undefined || tenant === null) return;
-    let count = 0;
-    for (const subscription of this.#bySid.values()) {
-      if ((this.#options.tenantOf?.(subscription.socket.actor) ?? null) === tenant) count += 1;
-    }
-    if (count >= perTenant) {
-      throw new SubscriptionLimitError({ scope: 'tenant', id: tenant, limit: perTenant });
-    }
   }
 }
 

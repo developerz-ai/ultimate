@@ -204,6 +204,24 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   same outage as never arming, and nothing awaits a timer — a throw out of one is an uncaught
   exception that can kill the process that was going to retry. Only the timer owns the chain and
   only the timer reports — a `connect()` the app called itself throws to the app and arms nothing.
+- **A `sid` is CLIENT data, so a subscription is keyed by `(socket, sid)` — never by `sid` alone.**
+  `LiveQueryRegistry.unsubscribe(socketId, sid)` and `.subscription(socketId, sid)` both take the
+  owner. Keyed by the sid alone, socket B reusing socket A's sid overwrote A's slot: A's
+  subscription stayed in its query entry's `subscribers` map with nothing able to reach it, so
+  `unsubscribeSocket(A)` freed nothing, `subscribers.size` never hit zero, and the entry's matcher
+  and shared window were pinned for the process's life while every change fanned out to a dead
+  socket. A `{op:'drop', sid}` frame from B ended A's stream with no error on either side.
+  `sync-node` passes `socket.id` on the drop path for that reason. Reusing a sid the SAME socket
+  already holds is `X_SUBSCRIPTION_ID_TAKEN` — refused rather than replaced, because replacing is
+  the strand. `subscription-book.ts` owns that identity and is the only place it is spelled: the
+  query entry's own `subscribers` map takes the same composite key, so one `unsubscribe` reaches
+  both by one identity.
+- **`connect()` closes the socket it is replacing, and a frame speaks only for its own socket.**
+  A remount calling `connect()` on a live client left the previous socket open: its `onMessage`
+  kept folding patches into the live registrations, and the node held two sockets for one client —
+  double presence membership, double fanout — until the tab closed. `#socket` is nulled before the
+  close so the corpse's `onClose` takes its early return, and `onMessage` carries the same identity
+  guard `onClose` already had.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
@@ -223,7 +241,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `nats-fake.ts` | an in-memory bus implementing the port — server semantics, not wire bytes; the only way to prove multi-node fanout under a sealed network |
 | `cursor.ts` / `change-buffer.ts` / `thundering-herd.ts` | reconnect — the highest-risk area |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
-| `client.ts` / `sync-node.ts` | the two halves — `client.test.ts` owns the reconnect timer |
+| `client.ts` / `sync-node.ts` | the two halves — connection lifecycle, subscriptions, mutations |
+| `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-node.ts`'s handler |
+| `client-harness-fixture.ts` | the injected socket + scheduler + harness both client suites drive. Excluded from the tarball |
+| `subscription-book.ts` | who holds which subscription, keyed by `(socket, sid)`, and the per-socket/per-tenant caps answered from it |
 | `apply-patches.ts` | folding a patch list onto a row list — the client's one stateless piece |
 | `hooks.ts` | the ambient client seam + the four component hooks — the only file an app imports |
 | `query-hook.ts` | the typed projection: one declared query bound to one named hook |

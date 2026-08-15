@@ -19,7 +19,11 @@ export interface StreamHole {
   readonly id: string;
   /** Rendered synchronously into the first flush (the `<Suspense fallback>`). */
   readonly fallback: string;
-  readonly resolve: () => Promise<string>;
+  /**
+   * `signal` aborts when the response is cancelled — a client that disconnected mid-stream. A
+   * hole that ignores it still finishes; it just finishes into a document nobody reads.
+   */
+  readonly resolve: (signal: AbortSignal) => Promise<string>;
 }
 
 export interface StreamPlan {
@@ -75,11 +79,29 @@ export function renderStreamHtml(
   const tail = plan.tail ?? '</body></html>';
   const errorFallback =
     options.errorFallback ?? ((id) => `<div data-x-hole-error="${id}" hidden></div>`);
+  /**
+   * The response's own lifetime. A client that disconnects mid-stream cancels the stream, and
+   * both halves of that have to be honoured: nothing more may be enqueued — `settle`'s
+   * `write(tail)`/`close()` on a cancelled controller threw out of a `void`ed promise, one
+   * unhandled rejection per response — and the holes still running must be told to stop doing
+   * their database work for a document nobody will read.
+   */
+  const holes = new AbortController();
+  let closed = false;
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
       const write = (chunk: string): void => {
+        // `desiredSize` is null once the controller is closed or errored, which is the half a
+        // cancellation flag cannot see on its own.
+        if (closed || controller.desiredSize === null) return;
         controller.enqueue(encoder.encode(chunk));
+      };
+
+      const close = (): void => {
+        if (closed) return;
+        closed = true;
+        controller.close();
       };
 
       // No holes, no reveal script: a page that streams nothing pays nothing.
@@ -88,7 +110,7 @@ export function renderStreamHtml(
       let pending = plan.holes.length;
       if (pending === 0) {
         write(tail);
-        controller.close();
+        close();
         return;
       }
 
@@ -96,13 +118,13 @@ export function renderStreamHtml(
         pending -= 1;
         if (pending === 0) {
           write(tail);
-          controller.close();
+          close();
         }
       };
 
       for (const hole of plan.holes) {
         void hole
-          .resolve()
+          .resolve(holes.signal)
           .then(
             (html) => {
               write(revealChunk(hole.id, html));
@@ -116,6 +138,12 @@ export function renderStreamHtml(
           )
           .then(settle, settle);
       }
+    },
+
+    /** The client went away. Stop enqueueing, and stop the work that was going to be enqueued. */
+    cancel(reason: unknown) {
+      closed = true;
+      holes.abort(reason);
     },
   });
 }

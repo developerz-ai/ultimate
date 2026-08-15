@@ -86,7 +86,9 @@ Names come from **export names** — that is what makes the path, the tool name 
 OpenAPI `operationId` derivable everywhere without a second declaration. Registration
 stamps the name onto the action the module exported, so the binding you imported is the
 one that projects; a projection attempted before boot is `X_ACTION_UNREGISTERED`. Two
-features exporting one name collide with `X_ACTION_DUPLICATE` rather than merging.
+features exporting one name collide with `X_ACTION_DUPLICATE` rather than merging, and two
+names deriving one route collide with `X_ACTION_PATH_DUPLICATE` — `pluralize` leaves a trailing
+`s` alone, so `archiveOrder` and `archiveOrders` are two exports and one `POST /api/orders/archive`.
 
 `registerActions` / `registerQueries` are what `defineApi` composes. An app calling them
 directly is a second path.
@@ -226,6 +228,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | Code | When | Fix |
 |---|---|---|
 | `X_ACTION_DUPLICATE` | two actions registered under one name | rename one export |
+| `X_ACTION_PATH_DUPLICATE` | two actions derive one HTTP path (`archiveOrder` / `archiveOrders`) | rename one export |
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |

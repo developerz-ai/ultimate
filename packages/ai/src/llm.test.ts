@@ -186,6 +186,45 @@ describe('structured output', () => {
     expect(seen[1]?.messages.at(-1)?.content).toContain('failed its schema');
   });
 
+  // The measured failure: the model answered through the `respond` tool, so `result.text` was the
+  // EMPTY STRING, and the repair turn replayed it as `{role:'assistant',content:''}` — a 400
+  // (`text content blocks must be non-empty`) that surfaced as X_AI_PROVIDER_UNAVAILABLE instead
+  // of the X_LLM_OUTPUT_INVALID this loop exists to raise.
+  test('never replays an empty assistant turn after a tool-use answer', async () => {
+    const { provider, seen } = stub({ summary: 42 }, ANSWER);
+    install(provider);
+    const summarize = declare(promptFor());
+
+    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
+
+    const replayed = seen[1]?.messages ?? [];
+    expect(replayed.some((message) => message.content === '')).toBe(false);
+  });
+
+  // The tool call's arguments ARE the answer on that path, so replaying them is what gives the
+  // repair turn something to repair.
+  test("echoes the tool call's own arguments back as the assistant turn", async () => {
+    const { provider, seen } = stub({ summary: 42 }, ANSWER);
+    install(provider);
+    const summarize = declare(promptFor());
+
+    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
+
+    const assistant = (seen[1]?.messages ?? []).filter((m) => m.role === 'assistant');
+    expect(assistant.at(-1)?.content).toBe(JSON.stringify({ summary: 42 }));
+  });
+
+  test('a prose answer is still echoed verbatim', async () => {
+    const { provider, seen } = stub('{"summary": 42}', ANSWER);
+    install(provider);
+    const summarize = declare(promptFor());
+
+    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
+
+    const assistant = (seen[1]?.messages ?? []).filter((m) => m.role === 'assistant');
+    expect(assistant.at(-1)?.content).toBe('{"summary": 42}');
+  });
+
   test('two bad answers throw X_LLM_OUTPUT_INVALID rather than looping', async () => {
     const { provider, seen } = stub({ summary: 42 });
     install(provider);

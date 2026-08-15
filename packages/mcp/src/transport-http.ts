@@ -63,12 +63,16 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
     rateLimitClass: (body) => server.classify(body),
 
     async handle(request: Request): Promise<Response> {
+      // Every authentication answer lands BEFORE the body is read. Parsing first meant a caller
+      // holding a rejected token still learned whether its JSON was well formed — `400 parse
+      // error` for one payload and `401` for the next is exactly the oracle the 401 exists to
+      // remove, and it costs nothing to close: the body is not an input to any of these.
       const token = bearerToken(request);
-      if (token === null) {
-        // 401 before parsing: an unauthenticated caller learns nothing about the catalog,
-        // not even whether its JSON was well formed.
-        return unauthorized();
-      }
+      if (token === null) return unauthorized();
+
+      const resolved = await input.resolveToken(token);
+      if (resolved === null) return unauthorized();
+      if (!isAgentActor(resolved.actor)) return notAnAgent();
 
       let body: unknown;
       try {
@@ -76,10 +80,6 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       } catch {
         return json(errorResponse(null, PARSE_ERROR, 'request body is not valid JSON'), 400);
       }
-
-      const resolved = await input.resolveToken(token);
-      if (resolved === null) return unauthorized();
-      if (!isAgentActor(resolved.actor)) return notAnAgent();
 
       const caller: McpCaller = {
         actor: resolved.actor,

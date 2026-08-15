@@ -24,7 +24,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `matcher.ts` | change event → minimal patch, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
 | `sql.ts` | `explain()` / `describeSql()` |
-| `cache.ts` | request memo + `ReadCache` tier + `invalidateTags` |
+| `cache.ts` | the read path: the request memo, and the fill through the tier |
+| `read-cache.ts` | the tier itself — the `ReadCache` seam, the bounded `MemoryReadCache` default, `invalidateQueryTags` |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
@@ -146,6 +147,20 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
   every row otherwise, which is the N+1 this collapses. Never gate `readOnce` on `def.cache`
   again, and never let a second key function grow beside `cacheKeyFor`.
+- **`invalidateQueryTags` drops two things, and both are required.** `invalidateTags` reaches the
+  graph `@ultimat3/cache` owns — every registered `CacheTier`, ISR route, CDN path and live query;
+  the read tier is *not* in that registry (it is this package's seam, swapped per deployment
+  through `setReadCache`), so the same tags are passed to `tier.invalidateTags?.()` in the same
+  hop. Dropping only the first is the defect this pairing replaced: the fan-out reported success
+  and the pre-write list was served until the process ended. An entry is therefore written with
+  the read's `cache.tags` — `readThrough`'s last argument — or it is reachable by key alone and
+  can only expire.
+- **The read tier is bounded and a `cache:` read always expires.** `MemoryReadCache` is
+  `@ultimat3/cache`'s `LruCache` (byte budget, tag index, one definition of tag matching — never
+  a second one derived here), and `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` is what
+  `readRows` passes. A query keyed on `{ orgId, cursor }` has as many distinct keys as the
+  deployment has tenants; unbounded and immortal, that is one permanent entry per page per org.
+  A `null` expiry is "the caller named none", never "never" — the tier applies its own default.
 - **The memo holds an execution, never a decision.** `readRows` runs `buildSource` — parse, guard,
   `sql()` — *before* it reaches the memo, on every call, and `.as()` reads in a child context whose
   identity is its own memo. So a memoized answer is still one this actor was allowed to ask for,

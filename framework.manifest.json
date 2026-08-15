@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "446f7ca0d3c11b3b154cec2a0b2989d7c886a6b723dfe845742f9ce6337cfe5b",
+  "buildId": "f9c3583fd8cdc1bf7ccd795fa38ae4cde5e2509d3ca5c09c123f702f6c5a0275",
   "tiers": {
     "0": [
       "core",
@@ -237,6 +237,11 @@
     },
     {
       "code": "X_ACTION_FOREIGN",
+      "owner": "action",
+      "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_ACTION_PATH_DUPLICATE",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
     },
@@ -1524,6 +1529,11 @@
       "code": "X_STYLES_GLOBAL_MISSING",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_SUBSCRIPTION_ID_TAKEN",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
     },
     {
       "code": "X_SUBSCRIPTION_LIMIT",

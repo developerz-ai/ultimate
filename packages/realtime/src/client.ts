@@ -4,14 +4,19 @@
 // with nothing about the subscription changing — that is the ladder's whole promise.
 
 import { type Clock, systemClock, uuid } from '@ultimat3/core';
-import { applyPatches } from './apply-patches';
 import type { Topic } from './channel';
+import {
+  applyFrame,
+  type ClientFrameTarget,
+  type LiveState,
+  type Registration,
+} from './client-frames';
 import type { LiveCursor } from './cursor';
 import type { JsonObject, JsonValue, Row } from './json';
 import type { LocalStore, LocalTx, TableMap } from './local-store';
 import { mutateFrame, type OfflineQueue } from './offline-queue';
-import { type ConflictStrategy, type RebaseLog, reconcile } from './rebase';
-import { decode, encode, type Frame, PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
+import type { ConflictStrategy, RebaseLog } from './rebase';
+import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 import {
   type BackoffPolicy,
   backoffDelay,
@@ -20,6 +25,9 @@ import {
   type Scheduler,
   timeoutScheduler,
 } from './thundering-herd';
+
+/** The four states a live subscription renders. Declared with the router that writes them. */
+export type { LiveState } from './client-frames';
 
 /** Injected reactive primitive. `createSignal` from Solid satisfies this exactly. */
 export type SignalFactory = <T>(initial: T) => [get: () => T, set: (next: T) => void];
@@ -32,8 +40,6 @@ export interface ClientSocket {
   onMessage(handler: (data: string) => void): void;
   onClose(handler: (code: number) => void): void;
 }
-
-export type LiveState = 'loading' | 'live' | 'stale' | 'offline';
 
 export interface LiveHandle<R extends Row = Row> extends Disposable {
   /** The reactive accessor. In an app this is the Solid signal `useLive` returns. */
@@ -83,17 +89,6 @@ export interface LiveClientOptions<T extends TableMap = TableMap> {
 const reportToConsole = (error: unknown): void => {
   console.error(error);
 };
-
-interface Registration {
-  readonly sid: string;
-  readonly name: string;
-  readonly input: JsonValue;
-  readonly setRows: (rows: readonly Row[]) => void;
-  readonly setState: (state: LiveState) => void;
-  readonly setCursor: (cursor: LiveCursor | null) => void;
-  rows: readonly Row[];
-  cursor: LiveCursor | null;
-}
 
 export class LiveClient<T extends TableMap = TableMap> {
   readonly #options: LiveClientOptions<T>;
@@ -150,6 +145,13 @@ export class LiveClient<T extends TableMap = TableMap> {
   connect(): void {
     this.#closed = false;
     this.#cancelReconnect();
+    // The socket we are replacing goes first. Left open, its `onMessage` keeps running: every
+    // patch frame applies twice, and the node holds two sockets for one client — double presence
+    // membership and double fanout — until the tab closes. Nulled before the close so the corpse's
+    // `onClose` takes its own early return rather than marking the new connection offline.
+    const previous = this.#socket;
+    this.#socket = null;
+    previous?.close(1000, 'reconnect');
     const socket = this.#options.connect();
     this.#socket = socket;
     socket.onOpen(() => {
@@ -170,7 +172,11 @@ export class LiveClient<T extends TableMap = TableMap> {
       void this.drain();
     });
     socket.onMessage((data) => {
-      this.#onFrame(decode(data));
+      // A frame speaks only for its own socket, the same rule `onClose` follows. A replaced socket
+      // that is still draining bytes would otherwise fold its patches into the live registrations
+      // a second time, over newer state.
+      if (this.#socket !== socket) return;
+      applyFrame(decode(data), this.#frameTarget);
     });
     socket.onClose(() => {
       // A close speaks only for its own socket: `connect()` may already have installed a newer one,
@@ -365,85 +371,22 @@ export class LiveClient<T extends TableMap = TableMap> {
     });
   }
 
-  #onFrame(frame: Frame): void {
-    switch (frame.type) {
-      case 'snapshot': {
-        const registration = this.#registrations.get(frame.sid);
-        if (!registration) return;
-        registration.rows = frame.rows;
-        registration.cursor = frame.cursor;
-        registration.setRows(frame.rows);
-        registration.setCursor(frame.cursor);
-        registration.setState('live');
-        return;
-      }
-      case 'patch': {
-        const registration = this.#registrations.get(frame.sid);
-        if (registration) {
-          registration.rows = applyPatches(registration.rows, frame.patches);
-          registration.setRows(registration.rows);
-          registration.setState('live');
-          return;
-        }
-        // No registration: it is a tier-1 channel message on `sid = topic`.
-        const handlers = this.#topics.get(frame.sid);
-        if (!handlers) return;
-        for (const patch of frame.patches) {
-          if (patch.row === null) continue;
-          for (const handler of handlers) handler(patch.row);
-        }
-        return;
-      }
-      case 'ack': {
-        const queue = this.#options.queue;
-        // `ack`/`fail` mutate the queue synchronously and persist asynchronously; chaining rather
-        // than notifying right after the call keeps this correct even if that ordering ever
-        // changes, and it still fires exactly once the persisted write actually lands.
-        const settled = frame.error ? queue?.fail(frame.ref, frame.error) : queue?.ack(frame.ref);
-        void settled?.then(() => this.#notifyQueueChange());
-        return;
-      }
-      case 'rebase': {
-        const store = this.#options.store;
-        const log = this.#options.log;
-        if (!store || !log) return;
-        reconcile({
-          store,
-          log,
-          ack: {
-            key: frame.key,
-            entity: frame.entity,
-            id: frame.row?.id ?? frame.key,
-            row: frame.row,
-          },
-        });
-        return;
-      }
-      case 'reconnect': {
-        // Order is load-bearing: arming first is what makes the close this triggers keep the delay
-        // the node assigned to *this* socket instead of falling back to a local backoff.
-        this.#scheduleReconnect(frame.afterMs);
-        this.#socket?.close(1001, frame.reason);
-        return;
-      }
-      case 'update-available': {
-        this.#setUpdate(frame.buildId);
-        return;
-      }
-      case 'presence': {
-        const handlers = this.#topics.get(frame.topic);
-        if (!handlers) return;
-        const message: JsonObject = { op: frame.op, members: frame.members.map(memberJson) };
-        for (const handler of handlers) handler(message);
-        return;
-      }
-      case 'hello':
-      case 'subscribe':
-      case 'mutate':
-        // Client-authored frames: never received. Ignored rather than thrown, so a future
-        // bidirectional use of the same kind cannot break an old client.
-        return;
-    }
+  /**
+   * The client's inbound surface, handed to the router. Built once: a frame reaches exactly these
+   * members and nothing else on the client.
+   */
+  get #frameTarget(): ClientFrameTarget<T> {
+    return {
+      registration: (sid) => this.#registrations.get(sid),
+      topicHandlers: (topic) => this.#topics.get(topic),
+      queue: this.#options.queue,
+      store: this.#options.store,
+      log: this.#options.log,
+      setUpdate: (buildId) => this.#setUpdate(buildId),
+      scheduleReconnect: (afterMs) => this.#scheduleReconnect(afterMs),
+      closeSocket: (code, reason) => this.#socket?.close(code, reason),
+      notifyQueueChange: () => this.#notifyQueueChange(),
+    };
   }
 
   /**
@@ -492,8 +435,4 @@ export class LiveClient<T extends TableMap = TableMap> {
   #notifyQueueChange(): void {
     for (const listener of this.#queueListeners) listener();
   }
-}
-
-function memberJson(member: PresenceMember): JsonValue {
-  return { id: member.id, actorId: member.actorId, meta: member.meta, updatedAt: member.updatedAt };
 }

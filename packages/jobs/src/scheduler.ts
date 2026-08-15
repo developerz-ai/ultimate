@@ -205,7 +205,17 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       }
       if (handle.catchUp === 'run-once') {
         const first = due[0];
-        if (first !== undefined) dispatched.push(await dispatch(handle, first, due.length > 1));
+        if (first !== undefined) {
+          dispatched.push(await dispatch(handle, first, due.length > 1));
+          // `dispatch` leaves the watermark on the occurrence it RAN — the earliest missed one
+          // here — so the next round found occurrences 2..n still due and fired the second, then
+          // the third, one per tick until the backlog drained: 24 nightly digests a second apart
+          // after a day down. "One catch-up" means the rest are DROPPED, and dropping an
+          // occurrence is moving the watermark past it. `at` rather than the last element of
+          // `due`, which `maxCatchUp` truncates: every occurrence at or before `at` is missed by
+          // definition, and this policy fires none of them.
+          if (first !== at) await schedulerState.markFired(handle.name, at);
+        }
         continue;
       }
       for (const occurrence of due) {

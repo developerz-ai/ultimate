@@ -3,13 +3,22 @@
 // ordering proved with a spy, impersonation via `options.actor`, and `buildSource`'s `total()`.
 
 import { describe, expect, test } from 'bun:test';
+import { tag } from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
+import { cacheKeyFor } from './cache';
 import { QueryDeniedError, QueryForeignError, QueryUnregisteredError } from './errors';
 import type { AnyQuery } from './query';
 import { query } from './query';
 import { defOf, hasDef, queryName, runQuery, sourceFor } from './read';
+import {
+  DEFAULT_READ_CACHE_TTL_MS,
+  getReadCache,
+  invalidateQueryTags,
+  MemoryReadCache,
+  setReadCache,
+} from './read-cache';
 import type { SqlSource } from './source';
 import { from } from './source';
 
@@ -268,5 +277,64 @@ describe("buildSource's live surface: total() when the source implements it", ()
 
     const live = await sourceFor(target, { orgId: ORG }, { ctx: allowedCtx, surface: 'live' });
     expect(live).toBe(noTotalSource);
+  });
+});
+
+describe("a cache: read's tier entry, and what drops it", () => {
+  /** Fresh tier per test: the module default is a process-wide singleton other files share. */
+  function defineCachedQuery(ttlMs?: number) {
+    const counts = { executed: 0 };
+    const target = query({
+      input: Input,
+      policy: allow(),
+      cache: ttlMs === undefined ? { tags: [tag('post')] } : { tags: [tag('post')], ttlMs },
+      sql: () =>
+        from<Row>('rows', async () => {
+          counts.executed += 1;
+          return rows;
+        }),
+    }).named(`cachedFeed${counts.executed}${ttlMs ?? 'default'}`);
+    return { target, counts };
+  }
+
+  // The measured failure: the entry was immortal and no fan-out could reach it, so the
+  // pre-write list was served for the life of the process.
+  test('an invalidateQueryTags fan-out drops it, and the next request re-reads', async () => {
+    setReadCache(new MemoryReadCache());
+    const { target, counts } = defineCachedQuery();
+
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    expect(counts.executed).toBe(1); // second request served from the tier
+
+    await invalidateQueryTags([tag('post')]);
+
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    expect(counts.executed).toBe(2);
+  });
+
+  test('a cache: block with no ttlMs still writes a bounded expiry', async () => {
+    setReadCache(new MemoryReadCache());
+    const { target } = defineCachedQuery();
+    const before = Date.now();
+
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+
+    const key = cacheKeyFor(queryName(target), { orgId: ORG }, [tag('post')]);
+    const entry = await getReadCache().get(key);
+    expect(entry?.expiresAt).toBeGreaterThanOrEqual(before + DEFAULT_READ_CACHE_TTL_MS);
+    expect(entry?.tags).toEqual([tag('post')]);
+  });
+
+  test('a declared ttlMs is honoured over the default', async () => {
+    setReadCache(new MemoryReadCache());
+    const { target } = defineCachedQuery(5_000);
+    const before = Date.now();
+
+    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+
+    const key = cacheKeyFor(queryName(target), { orgId: ORG }, [tag('post')]);
+    const entry = await getReadCache().get(key);
+    expect(entry?.expiresAt).toBeLessThan(before + DEFAULT_READ_CACHE_TTL_MS);
   });
 });

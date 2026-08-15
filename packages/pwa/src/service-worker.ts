@@ -203,12 +203,26 @@ function serializeRules(rules: readonly RouteRule[]): string {
   return `[${rows.join(',')}]`;
 }
 
+/**
+ * The revision addresses the **fetch**, never the **key**. Every strategy looks an entry up with
+ * `caches.match(req)` on the bare URL — `ignoreSearch` defaults to `false` — so an entry left
+ * keyed under `?v=<revision>` is a permanent miss: offline serves the fallback document instead
+ * of the page that was precached, and online every precached byte is downloaded a second time.
+ * `addAll` still does the fetching, because its all-or-nothing failure is what stops a
+ * half-populated precache from activating; the second pass only re-keys what it stored.
+ */
 const INSTALL_BLOCK = `
 self.addEventListener('install',(event)=>{
   event.waitUntil((async()=>{
     const cache=await caches.open(PRECACHE);
     // Revision is a content hash: unchanged assets are not re-downloaded across deploys.
-    await cache.addAll(PRECACHE_MANIFEST.map((e)=>new Request(e.url+'?v='+e.revision,{cache:'reload'})));
+    const fetched=PRECACHE_MANIFEST.map((e)=>new Request(e.url+'?v='+e.revision,{cache:'reload'}));
+    await cache.addAll(fetched);
+    for(let i=0;i<PRECACHE_MANIFEST.length;i++){
+      const stored=await cache.match(fetched[i]);
+      if(stored)await cache.put(new Request(PRECACHE_MANIFEST[i].url),stored);
+      await cache.delete(fetched[i]);
+    }
   })());
 });`.trim();
 
