@@ -6,8 +6,10 @@ their own timezone.
 
 This app is the framework's reference application — Ultimate's CI runs `x verify` here and
 **blocks** on the result, through the ratchet in `scripts/reference-app-gate.ts`: a step passing
-today must keep passing, and the steps still being repaired are pinned by name in its
-`EXPECTED_RED` table. Keep it small, keep it idiomatic. A clever file in Postly is a bug.
+today must keep passing, and the steps still being repaired are pinned by name in this app's
+`expectedRed` table in `scripts/lib/gated-apps.ts`. Keep it small, keep it idiomatic. A clever file
+in Postly is a bug. (`dummy/social-media-clone` rides the same ratchet — it is the deployed demo,
+not the reference app. Idiom is decided here.)
 
 ## Commands
 

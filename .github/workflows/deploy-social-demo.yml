@@ -38,6 +38,10 @@ jobs:
   # duplicated: it added ~70s to every publish and went red on a flake that the gate on the same
   # commit had already passed, holding back an image whose source was proven green.
   #
+  # As of 2026-08 that gate covers THIS app: `ci.yml`'s `reference-app-verify` job runs
+  # `x verify` in dummy/social-media-clone against the ratchet in scripts/lib/gated-apps.ts. Until
+  # then the image published here was the only place the app was exercised at all.
+  #
   # What protects production is not this job; it is that the image updater only rolls a `sha-<7>`
   # tag, and this workflow only pushes one for a commit that is already on main.
   build:

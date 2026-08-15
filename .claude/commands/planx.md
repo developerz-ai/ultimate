@@ -135,7 +135,7 @@ Any plan that violates one is wrong, not "a tradeoff":
 | typecheck / lint | `bun run typecheck` · `bun run lint` (`lint:fix`) |
 | import boundaries | `bun run boundaries` |
 | one test file / name | `bun test <path>` · `bun test -t '<name>'` |
-| the reference-app gate | `bun run scripts/reference-app-gate.ts` |
+| the app gate (both tracked apps) | `bun run scripts/reference-app-gate.ts` |
 | regenerate the manifest | `bun run manifest` (never hand-edit `framework.manifest.json`) |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | the CLI, in-repo | `bun run x -- <args>` |

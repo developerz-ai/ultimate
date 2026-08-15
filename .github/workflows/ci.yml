@@ -103,26 +103,31 @@ jobs:
       - name: x verify
         run: bun run scripts/verify.ts --json
 
-  # The reference app runs the same 17-step gate a generated app would, and this job BLOCKS on it.
-  # Independent of `verify`: the framework gate and the app gate are two different contracts,
-  # checked separately — a red app doesn't hide a green framework or vice versa.
+  # Both tracked apps — `examples/dummy` and the deployed `dummy/social-media-clone` — run the
+  # same 17-step gate a generated app would, and this job BLOCKS on both. Independent of `verify`:
+  # the framework gate and the app gate are two different contracts, checked separately — a red app
+  # doesn't hide a green framework or vice versa. One job, not two, because they answer the same
+  # question about two directories; the script names the app in every finding.
   #
-  # Postly is not green yet, so blocking on a bare `x verify` would make red the resting state,
+  # Neither app is green yet, so blocking on a bare `x verify` would make red the resting state,
   # which is how a gate stops being read. `scripts/reference-app-gate.ts` blocks on the ratchet
-  # instead: every step passing today must keep passing, every step pinned in its `EXPECTED_RED`
-  # table must still be failing, and the moment `typecheck` comes off the pin the app has to join
-  # the root `tsc -b` solution. The pin can only ever shrink, and when it empties the job is
-  # asserting a plain 17 of 17. Human render, not `--json`: the whole step table, every failing
-  # step and every fix line belong in the log for the person reading a red run.
+  # instead: every step passing today must keep passing, every step pinned in that app's
+  # `expectedRed` table (scripts/lib/gated-apps.ts) must still be failing, and the moment an app's
+  # `typecheck` comes off the pin it has to join the root `tsc -b` solution. The pin can only ever
+  # shrink, and when it empties the job is asserting a plain 17 of 17. Human render, not `--json`:
+  # the whole step table, every failing step and every fix line belong in the log for the person
+  # reading a red run.
+  #
+  # Job id unchanged from when it gated one app: it is a required status check.
   reference-app-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: x verify (examples/dummy), against the ratchet
+      - name: x verify (every tracked app), against the ratchet
         run: bun run scripts/reference-app-gate.ts
 
   # The end-to-end promise, proved for real: a stranger with nothing but `bun` runs `x new`,
