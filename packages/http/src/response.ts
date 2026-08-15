@@ -120,19 +120,33 @@ export const cacheControl = (hint: CacheHint): string => {
   return parts.join(', ');
 };
 
+/**
+ * Adds to the cache key without ever replacing it. `Vary` is a set, and two stages contribute to
+ * it — the cache stage names the request properties a body depends on, the CORS stage names the
+ * origin — so a `set` from the later one silently drops the earlier one's key and a CDN starts
+ * serving one variant for all of them.
+ */
+export const addVary = (response: Response, values: readonly string[]): Response => {
+  if (values.length === 0) return response;
+  const existing = response.headers.get('vary');
+  const merged = new Set([...(existing === null ? [] : existing.split(/,\s*/)), ...values]);
+  response.headers.set('vary', [...merged].join(', '));
+  return response;
+};
+
 /** Mutates the response headers in place — responses are per-request, never shared. */
 export const applyCacheHeaders = (response: Response, hint: CacheHint): Response => {
   response.headers.set('cache-control', cacheControl(hint));
   if (hint.tags !== undefined && hint.tags.length > 0) {
     response.headers.set('x-cache-tags', hint.tags.join(','));
   }
-  const vary = hint.vary ?? (hint.mode === 'public' ? ['accept-language'] : []);
-  if (vary.length > 0) {
-    const existing = response.headers.get('vary');
-    const merged = new Set([...(existing === null ? [] : existing.split(/,\s*/)), ...vary]);
-    response.headers.set('vary', [...merged].join(', '));
-  }
-  return response;
+  // `cookie` is not optional on the shared path. A `public` response is stored by a CDN under the
+  // URL, and every session in this framework travels in a cookie — so without it the first
+  // signed-in render of a public page is what every later visitor is served.
+  return addVary(
+    response,
+    hint.vary ?? (hint.mode === 'public' ? ['accept-language', 'cookie'] : []),
+  );
 };
 
 export const withHeaders = (response: Response, headers: Record<string, string>): Response => {

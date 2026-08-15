@@ -116,6 +116,19 @@ export interface Repo<T = unknown> {
   countBy(column: string, args?: FindManyArgs): Promise<ReadonlyMap<unknown, number>>;
 }
 
+/**
+ * What `memoryRepo()` returns: a `Repo`, plus the one member a database-backed repository has no
+ * business having. TEST SEAM — nothing on the framework's own request path calls `reset()`.
+ */
+export interface MemoryRepo<Row> extends Repo<Row> {
+  /**
+   * Drops every stored row, in place. In place is the whole point: `database()` resolves each
+   * table's repository once, so a test harness that replaced the driver's repositories would be
+   * emptying objects the app under test no longer reads.
+   */
+  reset(): void;
+}
+
 export interface Transactor {
   run<R>(work: (tx: Tx) => Promise<R>): Promise<R>;
 }
@@ -214,7 +227,10 @@ const afterCursor = <Row>(
  * migration and tests use it everywhere. Postgres is the production driver and implements
  * this same interface.
  */
-export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = []): Repo<Row> => {
+export const memoryRepo = <Row>(
+  entity: EntityCore<Row>,
+  seed: readonly Row[] = [],
+): MemoryRepo<Row> => {
   const keyOf = (row: unknown): string =>
     entity.$primaryKey.map((property) => String(field(row, property))).join('');
   const rows = new Map<string, Row>(seed.map((row) => [keyOf(row), row]));
@@ -413,6 +429,11 @@ export const memoryRepo = <Row>(entity: EntityCore<Row>, seed: readonly Row[] = 
         groups.set(value, (groups.get(value) ?? 0) + 1);
       }
       return countsFrom(entity, column, 'countBy', [...groups]);
+    },
+
+    reset() {
+      rows.clear();
+      for (const row of seed) rows.set(keyOf(row), row);
     },
   };
 };

@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { enumerated, integer, text, timestamp, uuid } from './columns';
-import { database, memoryDriver } from './database';
+import { database, defaultDriver, memoryDriver } from './database';
 import { entity } from './entity';
 import { invariant } from './invariants';
 import { clearRegistry } from './registry';
@@ -151,6 +151,41 @@ describe('database()', () => {
     await expect(
       db.posts.update(created.id, { title: 'Z' }, { orgId: 'org-other' }),
     ).rejects.toBeUltimateError('X_NOT_FOUND');
+  });
+});
+
+describe('the test seam', () => {
+  // A test harness needs the object the app reads through, not one of its own: `database()` with
+  // no driver resolves this one, and a preload that built a second memoryDriver() would be seeding
+  // rows nothing under test can see.
+  test('defaultDriver() is the one process default database() falls back to', async () => {
+    const implicit = database({ orgs, posts });
+    await defaultDriver()
+      .repo(posts)
+      .insert({
+        id: '00000000-0000-7000-8000-0000000009a1',
+        orgId: ORG,
+        slug: 'seeded',
+        title: 'Seeded',
+        status: 'draft',
+        likeCount: 0,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      });
+    expect(await implicit.posts.where({ orgId: ORG, slug: 'seeded' }).one()).not.toBeNull();
+    expect(defaultDriver()).toBe(defaultDriver());
+  });
+
+  test('reset() empties the repositories a table already resolved, not replacements of them', async () => {
+    const driver = memoryDriver();
+    const handle = database({ orgs, posts }, { driver });
+    await handle.posts.insert({ orgId: ORG, slug: 'temporary', title: 'Temporary' });
+    expect(await handle.posts.where({ orgId: ORG }).count()).toBe(1);
+
+    driver.reset?.();
+    // The same handle, built before the reset — a driver that swapped its repositories out would
+    // still be answering 1 here, which is the leak between tests this seam exists to end.
+    expect(await handle.posts.where({ orgId: ORG }).count()).toBe(0);
   });
 });
 

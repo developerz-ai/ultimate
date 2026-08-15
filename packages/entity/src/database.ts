@@ -17,6 +17,13 @@ export type Database<E extends EntitySet> = {
 /** Where rows actually live. Postgres in production, memory in tests and before migrations. */
 export interface Driver {
   repo<Row>(entity: EntityCore<Row>): Repo<Row>;
+  /**
+   * TEST SEAM, optional on purpose. Empties everything this driver holds, so one test's rows are
+   * not the next test's fixtures. `memoryDriver()` implements it; `postgresDriver()` leaves it
+   * undefined, because the rows there are an app's and a framework that could truncate them from a
+   * `reset()` eventually would. A harness therefore asks and does not assume: `driver.reset?.()`.
+   */
+  reset?(): void;
 }
 
 export interface DatabaseOptions {
@@ -29,6 +36,9 @@ export interface DatabaseOptions {
  */
 export const memoryDriver = (): Driver => {
   const repos = new Map<string, unknown>();
+  // Held separately from `repos` so the reset is a call on the repository the tables already
+  // resolved, never a replacement of it.
+  const resets: (() => void)[] = [];
   return {
     repo<Row>(entity: EntityCore<Row>): Repo<Row> {
       const existing = repos.get(entity.$name);
@@ -37,14 +47,27 @@ export const memoryDriver = (): Driver => {
       if (existing !== undefined) return existing as Repo<Row>;
       const created = memoryRepo<Row>(entity);
       repos.set(entity.$name, created);
+      resets.push(() => created.reset());
       return created;
+    },
+    reset() {
+      for (const reset of resets) reset();
     },
   };
 };
 
 let shared: Driver | undefined;
 
-const defaultDriver = (): Driver => {
+/**
+ * The driver `database()` uses when a call names none — one per process, created on first use.
+ *
+ * Exported for ONE reason: a test harness needs the same object the app reads through, so it can
+ * seed it before a test and `reset?.()` it after. Without a handle on it, a preload could only
+ * build a driver of its own, and rows written into that one are invisible to every `database()`
+ * call the app already made. Application code names its driver in `database(entities, { driver })`
+ * or takes this one implicitly; it never asks for it by hand.
+ */
+export const defaultDriver = (): Driver => {
   shared ??= memoryDriver();
   return shared;
 };

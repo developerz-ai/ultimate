@@ -289,12 +289,28 @@ describe('BuiltinAdapter — verification tokens', () => {
         },
       ],
     });
-    const taken = await adapter.takeVerification('password-reset', 'ada@example.test');
+    const taken = await adapter.takeVerification('password-reset', 'ada@example.test', 'hash');
     expect(lastText()).toContain('consumed_at is null');
     expect(taken?.consumedAt).toEqual(new Date('2026-01-02T03:04:05.000Z'));
 
     setup();
-    expect(await adapter.takeVerification('password-reset', 'ada@example.test')).toBeNull();
+    expect(await adapter.takeVerification('password-reset', 'ada@example.test', 'hash')).toBeNull();
+  });
+
+  test('takeVerification consumes one row, and only the one whose hash was presented', async () => {
+    setup();
+    await adapter.takeVerification('password-reset', 'ada@example.test', 'the-hash');
+    const text = lastText();
+    // The hash is inside the statement that writes `consumed_at`: comparing it afterwards means a
+    // wrong guess has already consumed the victim's live row.
+    expect(text).toContain('token_hash = $3');
+    expect(lastValues()).toEqual(['password-reset', 'ada@example.test', 'the-hash']);
+    // One row, addressed by id — an `update … where purpose = … and identifier = …` with no bound
+    // consumes every live row for that address and returns an arbitrary one.
+    expect(text).toContain('limit 1');
+    expect(text).toContain('where consumed_at is null and id = (');
+    // …and the outer statement re-checks it, or two racing redemptions both succeed.
+    expect(text.match(/consumed_at is null/g)).toHaveLength(2);
   });
 });
 

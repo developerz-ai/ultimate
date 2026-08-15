@@ -17,6 +17,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_PIPELINE_FINALIZE_FAILED',
   'X_NO_REQUEST',
   'X_ERROR_STATUS_INVALID',
+  'X_CORS_CONFIG_INVALID',
 ] as const;
 
 /**
@@ -47,6 +48,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_PIPELINE_FINALIZE_FAILED: 'a finalize stage threw instead of finishing the response',
   X_NO_REQUEST: 'the inbound request is not in scope here',
   X_ERROR_STATUS_INVALID: 'an error code cannot be mapped to that status',
+  X_CORS_CONFIG_INVALID: 'the cors config can never produce a working response',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -182,6 +184,18 @@ export const errorStatusInvalid = (code: string, reason: string): HttpError =>
     code: 'X_ERROR_STATUS_INVALID',
     cause: `${code} cannot be mapped: ${reason}`,
     fix: `x errors list --json   # then registerErrorStatus({ ${code}: 422 }) with a status the framework does not already own`,
+  });
+
+/**
+ * At `defineHttpConfig`, never on the request. A CORS pair a browser can never accept resolves to
+ * "emit no CORS headers at all", which is unreadable from the console: every cross-origin call
+ * fails and nothing on the server said anything.
+ */
+export const corsConfigInvalid = (reason: string): HttpError =>
+  new HttpError({
+    code: 'X_CORS_CONFIG_INVALID',
+    cause: `cors config rejected: ${reason}`,
+    fix: "in app.config.ts set http.cors.credentials: false, or replace http.cors.origins: ['*'] with the exact origins allowed to call this app",
   });
 
 export const routeConflict = (path: string, detail: string): HttpError =>

@@ -56,6 +56,34 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
 };
 
 /**
+ * A cursor's timestamp is the row's own value FLOORED: a `Date` holds milliseconds and a
+ * `timestamptz` column holds microseconds, so `created_at > '…123'` is satisfied by the very row
+ * at `…123456` the cursor was minted from — the same row, returned again, on every page boundary.
+ * Under `desc` the same gap does the opposite and silently drops every row inside that
+ * millisecond, which no `id` tiebreak can recover because the first `or` term never matched.
+ *
+ * So a timestamp seek compares against the millisecond WINDOW its value stands for — what
+ * `date_trunc('milliseconds', …)` would say, spelled as a half-open range so the column stays
+ * bare and an index can still range-scan it. `timestamptz` is the only sort kind revived as a
+ * `Date` (`cursor.ts`), so the type test IS the kind test.
+ */
+const nextMillisecond = (value: Date): Date => new Date(value.getTime() + 1);
+
+/** Strictly past the cursor's position in this key's direction. */
+const seekAfter = (column: SqlFragment, direction: string, value: unknown): SqlFragment => {
+  if (direction === 'desc') return sql`${column} < ${value}`;
+  // `>= v + 1ms` is `trunc(col) > v`; `< v` already is `trunc(col) < v`, so only asc moves.
+  if (value instanceof Date) return sql`${column} >= ${nextMillisecond(value)}`;
+  return sql`${column} > ${value}`;
+};
+
+/** At the cursor's position for this key — the prefix a later key's tiebreak hangs off. */
+const seekEqual = (column: SqlFragment, value: unknown): SqlFragment =>
+  value instanceof Date
+    ? sql`(${column} >= ${value} and ${column} < ${nextMillisecond(value)})`
+    : sql`${column} = ${value}`;
+
+/**
  * The keyset seek, spelled out rather than as a row comparison: `(a, b) > (x, y)` requires every
  * key to sort the same way, and a listing that is `published_at desc, id asc` does not.
  */
@@ -67,10 +95,9 @@ const seekSql = <Row>(
   const terms = orderBy.map((entry, index) => {
     const equal = orderBy
       .slice(0, index)
-      .map((earlier, position) => sql`${columnRef(entity, earlier.column)} = ${seek[position]}`);
-    const after = raw(entry.direction === 'desc' ? '<' : '>');
+      .map((earlier, position) => seekEqual(columnRef(entity, earlier.column), seek[position]));
     return sql`(${join(
-      [...equal, sql`${columnRef(entity, entry.column)} ${after} ${seek[index]}`],
+      [...equal, seekAfter(columnRef(entity, entry.column), entry.direction, seek[index])],
       ' and ',
     )})`;
   });

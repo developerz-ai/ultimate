@@ -97,8 +97,11 @@ export const securityHeaders = (
     'cross-origin-opener-policy': config.coop,
     'cross-origin-resource-policy': config.corp,
   };
-  // HSTS over plaintext is ignored by browsers and confuses local dev, so skip it.
-  if (config.hsts !== null && options.https !== false) {
+  // HSTS over plaintext is ignored by browsers and confuses local dev, so it is emitted only when
+  // the caller AFFIRMS https. `!== false` said the opposite of this comment: the zero-argument
+  // default — every caller that is not the pipeline, which passes `ctx.https` — sent a two-year
+  // `includeSubDomains` for a connection nothing had established was secure.
+  if (config.hsts !== null && options.https === true) {
     const parts = [`max-age=${config.hsts.maxAgeSeconds}`];
     if (config.hsts.includeSubdomains) parts.push('includeSubDomains');
     if (config.hsts.preload) parts.push('preload');

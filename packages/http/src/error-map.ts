@@ -30,6 +30,9 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // and declaring a status the framework already owns. 500 is the honest answer to either.
   X_NO_REQUEST: 500,
   X_ERROR_STATUS_INVALID: 500,
+  // Thrown while `app.config.ts` resolves, so no request is ever answered with it — the row exists
+  // because a code with no status is a 500 anyway and this table is the closed one.
+  X_CORS_CONFIG_INVALID: 500,
   // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
   // the primitive declared. 400 because that is what the published OpenAPI operation promises for
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,

@@ -112,10 +112,18 @@ export interface VerificationStore {
   /** Upsert on `(purpose, identifier)` — issuing a new token invalidates the previous one. */
   putVerification(record: AuthVerification): Promise<void>;
   /**
-   * Read **and consume** in one atomic step. Single-use is a storage guarantee, not a
-   * caller convention: two concurrent redemptions must not both see an unconsumed row.
+   * Read **and consume** in one atomic step, and only when `tokenHash` is the live row's.
+   * Single-use is a storage guarantee, not a caller convention: two concurrent redemptions must
+   * not both see an unconsumed row. The hash belongs to that same step for the same reason — a
+   * store that consumes first and lets the caller compare afterwards lets an unauthenticated
+   * wrong guess destroy the victim's live token, which is a password-reset denial of service
+   * against any address an attacker can name. A non-match consumes nothing and answers `null`.
    */
-  takeVerification(purpose: string, identifier: string): Promise<AuthVerification | null>;
+  takeVerification(
+    purpose: string,
+    identifier: string,
+    tokenHash: string,
+  ): Promise<AuthVerification | null>;
 }
 
 export interface AuthApiKeyRecord {

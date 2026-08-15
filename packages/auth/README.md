@@ -25,6 +25,9 @@ const { actor, token, cookie } = await login(auth, { email, password, ip });
 - Absolute and idle expiry are evaluated **independently**. Activity never moves the ceiling.
 - PKCE is mandatory on every provider. A missing verifier fails the callback.
 - Recovery codes, verification tokens and api keys are hashed at rest and single-use.
+- A verification token is consumed **only when its hash matches**, in the same statement — the
+  store takes `(purpose, identifier, tokenHash)`. Consuming first and comparing afterwards made an
+  unauthenticated wrong guess destroy the victim's live reset link.
 - Guards assert on the actor. They never evaluate a policy.
 
 ## Adapter seam

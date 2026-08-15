@@ -25,6 +25,17 @@ describe('readCookie', () => {
   test('trims whitespace around the name and value', () => {
     expect(readCookie('foo=bar;  x-locale = de ; baz=qux', 'x-locale')).toBe('de');
   });
+
+  // `Cookie:` is attacker-controlled and this runs in the `locale` stage, on every request. A bare
+  // `URIError` there is a 500 and a page for the on-call, sent by `curl -H 'Cookie: x-locale=%'`.
+  test('a malformed escape yields the raw value instead of throwing', () => {
+    expect(readCookie('x-locale=%', 'x-locale')).toBe('%');
+    expect(readCookie('x-locale=%ZZ', 'x-locale')).toBe('%ZZ');
+    expect(readCookie('foo=bar; x-timezone=%E0%A4%A', 'x-timezone')).toBe('%E0%A4%A');
+    // …and it degrades to the configured default rather than to a value nothing can format.
+    expect(negotiateLocale(null, undefined, readCookie('x-locale=%', 'x-locale'))).toBe('en');
+    expect(resolveTimeZone(readCookie('x-timezone=%', 'x-timezone'))).toBe('UTC');
+  });
 });
 
 describe('negotiateLocale', () => {

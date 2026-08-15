@@ -99,4 +99,26 @@ describe('unit · where a visitor lands after signing in', () => {
     expect(nextAfterSignIn('javascript:alert(1)', '/dashboard')).toBe('/dashboard');
     expect(nextAfterSignIn('dashboard', '/dashboard')).toBe('/dashboard');
   });
+
+  // A browser deletes tab/CR/LF from a `Location` before parsing it, so a single slash followed by
+  // one of them is a scheme-relative URL wearing a disguise: `/\t/evil.test` is delivered, parsed
+  // and followed as `//evil.test` → `https://evil.test`.
+  test('a control character the URL parser strips cannot smuggle an origin past the check', () => {
+    expect(nextAfterSignIn('%2F%09%2Fevil.test', '/dashboard')).toBe('/dashboard');
+    expect(nextAfterSignIn('%2F%0A%2Fevil.test', '/dashboard')).toBe('/dashboard');
+    expect(nextAfterSignIn('%2F%0D%2Fevil.test', '/dashboard')).toBe('/dashboard');
+    expect(nextAfterSignIn('/\t/evil.test', '/dashboard')).toBe('/dashboard');
+    expect(nextAfterSignIn('/\t\\evil.test', '/dashboard')).toBe('/dashboard');
+  });
+
+  // The value is off the URL bar, so it is not required to be valid percent-encoding either.
+  test('a malformed encoding falls back instead of throwing', () => {
+    expect(nextAfterSignIn('%', '/dashboard')).toBe('/dashboard');
+    expect(nextAfterSignIn('%2F%ZZ', '/dashboard')).toBe('/dashboard');
+  });
+
+  test('an ordinary path is returned verbatim, not renormalised', () => {
+    expect(nextAfterSignIn('/a/../b', '/dashboard')).toBe('/a/../b');
+    expect(nextAfterSignIn('/messages?q=a%20b#top', '/dashboard')).toBe('/messages?q=a b#top');
+  });
 });

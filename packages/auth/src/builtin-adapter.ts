@@ -244,11 +244,31 @@ export class BuiltinAdapter implements AuthAdapter {
             consumed_at = null`);
   }
 
-  /** The `consumed_at is null` predicate is what makes redemption single-use under concurrency. */
-  async takeVerification(purpose: string, identifier: string): Promise<AuthVerification | null> {
+  /**
+   * One conditional UPDATE, and every part of the predicate is load-bearing. `consumed_at is null`
+   * on the UPDATE itself is what makes redemption single-use under concurrency — inside the
+   * subselect alone, two racing redemptions both pick the row and both consume it. `token_hash`
+   * is what keeps a wrong guess from consuming anything: a consume that happens before the
+   * comparison turns any unauthenticated POST into a way to kill the victim's emailed link. The
+   * predicate compares the digest and never the token, so it leaks what a `=` on a hash leaks.
+   * `order by created_at desc limit 1` addresses exactly one row: `unique (purpose, identifier)`
+   * (`tables.ts`) already allows only one, but an unbounded `update … where` consumes every row
+   * that matches, so a table missing that constraint would redeem links nobody presented.
+   */
+  async takeVerification(
+    purpose: string,
+    identifier: string,
+    tokenHash: string,
+  ): Promise<AuthVerification | null> {
     const row = await this.#db.one<Row>(sql`
       update x_verifications set consumed_at = now()
-      where purpose = ${purpose} and identifier = ${identifier} and consumed_at is null
+      where consumed_at is null and id = (
+        select id from x_verifications
+        where purpose = ${purpose} and identifier = ${identifier}
+          and consumed_at is null and token_hash = ${tokenHash}
+        order by created_at desc
+        limit 1
+      )
       returning *`);
     return row === null ? null : toVerification(row);
   }

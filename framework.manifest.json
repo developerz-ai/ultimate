@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ccbdbee407e4ce19555992f302f7f4941a14598c4dd2d28beb69b5f04774c59a",
+  "buildId": "446f7ca0d3c11b3b154cec2a0b2989d7c886a6b723dfe845742f9ce6337cfe5b",
   "tiers": {
     "0": [
       "core",
@@ -484,6 +484,11 @@
       "code": "X_CONTRACT_DRIFT",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_CORS_CONFIG_INVALID",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
     },
     {
       "code": "X_CRON_INVALID",

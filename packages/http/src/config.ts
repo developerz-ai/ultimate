@@ -1,6 +1,6 @@
 // The HTTP slice of `app.config.ts`. One resolver, so a value is either a locked
 // default or an explicit override — never "whatever the first caller passed".
-import { type CorsConfig, DEFAULT_CORS } from './cors';
+import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import {
   DEFAULT_LOCALE_CONFIG,
   DEFAULT_TZ_CONFIG,
@@ -77,6 +77,10 @@ const env = (name: string): string | undefined => {
 
 export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   const dev = input.dev ?? env('NODE_ENV') !== 'production';
+  const cors = { ...DEFAULT_CORS, ...input.cors };
+  // The one resolver is the one place a resolved combination can be judged: an override is merged
+  // over defaults the author never restated, so `origins: ['*']` alone is what reaches this.
+  assertCorsConfig(cors);
   return {
     port: input.port ?? Number.parseInt(env('PORT') ?? '3000', 10),
     hostname: input.hostname ?? env('HOSTNAME') ?? '0.0.0.0',
@@ -90,7 +94,7 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     drainTimeoutMs: input.drainTimeoutMs ?? 15_000,
     locale: { ...DEFAULT_LOCALE_CONFIG, ...input.locale },
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },
-    cors: { ...DEFAULT_CORS, ...input.cors },
+    cors,
     security: {
       ...DEFAULT_SECURITY,
       ...input.security,

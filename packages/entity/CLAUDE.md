@@ -260,6 +260,16 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   exist, the rest by name after it; a relation is derived, so there is no file a reader could open
   to find them. An entity with no foreign key at all gets `x entities list --json` instead — the
   declaration it needs names a target this error cannot know.
+- **The process default driver has a name, and emptying it is optional on the seam.**
+  `defaultDriver()` returns the one `database()` falls back to when a call names none — exported so
+  a test harness seeds and empties the object the app actually reads through, since a second
+  `memoryDriver()` of its own would be invisible to every `database()` call already made.
+  `Driver.reset?()` is **optional**, implemented by `memoryDriver()` and by nothing else:
+  `postgresDriver()` leaves it undefined because those rows are the app's, so a harness writes
+  `driver.reset?.()`. The reset runs `MemoryRepo.reset()` on the repositories already handed out —
+  in place, never a replacement — because `database()` resolves each table's repository once and a
+  swapped-in repository is emptied where nothing is reading. Test seam only: no framework code path
+  calls either, and neither is a fixture system.
 - **A repository call rejects, never throws synchronously** — `tableFor`'s writes are `async` for
   that reason alone: `$parse` throws, and a call site should not need two error paths for one
   mistake.
@@ -345,8 +355,17 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   atomicity across them is `withTransaction`'s and never one statement's.
 - **Nothing is interpolated into SQL.** `pg-sql.ts` binds every value through `sql` and resolves
   every identifier through the entity, so a column name can only be one the entity declared.
-  `raw()` appears exactly three times, for `asc|desc`, the seek operator and the `default` cell of a
-  many-row `values` list — each a closed set of one word.
+  `raw()` appears exactly twice, for `asc|desc` and the `default` cell of a many-row `values` list —
+  each a closed set of one word. The seek operator was the third: it is now chosen in TypeScript
+  (`seekAfter`/`seekEqual`), because a timestamp seek is not one operator.
+- **A timestamp seek compares against a millisecond WINDOW, never a bare `>`.** A cursor carries a
+  `Date` (milliseconds); the column is `timestamptz` (microseconds), so the cursor value is the
+  row's own timestamp floored. `created_at > '…123'` is therefore satisfied by the `…123456` row
+  the cursor was minted from — the same row served again on every page boundary — and `<` drops
+  every row inside that millisecond instead. Ascending seeks `>= v + 1ms`, descending keeps `< v`,
+  and an equality prefix is `>= v and < v + 1ms`: what `date_trunc('milliseconds', …)` would say,
+  spelled as a half-open range so the column stays bare and the index still range-scans. The memory
+  driver stores millisecond `Date`s, so the two drivers agree without a second rule.
 - **Money is a `bigint` + `char(3)` column pair, and a `number` + `char(3)` VALUE.** A float throws.
   Never one column, never an implied single currency — and never two declarations of the shape.
   `MoneyValue` is re-exported from `@ultimat3/schema`, which is also what `@ultimat3/money`'s

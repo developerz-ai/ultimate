@@ -35,6 +35,17 @@ asserts the order; `/_x` renders it. Ordering rules worth restating:
 | body before authz | policies take parsed input as their subject |
 | cache-headers before response | a directive can never drop a security header |
 
+What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
+
+| Guard | Answer |
+|---|---|
+| a body past `bodyLimitBytes` | read through the stream and abandoned the instant the running total crosses the limit — `content-length` or not, multipart included — as `X_BODY_INVALID` |
+| a request carrying an identity on an `auth: 'public'` route | `cache-control: private`, never `s-maxage`; an anonymous one is shared-cacheable and keyed `vary: accept-language, cookie` |
+| a cross-origin request from an origin the allow-list refuses | no `access-control-allow-origin`, but always `vary: origin`, so a shared cache never answers an allowed origin out of the refusal's slot |
+| `cors.origins: ['*']` with `credentials: true` | `X_CORS_CONFIG_INVALID` at `defineHttpConfig`, because a browser accepts that pair from nobody |
+| `?next=` carrying anything but a same-origin path | the fallback — including a value whose TAB/CR/LF a browser strips back into `//evil.test` |
+| HSTS | emitted only when the connection is affirmatively https (`ctx.https`); never by the zero-argument default |
+
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
 `cause`) and the chain finishes that document instead. `finalize.ts` owns that promise.
@@ -62,6 +73,7 @@ through to `fetch`. Method resolution stays ours so a 405 still carries problem+
 
 `X_ROUTE_NOT_FOUND` · `X_METHOD_NOT_ALLOWED` · `X_BODY_INVALID` · `X_UNAUTHENTICATED`
 · `X_FORBIDDEN` · `X_RATE_LIMITED` · `X_BUILD_SKEW` · `X_ROUTE_CONFLICT`
+· `X_CORS_CONFIG_INVALID`
 
 One `factsOf()` feeds three renderings — terminal, `application/problem+json`, dev
 overlay — so the `code`/`cause`/`fix` strings can never diverge.

@@ -79,6 +79,22 @@ describe('cache headers', () => {
       tags: ['post:1', 'feed'],
     });
     expect(response.headers.get('x-cache-tags')).toBe('post:1,feed');
-    expect(response.headers.get('vary')).toBe('accept-language');
+    expect(response.headers.get('vary')).toBe('accept-language, cookie');
+  });
+
+  // Without `cookie` in the key, a shared cache stores one visitor's signed-in render of a public
+  // page under the URL alone and hands it to the next visitor.
+  test('a shared-cacheable response is keyed on the cookie by default', () => {
+    const response = applyCacheHeaders(text('body'), { mode: 'public', sMaxAgeSeconds: 60 });
+    expect(response.headers.get('vary')?.split(', ')).toContain('cookie');
+  });
+
+  test("an explicit vary is the caller's to own, and private needs no cookie key", () => {
+    expect(
+      applyCacheHeaders(text('body'), { mode: 'public', vary: ['accept'] }).headers.get('vary'),
+    ).toBe('accept');
+    expect(
+      applyCacheHeaders(text('body'), { mode: 'private', maxAgeSeconds: 0 }).headers.get('vary'),
+    ).toBeNull();
   });
 });

@@ -18,7 +18,36 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   framework that guessed `/signin` would send an app spelling it `/login` to a 404 — strictly
   worse than the JSON. The round trip is `?next=`, and `nextAfterSignIn` is the ONE reader of it:
   anything that is not a same-origin path falls back, or the page that hands out a session
-  becomes an open redirect.
+  becomes an open redirect. **A control character is an off-site destination**: a browser deletes
+  TAB, CR and LF from a `Location` before parsing it, so `/%09/evil.test` decodes to a value that
+  starts with one slash, passes a prefix check and is then followed as `//evil.test`. The prefix
+  checks are not the last word — the value is re-parsed against an origin no relative path can
+  reach, and anything that resolves off it falls back. Nothing here throws either: `?next=%` is a
+  bare `URIError`, and this runs while the pipeline is already rendering a 401.
+- **The body cap is enforced while reading, never after.** `UltimateRequest.#read` pulls the body
+  through a counting reader and cancels the stream the moment the running total passes
+  `bodyLimitBytes`. `content-length` is a courtesy — a `transfer-encoding: chunked` request
+  declares none, so `arrayBuffer()` allocated a 10GB payload in full before measuring it. Multipart
+  goes through the same capped bytes (re-parsed by `Response.formData()` off the announced
+  boundary) rather than being handed to the runtime as an unbounded stream, which is what left it
+  with no byte guard at all when the length was undeclared.
+- **The cache default reads the ACTOR, not just the route, and `vary` is added and never set.**
+  `meta.auth` is only `'public' | 'required'`, so the page that greets a signed-in visitor by name
+  is a `'public'` route: keying the default off the route alone put that visitor's personalised
+  HTML in a shared cache for 60 seconds. A request whose actor is not anonymous is `private`;
+  an anonymous one stays shared-cacheable and carries `vary: accept-language, cookie`. Both halves
+  are required — either alone leaves the hole. `addVary` (`response.ts`) is how the `response`
+  stage merges CORS's `vary: origin` into the cache stage's key instead of replacing it.
+- **`cors.origins: ['*']` with `credentials: true` is refused at `defineHttpConfig`.** No browser
+  accepts that pair, and `allowedOrigin` answering `null` for it meant the natural "open it up"
+  edit emitted no CORS headers at all, silently, on every request — with `DEFAULT_CORS.credentials`
+  (true) as the half nobody thinks to look at. `X_CORS_CONFIG_INVALID`, at config time, with the
+  one-line edit in the `fix`. A REFUSED origin still gets `vary: origin`: without it a shared cache
+  files the un-CORS'd body under the URL alone and hands it to an allowed origin next.
+- **HSTS is emitted only when https is affirmed.** `securityHeaders(config, { https })` defaults to
+  NOT sending it — the pipeline is the one caller that knows, and it passes `ctx.https`. The guard
+  read `!== false`, so every other caller sent a two-year `includeSubDomains` for a connection
+  nothing had established was secure, which is the opposite of what the comment above it promised.
 - **`meta.enforcedBy` says who evaluates `meta.policy`, and the `authz` stage obeys it.**
   `'pipeline'` (the default, and what a page wants) means the stage decides through
   `hooks.authorize`; `'handler'` means the handler is the one evaluation and the stage returns
@@ -104,6 +133,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `context.ts` | `RequestContext` + the single `Ctx` adapter (`asCtx`) + the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
+| `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor |
 
 ## Commands
 

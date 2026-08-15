@@ -317,6 +317,23 @@ database({ orgs, posts }, { driver: postgresDriver() });   // production
 | Rows live | in a `Map` | in Postgres |
 | For | tests, `x dev` before the first migration | production |
 | Transaction | `memoryTransactor()` — undo closures | `postgresTransactor()` — real `BEGIN`/`COMMIT` |
+| `reset()` | empties every repository it built | not implemented — the rows are the app's |
+
+`database()` called with no driver takes the process default, and `defaultDriver()` is that same
+object — the one seam a test harness needs, `As of 2026-08`:
+
+```ts
+import { defaultDriver } from '@ultimat3/entity';
+
+defaultDriver().repo(posts).insert(row); // seeds what database({ posts }) reads
+defaultDriver().reset?.();               // between tests; `?.` because Postgres has no reset
+```
+
+`Driver.reset?()` is optional on the interface and implemented by `memoryDriver()` alone, so a
+harness asks rather than assumes. It empties the repositories in place: `database()` resolves each
+table's repository once, so a driver that swapped in fresh ones would leave every handle the app
+already holds reading the old rows. Application code never calls either — it names its driver in
+`database(entities, { driver })`, or takes the default implicitly.
 
 They are not two implementations of an idea. They share the plan (scope, sort order, page size),
 the cursor codec and the `Repo<T>` contract, so a page taken in a test means the same thing as a
