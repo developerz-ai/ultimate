@@ -13,6 +13,7 @@ import type {
   SessionPatch,
   UserPatch,
 } from './adapter';
+import { timingSafeEqual } from './tokens';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
 
@@ -131,10 +132,17 @@ export class MemoryAdapter implements AuthAdapter {
     this.#verifications.set(verificationKey(record.purpose, record.identifier), record);
   }
 
-  async takeVerification(purpose: string, identifier: string): Promise<AuthVerification | null> {
+  async takeVerification(
+    purpose: string,
+    identifier: string,
+    tokenHash: string,
+  ): Promise<AuthVerification | null> {
     const key = verificationKey(purpose, identifier);
     const record = this.#verifications.get(key);
     if (record === undefined || record.consumedAt !== null) return null;
+    // Before the write, never after: a wrong guess that consumed the row would be an
+    // unauthenticated way to kill the victim's live link, which is the Postgres adapter's rule too.
+    if (!timingSafeEqual(tokenHash, record.tokenHash)) return null;
     const consumed: AuthVerification = { ...record, consumedAt: new Date(record.createdAt) };
     this.#verifications.set(key, consumed);
     return consumed;

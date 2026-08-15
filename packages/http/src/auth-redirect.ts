@@ -47,12 +47,35 @@ export function signInRedirect(input: {
  * phishing wants: a real domain, a real login, a hop to somewhere else.
  *
  * Refused: an absolute URL (`https://evil.test/x`), a scheme-relative one (`//evil.test`), a
- * backslash the browser normalises to a slash (`/\evil.test`), and anything not starting `/`.
+ * backslash the browser normalises to a slash (`/\evil.test`), a value carrying a TAB, CR or LF,
+ * and anything not starting `/`.
+ *
+ * The control characters are not cosmetic. A browser DELETES tab, CR and LF from a `Location`
+ * before it parses one, so `/%09/evil.test` decodes to `/\t/evil.test` — which starts with a
+ * single slash, passes a prefix check, and is then parsed as `//evil.test`. The URL parser
+ * strips them the same way, which is why the last word here is the parse: whatever a client
+ * would actually resolve has to still be a path on this origin.
  */
 export function nextAfterSignIn(raw: string | null | undefined, fallback: string): string {
   if (raw === null || raw === undefined || raw === '') return fallback;
-  const value = decodeURIComponent(raw);
+  // `?next=%` is a bare `URIError`, and this runs while the pipeline is already rendering a 401.
+  let value: string;
+  try {
+    value = decodeURIComponent(raw);
+  } catch {
+    return fallback;
+  }
   if (!value.startsWith('/')) return fallback;
   if (value.startsWith('//') || value.startsWith('/\\')) return fallback;
+  if (/[\t\r\n]/.test(value)) return fallback;
+  // An origin no relative path could reach, so any value that resolves off it left this origin.
+  const base = 'http://x.invalid';
+  let resolved: URL;
+  try {
+    resolved = new URL(value, base);
+  } catch {
+    return fallback;
+  }
+  if (resolved.origin !== base) return fallback;
   return value;
 }

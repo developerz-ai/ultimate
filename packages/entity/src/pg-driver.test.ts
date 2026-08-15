@@ -261,9 +261,56 @@ describe('keyset pagination', () => {
     await repo().findMany({ ...descending, cursor: first.nextCursor });
     expect(lastText()).not.toContain('offset');
     // `desc` on the first key and `asc` on the tie-breaking primary key: one row comparison
-    // cannot express that, which is why the seek is spelled out as an or-chain.
-    expect(lastText()).toContain('(("issued_at" < $2) or ("issued_at" = $3 and "id" > $4))');
+    // cannot express that, which is why the seek is spelled out as an or-chain. The equality
+    // prefix is the millisecond window the cursor value stands for — see the microsecond case.
+    expect(lastText()).toContain(
+      '(("issued_at" < $2) or (("issued_at" >= $3 and "issued_at" < $4) and "id" > $5))',
+    );
     expect(lastValues()[1]).toBeInstanceOf(Date);
+  });
+
+  /**
+   * The column is `timestamptz` (microseconds, `now()`); the cursor carries a `Date`
+   * (milliseconds). The floored value is strictly LESS than the row it was minted from, so a bare
+   * `>` returned that row again on every page boundary and a bare `<` dropped every row sharing
+   * its millisecond. Both directions are the same off-by-one gap.
+   */
+  test('a timestamp seek excludes the row it was minted from, to the microsecond', async () => {
+    // Row 3 is the page boundary — the row the cursor is minted from — and Postgres stored it
+    // with the microseconds `now()` gives every `timestamptz`.
+    const rows = [
+      ...page(2),
+      physical({
+        id: '00000000-0000-7000-8000-000000000298',
+        issued_at: '2026-08-14T10:00:00.123456Z',
+      }),
+      physical({ id: '00000000-0000-7000-8000-000000000299', issued_at: '2026-08-15T00:00:00Z' }),
+    ];
+    const ascending = {
+      orgId: ORG,
+      limit: 3,
+      orderBy: [{ column: 'issuedAt', direction: 'asc' as const }],
+    };
+
+    client.on('select', { rows });
+    const first = await repo().findMany(ascending);
+    await repo().findMany({ ...ascending, cursor: first.nextCursor });
+
+    // `>=` the next millisecond, never `>` the floored value: `.123456 > .123` is true, and the
+    // row on the page boundary would have been served again as the first row of the next page.
+    expect(lastText()).toContain('(("issued_at" >= $2) or');
+    const seekAt = lastValues()[1];
+    expect(seekAt).toBeInstanceOf(Date);
+    expect((seekAt as Date).toISOString()).toBe('2026-08-14T10:00:00.124Z');
+
+    client.on('select', { rows });
+    const firstDesc = await repo().findMany(descending);
+    await repo().findMany({ ...descending, cursor: firstDesc.nextCursor });
+    // Descending needs no shift — `< v` already means "before the whole millisecond" — but the
+    // tiebreak does, or every row inside that millisecond is skipped rather than compared by id.
+    expect(lastValues()[1]).toEqual(new Date('2026-08-14T10:00:00.123Z'));
+    expect(lastValues()[2]).toEqual(new Date('2026-08-14T10:00:00.123Z'));
+    expect(lastValues()[3]).toEqual(new Date('2026-08-14T10:00:00.124Z'));
   });
 
   test('a nullable sort column cannot carry a cursor', async () => {
@@ -284,10 +331,13 @@ describe('keyset pagination', () => {
 });
 
 describe('parity with the in-memory driver', () => {
-  test('both drivers expose the same repository surface', () => {
-    expect(Object.keys(postgresRepo(invoices)).sort()).toEqual(
-      Object.keys(memoryRepo(invoices)).sort(),
-    );
+  test('both drivers expose the same repository surface, bar the memory test seam', () => {
+    const postgres = Object.keys(postgresRepo(invoices)).sort();
+    const memory = Object.keys(memoryRepo(invoices)).sort();
+    // `reset()` is the one permitted difference: rows in Postgres belong to the app, and a
+    // framework that could empty them from a test helper eventually would.
+    expect(memory.filter((key) => key !== 'reset')).toEqual(postgres);
+    expect(memory).toContain('reset');
   });
 
   test('a cursor from memory is a seek predicate in Postgres', async () => {

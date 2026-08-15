@@ -26,6 +26,48 @@ const parseQuery = (url: URL): QueryValues => {
   return out;
 };
 
+/** What a body read produced: the bytes, or the running total at the moment it went over. */
+type CappedBody = { readonly bytes: Uint8Array } | { readonly over: number };
+
+/**
+ * The body, read through the stream and abandoned the instant the running total passes `limit`.
+ * `arrayBuffer()` materialises first and checks after, so a `transfer-encoding: chunked` request —
+ * one with no `content-length` for the pre-check to read — allocated its whole payload before the
+ * 413 it was going to get anyway. A declared length is a courtesy, not a guard.
+ */
+const readWithinLimit = async (
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<CappedBody> => {
+  if (body === null) return { bytes: new Uint8Array(0) };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        // Cancelled rather than drained: the peer is told to stop sending, and nothing past the
+        // cap is ever held. Draining is how a rejected request still costs its full transfer.
+        await reader.cancel();
+        return { over: total };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { bytes };
+};
+
 export class UltimateRequest {
   readonly raw: Request;
   readonly ctx: RequestContext;
@@ -152,21 +194,30 @@ export class UltimateRequest {
     const type = contentTypeOf(this.raw);
     if (type === '' || declared === 0) return undefined;
 
-    // multipart is streamed by the runtime; the declared length is the only guard.
+    // One capped read for every content type, multipart included: the parser runs on bytes this
+    // process already agreed to hold, never on a stream it hands to the runtime unbounded.
+    const read = await readWithinLimit(this.raw.body, limit);
+    if ('over' in read) {
+      throw bodyInvalid(this.pathname, [`body is at least ${read.over} bytes, limit is ${limit}`]);
+    }
+    if (read.bytes.byteLength === 0) return undefined;
+
     if (type === 'multipart/form-data') {
       try {
-        return Object.fromEntries(await this.raw.formData());
+        // Re-parsed from the capped bytes, so the boundary comes from the header it was announced
+        // in — `Response` is the one multipart parser here, exactly as `Request` was.
+        // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
+        // `SharedArrayBuffer`, which `Response` does not accept.
+        const form = await new Response(new Uint8Array(read.bytes), {
+          headers: { 'content-type': this.raw.headers.get('content-type') ?? type },
+        }).formData();
+        return Object.fromEntries(form);
       } catch (error) {
         throw bodyInvalid(this.pathname, [`could not parse ${type}: ${String(error)}`]);
       }
     }
 
-    const buffer = await this.raw.arrayBuffer();
-    if (buffer.byteLength > limit) {
-      throw bodyInvalid(this.pathname, [`body is ${buffer.byteLength} bytes, limit is ${limit}`]);
-    }
-    if (buffer.byteLength === 0) return undefined;
-    const body = new TextDecoder().decode(buffer);
+    const body = new TextDecoder().decode(read.bytes);
     try {
       if (type === 'application/json' || type.endsWith('+json')) return JSON.parse(body);
       if (type === 'application/x-www-form-urlencoded') {

@@ -32,8 +32,25 @@ class RecordingVerificationStore implements VerificationStore {
     this.written.set(`${record.purpose}:${record.identifier}`, record);
   }
 
+  async takeVerification(
+    purpose: string,
+    identifier: string,
+    tokenHash: string,
+  ): Promise<AuthVerification | null> {
+    return this.#adapter.takeVerification(purpose, identifier, tokenHash);
+  }
+}
+
+/** A third-party adapter that ignores the hash argument — the case the seam cannot enforce. */
+class SloppyVerificationStore implements VerificationStore {
+  readonly #rows = new Map<string, AuthVerification>();
+
+  async putVerification(record: AuthVerification): Promise<void> {
+    this.#rows.set(`${record.purpose}:${record.identifier}`, record);
+  }
+
   async takeVerification(purpose: string, identifier: string): Promise<AuthVerification | null> {
-    return this.#adapter.takeVerification(purpose, identifier);
+    return this.#rows.get(`${purpose}:${identifier}`) ?? null;
   }
 }
 
@@ -217,6 +234,57 @@ describe('consumeVerification', () => {
 
   test('rejects the wrong token for a real, live record', async () => {
     const rt = runtime();
+    await issueVerification(rt, {
+      purpose: 'email-verify',
+      identifier: 'a@example.com',
+      locale: 'en',
+    });
+
+    const error = await caught(() =>
+      consumeVerification(rt, {
+        purpose: 'email-verify',
+        identifier: 'a@example.com',
+        token: 'not-the-real-token',
+      }),
+    );
+    expect(error.code).toBe('X_UNAUTHENTICATED');
+  });
+
+  test("a wrong guess leaves the victim's live token redeemable", async () => {
+    const rt = runtime();
+    const { token } = await issueVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'victim@example.com',
+      locale: 'en',
+    });
+
+    // The attack: an unauthenticated POST naming a known address, with any token at all. Repeated,
+    // because one guess per second is what makes it a permanent denial of the reset link.
+    for (const guess of ['x', 'y', 'z']) {
+      const error = await caught(() =>
+        consumeVerification(rt, {
+          purpose: 'password-reset',
+          identifier: 'victim@example.com',
+          token: guess,
+        }),
+      );
+      expect(error.code).toBe('X_UNAUTHENTICATED');
+    }
+
+    const record = await consumeVerification(rt, {
+      purpose: 'password-reset',
+      identifier: 'victim@example.com',
+      token,
+    });
+    expect(record.identifier).toBe('victim@example.com');
+  });
+
+  test('refuses a wrong token even when the store hands back an unmatched row', async () => {
+    const rt: VerificationRuntime = {
+      store: new SloppyVerificationStore(),
+      clock: frozenClock(0),
+      mail: new RecordingMail(),
+    };
     await issueVerification(rt, {
       purpose: 'email-verify',
       identifier: 'a@example.com',

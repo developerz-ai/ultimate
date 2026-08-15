@@ -28,13 +28,29 @@ export const DEFAULT_TZ_CONFIG: TimeZoneConfig = {
   cookie: 'x-timezone',
 };
 
+/**
+ * The raw value on a malformed escape, never a throw. `Cookie:` is attacker-controlled and
+ * `decodeURIComponent('%')` is a bare `URIError` — thrown from the `locale` stage, which runs on
+ * every request, so `curl -H 'Cookie: x-locale=%'` answered 500 and paged the on-call. Nothing is
+ * loosened: a locale that is not in `supported` still falls back, and a time zone `Intl` cannot
+ * format is still refused. `@ultimat3/auth` guards its own cookie reader the same way and for the
+ * same reason; the guard is four lines and this package can never import that one (same tier).
+ */
+const decodeCookieValue = (raw: string): string => {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+};
+
 export const readCookie = (header: string | null, name: string): string | null => {
   if (header === null) return null;
   for (const part of header.split(';')) {
     const index = part.indexOf('=');
     if (index === -1) continue;
     if (part.slice(0, index).trim() !== name) continue;
-    return decodeURIComponent(part.slice(index + 1).trim());
+    return decodeCookieValue(part.slice(index + 1).trim());
   }
   return null;
 };

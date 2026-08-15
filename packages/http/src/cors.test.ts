@@ -3,16 +3,25 @@
 // ways it quietly widens: a wildcard standing next to credentials, and preflight answering an
 // origin the allow-list rejects.
 import { describe, expect, test } from 'bun:test';
-import { corsHeaders, DEFAULT_CORS, preflight } from './cors';
+import { defineHttpConfig } from './config';
+import { assertCorsConfig, corsHeaders, DEFAULT_CORS, preflight } from './cors';
+import { HttpError } from './errors';
 
 describe('corsHeaders()', () => {
-  test('null origin gets no headers', () => {
-    expect(corsHeaders({ ...DEFAULT_CORS, origins: ['https://a.test'] }, null)).toEqual({});
+  // A refusal carries `vary: origin` and nothing else. Without the key, a shared cache files the
+  // un-CORS'd body under the URL alone and answers the NEXT, allowed, origin out of that slot —
+  // a fetch that fails with no header and nothing in the request to explain it.
+  test('null origin gets no allow-origin, but is still keyed on the origin', () => {
+    expect(corsHeaders({ ...DEFAULT_CORS, origins: ['https://a.test'] }, null)).toEqual({
+      vary: 'origin',
+    });
   });
 
-  test('origin not in the allow-list and no wildcard gets no headers', () => {
+  test('origin not in the allow-list and no wildcard gets no allow-origin', () => {
     expect(corsHeaders({ ...DEFAULT_CORS, origins: ['https://a.test'] }, 'https://b.test')).toEqual(
-      {},
+      {
+        vary: 'origin',
+      },
     );
   });
 
@@ -66,14 +75,40 @@ describe('corsHeaders()', () => {
     expect(headers['access-control-allow-origin']).toBe('*');
   });
 
-  test('wildcard origin with credentials true resolves to no headers', () => {
-    // A wildcard cannot be combined with credentialed requests, so the wildcard
-    // is silently ignored rather than emitting an invalid `*` + credentials pair.
+  test('wildcard origin with credentials true resolves to no allow-origin', () => {
+    // A wildcard cannot be combined with credentialed requests, so the wildcard is ignored rather
+    // than emitting an invalid `*` + credentials pair — which is why `assertCorsConfig` refuses
+    // that pair before a request can reach this.
     const headers = corsHeaders(
       { ...DEFAULT_CORS, origins: ['*'], credentials: true },
       'https://anything.test',
     );
-    expect(headers).toEqual({});
+    expect(headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('assertCorsConfig()', () => {
+  // `DEFAULT_CORS.credentials` is true, so `origins: ['*']` on its own is the natural "open it up"
+  // edit — and it used to resolve to no CORS headers at all, silently, on every request.
+  test("refuses '*' next to credentials, at config time, with the edit that fixes it", () => {
+    let thrown: unknown;
+    try {
+      assertCorsConfig({ ...DEFAULT_CORS, origins: ['*'] });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(HttpError);
+    expect((thrown as HttpError).code).toBe('X_CORS_CONFIG_INVALID');
+    expect((thrown as HttpError).fix).toContain('credentials: false');
+  });
+
+  test('defineHttpConfig is where an app meets that refusal', () => {
+    expect(() => defineHttpConfig({ cors: { origins: ['*'] } })).toThrow(HttpError);
+    // Both legal spellings still resolve.
+    expect(defineHttpConfig({ cors: { origins: ['*'], credentials: false } }).cors.origins).toEqual(
+      ['*'],
+    );
+    expect(defineHttpConfig({ cors: { origins: ['https://a.test'] } }).cors.credentials).toBe(true);
   });
 });
 

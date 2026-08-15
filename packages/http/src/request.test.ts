@@ -229,6 +229,70 @@ describe('bodyRaw() — size limit', () => {
     expect(error?.cause).toContain('50');
     expect(error?.cause).toContain('10');
   });
+
+  // The shape a `content-length` pre-check can never see: `transfer-encoding: chunked`, no
+  // declared length, a body far larger than the process should ever hold. Reading it whole and
+  // measuring afterwards is an OOM where a 413 was owed.
+  test('a chunked body over the limit is abandoned mid-stream, not materialised first', async () => {
+    const chunk = new TextEncoder().encode('x'.repeat(64));
+    let pulled = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const { req } = build(
+      'https://example.com/x',
+      // No content-length: `duplex: 'half'` is what a streamed request body requires.
+      {
+        method: 'POST',
+        headers: { 'content-type': 'text/plain' },
+        body,
+        duplex: 'half',
+      } as RequestInit,
+      { bodyLimitBytes: 128 },
+    );
+
+    const error = await captureError(() => req.bodyRaw());
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('128');
+    // The stream never ends, so finishing the read at all is the failure: without the cap this
+    // test hangs or dies of memory rather than reporting.
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(10);
+  });
+
+  test('an undeclared multipart body is capped too, not handed to the runtime unbounded', async () => {
+    const formData = new FormData();
+    formData.set('note', 'y'.repeat(500));
+    // Serialised through a throwaway Request so this one can carry the multipart content-type
+    // with NO content-length — the case where the declared length was multipart's only guard.
+    const source = new Request('https://example.com/x', { method: 'POST', body: formData });
+    const { req } = build(
+      'https://example.com/x',
+      {
+        method: 'POST',
+        headers: { 'content-type': source.headers.get('content-type') ?? '' },
+        body: new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(new Uint8Array(await source.arrayBuffer()));
+            controller.close();
+          },
+        }),
+        duplex: 'half',
+      } as RequestInit,
+      { bodyLimitBytes: 64 },
+    );
+
+    const error = await captureError(() => req.bodyRaw());
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).toContain('64');
+  });
 });
 
 describe('bodyRaw() — no body to parse', () => {

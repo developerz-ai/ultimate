@@ -125,6 +125,7 @@ The envelope carries a **key id**: a domain-separated, truncated SHA-256 of the 
 | `X_PIPELINE_FINALIZE_FAILED` | a finalize stage threw instead of finishing the response | the response cannot take the headers the pipeline puts on it — a `Response.redirect()`, or a frozen or proxied `Response` a handler returned. `handle()` answers this 500 rather than rejecting, and the `cause` names the stage | return a Response built here — `json()`, `text()`, `html()` or `redirect()` from `@ultimat3/http` |
 | `X_NO_REQUEST` | the inbound request is not in scope here | `useRequestCookie()` / `setRedirect()` called from a job, a task or a module body | read it inside a route handler, an action or a page; a job gets the value from its payload |
 | `X_ERROR_STATUS_INVALID` | an error code cannot be mapped to that status | `registerErrorStatus()` given a framework-owned code, a status outside 100–599, or a second, different status for one code | `x errors list --json`, then map a code this app owns to a status the framework does not already hold |
+| `X_CORS_CONFIG_INVALID` | the cors config can never produce a working response | `cors.origins` contains `'*'` while `cors.credentials` is true — a pair no browser accepts, which used to resolve to no CORS headers at all rather than an error | in `app.config.ts` set `http.cors.credentials: false`, or replace `http.cors.origins: ['*']` with the exact origins allowed to call this app |
 
 ## Policy and authz
 

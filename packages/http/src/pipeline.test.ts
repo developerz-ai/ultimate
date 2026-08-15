@@ -179,6 +179,26 @@ describe('lifecycle', () => {
     expect(response.headers.get('server-timing')).toContain('total;dur=');
   });
 
+  // `meta.auth` is only 'public' | 'required', so the page that greets a signed-in visitor by name
+  // is a 'public' route. Keying the default off the route alone put that visitor's personalised
+  // HTML in a shared cache for 60 seconds, to be served to everyone who asked next.
+  test('a public route answers a signed-in actor privately, never shared-cacheable', async () => {
+    const anonymous = await pipelineWith({}).handle(get('/public'), { role: 'web' });
+    expect(anonymous.headers.get('cache-control')).toBe(
+      'public, max-age=0, s-maxage=60, stale-while-revalidate=600',
+    );
+    // …and even then the cookie is part of the cache key.
+    expect(anonymous.headers.get('vary')?.split(', ')).toContain('cookie');
+
+    const signedIn = await pipelineWith({ actorId: 'actor-1' }).handle(get('/public'), {
+      role: 'web',
+    });
+    const cacheControl = signedIn.headers.get('cache-control') ?? '';
+    expect(cacheControl).toContain('private');
+    expect(cacheControl).not.toContain('s-maxage');
+    expect(cacheControl).not.toContain('public');
+  });
+
   test('an unmatched route is problem+json, not an HTML page', async () => {
     const response = await pipelineWith({}).handle(get('/nope'), { role: 'web' });
     expect(response.status).toBe(404);

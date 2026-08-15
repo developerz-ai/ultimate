@@ -108,19 +108,26 @@ export interface ConsumeVerificationInput {
 }
 
 /**
- * The store consumes the row atomically, so a second redemption finds nothing even if it
- * races the first. The hash comparison happens after, on the row we already own.
+ * The hash goes INTO the consume, it is not compared after one: the store consumes the row only
+ * when the hash is the live row's, atomically, so a second redemption finds nothing even if it
+ * races the first *and* a wrong guess leaves the row live. Comparing afterwards made an
+ * unauthenticated POST with any token at all destroy the victim's emailed link — one request per
+ * address for permanent password-reset denial.
  */
 export async function consumeVerification(
   runtime: VerificationRuntime,
   input: ConsumeVerificationInput,
 ): Promise<AuthVerification> {
-  const record = await runtime.store.takeVerification(input.purpose, input.identifier);
+  const tokenHash = sha256Hex(input.token);
+  const record = await runtime.store.takeVerification(input.purpose, input.identifier, tokenHash);
   if (record === null) throw verificationInvalid(input.purpose);
-  if (runtime.clock.now().getTime() >= record.expiresAt.getTime()) {
+  // Kept for the seam, not for the blessed adapters: `VerificationStore` is implementable by an
+  // app, and one that ignores the third argument would otherwise redeem any token. Constant-time
+  // because this package never compares a secret — or a digest of one — with `===`.
+  if (!timingSafeEqual(tokenHash, record.tokenHash)) {
     throw verificationInvalid(input.purpose);
   }
-  if (!timingSafeEqual(sha256Hex(input.token), record.tokenHash)) {
+  if (runtime.clock.now().getTime() >= record.expiresAt.getTime()) {
     throw verificationInvalid(input.purpose);
   }
   return record;

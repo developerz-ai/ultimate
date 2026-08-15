@@ -123,7 +123,7 @@ describe('securityHeaders()', () => {
       ...DEFAULT_SECURITY,
       hsts: { maxAgeSeconds: 12_345, includeSubdomains: true, preload: true },
     };
-    const headers = securityHeaders(config);
+    const headers = securityHeaders(config, { https: true });
     expect(headers['strict-transport-security']).toBe('max-age=12345; includeSubDomains; preload');
   });
 
@@ -132,7 +132,7 @@ describe('securityHeaders()', () => {
       ...DEFAULT_SECURITY,
       hsts: { maxAgeSeconds: 12_345, includeSubdomains: false, preload: false },
     };
-    const headers = securityHeaders(config);
+    const headers = securityHeaders(config, { https: true });
     expect(headers['strict-transport-security']).toBe('max-age=12345');
   });
 
@@ -141,9 +141,15 @@ describe('securityHeaders()', () => {
     expect(headers['strict-transport-security']).toBeUndefined();
   });
 
-  test('hsts is present by default (https not explicitly false)', () => {
-    const headers = securityHeaders(DEFAULT_SECURITY);
-    expect(headers['strict-transport-security']).toBeDefined();
+  // The pipeline is the one caller that knows whether the connection is secure, and it says so
+  // (`ctx.https`). Every other caller gets no HSTS: a two-year `includeSubDomains` a plaintext
+  // origin emitted by DEFAULT is a header nobody chose to send and nobody can take back.
+  test('hsts is absent unless https is affirmed', () => {
+    expect(securityHeaders(DEFAULT_SECURITY)['strict-transport-security']).toBeUndefined();
+    expect(securityHeaders(DEFAULT_SECURITY, {})['strict-transport-security']).toBeUndefined();
+    expect(securityHeaders(DEFAULT_SECURITY, { https: true })['strict-transport-security']).toBe(
+      'max-age=63072000; includeSubDomains',
+    );
   });
 
   test('hsts null omits the header regardless of https option', () => {

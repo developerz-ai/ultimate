@@ -36,6 +36,14 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - One handshake cookie **per provider** (`handshakeCookieName`), never one shared slot. Two tabs
   are two handshakes in one jar, and a shared name makes the second redirect overwrite the first.
   `clearHandshakeCookie(provider)` for the same reason: clearing all of them cancels the other tab.
+- `takeVerification(purpose, identifier, tokenHash)` consumes the row **only on a hash match**,
+  in one conditional statement. The hash is an argument to the consume, not a comparison after it:
+  a store that consumes first lets `{identifier:'victim@…', token:'x'}` kill the victim's live
+  link, one request per address, unauthenticated. `consumeVerification` still compares in constant
+  time on the row it gets back — the seam is an app's to implement, and one that ignores the
+  argument would otherwise redeem any token. The Postgres statement carries `consumed_at is null`
+  on the UPDATE **and** in its subselect (single-use under two racing redemptions), and
+  `order by created_at desc limit 1` so it can only ever consume one row.
 - `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
   `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
   package — the raw value goes to the signature or hash check, which is the readable refusal.

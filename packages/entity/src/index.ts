@@ -19,7 +19,7 @@ export {
   uuid,
 } from './columns';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
-export { database, memoryDriver } from './database';
+export { database, defaultDriver, memoryDriver } from './database';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
 export type {
@@ -79,6 +79,7 @@ export type { EntityRelations, Relation, RelationKind, RelationMap } from './rel
 export { relationMap, relationNamed, relationsFor, relationsOf } from './relations';
 export type {
   FindManyArgs,
+  MemoryRepo,
   Page,
   Repo,
   RepoOptions,

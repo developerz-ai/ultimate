@@ -12,6 +12,7 @@ import {
   withSpan,
 } from '@ultimat3/core';
 import { signInRedirect } from './auth-redirect';
+import { defaultCache } from './cache-policy';
 import { defineHttpConfig, type HttpConfig, stripBasePath } from './config';
 import { actorView, asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
@@ -33,7 +34,7 @@ import { compose, type Middleware } from './middleware';
 import { overlayResponse, wantsOverlay } from './overlay';
 import { createRateLimiter, type RateLimiter, rateLimitKey } from './rate-limit';
 import { UltimateRequest } from './request';
-import { applyCacheHeaders, type CacheHint, problem, redirect } from './response';
+import { addVary, applyCacheHeaders, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
 import { securityHeaders } from './security-headers';
 import { validate } from './validate';
@@ -152,12 +153,6 @@ const REQUEST_ID = /^[\w.:-]{8,128}$/;
  * the server's cardinality is how a Prometheus dies.
  */
 const UNMATCHED_ROUTE = 'unmatched';
-
-/** Authenticated routes are never shared-cacheable; that default is not overridable. */
-const defaultCache = (route: Route | undefined): CacheHint =>
-  route === undefined || route.meta.auth === 'required'
-    ? { mode: 'no-store' }
-    : { mode: 'public', maxAgeSeconds: 0, sMaxAgeSeconds: 60, staleWhileRevalidateSeconds: 600 };
 
 const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) => {
   const hooks = deps.hooks ?? {};
@@ -294,7 +289,10 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
       const response = ctx.response;
       if (response === undefined) return undefined;
       if (!response.headers.has('cache-control')) {
-        applyCacheHeaders(response, ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route));
+        applyCacheHeaders(
+          response,
+          ctx.cache ?? ctx.route?.meta.cache ?? defaultCache(ctx.route, ctx.actor),
+        );
       }
       return undefined;
     },
@@ -361,7 +359,10 @@ const runners = (deps: PipelineDeps, config: HttpConfig, limiter: RateLimiter) =
       for (const [name, value] of Object.entries(
         corsHeaders(config.cors, request.header('origin')),
       )) {
-        response.headers.set(name, value);
+        // `vary` is the one header two stages both contribute to, so it is added and never set:
+        // `set` here would drop the cache stage's key (`accept-language`, `cookie`) on the floor.
+        if (name === 'vary') addVary(response, [value]);
+        else response.headers.set(name, value);
       }
       for (const [name, value] of Object.entries(
         securityHeaders(config.security, { https: ctx.https }),

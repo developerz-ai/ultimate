@@ -178,17 +178,26 @@ describe('verifications', () => {
     const adapter = new MemoryAdapter();
     await adapter.putVerification(record());
 
-    const first = await adapter.takeVerification('email-verify', 'a@example.com');
+    const first = await adapter.takeVerification('email-verify', 'a@example.com', 'hash');
     expect(first).not.toBeNull();
     expect(first?.consumedAt).not.toBeNull();
 
-    const second = await adapter.takeVerification('email-verify', 'a@example.com');
+    const second = await adapter.takeVerification('email-verify', 'a@example.com', 'hash');
     expect(second).toBeNull();
   });
 
   test('takeVerification returns null for an unknown purpose/identifier pair', async () => {
     const adapter = new MemoryAdapter();
-    expect(await adapter.takeVerification('email-verify', 'nobody@example.com')).toBeNull();
+    expect(await adapter.takeVerification('email-verify', 'nobody@example.com', 'hash')).toBeNull();
+  });
+
+  test('takeVerification consumes nothing when the hash does not match', async () => {
+    const adapter = new MemoryAdapter();
+    await adapter.putVerification(record());
+
+    expect(await adapter.takeVerification('email-verify', 'a@example.com', 'wrong')).toBeNull();
+    // The live row survived the guess — otherwise one unauthenticated request kills the link.
+    expect(await adapter.takeVerification('email-verify', 'a@example.com', 'hash')).not.toBeNull();
   });
 
   test('putVerification for the same purpose+identifier replaces the previous row', async () => {
@@ -196,7 +205,8 @@ describe('verifications', () => {
     await adapter.putVerification(record({ id: 'v1', tokenHash: 'first' }));
     await adapter.putVerification(record({ id: 'v2', tokenHash: 'second' }));
 
-    const taken = await adapter.takeVerification('email-verify', 'a@example.com');
+    expect(await adapter.takeVerification('email-verify', 'a@example.com', 'first')).toBeNull();
+    const taken = await adapter.takeVerification('email-verify', 'a@example.com', 'second');
     expect(taken?.id).toBe('v2');
     expect(taken?.tokenHash).toBe('second');
   });
