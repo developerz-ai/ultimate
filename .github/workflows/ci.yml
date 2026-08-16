@@ -188,16 +188,29 @@ jobs:
         # Retried once: the race above is intermittent, and a clean second install is always
         # idempotent — see the job comment for why the first can fail even on a good scaffold.
         run: bun install --linker=hoisted || bun install --linker=hoisted
-      # BLOCKING, on a one-step ratchet. `continue-on-error: true` used to make all 17 steps
-      # advisory over a waiver written for exactly one of them: `x new --example`'s entity.ts
-      # carries the pinned TS18048 gap scaffold-typecheck.ts's KNOWN_GAPS documents —
-      # `invariant()`'s generic key type falling back to `string` — which needs a breaking change to
-      # a shipped primitive, so a major version rather than a fix this job can wait on. Every other
-      # step is real signal, and the day `typecheck` goes green the waiver itself is the finding, so
-      # it can only shrink. `scripts/scaffold-gate.ts` runs the app's own `verify` script and reads
-      # its `--json` step table; the pins for the tracked apps live in scripts/lib/gated-apps.ts,
+      # BLOCKING, on a ratchet that can only shrink. `continue-on-error: true` used to make all 17
+      # steps advisory over a waiver written for exactly one of them — and the first blocking run
+      # proved the waiver was already stale AND that it was covering three unrelated reds.
+      # `typecheck` now PASSES in a scaffolded app, so the justification the blanket waiver rested
+      # on no longer exists; the three names below are what `continue-on-error` was actually hiding:
+      #
+      #   lint    — scaffold-repo.ts pins "$schema" to biome 2.4.15 against a "^2.4.15" range that
+      #             resolves higher, and prerender.ts ships Bun.env['SITE_ORIGIN'], which trips
+      #             useLiteralKeys under the biome.json the same generator writes
+      #   errors  — templates/action.ts emits an errors.ts whose fix: cites `x db studio`, which is
+      #             in PLANNED_SUBCOMMANDS and exits X_NOT_IMPLEMENTED, so the generator writes a
+      #             fresh X_ERROR_FIX_INVALID on every invocation
+      #   budgets — every generated route carries a `budget:`, but only the prerender path writes
+      #             build stats and it walks static routes only, so ssr/isr/stream/spa routes are
+      #             permanently X_BUDGET_UNMEASURED with a fix line that cannot produce the
+      #             measurement
+      #
+      # All three are slice 14 of the 101 audit and are fixed in that PR, at which point every name
+      # here goes. The list may never grow: a fourth red step fails this job, and so does any name
+      # here that starts passing. `scripts/scaffold-gate.ts` runs the app's own `verify` script and
+      # reads its `--json` step table; the pins for the tracked apps live in scripts/lib/gated-apps.ts,
       # and a scaffolded app has nowhere to keep one because it is built fresh on every run.
       - name: x verify (demoapp), against the ratchet
         run: >-
           bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
-          --allow-red typecheck
+          --allow-red lint,errors,budgets
