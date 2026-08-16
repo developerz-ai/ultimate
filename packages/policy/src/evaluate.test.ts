@@ -3,6 +3,7 @@
 // the pure helpers `codeOf()`/`reasonOf()` directly, since nothing else asserts on them in
 // isolation from a full evaluation.
 import { afterEach, describe, expect, test } from 'bun:test';
+import { userActor } from '@ultimat3/core';
 import { memoryDecisionSink, resetDecisionSink, setDecisionSink } from './decisions';
 import { codeOf, evaluate, reasonOf, resetPolicyTracing } from './evaluate';
 import { clearPermissions, definePermissions } from './permissions';
@@ -90,6 +91,35 @@ describe('the trace is opt-in in production', () => {
       { trace: true },
     );
     expect(evaluation.trace).toHaveLength(1);
+  });
+
+  // The whole record, not a field at a time: `reason: null` on an ALLOW is what "there is no code
+  // for yes" means, and a sink that started receiving a reason on an allow would be publishing a
+  // second vocabulary for success — invisible to any assertion that only reads `allowed`.
+  test('an allowed decision emits the full event, with no code and no reason', () => {
+    seed();
+    const events = memoryDecisionSink();
+    setDecisionSink(events);
+
+    evaluate(
+      can('post:publish'),
+      { input: {}, actor: userActor({ id: 'ada', orgId: 'acme', roles: ['editor'] }) },
+      { surface: 'http' },
+    );
+
+    expect(events.events).toEqual([
+      {
+        label: 'post:publish',
+        allowed: true,
+        code: null,
+        reason: null,
+        actorId: 'ada',
+        actorKind: 'user',
+        orgId: 'acme',
+        surface: 'http',
+        deciding: 'post:publish',
+      },
+    ]);
   });
 
   test('outside production the trace is on with nothing configured', () => {

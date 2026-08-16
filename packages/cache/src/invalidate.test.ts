@@ -21,12 +21,26 @@ import { declareTags, isolateDeclaredTags, knownTags, resetDeclaredTags, tag } f
 import { bestEffort, recentTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
 
-function fakeRedis(): RedisLike & { readonly sent: string[][] } {
-  const sets = new Map<string, Set<string>>();
+/**
+ * A recorder, never a Lua interpreter. It used to mirror both script bodies in TypeScript, which
+ * is why gutting either one left every test here green — the fan-out was asserting against the
+ * mirror. `answerEval` is how a test states what the server's script returned; an unprogrammed
+ * `EVAL` throws, which `bestEffort` turns into a `report.errors` entry rather than a silent
+ * empty bust. `redis.live.test.ts` owns the scripts' own semantics.
+ */
+function fakeRedis(): RedisLike & {
+  readonly sent: string[][];
+  answerEval(script: string, reply: unknown): void;
+} {
   const values = new Map<string, string>();
   const sent: string[][] = [];
+  // Nothing reads the tag-join's reply, so a constant asserts nothing about that script.
+  const evalReplies = new Map<string, unknown>([[REDIS_TAG_MEMBER_SCRIPT, 1]]);
   return {
     sent,
+    answerEval(script, reply) {
+      evalReplies.set(script, reply);
+    },
     get(key) {
       return Promise.resolve(values.get(key) ?? null);
     },
@@ -44,28 +58,15 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
         values.delete(String(args[0]));
         return Promise.resolve(1);
       }
-      if (command === 'EVAL' && args[0] === REDIS_TAG_MEMBER_SCRIPT) {
-        // Mirrors TAG_MEMBER_SCRIPT: join the member, lease the bucket. `redis.test.ts` owns the
-        // lease assertions; here the join only has to happen so the fan-out has something to find.
-        const bucket = String(args[2]);
-        const existing = sets.get(bucket) ?? new Set<string>();
-        existing.add(String(args[3]));
-        sets.set(bucket, existing);
-        return Promise.resolve(1);
-      }
-      if (command === 'EVAL' && args[0] === REDIS_INVALIDATE_SCRIPT) {
-        // Mirrors INVALIDATE_SCRIPT exactly, and the mirroring is the point: the script reads
-        // the members and drops the TAG SETS ONLY. It must not delete a value key — a script may
-        // only touch what it was handed in KEYS, and a fake that deleted them anyway would hide
-        // a tier that stopped issuing its own DELs.
-        const count = Number(args[1]);
-        const buckets = args.slice(2, 2 + count);
-        const removed: string[] = [];
-        for (const bucket of buckets) {
-          for (const member of sets.get(bucket) ?? []) removed.push(member);
-          sets.delete(bucket);
+      if (command === 'EVAL') {
+        const script = String(args[0]);
+        if (!evalReplies.has(script)) {
+          throw new Error(
+            'fake redis cannot execute EVAL — call answerEval(script, reply) to state what the ' +
+              'server returned, or move the claim to redis.live.test.ts, which runs the script',
+          );
         }
-        return Promise.resolve(removed);
+        return Promise.resolve(evalReplies.get(script));
       }
       return Promise.resolve(null);
     },
@@ -153,7 +154,10 @@ afterAll(restoreRegistries);
 describe('invalidateTags fan-out', () => {
   test('reaches every registered tier and reports what each one dropped', async () => {
     const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
-    const redis = createRedisTier({ client: fakeRedis() });
+    // `buildId: null` so the canned member below can name the value key without reading
+    // `appVersion()`; the namespace is `redis.test.ts`'s subject, not this file's.
+    const client = fakeRedis();
+    const redis = createRedisTier({ client, buildId: null });
     const cdn = cdnSpy();
     // Registered out of order on purpose: the stack must normalise to TIER_ORDER.
     registerTier(cdn);
@@ -163,6 +167,7 @@ describe('invalidateTags fan-out', () => {
     await lru.set('feed', ['a'], { tags: [tag('post')] });
     await redis.set('feed', ['a'], { tags: [tag('post')] });
     await lru.set('users', ['u'], { tags: [tag('user')] });
+    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed']);
 
     const report = await invalidateTags([tag('post')]);
 

@@ -1,13 +1,14 @@
-// Three shape rules the gate owns: one file, one job (a hard line ceiling), every workspace
-// package shipping the same contract files, and every published package's tarball matching what
-// its manifest promises. All report findings — a shape rule that is only written down is not a
-// rule (axiom 3).
+// Four shape rules the gate owns: one file, one job (a hard line ceiling), every workspace
+// package shipping the same contract files, every published package's tarball matching what its
+// manifest promises, and every published package being in the root build graph. All report
+// findings — a shape rule that is only written down is not a rule (axiom 3).
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderCauseValue } from '@ultimat3/core';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated } from './source-files';
+import { checkRootReferences } from './tsconfig-references';
 
 export const LINE_CEILING = 500;
 
@@ -342,5 +343,17 @@ export async function checkPackageShape(
       files: filesOf(manifest),
     });
   }
-  return [...findings, ...checkLockstep(facts, options.release), ...checkPublishShape(root, facts)];
+  return [
+    ...findings,
+    ...checkLockstep(facts, options.release),
+    ...checkPublishShape(root, facts),
+    // Nothing enforced that a workspace joins the root build graph, and `scripts/new-package.ts`
+    // never added one — so a package could ship, be imported, and be typechecked by nothing. It
+    // rides on this step because it is this step's own question: what does a workspace owe the
+    // repo it lives in?
+    ...(await checkRootReferences(
+      root,
+      facts.filter((fact) => !fact.private).map((fact) => fact.dir),
+    )),
+  ];
 }

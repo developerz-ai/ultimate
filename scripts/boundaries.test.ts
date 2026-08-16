@@ -117,6 +117,46 @@ describe('unit · boundaries', () => {
     ).toEqual([]);
   });
 
+  /**
+   * The INLINE spelling of the same statement. `dropTypeKeyword` only ever removed the keyword
+   * form, so `import { type Foo } from '@ultimat3/cli'` in a tier-0 file was erased by the
+   * transpiler and reported clean — the identical edge, spelled the way `useImportType` rewrites
+   * a mixed list to. `import { A, type B }` was already seen, which is what made the gap look shut.
+   */
+  test('an all-inline `{ type X }` import is the same violation as `import type`', () => {
+    expect(
+      checkBoundaries([
+        file('packages/core/src/types.ts', "import { type Route } from '@ultimat3/render';"),
+      ])[0],
+    ).toMatchObject({ from: 'core', to: 'render', reason: 'upward' });
+    expect(
+      checkBoundaries([
+        file('packages/schema/src/index.ts', "export { type CliCommand } from '@ultimat3/cli';"),
+      ])[0],
+    ).toMatchObject({ from: 'schema', to: 'cli', reason: 'upward' });
+    // Several specifiers, a rename, and a multi-line list: all still one import of one package.
+    expect(
+      checkBoundaries([
+        file(
+          'packages/core/src/many.ts',
+          "import {\n  type Route,\n  type Mode as M,\n} from '@ultimat3/render';",
+        ),
+      ])[0],
+    ).toMatchObject({ to: 'render', reason: 'upward' });
+  });
+
+  test('the inline rewrite leaves a lower-tier import and a local type alias alone', () => {
+    expect(
+      checkBoundaries([
+        file('packages/cli/src/x.ts', "import { type UltimateError } from '@ultimat3/core';"),
+        // `type` as an ordinary binding name is not a modifier, and neither is a property called
+        // `type` in an object literal — rewriting either would change what the parser reads.
+        file('packages/core/src/y.ts', "import { type } from './kind';\nexport const k = type;"),
+        file('packages/core/src/z.ts', "export const step = { type: 'unit' };"),
+      ]),
+    ).toEqual([]);
+  });
+
   test('a type-only import inside a template literal is not this file’s import', () => {
     // packages/cli/src/templates/*.ts emit generated app source. A regex over raw text would read
     // the generated line as cli's own; the transpiler still sees a string.
@@ -319,6 +359,17 @@ describe('unit · the source set is every directory a package ships from', () =>
     expect(paths).toContain('packages/cli/src/bin.ts');
     expect(paths.some((path) => /^packages\/[^/]+\/e2e\//.test(path))).toBe(true);
     expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  /**
+   * The other half of `errors` walks `@ultimat3/cli`'s `SOURCE_GLOBS`, which names `scripts/**`.
+   * This list did not, so the 16 `X_*` codes declared here were held to the fix-line rule and not
+   * to the render-safety rule — one step, two answers to "what is source".
+   */
+  test('collectSourceFiles includes scripts/, so both halves of the errors step see it', async () => {
+    const paths = (await collectSourceFiles(repoRoot())).map((entry) => entry.path);
+    expect(paths).toContain('scripts/error-render.ts');
+    expect(paths).toContain('scripts/lib/tiers.ts');
   });
 });
 

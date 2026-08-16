@@ -7,6 +7,7 @@ import { docsFor } from './error-codes';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
+import { countsOf } from './test-counts';
 import type { TestFile } from './test-select';
 import { planShards, reproduceFor, shardArgs } from './test-shards';
 import type { StepOutcome } from './verify-step';
@@ -63,6 +64,9 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
     ok: findings.length === 0,
     findings,
     workers: shards.length,
+    // Every shard's summary, including the green ones whose output is dropped above: the counts
+    // are how the ratchet tells a suite that passed from a suite that skipped itself to nothing.
+    tests: countsOf(runs.map((run) => run.result)),
     ...(output === '' ? {} : { output }),
   };
 }

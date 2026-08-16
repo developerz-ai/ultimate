@@ -84,6 +84,15 @@ describe('unit · every fix in the table is a line a shell can run', () => {
     expect(offenders).toEqual([]);
   });
 
+  // A fix that runs clean and changes nothing is the failure axiom 4 exists to prevent: `tsc -b`
+  // SKIPS an unreferenced package — that is what the code means — so it exits 0 while the finding
+  // stands. The gate is the only run that can show it.
+  test('the unreferenced-package fix runs the check that sees it, not the build that skips it', () => {
+    const fix = explainErrorCode('X_PACKAGE_UNREFERENCED')?.fix ?? '';
+    expect(xCommands(fix)).toEqual(['x verify --json']);
+    expect(fix).not.toContain('tsc -b');
+  });
+
   test('the new storage-secret code explains itself with the command that sets the key', () => {
     expect(explainErrorCode('X_STORAGE_SECRET_DEV')?.fix).toBe(
       'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',

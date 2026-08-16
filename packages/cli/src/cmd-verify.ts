@@ -35,6 +35,7 @@ import {
   floorProblemFindings,
   floorRequires,
   readVerifyFloor,
+  skippedSuiteFinding,
   vanishedSuiteFinding,
 } from './verify-floor';
 import type { StepOutcome, VerifyContext, VerifyStep, VerifyStepName } from './verify-step';
@@ -290,11 +291,18 @@ export async function runVerify(
         findings: [findingOf(error, step.name)],
       }),
     );
+    // A step the floor requires whose suite executed nothing is the same vanished suite as a step
+    // with no files at all — the run just had to finish before it could be seen. Appended to the
+    // step's own findings so `data.failed`, the counts and every gate reading this table carry it.
+    const vanished =
+      floorRequires(floor, step.name) && outcome.tests !== undefined && outcome.tests.ran === 0
+        ? [skippedSuiteFinding(step.name, outcome.tests.skipped)]
+        : [];
     results.push({
       name: step.name,
-      ok: outcome.ok,
+      ok: outcome.ok && vanished.length === 0,
       durationMs: Math.round(performance.now() - started),
-      findings: outcome.findings,
+      findings: [...outcome.findings, ...vanished],
       ...(outcome.output === undefined ? {} : { output: outcome.output }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
     });

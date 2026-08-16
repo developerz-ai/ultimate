@@ -10,6 +10,8 @@ import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
 import { planNewApp } from './cmd-new';
 import { icon } from './templates/scaffold-icon';
+import { belongsToType } from './test-select';
+import { parseVerifyFloor, VERIFY_FLOOR_FILE } from './verify-floor';
 
 /** The scaffolded bytes, proven to be bytes — `contents` is `string | Uint8Array`. */
 function iconBytes(): Uint8Array {
@@ -94,5 +96,51 @@ describe('unit · x new · scaffolded catalog', () => {
     const keys = catalogKeys(loadCatalog(JSON.parse(catalogSource(true))));
     expect(keys).toContain('app.dashboard.title');
     expect(keys).toContain('app.post.empty');
+  });
+});
+
+/** One emitted file's text, whichever variant wrote it — `contents` is `string | Uint8Array`. */
+function emitted(path: string, example: boolean): string {
+  const file = planNewApp({ name: 'demo-app', example }).find(
+    (candidate) => candidate.path === path,
+  );
+  const contents = file?.contents;
+  expect(typeof contents).toBe('string');
+  return typeof contents === 'string' ? contents : '';
+}
+
+describe('unit · x new · the suite floor the app is gated on', () => {
+  // `X_VERIFY_SUITE_VANISHED` was unreachable in every generated app: no scaffold wrote a floor,
+  // `readVerifyFloor` answers "no file is no floor", and a deleted suite turns its step from green
+  // into skipped-and-green. The scaffold has to commit the claim, because it is the only party
+  // that knows which steps the app it just wrote can actually run.
+  for (const example of [false, true]) {
+    test(`--${example ? 'example' : 'no-example'} writes a floor of steps the gate runs`, () => {
+      const floor = parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, example));
+      expect(floor.problems).toEqual([]);
+      expect(floor.steps).toContain('unit');
+      expect(floor.steps).toContain('typecheck');
+      expect(floor.steps).toContain('manifest');
+    });
+
+    // Derived, not restated: a floor naming a suite the scaffold ships no file for pins a step
+    // that can never apply, which holds the app's first gate red forever. `eval` is not in the
+    // list because it is the one step that applies with no suite of its own — every prompt must
+    // have an eval, and an app with neither still has that question answered.
+    test(`--${example ? 'example' : 'no-example'} names no typed suite it ships no file for`, () => {
+      const files = planNewApp({ name: 'demo-app', example });
+      const floor = parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, example));
+      for (const type of ['contract', 'live', 'job', 'e2e'] as const) {
+        if (!floor.steps.includes(type)) continue;
+        expect(files.some((file) => belongsToType(file.path, type))).toBe(true);
+      }
+    });
+  }
+
+  // `e2eTest` is `test.skip` until an app registers a browser driver, so the scaffolded
+  // `page.e2e.test.ts` runs zero tests — a floor naming `e2e` would fail `x verify` on the
+  // scaffold's own placeholder rather than on anything the author did.
+  test('it does not pin e2e, whose scaffolded test skips itself until a driver exists', () => {
+    expect(parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, true)).steps).not.toContain('e2e');
   });
 });

@@ -83,6 +83,24 @@ export const dropTypeKeyword = (source: string): string =>
   // of the imports this pass exists to find.
   source.replace(TYPE_ONLY_CLAUSE, '$1 ');
 
+/**
+ * The INLINE spelling the keyword pass cannot see: `import { type Foo } from '@ultimat3/cli'` is
+ * a whole specifier list of type-only bindings, so the transpiler erases the statement and tier 0
+ * reached tier 5 with `bun run boundaries` clean — the same hole `dropTypeKeyword` closed for
+ * `import type`, one syntax over. It is the form `useImportType` rewrites a mixed list INTO, so
+ * `import { A, type B }` losing its value binding turns a checked edge into an unchecked one.
+ *
+ * The specifier list is DELETED rather than de-`type`d, because deciding which `type` is a
+ * modifier and which is a binding named `type` (`{ type as kind }`, `{ type as as as }`) is the
+ * parser's job, and a wrong guess is a syntax error that takes the whole scan down. A side-effect
+ * import carries the one thing the tier rule reads — the specifier — and is never erased.
+ */
+const BRACE_IMPORT =
+  /(^|[\s;}])(?:import|export)\s+(?:[A-Za-z_$][\w$]*\s*,\s*)?\{[^{}]*\}\s*from\s*(['"])([^'"\n]+)\2/g;
+
+export const asSideEffectImports = (source: string): string =>
+  source.replace(BRACE_IMPORT, '$1import $2$3$2');
+
 /** Bun's transpiler is the parser: type-only imports are erased, dynamic imports are included. */
 export function importsOf(file: SourceFile): readonly string[] {
   const loader = file.path.endsWith('x') ? 'tsx' : 'ts';
@@ -98,9 +116,16 @@ export function importsOf(file: SourceFile): readonly string[] {
  */
 export function allImportsOf(file: SourceFile): readonly string[] {
   const loader = file.path.endsWith('x') ? 'tsx' : 'ts';
-  const typed = new Bun.Transpiler({ loader })
-    .scanImports(dropTypeKeyword(stripShebang(file.source)))
-    .map((entry) => entry.path);
+  const rewritten = asSideEffectImports(dropTypeKeyword(stripShebang(file.source)));
+  // A rewrite the transpiler refuses must not take the whole scan down with it: `importsOf` is the
+  // unrewritten pass and still answers, so a file this cannot rewrite is checked as it was before
+  // — never skipped silently for every rule at once.
+  let typed: readonly string[] = [];
+  try {
+    typed = new Bun.Transpiler({ loader }).scanImports(rewritten).map((entry) => entry.path);
+  } catch {
+    typed = [];
+  }
   return [...new Set([...importsOf(file), ...typed])];
 }
 
@@ -186,7 +211,17 @@ async function readFiles(root: string, pattern: string): Promise<readonly Source
  * and every rule here was blind to them — `packages/core/e2e/version.e2e.test.ts` could import
  * `@ultimat3/cli` (tier 0 reaching tier 5) and this script reported "no boundary violations".
  */
-const SOURCE_PATTERNS = ['packages/*/src/**/*.{ts,tsx}', 'packages/*/e2e/**/*.{ts,tsx}'] as const;
+const SOURCE_PATTERNS = [
+  'packages/*/src/**/*.{ts,tsx}',
+  'packages/*/e2e/**/*.{ts,tsx}',
+  // `scripts/**` is in `@ultimat3/cli`'s `SOURCE_GLOBS` and was missing here, so the two halves of
+  // the `errors` step disagreed about what source is: the 16 `X_*` codes this directory declares
+  // were held to the fix-line rule (`checkErrorFixes`, which walks that list) and NOT to the
+  // render-safety rule (`errorRendering`, which walks this one). The tier rule ignores these files
+  // — `packageOf` answers undefined outside `packages/` — so what the addition buys is the second
+  // half of `errors`, not a new tier check.
+  'scripts/**/*.{ts,tsx}',
+] as const;
 
 export async function collectSourceFiles(root: string): Promise<readonly SourceFile[]> {
   const seen = new Set<string>();

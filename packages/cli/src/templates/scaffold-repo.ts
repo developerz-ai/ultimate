@@ -5,6 +5,8 @@
 // container files scaffold-container.ts.
 
 import { ENV_EXAMPLE_PATH } from '@ultimat3/core';
+import { VERIFY_FLOOR_FILE } from '../verify-floor';
+import type { VerifyStepName } from '../verify-step';
 import type { GeneratedFile, NameSet } from './naming';
 import { dbPackageFiles } from './scaffold-db-package';
 import { docsFiles } from './scaffold-docs';
@@ -158,6 +160,39 @@ const biome = (): string => `{
 }
 `;
 
+/**
+ * The suite ratchet, committed on day one. Without it `readVerifyFloor` answers "no file is no
+ * floor" and a deleted suite turns its step from green into skipped-and-green — so
+ * `X_VERIFY_SUITE_VANISHED` was unreachable in every generated app, in the one repo shape that
+ * grows suites fastest.
+ *
+ * Every name here is a step this scaffold has proved it can run: the seven with no `applies` at
+ * all, plus `package-shape` (five workspace packages), `eval`, `drift` and `budgets` (all three
+ * apply to any root with an `app.config.ts`). Typed as `VerifyStepName`, so a name the gate does
+ * not run is a compile error rather than a floor that covers nothing.
+ *
+ * Four are deliberately absent. `contract`, `live` and `job` have no scaffolded file; `e2e` has
+ * one, and it is an `e2eTest` — `test.skip` until the app registers a browser driver, so the step
+ * would run zero tests and fail the ratchet on the scaffold's own placeholder. `contract-diff`
+ * needs a committed `x.manifest.json`, which `x manifest` writes later. Each joins the list in the
+ * commit that makes the app's own gate run it.
+ */
+const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [
+  'typecheck',
+  'lint',
+  'boundaries',
+  'filesize',
+  'package-shape',
+  'errors',
+  'unit',
+  'eval',
+  'drift',
+  'budgets',
+  'manifest',
+];
+
+const verifyFloor = (): string => `${JSON.stringify({ steps: SCAFFOLD_FLOOR }, null, 2)}\n`;
+
 const bunfig = (): string => `[test]
 root = "."
 # Frozen clock, seeded RNG, sealed network — nondeterminism in a test is a bug.
@@ -223,6 +258,7 @@ export function repoFiles(
     { path: 'biome.json', contents: biome() },
     { path: 'bunfig.toml', contents: bunfig() },
     { path: 'app.config.ts', contents: appConfig(app) },
+    { path: VERIFY_FLOOR_FILE, contents: verifyFloor() },
     { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
     { path: '.env.development', contents: envDevelopment() },

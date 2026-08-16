@@ -204,6 +204,23 @@ worker then clones it copy-on-write. With no Postgres configured it falls back t
 its own `--parallel` worker — measured on Bun 1.3.14, `--parallel` populates `BUN_TEST_WORKER_ID`
 and `JEST_WORKER_ID` itself, so that precedence is load-bearing rather than defensive.
 
+## The harness puts back what it found
+
+`bun test` is one process, so `describeApp`/`testApp` teardown is a **restore**, never an uninstall.
+`As of 2026-08`:
+
+| State | Owned by | What teardown does |
+|---|---|---|
+| the seal on `fetch` | the preload | unseals only if this boot was the one that sealed |
+| the frozen instant, `Math.random`, `globalThis.Date` | the preload (`ULTIMATE_TEST_NOW` / `ULTIMATE_TEST_SEED`) | `restoreCapturedDeterminism(captureDeterminism())` around the boot |
+| mocks, allow-listed hosts, the seen list | the boot | `resetNetwork()` |
+| the cloned worker database | the boot | `db.drop()`, in a `finally` — a rejecting `app.close()` reaches it |
+
+`installDeterminism()` runs during a boot only when the boot has something of its own to say
+(`seedValue`/`now`) or nothing installed it yet, so a run configured with `ULTIMATE_TEST_NOW` is not
+reset by the first `describeApp`. `restoreDeterminism()` is the process's own call, not a scope's:
+it hands the real clock and the real `Math.random` back to every later **file** in the run.
+
 ## Sealed network
 
 ```text

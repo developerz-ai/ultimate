@@ -42,10 +42,13 @@ import { clearSolidRuntime } from './solid-adapter';
 // import would be circular), and the fidelity this test needs is small: a component is a function
 // of props, a thunk is called, and nothing reactive exists.
 
-interface InertNode {
-  readonly inert: true;
+interface JsxLike {
   readonly type: string | ((props: Record<string, unknown>) => unknown);
   readonly props: Record<string, unknown>;
+}
+
+interface InertNode extends JsxLike {
+  readonly inert: true;
 }
 
 function h(
@@ -58,8 +61,21 @@ function h(
   return { inert: true, type, props: base };
 }
 
-const isNode = (value: unknown): value is InertNode =>
-  typeof value === 'object' && value !== null && 'inert' in value;
+/**
+ * `@ultimat3/render`'s node brand, read off the GLOBAL symbol registry rather than by importing
+ * the package this one may not depend on — which is exactly why the symbol is registered there.
+ *
+ * Which factory these components compile to is NOT this file's to choose: `render/src/index.ts`
+ * installs a process-global `Bun.plugin` `onLoad` for `/\.tsx$/` at import, and `bun test` is one
+ * process, so any other file in the run that imports `@ultimat3/render` first wins. Both factories
+ * build the same shape — a `type` and a `props` with children in `props.children` — so this walker
+ * understands both and the run's file order stops deciding the result. Recognising neither is what
+ * used to fall through to `String(value)` and assert against `"[object Object]"`.
+ */
+const RENDER_NODE: symbol = Symbol.for('ultimate.render.jsx');
+
+const isNode = (value: unknown): value is JsxLike =>
+  typeof value === 'object' && value !== null && ('inert' in value || RENDER_NODE in value);
 
 const SKIPPED_PROPS = new Set(['children', 'ref', 'innerHTML']);
 
@@ -108,6 +124,17 @@ describe('the inert server path', () => {
 
   afterAll(() => {
     Reflect.deleteProperty(globalThis, 'React');
+  });
+
+  // The premise, made an assertion. Every test below reads the string a component rendered to, and
+  // a component whose factory this file does not recognise renders to `"[object Object]"` — 26
+  // assertions that pass or fail on the run's file order, silently. Fail here instead, naming it.
+  test('the components under test compile to a JSX factory this file understands', () => {
+    const node: unknown = (Field as unknown as (props: Record<string, unknown>) => unknown)({
+      label: 'Email',
+      children: () => null,
+    });
+    expect(isNode(node)).toBe(true);
   });
 
   test('Field renders with no Solid runtime registered', () => {

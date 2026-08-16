@@ -112,12 +112,20 @@ export function installRegistryLeakGuard(): void {
   Bun.plugin({
     name: 'ultimate-registry-leak-guard',
     setup(build) {
-      build.onLoad({ filter: /\.test\.tsx?$/ }, async (args) => {
+      // `.test.ts` only, never `.test.tsx`. A load handler that answered `loader: 'tsx'` would
+      // compile JSX with Bun's CLASSIC React fallback — the very factory `@ultimat3/render`'s own
+      // loader exists to replace — and, because the first matching handler wins and this one is
+      // registered from the preload, it would shadow render's transform for that file. Routing
+      // `.tsx` through `transformTsx` is not the alternative either: it needs `@ultimat3/render`,
+      // whose import installs that global loader into every test process in the repo. Zero
+      // `.test.tsx` files exist and the convention is `<file>.test.ts`, so the narrower filter
+      // costs nothing today; a `.test.tsx` added later is unguarded rather than mis-compiled.
+      build.onLoad({ filter: /\.test\.ts$/ }, async (args) => {
         close();
         pending = repoRelative(args.path);
         return {
           contents: `${await Bun.file(args.path).text()}${SAMPLE_BASELINE}`,
-          loader: args.path.endsWith('tsx') ? 'tsx' : 'ts',
+          loader: 'ts',
         };
       });
     },

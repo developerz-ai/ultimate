@@ -5,6 +5,7 @@
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
 import type { Finding } from './output';
+import type { TestCounts } from './test-counts';
 
 /**
  * Every step of the gate, in cost order — cheapest and most informative first, and never a check
@@ -62,6 +63,12 @@ export interface StepOutcome {
    * reading the step list's source.
    */
   readonly workers?: number;
+  /**
+   * What the suite executed, for the steps that run one. Absent means this step spawned no test
+   * process at all — a check step, or the `eval` step answering with declarations alone — and is
+   * NOT the same as a suite that ran nothing, which is a number the ratchet acts on.
+   */
+  readonly tests?: TestCounts;
 }
 
 export interface VerifyStep {

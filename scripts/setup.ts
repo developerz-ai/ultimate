@@ -45,7 +45,10 @@ if (findings.length === 0 && !flagBool(args, 'skip-install')) {
     findings.push({
       code: 'X_SETUP_INSTALL_FAILED',
       cause: `bun install exited ${install.code}`,
-      fix: 'rm -rf node_modules bun.lock && bun install',
+      // `bun.lock` is NOT deleted: it is committed, and 29 packages release in lockstep off it —
+      // regenerating it here resolves fresh versions nobody reviewed, on a box whose only problem
+      // was a half-written node_modules. `--frozen-lockfile` fails loudly instead of rewriting it.
+      fix: 'rm -rf node_modules && bun install --frozen-lockfile',
     });
   }
 }

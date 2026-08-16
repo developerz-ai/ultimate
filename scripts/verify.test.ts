@@ -130,6 +130,56 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(missing).toEqual([]);
   }, 30_000);
 
+  /**
+   * `tsc -b` compiles the projects the root REFERENCES and nothing else, and a project can only be
+   * referenced if it is `composite`. `scripts/` satisfied neither: `scripts/tsconfig.json` set
+   * `composite: false` and no `references` entry named it, so `export const probe: number = 'no'`
+   * dropped anywhere under `scripts/` left `bunx tsc -b` at exit 0 — the gate's own implementation
+   * compiled nowhere, which is how `list-workspaces.ts` shipped passing a string to a number
+   * parameter. Both halves are asserted, because either one alone puts the hole straight back.
+   */
+  test('the root build graph contains scripts/, and scripts/ can be referenced', async () => {
+    const root = repoRoot();
+    const references = field(await readJson(join(root, 'tsconfig.json')), 'references');
+    const paths = (Array.isArray(references) ? references : []).map((ref) => field(ref, 'path'));
+    expect(paths).toContain('./scripts');
+    const options = field(await readJson(join(root, 'scripts/tsconfig.json')), 'compilerOptions');
+    expect(field(options, 'composite')).toBe(true);
+  });
+
+  /**
+   * What the two keys above BUY, proved against a real `tsc -b` rather than asserted about it: a
+   * type error in a referenced composite project fails the build, and the same error in the same
+   * project fails nothing once the reference is gone. Run on a two-file solution in a temp dir —
+   * the repo's own build is minutes and writes `.tsbuildinfo` every other suite shares.
+   */
+  test('tsc -b fails on a referenced project and passes over an unreferenced one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-refs-'));
+    try {
+      const project = {
+        compilerOptions: { composite: true, noEmit: true, strict: true, types: [] },
+      };
+      for (const name of ['sub', 'other']) {
+        await Bun.write(join(dir, name, 'tsconfig.json'), JSON.stringify(project));
+      }
+      await Bun.write(join(dir, 'other/ok.ts'), 'export const ok = 1;\n');
+      await Bun.write(join(dir, 'sub/probe.ts'), "export const probe: number = 'not a number';\n");
+      const tsc = join(repoRoot(), 'node_modules/.bin/tsc');
+      // `other` is always referenced, so the solution has something to build either way and the
+      // exit code is answering "was sub compiled?" and not "was this configuration empty?".
+      const build = async (paths: readonly string[]): Promise<number> => {
+        const references = paths.map((path) => ({ path }));
+        await Bun.write(join(dir, 'tsconfig.json'), JSON.stringify({ files: [], references }));
+        await rm(join(dir, 'sub/tsconfig.tsbuildinfo'), { force: true });
+        return (await exec([tsc, '-b', '--pretty', 'false'], { cwd: dir })).code;
+      };
+      expect(await build(['./other', './sub'])).not.toBe(0);
+      expect(await build(['./other'])).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   // Four full-repo scans, one of them a complete manifest regeneration over 29 packages. Bun's
   // 5s default was always marginal for that and became a failure the moment `x test` started
   // sharding across workers, because the shards compete for the same cores. The work is the

@@ -38,6 +38,30 @@ that names a step the gate does not run, enforces nothing — and a ratchet nobo
 the false green it exists to close. Nothing writes the file; a gate that edits its own floor
 ratchets in both directions.
 
+**"Nothing to check" is two conditions and one code.** `applies` sees the first — no files — and
+cannot see the second, because `describe.skipIf` is decided inside the child process: measured with
+no `TEST_DATABASE_URL`, `live` is `4 pass, 114 skip` and the step reported green over a suite whose
+whole subject is the database. `test-counts.ts` reads bun's own summary back (`parseBunTest`, the
+same reader `x mcp`'s `test.run` uses — a second regex over one format is drift), each runner
+attaches `StepOutcome.tests`, and a floor step whose `ran` is zero is `X_VERIFY_SUITE_VANISHED`
+with `skippedSuiteFinding`'s cause. **Zero, not a ratio**: one real assertion is a suite that runs,
+and a threshold would be a number nobody can defend. An absent `tests` is a step that spawned no
+test process at all (`eval` answering with declarations alone), which is not the same claim.
+
+`x new` writes an `x.verify.json` (`templates/scaffold-repo.ts`), or the code above is unreachable
+in every generated app — the repo shape that grows suites fastest. It names the eleven steps the
+scaffold has proved apply, and deliberately not `e2e`: the scaffolded `page.e2e.test.ts` is an
+`e2eTest`, which is `test.skip` until the app registers a browser driver, so pinning it would fail
+the app's first gate on the scaffold's own placeholder.
+
+`tsconfig-references.ts` is `package-shape`'s fourth rule: **every published workspace is in the
+root `references`**. `bun run typecheck` is `tsc -b`, which builds referenced projects and nothing
+else, so a package no reference names is one the gate's own `typecheck` step passes over without
+reading a line of it — `X_PACKAGE_UNREFERENCED`, whose `fix:` is the exact `{ "path": … }` entry
+and the `tsc -b` that proves it took. Private packages are exempt (a generated app's are all
+private), and a root that declares **no** `references` array is not judged at all: project
+references are opt-in, and a scaffolded app builds through `extends` + `include`.
+
 `app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
 a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
 gate runs in — so the step always has a question to answer, and gating both halves on the file

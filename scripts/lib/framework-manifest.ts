@@ -94,12 +94,12 @@ function isFrameworkManifest(value: unknown): value is FrameworkManifest {
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
   return (
-    record.version === 1 &&
-    typeof record.buildId === 'string' &&
-    typeof record.tiers === 'object' &&
-    record.tiers !== null &&
-    Array.isArray(record.packages) &&
-    Array.isArray(record.errorCodes)
+    record['version'] === 1 &&
+    typeof record['buildId'] === 'string' &&
+    typeof record['tiers'] === 'object' &&
+    record['tiers'] !== null &&
+    Array.isArray(record['packages']) &&
+    Array.isArray(record['errorCodes'])
   );
 }
 

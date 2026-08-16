@@ -37,6 +37,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_VERIFY_SUITE_VANISHED',
   'X_FILE_TOO_LONG',
   'X_PACKAGE_SHAPE',
+  // The build graph's own membership rule. `tsc -b` compiles referenced projects and nothing
+  // else, so a workspace no root reference names is one the `typecheck` step passes over without
+  // reading — the hole that let `scripts/` hold seven type errors under a green gate.
+  'X_PACKAGE_UNREFERENCED',
   'X_RELEASE_VERSION_SKEW',
   'X_STORAGE_UNWRITABLE',
   'X_STORAGE_SECRET_DEV',
@@ -145,6 +149,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_VERIFY_SUITE_VANISHED: 'a step the committed floor requires had nothing left to check',
   X_FILE_TOO_LONG: 'a source file is over 500 lines',
   X_PACKAGE_SHAPE: 'a workspace package is missing a contract file',
+  X_PACKAGE_UNREFERENCED: 'a published workspace is not in the root tsconfig build graph',
   X_RELEASE_VERSION_SKEW: 'a workspace is not at the lockstep version',
   X_MANIFEST_STALE: 'openapi.json is stale',
   X_BUDGET_UNMEASURED: 'a route declares a budget the build never measured',

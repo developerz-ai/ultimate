@@ -94,6 +94,35 @@ export function restoreDeterminism(): void {
   installed = false;
 }
 
+/** Everything `installDeterminism` overwrites, so a nested install can put back what it found. */
+export interface DeterminismSnapshot {
+  readonly installed: boolean;
+  readonly frozenAt: number;
+  readonly random: () => number;
+  readonly date: DateConstructor;
+}
+
+/**
+ * Capture before a nested `installDeterminism`, restore after — the shape `fixture-network.ts`
+ * uses for the seal. The preload installs determinism once for the whole process, so an inner
+ * scope that called `restoreDeterminism()` would hand the REAL clock and the REAL `Math.random`
+ * to every later test file in it. `random` is captured by identity because a generator's state is
+ * its closure: re-seeding produces an equal sequence, not the same position in this one.
+ */
+export const captureDeterminism = (): DeterminismSnapshot => ({
+  installed,
+  frozenAt,
+  random: Math.random,
+  date: globalThis.Date,
+});
+
+export function restoreCapturedDeterminism(snapshot: DeterminismSnapshot): void {
+  frozenAt = snapshot.frozenAt;
+  Math.random = snapshot.random;
+  globalThis.Date = snapshot.date;
+  installed = snapshot.installed;
+}
+
 export const isDeterminismInstalled = (): boolean => installed;
 
 /** Move the frozen clock forward. The only legal way for time to pass inside a test. */

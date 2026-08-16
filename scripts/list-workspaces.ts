@@ -21,7 +21,7 @@ const rows = workspaces.map((workspace) => ({
   name: workspace.name,
   version: workspace.version,
   tier: workspace.tier,
-  mayImport: allowedTiersFor(workspace.dir),
+  mayImport: allowedTiersFor(workspace.tier),
   publish: workspace.private ? 'private' : 'public',
 }));
 

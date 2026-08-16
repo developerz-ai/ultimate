@@ -178,6 +178,28 @@ describe('unit · the package shape', () => {
     expect(fixProblem(fix)).toBeUndefined();
   });
 
+  // `tsc -b` builds referenced projects only, so a workspace outside the root `references` is one
+  // the gate's `typecheck` step never opens. Asserted through `checkPackageShape` and not through
+  // the rule alone, because a rule nothing calls is exactly the failure mode being closed.
+  test('a published workspace outside the root references is a package-shape finding', async () => {
+    const bad = await mkdtemp(join(tmpdir(), 'ultimate-refs-'));
+    try {
+      for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
+      const manifest = (extra: string): string =>
+        `{"name":"p","version":"1.0.0",${extra}"files":["src","${TEST_EXCLUSION}"]}\n`;
+      await Bun.write(join(bad, 'tsconfig.json'), '{"files":[],"references":[]}\n');
+      await Bun.write(join(bad, 'packages/p/package.json'), manifest(''));
+      const findings = await checkPackageShape(bad);
+      expect(findings.map((finding) => finding.code)).toContain('X_PACKAGE_UNREFERENCED');
+      // A private package is not a shipped contract, and a generated app's are all private.
+      await Bun.write(join(bad, 'packages/p/package.json'), manifest('"private":true,'));
+      const exempt = await checkPackageShape(bad);
+      expect(exempt.map((finding) => finding.code)).not.toContain('X_PACKAGE_UNREFERENCED');
+    } finally {
+      await rm(bad, { recursive: true, force: true });
+    }
+  });
+
   test('scss.d.ts in ui/src is allowlisted and not reported', async () => {
     const good = await mkdtemp(join(tmpdir(), 'ultimate-ui-scss-'));
     for (const file of PACKAGE_FILES) await Bun.write(join(good, 'packages/ui', file), '{}\n');
@@ -203,6 +225,8 @@ describe('unit · the package shape', () => {
     }
     const contractFindings = findings.filter((f) => f.cause?.includes('has no'));
     expect(contractFindings).toEqual([]);
+    // The ratchet for the rule above: every published package here is in the root build graph.
+    expect(findings.filter((f) => f.code === 'X_PACKAGE_UNREFERENCED')).toEqual([]);
     expect(await workspacePackages(REPO_ROOT)).toContain('cli');
     expect(PACKAGE_FILES).toHaveLength(4);
   });

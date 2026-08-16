@@ -94,6 +94,9 @@
     },
     {
       "path": "./packages/ui"
+    },
+    {
+      "path": "./scripts"
     }
   ]
 }

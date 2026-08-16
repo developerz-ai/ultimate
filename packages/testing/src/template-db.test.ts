@@ -8,6 +8,7 @@ import {
   databaseNameFor,
   dropSql,
   lockSql,
+  unlockSql,
   urlFor,
   workerId,
 } from './template-db';
@@ -88,6 +89,68 @@ describe('unit · template-db', () => {
     expect(statements).toContain(createTemplateSql(DEFAULT_TEMPLATE));
     expect(migrated).toEqual([urlFor(ADMIN, DEFAULT_TEMPLATE)]);
     expect(statements.some((sql) => sql.startsWith('SELECT pg_advisory_unlock'))).toBe(true);
+  });
+
+  // On any Postgres that outlives one run — a laptop, a self-hosted runner — the template is
+  // created once and found again on every later run. Tolerating "already exists" for the CREATE
+  // must not also skip the migrations, or every worker database is a clone of the first run's
+  // schema and every live test asserts against a stale one.
+  test('an existing template is still migrated', async () => {
+    const statements: string[] = [];
+    const migrated: string[] = [];
+    const connect = (): SqlRunner => ({
+      exec: async (sql: string) => {
+        statements.push(sql);
+        if (sql === createTemplateSql(DEFAULT_TEMPLATE)) {
+          throw new Error(`database "${DEFAULT_TEMPLATE}" already exists`);
+        }
+      },
+      close: async () => undefined,
+    });
+
+    const db = await acquireWorkerDatabase(
+      {
+        adminUrl: ADMIN,
+        migrate: async (url) => {
+          migrated.push(url);
+        },
+      },
+      { connect, env: { BUN_TEST_WORKER_ID: '0' } },
+    );
+
+    expect(migrated).toEqual([urlFor(ADMIN, DEFAULT_TEMPLATE)]);
+    expect(statements).toContain(cloneSql(DEFAULT_TEMPLATE, db.database));
+  });
+
+  // Migrations are idempotent and the advisory lock serialises them, so a migration that fails is
+  // a real failure. Swallowing it clones a half-migrated template and every test after it asserts
+  // against a schema nobody declared.
+  test('a failing migration is reported, not swallowed into a half-migrated clone', async () => {
+    const statements: string[] = [];
+    const connect = (): SqlRunner => ({
+      exec: async (sql: string) => {
+        statements.push(sql);
+      },
+      close: async () => undefined,
+    });
+
+    const failing = acquireWorkerDatabase(
+      {
+        adminUrl: ADMIN,
+        // The message is the trap: a substring match on "already exists" reads a migration failure
+        // as "another worker got here first".
+        migrate: async () => {
+          throw new Error('relation "x_jobs" already exists');
+        },
+      },
+      { connect, env: { BUN_TEST_WORKER_ID: '0' } },
+    );
+
+    await expect(failing).rejects.toBeUltimateError('X_TEST_DB_UNAVAILABLE');
+    expect(statements).toContain(unlockSql(DEFAULT_TEMPLATE));
+    expect(
+      statements.some((sql) => sql.startsWith('CREATE DATABASE "ultimate_test_template_w')),
+    ).toBe(false);
   });
 
   test('a worker database is dropped before it is recreated, so a crashed run cannot leak', async () => {

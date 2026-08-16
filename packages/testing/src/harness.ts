@@ -3,8 +3,14 @@
 // into a race and every failure into a log-scraping exercise.
 
 import { afterAll, beforeAll, describe, test } from 'bun:test';
-import { installDeterminism, restoreDeterminism } from './determinism';
-import { allowHost, resetNetwork, sealNetwork, unsealNetwork } from './sealed-network';
+import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
+import {
+  allowHost,
+  isNetworkSealed,
+  resetNetwork,
+  sealNetwork,
+  unsealNetwork,
+} from './sealed-network';
 import type { TemplateDbConfig, WorkerDatabase } from './template-db';
 import { acquireWorkerDatabase } from './template-db';
 import type { TestType } from './test-types';
@@ -36,19 +42,77 @@ export interface AppHandle {
 
 const BASE = 'http://app.test';
 
-async function boot(
+export interface BootedHarness {
+  readonly handle: AppHandle;
+  close(): Promise<void>;
+}
+
+export interface HarnessDeps {
+  /**
+   * How this harness gets a database. A parameter for the reason `TemplateDbDeps.connect` is one:
+   * the rejection path below drops what it acquired, and the PGlite fallback's `drop` is a no-op,
+   * so proving it needs an injected handle rather than a server.
+   */
+  readonly acquire: (config: TemplateDbConfig) => Promise<WorkerDatabase>;
+}
+
+/**
+ * The lifecycle `describeApp` and `testApp` are the two idiomatic wrappers around. Exported from
+ * this module but deliberately NOT from `src/index.ts`: those two are the ways an app boots, and a
+ * third public entry point would be a second answer to one question. It is exported at all because
+ * the teardown contract — a rejecting `close` must still drop the cloned database — cannot be
+ * asserted through a wrapper that rethrows into the test's own result.
+ */
+export async function bootApp(
   options: AppOptions,
-): Promise<{ handle: AppHandle; close: () => Promise<void> }> {
-  installDeterminism({
-    ...(options.seedValue === undefined ? {} : { seed: options.seedValue }),
-    ...(options.now === undefined ? {} : { now: options.now }),
-  });
+  deps: Partial<HarnessDeps> = {},
+): Promise<BootedHarness> {
+  // Captured, never assumed. The preload already sealed the network and installed determinism for
+  // the whole process, so `sealNetwork()` here is a no-op and an unconditional teardown would hand
+  // the real `fetch`, the real `Date` and the real `Math.random` to every later FILE in the run —
+  // `bun test` is one process. Restore only what this boot actually changed.
+  const determinism = captureDeterminism();
+  const sealedBefore = isNetworkSealed();
+
+  // Only when this boot has something of its own to say. A run configured with ULTIMATE_TEST_NOW /
+  // ULTIMATE_TEST_SEED (`preload.ts`) is otherwise reset to the defaults by the first describeApp.
+  if (!determinism.installed || options.seedValue !== undefined || options.now !== undefined) {
+    installDeterminism({
+      ...(options.seedValue === undefined ? {} : { seed: options.seedValue }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+    });
+  }
   sealNetwork();
   for (const host of options.allowHosts ?? []) allowHost(host);
 
-  const db = await acquireWorkerDatabase(options.db ?? {});
-  if (options.seed !== undefined) await options.seed(db.url);
-  const app = await options.boot({ databaseUrl: db.url });
+  // What `close` puts back, named once: the boot has to run it too, and two copies of this list is
+  // how one of them ends up missing the allow-list.
+  const restoreProcessState = (): void => {
+    resetNetwork();
+    if (!sealedBefore) unsealNetwork();
+    restoreCapturedDeterminism(determinism);
+  };
+
+  let db: WorkerDatabase | undefined;
+  let app: BootedApp;
+  try {
+    db = await (deps.acquire ?? acquireWorkerDatabase)(options.db ?? {});
+    if (options.seed !== undefined) await options.seed(db.url);
+    app = await options.boot({ databaseUrl: db.url });
+  } catch (error) {
+    // A boot that rejects returns no `BootedHarness`, so nothing can ever call the `close` below —
+    // the same leak that block exists to prevent, one function earlier. A failing `seed` stranded
+    // its clone and left the clock, the seal and the allow-list this boot installed to every later
+    // FILE in the run; `bun test` is one process.
+    try {
+      await db?.drop();
+    } catch {
+      // The boot's own failure is what the caller must see, and there is no handle to report a
+      // second one through — the same "first failure wins" rule `close` runs by.
+    }
+    restoreProcessState();
+    throw error;
+  }
 
   const handle: AppHandle = {
     db,
@@ -61,12 +125,24 @@ async function boot(
 
   return {
     handle,
+    // Every step runs even when an earlier one rejects, and the FIRST failure is what the caller
+    // sees — the same rule `fixtures.ts` disposes by. An `app.close()` that threw used to strand
+    // the clone: one `ultimate_test_template_wN` leaked per failing run, and the seal and the
+    // clock were never put back either.
     close: async () => {
-      await app.close?.();
-      await db.drop();
-      resetNetwork();
-      unsealNetwork();
-      restoreDeterminism();
+      let failure: { readonly error: unknown } | undefined;
+      try {
+        await app.close?.();
+      } catch (error) {
+        failure = { error };
+      }
+      try {
+        await db.drop();
+      } catch (error) {
+        failure ??= { error };
+      }
+      restoreProcessState();
+      if (failure !== undefined) throw failure.error;
     },
   };
 }
@@ -81,9 +157,9 @@ export function describeApp(
   body: (app: () => AppHandle) => void,
 ): void {
   describe(name, () => {
-    let booted: { handle: AppHandle; close: () => Promise<void> } | undefined;
+    let booted: BootedHarness | undefined;
     beforeAll(async () => {
-      booted = await boot(options);
+      booted = await bootApp(options);
     });
     afterAll(async () => {
       await booted?.close();
@@ -104,7 +180,7 @@ export function testApp(
   type: TestType = 'unit',
 ): void {
   test(testName(type, name), async () => {
-    const booted = await boot(options);
+    const booted = await bootApp(options);
     try {
       await body(booted.handle);
     } finally {
