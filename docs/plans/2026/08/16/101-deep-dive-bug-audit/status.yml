@@ -1,0 +1,77 @@
+plan: 101-deep-dive-bug-audit
+title: Deep-dive bug audit — twelve sweeps, one plan
+status: not_started
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "05-gate-and-scripts.md — land first; two gate checks provably do not check what they claim"
+slices:
+  - file: 05-gate-and-scripts.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 10-tests.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 07-security.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 01-tier01-bugs.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 09-logic-edge-cases.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 04-projection-contract.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-tier23-bugs.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 06-concurrency-lifecycle.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 03-tier45-bugs.md
+    tier: 4
+    status: not_started
+    percent: 0
+  - file: 11-deploy-ci.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 14-agent-dx.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 08-architecture.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 12-tracked-apps.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 15-dead-code-drift.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 13-docs-drift.md
+    tier: 5
+    status: not_started
+    percent: 0
+evidence: []
+notes: >
+  Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
+  does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide
+  with patches from 01-03. Findings reached by more than one sweep are cross-linked in overview.md
+  under "PR shape": fix once, cite both. Two design decisions must be made explicitly before their
+  slices can land — job-surface tenancy (07) and MoneyValue.scale (09).
+last_updated: 2026-08-16

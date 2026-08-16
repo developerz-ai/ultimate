@@ -178,3 +178,9 @@ Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` 
 ## Note
 
 Do not use git worktrees — work directly in this checkout. If a task is big enough to need subagents, run them as a team in this same checkout: split the work into disjoint pieces so no two agents touch the same files.
+
+**Only the top-level agent spawns subagents.** A subagent does the work it was given and reports
+back — it never delegates further. Nested fan-out is why a 4-agent sweep becomes 17 running agents:
+the count stops being knowable, the disjoint-files split stops holding, and two grandchildren edit
+the same file. A subagent that finds its scope too large says so in its report and returns; widening
+the split is the top-level agent's call.
