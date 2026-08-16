@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
 import type { JsonValue, Row, RowPatch } from './json';
-import type { LiveQueryDefinition } from './live-query';
+import type { LiveQueryDefinition } from './live-contract';
 import {
   type GateFailed,
   type GateTarget,

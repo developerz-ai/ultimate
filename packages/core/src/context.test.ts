@@ -40,7 +40,13 @@ describe('request context', () => {
       handle('c', 15),
     ]);
 
-    expect(observed).toEqual(['b', 'c', 'a']);
+    // The SET, not the sequence. Each task pushes the id its OWN ambient context reports, so a
+    // leak between tasks shows up as a duplicate or a wrong id here either way — while asserting
+    // the completion ORDER asserted that a 5ms sleep always resolves before a 15ms one, which is
+    // false on a loaded machine and is the one flaky test in this repo (seen across three PRs
+    // before it was caught: `bun run x -- test unit` failing one shard, then passing on retry).
+    // The preload freezes `Date` and seeds `Math.random`, but `Bun.sleep` is a real timer.
+    expect([...observed].sort()).toEqual(['a', 'b', 'c']);
     expect(new Set([first, second, third]).size).toBe(3);
     expect(hasContext()).toBe(false);
   });

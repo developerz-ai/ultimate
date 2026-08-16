@@ -17,43 +17,91 @@ import type { ResumeSource } from './cursor';
 import type { RowPatch } from './json';
 
 export interface ChangeBufferOptions {
-  /** Retained patches per query hash. */
+  /** Retained patches per query hash — a REPLAY bound: what a delta resume may cost to fold. */
   readonly capacity?: number;
   /** Retained query hashes; the least-recently-written is dropped first. */
   readonly maxQueries?: number;
+  /** Retained bytes per query hash. The memory bound, and the one that actually holds. */
+  readonly maxBytesPerQuery?: number;
+  /** Retained bytes across every query on this node. */
+  readonly maxBytes?: number;
 }
+
+/**
+ * The node's retained-patch memory ceiling. `packages/cache/src/lru.ts:1-2` states the rule this
+ * exists to obey: bounded by BYTES, never by entry count — 4,096 queries x 1,024 patches is 4.19M
+ * retained `RowPatch` objects, each holding a whole row, and nothing in that product is memory.
+ */
+export const DEFAULT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_MAX_BUFFER_BYTES_PER_QUERY = 1024 * 1024;
 
 interface Ring {
   patches: RowPatch[];
+  bytes: number;
   /** Highest lsn already dropped. A cursor at or after this is still resumable. */
   evictedThrough: string | null;
+}
+
+const encoder = new TextEncoder();
+
+/** What one retained patch costs. Its serialised size: the row is the whole of it. */
+function patchBytes(patch: RowPatch): number {
+  return encoder.encode(JSON.stringify(patch)).length;
 }
 
 export class RingChangeBuffer implements ResumeSource {
   readonly #rings = new Map<string, Ring>();
   readonly #capacity: number;
   readonly #maxQueries: number;
+  readonly #maxBytesPerQuery: number;
+  readonly #maxBytes: number;
+  #bytes = 0;
 
   constructor(options: ChangeBufferOptions = {}) {
     this.#capacity = options.capacity ?? 1024;
     this.#maxQueries = options.maxQueries ?? 4096;
+    this.#maxBytesPerQuery = options.maxBytesPerQuery ?? DEFAULT_MAX_BUFFER_BYTES_PER_QUERY;
+    this.#maxBytes = options.maxBytes ?? DEFAULT_MAX_BUFFER_BYTES;
+  }
+
+  /** Retained bytes across every query on this node. The number the ceiling is about. */
+  get bytes(): number {
+    return this.#bytes;
   }
 
   append(qid: string, patch: RowPatch): void {
     const existing = this.#rings.get(qid);
-    const ring: Ring = existing ?? { patches: [], evictedThrough: null };
+    const ring: Ring = existing ?? { patches: [], bytes: 0, evictedThrough: null };
     ring.patches.push(patch);
-    while (ring.patches.length > this.#capacity) {
-      const dropped = ring.patches.shift();
-      if (dropped) ring.evictedThrough = dropped.lsn;
+    const cost = patchBytes(patch);
+    ring.bytes += cost;
+    this.#bytes += cost;
+    // Two ceilings, because they bound two different things: the count bounds what a resume has
+    // to fold, the bytes bound what this process holds. Whichever bites first, bites.
+    while (ring.patches.length > this.#capacity || ring.bytes > this.#maxBytesPerQuery) {
+      if (!this.#shift(ring)) break;
     }
     // Re-insert to move this qid to the tail of the LRU order.
     if (existing) this.#rings.delete(qid);
     this.#rings.set(qid, ring);
-    if (this.#rings.size > this.#maxQueries) {
+    while (this.#rings.size > this.#maxQueries || this.#bytes > this.#maxBytes) {
       const oldest = this.#rings.keys().next();
-      if (!oldest.done) this.#rings.delete(oldest.value);
+      // The only ring left is the one just written: evicting it would make a node under memory
+      // pressure retain nothing at all, and every reconnect a snapshot.
+      if (oldest.done || this.#rings.size === 1) break;
+      this.forget(oldest.value);
     }
+  }
+
+  /** Drop the oldest patch of a ring, keeping both byte counters honest. Answers what it did. */
+  #shift(ring: Ring): boolean {
+    const dropped = ring.patches.shift();
+    if (!dropped) return false;
+    const cost = patchBytes(dropped);
+    ring.bytes -= cost;
+    this.#bytes -= cost;
+    ring.evictedThrough = dropped.lsn;
+    return true;
   }
 
   since(qid: string, lsn: string): RowPatch[] | null {
@@ -69,8 +117,15 @@ export class RingChangeBuffer implements ResumeSource {
     return last ? last.lsn : null;
   }
 
-  /** Called when the last subscriber of a query goes away, so an idle query stops costing memory. */
+  /**
+   * Called when the last subscriber of a query goes away, so an idle query stops costing memory.
+   * It had no caller until `LiveQueryRegistry.unsubscribe` gained one: the entry was dropped and
+   * the ring behind it kept every patch it held until the LRU happened to reach it.
+   */
   forget(qid: string): void {
+    const ring = this.#rings.get(qid);
+    if (!ring) return;
+    this.#bytes -= ring.bytes;
     this.#rings.delete(qid);
   }
 

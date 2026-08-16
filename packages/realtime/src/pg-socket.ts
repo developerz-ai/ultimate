@@ -51,9 +51,12 @@ export function parsePgUrl(url: string): PgTarget {
   try {
     parsed = new URL(url);
   } catch {
+    // The variable, never its value: a connection URL carries the database password, and an
+    // error is the one thing that reaches a log, `--json`, an agent transcript and a ticket.
+    // Same rule as `packages/mail/src/driver-smtp.ts:68`.
     throw new ReplicationFailedError({
       stage: 'connect',
-      detail: `"${url}" is not a connection URL`,
+      detail: 'DATABASE_URL is not a connection URL',
       fix: 'set DATABASE_URL to postgres://user:password@host:5432/database',
     });
   }

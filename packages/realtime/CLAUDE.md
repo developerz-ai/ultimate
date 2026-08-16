@@ -285,6 +285,34 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   one. A stale window is replaced in the lane (`refillWindowInLane`) — `fillWindow` takes the
   entry's own lane and a lane is not reentrant.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
+- **Every question a hot path asks is indexed, never scanned.** `SubscriptionBook` keeps
+  `#bySocket` and a per-tenant count beside `#bySid`, and `SocketRegistry` keeps `#byTopic` beside
+  the socket table. Both replaced a walk of the whole node that ran once per socket or once per
+  frame: `ofSocket` filtered a copy of every subscription (100,000 entries measured at **17.7s** of
+  blocking work per teardown or re-auth sweep — a deploy or a batch of grants expiring together is
+  the whole trigger), and the per-tenant cap walked the same map on **every subscribe frame**
+  (7.96 ms each at that size). A new index goes where the deaths are seen: topic membership is the
+  registry's because `remove` is the one path a close, a drain and the idle sweep all take, and
+  `joinTopic`/`leaveTopic` are the only way to change it — two call sites for one membership is how
+  an index goes wrong. When an actor changes, `reauthorize` calls `book.retenant(socket)`: an index
+  nobody updates is a count that drifts for the rest of the process.
+- **A ceiling per resource, and the wire's are not options.** `README.md` has the table. The rule
+  behind it: the accept budget bounds the accept *rate*, so the *count* needs its own
+  (`maxConnections`, shed as the same 503 + `retry-after-ms`); a socket that is open needs a frame
+  budget (`socket.frameBudget`, checked at the top of `routeFrame` **before `touch()`** — a frame
+  this node refuses must not renew the idle window); and anything a client sizes is bounded in
+  `decode` by `FRAME_LIMITS`, which a caller may narrow but never widen. `list()` takes a required
+  `max` so a new array field on a new frame cannot ship without someone choosing its size.
+  `input` is walked ITERATIVELY: the thing being refused is a stack overflow in `canonicalJson`, so
+  a recursive check would be the same crash one frame earlier.
+- **Retained memory is bounded by BYTES.** `RingChangeBuffer` keeps the patch-count cap as a
+  *replay* bound (what a delta resume costs to fold) and adds the byte budgets as the memory one —
+  `packages/cache/src/lru.ts:1-2` states why: 4,096 queries x 1,024 patches is 4.19M retained rows
+  and no number of bytes at all. `forget(qid)` is called by `LiveQueryRegistry.unsubscribe` when the
+  last subscriber of a query id goes; it had no caller, so the ring outlived the entry.
+- **An error never renders a value that carries a credential.** `parsePgUrl` names `DATABASE_URL`
+  rather than echoing the URL it refused — an error reaches a log, `--json`, an agent transcript
+  and a ticket, and the password is in the string. Same rule as `packages/mail/src/driver-smtp.ts`.
 - **A full presence frame is capped and says so; the set behind it is never capped.** `roster()` is
   what a frame carries (`maxMembers`, 256, plus `total`); `list()` stays whole because the sweep
   differences it, and a short list would report every member past the cap as having left. `total`
@@ -331,6 +359,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `window-lock.ts` | one FIFO lane per query id — the only thing that orders a fanout |
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
+| `live-contract.ts` | what a live query IS: `qidOf`, `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
 

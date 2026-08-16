@@ -8,6 +8,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
   'X_SUBSCRIPTION_ID_TAKEN',
+  'X_FRAME_RATE_LIMIT',
   'X_PROTOCOL_VERSION',
   'X_CURSOR_STALE',
   'X_REBASE_CONFLICT',
@@ -55,6 +56,8 @@ export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
   'X_TOPIC_FORBIDDEN',
   'X_SUBSCRIPTION_LIMIT',
   'X_SUBSCRIPTION_ID_TAKEN',
+  // The client is the one sending too fast, and it is the one that can stop.
+  'X_FRAME_RATE_LIMIT',
   'X_PROTOCOL_VERSION',
   'X_LIVE_QUERY_UNKNOWN',
   'X_CURSOR_STALE',
@@ -96,8 +99,9 @@ export type RealtimeErrorCode = (typeof REALTIME_ERROR_CODES)[number];
 
 export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, string>> = {
   X_TOPIC_FORBIDDEN: 'the actor may not subscribe to this topic',
-  X_SUBSCRIPTION_LIMIT: 'socket or tenant hit its subscription cap',
+  X_SUBSCRIPTION_LIMIT: 'socket, tenant or node hit its subscription cap',
   X_SUBSCRIPTION_ID_TAKEN: 'a subscribe frame reused a sid this socket already holds',
+  X_FRAME_RATE_LIMIT: 'one socket sent frames faster than this node will route them',
   X_PROTOCOL_VERSION: 'client and sync node disagree on the wire protocol',
   X_CURSOR_STALE: 'the resume LSN is outside the change buffer',
   X_REBASE_CONFLICT: 'a local mutation could not be rebased',
@@ -147,13 +151,45 @@ export class TopicForbiddenError extends RealtimeError {
   }
 }
 
-/** Load shedding, not a crash: a socket or tenant asked for more subscriptions than the cap. */
+/**
+ * Load shedding, not a crash: a socket, a tenant or this node asked for more than its cap.
+ *
+ * `knob` is the option that raises it, and it is passed rather than derived because the `node`
+ * scope has more than one — a live-query entry ceiling and a channel-topic ceiling are two
+ * different numbers on two different objects. The fix names the constructor option, never an
+ * `app.config.ts` field: there is none (`docs/architecture/07-realtime-internals.md:244`), and a
+ * fix line naming a field that does not exist is an instruction that cannot be followed.
+ */
 export class SubscriptionLimitError extends RealtimeError {
-  constructor(args: { scope: 'socket' | 'tenant'; id: string; limit: number }) {
+  constructor(args: {
+    scope: 'socket' | 'tenant' | 'node';
+    id: string;
+    limit: number;
+    knob?: string;
+  }) {
+    const knob = args.knob ?? (args.scope === 'socket' ? 'maxPerSocket' : 'maxPerTenant');
     super({
       code: 'X_SUBSCRIPTION_LIMIT',
       cause: `${args.scope} ${args.id} reached the subscription cap of ${args.limit}`,
-      fix: `raise realtime.limits.${args.scope === 'socket' ? 'perSocket' : 'perTenant'} in app.config.ts, or unsubscribe unused live queries`,
+      fix: `raise ${knob} where this sync node is constructed, or unsubscribe unused live queries`,
+    });
+  }
+}
+
+/**
+ * One socket sent frames faster than the node will route them. The accept budget spends a token
+ * per UPGRADE, so before this existed an authenticated socket — the cheapest possible foothold —
+ * could drive an unbounded number of subscribe frames into a DB read, a presence write and a
+ * fleet-wide publish each, with nothing between the frame and the work.
+ *
+ * A client fault, so it never pages anyone: the ack frame carries this and the client backs off.
+ */
+export class FrameRateLimitError extends RealtimeError {
+  constructor(args: { socketId: string; perSecond: number }) {
+    super({
+      code: 'X_FRAME_RATE_LIMIT',
+      cause: `socket ${args.socketId} exceeded ${args.perSecond} frames per second`,
+      fix: 'batch subscribes into one frame per subscription and retry after the delay, or raise maxFramesPerSecond where createSyncNode() is called',
     });
   }
 }

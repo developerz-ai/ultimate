@@ -3,7 +3,7 @@
 // config flag (`persist: true`), never a new protocol — that promise is enforced here.
 
 import { renderThrowable, stringField } from '@ultimat3/core';
-import type { LiveCursor } from './cursor';
+import { CURSOR_ID_LIMIT, type LiveCursor } from './cursor';
 import { ProtocolVersionError } from './errors';
 import {
   isJsonObject,
@@ -15,6 +15,28 @@ import {
 } from './json';
 
 export const PROTOCOL_VERSION = 1;
+
+/**
+ * What one frame may contain. Hard ceilings a caller cannot widen — the shape
+ * `packages/mcp/src/query-limits.ts` uses — because every one of them is read off a socket the
+ * node has already paid for: an unbounded `cursor.ids` was consumed raw into a `Set`, and an
+ * `input` of arbitrary depth reached `canonicalJson`, which recurses.
+ *
+ * Every number clears what this node itself produces, or the decoder refuses its own frames on
+ * the next reconnect: `cursorIds` is `CURSOR_ID_LIMIT`, `resume` clears the per-socket
+ * subscription cap, `patches` clears `defaultReconnectBudget.maxPatches`.
+ */
+export const FRAME_LIMITS = Object.freeze({
+  cursorIds: CURSOR_ID_LIMIT,
+  resume: 256,
+  patches: 4_096,
+  rows: 10_000,
+  members: 4_096,
+  /** Nesting one `input` may reach. 32 is far past any query's real argument shape. */
+  inputDepth: 32,
+  /** Values one `input` may hold in total, so a flat-but-enormous object is refused too. */
+  inputNodes: 10_000,
+});
 
 export type ConflictStrategyName = 'server-wins' | 'last-write-wins' | 'custom';
 
@@ -202,7 +224,7 @@ export function decode(raw: string | Uint8Array): Frame {
         buildId: str(parsed, 'buildId'),
         sessionId: nullableStr(parsed, 'sessionId'),
         actorId: nullableStr(parsed, 'actorId'),
-        resume: list(parsed, 'resume').map(cursor),
+        resume: list(parsed, 'resume', FRAME_LIMITS.resume).map(cursor),
       };
     case 'subscribe':
       return {
@@ -217,7 +239,7 @@ export function decode(raw: string | Uint8Array): Frame {
         type: 'snapshot',
         v: PROTOCOL_VERSION,
         sid: str(parsed, 'sid'),
-        rows: list(parsed, 'rows').map(row),
+        rows: list(parsed, 'rows', FRAME_LIMITS.rows).map(row),
         cursor: cursor(parsed['cursor']),
       } as const;
       const entity = nullableStr(parsed, 'entity');
@@ -228,7 +250,7 @@ export function decode(raw: string | Uint8Array): Frame {
         type: 'patch',
         v: PROTOCOL_VERSION,
         sid: str(parsed, 'sid'),
-        patches: list(parsed, 'patches').map(patch),
+        patches: list(parsed, 'patches', FRAME_LIMITS.patches).map(patch),
         lsn: str(parsed, 'lsn'),
       };
     case 'mutate':
@@ -238,7 +260,7 @@ export function decode(raw: string | Uint8Array): Frame {
         key: str(parsed, 'key'),
         seq: num(parsed, 'seq'),
         name: str(parsed, 'name'),
-        input: parsed['input'] ?? null,
+        input: bounded(parsed['input'] ?? null, 'input'),
       };
     case 'ack':
       return {
@@ -263,7 +285,7 @@ export function decode(raw: string | Uint8Array): Frame {
         v: PROTOCOL_VERSION,
         topic: str(parsed, 'topic'),
         op: pick(parsed, 'op', ['join', 'leave', 'update', 'sync'] as const),
-        members: list(parsed, 'members').map(member),
+        members: list(parsed, 'members', FRAME_LIMITS.members).map(member),
       } as const;
       return parsed['total'] === undefined ? base : { ...base, total: num(parsed, 'total') };
     }
@@ -328,10 +350,45 @@ function pick<T extends string>(obj: JsonObject, key: string, allowed: readonly 
   return found;
 }
 
-function list(obj: JsonObject, key: string): JsonValue[] {
+/**
+ * An array field, with the ceiling the caller had to choose. `max` is required rather than
+ * defaulted: a new list field on a new frame is a new thing an authenticated socket can make
+ * arbitrarily large, and a default would let one ship without anyone deciding its size.
+ */
+function list(obj: JsonObject, key: string, max: number, label = key): JsonValue[] {
   const value = obj[key];
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw fail(`field "${key}" must be an array`);
+  if (!Array.isArray(value)) throw fail(`field "${label}" must be an array`);
+  if (value.length > max) {
+    throw fail(`field "${label}" carries ${value.length} entries, over the limit of ${max}`);
+  }
+  return value;
+}
+
+/**
+ * A client-supplied value, walked ITERATIVELY to its limits. Iteratively because the thing being
+ * refused is a stack overflow: `qidOf` -> `canonicalJson` recurses over exactly this value, so a
+ * depth check that recursed would be the same crash one frame earlier.
+ */
+function bounded(value: JsonValue, label: string): JsonValue {
+  const stack: { node: JsonValue; depth: number }[] = [{ node: value, depth: 1 }];
+  let seen = 0;
+  while (stack.length > 0) {
+    // `pop` cannot answer undefined here — the loop guard is the length — and the check is what
+    // makes that readable to the compiler without a cast.
+    const next = stack.pop();
+    if (next === undefined) break;
+    seen += 1;
+    if (seen > FRAME_LIMITS.inputNodes) {
+      throw fail(`field "${label}" holds more than ${FRAME_LIMITS.inputNodes} values`);
+    }
+    if (next.depth > FRAME_LIMITS.inputDepth) {
+      throw fail(`field "${label}" is nested deeper than ${FRAME_LIMITS.inputDepth}`);
+    }
+    if (next.node === null || typeof next.node !== 'object') continue;
+    const children = Array.isArray(next.node) ? next.node : Object.values(next.node);
+    for (const child of children) stack.push({ node: child, depth: next.depth + 1 });
+  }
   return value;
 }
 
@@ -346,7 +403,7 @@ function cursor(value: unknown): LiveCursor {
     qid: str(value, 'qid'),
     lsn: str(value, 'lsn'),
     digest: str(value, 'digest'),
-    ids: list(value, 'ids').map((id) => {
+    ids: list(value, 'ids', FRAME_LIMITS.cursorIds, 'cursor.ids').map((id) => {
       if (typeof id !== 'string') throw fail('cursor.ids must be strings');
       return id;
     }),
@@ -383,7 +440,7 @@ function target(value: unknown): SubscribeTarget {
   return {
     kind,
     qid: str(value, 'qid'),
-    input: value['input'] ?? null,
+    input: bounded(value['input'] ?? null, 'input'),
     cursor:
       value['cursor'] === null || value['cursor'] === undefined ? null : cursor(value['cursor']),
   };

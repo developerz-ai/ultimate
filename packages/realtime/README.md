@@ -150,6 +150,36 @@ One authz system, never two: `policy` is evaluated **once per subscriber**, neve
 Two actors on one live query get two different result sets, and a row that leaves an actor's policy
 is delivered to them as a `delete` — never as silence.
 
+## What one socket may cost
+
+Every ceiling on this node, and the option that moves it. Each one is a default, not a policy: an
+app narrows or widens it where the object is constructed, and none of them can be raised from the
+wire.
+
+| Ceiling | Default | Option | Refused with |
+|---|---|---|---|
+| concurrent sockets on this node | 250,000 | `createSyncNode({ maxConnections })` | `503` + `retry-after-ms`, the same shed as the accept budget |
+| inbound bytes per frame | 256 KiB | `createSyncNode({ maxFrameBytes })` | the socket, by `Bun.serve`'s `maxPayloadLength` |
+| inbound frames per socket | 64/s, burst 256 | `createSyncNode({ maxFramesPerSecond, frameBurst })` | `X_FRAME_RATE_LIMIT` |
+| live subscriptions per socket | 128 | `new LiveQueryRegistry({ maxPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
+| live subscriptions per tenant | unset | `new LiveQueryRegistry({ maxPerTenant, tenantOf })` — **both**, or it arms nothing | `X_SUBSCRIPTION_LIMIT` |
+| distinct `(query, input)` pairs per node | 10,000 | `new LiveQueryRegistry({ maxEntries })` | `X_SUBSCRIPTION_LIMIT` |
+| channel topics per socket | 64 | `new ChannelHub({ maxTopicsPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
+| distinct channel topics per node | 10,000 | `new ChannelHub({ maxTopicsPerNode })` | `X_SUBSCRIPTION_LIMIT` |
+| retained patch bytes per node | 64 MiB | `new RingChangeBuffer({ maxBytes, maxBytesPerQuery })` | eviction, then a re-snapshot on resume |
+| array lengths and `input` nesting in a frame | `FRAME_LIMITS` | none — a hard ceiling | `X_PROTOCOL_VERSION` |
+
+The accept budget bounds the accept **rate**; `maxConnections` bounds the **count**, and they are
+two different attacks — 500 accepts/s held open with one keepalive each is 1.8M sockets an hour.
+The frame budget is per socket and checked at the top of the frame router, before anything a frame
+can reach: a subscribe frame is a database read, a presence write and a fleet-wide publish, and one
+authenticated socket is the cheapest foothold there is.
+
+`FRAME_LIMITS` is the wire's own hard ceiling — array lengths (`cursor.ids`, `resume`, `patches`,
+`rows`, `members`) plus the depth and node count of a client-supplied `input`. It is not an option:
+`input` reaches `canonicalJson`, which recurses, so an unbounded one is a stack overflow in the
+process rather than a slow query.
+
 ## One row per `(entity, id)`
 
 Two components subscribing to two live queries that both return post #7 hold **one** row, not two

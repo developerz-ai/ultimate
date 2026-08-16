@@ -3,7 +3,7 @@
 // decision is never here — `live-query.ts` owns that, once per subscriber, over what this returns.
 
 import type { JsonValue, Row } from './json';
-import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-query';
+import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import type { IncrementalMatcher, SubscriptionShape } from './matcher-bridge';
 import { WindowLock } from './window-lock';
 

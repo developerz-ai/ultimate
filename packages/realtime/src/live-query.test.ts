@@ -4,7 +4,8 @@ import { RingChangeBuffer } from './change-buffer';
 import type { ChangeEvent } from './changefeed';
 import { formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
-import { type LiveQueryDefinition, LiveQueryRegistry } from './live-query';
+import type { LiveQueryDefinition } from './live-contract';
+import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
@@ -178,5 +179,77 @@ describe('live queries', () => {
     });
 
     expect(result.frame.type).toBe('snapshot');
+  });
+});
+
+/**
+ * What a node holds when nobody is subscribed, and what it refuses before it holds too much. A
+ * `qid` derives from client-chosen input, so both answers decide how much one socket can cost.
+ */
+describe('what the registry retains', () => {
+  test('dropping the last subscriber forgets the retained patches too', async () => {
+    const source = new RingChangeBuffer();
+    const registry = new LiveQueryRegistry({ source }).register(liveFeed);
+    const alice = socketFor('s-alice', actor('alice'));
+    const { subscription } = await registry.subscribe({
+      socket: alice.socket,
+      name: 'liveFeed',
+      input: { orgId: 'o1' },
+      sid: 'one',
+    });
+    await registry.deliver(
+      change(
+        { id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'edited', likes: 1 },
+        rows[0] ?? null,
+      ),
+    );
+    expect(source.queryCount).toBe(1);
+
+    registry.unsubscribe('s-alice', subscription.sid);
+
+    // The entry went and the ring behind it went with it. `forget` had no caller at all: the
+    // patches of a query nobody can resume sat at full capacity until the LRU reached them.
+    expect(registry.subscriberCount(subscription.qid)).toBe(0);
+    expect(source.queryCount).toBe(0);
+    expect(source.bytes).toBe(0);
+  });
+
+  test('a second subscriber keeps the window: forget is the LAST unsubscribe, not any', async () => {
+    const source = new RingChangeBuffer();
+    const registry = new LiveQueryRegistry({ source }).register(liveFeed);
+    const alice = socketFor('s-alice', actor('alice'));
+    const bob = socketFor('s-bob', actor('bob'));
+    const input = { orgId: 'o1' };
+    const first = await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input });
+    await registry.subscribe({ socket: bob.socket, name: 'liveFeed', input });
+    await registry.deliver(
+      change(
+        { id: 'p1', orgId: 'o1', ownerId: 'alice', title: 'edited', likes: 1 },
+        rows[0] ?? null,
+      ),
+    );
+
+    registry.unsubscribe('s-alice', first.subscription.sid);
+    expect(source.queryCount).toBe(1);
+  });
+
+  test('distinct client-chosen inputs are capped node-wide', async () => {
+    const registry = new LiveQueryRegistry({
+      source: new RingChangeBuffer(),
+      maxEntries: 2,
+    }).register(liveFeed);
+    const alice = socketFor('s-alice', actor('alice'));
+    await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input: { page: 1 } });
+    await registry.subscribe({ socket: alice.socket, name: 'liveFeed', input: { page: 2 } });
+
+    // Each distinct input is a matcher, a row window and a `WindowLock` that every change fans out
+    // over — so the ceiling is the node's, not the socket's.
+    await expect(
+      registry.subscribe({ socket: alice.socket, name: 'liveFeed', input: { page: 3 } }),
+    ).rejects.toBeUltimateError('X_SUBSCRIPTION_LIMIT');
+    // An input this node already holds is still free.
+    await expect(
+      registry.subscribe({ socket: alice.socket, name: 'liveFeed', input: { page: 1 } }),
+    ).resolves.toBeDefined();
   });
 });

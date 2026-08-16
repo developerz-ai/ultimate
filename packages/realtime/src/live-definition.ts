@@ -12,7 +12,7 @@ import type { Ctx } from '@ultimat3/core';
 import { type AnyQuery, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
-import { type LiveQueryDefinition, qidOf, type SnapshotResult } from './live-query';
+import { type LiveQueryDefinition, qidOf, type SnapshotResult } from './live-contract';
 import { type IncrementalMatcher, matcherFor } from './matcher-bridge';
 import { authorizeWithPolicy, visibleWithPolicy } from './policy-gate';
 

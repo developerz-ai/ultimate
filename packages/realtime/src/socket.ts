@@ -1,11 +1,13 @@
 // One WS connection. Bun's WS profile is what makes a million sockets affordable, so this object
-// is deliberately lean: ~8 fields plus two small sets. Budget is ~1KB of JS heap per connection on
-// top of Bun's own per-socket cost — anything richer (row caches, per-socket buffers) belongs in
-// the transport or the change buffer, never here. `sync` is stateless: nothing on this object
-// survives a restart, and nothing needs to.
+// is deliberately lean: ~8 fields, two small sets and one token bucket (the frame budget, which is
+// five numbers and the only thing standing between one authenticated socket and this node's whole
+// subscribe path). Budget is ~1KB of JS heap per connection on top of Bun's own per-socket cost —
+// anything richer (row caches, per-socket buffers) belongs in the transport or the change buffer,
+// never here. `sync` is stateless: nothing on this object survives a restart, and nothing needs to.
 
 import { type Actor, type Clock, recordConnection, systemClock, uuid } from '@ultimat3/core';
 import { encode, type Frame } from './sync-protocol';
+import { AcceptBudget } from './thundering-herd';
 
 export const CLOSE = {
   normal: 1000,
@@ -37,7 +39,21 @@ export interface SyncSocketOptions {
   /** Frames are dropped rather than queued past this. See `desynced`. */
   readonly maxBufferedBytes?: number;
   readonly maxDroppedFrames?: number;
+  /** Sustained inbound frames this socket may have routed per second. See `frameBudget`. */
+  readonly maxFramesPerSecond?: number;
+  /** Burst allowance, so a client subscribing its whole cap at connect is never refused. */
+  readonly frameBurst?: number;
 }
+
+/**
+ * What one socket may ask this node to do per second, and how much of it may arrive at once.
+ *
+ * The burst clears `DEFAULT_MAX_PER_SOCKET` (128) plus a `hello`, because that is exactly what a
+ * legitimate client sends on connect; the sustained rate is well under the ~155 frames/s measured
+ * to consume a node through the subscribe path's amplifiers.
+ */
+export const DEFAULT_MAX_FRAMES_PER_SECOND = 64;
+export const DEFAULT_FRAME_BURST = 256;
 
 export function actorIdOf(actor: Actor | null): string | null {
   return actor === null ? null : actor.id;
@@ -58,6 +74,13 @@ export class SyncSocket {
    * flush re-snapshots instead of silently diverging.
    */
   readonly desynced = new Set<string>();
+  /**
+   * Inbound frames this socket may still have routed. The accept budget spends one token per
+   * UPGRADE, so nothing bounded what happened after: one authenticated socket reached a DB read,
+   * a shared-store presence write and a fleet-wide publish once per frame, unbounded and
+   * unawaited. Same token bucket, one per socket — the mechanism already existed, one rung down.
+   */
+  readonly frameBudget: AcceptBudget;
 
   actor: Actor | null;
   lastSeenAt: number;
@@ -79,6 +102,11 @@ export class SyncSocket {
     this.actor = options.actor ?? null;
     this.#maxBufferedBytes = options.maxBufferedBytes ?? 1024 * 1024;
     this.#maxDroppedFrames = options.maxDroppedFrames ?? 32;
+    this.frameBudget = new AcceptBudget({
+      perSecond: options.maxFramesPerSecond ?? DEFAULT_MAX_FRAMES_PER_SECOND,
+      burst: options.frameBurst ?? DEFAULT_FRAME_BURST,
+      clock: this.#clock,
+    });
     this.openedAt = this.#clock.now().getTime();
     this.lastSeenAt = this.openedAt;
   }
@@ -154,6 +182,15 @@ export interface SocketRegistryOptions {
 /** Per-node socket table. Intentionally the only in-memory map on a `sync` node. */
 export class SocketRegistry {
   readonly #sockets = new Map<string, SyncSocket>();
+  /**
+   * Who is on each channel topic. `deliver` walked every socket on the node asking each whether
+   * it held the topic, so one message with one legitimate subscriber cost as many iterations as
+   * this node has connections — 50,000 at the scale this framework benchmarks. It lives here
+   * rather than on the hub because this is the only object that sees a socket die: a close, a
+   * drain and the idle sweep all pass through `remove`, and an index nobody cleans on those paths
+   * retains a dead socket per topic forever.
+   */
+  readonly #byTopic = new Map<string, Set<SyncSocket>>();
   readonly #clock: Clock;
   readonly #idleTimeoutMs: number;
 
@@ -178,8 +215,33 @@ export class SocketRegistry {
   }
 
   remove(id: string): void {
+    const socket = this.#sockets.get(id);
     // `Map.delete` answers "was it actually there", so a double close cannot decrement twice.
-    if (this.#sockets.delete(id)) recordConnection(-1);
+    if (!this.#sockets.delete(id)) return;
+    recordConnection(-1);
+    if (socket) for (const name of socket.topics) this.#dropFrom(name, socket);
+  }
+
+  /**
+   * Join a topic: the socket's own set, Bun's native pub/sub and this node's delivery index, in
+   * one call. `ChannelHub` is its only caller, and calls nothing else — two call sites for one
+   * membership is how an index goes wrong.
+   */
+  joinTopic(socket: SyncSocket, topic: string): void {
+    socket.subscribeTopic(topic);
+    const members = this.#byTopic.get(topic);
+    if (members) members.add(socket);
+    else this.#byTopic.set(topic, new Set([socket]));
+  }
+
+  leaveTopic(socket: SyncSocket, topic: string): void {
+    socket.unsubscribeTopic(topic);
+    this.#dropFrom(topic, socket);
+  }
+
+  /** Sockets this node would deliver `topic` to. */
+  subscriberCount(topic: string): number {
+    return this.#byTopic.get(topic)?.size ?? 0;
   }
 
   get(id: string): SyncSocket | undefined {
@@ -209,13 +271,31 @@ export class SocketRegistry {
     return closed;
   }
 
-  /** Local delivery for a channel topic. Bun's native pub/sub handles the common case; this is
-   *  the fallback used when a frame must be filtered per socket (policy, desync bookkeeping). */
+  /**
+   * Local delivery for a channel topic — every channel message on this node comes through here,
+   * so it reads the per-topic index rather than the socket table. A socket that closed without
+   * an unsubscribe is dropped as it is met, so the index cannot outlive the connection even on a
+   * path that forgot to `remove` it.
+   */
   deliver(topic: string, frame: Frame): number {
+    const members = this.#byTopic.get(topic);
+    if (!members) return 0;
     let sent = 0;
-    for (const socket of this.#sockets.values()) {
-      if (socket.topics.has(topic) && socket.send(frame)) sent += 1;
+    for (const socket of members) {
+      if (socket.closed) {
+        members.delete(socket);
+        continue;
+      }
+      if (socket.send(frame)) sent += 1;
     }
+    if (members.size === 0) this.#byTopic.delete(topic);
     return sent;
+  }
+
+  #dropFrom(topic: string, socket: SyncSocket): void {
+    const members = this.#byTopic.get(topic);
+    if (!members) return;
+    members.delete(socket);
+    if (members.size === 0) this.#byTopic.delete(topic);
   }
 }

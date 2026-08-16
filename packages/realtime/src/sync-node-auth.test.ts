@@ -11,7 +11,8 @@ import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub, topic } from './channel';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
-import { type LiveQueryDefinition, LiveQueryRegistry } from './live-query';
+import type { LiveQueryDefinition } from './live-contract';
+import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SocketRegistry, type WsLike } from './socket';
 import {

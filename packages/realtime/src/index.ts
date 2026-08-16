@@ -3,7 +3,12 @@
 
 // ---- the client's one stateless piece, reusable against an app's own store ----------------------
 export { applyPatches, orderAfterPatches } from './apply-patches';
-export { type ChangeBufferOptions, RingChangeBuffer } from './change-buffer';
+export {
+  type ChangeBufferOptions,
+  DEFAULT_MAX_BUFFER_BYTES,
+  DEFAULT_MAX_BUFFER_BYTES_PER_QUERY,
+  RingChangeBuffer,
+} from './change-buffer';
 // ---- tier 2: live queries ----------------------------------------------------------------------
 export {
   type ChangeEvent,
@@ -32,6 +37,7 @@ export {
   ChannelHub,
   type ChannelHubOptions,
   channelFrame,
+  DEFAULT_MAX_TOPICS_PER_NODE,
   type Topic,
   type TopicGuard,
   type TopicGuardArgs,
@@ -72,6 +78,7 @@ export {
 // ---- errors ----------------------------------------------------------------------------------
 export {
   CursorStaleError,
+  FrameRateLimitError,
   LiveClientMissingError,
   LiveQueryUnknownError,
   LiveRowUnidentifiedError,
@@ -140,14 +147,17 @@ export {
   type RowOp,
   type RowPatch,
 } from './json';
-export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';
 export {
   type LiveQueryDefinition,
-  LiveQueryRegistry,
-  type LiveQueryRegistryOptions,
   type LiveSubscription,
   qidOf,
   type SnapshotResult,
+} from './live-contract';
+export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';
+export {
+  DEFAULT_MAX_ENTRIES,
+  LiveQueryRegistry,
+  type LiveQueryRegistryOptions,
 } from './live-query';
 export { type Registration, RowWindows } from './live-rows';
 // ---- tier 3: local-first ------------------------------------------------------------------------
@@ -288,6 +298,8 @@ export {
 export {
   actorIdOf,
   CLOSE,
+  DEFAULT_FRAME_BURST,
+  DEFAULT_MAX_FRAMES_PER_SECOND,
   SocketRegistry,
   type SocketRegistryOptions,
   SyncSocket,
@@ -322,6 +334,8 @@ export {
 } from './sync-listen';
 export {
   createSyncNode,
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_MAX_FRAME_BYTES,
   DEFAULT_REAUTH_INTERVAL_MS,
   type SyncNode,
   type SyncNodeOptions,
@@ -336,6 +350,7 @@ export {
   decode,
   encode,
   FRAME_KINDS,
+  FRAME_LIMITS,
   type Frame,
   type FrameKind,
   type HelloFrame,

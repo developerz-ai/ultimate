@@ -16,63 +16,25 @@ import {
   type ResumeSource,
   resumeFrom,
 } from './cursor';
-import { isPolicyDenial, LiveQueryUnknownError, SubscriptionIdTakenError } from './errors';
-import { canonicalJson, fnv1a, type JsonValue, type Row, type RowPatch } from './json';
-import { applyToWindow, bridgeChange, type IncrementalMatcher } from './matcher-bridge';
+import {
+  isPolicyDenial,
+  LiveQueryUnknownError,
+  SubscriptionIdTakenError,
+  SubscriptionLimitError,
+} from './errors';
+import type { JsonValue, Row, RowPatch } from './json';
+import {
+  type LiveQueryDefinition,
+  type LiveSubscription,
+  qidOf,
+  type SnapshotResult,
+} from './live-contract';
+import { applyToWindow, bridgeChange } from './matcher-bridge';
 import { createEntry, fillWindow, type QueryEntry, refillWindowInLane } from './query-window';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
-
-/** `qid` = hash(query name, input). Fanout subjects and change windows are keyed by it. */
-export function qidOf(name: string, input: JsonValue): string {
-  return `${name}:${fnv1a(canonicalJson(input))}`;
-}
-
-export interface SnapshotResult<R extends Row = Row> {
-  readonly rows: readonly R[];
-  readonly lsn: string;
-}
-
-export interface LiveQueryDefinition<R extends Row = Row> {
-  readonly name: string;
-  /** Dependency set for the pre-filter. `x verify` rejects a `live: true` query without one. */
-  readonly entities: readonly string[];
-  /** Read set. Lets the pre-filter skip updates that touch no column this query reads. */
-  readonly columns?: readonly string[];
-  /** Bounded read (`orderBy` + `limit`, enforced by `x verify`), unfiltered by policy. */
-  snapshot(args: { input: JsonValue }): Promise<SnapshotResult<R>>;
-  /** Subscribe-time gate. Throws to deny — the same `policy` used by HTTP, jobs, and MCP. */
-  authorize?(args: { actor: Actor | null; input: JsonValue }): void | Promise<void>;
-  /** Row-level gate, evaluated per subscriber. The only row filter in the pipeline. */
-  visible(args: { actor: Actor | null; row: R; input: JsonValue }): boolean | Promise<boolean>;
-  /** Built once per `qid`, since a qid pins both the query and its input. */
-  matcher(input: JsonValue): IncrementalMatcher;
-  /**
-   * The entity every row of this result set belongs to, resolved per input exactly as `matcher`
-   * is. It is the client's identity scope, and it can only come from here: a browser cannot
-   * compile the shape a `sql` produces. `null` means "not stated", and the client then keeps the
-   * rows private to that one subscription rather than guessing.
-   */
-  rowEntity?(input: JsonValue): string | null;
-  /**
-   * Resolve whatever this input needs before an entry is built. `matcher` is synchronous by
-   * design — a change event must not await anything — so a definition that has to compile a
-   * source or a shape does it here, after `authorize` allowed this subscriber and before the
-   * shared window exists.
-   */
-  prepare?(input: JsonValue): Promise<void>;
-}
-
-export interface LiveSubscription {
-  readonly sid: string;
-  readonly qid: string;
-  readonly socket: SyncSocket;
-  readonly input: JsonValue;
-  readonly definition: LiveQueryDefinition;
-  cursor: LiveCursor;
-}
 
 export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly source: ResumeSource;
@@ -81,22 +43,39 @@ export interface LiveQueryRegistryOptions extends SubscriberGateOptions {
   readonly maxPerSocket?: number;
   readonly maxPerTenant?: number;
   readonly tenantOf?: (actor: Actor | null) => string | null;
+  /**
+   * Distinct `(query, input)` pairs this node will hold at once. A `qid` derives from
+   * client-chosen input, so without a ceiling one socket mints entries — a matcher, a row window,
+   * a `WindowLock` and a fanout target each — until the process dies.
+   */
+  readonly maxEntries?: number;
 }
+
+/**
+ * Live `(query, input)` pairs one node holds. Reached, the next NEW pair is refused with
+ * `X_SUBSCRIPTION_LIMIT`; subscribing to a pair that already exists keeps working, because the
+ * cost this bounds is the entry, not the subscriber.
+ */
+export const DEFAULT_MAX_ENTRIES = 10_000;
 
 export class LiveQueryRegistry {
   readonly #definitions = new Map<string, LiveQueryDefinition>();
   readonly #entries = new Map<string, QueryEntry>();
   /** Keyed by `(socket, sid)`, never by `sid` alone — `subscription-book.ts` owns why. */
-  readonly #book = new SubscriptionBook();
+  readonly #book: SubscriptionBook;
   readonly #options: LiveQueryRegistryOptions;
   readonly #clock: Clock;
   readonly #gate: SubscriberGate;
+  readonly #maxEntries: number;
   #staleChanges = 0;
 
   constructor(options: LiveQueryRegistryOptions) {
     this.#options = options;
     this.#clock = options.clock ?? systemClock;
     this.#gate = new SubscriberGate(options);
+    this.#maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
+    // The book owns the caps because it is the only thing that can answer them in O(1).
+    this.#book = new SubscriptionBook(options);
   }
 
   /** `live.rows_denied` for this node: rows a subscriber's policy refused since boot. */
@@ -170,7 +149,7 @@ export class LiveQueryRegistry {
     // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
     // client "x build && redeploy the client" for a typo no rebuild changes.
     if (!definition) throw new LiveQueryUnknownError({ name: args.name });
-    this.#book.assertCapacity(args.socket, this.#options);
+    this.#book.assertCapacity(args.socket);
     await definition.authorize?.({ actor: args.socket.actor, input: args.input });
     // After this subscriber's own decision, never before it: resolving a shape for a caller who
     // may not subscribe is work an unauthorized client gets to schedule.
@@ -239,7 +218,12 @@ export class LiveQueryRegistry {
     if (!entry) return;
     entry.subscribers.delete(subscriptionKey(socketId, sid));
     // An entry with no subscribers stops costing a matcher and a change window.
-    if (entry.subscribers.size === 0) this.#entries.delete(subscription.qid);
+    if (entry.subscribers.size !== 0) return;
+    this.#entries.delete(subscription.qid);
+    // And the retained patches go with it. `forget` had no caller: the entry was dropped here and
+    // the `ResumeSource` was never told, so its ring for that qid sat at full capacity until the
+    // LRU happened to evict it — a client-chosen input's memory outliving the last subscriber.
+    this.#options.source.forget?.(subscription.qid);
   }
 
   unsubscribeSocket(socketId: string): void {
@@ -256,6 +240,10 @@ export class LiveQueryRegistry {
    */
   async reauthorize(socket: SyncSocket): Promise<readonly string[]> {
     const dropped: string[] = [];
+    // The actor changed, so what tenant this socket's subscriptions count against may have too.
+    // Told here rather than derived per lookup: the per-tenant cap is an index now, and an index
+    // nobody updates is a count that drifts from the book for the rest of the process.
+    this.#book.retenant(socket);
     for (const subscription of this.#book.ofSocket(socket.id)) {
       try {
         await subscription.definition.authorize?.({
@@ -456,6 +444,17 @@ export class LiveQueryRegistry {
   #entryFor(qid: string, definition: LiveQueryDefinition, input: JsonValue): QueryEntry {
     const existing = this.#entries.get(qid);
     if (existing) return existing;
+    // The node-wide ceiling, refused where the entry would be born. `qid` derives from
+    // client-chosen input, so one socket varying it mints a matcher, a row window and a
+    // `WindowLock` per value, and every change then fans out over all of them.
+    if (this.#entries.size >= this.#maxEntries) {
+      throw new SubscriptionLimitError({
+        scope: 'node',
+        id: definition.name,
+        limit: this.#maxEntries,
+        knob: 'maxEntries',
+      });
+    }
     const created = createEntry(qid, definition, input, definition.matcher(input));
     this.#entries.set(qid, created);
     return created;

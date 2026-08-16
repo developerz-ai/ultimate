@@ -44,6 +44,23 @@ export type SyncWs = WsLike & { readonly data: WsData };
  */
 export const DEFAULT_REAUTH_INTERVAL_MS = 30_000;
 
+/**
+ * Concurrent sockets one node will hold. The accept budget bounds the accept RATE and nothing
+ * bounded the COUNT: at the 500/s that budget permits, an attacker holding each socket open with
+ * one keepalive frame a minute reaches 1.8M sockets an hour, each carrying a `GrantBook` entry.
+ *
+ * The number clears the 50,000 real clients this repo has measured on one node
+ * (`scripts/bench/restart-bench.ts`) with room to spare, because a ceiling that refuses a proven
+ * workload is an outage the framework caused.
+ */
+export const DEFAULT_MAX_CONNECTIONS = 250_000;
+
+/**
+ * Inbound bytes one frame may carry. Bun's own default is 16 MiB, which one authenticated socket
+ * can push continuously; a `subscribe` frame carrying a full 512-id cursor is under 32 KiB.
+ */
+export const DEFAULT_MAX_FRAME_BYTES = 256 * 1024;
+
 export interface SyncNodeOptions {
   readonly hub: ChannelHub;
   readonly registry: LiveQueryRegistry;
@@ -52,6 +69,14 @@ export interface SyncNodeOptions {
   readonly presence?: PresenceRegistry;
   readonly sockets?: SocketRegistry;
   readonly accept?: AcceptBudget;
+  /** Concurrent sockets this node will hold. The count the accept budget does not bound. */
+  readonly maxConnections?: number;
+  /** Inbound bytes one frame may carry, handed to whatever server mounts `websocket`. */
+  readonly maxFrameBytes?: number;
+  /** Sustained inbound frames one socket may have routed per second. */
+  readonly maxFramesPerSecond?: number;
+  /** Burst allowance on that rate, per socket. */
+  readonly frameBurst?: number;
   readonly onMutate?: MutationHandler;
   /**
    * Who is dialling. Injected for the same reason `onMutate` is: `sync` owns no business logic and
@@ -91,6 +116,8 @@ export interface SyncNode {
   readonly websocket: {
     idleTimeout: number;
     backpressureLimit: number;
+    /** Inbound ceiling. Declared here so every host that mounts this handler inherits it. */
+    maxPayloadLength: number;
     publishToSelf: boolean;
     sendPings: boolean;
     open(ws: SyncWs): void;
@@ -106,6 +133,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     options.sockets ?? new SocketRegistry({ ...(options.clock ? { clock: options.clock } : {}) });
   const clock = options.clock ?? systemClock;
   const accept = options.accept ?? new AcceptBudget({ perSecond: 500, burst: 2000, clock });
+  const maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
   const path = options.path ?? '/_x/sync';
   const presence = options.presence;
   const grants = new GrantBook();
@@ -282,7 +310,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         return ready ? json(payload) : json({ status: 503, body: payload.body });
       }
       if (url.pathname !== path) return new Response('not found', { status: 404 });
-      if (!ready || !accept.tryAccept()) {
+      // The count, not the rate. Shed the same way and with the same delay attached: a client
+      // refused for a full node and one refused for a fast one have the same next move, and the
+      // refusal is decided before `authenticate` so a full node costs no token service call.
+      if (sockets.count >= maxConnections || !ready || !accept.tryAccept()) {
         // Load shedding with a delay attached: refusing without one just moves the herd next door.
         return new Response('retry', {
           status: 503,
@@ -327,6 +358,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     websocket: {
       idleTimeout: 120,
       backpressureLimit: 1024 * 1024,
+      maxPayloadLength: options.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES,
       publishToSelf: false,
       sendPings: true,
 
@@ -341,6 +373,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           serverBuildId: options.buildId,
           actor: grants.get(ws.data.socketId)?.actor ?? null,
           clock,
+          ...(options.maxFramesPerSecond === undefined
+            ? {}
+            : { maxFramesPerSecond: options.maxFramesPerSecond }),
+          ...(options.frameBurst === undefined ? {} : { frameBurst: options.frameBurst }),
         });
         sockets.add(socket);
       },

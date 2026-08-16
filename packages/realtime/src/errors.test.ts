@@ -41,6 +41,7 @@ const ADDED_SINCE = [
   'X_SUBSCRIPTION_ID_TAKEN',
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
+  'X_FRAME_RATE_LIMIT',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
