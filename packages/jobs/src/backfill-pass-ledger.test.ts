@@ -119,6 +119,7 @@ describe('the x_backfills ledger', () => {
     // The same durable name, a different body — what editing a shipped backfill looks like.
     const table = tableFor(rows, memoryRepo(rows, SEED));
     const edited = backfill<Row>({
+      tenant: 'none',
       name: 'rewrite-titles',
       batch: 3,
       source: () => table.where({ orgId: ORG }),
@@ -155,6 +156,7 @@ describe('the x_backfills ledger', () => {
     const store = createMemoryStepStore();
     const table = tableFor(rows, memoryRepo(rows, SEED));
     const parked = backfill<Row>({
+      tenant: 'none',
       name: 'parks-itself',
       batch: 3,
       source: () => table.where({ orgId: ORG }),

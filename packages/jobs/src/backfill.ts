@@ -23,6 +23,7 @@ import type { JobHandle } from './job';
 import { job } from './job';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
+import type { JobTenant } from './tenant';
 
 /**
  * Rows per statement and per durable step. Not `entity`'s `DEFAULT_PAGE_SIZE`: that number is a
@@ -52,6 +53,20 @@ export interface BackfillDefinition<Row> {
    * export name a module happened to use.
    */
   readonly name: string;
+  /**
+   * REQUIRED, exactly as it is on `job()` — a backfill IS a job, so it declares the org its pass
+   * runs under rather than inheriting the worker's. A payload carries only `force`, so the two
+   * honest spellings are `tenant: () => '<org>'` for a sweep declared against one tenant, and
+   * `tenant: 'none'` for one that spans every tenant.
+   *
+   * `'none'` is where a backfill differs from a plain `job`, and the difference is forced by the
+   * shape of `source`: it hands back a LAZY chain, so every page's plan is built inside the
+   * iteration — after the declaring frame has closed — and there is nothing an author could wrap
+   * in `crossTenant(reason, fn)`. So `backfillPass` opens that scope itself, for a `'none'`
+   * declaration only (`backfill-scope.ts`). A declared tenant is handed its context untouched and
+   * every page is scoped to that org, exactly as a request would be.
+   */
+  readonly tenant: JobTenant<BackfillInput>;
   /**
    * The rows to visit, as a chain: `() => db.posts.where({ published: true })`, or one narrowed by
    * the run's own context — `({ ctx }) => db.posts.where({ orgId: ctx.actor.orgId })`. Read once
@@ -177,6 +192,9 @@ export function backfill<Row>(definition: BackfillDefinition<Row>): JobHandle<Ba
     // same pass, and deduping it is what makes "kick it again" safe rather than a second writer on
     // one table — which is exactly what a `force` in the key would have allowed.
     idempotencyKey: () => definition.name,
+    // Forwarded verbatim, like every other job field this factory carries: a backfill that
+    // declared its tenant and then ran under somebody else's would be a factory deciding authz.
+    tenant: definition.tenant,
     retry: definition.retry ?? DEFAULT_RETRY,
     ...(definition.queue === undefined ? {} : { queue: definition.queue }),
     ...(definition.timeout === undefined ? {} : { timeout: definition.timeout }),

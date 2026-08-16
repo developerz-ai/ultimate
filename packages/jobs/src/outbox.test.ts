@@ -36,6 +36,7 @@ let notify: JobHandle<OrgInput>;
 beforeEach(() => {
   resetJobs();
   notify = job<OrgInput>({
+    tenant: 'none',
     name: 'notifySubscribers',
     input: passthrough<OrgInput>(),
     idempotencyKey: ({ orgId }) => `notify:${orgId}`,

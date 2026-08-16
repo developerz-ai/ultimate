@@ -100,6 +100,7 @@ describe('cancelling a job', () => {
     const driver = createMemoryDriver();
     let reachedSecondStep = false;
     job({
+      tenant: 'none',
       name: 'runaway',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'runaway:one',

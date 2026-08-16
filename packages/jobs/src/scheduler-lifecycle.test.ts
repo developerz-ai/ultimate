@@ -126,6 +126,7 @@ beforeEach(() => {
   // Lifecycle registrations are process-global, so a leak here is another suite's problem too.
   resetLifecycle();
   sendDigest = job<Record<string, never>>({
+    tenant: 'none',
     name: 'sendDigest',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'digest',

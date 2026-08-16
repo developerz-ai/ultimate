@@ -146,7 +146,8 @@ export const publishPost = action({
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    // The org rides in the payload because the job DECLARES its tenant from its own input.
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });
     return post;
   },
 });
@@ -191,7 +192,10 @@ Every order ends with a key unique in the row shape, written out explicitly (`.o
 ```ts
 // apps/web/app/posts/jobs.ts
 export const notifySubscribers = job({
-  input: t.object({ postId: t.uuid }),
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
+  // REQUIRED by the type, and the reason `orgId` is in the input: a job has no request behind
+  // it, so the org the run acts under is DECLARED from its own payload.
+  tenant: ({ orgId }) => orgId,
   idempotencyKey: ({ postId }) => `notify:${postId}`,   // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
   concurrency: 1,   // max in-flight runs of THIS job across the fleet — a plain number, not a key

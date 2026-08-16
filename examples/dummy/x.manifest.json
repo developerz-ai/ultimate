@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "fb9d114e4063030b",
+  "buildId": "0d787d16185d9e2b",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -1980,10 +1980,15 @@
           "postId": {
             "type": "string",
             "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
-          "postId"
+          "postId",
+          "orgId"
         ],
         "additionalProperties": false
       },
@@ -2059,10 +2064,15 @@
           "memberId": {
             "type": "string",
             "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
-          "memberId"
+          "memberId",
+          "orgId"
         ],
         "additionalProperties": false
       },

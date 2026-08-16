@@ -55,6 +55,7 @@ async function claimOne(
 ): Promise<Harness> {
   resetJobs();
   const handle = job<{ n: number }>({
+    tenant: 'none',
     name: 'cancellable',
     input: passthrough<{ n: number }>(),
     idempotencyKey: ({ n }) => `cancellable:${n}`,

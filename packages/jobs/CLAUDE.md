@@ -82,6 +82,84 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   who asked, for audit, and the body is explicitly system-authority — which is how
   `docs/idea/02-primitives.md` already frames a job. A job that must act FOR a user takes that
   user's id in its INPUT and re-authorises it in the body, where the check is visible in review.
+- **JOBS DECLARE THEIR TENANT, and `executeJob` INSTALLS the context — decided 2026-08, do not
+  re-litigate.** Two halves of one defect, and neither works alone.
+
+  The defect: `executeJob` built a `Ctx` and handed it to `handle.run({ ctx })` as a PARAMETER —
+  `runWithContext` appeared nowhere in this package. `@ultimat3/entity`'s tenant guard derives from
+  `tryUseContext()` (`tenancy.ts:152`), not from the ctx it is given, so inside a job body
+  `actorTenant` answered `undefined`, `scopedPlan` derived no predicate, `verifyScope` returned
+  early and `assertRowTenant` could not fire. Proven, same entity, same actor, same call:
+  `HTTP surface, write naming another org -> X_TENANCY_ACTOR_MISMATCH` /
+  `JOB surface -> ACCEPTED`. Reachable by any app routing user input into a job — which is what the
+  bullet above tells an author to do — and by every `backfill()` sweep. Both halves are pinned by
+  `tenancy-cross-surface.test.ts`, which asserts the two surfaces' verdicts are EQUAL rather than
+  asserting each one separately: that equality is the only shape of test that could have caught it.
+
+  **`tenant` is REQUIRED on `JobDefinition`**, as `(input) => input.orgId` or the explicit
+  `tenant: 'none'`. The type is the first rail and `X_JOB_TENANT_REQUIRED` (`assertJobTenant`) is
+  the runtime backstop for generated code and JS callers — the shape `idempotencyKey` already has.
+  `executeJob` derives the org through `handle.tenantFor(input)`, puts it on the ctx's actor
+  (`jobRunActor`, which changes the ORG and nothing else — the identity stays whatever
+  `WorkerOptions.context()` wired, so this grants no authority) and runs the body inside
+  `runWithContext`. `'none'` STRIPS the org rather than inheriting the worker's, so a tenant-scoped
+  read inside such a job is `X_TENANCY_ACTOR_ORG_REQUIRED` — fail-closed, intended, and not to be
+  weakened; a sweep that genuinely spans tenants says so with `crossTenant(reason, fn)`.
+
+  **A boot-supplied service actor was considered and REJECTED.** It closes the same hole and is one
+  identity for every job in the app — so the first job that takes an org id in its input reads and
+  writes another tenant's rows with the framework's blessing, which is precisely the cross-tenant
+  hole this closes. The tenant is a fact about the WORK, so it is declared per job, from the payload
+  the author already had to pass. A default was rejected for the same reason in both directions:
+  `'none'` silently reopens the hole, and inheriting the worker's org is the shared identity again.
+  `tenantFor` is a METHOD on `JobHandle`, never a `readonly tenant: JobTenant<I>` field — a
+  function-typed property is contravariant in its parameter, so the field would stop
+  `JobHandle<OrgInput>` being assignable to `AnyJobHandle` and break the registry.
+  **The queue row's `tenantId` is unchanged**: it comes from the ENQUEUER's actor and is the
+  limiter's bucket, never re-derived from the payload (`limits.ts`'s header rule). Two different
+  questions — "whose rate budget does this enqueue spend" and "whose rows may this run touch".
+- **A `backfill()` declaring `tenant: 'none'` gets the cross-tenant scope, and NOTHING else does**
+  (`As of 2026-08`). The one exception to the bullet above, and it is forced rather than chosen.
+
+  `source` hands back a LAZY chain, so every page's plan is built inside the iteration
+  (`backfill-pass.ts`'s `iterate()`) — after the declaring frame has closed — and
+  `@ultimat3/entity` applies `scopedPlan` at plan-build time (`plan.ts:111`). An app author holding
+  a `ReadBuilder` therefore has nothing to wrap in `crossTenant(reason, fn)`: only the pass is
+  positioned to open it. Without it, `tenant: 'none'` made a sweep over a tenant-scoped entity fail
+  on page ONE with `X_TENANCY_ACTOR_ORG_REQUIRED` — the docstring told authors to do something the
+  API cannot express. `backfill-tenancy.test.ts` drives the real surface (`executeJob`, not
+  `backfillPass` by hand — the shared fixture calls it directly and so runs with no ambient context
+  at all, which is why no existing backfill test could see this).
+
+  **A backfill that declared a real `tenant` never gets it.** Granting the escape to a tenanted
+  sweep is granting it to every backfill in the app, which is the opposite of what declaring a
+  tenant means; the negative is pinned by two tests that fail the moment the guard in
+  `withBackfillScope` is dropped. The reason string is derived and names the backfill, because it
+  lands in the audit trail and `X_TENANCY_CROSS_DENIED` renders it — "backfill" alone would read
+  identically for every sweep in the app.
+
+  **The capability is granted on the PASS's actor, not on the worker's — and that is the decision.**
+  Minting a worker identity carrying `tenancy:cross` at boot (`packages/cli/src/dev-roles.ts`
+  builds that context) would hand it to every job that worker claims, including a plain
+  `job({ tenant: 'none' })` that declared no sweep, and would move the decision into deployment
+  config where no reviewer sees it — one identity serving every job, which is the shape this whole
+  change exists to remove. Here it is bounded four ways: only `backfill()`, only on an explicit
+  `tenant: 'none'`, only for the duration of that pass, and only on a context that dies with it.
+  **So `dev-roles.ts` needs no change**, and no framework role's actor carries `tenancy:cross`.
+  `runWithContext` goes OUTSIDE `crossTenant`, never the reverse: the capability is proved against
+  the ambient actor at the call and again for every plan built inside. Nesting is safe — an app
+  `handle` opening its own `crossTenant` replaces the reason and re-proves a capability the actor
+  already holds — so an app that wraps its own body does not fight the pass.
+- **`limits.ts`'s per-tenant state is BOUNDED, and a counter at zero is DELETED** (`As of 2026-08`).
+  `bump(…, -1)` wrote `0` and kept the key, `refusals` cleared only on a matching acquire, and
+  `starts` kept an array per tenant — four permanent entries per org in a process that never
+  restarts, which self-service org creation turns into a leak. Zero and absent already answer
+  identically (`?? 0`), so the counters drop to nothing with the run; `starts` and `refusals` are
+  swept (a spent window and a refusal past `REFUSAL_TTL_MS` are indistinguishable from missing) and
+  then capped at `DEFAULT_MAX_LIMIT_TENANTS`. The eviction order is `@ultimat3/http`'s
+  `memoryRateLimitStore`'s and must stay it: the LEAST throttled window goes first, because
+  discarding a full one hands that tenant a free rate reset. `LimitSnapshot.tracked` publishes both
+  sizes so the bound is assertable rather than assumed.
 - **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`, and nowhere else.** The relay runs
   after commit in its own timer with no request span in scope, so a trace read there would be
   nobody's. A `currentSpanContext()` recovered from a `Ctx` has an empty `spanId`, which renders an
@@ -373,8 +451,10 @@ picture from the other side.
 | File | Owns |
 |---|---|
 | `job.ts` | the `job()` primitive + registry + the handle's fluent surface + `registerJob` |
+| `tenant.ts` | what tenant a run acts under: `JobTenant`, the declaration's backstop, the actor `executeJob` installs |
 | `backfill.ts` | `backfill()` — a factory over `job()`: the declaration, its checksum and its input |
 | `backfill-pass.ts` | one pass: the batched iteration, its cursor checkpoints and its ledger row |
+| `backfill-scope.ts` | which sweeps run across tenants — `tenant: 'none'` only, on the pass's own actor, for the pass's own life |
 | `backfill-ledger.ts` | `x_backfills` — the contract, `BACKFILL_STATUSES`, the checksum, the verdict, the memory ledger |
 | `backfill-registry.ts` | what was DECLARED: the `origin` stamp, `isBackfill`, `registeredBackfills` |
 | `backfill-gate.ts` | may this sweep run here and now — environment, `requires`, already-applied |

@@ -40,6 +40,7 @@ beforeEach(() => {
   resetJobs();
   ran = [];
   countedJob = job<Payload>({
+    tenant: 'none',
     name: 'countedJob',
     input: passthrough<Payload>(),
     idempotencyKey: ({ n }) => `counted:${n}`,

@@ -39,6 +39,7 @@ describe('two enqueues racing on one idempotency key', () => {
     const runs: number[] = [];
     const driver = createMemoryDriver();
     const handle = job<{ orgId: string }>({
+      tenant: 'none',
       name: 'provisionOrg',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `provision:${orgId}`,
@@ -83,6 +84,7 @@ describe('two enqueues racing on one idempotency key', () => {
     const runs: string[] = [];
     const driver = createMemoryDriver();
     const handle = job<{ orgId: string }>({
+      tenant: 'none',
       name: 'provisionOrgContended',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `provision:${orgId}`,
@@ -127,6 +129,7 @@ describe('the dedupe window is "currently live", not "ever existed"', () => {
     const runs: string[] = [];
     const driver = createMemoryDriver();
     const handle = job<{ orgId: string }>({
+      tenant: 'none',
       name: 'sendReceipt',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `receipt:${orgId}`,

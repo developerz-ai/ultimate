@@ -20,6 +20,7 @@ import { checkBackfillEnvironment } from './backfill-gate';
 import type { BackfillLedger, BackfillRun } from './backfill-ledger';
 import { decideBackfill } from './backfill-ledger';
 import type { Pacer } from './backfill-rate';
+import { withBackfillScope } from './backfill-scope';
 import { jobDriver } from './driver';
 import { BackfillStalledError } from './errors';
 import type { JobRunArgs } from './job';
@@ -144,7 +145,7 @@ export async function backfillPass<Row>(
   args: JobRunArgs<BackfillInput>,
 ): Promise<BackfillReport> {
   const { definition, size, checksum, pace } = plan;
-  const { ctx, step, runId } = args;
+  const { step, runId } = args;
   const name = definition.name;
   // Before the ledger is even opened: a sweep this deploy may not run must leave no row saying it
   // started. Enforced here and not only in `x db backfill`, because app code that calls
@@ -185,79 +186,91 @@ export async function backfillPass<Row>(
       ...(previous === undefined ? {} : { previousRunId: previous.runId }),
     };
   }
-  await ledger?.start({ runId, name, checksum, appVersion: appVersion() });
+  // The pass itself, run under the tenant the DECLARATION named. Everything below builds a plan
+  // — `source()` per page, `count()` at the end — and `scopedPlan` is applied where a plan is
+  // built, which is inside this iteration and not where the author wrote the chain. So the scope
+  // has to be opened here: `tenant: 'none'` sweeps every tenant and says so, a declared tenant is
+  // handed its context untouched. `backfill-scope.ts` says why it is not the worker's actor.
+  return withBackfillScope(
+    name,
+    definition.tenant,
+    args.ctx,
+    async (ctx): Promise<BackfillReport> => {
+      await ledger?.start({ runId, name, checksum, appVersion: appVersion() });
 
-  let cursor: string | null = null;
-  let rows = 0;
-  let batches = 0;
-  let live: Iteration<Row> | undefined;
+      let cursor: string | null = null;
+      let rows = 0;
+      let batches = 0;
+      let live: Iteration<Row> | undefined;
 
-  /**
-   * The iteration positioned at `cursor`, opened on the first batch this attempt actually runs so
-   * a resumed pass sends no statement for a page it already handled.
-   *
-   * `batches.cursor` IS where the next statement starts, so comparing it with the checkpoint's is
-   * the whole staleness test — and it is not academic: `retryFromStep` re-opens ONE step in the
-   * middle of a finished run, which moves the checkpoints somewhere this iteration is not. Rebuilt
-   * from the checkpoint rather than read from wherever the old one was parked.
-   */
-  const iterate = async (): Promise<Iteration<Row>> => {
-    if (live !== undefined && live.batches.cursor === cursor) return live;
-    await live?.batches.close();
-    const opened = definition.source({ ctx }).after(cursor).inBatches(size);
-    live = { batches: opened, pull: opened[Symbol.asyncIterator]() };
-    return live;
-  };
+      /**
+       * The iteration positioned at `cursor`, opened on the first batch this attempt actually runs so
+       * a resumed pass sends no statement for a page it already handled.
+       *
+       * `batches.cursor` IS where the next statement starts, so comparing it with the checkpoint's is
+       * the whole staleness test — and it is not academic: `retryFromStep` re-opens ONE step in the
+       * middle of a finished run, which moves the checkpoints somewhere this iteration is not. Rebuilt
+       * from the checkpoint rather than read from wherever the old one was parked.
+       */
+      const iterate = async (): Promise<Iteration<Row>> => {
+        if (live !== undefined && live.batches.cursor === cursor) return live;
+        await live?.batches.close();
+        const opened = definition.source({ ctx }).after(cursor).inBatches(size);
+        live = { batches: opened, pull: opened[Symbol.asyncIterator]() };
+        return live;
+      };
 
-  try {
-    for (let index = 0; ; index += 1) {
-      const stepName = `${STEP_PREFIX}${index}`;
-      const checkpoint = asCheckpoint(
-        await step.run(stepName, async (signal): Promise<Checkpoint> => {
-          // INSIDE the body, which is the whole of it: a completed step is served from storage
-          // without its body running, so an attempt resuming at batch 500 replays 500 checkpoints
-          // and pays none of their pauses. Paced outside the step, a resumed pass would spend the
-          // entire throttle of everything it had already done before touching a new row.
-          //
-          // The signal is the run's cancellation composed with this step's ceiling, so a cancelled
-          // pass unwinds out of the wait instead of sitting in a timer nobody is waiting for.
-          await pace.wait({ signal, step: stepName });
-          const iteration = await iterate();
-          const next = await iteration.pull.next();
-          if (next.done === true) return { cursor: null, rows: 0 };
-          await definition.handle({ rows: next.value, ctx, signal, index });
-          return { cursor: iteration.batches.cursor, rows: next.value.length };
-        }),
-        stepName,
-      );
-      rows += checkpoint.rows;
-      cursor = checkpoint.cursor;
-      // `inBatches()` never yields an empty batch, so rows is what tells a handled page from the
-      // one step an exhausted source costs — and what keeps the exhausted step off the ledger,
-      // whose last write is `finish` either way.
-      if (checkpoint.rows > 0) {
-        batches += 1;
-        // Absolute, so a replayed batch reports the position it reported the first time.
-        await ledger?.progress(runId, { rows, cursor });
+      try {
+        for (let index = 0; ; index += 1) {
+          const stepName = `${STEP_PREFIX}${index}`;
+          const checkpoint = asCheckpoint(
+            await step.run(stepName, async (signal): Promise<Checkpoint> => {
+              // INSIDE the body, which is the whole of it: a completed step is served from storage
+              // without its body running, so an attempt resuming at batch 500 replays 500 checkpoints
+              // and pays none of their pauses. Paced outside the step, a resumed pass would spend the
+              // entire throttle of everything it had already done before touching a new row.
+              //
+              // The signal is the run's cancellation composed with this step's ceiling, so a cancelled
+              // pass unwinds out of the wait instead of sitting in a timer nobody is waiting for.
+              await pace.wait({ signal, step: stepName });
+              const iteration = await iterate();
+              const next = await iteration.pull.next();
+              if (next.done === true) return { cursor: null, rows: 0 };
+              await definition.handle({ rows: next.value, ctx, signal, index });
+              return { cursor: iteration.batches.cursor, rows: next.value.length };
+            }),
+            stepName,
+          );
+          rows += checkpoint.rows;
+          cursor = checkpoint.cursor;
+          // `inBatches()` never yields an empty batch, so rows is what tells a handled page from the
+          // one step an exhausted source costs — and what keeps the exhausted step off the ledger,
+          // whose last write is `finish` either way.
+          if (checkpoint.rows > 0) {
+            batches += 1;
+            // Absolute, so a replayed batch reports the position it reported the first time.
+            await ledger?.progress(runId, { rows, cursor });
+          }
+          if (cursor === null) break;
+        }
+        // The source is exhausted; the declaration's own count is the only thing that can say whether
+        // that means the work is done. One statement per PASS, not per batch — the question is "did
+        // this converge", asked once, where the answer is finally decidable. Inside the `try` so the
+        // ledger records the attempt as `failed`: a pass that left rows behind must not write the
+        // completed row that stops the next deploy re-running it.
+        await assertConverged(definition, ctx, rows);
+      } catch (error) {
+        // Control flow, not a failure: a suspended run is parked and will be back on this step.
+        if (!isStepSuspension(error)) await markFailed(ledger, runId, rows);
+        throw error;
+      } finally {
+        // Whatever the iteration holds belongs to this attempt, and an attempt that failed, was
+        // cancelled or finished is done with it either way.
+        await live?.batches.close();
       }
-      if (cursor === null) break;
-    }
-    // The source is exhausted; the declaration's own count is the only thing that can say whether
-    // that means the work is done. One statement per PASS, not per batch — the question is "did
-    // this converge", asked once, where the answer is finally decidable. Inside the `try` so the
-    // ledger records the attempt as `failed`: a pass that left rows behind must not write the
-    // completed row that stops the next deploy re-running it.
-    await assertConverged(definition, ctx, rows);
-  } catch (error) {
-    // Control flow, not a failure: a suspended run is parked and will be back on this step.
-    if (!isStepSuspension(error)) await markFailed(ledger, runId, rows);
-    throw error;
-  } finally {
-    // Whatever the iteration holds belongs to this attempt, and an attempt that failed, was
-    // cancelled or finished is done with it either way.
-    await live?.batches.close();
-  }
 
-  await ledger?.finish(runId, { status: 'completed', rows });
-  return { name, batches, rows, skipped: false };
+      await ledger?.finish(runId, { status: 'completed', rows });
+      return { name, batches, rows, skipped: false };
+    },
+  );
 }

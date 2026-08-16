@@ -157,6 +157,7 @@ export const harness = (
     steps: () => store.list(RUN_ID),
   };
   const handle = backfill<Row>({
+    tenant: 'none',
     name: options.name ?? 'rewrite-titles',
     // Every test on this harness is about the iteration and not the throttle, so it declares a
     // rate no timer can resolve and the pacer skips each wait. `the rate throttle` owns pacing.

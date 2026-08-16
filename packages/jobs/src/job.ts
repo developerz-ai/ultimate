@@ -24,6 +24,8 @@ import { jobsFacade } from './outbox';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
 import type { StepApi } from './steps';
+import type { JobTenant } from './tenant';
+import { assertJobTenant, jobTenantFor } from './tenant';
 
 export interface JobRunArgs<I> {
   readonly input: I;
@@ -50,6 +52,21 @@ export interface JobDefinition<I> {
   readonly input: StandardSchemaV1<unknown, I>;
   /** REQUIRED. See the file header — this is the whole point. */
   readonly idempotencyKey: (input: I) => string;
+  /**
+   * REQUIRED, and the org this job's body runs under. `tenant: (input) => input.orgId` derives it
+   * from the payload; `tenant: 'none'` says this job belongs to no tenant, and then every
+   * tenant-scoped read inside it fails closed with `X_TENANCY_ACTOR_ORG_REQUIRED`.
+   *
+   * There is no default, because both candidates are wrong. Until this field existed the worker ran
+   * a body with no ambient context at all, so `@ultimat3/entity`'s tenant guard — which derives
+   * from `tryUseContext()` and not from the ctx it is handed — read no actor, added no predicate
+   * and accepted a caller-named `orgId` unchecked: the same write refused over HTTP as
+   * `X_TENANCY_ACTOR_MISMATCH` was ACCEPTED through the job surface. A boot-supplied service actor
+   * would close that with ONE identity for every job, which is a cross-tenant read waiting for the
+   * first job that takes an org id in its input. So the job declares it, per job, from its own
+   * payload — the value an author already had to pass anyway.
+   */
+  readonly tenant: JobTenant<I>;
   readonly retry: RetryPolicy;
   readonly queue?: string;
   /**
@@ -100,6 +117,13 @@ export interface JobHandle<I = unknown> {
   readonly input: StandardSchemaV1<unknown, I>;
   parse(raw: unknown): I;
   idempotencyKeyFor(input: I): string;
+  /**
+   * The org THIS payload's run acts under — `undefined` for `tenant: 'none'`. A method and never a
+   * `readonly tenant: JobTenant<I>` field: a function-typed property is contravariant in its
+   * parameter, so `JobHandle<OrgInput>` would stop being assignable to `AnyJobHandle` and the
+   * registry, the worker and a task's enqueue list could no longer hold heterogeneous handles.
+   */
+  tenantFor(input: I): string | undefined;
   run(args: JobRunArgs<I>): Promise<unknown>;
   /**
    * Put this job on the queue. Joins the caller's transaction when the app installed the
@@ -138,10 +162,11 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
   anonymous += 1;
   const name = definition.name ?? `anonymous-job-${anonymous}`;
 
-  // Runtime backstop for generated code and JS callers; TS already forbids omitting it.
+  // Runtime backstops for generated code and JS callers; TS already forbids omitting either.
   if (typeof definition.idempotencyKey !== 'function') {
     throw new IdempotencyRequiredError({ job: name });
   }
+  assertJobTenant(name, definition.tenant);
   assert(
     definition.retry.attempts >= 1,
     `job "${name}" needs retry.attempts >= 1, got ${String(definition.retry.attempts)}`,
@@ -167,6 +192,9 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
         `return a non-empty stable key from job("${name}").idempotencyKey — an empty key makes every enqueue look like a duplicate of every other`,
       );
       return key;
+    },
+    tenantFor(input: I): string | undefined {
+      return jobTenantFor(name, definition.tenant, input);
     },
     run(args: JobRunArgs<I>): Promise<unknown> {
       return definition.run(args);

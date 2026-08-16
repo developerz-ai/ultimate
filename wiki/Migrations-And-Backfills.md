@@ -76,6 +76,7 @@ Same rule `llm()` follows for a model call ([`docs/idea/02-primitives.md`](https
 ```ts
 export const normalizePostTitles = backfill({
   name: 'normalize-post-titles',
+  tenant: 'none',   // a sweep spans every tenant; the PASS opens the cross-tenant scope, not you
   source: ({ ctx }) => db.posts.where({ orgId: ctx.actor.orgId }),
   handle: async ({ rows, signal }) => {
     signal.throwIfAborted();

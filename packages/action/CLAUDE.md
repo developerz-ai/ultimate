@@ -40,6 +40,17 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 
 - Every surface goes through `invoke`: parse input, evaluate policy, handle, parse
   output. Adding a second execution path is the one unforgivable change here.
+- **An explicit `ctx` is INSTALLED, never merely passed** (`As of 2026-08`). `invoke` entered
+  `runWithContext` only when `options.actor` was supplied; given `options.ctx` alone it called
+  `core(target, raw, options.ctx, options)` directly. So `guard()` decided about that actor while
+  everything reading the AMBIENT context — above all `@ultimat3/entity`'s tenant guard, which
+  derives from `tryUseContext()` and not from the ctx it is handed — saw a different identity, or
+  none: `writeAnywhere.job().invoke(input, ctxAsOrgA)` wrote a row naming org B while the identical
+  call under an ambient context was `X_TENANCY_ACTOR_MISMATCH`. Absent a `ctx` this reinstalls the
+  ambient one, a no-op on every path that already worked. The twin fix is `@ultimat3/query`'s
+  `asActor`, and `invoke-context.test.ts` asserts an EQUALITY between the three spellings of one
+  caller — ambient, `options.actor`, `options.ctx` — because three independent expectations are
+  exactly what let this ship.
 - The declaration never leaves `invoke.ts`. `defOf`/`stashDef` are internal and must
   never be re-exported from `src/index.ts` — that absence is the enforcement, and
   `index.test.ts` is what makes it one.

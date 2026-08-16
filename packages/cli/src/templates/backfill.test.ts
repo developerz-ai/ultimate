@@ -35,8 +35,25 @@ describe('unit · x g backfill', () => {
 
   test('the tenancy assert still carries a cause and a runnable fix, not just a message', () => {
     const source = generated().source;
-    expect(source).toContain('carries no orgId');
+    expect(source).toContain('holds no tenancy:cross');
     expect(source).toContain('--json');
+  });
+
+  test('the sweep declares its tenant, and declares the one a sweep actually has', () => {
+    const source = generated().source;
+    // `tenant` is required by `BackfillDefinition`, and a scaffold that omitted it would fail at
+    // import with X_JOB_TENANT_REQUIRED rather than at typecheck — so this pins the declaration.
+    expect(source).toContain("tenant: 'none',");
+    // `'none'` strips the org, so the emitted scope must NOT be the one that reads it back off the
+    // actor: that assert could only ever fire. Both halves have to move together or the scaffold
+    // ships source guaranteed to throw on its first run.
+    expect(source).not.toContain('ctx.actor;');
+    // The EXECUTABLE half of the pairing, not the sentence about it: the pass mints `tenancy:cross`
+    // on its own actor for a `tenant: 'none'` backfill, and this guard is the scaffold's only
+    // reader of that fact. A source that dropped the import or the check would still contain every
+    // word of the comment above it.
+    expect(source).toContain('import { CROSS_TENANT_SCOPE, postgresRepo, tableFor } from');
+    expect(source).toContain('hasScope(ctx.actor, CROSS_TENANT_SCOPE)');
   });
 
   test('count(), requires and environments are offered as declarations, not as defaults', () => {

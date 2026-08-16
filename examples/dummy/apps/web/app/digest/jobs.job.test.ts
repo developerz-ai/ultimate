@@ -167,6 +167,16 @@ const deliver = (runner: StepRunner, reads: Reads, posts: readonly ReturnType<ty
     runId: RUN,
   });
 
+test('the fan-out belongs to no org and the delivery belongs to exactly one', () => {
+  // The two halves of the digest's tenancy, asserted together because they are one decision: the
+  // fan-out reads every org's members (its one cross-tenant statement is scoped in
+  // `app/orgs/repo.ts`), and everything it schedules is one org's work.
+  expect(sendDigest.tenantFor({ runDate: '2026-08-12' })).toBeUndefined();
+  expect(
+    deliverDigest.tenantFor({ orgId: TINTA, zone: MADRID, localDate: LOCAL_DATE, slotAt: SLOT_AT }),
+  ).toBe(TINTA);
+});
+
 test('one window read and one member read, however many readers the group holds', async () => {
   const reads = noReads();
   const mail = mailFailingOn(NEVER);

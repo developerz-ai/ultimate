@@ -8,7 +8,7 @@ import { priceDecimalOf } from '@postly/domain';
 import { useT } from '@postly/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { ld } from '@ultimat3/seo';
-import { Image, Stack } from '@ultimat3/ui';
+import { Stack } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { currencyFromUrl } from '../shared/currency';
 import styles from './page.module.scss';
@@ -63,14 +63,14 @@ export function Page(): JSX.Element {
             </a>
           </div>
         </Stack>
-
-        {/* Dimensions are read at build time and inlined, so this hero costs 0 CLS. */}
-        <Image
-          src="/media/feed-screenshot.png"
-          alt={t('site.hero.title')}
-          sizes="(max-width: 700px) 100vw, 620px"
-          priority
-        />
+        {/*
+          No hero image. `/media/*key` is the STORAGE route — one disk holding every tenant's
+          uploads — so it is `auth: 'required'`, and an anonymous marketing page asking it for
+          `feed-screenshot.png` is a 401 (it was a 404 before, because nothing ever wrote that
+          object). A genuinely public image belongs under `apps/web/site/` as a committed asset, and
+          this app has no static-asset route to serve one from yet, so the honest answer is no image
+          rather than a broken one. See `packages/cli/src/dev-assets.ts`.
+        */}
       </section>
 
       <section class={styles.features}>

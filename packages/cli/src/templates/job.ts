@@ -1,6 +1,7 @@
 // `x g job` / `x g task` — durable background work and the cron trigger that enqueues it. The
-// idempotency key is required by the type, so the generator always emits one; the generated test
-// pins it through a real driver, because a key that is not stable is a job that runs twice.
+// idempotency key and the tenant are both required by the type, so the generator always emits
+// both; the generated test pins them through a real driver, because a key that is not stable is a
+// job that runs twice and a tenant that is not declared is a job that reads the wrong org's rows.
 
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
@@ -16,7 +17,14 @@ import { job, t } from '@ultimat3/jobs';
 import * as repo from '../repo';
 
 export const ${name.camel} = job({
-  input: t.object({ id: t.uuid }),
+  input: t.object({ id: t.uuid, orgId: t.uuid }),
+  // The org this run's body acts as, derived from the job's OWN input — never from whoever
+  // enqueued it, who may have changed orgs by the time a retried job settles. \`orgId\` is in the
+  // input for this and no other reason: \`x g entity\` scaffolds \`tenant: 'orgId'\`, so every read
+  // below is tenant-scoped. \`tenant: 'none'\` is the other spelling and it STRIPS the org, which
+  // makes a tenant-scoped read fail closed with X_TENANCY_ACTOR_ORG_REQUIRED — use it only for a
+  // job that touches no tenanted table.
+  tenant: (input) => input.orgId,
   idempotencyKey: ({ id }) => \`${name.kebab}:\${id}\`,
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step }) {
@@ -42,7 +50,17 @@ import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
 export const ${name.camel} = task({
   cron: '0 3 * * *',
   tz: 'UTC',
-  enqueue: () => [[${jobName.camel}, { id: '00000000-0000-4000-8000-000000000001' }]],
+  // The org rides in the payload because the job DECLARES its tenant from its own input: a task
+  // has no request behind it, so there is no caller whose org could be read instead.
+  enqueue: () => [
+    [
+      ${jobName.camel},
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        orgId: '00000000-0000-4000-8000-000000000002',
+      },
+    ],
+  ],
 });
 `;
 
@@ -53,6 +71,8 @@ import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
 const id = '00000000-0000-4000-8000-000000000001';
+const orgId = '00000000-0000-4000-8000-000000000002';
+const input = { id, orgId };
 
 // The driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test happens to run next.
@@ -63,12 +83,19 @@ afterAll(resetJobDriver);
 
 jobTest('${name.camel} declares an idempotency key and a retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
-  expect(${name.camel}.idempotencyKeyFor({ id })).toBe(\`${name.kebab}:\${id}\`);
+  expect(${name.camel}.idempotencyKeyFor(input)).toBe(\`${name.kebab}:\${id}\`);
   expect(${name.camel}.retry.attempts).toBeGreaterThan(1);
 });
 
 jobTest('${name.camel} derives the same key for the same input', () => {
-  expect(${name.camel}.idempotencyKeyFor({ id })).toBe(${name.camel}.idempotencyKeyFor({ id }));
+  expect(${name.camel}.idempotencyKeyFor(input)).toBe(${name.camel}.idempotencyKeyFor(input));
+});
+
+jobTest('${name.camel} runs as the org its own input names', () => {
+  // Not a formality: \`tenant: 'none'\` compiles just as well and strips the org, and every read in
+  // this job is tenant-scoped — so this declaration is the whole of what stands between the body
+  // and X_TENANCY_ACTOR_ORG_REQUIRED, or worse, another org's rows.
+  expect(${name.camel}.tenantFor(input)).toBe(orgId);
 });
 
 jobTest('${name.camel} projects itself into the manifest', () => {
@@ -80,9 +107,9 @@ jobTest('${name.camel} projects itself into the manifest', () => {
 jobTest('${name.camel} enqueues once, and dedupes the retry', async () => {
   // The whole point of the key: an at-least-once caller may enqueue twice and the work still
   // happens once. \`.enqueue()\` is the one queue path — a job is never run inline.
-  const first = await ${name.camel}.enqueue({ id });
+  const first = await ${name.camel}.enqueue(input);
   expect(first.deduped).toBe(false);
-  const again = await ${name.camel}.enqueue({ id });
+  const again = await ${name.camel}.enqueue(input);
   expect(again.deduped).toBe(true);
 });
 `;

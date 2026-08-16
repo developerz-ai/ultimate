@@ -24,6 +24,13 @@ const instant = t.string;
 export const sweepOrphanMedia = job({
   input: t.object({ before: instant }),
   idempotencyKey: (input) => `media-sweep:${input.before}`,
+  /**
+   * There is no tenant to declare: visibility here is relational (friendships and blocks), so no
+   * entity in this app carries a tenant column and the guard that `'none'` fails closed against
+   * never fires. `crossTenant()` would be a lie about a sweep that crosses nothing — and it refuses
+   * an actor without `tenancy:cross`, which no worker context in the framework mints.
+   */
+  tenant: 'none',
   retry: { attempts: 5, backoff: 'exponential', delay: '10s' },
   async run({ input }) {
     const stale = await pendingMediaBefore(new Date(input.before), SWEEP_PAGE);
@@ -47,6 +54,8 @@ export const sweepOrphanMedia = job({
 export const resetDemo = job({
   input: t.object({ occurrence: instant }),
   idempotencyKey: (input) => `demo-reset:${input.occurrence}`,
+  /** Same reason as the sweep above: this app has no tenant column, and a reset owns every row. */
+  tenant: 'none',
   // One attempt more than a transient blip needs, and no more: a reset that keeps failing should
   // dead-letter loudly rather than delete the demo four more times.
   retry: { attempts: 3, backoff: 'exponential', delay: '30s' },

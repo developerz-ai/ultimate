@@ -30,7 +30,7 @@ export const publishPost = action({
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });
     return post;
   },
 });
@@ -225,6 +225,7 @@ import { send } from '@ultimat3/mail';
 
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid, to: t.email, locale: t.locale }),
+  tenant: ({ orgId }) => orgId,                       // REQUIRED by the type
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`,   // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {

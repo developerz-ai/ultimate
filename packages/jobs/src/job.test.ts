@@ -50,6 +50,7 @@ beforeEach(() => {
   resetJobDriver();
   driver = createMemoryDriver();
   notify = job<OrgInput>({
+    tenant: 'none',
     name: 'notifySubscribers',
     input: passthrough<OrgInput>(),
     idempotencyKey: ({ orgId }) => `notify:${orgId}`,
@@ -126,6 +127,7 @@ describe('handle.as', () => {
     setJobDriver(driver);
     let ran = false;
     const audit = job<OrgInput>({
+      tenant: 'none',
       name: 'auditOrg',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `audit:${orgId}`,
@@ -146,6 +148,7 @@ describe('handle.as', () => {
 describe('describe', () => {
   test('describeJobs() is the handles own projection, name-sorted', () => {
     job<OrgInput>({
+      tenant: 'none',
       name: 'archiveOrg',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `archive:${orgId}`,
@@ -181,6 +184,7 @@ describe('describe', () => {
   test('a real schema is published as JSON Schema, not as its vendor name', () => {
     resetJobs();
     const provision = job({
+      tenant: 'none',
       name: 'provisionOrg',
       input: t.object({ orgId: t.string, seats: t.number }),
       idempotencyKey: ({ orgId }) => `provision:${orgId}`,
@@ -199,6 +203,7 @@ describe('describe', () => {
   test('backoff falls back to the default when the definition omits it', () => {
     resetJobs();
     const sweep = job<OrgInput>({
+      tenant: 'none',
       name: 'sweep',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `sweep:${orgId}`,
@@ -216,6 +221,7 @@ describe('an unregistered job', () => {
     resetJobs();
     setJobDriver(driver);
     const orphan = job<OrgInput>({
+      tenant: 'none',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `orphan:${orgId}`,
       retry: { attempts: 1 },

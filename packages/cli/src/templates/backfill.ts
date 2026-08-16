@@ -20,9 +20,9 @@ const backfillSource = (
 // \`BackfillBatch\` comes from @ultimat3/jobs, not @ultimat3/schema: a backfill file imports one package.
 
 import type { Ctx } from '@ultimat3/core';
-import { assert } from '@ultimat3/core';
+import { assert, hasScope } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
-import { postgresRepo, tableFor } from '@ultimat3/entity';
+import { CROSS_TENANT_SCOPE, postgresRepo, tableFor } from '@ultimat3/entity';
 import type { BackfillBatch } from '@ultimat3/jobs';
 import { backfill } from '@ultimat3/jobs';
 import type { ${feature.pascal} } from '../entity';
@@ -32,18 +32,21 @@ import { ${feature.camel} } from '../entity';
 const ${feature.camel}Table = () => tableFor(${feature.camel}, postgresRepo(${feature.camel}));
 
 /**
- * The rows this pass visits. \`where({ orgId })\` is what satisfies the tenancy guard, and a sweep
- * with no org would visit every tenant at once — so the actor this run carries has to name one.
+ * The rows this pass visits. A one-pass sweep has no single org, so it declares \`tenant: 'none'\`
+ * below — which STRIPS the org from the run rather than inheriting the worker's. That makes
+ * spanning tenants a capability instead of an accident: the actor this worker runs as has to carry
+ * \`tenancy:cross\`, and this is where that is said, before a page is read rather than inside the
+ * plan builder. A single-org sweep is the other shape — declare \`tenant: () => '<org id>'\` and put
+ * \`.where({ orgId: ctx.actor.orgId })\` back.
  */
 const ${name.camel}Scope = (ctx: Ctx): ReadBuilder<${feature.pascal}> => {
-  const { orgId } = ctx.actor;
   assert(
-    orgId !== undefined,
-    '${name.kebab}: the actor running this pass carries no orgId, and a sweep is tenanted',
+    hasScope(ctx.actor, CROSS_TENANT_SCOPE),
+    '${name.kebab}: this pass spans every tenant and its actor holds no tenancy:cross',
     // A generated \`fix:\` is copied and run verbatim, so it names a command this build SHIPS.
     'x db backfill ${name.kebab} --write --json',
   );
-  return ${feature.camel}Table().where({ orgId });
+  return ${feature.camel}Table();
 };
 
 /**
@@ -58,6 +61,13 @@ export const ${name.camel}Row = (row: ${feature.pascal}): ${feature.pascal} => (
 
 export const ${name.camel} = backfill({
   name: '${name.kebab}',
+  // A sweep over a table belongs to no one org, so it declares none — and \`'none'\` STRIPS the org
+  // rather than inheriting the worker's, so a tenant-scoped read inside the pass fails closed
+  // (X_TENANCY_ACTOR_ORG_REQUIRED) instead of reading somebody's rows by accident. A sweep that
+  // genuinely spans tenants says so out loud: its work runs inside \`crossTenant(reason, fn)\`, and
+  // the reason IS the mechanism. A per-org sweep declares its org instead: \`tenant: () => orgId\`,
+  // one enqueue per org.
+  tenant: 'none',
   source: ({ ctx }): ReadBuilder<${feature.pascal}> => ${name.camel}Scope(ctx),
   handle: async ({ rows, signal }: BackfillBatch<${feature.pascal}>) => {
     // One page, in its own durable step, at least once. Write through upsertAll, updateWhere or an
@@ -70,7 +80,7 @@ export const ${name.camel} = backfill({
   // \`source\` narrows to the rows that are actually behind (\`.andWhere('publishedAt', 'is', null)\`
   // and the like): then a dry run cannot lie, and a pass that exhausts its source while this still
   // answers above zero fails as X_BACKFILL_STALLED instead of writing a completed row nobody can
-  // trust. Left out here because this scaffold re-normalises every row in the org, so a count of
+  // trust. Left out here because this scaffold re-normalises every row it visits, so a count of
   // the same chain would never reach zero.
   // count: ({ ctx }) => ${name.camel}Scope(ctx).andWhere('publishedAt', 'is', null).count(),
   // batch: 1_000, // rows per step, default. Adjust to balance statement size and retry scope.

@@ -15,6 +15,10 @@ export const onboardOrg = job({
   // request context that stopped existing the moment the signup returned.
   input: t.object({ orgId: t.uuid, to: t.email, locale: t.locale }),
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`, // REQUIRED by the type
+  // The org this run acts as, and it is the one the payload already names: `memberCount` inside
+  // `ctx.orgs.byId` reads `members`, which is tenant-scoped, so without this the seat count is a
+  // read no actor owns.
+  tenant: ({ orgId }) => orgId,
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {
     // There is nothing to provision. A disk is declared in `app.config.ts` and built once at
@@ -33,8 +37,17 @@ export const onboardOrg = job({
 });
 
 export const sendInvite = job({
-  input: t.object({ memberId: t.uuid }),
+  /**
+   * `orgId` rides beside the member id because `members` is tenant-scoped and the org is not
+   * recoverable from a member id without already being inside the tenant: `ctx.orgs.memberById`
+   * scopes by the ACTING actor's org, and the only thing that puts one on a job's actor is this
+   * declaration. `inviteMember` takes it off the row it just wrote, which is the org the member
+   * actually landed in.
+   */
+  input: t.object({ memberId: t.uuid, orgId: t.uuid }),
+  /** The member id alone: it is a uuid primary key, so the org would narrow nothing. */
   idempotencyKey: ({ memberId }) => `invite:${memberId}`,
+  tenant: ({ orgId }) => orgId,
   retry: { attempts: 3, backoff: 'exponential' },
   queue: 'mail',
   async run({ input, step, ctx }) {

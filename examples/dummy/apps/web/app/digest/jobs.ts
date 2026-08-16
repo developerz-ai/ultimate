@@ -62,6 +62,14 @@ export const sendDigest = job({
    */
   input: t.object({ runDate: t.string }),
   idempotencyKey: ({ runDate }) => `digest:${runDate}`,
+  /**
+   * No org, and that is the point of the fan-out: it reads every opted-in member in every org to
+   * decide which (org, zone) groups exist tonight. `'none'` fails closed on a tenant-scoped read,
+   * so the one statement that spans orgs says so out loud — `allDigestRecipients` in
+   * `app/orgs/repo.ts` is wrapped in `crossTenant()`. Every read BELOW the fan-out belongs to one
+   * org, which is why `deliverDigest` declares one.
+   */
+  tenant: 'none',
   retry: { attempts: 3, backoff: 'exponential' },
   queue: 'digest',
   async run({ input, step, ctx }) {
@@ -126,6 +134,8 @@ export const deliverDigest = job({
   }),
   /** Local date, not UTC date: two zones inside one org are two different digests. */
   idempotencyKey: ({ orgId, zone, localDate }) => `digest:${orgId}:${zone}:${localDate}`,
+  /** One group is one org: the posts, the org row and the readers are all read under this id. */
+  tenant: ({ orgId }) => orgId,
   retry: { attempts: 4, backoff: 'exponential' },
   queue: 'mail',
   /** One group in flight at a time, so a retry cannot race its own first attempt. */

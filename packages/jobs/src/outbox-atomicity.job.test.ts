@@ -44,6 +44,7 @@ describe('a rolled-back stage never reaches a worker', () => {
     const driver = createMemoryDriver();
     const store: OutboxStore = createMemoryOutboxStore();
     const handle = job<{ orgId: string }>({
+      tenant: 'none',
       name: 'welcomeEmail',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `welcome:${orgId}`,
@@ -80,6 +81,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
     const store = createMemoryOutboxStore();
     const relay = createOutboxRelay({ store, driver });
     const handle = job<{ orgId: string }>({
+      tenant: 'none',
       name: 'welcomeEmailCommitted',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `welcome:${orgId}`,
@@ -114,6 +116,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
     const driver = createMemoryDriver();
     const store = createMemoryOutboxStore();
     const handle = job<{ orgId: string }>({
+      tenant: 'none',
       name: 'welcomeEmailCrashRelay',
       input: passthrough<{ orgId: string }>(),
       idempotencyKey: ({ orgId }) => `welcome:${orgId}`,

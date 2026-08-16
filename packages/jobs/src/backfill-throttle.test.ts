@@ -167,6 +167,7 @@ describe('the rate throttle', () => {
     const seen: string[][] = [];
     const table = tableFor(rows, memoryRepo(rows, SEED));
     const slow = backfill<Row>({
+      tenant: 'none',
       name: 'slow-sweep',
       batch: 3,
       rate: 0.5,

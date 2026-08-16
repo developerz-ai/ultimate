@@ -112,6 +112,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
     const chaosJobIds = new Set<string>();
 
     const handle = job<{ n: number }>({
+      tenant: 'none',
       name: 'soakJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `soak:${n}`,

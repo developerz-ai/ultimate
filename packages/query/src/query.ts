@@ -92,11 +92,24 @@ export interface QueryOptions {
 
 export interface SourceOptions extends QueryOptions {
   /**
-   * `false` for developer tooling (`explain`, admin-gated) and for the shared, subject-less
-   * window a sync node builds once per `(query, input)` — see `ToLiveOptions.enforce`. Both are
-   * reads with no subscriber to decide about; every other caller leaves it alone.
+   * Build this source WITHOUT evaluating its policy, and say WHY — a written reason, never a bare
+   * boolean. It was `enforce: false`, and a boolean is wrong here for the reason
+   * `@ultimat3/entity`'s `cross-tenant.ts` gives for the same shape: it reads exactly like
+   * forgetting the check. The reason is the mechanism, not documentation of it — a blank one is
+   * refused (`X_INVARIANT`), so an escape with no argument cannot be written at all, and every
+   * skipped policy in a codebase is one `grep` away with the justification attached.
+   *
+   * Two situations qualify, and both are reads with no subscriber to decide about: developer
+   * tooling that returns no rows (`explain`, `describeSql`) and the shared, subject-less window a
+   * sync node builds once per `(query, input)` — see `ToLiveOptions.enforce`, which is that one
+   * use spelled as a boolean because it has exactly one reason and this file already states it.
+   *
+   * It is deliberately NOT gated on a capability the way `crossTenant` is: `explain` runs from the
+   * CLI with no actor at all to check one against, so a scope requirement would close the one
+   * surface this exists for. The rows are still tenant-scoped by `@ultimat3/entity` under the
+   * caller's own context, which `read.ts` now installs.
    */
-  readonly enforce?: boolean;
+  readonly unenforced?: string;
 }
 
 export interface QueryDescriptor {

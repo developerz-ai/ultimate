@@ -51,7 +51,9 @@ export const publishPost = action({
     const post = await ctx.posts.publish(postId(input.postId));
     // The job enqueues itself through its own handle, in the same transaction as the publish: a
     // rolled-back publish never mails anybody and a committed one always does.
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    // The org the policy already decided on, carried into the payload: the fanout's reads are
+    // tenant-scoped and a job has no request behind it to derive one from.
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });
     return post;
   },
 });

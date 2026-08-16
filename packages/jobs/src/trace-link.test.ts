@@ -48,6 +48,7 @@ describe('the trace link across the queue', () => {
     setJobDriver(driver);
 
     const chargeCard = job({
+      tenant: 'none',
       name: 'chargeCard',
       input: passthrough<{ orderId: string }>(),
       idempotencyKey: (input) => `order:${input.orderId}`,
@@ -72,6 +73,7 @@ describe('the trace link across the queue', () => {
     setJobDriver(driver);
 
     job({
+      tenant: 'none',
       name: 'chargeCard',
       input: passthrough<{ orderId: string }>(),
       idempotencyKey: (input) => `order:${input.orderId}`,
@@ -111,6 +113,7 @@ describe('the trace link across the queue', () => {
     const driver = createMemoryDriver();
     setJobDriver(driver);
     const sendDigest = job({
+      tenant: 'none',
       name: 'sendDigest',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'digest',
@@ -128,6 +131,7 @@ describe('the trace link across the queue', () => {
     const driver = createMemoryDriver();
     setJobDriver(driver);
     const exportLedger = job({
+      tenant: 'none',
       name: 'exportLedger',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'export',

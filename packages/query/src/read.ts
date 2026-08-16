@@ -8,7 +8,9 @@
 import type { Ctx } from '@ultimat3/core';
 import {
   anonymousActor,
+  assert,
   createContext,
+  logger,
   runWithContext,
   tryUseContext,
   useContext,
@@ -97,7 +99,14 @@ export function sourceFor(
  * core models it as the anonymous actor. Omitting `actor` touches no context at all.
  */
 function asActor<T>(options: QueryOptions, run: (ctx: Ctx) => Promise<T>): Promise<T> {
-  if (options.actor === undefined) return run(options.ctx ?? useContext());
+  if (options.actor === undefined) {
+    // INSTALLED, never only handed over — the same fix `@ultimat3/action`'s `invoke` carries, for
+    // the same reason: `@ultimat3/entity`'s tenant guard derives from `tryUseContext()`, so a read
+    // built under an explicit `ctx` evaluated its policy against that actor and its row tenancy
+    // against nobody. Absent a `ctx` this reinstalls the ambient one, which changes nothing.
+    const ctx = options.ctx ?? useContext();
+    return runWithContext(ctx, () => run(ctx));
+  }
   const patch = { actor: options.actor ?? anonymousActor() };
   const inChild = (): Promise<T> => run(useContext());
   const base = options.ctx ?? tryUseContext();
@@ -178,12 +187,26 @@ async function buildSource(
   const def = defOf(target);
   const name = queryName(target);
   const input = await validate(def.input, raw, name);
-  if (options.enforce !== false) {
+  const unenforced = options.unenforced;
+  if (unenforced === undefined) {
     guard(
       def.policy,
       { actor: actorOf(ctx), input, ctx, query: name },
       options.surface ?? 'server',
     );
+  } else {
+    // The reason IS the mechanism, exactly as it is for `crossTenant`: a blank one leaves the
+    // escape with no argument, and the next reader cannot tell a considered skip from a forgotten
+    // policy. Refused before the source is built, so nothing is read on a blank justification.
+    assert(
+      unenforced.trim() !== '',
+      `query "${name}" was built with a blank unenforced reason, so the policy it skips carries no argument`,
+      `pass why this read needs no subject: sourceFor(target, input, { unenforced: 'explain returns no rows' })`,
+    );
+    // The audit half. `debug`, because the two shipped callers are dev tooling and a sync node's
+    // once-per-query-id window — never a per-request path — and core's logger costs one level
+    // comparison when nothing is listening.
+    logger.debug('query.policy.unenforced', { query: name, reason: unenforced });
   }
   const source = def.sql(input, ctx);
   // A live window is served in the order its patches are placed in. The matcher breaks a tie on

@@ -34,6 +34,8 @@ function pingJob(name = 'ping') {
   return job({
     name,
     input: t.object({}),
+    // A ping touches no tenant-scoped table — the fixture exists to give a task a job to name.
+    tenant: 'none' as const,
     idempotencyKey: () => name,
     retry: { attempts: 1 },
     run: () => Promise.resolve(),

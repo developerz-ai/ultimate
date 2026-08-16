@@ -13,6 +13,7 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 ```ts
 export const reindexTodo = job({
   input: t.object({ id: t.uuid }),
+  tenant: 'none',                              // a todo carries no org in this tutorial
   idempotencyKey: ({ id }) => `reindex-todo:${id}`,
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step }) {

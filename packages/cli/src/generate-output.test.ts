@@ -120,7 +120,12 @@ describe('unit · what x g emits', () => {
     expect(source?.contents).toContain('idempotencyKey:');
     const testFile = files.find((file) => file.path.endsWith('reindex.test.ts'));
     // Pinned through a real driver: the key only matters because the second enqueue dedupes.
-    expect(testFile?.contents).toContain('.enqueue({ id })');
+    // `input`, not `{ id }` — the emitted job declares `tenant: (input) => input.orgId`, so its
+    // payload carries the org the run acts under and the enqueue has to name it.
+    expect(testFile?.contents).toContain('.enqueue(input)');
+    // The resolver, not the field: `tenant: 'none'` and `tenant: () => 'whatever'` both satisfy
+    // `toContain('tenant:')` while stripping the org off every read the generated job makes.
+    expect(source?.contents).toContain('tenant: (input) => input.orgId,');
     expect(testFile?.contents).toContain('deduped');
   });
 

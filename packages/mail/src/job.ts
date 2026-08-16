@@ -31,6 +31,10 @@ export const sendMailJob: JobHandle<MailMessage> = job<MailMessage>({
   name: 'mail.send',
   input: mailMessageSchema,
   idempotencyKey: mailIdempotencyKey,
+  // A send carries a MailMessage — addresses and a rendered body, never an org. The recipient
+  // was resolved by whoever enqueued it, under their own tenant, so this run touches no
+  // tenant-scoped table and has no org to declare.
+  tenant: 'none',
   retry: { attempts: 5, backoff: 'exponential' },
   run: ({ input }): Promise<SendResult> => mailDriver().send(input),
 });

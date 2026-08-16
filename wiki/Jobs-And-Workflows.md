@@ -10,6 +10,7 @@ v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading))
 // job
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
+  tenant: ({ orgId }) => orgId,               // the org this run acts as
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`,   // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {
@@ -48,7 +49,7 @@ Every projection is a method on the job — `onboardOrg.enqueue({ orgId })`, nev
 ```ts
 async handle({ input, ctx }) {
   const post = await ctx.posts.publish(input.postId);              // INSERT/UPDATE
-  if (input.notify) await notifySubscribers.enqueue({ postId: post.id });  // same tx
+  if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: post.orgId });  // same tx
   return post;
 }
 ```
@@ -128,6 +129,7 @@ Declared per job, enforced per tenant, so one noisy customer cannot starve the r
 ```ts
 export const syncCrm = job({
   input: t.object({ orgId: t.uuid }),
+  tenant: ({ orgId }) => orgId,
   idempotencyKey: ({ orgId }) => `crm-sync:${orgId}`,
   concurrency: { key: ({ orgId }) => orgId, limit: 2 },
   rateLimit:   { key: ({ orgId }) => orgId, limit: 60, per: '1m' },

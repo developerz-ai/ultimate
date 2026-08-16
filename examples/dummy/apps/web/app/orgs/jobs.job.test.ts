@@ -8,6 +8,17 @@ import { inviteMember } from './actions';
 import { onboardOrg, sendInvite } from './jobs';
 import { nudgeEmail } from './mail';
 
+/** Any org and any member: what is under test is where the two jobs READ the tenant from. */
+const ORG = '00000000-0000-4000-8000-00000000c001';
+const MEMBER = '00000000-0000-4000-8000-00000000c0a1';
+
+test('both org jobs run as the org their payload names', () => {
+  expect(onboardOrg.tenantFor({ orgId: ORG, to: 'mara@tinta.example', locale: 'en' })).toBe(ORG);
+  // `memberId` alone cannot answer this: `ctx.orgs.memberById` scopes by the ACTING actor's org,
+  // and a job's actor has one only because this declaration put it there.
+  expect(sendInvite.tenantFor({ memberId: MEMBER, orgId: ORG })).toBe(ORG);
+});
+
 test('onboardOrg retries only the failed step', async ({ seed, clock, mail, runJobs }) => {
   const { org, owner } = await seed('dev').pick({ org: 'org:tinta', owner: 'member:mara' });
   mail.failOnce(nudgeEmail);

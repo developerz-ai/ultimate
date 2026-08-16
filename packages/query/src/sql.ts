@@ -27,7 +27,7 @@ export async function explain<TInput extends StandardSchemaV1, TRow extends obje
   ctx?: Ctx,
 ): Promise<ExplainResult> {
   const source = await sourceFor(target, input, {
-    enforce: false,
+    unenforced: 'explain returns the statement and never a row, and its surfaces are admin-gated',
     ...(ctx === undefined ? {} : { ctx }),
   });
   const text = source.toSQL();
@@ -65,7 +65,7 @@ export async function describeSql(
       continue;
     }
     const source = await sourceFor(target, sample, {
-      enforce: false,
+      unenforced: 'the dashboard listing renders SQL text for a sample input and reads no rows',
       ...(ctx === undefined ? {} : { ctx }),
     });
     entries.push({ query: name, live: target.isLive, sql: source.toSQL().sql });

@@ -9,6 +9,7 @@ import { job, t } from '@ultimat3/jobs';
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`,   // REQUIRED by the type
+  tenant: ({ orgId }) => orgId,                       // REQUIRED by the type — or tenant: 'none'
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {
     const org = await step.run('provision', () => ctx.orgs.provision(input.orgId));
@@ -90,6 +91,32 @@ usually "nobody thought about it", and the bug — two charges, two welcome emai
 provisioned orgs — shows up in production under load and never in a test. There is no way
 to define a job in Ultimate that cannot be deduped.
 
+## `tenant` is required by the type
+
+The same shape, for the same class of bug. A job body runs with no request behind it, so nothing
+can read the acting org off a caller — and `@ultimat3/entity`'s tenant guard derives from the
+**ambient** context, so a job that declared nothing used to run with no tenant at all: a row naming
+another org was refused over HTTP as `X_TENANCY_ACTOR_MISMATCH` and accepted through the queue.
+
+```ts
+tenant: (input) => input.orgId   // the run acts under this org
+tenant: 'none'                   // this job belongs to no tenant
+```
+
+`executeJob` derives the org, puts it on the run's actor and installs that context, so
+`ctx.actor.orgId` inside the body is the tenant the job declared — and every tenant-scoped read and
+write is checked against it, exactly as it is on every other surface. `'none'` carries **no** org,
+so a tenant-scoped read inside such a `job()` is `X_TENANCY_ACTOR_ORG_REQUIRED`: a job body that
+genuinely spans tenants says so with `crossTenant(reason, fn)` around its own reads. (A
+`backfill()` is the one exception, and it is not a loophole — its `source` is a lazy chain, so the
+author has nothing to wrap and the pass opens the scope itself. See the backfill section below.)
+Omitting the field is a type error, and
+`X_JOB_TENANT_REQUIRED` for generated code and JS callers.
+
+A single boot-supplied service actor would have closed the same hole with one identity for every
+job in the app — which is a cross-tenant read waiting for the first job that takes an org id in its
+input. The tenant is a fact about the work, so the job declares it.
+
 ## Durable steps
 
 | Call | Behaviour |
@@ -117,6 +144,7 @@ export const rewriteSlugs = backfill({
   name: 'rewrite-slugs',                                   // REQUIRED: a durable key
   batch: 1_000,                                            // rows per statement and per step
   rate: 5,                                                 // batches/sec — the default
+  tenant: 'none',                                          // every tenant — the pass scopes itself
   source: () => db.posts.where({ published: true }),
   async handle({ rows }) {
     await db.posts.upsertAll(rows.map(slugged), { onConflict: ['id'] });
@@ -138,6 +166,7 @@ without a statement, and the iteration reopens at the cursor they left behind.
 | `handle` is given a `signal` | the run's deadline composed with the batch's own ceiling — hand it to whatever the body calls |
 | `handle` runs at least once per page | an attempt cancelled between the last row and the checkpoint replays it — write through `upsertAll` / `updateWhere`, never `count + 1` |
 | `idempotencyKey` is the backfill's name | re-enqueueing a live pass is the same pass, not a second writer on one table |
+| `tenant` is required, exactly as on `job()` | a backfill IS a job. `tenant: () => orgId` scopes every page to one org; `tenant: 'none'` sweeps every tenant, and the PASS opens that cross-tenant scope — `source` is a lazy chain, so the author has nothing to wrap |
 | `batch` is refused at declaration | `0`, `1.5` and a `NaN` from an env var fail the build, not the fourth attempt |
 | `rate` throttles, and there is no way off | a sweep shares its pool with the requests the app is still serving; to go faster raise the number |
 | the pause is spent **inside** the step | a resumed attempt replays 500 checkpoints and re-pays none of their pauses |
@@ -226,6 +255,7 @@ anything is unswept so a cron or a deploy check can read the exit code alone.
 ```ts
 export const dropLegacy = backfill({
   name: 'drop-legacy',
+  tenant: 'none',                              // required, exactly as on job() — see the table above
   requires: '20260814120000_add_publish_at',   // a migration id, checked against x_migrations
   environments: ['staging', 'production'],     // omitted = every environment
   count: ({ ctx }) => db.posts.where({ publishedAt: null }).count(),
@@ -290,7 +320,7 @@ as `jobs.timeout.abandoned` — the one way to find a handler that never reads `
 ```ts
 await ctx.tx(async (tx) => {
   const post = await ctx.posts.publish(input.postId, tx);
-  await notifySubscribers.enqueue({ postId: post.id }); // joins `tx`
+  await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId }); // joins `tx`
 });
 ```
 

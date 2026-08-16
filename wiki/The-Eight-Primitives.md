@@ -99,7 +99,7 @@ export const publishPost = action({
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: post.orgId });
     return post;
   },
 });
@@ -160,6 +160,7 @@ Durable background work, optionally multi-step. `idempotencyKey` is **required b
 ```ts
 export const onboardOrg = job({
   input: t.object({ orgId: t.uuid }),
+  tenant: ({ orgId }) => orgId,               // the org this run acts as
   idempotencyKey: ({ orgId }) => `onboard:${orgId}`,   // REQUIRED by the type
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step, ctx }) {

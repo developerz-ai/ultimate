@@ -107,6 +107,8 @@ describe(testName('unit', 'the runJobs fixture'), () => {
     job<{ readonly id: string }>({
       name,
       input: passthrough<{ readonly id: string }>(),
+      // A fixture asserting retry and step replay — it reads no tenant-scoped table.
+      tenant: 'none',
       idempotencyKey: (input) => `${name}:${input.id}`,
       retry: { attempts: 3, backoff: 'fixed', delay: 1_000, jitter: false },
       run: async ({ step }) => {
@@ -151,6 +153,7 @@ describe(testName('unit', 'the runJobs fixture'), () => {
     const sleeper = job<{ readonly id: string }>({
       name: 'fixture-sleeper',
       input: passthrough<{ readonly id: string }>(),
+      tenant: 'none',
       idempotencyKey: (input) => `sleeper:${input.id}`,
       retry: { attempts: 1 },
       run: async ({ step }) => {

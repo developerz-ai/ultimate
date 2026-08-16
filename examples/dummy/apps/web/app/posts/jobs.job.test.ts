@@ -131,13 +131,20 @@ const runnerOn = (store: StepStore): StepRunner =>
 /** One attempt, over a store shared with the attempts before it — which is what makes it a replay. */
 const attempt = (runner: StepRunner, reads: Reads, nth: number): Promise<unknown> =>
   notifySubscribers.run({
-    input: { postId: POST },
+    input: { postId: POST, orgId: ORG },
     step: runner.step,
     ctx: contextFor(reads),
     attempt: nth,
     jobId: 'job-notify-1',
     runId: RUN,
   });
+
+test('the fanout runs as the org its payload names, never as no tenant', () => {
+  // The org has to come from the INPUT: every read in the body is tenant-scoped and the first one
+  // is what would have told us the org. `tenant: 'none'` here is `X_TENANCY_ACTOR_ORG_REQUIRED` on
+  // `load-post`, and a `crossTenant` wrapper around a one-org fanout would be a lie.
+  expect(notifySubscribers.tenantFor({ postId: POST, orgId: ORG })).toBe(ORG);
+});
 
 test('the send loop is one step per recipient, named for the recipient', async () => {
   const mail = mailFailingOn(NEVER);

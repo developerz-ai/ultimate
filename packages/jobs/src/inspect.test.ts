@@ -200,6 +200,7 @@ describe('inspectJob', () => {
   test('reads the record, its steps, and the retry schedule of the matching registered job', async () => {
     const driver = createMemoryDriver();
     const handle: JobHandle<OrgInput> = job<OrgInput>({
+      tenant: 'none',
       name: 'sendDigest',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `digest:${orgId}`,
@@ -389,6 +390,7 @@ describe('retryFromStep', () => {
 describe('inspectManifest', () => {
   test('with no scheduler: jobs and tasks are mapped, and every task nextRun is null', () => {
     const digest: JobHandle<OrgInput> = job<OrgInput>({
+      tenant: 'none',
       name: 'sendDigest',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `digest:${orgId}`,
@@ -431,6 +433,7 @@ describe('inspectManifest', () => {
 
   test('omitted job fields (no concurrency, no timeout) come through as null, not undefined', () => {
     job<OrgInput>({
+      tenant: 'none',
       name: 'plainJob',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `plain:${orgId}`,
@@ -450,6 +453,7 @@ describe('inspectManifest', () => {
 
   test('with a scheduler: nextRun is populated from scheduler.nextRunFor(handle)', () => {
     const digest: JobHandle<OrgInput> = job<OrgInput>({
+      tenant: 'none',
       name: 'sendDigest',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `digest:${orgId}`,
