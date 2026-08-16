@@ -14,7 +14,7 @@ export function oneRow<TRow>(rows: readonly TRow[], reference: string): TRow {
     `no row for ${JSON.stringify(reference)} — the read backing this route answered no rows, ` +
       'which for a bounded single-row read is "absent", never "not yet"',
     'confirm the row exists and this actor may read it: ' +
-      'x db query "select id, slug, status from posts limit 5" --json',
+      'x dev, then run the read in the /_x/db panel',
   );
   return row;
 }

@@ -1,0 +1,1758 @@
+{
+  "manifestVersion": 1,
+  "buildId": "1496a31926c0d80a",
+  "app": {
+    "name": "social-media-clone",
+    "version": "0.1.0"
+  },
+  "routes": [
+    {
+      "url": "/",
+      "render": "static",
+      "offline": "precache",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1500
+      }
+    },
+    {
+      "url": "/admin",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 3000
+      }
+    },
+    {
+      "url": "/admin/jobs",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 3000
+      }
+    },
+    {
+      "url": "/admin/media",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 3000
+      }
+    },
+    {
+      "url": "/admin/ops",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app"
+    },
+    {
+      "url": "/admin/posts",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 3000
+      }
+    },
+    {
+      "url": "/admin/users",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 3000
+      }
+    },
+    {
+      "url": "/dashboard",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "visible",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "60kb",
+        "lcp": 2500
+      }
+    },
+    {
+      "url": "/feed",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 2000
+      }
+    },
+    {
+      "url": "/friends",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 2500
+      }
+    },
+    {
+      "url": "/messages",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 2000
+      }
+    },
+    {
+      "url": "/messages/:id",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 2000
+      }
+    },
+    {
+      "url": "/notifications",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "app",
+      "budget": {
+        "js": "0kb",
+        "lcp": 2000
+      }
+    },
+    {
+      "url": "/signin",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1500
+      }
+    },
+    {
+      "url": "/signup",
+      "render": "ssr",
+      "offline": "network-only",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 1500
+      }
+    },
+    {
+      "url": "/u/:handle",
+      "render": "ssr",
+      "offline": "runtime",
+      "hydrate": "never",
+      "revalidateTags": [],
+      "surface": "site",
+      "budget": {
+        "js": "0kb",
+        "lcp": 2000
+      }
+    }
+  ],
+  "entities": [
+    {
+      "name": "blocks",
+      "table": "blocks",
+      "columns": [
+        {
+          "name": "blocked_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        },
+        {
+          "name": "blocker_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "comments",
+      "table": "comments",
+      "columns": [
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "posts.id"
+        }
+      ],
+      "invariants": [
+        "comment_body_present"
+      ]
+    },
+    {
+      "name": "conversations",
+      "table": "conversations",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "credentials",
+      "table": "credentials",
+      "columns": [
+        {
+          "name": "password_hash",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "friendships",
+      "table": "friendships",
+      "columns": [
+        {
+          "name": "addressee_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "requester_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        },
+        {
+          "name": "responded_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "friendship_responded_coherent"
+      ]
+    },
+    {
+      "name": "likes",
+      "table": "likes",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "posts.id"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "media",
+      "table": "media",
+      "columns": [
+        {
+          "name": "bytes",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "key",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "owner_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        },
+        {
+          "name": "post_id",
+          "type": "uuid",
+          "nullable": true,
+          "primaryKey": false,
+          "references": "posts.id"
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "nullable": true,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "media_bytes_positive",
+        "media_key_unique"
+      ]
+    },
+    {
+      "name": "messages",
+      "table": "messages",
+      "columns": [
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "conversation_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "conversations.id"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        }
+      ],
+      "invariants": [
+        "message_body_present"
+      ]
+    },
+    {
+      "name": "notifications",
+      "table": "notifications",
+      "columns": [
+        {
+          "name": "actor_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "read_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "subject_id",
+          "type": "uuid",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "participants",
+      "table": "participants",
+      "columns": [
+        {
+          "name": "conversation_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "conversations.id"
+        },
+        {
+          "name": "joined_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "last_read_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true,
+          "references": "users.id"
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "posts",
+      "table": "posts",
+      "columns": [
+        {
+          "name": "audience",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "author_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "comment_count",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "like_count",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "media_count",
+          "type": "integer",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "published_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "post_body_present",
+        "post_comment_count_non_negative",
+        "post_like_count_non_negative",
+        "post_media_count_non_negative"
+      ]
+    },
+    {
+      "name": "sessions",
+      "table": "sessions",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "token_hash",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": false,
+          "references": "users.id"
+        }
+      ],
+      "invariants": []
+    },
+    {
+      "name": "users",
+      "table": "users",
+      "columns": [
+        {
+          "name": "avatar_key",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "bio",
+          "type": "text",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamptz",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "handle",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "id",
+          "type": "uuid",
+          "nullable": false,
+          "primaryKey": true
+        },
+        {
+          "name": "locale",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "suspended",
+          "type": "boolean",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "tz",
+          "type": "text",
+          "nullable": false,
+          "primaryKey": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamptz",
+          "nullable": false,
+          "primaryKey": false
+        }
+      ],
+      "invariants": [
+        "user_display_name_present",
+        "user_email_shape",
+        "user_handle_shape"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "name": "blockUser",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "blockerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "blockedId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "blockerId",
+          "blockedId",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "block:create",
+      "permissions": [
+        "block:create"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Block a user and decline any friendship between them"
+      }
+    },
+    {
+      "name": "createAccount",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 30,
+            "pattern": "^[A-Za-z0-9_]+$",
+            "description": "lowercase letters, digits and underscores"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "h-captcha-response": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "handle",
+          "displayName",
+          "email",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1
+          },
+          "handle": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ok",
+          "next",
+          "handle"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "public",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "createSession",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 30,
+            "pattern": "^[A-Za-z0-9_]+$",
+            "description": "lowercase letters, digits and underscores"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "h-captcha-response": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "handle",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1
+          },
+          "handle": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ok",
+          "next",
+          "handle"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "public",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "destroySession",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "const": "sign-out"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revoked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "next",
+          "revoked"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "public",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
+      "name": "health",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ok",
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "public",
+      "permissions": [],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Readiness of this process"
+      }
+    },
+    {
+      "name": "markNotificationsRead",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "marked": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "marked"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "notification:mark-read",
+      "permissions": [
+        "notification:mark-read"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Mark the acting user's notifications as read"
+      },
+      "mutator": true
+    },
+    {
+      "name": "requestFriend",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "requesterId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "addresseeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "declined"
+            ]
+          },
+          "respondedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "requesterId",
+          "addresseeId",
+          "status",
+          "respondedAt",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "friend:request",
+      "permissions": [
+        "friend:request"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Ask another user to be friends"
+      }
+    },
+    {
+      "name": "respondFriend",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "requesterId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "decline"
+            ]
+          }
+        },
+        "required": [
+          "requesterId",
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "requesterId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "addresseeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "declined"
+            ]
+          },
+          "respondedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "requesterId",
+          "addresseeId",
+          "status",
+          "respondedAt",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "friend:respond",
+      "permissions": [
+        "friend:respond"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Accept or decline a friend request addressed to the caller"
+      }
+    },
+    {
+      "name": "sendMessage",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        },
+        "required": [
+          "conversationId",
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "authorId",
+          "body",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "message:send",
+      "permissions": [
+        "message:send"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Send a message to a conversation the actor is already in"
+      }
+    },
+    {
+      "name": "unblockUser",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "blockerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "blockedId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "blockerId",
+          "blockedId"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "block:delete",
+      "permissions": [
+        "block:delete"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": true,
+        "description": "Lift a block this user placed"
+      }
+    }
+  ],
+  "queries": [
+    {
+      "name": "liveThread",
+      "policy": "message:read",
+      "permissions": [
+        "message:read"
+      ],
+      "live": true,
+      "cacheTags": []
+    }
+  ],
+  "jobs": [
+    {
+      "name": "mail.send",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "mailId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "html": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          },
+          "tz": {
+            "type": "string",
+            "format": "iana-time-zone"
+          },
+          "replyTo": {
+            "type": "string",
+            "format": "email"
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "email"
+            }
+          },
+          "unsubscribeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "mailId",
+          "to",
+          "subject",
+          "html",
+          "text",
+          "locale",
+          "tz"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "resetDemo",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "occurrence": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "occurrence"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 3,
+        "backoff": "exponential"
+      },
+      "steps": []
+    },
+    {
+      "name": "sweepOrphanMedia",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "before"
+        ],
+        "additionalProperties": false
+      },
+      "queue": "default",
+      "retry": {
+        "attempts": 5,
+        "backoff": "exponential"
+      },
+      "steps": []
+    }
+  ],
+  "tasks": [
+    {
+      "name": "hourlyDemoReset",
+      "cron": "30 * * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "resetDemo"
+      ]
+    },
+    {
+      "name": "hourlyMediaSweep",
+      "cron": "0 * * * *",
+      "tz": "UTC",
+      "enqueues": [
+        "sweepOrphanMedia"
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "permission": "admin:destroy",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:impersonate",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "admin:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "audit:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "block:create",
+      "enforcedIn": [
+        "action:blockUser"
+      ]
+    },
+    {
+      "permission": "block:delete",
+      "enforcedIn": [
+        "action:unblockUser"
+      ]
+    },
+    {
+      "permission": "dashboard:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "feed:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "friend:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "friend:request",
+      "enforcedIn": [
+        "action:requestFriend"
+      ]
+    },
+    {
+      "permission": "friend:respond",
+      "enforcedIn": [
+        "action:respondFriend"
+      ]
+    },
+    {
+      "permission": "job:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "media:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "media:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "media:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "message:read",
+      "enforcedIn": [
+        "query:liveThread"
+      ]
+    },
+    {
+      "permission": "message:send",
+      "enforcedIn": [
+        "action:sendMessage"
+      ]
+    },
+    {
+      "permission": "notification:mark-read",
+      "enforcedIn": [
+        "action:markNotificationsRead"
+      ]
+    },
+    {
+      "permission": "notification:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post:comment",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post:create",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post:like",
+      "enforcedIn": []
+    },
+    {
+      "permission": "post:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "posts:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "posts:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "posts:write",
+      "enforcedIn": []
+    },
+    {
+      "permission": "public",
+      "enforcedIn": [
+        "action:createAccount",
+        "action:createSession",
+        "action:destroySession",
+        "action:health"
+      ]
+    },
+    {
+      "permission": "users:delete",
+      "enforcedIn": []
+    },
+    {
+      "permission": "users:read",
+      "enforcedIn": []
+    },
+    {
+      "permission": "users:suspend",
+      "enforcedIn": []
+    },
+    {
+      "permission": "users:write",
+      "enforcedIn": []
+    }
+  ],
+  "permissions": [
+    "admin:destroy",
+    "admin:impersonate",
+    "admin:read",
+    "admin:write",
+    "audit:read",
+    "block:create",
+    "block:delete",
+    "dashboard:read",
+    "feed:read",
+    "friend:read",
+    "friend:request",
+    "friend:respond",
+    "job:read",
+    "media:delete",
+    "media:read",
+    "media:write",
+    "message:read",
+    "message:send",
+    "notification:mark-read",
+    "notification:read",
+    "post:comment",
+    "post:create",
+    "post:delete",
+    "post:like",
+    "post:read",
+    "posts:delete",
+    "posts:read",
+    "posts:write",
+    "public",
+    "users:delete",
+    "users:read",
+    "users:suspend",
+    "users:write"
+  ],
+  "locales": [
+    "en"
+  ],
+  "errorCodes": [
+    {
+      "code": "X_AUTH_CAPTCHA_FAILED",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_AUTH_CREDENTIALS_INVALID",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_AUTH_HANDLE_TAKEN",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_AUTH_PASSWORD_WEAK",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_BLOCK_REMOVE_UNSUPPORTED",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_DEMO_RESET_UNSAFE",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_FRIEND_MIRROR_EXISTS",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_FRIEND_NOT_FOUND",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_FRIEND_SELF",
+      "package": "apps/web"
+    },
+    {
+      "code": "X_NOT_A_PARTICIPANT",
+      "package": "apps/web"
+    }
+  ]
+}

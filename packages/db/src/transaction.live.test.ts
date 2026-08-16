@@ -11,6 +11,24 @@ import { withTransaction } from './transaction';
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
 
+/** What the loser is expected to be thrown — read structurally, never cast to `any`. */
+interface CaughtError {
+  readonly code?: string | undefined;
+  readonly fix?: string | undefined;
+}
+
+/**
+ * One half of a rendezvous: a promise and the call that settles it. Every ordering these tests
+ * depend on is a gate, never a sleep and never wall-clock luck — see the choreography below.
+ */
+function gate(): { readonly reached: Promise<void>; readonly open: () => void } {
+  let open: () => void = () => undefined;
+  const reached = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { reached, open };
+}
+
 describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
   const clients: PostgresClient[] = [];
 
@@ -31,27 +49,61 @@ describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
     await Promise.all(clients.splice(0).map((client) => client.close()));
   });
 
-  test('a real 40001 is retried, and the second attempt commits', async () => {
-    // Both transactions read the whole table and then write to it, which is the textbook
-    // read-write skew SERIALIZABLE refuses. The one that commits second loses — deterministically,
-    // because the barrier makes `slow` commit last.
-    let released: (() => void) | undefined;
-    const otherCommitted = new Promise<void>((resolve) => {
-      released = resolve;
-    });
-    const attempts: number[] = [];
+  /**
+   * The write skew SSI refuses, forced rather than raced. Both transactions read the whole table
+   * — a seq scan over two rows, so a relation-level SIREAD predicate lock — and both then insert
+   * into it, which is a rw-antidependency in each direction and the dangerous structure Postgres
+   * aborts one side of.
+   *
+   * **Postgres only sees a conflict while the two overlap, so the order is gated end to end:**
+   *
+   * 1. the loser opens, reads, and opens `read`;
+   * 2. only then does the winner open — so the loser's predicate lock is already held, and the
+   *    winner's own read is taken against a transaction still in flight;
+   * 3. the winner writes and commits (first committer wins, and only one edge exists at that
+   *    moment, so the winner can never be the side that aborts), then opens `committed`;
+   * 4. the loser writes, completing the pivot, and takes the `40001`.
+   *
+   * Nothing here is timing-dependent, and the version this replaced was nothing but. It started
+   * both transactions at once and let the loser's `await` on the winner do the sequencing, which
+   * gates step 4 and step 4 alone: the loser's *read* was left racing the winner's *whole*
+   * transaction, and each side pays a cold pool connect first, because every test builds its
+   * clients fresh. Measured against `pgvector/pgvector:pg17` — CI's own image — on a quiet laptop:
+   * the winner committed 0.5ms after the loser's read landed. Lose that half-millisecond and the
+   * loser reads a settled snapshot, commits on the first attempt, and both tests fail with "no
+   * 40001 happened" — `attempts` 1 instead of 2, and nothing thrown to inspect. A backend fork is
+   * tens of milliseconds and jitters with load, which is why a busy CI runner lands the other side
+   * of it. Reproduced deterministically by delaying the loser's read past the winner's commit.
+   *
+   * A retry runs alone — the winner is long gone — so attempt 2 skips both gates and commits.
+   */
+  const loseTheSerializationRace = async (
+    retry: number,
+  ): Promise<{ readonly attempts: number; readonly caught: CaughtError | undefined }> => {
+    const read = gate();
+    const committed = gate();
+    let attempts = 0;
 
-    const slow = withTransaction(
+    const loser = withTransaction(
       async (tx) => {
-        attempts.push(attempts.length + 1);
+        attempts += 1;
         await tx.query(sql`select sum(amount) from x_live_ledger`);
-        // Only the first attempt waits: the second runs after the winner is durable, so it sees a
-        // settled snapshot and commits.
-        if (attempts.length === 1) await otherCommitted;
+        if (attempts === 1) {
+          read.open();
+          await committed.reached;
+        }
         await tx.execute(sql`insert into x_live_ledger (amount) values (10)`);
       },
-      { isolation: 'serializable', retry: 3, client: freshClient() },
+      { isolation: 'serializable', retry, client: freshClient() },
+    ).then(
+      () => undefined,
+      (error: unknown) => error as CaughtError,
     );
+
+    // Raced against the loser itself, not awaited bare: a loser that fails *before* its read never
+    // opens the gate, and a bare await would hang until the test timeout, reporting a 20s stall
+    // instead of the connection error that caused it.
+    await Promise.race([read.reached, loser]);
 
     await withTransaction(
       async (tx) => {
@@ -60,11 +112,19 @@ describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
       },
       { isolation: 'serializable', client: freshClient() },
     );
-    released?.();
+    committed.open();
 
-    await slow;
+    const caught = await loser;
+    return { attempts, caught };
+  };
 
-    expect(attempts.length).toBeGreaterThanOrEqual(2);
+  test('a real 40001 is retried, and the second attempt commits', async () => {
+    const { attempts, caught } = await loseTheSerializationRace(3);
+
+    // Exactly two, not "at least two": the choreography forces one conflict, so a third attempt
+    // would mean the retry re-ran a body that had nothing left to lose to.
+    expect(attempts).toBe(2);
+    expect(caught).toBeUndefined();
     const rows = await freshClient().query<{ amount: number }>(
       sql`select amount from x_live_ledger order by amount`,
     );
@@ -73,34 +133,15 @@ describe.skipIf(!hasPostgres)('live · postgres · serializable retry', () => {
   }, 20_000);
 
   test('retry: 0 surfaces the 40001 as X_DB_SERIALIZATION_FAILURE, never as unreachable', async () => {
-    let released: (() => void) | undefined;
-    const otherCommitted = new Promise<void>((resolve) => {
-      released = resolve;
-    });
+    const { attempts, caught } = await loseTheSerializationRace(0);
 
-    const loser = withTransaction(
-      async (tx) => {
-        await tx.query(sql`select sum(amount) from x_live_ledger`);
-        await otherCommitted;
-        await tx.execute(sql`insert into x_live_ledger (amount) values (10)`);
-      },
-      { isolation: 'serializable', client: freshClient() },
-    ).then(
-      () => undefined,
-      (error: unknown) => error as { code: string; fix: string },
-    );
-
-    await withTransaction(
-      async (tx) => {
-        await tx.query(sql`select sum(amount) from x_live_ledger`);
-        await tx.execute(sql`insert into x_live_ledger (amount) values (20)`);
-      },
-      { isolation: 'serializable', client: freshClient() },
-    );
-    released?.();
-
-    const caught = await loser;
+    expect(attempts).toBe(1);
     expect(caught?.code).toBe('X_DB_SERIALIZATION_FAILURE');
     expect(caught?.fix).toContain('withTransaction(fn, { retry: 3 })');
+    // The loser's row is gone with its transaction; the winner's is durable.
+    const rows = await freshClient().query<{ amount: number }>(
+      sql`select amount from x_live_ledger order by amount`,
+    );
+    expect(rows.map((row) => row.amount)).toEqual([1, 1, 20]);
   }, 20_000);
 });
