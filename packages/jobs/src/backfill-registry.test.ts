@@ -28,7 +28,7 @@ const ORG = '00000000-0000-7000-8000-0000000000b1';
 const source = () => tableFor(rows, memoryRepo(rows, [])).where({ orgId: ORG });
 
 const declareBackfill = (name: string, over: Record<string, unknown> = {}) =>
-  backfill<Row>({ name, source, handle: () => undefined, ...over });
+  backfill<Row>({ name, tenant: 'none', source, handle: () => undefined, ...over });
 
 beforeEach(() => {
   resetJobs();
@@ -44,6 +44,7 @@ describe('unit · the declaration registry', () => {
     // The failure this closes: a structural guard reading `kind: 'job'` would hand every job in
     // the app the pending diff, the gate and the deploy trigger it was never declared for.
     const plain = job({
+      tenant: 'none',
       name: 'send-digest',
       input: t.object({}),
       idempotencyKey: () => 'send-digest',
@@ -93,6 +94,7 @@ describe('unit · the declaration registry', () => {
     // A reference torn off the object literal would run with `this` undefined and throw here.
     const definition = {
       name: 'counted',
+      tenant: 'none' as const,
       source,
       handle: () => undefined,
       offset: 7,

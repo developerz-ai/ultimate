@@ -56,6 +56,7 @@ beforeEach(() => {
   resetJobDriver();
   resetJobsFacade();
   sendDigest = job<Record<string, never>>({
+    tenant: 'none',
     name: 'sendDigest',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'digest',
@@ -63,6 +64,7 @@ beforeEach(() => {
     run: () => Promise.resolve(),
   });
   sweepLogs = job<Record<string, never>>({
+    tenant: 'none',
     name: 'sweepLogs',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'sweep',

@@ -10,6 +10,7 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_MAX_ATTEMPTS',
   'X_DRIVER_UNAVAILABLE',
   'X_IDEMPOTENCY_REQUIRED',
+  'X_JOB_TENANT_REQUIRED',
   'X_JOB_CONCURRENCY_UNENFORCEABLE',
   'X_JOB_LEASE_LOST',
   'X_JOB_NOT_CANCELLABLE',
@@ -43,6 +44,7 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_MAX_ATTEMPTS: 'the job exhausted its retries',
   X_DRIVER_UNAVAILABLE: 'the queue driver is unreachable',
   X_IDEMPOTENCY_REQUIRED: 'the job has no idempotencyKey',
+  X_JOB_TENANT_REQUIRED: 'the job declares no tenant',
   X_JOB_CONCURRENCY_UNENFORCEABLE: 'job.concurrency is declared and cannot be enforced',
   X_JOB_LEASE_LOST: 'the queue took this job back mid-run',
   X_JOB_NOT_CANCELLABLE: 'the job cannot be cancelled',
@@ -181,6 +183,28 @@ export class IdempotencyRequiredError extends UltimateError {
       cause: `job "${input.job}" has no idempotencyKey — at-least-once delivery would run it twice`,
       fix: `add idempotencyKey: (input) => \`${input.job}:\${input.id}\` to the job definition`,
       docs: docsFor('X_IDEMPOTENCY_REQUIRED'),
+    });
+  }
+}
+
+/**
+ * A job declared no `tenant`. The type already requires it; this is the runtime backstop for
+ * generated code and JS callers, so the guarantee holds at both ends — the shape
+ * `IdempotencyRequiredError` above already has.
+ *
+ * It is refused rather than defaulted because both defaults are wrong. `'none'` silently reopens
+ * the hole this field closes: the body would run with no org, and before this field existed that
+ * meant `@ultimat3/entity`'s guard read no actor at all and accepted a caller-named tenant
+ * unchecked. Inheriting the worker's org would make one identity serve every job, which is the
+ * cross-tenant read the declaration exists to prevent.
+ */
+export class JobTenantRequiredError extends UltimateError {
+  constructor(input: { job: string }) {
+    super({
+      code: 'X_JOB_TENANT_REQUIRED',
+      cause: `job "${input.job}" declares no tenant — a job body runs with no request behind it, so every tenant-scoped read inside it would be unscoped`,
+      fix: `add tenant: (input) => input.orgId to job("${input.job}"), or tenant: 'none' if it touches no tenant-scoped table`,
+      docs: docsFor('X_JOB_TENANT_REQUIRED'),
     });
   }
 }

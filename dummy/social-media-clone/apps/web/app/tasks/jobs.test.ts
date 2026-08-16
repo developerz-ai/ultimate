@@ -6,7 +6,7 @@ import { afterAll, beforeEach, expect, test } from 'bun:test';
 import { seedDemo } from '@social-media-clone/db';
 import { seedId } from '@ultimat3/entity';
 import { createRunJobs, type RunJobs } from '@ultimat3/testing';
-import { sweepOrphanMedia } from './jobs';
+import { resetDemo, sweepOrphanMedia } from './jobs';
 import { mediaById, pendingMediaBefore } from './repo';
 
 /** The seed's deliberate orphan, and the attached row that must survive every sweep. */
@@ -29,6 +29,14 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await jobs?.[Symbol.asyncDispose]();
+});
+
+test('neither scheduled job carries a tenant, because no entity here has one', () => {
+  // Visibility in this app is relational, not a tenant column, so `'none'` strips an org that was
+  // never there rather than failing a read closed — which the sweep test below proves through a
+  // real worker. A `tenant: (input) => …` here would put an org on the actor that matches no row.
+  expect(sweepOrphanMedia.tenantFor({ before: CUTOFF })).toBeUndefined();
+  expect(resetDemo.tenantFor({ occurrence: CUTOFF })).toBeUndefined();
 });
 
 test('the sweep collects the seeded pending upload and leaves the attached one alone', async () => {

@@ -24,7 +24,9 @@ export const inviteMember = action({
     const member = await ctx.orgs.invite(input);
     // The job enqueues itself, in the same transaction as the insert: a rolled-back invite never
     // mails anyone.
-    await sendInvite.enqueue({ memberId: memberId(member.id) });
+    // The org comes off the row that was just written, never off the input: `ctx.orgs.invite`
+    // seats the member in the ACTOR's org, and that is the tenant the job has to run as.
+    await sendInvite.enqueue({ memberId: memberId(member.id), orgId: member.orgId });
     return member;
   },
 });

@@ -44,6 +44,7 @@ describe('fleet-wide job concurrency', () => {
     const gate = deferred();
     let started = 0;
     const rebuildSearchIndex = job({
+      tenant: 'none',
       name: 'rebuildSearchIndex',
       input: passthrough<{ shard: string }>(),
       idempotencyKey: (input) => `shard:${input.shard}`,
@@ -108,6 +109,7 @@ describe('fleet-wide job concurrency', () => {
     const leases = createMemoryLeaseStore();
     const driver = createMemoryDriver({ leases });
     job({
+      tenant: 'none',
       name: 'uncapped',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'one',
@@ -135,6 +137,7 @@ describe('fleet-wide job concurrency', () => {
     // The minimum bar: a documented guarantee that silently does nothing is the worst of the
     // three options, so a driver that cannot hold the cap does not get to claim it.
     job({
+      tenant: 'none',
       name: 'cappedButUnenforceable',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'one',

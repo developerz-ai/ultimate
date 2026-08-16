@@ -43,6 +43,7 @@ describe('a completed step survives a real retry', () => {
     const driver = createMemoryDriver({ clock });
 
     const handle = job<{ n: number }>({
+      tenant: 'none',
       name: 'chargeAndNotify',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `charge:${n}`,
@@ -114,6 +115,7 @@ describe('a suspended step resumes without re-running what already ran', () => {
     const driver = createMemoryDriver({ clock });
 
     const handle = job<{ n: number }>({
+      tenant: 'none',
       name: 'sleepAndResume',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `sleep:${n}`,

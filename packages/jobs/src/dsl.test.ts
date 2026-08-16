@@ -67,6 +67,7 @@ const TASK_MEMBERS = [
 
 function defineJob(): JobHandle<OrgInput> {
   return job<OrgInput>({
+    tenant: 'none',
     name: 'dslNotify',
     input: passthrough<OrgInput>(),
     idempotencyKey: ({ orgId }) => `dsl-notify:${orgId}`,

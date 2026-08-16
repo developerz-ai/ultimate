@@ -94,6 +94,13 @@ export interface ToLiveOptions {
   readonly enforce?: boolean;
 }
 
+/**
+ * Why a shared window builds with no policy evaluation. Spelled once, here, so the reason a sync
+ * node gives `sourceFor` cannot drift from the one `ToLiveOptions.enforce` documents.
+ */
+const SHARED_WINDOW_REASON =
+  'the shared subject-less window has no subscriber to decide about; authorize() runs per subscriber';
+
 /** Changing the build changes the epoch, which forces reconnects to refetch. */
 export function liveEpoch(): string {
   return Bun.env['X_BUILD_ID'] ?? 'dev';
@@ -107,7 +114,10 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
   const name = queryName(target);
   const source = await sourceFor(target, input, {
     ...(options.ctx === undefined ? {} : { ctx: options.ctx }),
-    ...(options.enforce === undefined ? {} : { enforce: options.enforce }),
+    // The boolean stays this layer's spelling because it has exactly ONE reason, stated on
+    // `ToLiveOptions.enforce` above; `sourceFor` takes that reason as a string so every skipped
+    // policy in the framework is greppable with its justification attached.
+    ...(options.enforce === false ? { unenforced: SHARED_WINDOW_REASON } : {}),
     surface: 'live',
   });
   const shape = source.shape();

@@ -74,8 +74,16 @@ ${wrapper}('${name.camel} is bounded and TOTALLY ordered', async () => {
   // The SQL text is the contract an agent reads to self-correct, so assert on it, not on a
   // shape. \`sourceFor\` is the one read path — it parses the input and builds the source exactly
   // as a request does. \`actor: null\` gives the call a context of its own rather than borrowing
-  // an ambient one, and \`enforce: false\` leaves the policy to the test below.
-  const source = await sourceFor(target, { orgId, limit: 50 }, { actor: null, enforce: false });
+  // an ambient one, and \`unenforced\` states WHY the policy is skipped: the escape hatch takes a
+  // written reason, never a boolean, because a boolean reads exactly like forgetting the policy.
+  const source = await sourceFor(
+    target,
+    { orgId, limit: 50 },
+    {
+      actor: null,
+      unenforced: 'a scaffolded test asserts the SQL text; the policy is asserted separately',
+    },
+  );
   const { sql } = source.toSQL();
   const text = sql.toLowerCase();
   expect(text).toContain('order by');

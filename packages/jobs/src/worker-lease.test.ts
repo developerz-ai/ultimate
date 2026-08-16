@@ -56,6 +56,7 @@ async function parkOne(heartbeat: () => Promise<void>): Promise<Parked> {
     started = resolve;
   });
   job({
+    tenant: 'none',
     name: 'leasedJob',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'leased:1',

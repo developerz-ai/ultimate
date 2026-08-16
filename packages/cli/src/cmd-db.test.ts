@@ -217,6 +217,9 @@ interface SweepRow {
 const declareSweep = (name: string) =>
   backfill<SweepRow>({
     name,
+    // These fixtures assert `x db backfill`'s PLAN — which sweeps are pending, what a dry run
+    // enqueues — and never run a pass, so nothing here is ever scoped.
+    tenant: 'none',
     source: () => {
       const rows = entity(`cmd_db_${name.replaceAll('-', '_')}`, {
         columns: { id: uuid().primaryKey(), orgId: uuid() },

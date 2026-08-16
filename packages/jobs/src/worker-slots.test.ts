@@ -50,6 +50,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     const started = gate();
     let slowEnded = false;
     job({
+      tenant: 'none',
       name: 'slowJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'slow:1',
@@ -61,6 +62,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       },
     });
     job({
+      tenant: 'none',
       name: 'quickJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'quick:1',
@@ -94,6 +96,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     const started = gate();
     const asked: string[] = [];
     job({
+      tenant: 'none',
       name: 'importJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'import:1',
@@ -104,6 +107,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
       },
     });
     job({
+      tenant: 'none',
       name: 'emailJob',
       input: passthrough<Record<string, never>>(),
       idempotencyKey: () => 'email:1',
@@ -147,6 +151,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     const running: string[] = [];
     for (const name of ['jobA', 'jobB']) {
       job({
+        tenant: 'none',
         name,
         input: passthrough<Record<string, never>>(),
         idempotencyKey: () => `${name}:1`,

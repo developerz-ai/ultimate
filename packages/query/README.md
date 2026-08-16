@@ -58,6 +58,22 @@ among them — it lives in a private store inside `read.ts`, so `sourceFor` is t
 that can build a source and there is nowhere for a second authz path to hide. Something that
 merely looks like a query (`kind: 'query'`, no declaration) is `X_QUERY_FOREIGN`.
 
+### Skipping the policy costs a written reason
+
+Two reads have no subscriber to decide about: developer tooling that returns the statement and no
+rows (`explain`, `describeSql`), and the shared, subject-less window a sync node builds once per
+`(query, input)`. Both say so, in words:
+
+```ts
+const source = await sourceFor(target, input, {
+  unenforced: 'a scaffolded test asserts the SQL text; the policy is asserted separately',
+});
+```
+
+A blank reason is refused before the source is built. It is a string and not a boolean for the
+reason `@ultimat3/entity`'s `crossTenant(reason, fn)` is: `enforce: false` reads exactly like
+forgetting the policy, and the reason is what tells the next reader which of the two it is.
+
 ## What each file owns
 
 | File | Job |

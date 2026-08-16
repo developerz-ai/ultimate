@@ -32,6 +32,12 @@ export const sendSalesReceipt = job({
    */
   idempotencyKey: ({ email, plan, currency, message, locale }) =>
     `sales-receipt:${email}:${Bun.hash(`${plan}|${currency}|${locale}|${message}`).toString(36)}`,
+  /**
+   * A sales enquiry arrives from an anonymous visitor who is in no org yet, and the body reads no
+   * table at all — it renders the payload and mails it. `'none'` is the honest answer, and it fails
+   * closed the day somebody adds a tenant-scoped read here.
+   */
+  tenant: 'none',
   retry: { attempts: 3, backoff: 'exponential' },
   queue: 'mail',
   async run({ input, step }) {

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0d671bec5061bd235df5028b3d89843bd8daaf46580d46261f7092a3b14197d8",
+  "buildId": "650d896022c39ad25a6e650b723a4ae24281f7a49b46732cc3f2202c75ab1cad",
   "tiers": {
     "0": [
       "core",
@@ -992,6 +992,11 @@
     },
     {
       "code": "X_JOB_NOT_CANCELLABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_TENANT_REQUIRED",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },

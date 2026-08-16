@@ -254,6 +254,7 @@ synthesizes `https://ultimate.dev/errors/<code>` for a code no page here documen
 | Code | Means | Typical cause | Fix |
 |---|---|---|---|
 | `X_IDEMPOTENCY_REQUIRED` | the job has no `idempotencyKey` | the field was omitted — normally a compile error, checked again at registration | add `idempotencyKey: (input) => '<stable>:' + input.id` |
+| `X_JOB_TENANT_REQUIRED` | the job declares no tenant | the field was omitted — normally a compile error, checked again at declaration. A job body runs with no request behind it, and `@ultimat3/entity`'s tenant guard derives from the **ambient** context, so a job that declared nothing ran with no tenant at all: a row naming another org was refused over HTTP as `X_TENANCY_ACTOR_MISMATCH` and accepted through the queue. A boot-supplied service actor would close the same hole with one identity for every job, which is the cross-tenant read the declaration exists to prevent | add `tenant: (input) => input.orgId` to the job, or `tenant: 'none'` if it touches no tenant-scoped table |
 | `X_JOB_DUPLICATE` | a name or a live key already has a job | a second enqueue inside the dedupe window, or a second job/task registered under a name already taken | pass `onConflict: 'dedupe'` or make the key narrower; for a name clash, rename one export |
 | `X_STEP_DUPLICATE` | two `step.run` calls share a name | copy-paste inside `run()` | rename one — step names are the replay key |
 | `X_JOB_MAX_ATTEMPTS` | the job exhausted its retries | a step kept failing | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` |

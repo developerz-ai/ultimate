@@ -3,8 +3,14 @@
 // a deadline here means CANCEL: the nack that follows makes the job claimable again, so a body
 // still running past it would be a second copy of one job, racing the attempt that replaced it.
 
-import type { Clock, Ctx } from '@ultimat3/core';
-import { isUltimateError, logger, reportError } from '@ultimat3/core';
+import type { Actor, Clock, Ctx } from '@ultimat3/core';
+import {
+  anonymousActor,
+  isUltimateError,
+  logger,
+  reportError,
+  runWithContext,
+} from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { JobAbortedError, JobTimeoutError } from './errors';
@@ -13,6 +19,7 @@ import type { AnyJobHandle } from './job';
 import { nextRetry } from './retry';
 import type { EventLookup, StepRecord } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
+import { jobRunActor } from './tenant';
 
 export type JobOutcome = 'completed' | 'suspended' | 'retried' | 'dead-lettered';
 
@@ -27,6 +34,17 @@ const NEVER_ABORTED = new AbortController().signal;
  */
 function callerSignal(ctx: Ctx): AbortSignal {
   return ctx.signal instanceof AbortSignal ? ctx.signal : NEVER_ABORTED;
+}
+
+/**
+ * The same defensive read, for the same reason: `Ctx.actor` is non-optional in the type and
+ * `createContext` always sets it, but `WorkerOptions.context()` is the app's own function and a
+ * cast context (`{} as Ctx`) reaches here without one. Anonymous is the honest stand-in — it
+ * carries no org, so the job's declared tenant is the only thing that can put one on the run.
+ */
+function callerActor(ctx: Ctx): Actor {
+  const actor: Actor | undefined = ctx.actor;
+  return actor === undefined ? anonymousActor() : actor;
 }
 
 export interface JobExecution {
@@ -80,14 +98,27 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
 
   try {
     const input = handle.parse(claimed.input);
-    const work = handle.run({
-      input,
-      step: runner.step,
-      ctx,
-      attempt: claimed.attempt,
-      jobId: claimed.id,
-      runId: claimed.runId,
+    // The job's DECLARED tenant, on the actor the body runs as. `tenant: 'none'` strips the org
+    // rather than inheriting the worker's, so a tenant-scoped read inside such a job fails closed.
+    const runCtx: Ctx = Object.freeze({
+      ...ctx,
+      actor: jobRunActor(callerActor(ctx), handle.tenantFor(input)),
     });
+    // Installed as the AMBIENT context and not only handed over as a parameter. This is the whole
+    // of the fix: `@ultimat3/entity`'s tenant guard derives from `tryUseContext()`, so a ctx passed
+    // as an argument was read by nobody — `actorTenant` answered `undefined`, `scopedPlan` derived
+    // no predicate, `verifyScope` returned early, and a row naming another org was written by a
+    // job while the identical write over HTTP was refused as `X_TENANCY_ACTOR_MISMATCH`.
+    const work = runWithContext(runCtx, () =>
+      handle.run({
+        input,
+        step: runner.step,
+        ctx: runCtx,
+        attempt: claimed.attempt,
+        jobId: claimed.id,
+        runId: claimed.runId,
+      }),
+    );
 
     await (handle.timeoutMs === undefined
       ? work

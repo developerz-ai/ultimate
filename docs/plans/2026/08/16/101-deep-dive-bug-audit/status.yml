@@ -1,23 +1,25 @@
 plan: 101-deep-dive-bug-audit
 title: Deep-dive bug audit — twelve sweeps, one plan
-status: not_started
+status: in_progress
 created_by: sebi
-worked_by: ""
+worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 0
-current_focus: "05-gate-and-scripts.md — land first; two gate checks provably do not check what they claim"
+percent: 13
+current_focus: "07-security.md — PR #102 in flight; 05+10 merged as #101"
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 101
   - file: 10-tests.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 101
   - file: 07-security.md
     tier: 0
-    status: not_started
+    status: in_progress
     percent: 0
   - file: 01-tier01-bugs.md
     tier: 0
@@ -67,7 +69,27 @@ slices:
     tier: 5
     status: not_started
     percent: 0
-evidence: []
+evidence:
+  - pr: 101
+    merged: 290dd96
+    slices: [05, 10]
+    gate: "14 of 17 passed, 3 skipped (drift, contract-diff, budgets)"
+    falsified:
+      - "10-1: `bun run test` was NOT red by shard byte-packing. Every shard already runs
+         --isolate, which fully prevents the render-plugin leak; sharding by package would
+         have fixed nothing and cost ~30% on the biggest bin. The divergence was one missing
+         flag on root package.json's `test` script."
+      - "05-5: packages/cli/src/source-files.ts:11 ALREADY contained scripts/**. The narrow
+         list was scripts/boundaries.ts's own SOURCE_PATTERNS."
+      - "10-L: '/e2e/' is not an expressible bun filter (bun 1.3.14: 'had no matches').
+         The working form is 'e2e/'."
+    deferred:
+      - "282 typecheck errors in .test.ts across 110 files / 24 packages — every package
+         tsconfig excludes src/**/*.test.ts. Measured, not fixed. Known-Gaps row landed."
+      - "serial live/e2e steps still run without --isolate; measured 28s -> 56s. Recorded."
+      - "X_PACKAGE_UNREFERENCED fail-opens on a JSONC root tsconfig (comment => parse
+         returns undefined => rule reads it as 'no project references')."
+    new_codes: [X_REFERENCE_APP_NO_FLOOR, X_SCAFFOLD_GATE_RED, X_PACKAGE_UNREFERENCED]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide

@@ -29,6 +29,7 @@ interface OrgInput {
 
 const anonymousJob = (): JobHandle<OrgInput> =>
   job<OrgInput>({
+    tenant: 'none',
     input: passthrough<OrgInput>(),
     idempotencyKey: ({ orgId }) => `notify:${orgId}`,
     retry: { attempts: 3, backoff: 'exponential' },
@@ -87,6 +88,7 @@ describe('registerJobs', () => {
 
   test('a declared name wins over the export name — it is a durable queue key', () => {
     const sendMail = job<OrgInput>({
+      tenant: 'none',
       name: 'mail.send',
       input: passthrough<OrgInput>(),
       idempotencyKey: ({ orgId }) => `mail:${orgId}`,
@@ -242,6 +244,7 @@ describe('one handle, one durable name', () => {
   test('two jobs declaring one name collide at job(), before either can seat the other out', () => {
     const declared = (): JobHandle<OrgInput> =>
       job<OrgInput>({
+        tenant: 'none',
         name: 'send-digest',
         input: passthrough<OrgInput>(),
         idempotencyKey: ({ orgId }) => `digest:${orgId}`,

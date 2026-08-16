@@ -25,6 +25,7 @@ beforeEach(() => {
 describe('the factory', () => {
   test('returns a registered job handle keyed by the declared name', () => {
     const handle = backfill<Row>({
+      tenant: 'none',
       name: 'rewrite-titles',
       queue: 'maintenance',
       retry: { attempts: 7, backoff: 'fixed' },
@@ -45,6 +46,7 @@ describe('the factory', () => {
       let thrown: unknown;
       try {
         backfill<Row>({
+          tenant: 'none',
           name: `bad-${String(batch)}`,
           batch,
           source,
@@ -65,6 +67,7 @@ describe('the factory', () => {
       let thrown: unknown;
       try {
         backfill<Row>({
+          tenant: 'none',
           name: `unpaced-${String(rate)}`,
           rate,
           source,
@@ -84,6 +87,7 @@ describe('the factory', () => {
     // Unlike `batch`, which is a whole number of rows: this one is a frequency, and a backfill
     // slower than one batch a second is exactly what a hot table wants.
     const handle = backfill<Row>({
+      tenant: 'none',
       name: 'slow-and-steady',
       rate: 0.5,
       source,

@@ -12,8 +12,17 @@ import { send } from '@ultimat3/mail';
 import { postPublished } from './mail';
 
 export const notifySubscribers = job({
-  input: t.object({ postId: t.uuid }),
+  /**
+   * `orgId` rides beside the post id, and it is not redundant with it: `posts`, `members` and
+   * `comments` are tenant-scoped, so the first read — `ctx.posts.byId` — is already scoped by the
+   * acting actor's org, and a job's actor gets one only from `tenant` below. Reading the org OFF
+   * the post to declare it is circular. One org's fanout, so the org belongs in the payload; the
+   * escape hatch (`tenant: 'none'` plus `crossTenant`) is for a sweep that genuinely spans orgs.
+   */
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
+  /** The post alone: one notification per published post, whichever org it belongs to. */
   idempotencyKey: ({ postId }) => `notify:${postId}`,
+  tenant: ({ orgId }) => orgId,
   retry: { attempts: 5, backoff: 'exponential' },
   queue: 'mail',
   /** One fanout in flight at a time; a retry cannot race its own first attempt. */

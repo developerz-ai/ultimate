@@ -161,9 +161,10 @@ describe('query', () => {
     expect(describeQueries()[0]?.live).toBe(true);
   });
 
-  test('enforce:false skips the policy and nothing else — the shape `x g query` emits', async () => {
+  test('a stated unenforced reason skips the policy and nothing else — the shape `x g query` emits', async () => {
     const feed = defineFeed().named('orgFeed');
-    const source = await sourceFor(feed, { orgId: ORG }, { ctx: anonymous, enforce: false });
+    const reason = 'a scaffolded test asserts the SQL text; the policy is asserted separately';
+    const source = await sourceFor(feed, { orgId: ORG }, { ctx: anonymous, unenforced: reason });
     expect(source.toSQL().sql).toContain('order by');
 
     // The input is still parsed: a scaffolded test that passes garbage must go red.
@@ -172,7 +173,7 @@ describe('query', () => {
       { orgId: 'nope' },
       {
         ctx: anonymous,
-        enforce: false,
+        unenforced: reason,
       },
     ).catch((error: unknown) => error);
     expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');

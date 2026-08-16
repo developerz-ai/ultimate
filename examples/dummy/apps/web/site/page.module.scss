@@ -7,15 +7,13 @@
   padding-inline: var(--space-4);
 }
 
+// One column: the second held the hero image, and a 1fr 1fr grid with one child renders the copy
+// at half width against nothing.
 .hero {
   align-items: center;
   display: grid;
   gap: var(--space-12);
   grid-template-columns: 1fr;
-
-  @media (min-width: 60rem) {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 .subtitle {

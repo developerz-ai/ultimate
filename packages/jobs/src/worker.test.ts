@@ -134,6 +134,7 @@ describe('the worker counts what it finished', () => {
   const runOne = async (options: { attempts: number; fail: boolean }): Promise<void> => {
     resetJobs();
     const handle = job<{ n: number }>({
+      tenant: 'none',
       name: 'countedJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `counted:${n}`,

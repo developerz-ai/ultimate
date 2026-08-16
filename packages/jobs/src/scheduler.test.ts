@@ -66,6 +66,7 @@ interface DatedInput {
 /** A job whose payload names a day, so a payload built for the wrong day is visible. */
 function datedDigestJob(): JobHandle<DatedInput> {
   return job<DatedInput>({
+    tenant: 'none',
     name: 'datedDigest',
     input: passthrough<DatedInput>(),
     idempotencyKey: ({ runDate }) => `digest:${runDate}`,
@@ -82,6 +83,7 @@ beforeEach(() => {
   resetJobDriver();
   resetJobsFacade();
   sendDigest = job<Record<string, never>>({
+    tenant: 'none',
     name: 'sendDigest',
     input: passthrough<Record<string, never>>(),
     idempotencyKey: () => 'digest',

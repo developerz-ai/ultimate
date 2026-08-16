@@ -62,6 +62,7 @@ describe('one pass', () => {
     const pass = harness({ batch: 3, name: 'empty-pass' });
     const table = tableFor(rows, memoryRepo(rows, []));
     const empty = backfill<Row>({
+      tenant: 'none',
       name: 'nothing-to-do',
       batch: 3,
       source: () => table.where({ orgId: ORG }),

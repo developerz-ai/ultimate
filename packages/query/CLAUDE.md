@@ -36,6 +36,27 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 
 - Every surface goes through `sourceFor`: parse input, evaluate policy, build the source.
   Adding a second read path is the one unforgivable change here.
+- **An explicit `ctx` is INSTALLED, never merely passed** (`As of 2026-08`). `asActor` used to hand
+  `options.ctx` to `run(ctx)` and enter no `runWithContext` unless an `actor` was also given, so
+  `guard()` decided about that actor while everything reading the AMBIENT context — above all
+  `@ultimat3/entity`'s tenant guard, which derives from `tryUseContext()` and not from the ctx it is
+  handed — saw a different identity, or none. A read was authorised as one caller and scoped to
+  nobody. Absent a `ctx` it reinstalls the ambient one, which is a no-op on every path that already
+  worked. The twin fix is `@ultimat3/action`'s `invoke`, and `read-context.test.ts` is written as an
+  equality between the three spellings of one caller — ambient, `options.actor`, `options.ctx` —
+  because three independent expectations are exactly what let this ship.
+- **Skipping a read's policy costs a WRITTEN REASON, never a boolean** (`As of 2026-08`).
+  `SourceOptions.enforce?: boolean` is gone; it is `unenforced?: string`, and a blank one is
+  refused before the source is built. The bar is `@ultimat3/entity`'s `cross-tenant.ts`: a boolean
+  argument "reads exactly like forgetting the tenant", and a forgotten policy reads the same way —
+  so the reason IS the mechanism and every skipped policy is one `grep` away with its justification
+  attached. It is deliberately NOT capability-gated the way `crossTenant` is: `explain` runs from
+  the CLI with no actor to check a scope against, and gating it would close the one surface it
+  exists for. **`ToLiveOptions.enforce` stays a boolean**, because it is that one use with exactly
+  one reason — `toLiveQuery` translates it into the reason string spelled once as
+  `SHARED_WINDOW_REASON`, so a sync node and this file cannot disagree about why the shared window
+  has no subject. Two shipped callers, both reading no rows for a subscriber: `sql.ts` and that
+  window.
 - The declaration never leaves `read.ts`. `defOf`/`stashDef`/`hasDef` are internal and must
   never be re-exported from `src/index.ts` — that omission is the enforcement.
 - A query has no `.def`. Inside the package read it with `defOf(target)`; outside, read the

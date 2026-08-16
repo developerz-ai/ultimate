@@ -66,6 +66,7 @@ describe('stop() waits out the round it races', () => {
 
     const running = gate();
     job<{ n: number }>({
+      tenant: 'none',
       name: 'drainedJob',
       input: passthrough<{ n: number }>(),
       idempotencyKey: ({ n }) => `drained:${n}`,

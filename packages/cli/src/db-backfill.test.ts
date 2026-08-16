@@ -72,7 +72,16 @@ const sweepSource = (): ReadBuilder<Post> => {
 };
 
 const declareSweep = (name: string, over: Record<string, unknown> = {}) =>
-  backfill<Post>({ name, source: sweepSource, handle: () => undefined, ...over });
+  // `'none'` because these fixtures assert the PLAN — which sweeps are pending, what a dry run
+  // reports — and never run a pass, so no read is ever scoped. A sweep with a real tenant is
+  // covered where it belongs, in packages/jobs/src/backfill-tenancy.test.ts.
+  backfill<Post>({
+    name,
+    tenant: 'none',
+    source: sweepSource,
+    handle: () => undefined,
+    ...over,
+  });
 
 /** Rows waiting on the queue, across every queue — what a dry run must leave at zero. */
 const queued = async (driver: JobDriver): Promise<number> =>

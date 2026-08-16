@@ -76,7 +76,17 @@ export function invoke(
   raw: unknown,
   options: InvokeOptions = {},
 ): Promise<unknown> {
-  if (options.actor === undefined) return core(target, raw, options.ctx ?? useContext(), options);
+  if (options.actor === undefined) {
+    // INSTALLED, never only handed over. An explicit `ctx` used to be passed to `core` and to
+    // nothing else, so everything downstream that reads the ambient context — most importantly
+    // `@ultimat3/entity`'s tenant guard, which derives from `tryUseContext()` and not from the ctx
+    // it is given — saw either a different identity or none at all: policy decided about this
+    // actor while a row's tenancy was decided about nobody. When `ctx` is absent this is
+    // `runWithContext(useContext(), …)`, which is the context already installed — a no-op on every
+    // path that worked before.
+    const ctx = options.ctx ?? useContext();
+    return runWithContext(ctx, () => core(target, raw, ctx, options));
+  }
 
   // Impersonation keeps the surrounding context whole — services, clock, locale,
   // trace — and swaps only the actor. Policy models "nobody" as null; core models
