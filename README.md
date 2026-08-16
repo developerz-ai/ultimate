@@ -141,7 +141,7 @@ This is the load-bearing idea. You write one declaration:
 
 ```ts
 export const publishPost = action({
-  input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
+  input:  t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
   policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
@@ -149,7 +149,7 @@ export const publishPost = action({
 
   async handle({ input }) {
     const post = await publish(input.postId);
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });
     return post;
   },
 });

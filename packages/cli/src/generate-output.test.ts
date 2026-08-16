@@ -123,7 +123,9 @@ describe('unit · what x g emits', () => {
     // `input`, not `{ id }` — the emitted job declares `tenant: (input) => input.orgId`, so its
     // payload carries the org the run acts under and the enqueue has to name it.
     expect(testFile?.contents).toContain('.enqueue(input)');
-    expect(source?.contents).toContain('tenant:');
+    // The resolver, not the field: `tenant: 'none'` and `tenant: () => 'whatever'` both satisfy
+    // `toContain('tenant:')` while stripping the org off every read the generated job makes.
+    expect(source?.contents).toContain('tenant: (input) => input.orgId,');
     expect(testFile?.contents).toContain('deduped');
   });
 

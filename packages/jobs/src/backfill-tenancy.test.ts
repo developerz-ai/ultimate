@@ -8,7 +8,8 @@
 // sweeps every tenant, and a backfill that declared a real tenant must NOT inherit that escape.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, userActor } from '@ultimat3/core';
+import type { Ctx } from '@ultimat3/core';
+import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { clearRegistry, entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { BackfillInput } from './backfill';
@@ -57,6 +58,8 @@ interface Sweep {
   readonly outcome: string;
   readonly rows: readonly Post[];
   readonly pages: number;
+  /** The worker context the pass was handed, kept so a leak test can read it back afterwards. */
+  readonly worker: Ctx;
 }
 
 /**
@@ -79,18 +82,21 @@ const sweep = async (handle: AnyJobHandle, seen: Post[], pages: () => number): P
     workerId: 'w1',
   });
   if (claimed === undefined) throw new Error('the driver claimed nothing');
+  // What a worker builds: a context with an actor and NO org. The declaration is the only thing
+  // that can put one on the run. Held rather than inlined so a caller can re-enter it after the
+  // pass and ask whether the pass widened it.
+  const worker = createContext({ role: 'worker', actor: userActor({ id: 'worker-1' }) });
   const execution = await executeJob({
     driver,
     claimed: claimed as ClaimedJob,
     handle,
-    // What a worker builds: a context with an actor and NO org. The declaration is the only
-    // thing that can put one on the run.
-    ctx: createContext({ role: 'worker', actor: userActor({ id: 'worker-1' }) }),
+    ctx: worker,
   });
   return {
     outcome: execution.outcome === 'completed' ? 'completed' : (execution.error ?? 'failed'),
     rows: seen,
     pages: pages(),
+    worker,
   };
 };
 
@@ -147,15 +153,22 @@ describe("a backfill declaring tenant: 'none' sweeps every tenant", () => {
 
   test('the scope does not outlive the pass — the run is left with no cross-tenant capability', async () => {
     const declared = declare('bf-sweep-scoped-out', 'none');
-    await sweep(declared.handle, declared.seen, declared.pages);
+    const result = await sweep(declared.handle, declared.seen, declared.pages);
 
-    // Nothing ambient survives `executeJob`, so a read out here is refused exactly as it was
-    // before the pass ran. An `X_TENANCY_*` code either way — never rows.
-    const escaped = await table
-      .all()
-      .then(() => 'ACCEPTED')
-      .catch((error: unknown) => (isUltimateError(error) ? error.code : String(error)));
-    expect(escaped).not.toBe('ACCEPTED');
+    const read = (): Promise<string> =>
+      table
+        .all()
+        .then(() => 'ACCEPTED')
+        .catch((error: unknown) => (isUltimateError(error) ? error.code : String(error)));
+
+    // Asked INSIDE the worker's own context, not from nowhere: with no ambient context at all this
+    // is refused whatever the pass did, so it would pass over a pass that had stamped
+    // `tenancy:cross` onto the caller's actor. Re-entering the exact `Ctx` `executeJob` was handed
+    // is the only read that can tell "the capability died with the pass" from "nobody is looking".
+    expect(await runWithContext(result.worker, read)).not.toBe('ACCEPTED');
+    // And the actor object itself is unchanged — the grant went onto one the pass built.
+    expect(result.worker.actor.scopes).toEqual([]);
+    expect(await read()).not.toBe('ACCEPTED');
   });
 });
 

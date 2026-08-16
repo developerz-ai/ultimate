@@ -4,21 +4,14 @@
 // added four permanent entries per org to every worker.
 
 import { describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
-import { createLimiter } from './limits';
+import { frozenClock } from '@ultimat3/core';
+import { createLimiter, DEFAULT_MAX_LIMIT_TENANTS } from './limits';
 
 const T0 = Date.UTC(2026, 0, 1);
 
-/** A clock the sweep can be watched against; the limiter reads it through `nowMs`. */
-const fakeClock = (start: number): Clock & { advance(ms: number): void } => {
-  let at = start;
-  return {
-    now: () => new Date(at),
-    advance(ms: number) {
-      at += ms;
-    },
-  };
-};
+// The clock below is core's own `frozenClock`, never a local `{ now, advance }` cast to `Clock`:
+// that double is missing `monotonic()`, and a test double that lies about the interface it
+// implements is the one kind of double a suite may not carry.
 
 describe('the concurrency counters are bounded by what is in flight', () => {
   test('a released slot leaves NO entry behind — zero and absent are the same answer', () => {
@@ -45,7 +38,7 @@ describe('the concurrency counters are bounded by what is in flight', () => {
 
 describe('the rate window and the refusal log are swept and capped', () => {
   test('a spent rate window is forgotten, not kept as an empty array', () => {
-    const clock = fakeClock(T0);
+    const clock = frozenClock(T0);
     const limiter = createLimiter({ ratePerTenant: { limit: 2, windowMs: 1_000 } }, clock);
 
     for (let index = 0; index < 500; index += 1) {
@@ -60,7 +53,7 @@ describe('the rate window and the refusal log are swept and capped', () => {
   });
 
   test('a stale refusal answers as a missing one, and the sweep drops it', () => {
-    const clock = fakeClock(T0);
+    const clock = frozenClock(T0);
     const limiter = createLimiter({ perTenant: 0 }, clock);
 
     expect(limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' })).toBeUndefined();
@@ -74,7 +67,7 @@ describe('the rate window and the refusal log are swept and capped', () => {
   });
 
   test('the cap holds even when nothing has expired — one org per request cannot grow the heap', () => {
-    const clock = fakeClock(T0);
+    const clock = frozenClock(T0);
     const limiter = createLimiter(
       { perTenant: 0, ratePerTenant: { limit: 2, windowMs: 3_600_000 } },
       clock,
@@ -90,7 +83,7 @@ describe('the rate window and the refusal log are swept and capped', () => {
   });
 
   test('the cap evicts the LEAST throttled window first — a full one is never a free reset', () => {
-    const clock = fakeClock(T0);
+    const clock = frozenClock(T0);
     const limiter = createLimiter({ ratePerTenant: { limit: 5, windowMs: 3_600_000 } }, clock, {
       maxTenants: 4,
     });
@@ -112,5 +105,19 @@ describe('the rate window and the refusal log are swept and capped', () => {
       limiter.tryAcquire({ queue: 'default', tenantId: 'org-hot' })?.release();
     }
     expect(limiter.tryAcquire({ queue: 'default', tenantId: 'org-hot' })).toBeUndefined();
+  });
+
+  test('a cap that is not a finite number is refused where it is written, not at the first claim', () => {
+    // `Math.floor(NaN)` is `NaN` and `Math.floor(Infinity)` is `Infinity`, so every `size > cap`
+    // below reads FALSE and the option quietly means "no cap at all" — the setting this bound
+    // exists to make unreachable. `Number(process.env.WHATEVER)` is how a deploy writes the first.
+    for (const maxTenants of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => createLimiter({}, frozenClock(T0), { maxTenants })).toThrow(/maxTenants/);
+    }
+    // The default is still a number a limiter can be built with, so the guard refuses the bad
+    // value rather than the option.
+    expect(() =>
+      createLimiter({}, frozenClock(T0), { maxTenants: DEFAULT_MAX_LIMIT_TENANTS }),
+    ).not.toThrow();
   });
 });

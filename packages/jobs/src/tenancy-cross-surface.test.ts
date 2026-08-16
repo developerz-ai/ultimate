@@ -9,8 +9,11 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type Actor,
+  type Ctx,
   createContext,
+  defineService,
   isUltimateError,
+  resetServices,
   runWithContext,
   userActor,
 } from '@ultimat3/core';
@@ -48,6 +51,21 @@ let repo: ReturnType<typeof memoryRepo<typeof posts.$row>>;
 
 const actorFor = (orgId: string): Actor => userActor({ id: idAt('90'), orgId });
 
+/**
+ * A service that captures the org of the actor it was BUILT for — the one thing a spread of the
+ * worker's context carries and a rebuild does not. Registered at module scope, the way an app's
+ * `defineService` call registers at import, and handed back in `afterAll`.
+ */
+const PROBE = 'crossSurfaceTenantProbe';
+defineService(PROBE, (ctx) => ({ orgId: ctx.actor.orgId }));
+
+/** Narrowed, never cast: `ServiceBag` is `unknown` per key by design. */
+const probeOrgOf = (service: unknown): string | undefined => {
+  if (typeof service !== 'object' || service === null || !('orgId' in service)) return undefined;
+  const orgId: unknown = (service as { orgId: unknown }).orgId;
+  return typeof orgId === 'string' ? orgId : undefined;
+};
+
 /** The verdict of one attempt: a code, or `'ACCEPTED'`. Same vocabulary on both surfaces. */
 const codeOf = async (attempt: () => Promise<unknown>): Promise<string> => {
   try {
@@ -67,8 +85,14 @@ const overHttp = (actingOrgId: string, rowOrgId: string): Promise<string> =>
     codeOf(() => write(rowOrgId)),
   );
 
-/** The job surface, structurally: the worker's own `executeJob`, with the worker's own context. */
-const overJob = async (handle: AnyJobHandle, input: unknown): Promise<string> => {
+/**
+ * The job surface, structurally: the worker's own `executeJob`, with the worker's own context.
+ *
+ * `worker` is a parameter and not a constant because a worker context with NO org cannot tell
+ * "the declaration stripped it" from "the declaration was ignored" — both end in
+ * `X_TENANCY_ACTOR_ORG_REQUIRED`. A case that means to prove the stripping passes one WITH an org.
+ */
+const overJob = async (handle: AnyJobHandle, input: unknown, worker?: Ctx): Promise<string> => {
   const driver: JobDriver = createMemoryDriver();
   await driver.enqueue({
     name: handle.name,
@@ -89,7 +113,7 @@ const overJob = async (handle: AnyJobHandle, input: unknown): Promise<string> =>
     claimed: claimed as ClaimedJob,
     handle,
     // What `packages/cli/src/dev-roles.ts` builds for the worker role: a context with no actor.
-    ctx: createContext({ role: 'worker' }),
+    ctx: worker ?? createContext({ role: 'worker' }),
   });
   if (execution.outcome === 'completed') return 'ACCEPTED';
   return execution.error ?? execution.outcome;
@@ -103,6 +127,9 @@ beforeEach(() => {
 afterAll(() => {
   resetJobs();
   clearRegistry();
+  // The service registry is process-global, so the probe above is handed back rather than left
+  // installed on every `createContext` for the rest of the run.
+  resetServices();
 });
 
 describe('one write, two surfaces, one verdict', () => {
@@ -162,7 +189,34 @@ describe('one write, two surfaces, one verdict', () => {
       },
     });
 
-    expect(await overJob(sweep, {})).toContain('X_TENANCY_ACTOR_ORG_REQUIRED');
+    // The worker is scoped to ORG_A, which is the only way this can fail for the right reason: a
+    // run that INHERITED the worker's org would read ORG_A's rows and answer `ACCEPTED`, and
+    // against the default org-less worker context both answers are the same refusal.
+    const worker = createContext({ role: 'worker', actor: actorFor(ORG_A) });
+    expect(await overJob(sweep, {}, worker)).toContain('X_TENANCY_ACTOR_ORG_REQUIRED');
+  });
+
+  test('a registered service is rebuilt for the DECLARED tenant, not the worker it was claimed by', async () => {
+    let captured: string | undefined = 'never ran';
+    const readService = job<WriteInput>({
+      name: 'cross-surface-service',
+      input: writeInput,
+      idempotencyKey: () => 'service',
+      tenant: (input) => input.actingOrgId,
+      retry: { attempts: 1 },
+      run: ({ ctx }) => {
+        // `defineService` CLOSES OVER the ctx it was built for, so a run context spread off the
+        // worker's would hand the body an instance answering the worker's org while every ambient
+        // repository call answered the job's — one run acting as two tenants.
+        captured = probeOrgOf(ctx.services[PROBE]);
+        return Promise.resolve();
+      },
+    });
+
+    const worker = createContext({ role: 'worker', actor: actorFor(ORG_B) });
+    await overJob(readService, { actingOrgId: ORG_A, rowOrgId: ORG_A }, worker);
+
+    expect(captured).toBe(ORG_A);
   });
 
   test('the run body sees its declared tenant as the AMBIENT actor, not only as a parameter', async () => {

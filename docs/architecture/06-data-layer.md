@@ -209,7 +209,7 @@ base64url(JSON [scope, id, key]) "." hmac-sha256(body, secret)[0:32]
 ```ts
 async handle({ input, ctx }) {
   const post = await ctx.posts.publish(input.postId);              // INSERT/UPDATE
-  if (input.notify) await notifySubscribers.enqueue({ postId: post.id });  // same tx
+  if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });  // same tx
   return post;
 }
 ```

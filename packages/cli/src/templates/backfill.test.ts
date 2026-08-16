@@ -48,7 +48,12 @@ describe('unit · x g backfill', () => {
     // actor: that assert could only ever fire. Both halves have to move together or the scaffold
     // ships source guaranteed to throw on its first run.
     expect(source).not.toContain('ctx.actor;');
-    expect(source).toContain('crossTenant(reason, fn)');
+    // The EXECUTABLE half of the pairing, not the sentence about it: the pass mints `tenancy:cross`
+    // on its own actor for a `tenant: 'none'` backfill, and this guard is the scaffold's only
+    // reader of that fact. A source that dropped the import or the check would still contain every
+    // word of the comment above it.
+    expect(source).toContain('import { CROSS_TENANT_SCOPE, postgresRepo, tableFor } from');
+    expect(source).toContain('hasScope(ctx.actor, CROSS_TENANT_SCOPE)');
   });
 
   test('count(), requires and environments are offered as declarations, not as defaults', () => {

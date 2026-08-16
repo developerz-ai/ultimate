@@ -60,10 +60,11 @@ export function withBackfillScope<T>(
   pass: (ctx: Ctx) => Promise<T>,
 ): Promise<T> {
   if (tenant !== NO_JOB_TENANT) return pass(ctx);
-  // Spread and `runWithContext`, the same shape `executeJob` builds the run's context with, rather
-  // than `withChildContext`: the pass is also driven directly by tests and by tooling that has no
-  // ambient context for a child to derive from, and one mechanism in both places is one fewer way
-  // for the run's actor and the ambient actor to disagree.
+  // Spread and `runWithContext` rather than `withChildContext`, which is the opposite of what
+  // `executeJob` does one frame up — and deliberately: the pass is also driven directly by tests and
+  // by tooling with no ambient context for a child to derive from, and the only fact that changes
+  // here is a SCOPE on an actor `executeJob` already built. The identity, the org and therefore
+  // every service instance are the run's own, so there is nothing for a rebuild to correct.
   const scoped: Ctx = Object.freeze({ ...ctx, actor: withCrossTenant(ctx.actor) });
   return runWithContext(scoped, () => crossTenant(reasonFor(name), () => pass(scoped)));
 }

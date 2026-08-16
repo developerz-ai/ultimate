@@ -11,7 +11,7 @@ export const publishPost = action({
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: post.orgId });
     return post;
   },
 });

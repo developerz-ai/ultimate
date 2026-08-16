@@ -86,14 +86,14 @@ Queries acquire tags automatically from the tables their `sql` touches. Routes d
 ```ts
 // action
 export const publishPost = action({
-  input:  t.object({ postId: t.uuid, notify: t.boolean.default(true) }),
+  input:  t.object({ postId: t.uuid, orgId: t.uuid, notify: t.boolean.default(true) }),
   output: PostView,
   policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),
   cache:  { invalidates: [tag.post, tag.feed] },
   mcp:    { expose: true, description: 'Publish a draft post' },
   async handle({ input, ctx }) {
     const post = await ctx.posts.publish(input.postId);
-    if (input.notify) await notifySubscribers.enqueue({ postId: post.id });
+    if (input.notify) await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId });
     return post;
   },
 });

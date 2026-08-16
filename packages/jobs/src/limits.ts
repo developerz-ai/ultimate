@@ -12,7 +12,7 @@
 // what `job.concurrency` is enforced with.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { assert, systemClock } from '@ultimat3/core';
 import { nowMs } from './clock';
 
 export interface RateLimit {
@@ -87,7 +87,13 @@ export const NO_TENANT = 'global';
  */
 const REFUSAL_TTL_MS = 60_000;
 
-/** An idle limiter still sweeps this often, so a burst's state does not sit until the next one. */
+/**
+ * The most often a sweep is worth paying for. It is amortised onto `tryAcquire` and there is
+ * deliberately NO timer: a limiter is a plain object with no `dispose()`, so a scheduled sweep
+ * would be an interval retaining a stopped worker's maps for the life of the process — the leak
+ * this file exists to close, wearing the costume of the fix. An idle limiter therefore holds its
+ * last state until something claims again, bounded by `maxTenants` the whole time.
+ */
 const SWEEP_EVERY_MS = 60_000;
 
 /**
@@ -108,7 +114,17 @@ export function createLimiter(
   clock: Clock = systemClock,
   options: { readonly maxTenants?: number | undefined } = {},
 ): Limiter {
-  const maxTenants = Math.max(1, Math.floor(options.maxTenants ?? DEFAULT_MAX_LIMIT_TENANTS));
+  const requested = options.maxTenants ?? DEFAULT_MAX_LIMIT_TENANTS;
+  // Refused where it was written, for the reason `createPacer` refuses `rate: 0`: `Math.floor(NaN)`
+  // is `NaN` and `Math.floor(Infinity)` is `Infinity`, so BOTH cap comparisons below read false and
+  // the option silently means "no cap at all" — the one setting this bound exists to make
+  // unreachable. `Number(process.env.X)` is how a deployment writes the first of those.
+  assert(
+    Number.isFinite(requested),
+    `job limiter maxTenants is ${String(requested)}, which caps nothing — the per-tenant maps would grow without a bound`,
+    `pass a finite maxTenants to createLimiter(...), or omit it for the default ${String(DEFAULT_MAX_LIMIT_TENANTS)}`,
+  );
+  const maxTenants = Math.max(1, Math.floor(requested));
   const evictTo = Math.max(1, Math.floor(maxTenants * 0.9));
   const byQueue = new Map<string, number>();
   const byTenant = new Map<string, number>();
@@ -162,7 +178,7 @@ export function createLimiter(
     }
   };
 
-  /** Swept on a burst and on a schedule, so an idle limiter still lets its state go. */
+  /** Swept on a burst, and otherwise at most once per `SWEEP_EVERY_MS` of claim activity. */
   const maybeSweep = (at: number): void => {
     if (
       starts.size > maxTenants ||

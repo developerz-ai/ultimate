@@ -3,13 +3,15 @@
 // a deadline here means CANCEL: the nack that follows makes the job claimable again, so a body
 // still running past it would be a second copy of one job, racing the attempt that replaced it.
 
-import type { Actor, Clock, Ctx } from '@ultimat3/core';
+import type { Actor, Clock, Ctx, ServiceBag } from '@ultimat3/core';
 import {
   anonymousActor,
   isUltimateError,
   logger,
   reportError,
   runWithContext,
+  useContext,
+  withChildContext,
 } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
@@ -47,6 +49,18 @@ function callerActor(ctx: Ctx): Actor {
   return actor === undefined ? anonymousActor() : actor;
 }
 
+const NO_SERVICES: ServiceBag = Object.freeze({});
+
+/**
+ * The same defensive read a third time, and this one is load-bearing rather than merely kind:
+ * `withChildContext` ITERATES the parent's bag to decide what carries forward, so a cast context
+ * with no `services` would fail the run with a `TypeError` before the body ever started.
+ */
+function callerServices(ctx: Ctx): ServiceBag {
+  const services: ServiceBag | undefined = ctx.services;
+  return services === undefined ? NO_SERVICES : services;
+}
+
 export interface JobExecution {
   readonly outcome: JobOutcome;
   readonly jobId: string;
@@ -81,7 +95,11 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   // caller's signal rather than replacing it: a ctx that was already going away still is.
   const cancel = new AbortController();
   const signal = AbortSignal.any([callerSignal(options.ctx), cancel.signal]);
-  const ctx: Ctx = Object.freeze({ ...options.ctx, signal });
+  const ctx: Ctx = Object.freeze({
+    ...options.ctx,
+    signal,
+    services: callerServices(options.ctx),
+  });
   const runner = createStepRunner({
     runId: claimed.runId,
     jobName: handle.name,
@@ -100,24 +118,31 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     const input = handle.parse(claimed.input);
     // The job's DECLARED tenant, on the actor the body runs as. `tenant: 'none'` strips the org
     // rather than inheriting the worker's, so a tenant-scoped read inside such a job fails closed.
-    const runCtx: Ctx = Object.freeze({
-      ...ctx,
-      actor: jobRunActor(callerActor(ctx), handle.tenantFor(input)),
-    });
+    const runActor = jobRunActor(callerActor(ctx), handle.tenantFor(input));
     // Installed as the AMBIENT context and not only handed over as a parameter. This is the whole
     // of the fix: `@ultimat3/entity`'s tenant guard derives from `tryUseContext()`, so a ctx passed
     // as an argument was read by nobody — `actorTenant` answered `undefined`, `scopedPlan` derived
     // no predicate, `verifyScope` returned early, and a row naming another org was written by a
     // job while the identical write over HTTP was refused as `X_TENANCY_ACTOR_MISMATCH`.
-    const work = runWithContext(runCtx, () =>
-      handle.run({
-        input,
-        step: runner.step,
-        ctx: runCtx,
-        attempt: claimed.attempt,
-        jobId: claimed.id,
-        runId: claimed.runId,
-      }),
+    //
+    // `withChildContext` and NOT a spread of `ctx`, for the reason it exists: a registered service
+    // CLOSES OVER the context it was built for (`defineService`), so the worker's `ctx.posts` would
+    // still answer the worker's org while every ambient repository call answered the job's — one
+    // run acting as two tenants, which is the same hole one layer up. It rebuilds every managed
+    // factory against `runActor` and carries only the services no factory owns.
+    const work = runWithContext(ctx, () =>
+      withChildContext({ actor: runActor }, () =>
+        handle.run({
+          input,
+          step: runner.step,
+          // The child itself, never a rebuilt sibling: the ctx a body is HANDED and the ctx the
+          // entity guard READS have to be one object, which is what `tenancy-cross-surface` pins.
+          ctx: useContext(),
+          attempt: claimed.attempt,
+          jobId: claimed.id,
+          runId: claimed.runId,
+        }),
+      ),
     );
 
     await (handle.timeoutMs === undefined

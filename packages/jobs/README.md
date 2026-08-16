@@ -255,6 +255,7 @@ anything is unswept so a cron or a deploy check can read the exit code alone.
 ```ts
 export const dropLegacy = backfill({
   name: 'drop-legacy',
+  tenant: 'none',                              // required, exactly as on job() — see the table above
   requires: '20260814120000_add_publish_at',   // a migration id, checked against x_migrations
   environments: ['staging', 'production'],     // omitted = every environment
   count: ({ ctx }) => db.posts.where({ publishedAt: null }).count(),
@@ -319,7 +320,7 @@ as `jobs.timeout.abandoned` — the one way to find a handler that never reads `
 ```ts
 await ctx.tx(async (tx) => {
   const post = await ctx.posts.publish(input.postId, tx);
-  await notifySubscribers.enqueue({ postId: post.id }); // joins `tx`
+  await notifySubscribers.enqueue({ postId: post.id, orgId: input.orgId }); // joins `tx`
 });
 ```
 

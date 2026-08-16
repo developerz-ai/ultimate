@@ -203,7 +203,12 @@ export class JobTenantRequiredError extends UltimateError {
     super({
       code: 'X_JOB_TENANT_REQUIRED',
       cause: `job "${input.job}" declares no tenant — a job body runs with no request behind it, so every tenant-scoped read inside it would be unscoped`,
-      fix: `add tenant: (input) => input.orgId to job("${input.job}"), or tenant: 'none' if it touches no tenant-scoped table`,
+      // `'none'` reads differently either side of `backfill()` and the fix has to say so: for a
+      // plain job it means "touches no tenant-scoped table", because the org is STRIPPED and any
+      // scoped read fails closed — but a backfill declaring it is how a sweep says it spans every
+      // tenant, and the pass opens the cross-tenant scope for exactly that declaration. Half the
+      // callers of this code arrive through `backfill()`, which forwards its `tenant` to `job()`.
+      fix: `add tenant: (input) => input.orgId to job("${input.job}") — or tenant: 'none', which declares NO org: right for a job that touches no tenant-scoped table, and the spelling a backfill() uses to sweep every tenant`,
       docs: docsFor('X_JOB_TENANT_REQUIRED'),
     });
   }
